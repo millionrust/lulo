@@ -40,17 +40,39 @@
 - Decouple state updates from render; sync render loop to display refresh.
 - `sysinfo`: keep ONE `System` instance, refresh in place (works on diffs).
 
+## App suite (target)
+
+All six are **buildable & testable on macOS now** (unlike the Dock/panels, which need
+Wayland layer-shell). Build the shared foundations once; apps compose them.
+
+### Shared crates (build first, reused everywhere)
+
+| Crate | Responsibility | Consumers |
+|---|---|---|
+| `rmac-ui` | Design system: theme tokens, fonts (Inter / JetBrains Mono), traffic-light `TitleBar` + window chrome, common widgets, window-position persistence | **every** app |
+| `rmac-editor` | Text editing core: rope buffer (gpui-component `input`/Rope), undo/redo (`history`), syntax highlight (`highlighter`) | Text Editor, Notes |
+| `rmac-apps` | Installed-app enumeration abstraction — `.desktop` (Linux) vs `.app` (macOS), icons, launch | App Drawer, future Spotlight + Dock |
+| `rmac-sys` | System data + control: `sysinfo` wrappers, per-OS settings backends | Activity Monitor, System Settings |
+
+### The apps → Rust approach
+
+| # | App | Core crates / approach | Prior art | macOS-now? |
+|---|---|---|---|---|
+| 1 | **Terminal** | `alacritty_terminal` (VTE/grid engine) + `portable-pty`, GPUI grid render | **Zed's terminal** (same stack) | ✅ |
+| 2 | **Notes** | `rmac-editor` + storage (`rusqlite` or files) + full-text search | Apple Notes | ✅ |
+| 3 | **Finder** | `std::fs` + `notify` (watch) + async I/O (yazi arch); `tree`/`sidebar`/`list` | yazi, cosmic-files | ✅ |
+| 4 | **System Settings** | `sidebar` + panes shell; backends per-OS (Linux: gsettings/dconf/compositor) | — | shell ✅, Linux backends later |
+| 5 | **App Drawer** | Launchpad/App-Library grid + fuzzy search; `rmac-apps` enumeration | macOS Launchpad/App Library | ✅ |
+| 6 | **Text Editor** | `rmac-editor` + `highlighter` (syntax) | macOS TextEdit | ✅ |
+
 ## Roadmap
 
 - **Phase 0 — Foundation** ✅ workspace + toolkit decision (GPUI).
-- **Phase 1 — Activity Monitor** 🟡 IN PROGRESS — `crates/activity-monitor`.
-  Runs on macOS today (Metal); exercises GPUI + gpui-component Table + sysinfo.
-  *(Dock/panels need Wayland layer-shell → Linux-only → deferred until testing on Ubuntu.)*
-- **Phase 2 — Dock** (Linux) — layer-shell, hover magnification, spring physics, launch.
-- **Phase 3 — Spotlight + top bar** — instant fuzzy launcher; clock/tray panel.
-- **Phase 4 — More utilities** — file manager (copy yazi's async-I/O arch), settings, screenshot, clipboard.
-- **Phase 5 — Notes app** (flagship) — rich text (cosmic-text), folders, fast full-text search.
-- **Phase 6 — The *feel*** — inertial gestures (in compositor), global menu bar, Mission-Control overview, packaging as Ubuntu remix.
+- **Phase 1 — Activity Monitor** ✅ DONE — `crates/activity-monitor` builds & runs on macOS. Live process table + summary, 2s auto-refresh. Proves the GPUI + gpui-component + sysinfo stack.
+- **Phase 2 — `rmac-ui` foundation** ⏭️ NEXT — traffic-light titlebar, theme, fonts. Unblocks a consistent look across all apps.
+- **Phase 3 — App suite** — Text Editor → Notes (share `rmac-editor`) → Terminal → Finder → App Drawer → System Settings.
+- **Phase 4 — Dock & shell** (Linux) — layer-shell dock (hover magnification, spring physics), top bar, Spotlight.
+- **Phase 5 — The *feel*** — inertial gestures (in compositor), global menu bar, Mission-Control overview, packaging as Ubuntu remix.
 
 ## Build setup notes
 

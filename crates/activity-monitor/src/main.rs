@@ -8,12 +8,12 @@ use std::cmp::Ordering;
 use std::time::Duration;
 
 use gpui::{
-    div, point, px, size, App, AppContext as _, Application, Bounds, Context, Entity, IntoElement,
-    ParentElement, Render, SharedString, Styled, Window, WindowBounds, WindowOptions,
+    div, px, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render,
+    SharedString, Styled, Window,
 };
 use gpui_component::{
     table::{Column, ColumnSort, Table, TableDelegate, TableState},
-    ActiveTheme as _, Root, StyledExt as _,
+    ActiveTheme as _, StyledExt as _,
 };
 use sysinfo::{ProcessesToUpdate, System};
 
@@ -234,6 +234,7 @@ impl Render for MonitorView {
             .v_flex()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
+            .child(rmac_ui::title_bar("Activity Monitor"))
             .child(
                 // Summary strip
                 div()
@@ -256,23 +257,7 @@ impl Render for MonitorView {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        gpui_component::init(cx);
-
-        let bounds = Bounds::new(point(px(200.0), px(120.0)), size(px(960.0), px(640.0)));
-
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..Default::default()
-            },
-            |window, cx| {
-                let view = cx.new(|cx| MonitorView::new(window, cx));
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        )
-        .unwrap();
-
-        cx.activate(true);
+    rmac_ui::boot("Activity Monitor", 960.0, 640.0, |window, cx| {
+        MonitorView::new(window, cx)
     });
 }

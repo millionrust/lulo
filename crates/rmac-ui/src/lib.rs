@@ -70,10 +70,20 @@ where
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
     let title: SharedString = title.into();
-    Application::new().run(move |cx: &mut App| {
-        gpui_component::init(cx);
+    Application::new()
+        // Register gpui-component's SVG icon assets so Icon/Button.icon render.
+        .with_assets(gpui_component_assets::Assets)
+        .run(move |cx: &mut App| {
+            gpui_component::init(cx);
 
         cx.open_window(window_options(width, height), move |window, cx| {
+            // Force light mode so every built-in widget matches the `mac` palette.
+            // (Dark mode + dynamic switching is a later pass.)
+            gpui_component::theme::Theme::change(
+                gpui_component::theme::ThemeMode::Light,
+                Some(window),
+                cx,
+            );
             let view = cx.new(|cx| build(window, cx));
             cx.new(|cx| Root::new(view, window, cx))
         })
@@ -93,4 +103,58 @@ pub fn page() -> gpui::Div {
 /// Convenience: themed background color for the app body.
 pub fn body_bg(cx: &App) -> gpui::Hsla {
     cx.theme().background
+}
+
+/// Precise macOS (light-mode) design tokens — system colors, weights, metrics.
+/// Apps use these instead of generic theme colors so the suite matches macOS
+/// pixel-for-pixel. (Dark mode + dynamic switching is a later pass.)
+pub mod mac {
+    use gpui::{rgb, rgba, FontWeight, Hsla};
+
+    // Surfaces
+    /// Window / editor content background.
+    pub fn window() -> Hsla { rgb(0xffffff).into() }
+    /// Unified toolbar / window chrome.
+    pub fn chrome() -> Hsla { rgb(0xf6f6f6).into() }
+    /// Source list (sidebar) background.
+    pub fn sidebar() -> Hsla { rgb(0xf2f2f2).into() }
+    /// Middle list column background.
+    pub fn list() -> Hsla { rgb(0xffffff).into() }
+
+    // Text
+    /// Primary label color (near-black).
+    pub fn text() -> Hsla { rgb(0x1d1d1f).into() }
+    /// Secondary label (systemGray).
+    pub fn text_secondary() -> Hsla { rgb(0x86868b).into() }
+    /// Tertiary label (section headers, counts).
+    pub fn text_tertiary() -> Hsla { rgb(0xaeaeb2).into() }
+
+    // Lines & fills
+    /// Hairline separator (~8% black).
+    pub fn separator() -> Hsla { rgba(0x00000014).into() }
+    /// Hover fill on rows/controls.
+    pub fn hover() -> Hsla { rgba(0x0000000a).into() }
+    /// Neutral (unfocused) selection fill in source lists.
+    pub fn sidebar_selection() -> Hsla { rgba(0x00000014).into() }
+
+    // Notes accent family (yellow)
+    pub fn notes_accent() -> Hsla { rgb(0xffc40c).into() }
+    /// Soft yellow row highlight for the selected note (focused).
+    pub fn notes_selection() -> Hsla { rgb(0xfdeaa3).into() }
+
+    // Type weights (SF on macOS via the system font)
+    pub const REGULAR: FontWeight = FontWeight::NORMAL;
+    pub const MEDIUM: FontWeight = FontWeight::MEDIUM;
+    pub const SEMIBOLD: FontWeight = FontWeight::SEMIBOLD;
+    pub const BOLD: FontWeight = FontWeight::BOLD;
+}
+
+/// A unified macOS toolbar/title bar with the chrome color and a hairline base.
+/// Children are laid out after the 80px traffic-light gutter.
+pub fn toolbar(children: impl IntoElement) -> impl IntoElement {
+    use gpui::Styled as _;
+    TitleBar::new()
+        .bg(mac::chrome())
+        .border_color(mac::separator())
+        .child(children)
 }

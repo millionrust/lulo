@@ -4593,6 +4593,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+]
+
+[[package]]
 name = "ropey"
 version = "2.0.0-beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

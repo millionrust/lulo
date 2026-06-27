@@ -45,11 +45,18 @@
 All six are **buildable & testable on macOS now** (unlike the Dock/panels, which need
 Wayland layer-shell). Build the shared foundations once; apps compose them.
 
+### Fidelity bar (non-negotiable)
+
+Each app must match the **real** macOS app pixel-for-pixel, not approximate it.
+Use the `rmac_ui::mac` design tokens (system colors, weights, metrics) everywhere —
+never generic theme colors. Verify the *look* with a screenshot, not just a clean run.
+`boot()` registers icon assets + forces light mode so the whole suite is consistent.
+
 ### Shared crates (build first, reused everywhere)
 
 | Crate | Responsibility | Consumers |
 |---|---|---|
-| `rmac-ui` | Design system: theme tokens, fonts (Inter / JetBrains Mono), traffic-light `TitleBar` + window chrome, common widgets, window-position persistence | **every** app |
+| `rmac-ui` | Design system: `mac::` token palette, fonts, traffic-light `TitleBar` + `toolbar()`, `boot()` (icon assets + light theme), window-position persistence | **every** app |
 | `rmac-editor` | Text editing core: rope buffer (gpui-component `input`/Rope), undo/redo (`history`), syntax highlight (`highlighter`) | Text Editor, Notes |
 | `rmac-apps` | Installed-app enumeration abstraction — `.desktop` (Linux) vs `.app` (macOS), icons, launch | App Drawer, future Spotlight + Dock |
 | `rmac-sys` | System data + control: `sysinfo` wrappers, per-OS settings backends | Activity Monitor, System Settings |

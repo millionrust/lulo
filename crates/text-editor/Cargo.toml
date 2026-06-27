@@ -1,0 +1,15 @@
+[package]
+name = "rmac-text-editor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rmac-text-editor"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui-component.workspace = true
+rmac-ui = { path = "../rmac-ui" }

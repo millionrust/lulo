@@ -4594,6 +4594,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-text-editor"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "rmac-ui",
+]
+
+[[package]]
 name = "rmac-ui"
 version = "0.1.0"
 dependencies = [

@@ -69,8 +69,11 @@ Wayland layer-shell). Build the shared foundations once; apps compose them.
 
 - **Phase 0 — Foundation** ✅ workspace + toolkit decision (GPUI).
 - **Phase 1 — Activity Monitor** ✅ DONE — `crates/activity-monitor` builds & runs on macOS. Live process table + summary, 2s auto-refresh. Proves the GPUI + gpui-component + sysinfo stack.
-- **Phase 2 — `rmac-ui` foundation** ⏭️ NEXT — traffic-light titlebar, theme, fonts. Unblocks a consistent look across all apps.
-- **Phase 3 — App suite** — Text Editor → Notes (share `rmac-editor`) → Terminal → Finder → App Drawer → System Settings.
+- **Phase 2 — `rmac-ui` foundation** ✅ DONE — traffic-light titlebar, theme, fonts, `boot()`. Monitor wired onto it.
+- **Phase 3 — App suite** — build order: Text Editor ✅ → Notes ✅ (both share `rmac-editor` ✅) → Terminal ⏭️ NEXT → Finder → App Drawer → System Settings.
+  - **Text Editor** ✅ — rope editor + native Open/Save.
+  - **Notes** ✅ — two-pane sidebar/editor, `.md` files in `~/Documents/rmac-notes`, 1.5s auto-save.
+  - **Terminal** — next: `alacritty_terminal` + `portable-pty`, GPUI grid render (Zed's stack).
 - **Phase 4 — Dock & shell** (Linux) — layer-shell dock (hover magnification, spring physics), top bar, Spotlight.
 - **Phase 5 — The *feel*** — inertial gestures (in compositor), global menu bar, Mission-Control overview, packaging as Ubuntu remix.
 

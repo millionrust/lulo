@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["rmac"]
+
+# A fast, macOS-feel desktop suite built in Rust on GPUI, targeting Ubuntu/Wayland.
+# Developed on macOS (Metal) today; Linux (Vulkan) is the deployment target.
+
+[workspace.dependencies]
+gpui = "0.2"
+gpui-component = "0.5"
+sysinfo = "0.33"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = 3
+strip = true

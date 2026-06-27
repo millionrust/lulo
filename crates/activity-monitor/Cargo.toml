@@ -1,0 +1,15 @@
+[package]
+name = "rmac-activity-monitor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rmac-activity-monitor"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui-component.workspace = true
+sysinfo.workspace = true

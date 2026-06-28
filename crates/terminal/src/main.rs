@@ -9,12 +9,14 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::{Event, EventListener};
-use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line};
+use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term};
 use gpui::{
-    div, px, Context, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement,
-    Render, Styled, Window,
+    div, px, ClipboardItem, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, Styled, Window,
 };
 use gpui_component::StyledExt as _;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
@@ -25,10 +27,20 @@ const ROWS: usize = 28;
 const FONT: &str = "Menlo"; // macOS Terminal's default monospace
 const FONT_SIZE: f32 = 13.0;
 const LINE_H: f32 = 17.0;
+/// Approximate monospace cell advance for `Menlo` at `FONT_SIZE`.
+const CELL_W: f32 = FONT_SIZE * 0.6;
+/// Pixels from the window top to the first text row: 34pt title bar + 8pt pad.
+const TOP_PAD: f32 = 34.0 + 8.0;
+/// Pixels from the window left to the first column: 8pt content padding.
+const LEFT_PAD: f32 = 8.0;
 
 // One Dark-ish palette.
 const FG: u32 = 0xd4d4d4;
 const BG: u32 = 0x1e1e1e;
+/// macOS-style text selection fill (translucent blue over the grid).
+const SELECTION: u32 = 0x2f5d8c;
+
+gpui::actions!(terminal, [Copy, Paste]);
 
 /// Grid geometry handed to the terminal model and the PTY.
 #[derive(Clone, Copy)]
@@ -49,6 +61,46 @@ impl Dimensions for TermSize {
     }
 }
 
+/// A selected cell range, in alacritty grid-line coordinates (`Line` values,
+/// which are negative for scrollback). Coordinates are `(line, column)`.
+#[derive(Clone, Copy)]
+struct Selection {
+    anchor: (i32, usize),
+    head: (i32, usize),
+}
+
+impl Selection {
+    /// Return `(start, end)` ordered top-to-bottom, left-to-right.
+    fn ordered(&self) -> ((i32, usize), (i32, usize)) {
+        if (self.anchor.0, self.anchor.1) <= (self.head.0, self.head.1) {
+            (self.anchor, self.head)
+        } else {
+            (self.head, self.anchor)
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.anchor == self.head
+    }
+
+    /// Is the cell at `(line, col)` inside the selection?
+    fn contains(&self, line: i32, col: usize) -> bool {
+        let (s, e) = self.ordered();
+        (line, col) >= s && (line, col) <= e
+    }
+}
+
+/// Visual style of a run of cells — runs break when any attribute changes.
+#[derive(Clone, Copy, PartialEq)]
+struct Style {
+    fg: Hsla,
+    bg: Hsla,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strike: bool,
+}
+
 /// No-op event listener — we poll the grid on a render timer instead.
 #[derive(Clone)]
 struct EventProxy;
@@ -63,6 +115,12 @@ struct TerminalView {
     cols: usize,
     rows: usize,
     focus: gpui::FocusHandle,
+    /// Active text selection (set while dragging, kept until next click).
+    selection: Option<Selection>,
+    /// True while the mouse button is held during a drag-select.
+    selecting: bool,
+    /// Fractional scroll-line accumulator for smooth trackpad scrolling.
+    scroll_accum: f32,
 }
 
 impl TerminalView {
@@ -114,6 +172,12 @@ impl TerminalView {
             }
         });
 
+        // ⌘C / ⌘V copy & paste.
+        cx.bind_keys([
+            KeyBinding::new("cmd-c", Copy, Some("Terminal")),
+            KeyBinding::new("cmd-v", Paste, Some("Terminal")),
+        ]);
+
         let focus = cx.focus_handle();
         window.focus(&focus);
 
@@ -135,6 +199,9 @@ impl TerminalView {
             cols: COLS,
             rows: ROWS,
             focus,
+            selection: None,
+            selecting: false,
+            scroll_accum: 0.0,
         }
     }
 
@@ -143,8 +210,7 @@ impl TerminalView {
         let vp = window.viewport_size();
         let w = f32::from(vp.width);
         let h = f32::from(vp.height);
-        let cell_w = FONT_SIZE * 0.6;
-        let cols = (((w - 16.0) / cell_w).floor() as usize).max(20);
+        let cols = (((w - 16.0) / CELL_W).floor() as usize).max(20);
         let rows = (((h - 34.0 - 16.0) / LINE_H).floor() as usize).max(5);
         if cols == self.cols && rows == self.rows {
             return;
@@ -162,9 +228,43 @@ impl TerminalView {
         });
     }
 
+    /// Current scrollback offset (0 = pinned to the live prompt).
+    fn display_offset(&self) -> i32 {
+        self.term
+            .lock()
+            .map(|t| t.grid().display_offset() as i32)
+            .unwrap_or(0)
+    }
+
+    /// Convert a window-space mouse position to a `(grid_line, column)` cell.
+    /// `offset` is the scrollback offset so history selections stay anchored
+    /// to content rather than to the viewport.
+    fn pos_to_cell(&self, pos: Point<Pixels>, offset: i32) -> (i32, usize) {
+        let x = f32::from(pos.x);
+        let y = f32::from(pos.y);
+        let col = (((x - LEFT_PAD) / CELL_W).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
+        let row = (((y - TOP_PAD) / LINE_H).floor() as i32).clamp(0, self.rows as i32 - 1);
+        (row - offset, col)
+    }
+
+    /// Scroll the viewport by `lines` (positive = into history).
+    fn scroll_lines(&mut self, lines: i32) {
+        if lines == 0 {
+            return;
+        }
+        if let Ok(mut t) = self.term.lock() {
+            t.scroll_display(Scroll::Delta(lines));
+        }
+    }
+
     fn on_key(&mut self, ev: &KeyDownEvent) {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
+        // Let ⌘-shortcuts (copy/paste/…) flow to the action system instead of
+        // writing the literal character to the PTY.
+        if m.platform {
+            return;
+        }
         let bytes: Vec<u8> = match ks.key.as_str() {
             "enter" => vec![b'\r'],
             "backspace" => vec![0x7f],
@@ -191,52 +291,143 @@ impl TerminalView {
             }
         };
         if !bytes.is_empty() {
+            // Typing jumps the viewport back to the live prompt, like a real terminal.
+            if let Ok(mut t) = self.term.lock() {
+                t.scroll_display(Scroll::Bottom);
+            }
             let _ = self.writer.write_all(&bytes);
             let _ = self.writer.flush();
         }
     }
 
-    /// Build the visible grid as one styled line per row (color runs).
+    /// Copy the current selection to the system clipboard.
+    fn copy(&mut self, cx: &mut Context<Self>) {
+        if let Some(text) = self.selection_text() {
+            if !text.is_empty() {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+            }
+        }
+    }
+
+    /// Paste clipboard text into the PTY input stream.
+    fn paste(&mut self, cx: &mut Context<Self>) {
+        if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
+            if let Ok(mut t) = self.term.lock() {
+                t.scroll_display(Scroll::Bottom);
+            }
+            let _ = self.writer.write_all(text.as_bytes());
+            let _ = self.writer.flush();
+        }
+    }
+
+    /// Extract the selected cells as text, one grid line per row (trailing
+    /// whitespace trimmed), joined with newlines.
+    fn selection_text(&self) -> Option<String> {
+        let sel = self.selection?;
+        let (s, e) = sel.ordered();
+        let term = self.term.lock().ok()?;
+        let grid = term.grid();
+        let history = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
+
+        let mut out = String::new();
+        let mut first = true;
+        for line in s.0..=e.0 {
+            if line < -history || line >= self.rows as i32 {
+                continue;
+            }
+            let (c0, c1) = if s.0 == e.0 {
+                (s.1, e.1)
+            } else if line == s.0 {
+                (s.1, self.cols - 1)
+            } else if line == e.0 {
+                (0, e.1)
+            } else {
+                (0, self.cols - 1)
+            };
+            let row = &grid[Line(line)];
+            let mut text = String::new();
+            for col in c0..=c1.min(self.cols - 1) {
+                let ch = row[Column(col)].c;
+                text.push(if ch == '\0' { ' ' } else { ch });
+            }
+            if !first {
+                out.push('\n');
+            }
+            out.push_str(text.trim_end());
+            first = false;
+        }
+        Some(out)
+    }
+
+    /// Build the visible grid as one styled line per row (style runs), honoring
+    /// the scrollback offset, selection highlight, and bold/italic/underline.
     fn render_rows(&self) -> Vec<gpui::AnyElement> {
         let Ok(term) = self.term.lock() else {
             return Vec::new();
         };
         let grid = term.grid();
+        let offset = grid.display_offset() as i32;
         let cursor = grid.cursor.point;
+        // Hide the cursor while scrolled back into history.
+        let show_cursor = offset == 0;
         let cursor_line = cursor.line.0;
         let cursor_col = cursor.column.0;
 
         let mut rows: Vec<gpui::AnyElement> = Vec::with_capacity(self.rows);
-        for line in 0..self.rows as i32 {
-            let row = &grid[Line(line)];
+        for i in 0..self.rows as i32 {
+            let line_idx = i - offset;
+            let row = &grid[Line(line_idx)];
             let mut spans: Vec<gpui::AnyElement> = Vec::new();
             let mut run = String::new();
-            let mut run_fg = conv(Color::Named(NamedColor::Foreground));
-            let mut run_bg = conv(Color::Named(NamedColor::Background));
+            let mut run_style: Option<Style> = None;
 
             for col in 0..self.cols {
                 let cell = &row[Column(col)];
+                let flags = cell.flags;
                 let mut fg = conv(cell.fg);
                 let mut bg = conv(cell.bg);
-                // Block cursor: invert the cell under the cursor.
-                if line == cursor_line && col == cursor_col {
+
+                // Dim attribute: fade the foreground.
+                if flags.contains(Flags::DIM) {
+                    fg.a *= 0.65;
+                }
+                // Block cursor: invert the cell under the cursor (live view only).
+                if show_cursor && line_idx == cursor_line && col == cursor_col {
                     std::mem::swap(&mut fg, &mut bg);
                 }
+                // Selection highlight overrides the background.
+                if let Some(sel) = &self.selection {
+                    if !sel.is_empty() && sel.contains(line_idx, col) {
+                        bg = hsla(SELECTION);
+                    }
+                }
+
+                let style = Style {
+                    fg,
+                    bg,
+                    bold: flags.intersects(Flags::BOLD | Flags::DIM_BOLD),
+                    italic: flags.contains(Flags::ITALIC),
+                    underline: flags.intersects(Flags::ALL_UNDERLINES),
+                    strike: flags.contains(Flags::STRIKEOUT),
+                };
+
                 let ch = if cell.c == '\0' { ' ' } else { cell.c };
 
-                if run.is_empty() {
-                    run_fg = fg;
-                    run_bg = bg;
-                } else if fg != run_fg || bg != run_bg {
-                    spans.push(span(&run, run_fg, run_bg));
-                    run.clear();
-                    run_fg = fg;
-                    run_bg = bg;
+                match run_style {
+                    None => run_style = Some(style),
+                    Some(s) if s != style => {
+                        spans.push(span(&run, s));
+                        run.clear();
+                        run_style = Some(style);
+                    }
+                    _ => {}
                 }
                 run.push(ch);
             }
-            if !run.is_empty() {
-                spans.push(span(&run, run_fg, run_bg));
+            if let Some(s) = run_style {
+                if !run.is_empty() {
+                    spans.push(span(&run, s));
+                }
             }
 
             rows.push(div().flex().h(px(LINE_H)).children(spans).into_any_element());
@@ -270,6 +461,59 @@ impl Render for TerminalView {
                         this.on_key(ev);
                         cx.notify();
                     }))
+                    .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
+                    .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
+                    // Drag to select a cell range.
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            let offset = this.display_offset();
+                            let cell = this.pos_to_cell(ev.position, offset);
+                            this.selection = Some(Selection {
+                                anchor: cell,
+                                head: cell,
+                            });
+                            this.selecting = true;
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
+                        if this.selecting {
+                            let offset = this.display_offset();
+                            let cell = this.pos_to_cell(ev.position, offset);
+                            if let Some(sel) = this.selection.as_mut() {
+                                sel.head = cell;
+                            }
+                            cx.notify();
+                        }
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                            this.selecting = false;
+                            // A bare click (no drag) clears the selection.
+                            if let Some(sel) = this.selection {
+                                if sel.is_empty() {
+                                    this.selection = None;
+                                }
+                            }
+                            cx.notify();
+                        }),
+                    )
+                    // Scroll wheel / trackpad → walk through scrollback history.
+                    .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, _, cx| {
+                        let dy = match ev.delta {
+                            ScrollDelta::Lines(p) => p.y,
+                            ScrollDelta::Pixels(p) => f32::from(p.y) / LINE_H,
+                        };
+                        this.scroll_accum += dy;
+                        let lines = this.scroll_accum.trunc() as i32;
+                        this.scroll_accum -= lines as f32;
+                        if lines != 0 {
+                            this.scroll_lines(lines);
+                            cx.notify();
+                        }
+                    }))
                     .flex_1()
                     .p_2()
                     .bg(hsla(BG))
@@ -281,12 +525,21 @@ impl Render for TerminalView {
     }
 }
 
-fn span(text: &str, fg: Hsla, bg: Hsla) -> gpui::AnyElement {
-    div()
-        .text_color(fg)
-        .bg(bg)
-        .child(text.to_string())
-        .into_any_element()
+fn span(text: &str, s: Style) -> gpui::AnyElement {
+    let mut d = div().text_color(s.fg).bg(s.bg).child(text.to_string());
+    if s.bold {
+        d = d.font_weight(FontWeight::BOLD);
+    }
+    if s.italic {
+        d = d.italic();
+    }
+    if s.underline {
+        d = d.underline();
+    }
+    if s.strike {
+        d = d.line_through();
+    }
+    d.into_any_element()
 }
 
 fn hsla(hex: u32) -> Hsla {

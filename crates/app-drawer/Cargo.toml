@@ -1,18 +1,15 @@
 [package]
-name = "rmac-finder"
+name = "rmac-app-drawer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "rmac-finder"
+name = "rmac-app-drawer"
 path = "src/main.rs"
 
 [dependencies]
 gpui.workspace = true
 gpui-component.workspace = true
-gpui-component-assets = "0.5"
 rmac-ui = { path = "../rmac-ui" }
-chrono = "0.4"
-rust-embed = "8"

@@ -4687,6 +4687,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-app-drawer"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "rmac-ui",
+]
+
+[[package]]
 name = "rmac-editor"
 version = "0.1.0"
 dependencies = [
@@ -4701,7 +4710,9 @@ dependencies = [
  "chrono",
  "gpui",
  "gpui-component",
+ "gpui-component-assets",
  "rmac-ui",
+ "rust-embed",
 ]
 
 [[package]]

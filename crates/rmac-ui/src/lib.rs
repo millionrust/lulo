@@ -41,6 +41,54 @@ pub fn window_options(width: f32, height: f32) -> WindowOptions {
     }
 }
 
+/// Window options for an app with a **unified 52pt toolbar** (Finder-style):
+/// traffic lights positioned for the taller bar.
+pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(200.0), px(120.0)),
+            size(px(width), px(height)),
+        ))),
+        titlebar: Some(TitlebarOptions {
+            title: None,
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(19.0), px(19.0))),
+        }),
+        ..Default::default()
+    }
+}
+
+/// Like [`boot_with_assets`] but for unified-toolbar apps (Finder, System
+/// Settings) — the window reserves a taller titlebar and positions the traffic
+/// lights for a 52pt bar. The app renders its own toolbar at the top.
+pub fn boot_unified_with_assets<A, V, F>(
+    assets: A,
+    width: f32,
+    height: f32,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
+    Application::new()
+        .with_assets(assets)
+        .run(move |cx: &mut App| {
+            gpui_component::init(cx);
+            cx.open_window(window_options_unified(width, height), move |window, cx| {
+                gpui_component::theme::Theme::change(
+                    gpui_component::theme::ThemeMode::Light,
+                    Some(window),
+                    cx,
+                );
+                let view = cx.new(|cx| build(window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            })
+            .expect("failed to open window");
+            cx.activate(true);
+        });
+}
+
 /// The shared title bar: traffic-light gutter on the left, centered title.
 /// Apps put this at the top of their root `div`.
 pub fn title_bar(title: impl Into<SharedString>) -> impl IntoElement {
@@ -69,28 +117,43 @@ where
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
+    boot_with_assets(gpui_component_assets::Assets, title, width, height, build);
+}
+
+/// Like [`boot`], but with a custom asset source (e.g. an app that embeds its
+/// own SVG icons combined with gpui-component's). The source must still resolve
+/// gpui-component's `icons/**` paths or built-in icons won't render.
+pub fn boot_with_assets<A, V, F>(
+    assets: A,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
     let title: SharedString = title.into();
     Application::new()
-        // Register gpui-component's SVG icon assets so Icon/Button.icon render.
-        .with_assets(gpui_component_assets::Assets)
+        .with_assets(assets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
 
-        cx.open_window(window_options(width, height), move |window, cx| {
-            // Force light mode so every built-in widget matches the `mac` palette.
-            // (Dark mode + dynamic switching is a later pass.)
-            gpui_component::theme::Theme::change(
-                gpui_component::theme::ThemeMode::Light,
-                Some(window),
-                cx,
-            );
-            let view = cx.new(|cx| build(window, cx));
-            cx.new(|cx| Root::new(view, window, cx))
-        })
-        .expect("failed to open window");
+            cx.open_window(window_options(width, height), move |window, cx| {
+                // Force light mode so every built-in widget matches the `mac` palette.
+                gpui_component::theme::Theme::change(
+                    gpui_component::theme::ThemeMode::Light,
+                    Some(window),
+                    cx,
+                );
+                let view = cx.new(|cx| build(window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            })
+            .expect("failed to open window");
 
-        cx.activate(true);
-    });
+            cx.activate(true);
+        });
     let _ = title; // reserved for window title once GPUI exposes it post-open
 }
 

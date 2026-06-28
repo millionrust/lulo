@@ -18,10 +18,10 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource, ClickEvent,
-    Context, Div, FocusHandle, Focusable as _, Hsla, InteractiveElement as _, IntoElement,
-    KeyBinding, KeyDownEvent, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Svg, Window,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource,
+    ClickEvent, ClipboardItem, Context, Div, ExternalPaths, FocusHandle, Focusable as _, Hsla,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, ParentElement,
+    Render, Result, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::{
     input::{Input, InputEvent, InputState},
@@ -623,17 +623,42 @@ impl FinderView {
         self.reload(cx);
     }
 
-    fn copy(&mut self, _cx: &mut Context<Self>) {
-        self.clipboard = self.selected_paths();
-        self.clip_cut = false;
+    fn write_clip_text(&self, cx: &mut Context<Self>) {
+        let text = self
+            .clipboard
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !text.is_empty() {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
     }
 
-    fn cut(&mut self, _cx: &mut Context<Self>) {
+    fn copy(&mut self, cx: &mut Context<Self>) {
+        self.clipboard = self.selected_paths();
+        self.clip_cut = false;
+        self.write_clip_text(cx);
+    }
+
+    fn cut(&mut self, cx: &mut Context<Self>) {
         self.clipboard = self.selected_paths();
         self.clip_cut = true;
+        self.write_clip_text(cx);
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        // Fall back to file paths on the system clipboard (text bridge).
+        if self.clipboard.is_empty() {
+            if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
+                let paths: Vec<PathBuf> =
+                    text.lines().map(PathBuf::from).filter(|p| p.exists()).collect();
+                if !paths.is_empty() {
+                    self.clipboard = paths;
+                    self.clip_cut = false;
+                }
+            }
+        }
         for src in self.clipboard.clone() {
             let name = src.file_name().map(|n| n.to_owned()).unwrap_or_default();
             let dst = unique_path(self.cwd.join(name));
@@ -1257,6 +1282,10 @@ impl FinderView {
                     _ => {}
                 }
             }))
+            .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(hsl(0xeaf3ff)))
+            .on_drop(cx.listener(|this, ep: &ExternalPaths, _, cx| {
+                this.drop_external(ep.paths().to_vec(), cx)
+            }))
             .flex_1()
             .v_flex()
             .bg(list_bg())
@@ -1398,6 +1427,17 @@ impl FinderView {
                 } else {
                     let _ = std::fs::remove_file(src);
                 }
+            }
+        }
+        self.reload(cx);
+    }
+
+    /// Files dropped from another app (Finder, etc.) → copy into the current dir.
+    fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        for src in paths {
+            if let Some(name) = src.file_name() {
+                let dst = unique_path(self.cwd.join(name));
+                let _ = copy_recursive(&src, &dst);
             }
         }
         self.reload(cx);

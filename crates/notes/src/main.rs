@@ -395,6 +395,34 @@ impl NotesView {
 
     // ---- format blocks ----
 
+    /// Attach an image: pick a file, copy it next to the note, insert a markdown ref.
+    fn attach_image(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let rx = cx.prompt_for_paths(gpui::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: None,
+        });
+        let dir = self.dir.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else { return };
+            let Some(src) = paths.into_iter().next() else {
+                return;
+            };
+            let name = src
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "image".to_string());
+            let dst = dir.join(&name);
+            if std::fs::copy(&src, &dst).is_ok() {
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.insert_token(&format!("\n![]({name})\n"), window, cx);
+                });
+            }
+        })
+        .detach();
+    }
+
     fn insert_token(&mut self, tok: &str, window: &mut Window, cx: &mut Context<Self>) {
         let tok = tok.to_string();
         self.body.update(cx, |s, cx| s.insert(tok, window, cx));
@@ -777,6 +805,15 @@ impl NotesView {
             .child(btn("fmt-h2", "Heading", "Subheading", "## ", cx))
             .child(btn("fmt-bullet", "• List", "Bulleted List", "- ", cx))
             .child(btn("fmt-check", "☑ Checklist", "Checklist", "- [ ] ", cx))
+            .child(
+                Button::new("fmt-attach")
+                    .label("📎 Attach")
+                    .ghost()
+                    .with_size(Size::Small)
+                    .disabled(preview)
+                    .tooltip("Attach Image")
+                    .on_click(cx.listener(|this, _, window, cx| this.attach_image(window, cx))),
+            )
             .child(div().flex_1())
             .child(
                 Button::new("preview")
@@ -800,7 +837,12 @@ impl NotesView {
         let mut blocks: Vec<AnyElement> = Vec::new();
         for (i, line) in body.lines().enumerate() {
             let trimmed = line.trim_start();
-            let el: AnyElement = if let Some(rest) = trimmed
+            let el: AnyElement = if let Some(path) = parse_image(trimmed) {
+                gpui::img(self.dir.join(&path))
+                    .max_w(px(380.0))
+                    .rounded(px(6.0))
+                    .into_any_element()
+            } else if let Some(rest) = trimmed
                 .strip_prefix("- [ ]")
                 .or_else(|| trimmed.strip_prefix("- [x]"))
             {
@@ -1040,6 +1082,21 @@ fn checklist_row(line_ix: usize, checked: bool, text: &str, cx: &mut Context<Not
 }
 
 // ---- pure helpers ----
+
+/// Parse a markdown image line `![alt](path)` → the path.
+fn parse_image(line: &str) -> Option<String> {
+    let l = line.trim();
+    if !l.starts_with("![") {
+        return None;
+    }
+    let open = l.find("](")?;
+    let end = l.rfind(')')?;
+    if end > open + 2 {
+        Some(l[open + 2..end].to_string())
+    } else {
+        None
+    }
+}
 
 fn parse_tags(raw: &str) -> Vec<String> {
     raw.split(',')

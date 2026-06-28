@@ -42,7 +42,7 @@ const BG: u32 = 0x1e1e1e;
 /// macOS-style text selection fill (translucent blue over the grid).
 const SELECTION: u32 = 0x2f5d8c;
 
-gpui::actions!(terminal, [Copy, Paste, Find]);
+gpui::actions!(terminal, [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset]);
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
 
@@ -118,6 +118,9 @@ struct TerminalView {
     master: Box<dyn MasterPty + Send>,
     cols: usize,
     rows: usize,
+    font_size: f32,
+    line_h: f32,
+    cell_w: f32,
     focus: FocusHandle,
     /// Find bar: input + whether it's open.
     search: Entity<InputState>,
@@ -187,6 +190,10 @@ impl TerminalView {
             KeyBinding::new("cmd-c", Copy, Some("Terminal")),
             KeyBinding::new("cmd-v", Paste, Some("Terminal")),
             KeyBinding::new("cmd-f", Find, Some("Terminal")),
+            KeyBinding::new("cmd-=", ZoomIn, Some("Terminal")),
+            KeyBinding::new("cmd-+", ZoomIn, Some("Terminal")),
+            KeyBinding::new("cmd--", ZoomOut, Some("Terminal")),
+            KeyBinding::new("cmd-0", ZoomReset, Some("Terminal")),
         ]);
 
         let focus = cx.focus_handle();
@@ -209,6 +216,9 @@ impl TerminalView {
             master: pair.master,
             cols: COLS,
             rows: ROWS,
+            font_size: FONT_SIZE,
+            line_h: LINE_H,
+            cell_w: CELL_W,
             focus,
             search,
             searching: false,
@@ -216,6 +226,15 @@ impl TerminalView {
             selecting: false,
             scroll_accum: 0.0,
         }
+    }
+
+    /// Set the font size (clamped) and re-fit the grid to the window next frame.
+    fn set_font(&mut self, size: f32, cx: &mut Context<Self>) {
+        self.font_size = size.clamp(8.0, 32.0);
+        self.line_h = self.font_size * (LINE_H / FONT_SIZE);
+        self.cell_w = self.font_size * 0.6;
+        self.cols = 0; // force resize_to() to recompute on the next render
+        cx.notify();
     }
 
     fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -234,8 +253,8 @@ impl TerminalView {
         let vp = window.viewport_size();
         let w = f32::from(vp.width);
         let h = f32::from(vp.height);
-        let cols = (((w - 16.0) / CELL_W).floor() as usize).max(20);
-        let rows = (((h - 34.0 - 16.0) / LINE_H).floor() as usize).max(5);
+        let cols = (((w - 16.0) / self.cell_w).floor() as usize).max(20);
+        let rows = (((h - 34.0 - 16.0) / self.line_h).floor() as usize).max(5);
         if cols == self.cols && rows == self.rows {
             return;
         }
@@ -266,8 +285,8 @@ impl TerminalView {
     fn pos_to_cell(&self, pos: Point<Pixels>, offset: i32) -> (i32, usize) {
         let x = f32::from(pos.x);
         let y = f32::from(pos.y);
-        let col = (((x - LEFT_PAD) / CELL_W).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
-        let row = (((y - TOP_PAD) / LINE_H).floor() as i32).clamp(0, self.rows as i32 - 1);
+        let col = (((x - LEFT_PAD) / self.cell_w).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
+        let row = (((y - TOP_PAD) / self.line_h).floor() as i32).clamp(0, self.rows as i32 - 1);
         (row - offset, col)
     }
 
@@ -501,7 +520,7 @@ impl TerminalView {
                 }
             }
 
-            rows.push(div().flex().h(px(LINE_H)).children(spans).into_any_element());
+            rows.push(div().flex().h(px(self.line_h)).children(spans).into_any_element());
         }
         rows
     }
@@ -542,6 +561,15 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
                     .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
                     .on_action(cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)))
+                    .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
+                        let s = this.font_size + 1.0;
+                        this.set_font(s, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &ZoomOut, _, cx| {
+                        let s = this.font_size - 1.0;
+                        this.set_font(s, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_font(FONT_SIZE, cx)))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,
@@ -583,7 +611,7 @@ impl Render for TerminalView {
                     .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, _, cx| {
                         let dy = match ev.delta {
                             ScrollDelta::Lines(p) => p.y,
-                            ScrollDelta::Pixels(p) => f32::from(p.y) / LINE_H,
+                            ScrollDelta::Pixels(p) => f32::from(p.y) / this.line_h,
                         };
                         this.scroll_accum += dy;
                         let lines = this.scroll_accum.trunc() as i32;
@@ -597,7 +625,7 @@ impl Render for TerminalView {
                     .p_2()
                     .bg(hsla(BG))
                     .font_family(FONT)
-                    .text_size(px(FONT_SIZE))
+                    .text_size(px(self.font_size))
                     .v_flex()
                     .children(rows),
             )

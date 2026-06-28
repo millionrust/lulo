@@ -320,17 +320,21 @@ impl TerminalView {
         }
     }
 
-    /// Extract the selected cells as text, one grid line per row (trailing
-    /// whitespace trimmed), joined with newlines.
+    /// Extract the selected cells as text. Hard line breaks become `\n`, but
+    /// soft-wrapped rows (the last cell carries alacritty's `WRAPLINE` flag) are
+    /// joined without a newline so a wrapped long line copies as a single line.
     fn selection_text(&self) -> Option<String> {
         let sel = self.selection?;
         let (s, e) = sel.ordered();
         let term = self.term.lock().ok()?;
         let grid = term.grid();
         let history = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
+        let last_col = self.cols - 1;
 
         let mut out = String::new();
         let mut first = true;
+        // True when the previous emitted row soft-wrapped into this one.
+        let mut prev_wrapped = false;
         for line in s.0..=e.0 {
             if line < -history || line >= self.rows as i32 {
                 continue;
@@ -338,22 +342,34 @@ impl TerminalView {
             let (c0, c1) = if s.0 == e.0 {
                 (s.1, e.1)
             } else if line == s.0 {
-                (s.1, self.cols - 1)
+                (s.1, last_col)
             } else if line == e.0 {
                 (0, e.1)
             } else {
-                (0, self.cols - 1)
+                (0, last_col)
             };
             let row = &grid[Line(line)];
             let mut text = String::new();
-            for col in c0..=c1.min(self.cols - 1) {
+            for col in c0..=c1.min(last_col) {
                 let ch = row[Column(col)].c;
                 text.push(if ch == '\0' { ' ' } else { ch });
             }
-            if !first {
+            // The row soft-wraps when its final cell is flagged WRAPLINE and the
+            // selection reaches that cell, so the next row continues this line.
+            let wrapped = c1 >= last_col
+                && row[Column(last_col)].flags.contains(Flags::WRAPLINE);
+
+            if !first && !prev_wrapped {
                 out.push('\n');
             }
-            out.push_str(text.trim_end());
+            // Don't trim a soft-wrapped row: its trailing cells are real content
+            // that continues onto the next row.
+            if wrapped {
+                out.push_str(&text);
+            } else {
+                out.push_str(text.trim_end());
+            }
+            prev_wrapped = wrapped;
             first = false;
         }
         Some(out)

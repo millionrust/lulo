@@ -9,12 +9,13 @@
 //! (appearance, computer name, macOS version, chip, memory).
 
 use std::borrow::Cow;
+use std::path::PathBuf;
 use std::process::Command;
 
 use gpui::{
-    actions, div, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _, AssetSource,
-    Context, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement as _, IntoElement,
-    KeyBinding, MouseButton, ParentElement, Render, Result, SharedString,
+    actions, div, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
+    AssetSource, Context, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement as _,
+    IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString,
     StatefulInteractiveElement as _, Stateful, Styled, Svg, Window,
 };
 use gpui_component::slider::{Slider, SliderState};
@@ -186,6 +187,212 @@ const ACCENTS: &[(&str, u32)] = &[
 
 const ALERT_SOUNDS: &[&str] = &["Boop", "Breeze", "Bubble", "Crystal", "Funk", "Heroine", "Submarine"];
 
+// ---- on-disk persistence -------------------------------------------------
+//
+// The interactive settings state is serialized to a small flat JSON config
+// file so toggles/sliders/segmented choices survive a quit. We hand-roll a
+// tiny flat-JSON writer/reader (all values are numbers or 0/1 booleans) to
+// avoid pulling extra dependencies into the workspace lockfile.
+
+/// A snapshot of all persisted interactive state.
+#[derive(Clone)]
+struct Persisted {
+    wifi_on: bool,
+    ask_to_join: bool,
+    joined: Option<usize>,
+    bluetooth_on: bool,
+    bt_discoverable: bool,
+    appearance: u8, // 0 = Light, 1 = Dark, 2 = Auto
+    accent_idx: usize,
+    show_color_in_menu: bool,
+    large_sidebar: bool,
+    output_volume: f32,
+    alert_volume: f32,
+    balance: f32,
+    mute: bool,
+    play_on_startup: bool,
+    play_ui_sounds: bool,
+    alert_idx: usize,
+    handoff: bool,
+    airdrop_idx: usize,
+    airplay_receiver: bool,
+}
+
+impl Default for Persisted {
+    fn default() -> Self {
+        Self {
+            wifi_on: true,
+            ask_to_join: true,
+            joined: Some(0),
+            bluetooth_on: true,
+            bt_discoverable: true,
+            // Default appearance follows the live system setting at first launch.
+            appearance: if appearance_is_dark() { 1 } else { 0 },
+            accent_idx: 0,
+            show_color_in_menu: true,
+            large_sidebar: false,
+            output_volume: 72.0,
+            alert_volume: 55.0,
+            balance: 50.0,
+            mute: false,
+            play_on_startup: true,
+            play_ui_sounds: true,
+            alert_idx: 0,
+            handoff: true,
+            airdrop_idx: 1,
+            airplay_receiver: false,
+        }
+    }
+}
+
+fn config_path() -> Option<PathBuf> {
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    #[cfg(target_os = "macos")]
+    let dir = home.join("Library/Application Support/rmac-system-settings");
+    #[cfg(not(target_os = "macos"))]
+    let dir = {
+        match std::env::var_os("XDG_CONFIG_HOME") {
+            Some(x) => PathBuf::from(x).join("rmac-system-settings"),
+            None => home.join(".config/rmac-system-settings"),
+        }
+    };
+    Some(dir.join("settings.json"))
+}
+
+impl Persisted {
+    fn load() -> Self {
+        let Some(path) = config_path() else { return Self::default() };
+        match std::fs::read_to_string(&path) {
+            Ok(content) => Self::parse(&content),
+            Err(_) => Self::default(),
+        }
+    }
+
+    fn save(&self) {
+        let Some(path) = config_path() else { return };
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, self.to_json());
+    }
+
+    fn to_json(&self) -> String {
+        let b = |v: bool| if v { 1 } else { 0 };
+        format!(
+            concat!(
+                "{{\n",
+                "  \"wifi_on\": {},\n",
+                "  \"ask_to_join\": {},\n",
+                "  \"joined\": {},\n",
+                "  \"bluetooth_on\": {},\n",
+                "  \"bt_discoverable\": {},\n",
+                "  \"appearance\": {},\n",
+                "  \"accent_idx\": {},\n",
+                "  \"show_color_in_menu\": {},\n",
+                "  \"large_sidebar\": {},\n",
+                "  \"output_volume\": {},\n",
+                "  \"alert_volume\": {},\n",
+                "  \"balance\": {},\n",
+                "  \"mute\": {},\n",
+                "  \"play_on_startup\": {},\n",
+                "  \"play_ui_sounds\": {},\n",
+                "  \"alert_idx\": {},\n",
+                "  \"handoff\": {},\n",
+                "  \"airdrop_idx\": {},\n",
+                "  \"airplay_receiver\": {}\n",
+                "}}\n",
+            ),
+            b(self.wifi_on),
+            b(self.ask_to_join),
+            self.joined.map(|j| j as i64).unwrap_or(-1),
+            b(self.bluetooth_on),
+            b(self.bt_discoverable),
+            self.appearance,
+            self.accent_idx,
+            b(self.show_color_in_menu),
+            b(self.large_sidebar),
+            self.output_volume,
+            self.alert_volume,
+            self.balance,
+            b(self.mute),
+            b(self.play_on_startup),
+            b(self.play_ui_sounds),
+            self.alert_idx,
+            b(self.handoff),
+            self.airdrop_idx,
+            b(self.airplay_receiver),
+        )
+    }
+
+    /// Parse a flat JSON object of numeric values; unknown/missing keys keep
+    /// their default and malformed values are ignored.
+    fn parse(content: &str) -> Self {
+        let mut p = Self::default();
+        let body = content
+            .trim()
+            .trim_start_matches('{')
+            .trim_end_matches('}');
+        for part in body.split(',') {
+            let part = part.trim().trim_matches(|c: char| c.is_whitespace() || c == '\n');
+            if part.is_empty() {
+                continue;
+            }
+            let mut it = part.splitn(2, ':');
+            let key = it.next().unwrap_or("").trim().trim_matches('"');
+            let raw = match it.next() {
+                Some(v) => v.trim().trim_matches('"'),
+                None => continue,
+            };
+            let num: f64 = match raw.parse() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            let truthy = num != 0.0;
+            match key {
+                "wifi_on" => p.wifi_on = truthy,
+                "ask_to_join" => p.ask_to_join = truthy,
+                "joined" => p.joined = if num < 0.0 { None } else { Some(num as usize) },
+                "bluetooth_on" => p.bluetooth_on = truthy,
+                "bt_discoverable" => p.bt_discoverable = truthy,
+                "appearance" => p.appearance = (num as u8).min(2),
+                "accent_idx" => p.accent_idx = num as usize,
+                "show_color_in_menu" => p.show_color_in_menu = truthy,
+                "large_sidebar" => p.large_sidebar = truthy,
+                "output_volume" => p.output_volume = num as f32,
+                "alert_volume" => p.alert_volume = num as f32,
+                "balance" => p.balance = num as f32,
+                "mute" => p.mute = truthy,
+                "play_on_startup" => p.play_on_startup = truthy,
+                "play_ui_sounds" => p.play_ui_sounds = truthy,
+                "alert_idx" => p.alert_idx = num as usize,
+                "handoff" => p.handoff = truthy,
+                "airdrop_idx" => p.airdrop_idx = num as usize,
+                "airplay_receiver" => p.airplay_receiver = truthy,
+                _ => {}
+            }
+        }
+        // Clamp index-like fields so a corrupt file can't panic on lookup.
+        if p.accent_idx >= ACCENTS.len() {
+            p.accent_idx = 0;
+        }
+        if p.alert_idx >= ALERT_SOUNDS.len() {
+            p.alert_idx = 0;
+        }
+        if p.airdrop_idx > 2 {
+            p.airdrop_idx = 1;
+        }
+        p
+    }
+
+    fn appearance_enum(&self) -> Appearance {
+        match self.appearance {
+            1 => Appearance::Dark,
+            2 => Appearance::Auto,
+            _ => Appearance::Light,
+        }
+    }
+}
+
 impl Settings {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| {
@@ -193,14 +400,31 @@ impl Settings {
         });
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
 
+        // Load persisted interactive state (falls back to sensible defaults).
+        let saved = Persisted::load();
+
+        // Sliders persist their value; observing them writes the config on change.
         let mk_slider = |cx: &mut Context<Self>, val: f32| {
             let s = cx.new(|_| SliderState::new().min(0.0).max(100.0).step(1.0).default_value(val));
-            cx.observe(&s, |_, _, cx| cx.notify()).detach();
+            cx.observe(&s, |this, _, cx| {
+                this.persist(cx);
+                cx.notify();
+            })
+            .detach();
             s
         };
-        let output_volume = mk_slider(cx, 72.0);
-        let alert_volume = mk_slider(cx, 55.0);
-        let balance = mk_slider(cx, 50.0);
+        let output_volume = mk_slider(cx, saved.output_volume);
+        let alert_volume = mk_slider(cx, saved.alert_volume);
+        let balance = mk_slider(cx, saved.balance);
+
+        // Clamp a possibly out-of-range saved network selection.
+        let networks = vec![
+            WifiNetwork { name: "lmes-5G".into(), secure: true, strength: 3 },
+            WifiNetwork { name: "lmes-guest".into(), secure: false, strength: 2 },
+            WifiNetwork { name: "Studio".into(), secure: true, strength: 2 },
+            WifiNetwork { name: "CoffeeHouse".into(), secure: false, strength: 1 },
+        ];
+        let joined = saved.joined.filter(|&j| j < networks.len());
 
         Self {
             account: account_name().into(),
@@ -213,36 +437,61 @@ impl Settings {
             focused_once: false,
             dragging: false,
 
-            wifi_on: true,
-            ask_to_join: true,
-            joined: Some(0),
-            networks: vec![
-                WifiNetwork { name: "lmes-5G".into(), secure: true, strength: 3 },
-                WifiNetwork { name: "lmes-guest".into(), secure: false, strength: 2 },
-                WifiNetwork { name: "Studio".into(), secure: true, strength: 2 },
-                WifiNetwork { name: "CoffeeHouse".into(), secure: false, strength: 1 },
-            ],
+            wifi_on: saved.wifi_on,
+            ask_to_join: saved.ask_to_join,
+            joined,
+            networks,
 
-            bluetooth_on: true,
-            bt_discoverable: true,
+            bluetooth_on: saved.bluetooth_on,
+            bt_discoverable: saved.bt_discoverable,
 
-            appearance: if appearance_is_dark() { Appearance::Dark } else { Appearance::Light },
-            accent_idx: 0,
-            show_color_in_menu: true,
-            large_sidebar: false,
+            appearance: saved.appearance_enum(),
+            accent_idx: saved.accent_idx,
+            show_color_in_menu: saved.show_color_in_menu,
+            large_sidebar: saved.large_sidebar,
 
             output_volume,
             alert_volume,
             balance,
-            mute: false,
-            play_on_startup: true,
-            play_ui_sounds: true,
-            alert_idx: 0,
+            mute: saved.mute,
+            play_on_startup: saved.play_on_startup,
+            play_ui_sounds: saved.play_ui_sounds,
+            alert_idx: saved.alert_idx,
 
-            handoff: true,
-            airdrop_idx: 1,
-            airplay_receiver: false,
+            handoff: saved.handoff,
+            airdrop_idx: saved.airdrop_idx,
+            airplay_receiver: saved.airplay_receiver,
         }
+    }
+
+    /// Capture the current interactive state and write it to disk.
+    fn persist(&self, cx: &App) {
+        let snapshot = Persisted {
+            wifi_on: self.wifi_on,
+            ask_to_join: self.ask_to_join,
+            joined: self.joined,
+            bluetooth_on: self.bluetooth_on,
+            bt_discoverable: self.bt_discoverable,
+            appearance: match self.appearance {
+                Appearance::Light => 0,
+                Appearance::Dark => 1,
+                Appearance::Auto => 2,
+            },
+            accent_idx: self.accent_idx,
+            show_color_in_menu: self.show_color_in_menu,
+            large_sidebar: self.large_sidebar,
+            output_volume: self.output_volume.read(cx).value().start(),
+            alert_volume: self.alert_volume.read(cx).value().start(),
+            balance: self.balance.read(cx).value().start(),
+            mute: self.mute,
+            play_on_startup: self.play_on_startup,
+            play_ui_sounds: self.play_ui_sounds,
+            alert_idx: self.alert_idx,
+            handoff: self.handoff,
+            airdrop_idx: self.airdrop_idx,
+            airplay_receiver: self.airplay_receiver,
+        };
+        snapshot.save();
     }
 
     fn current(&self) -> &Category {
@@ -687,6 +936,7 @@ impl Settings {
                     .on_click(move |_, _, cx| {
                         v.update(cx, |s, cx| {
                             s.appearance = ap;
+                            s.persist(cx);
                             cx.notify();
                         });
                     })
@@ -731,6 +981,7 @@ impl Settings {
                         .on_click(move |_, _, cx| {
                             v.update(cx, |s, cx| {
                                 s.accent_idx = i;
+                                s.persist(cx);
                                 cx.notify();
                             });
                         })
@@ -1011,6 +1262,7 @@ fn switch_row(
         let nv = *v;
         view.update(cx, |s, cx| {
             set(s, nv);
+            s.persist(cx);
             cx.notify();
         });
     });
@@ -1070,6 +1322,7 @@ fn network_row(view: Entity<Settings>, idx: usize, net: WifiNetwork) -> AnyEleme
         .on_click(move |_, _, cx| {
             view.update(cx, |s, cx| {
                 s.joined = Some(idx);
+                s.persist(cx);
                 cx.notify();
             });
         })
@@ -1105,6 +1358,7 @@ fn segmented(
                 .on_click(move |_, _, cx| {
                     v.update(cx, |s, cx| {
                         set(s, i);
+                        s.persist(cx);
                         cx.notify();
                     });
                 }),
@@ -1142,6 +1396,7 @@ fn segmented_dynamic(
                 .on_click(move |_, _, cx| {
                     v.update(cx, |s, cx| {
                         set(s, i);
+                        s.persist(cx);
                         cx.notify();
                     });
                 }),

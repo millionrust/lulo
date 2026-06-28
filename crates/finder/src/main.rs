@@ -187,6 +187,7 @@ struct FinderView {
     fwd: Vec<PathBuf>,
     sections: Vec<Section>,
     info: Option<usize>,
+    result_title: Option<SharedString>,
     dragging: bool,
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
@@ -326,6 +327,7 @@ impl FinderView {
             fwd: Vec::new(),
             sections,
             info: None,
+            result_title: None,
             dragging: false,
             focus,
             watcher,
@@ -354,6 +356,7 @@ impl FinderView {
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
+        self.result_title = None;
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
         }
@@ -599,7 +602,7 @@ impl FinderView {
                 None => format!("{stem} copy"),
             };
             let dst = unique_path(self.cwd.join(copy_name));
-            let _ = copy_recursive(&src, &dst);
+            let _ = copy_item(&src, &dst);
         }
         self.reload(cx);
     }
@@ -664,7 +667,7 @@ impl FinderView {
             let dst = unique_path(self.cwd.join(name));
             if self.clip_cut {
                 if std::fs::rename(&src, &dst).is_err() {
-                    if copy_recursive(&src, &dst).is_ok() {
+                    if copy_item(&src, &dst).is_ok() {
                         let _ = if src.is_dir() {
                             std::fs::remove_dir_all(&src)
                         } else {
@@ -673,7 +676,7 @@ impl FinderView {
                     }
                 }
             } else {
-                let _ = copy_recursive(&src, &dst);
+                let _ = copy_item(&src, &dst);
             }
         }
         if self.clip_cut {
@@ -869,6 +872,9 @@ impl FinderView {
     }
 
     fn title(&self) -> SharedString {
+        if let Some(rt) = &self.result_title {
+            return rt.clone();
+        }
         self.cwd
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -889,6 +895,7 @@ impl FinderView {
         };
 
         let np = p.path.clone();
+        let tag_name = p.name.clone();
         let main = div()
             .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
@@ -899,7 +906,9 @@ impl FinderView {
             .child(leading)
             .child(div().flex_1().text_size(px(13.0)).text_color(label()).truncate().child(p.name.clone()))
             .on_click(cx.listener(move |this, _, _, cx| {
-                if !is_tag {
+                if is_tag {
+                    this.tag_click(tag_name.clone(), cx);
+                } else {
                     this.navigate(np.clone(), cx);
                 }
             }));
@@ -1421,7 +1430,7 @@ impl FinderView {
             }
             let Some(name) = src.file_name() else { continue };
             let dst = unique_path(dir.join(name));
-            if std::fs::rename(src, &dst).is_err() && copy_recursive(src, &dst).is_ok() {
+            if std::fs::rename(src, &dst).is_err() && copy_item(src, &dst).is_ok() {
                 if src.is_dir() {
                     let _ = std::fs::remove_dir_all(src);
                 } else {
@@ -1437,7 +1446,7 @@ impl FinderView {
         for src in paths {
             if let Some(name) = src.file_name() {
                 let dst = unique_path(self.cwd.join(name));
-                let _ = copy_recursive(&src, &dst);
+                let _ = copy_item(&src, &dst);
             }
         }
         self.reload(cx);
@@ -1446,6 +1455,42 @@ impl FinderView {
     fn get_info(&mut self, cx: &mut Context<Self>) {
         self.info = self.selected.iter().next().copied();
         cx.notify();
+    }
+
+    /// Clicking a sidebar tag runs a Spotlight query for files with that tag.
+    fn tag_click(&mut self, name: SharedString, cx: &mut Context<Self>) {
+        let query = format!("kMDItemUserTags == '{name}'c");
+        let title: SharedString = format!("Tag: {name}").into();
+        let key = self.sort_key;
+        let asc = self.sort_asc;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let entries = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut v = Command::new("mdfind")
+                        .arg(query)
+                        .output()
+                        .ok()
+                        .map(|o| {
+                            String::from_utf8_lossy(&o.stdout)
+                                .lines()
+                                .filter_map(|l| entry_for(Path::new(l)))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    sort_entries(&mut v, key, asc);
+                    v
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.entries = entries;
+                this.result_title = Some(title);
+                this.selected.clear();
+                this.anchor = None;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn render_info(&self, ix: usize, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1580,6 +1625,22 @@ fn unique_path(path: PathBuf) -> PathBuf {
     path
 }
 
+/// Copy preserving macOS metadata (xattrs, resource forks, ACLs, packages) via
+/// `ditto`, falling back to a plain recursive copy if ditto is unavailable.
+fn copy_item(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let ok = Command::new("ditto")
+        .arg(src)
+        .arg(dst)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok {
+        Ok(())
+    } else {
+        copy_recursive(src, dst)
+    }
+}
+
 fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src.is_dir() {
         std::fs::create_dir_all(dst)?;
@@ -1593,6 +1654,26 @@ fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+fn entry_for(path: &Path) -> Option<Entry> {
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let md = std::fs::symlink_metadata(path).ok();
+    let is_dir = md.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+    let size_bytes = if is_dir { 0 } else { md.as_ref().map(|m| m.len()).unwrap_or(0) };
+    let mtime = md.as_ref().and_then(|m| m.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
+    let size = if is_dir { "--".to_string() } else { human_size(size_bytes) };
+    let kind = kind_of(path, is_dir);
+    Some(Entry {
+        name: name.into(),
+        path: path.to_path_buf(),
+        is_dir,
+        size: size.into(),
+        modified: date_label(mtime).into(),
+        kind: kind.into(),
+        size_bytes,
+        mtime,
+    })
+}
+
 fn read_entries(dir: &Path, show_hidden: bool) -> Vec<Entry> {
     let mut v: Vec<Entry> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(dir) {
@@ -1601,23 +1682,9 @@ fn read_entries(dir: &Path, show_hidden: bool) -> Vec<Entry> {
             if !show_hidden && name.starts_with('.') {
                 continue;
             }
-            let path = e.path();
-            let md = e.metadata().ok();
-            let is_dir = md.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            let size_bytes = if is_dir { 0 } else { md.as_ref().map(|m| m.len()).unwrap_or(0) };
-            let mtime = md.as_ref().and_then(|m| m.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
-            let size = if is_dir { "--".to_string() } else { human_size(size_bytes) };
-            let kind = kind_of(&path, is_dir);
-            v.push(Entry {
-                name: name.into(),
-                path,
-                is_dir,
-                size: size.into(),
-                modified: date_label(mtime).into(),
-                kind: kind.into(),
-                size_bytes,
-                mtime,
-            });
+            if let Some(entry) = entry_for(&e.path()) {
+                v.push(entry);
+            }
         }
     }
     v

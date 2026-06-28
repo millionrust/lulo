@@ -10,7 +10,7 @@ use std::time::Duration;
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement, Render, SharedString,
-    Stateful, Styled, Window,
+    Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{
     button::{Button, ButtonGroup, ButtonVariants as _},
@@ -20,7 +20,7 @@ use gpui_component::{
     Disableable as _, Selectable as _, Sizable as _, StyledExt as _,
 };
 use rmac_ui::mac;
-use sysinfo::{Networks, Pid, ProcessesToUpdate, Signal, System};
+use sysinfo::{Networks, Pid, ProcessesToUpdate, Signal, System, Users};
 
 gpui::actions!(
     activity_monitor,
@@ -56,13 +56,13 @@ impl Tab {
     /// Network has no per-process data source (sysinfo only exposes system-wide
     /// interface counters), so it is summary-only and hides the table — the
     /// returned column is unused there but kept sensible for safety.
-    fn default_sort_col(self) -> usize {
+    fn default_sort_key(self) -> ColKey {
         match self {
-            Tab::Cpu => 2,
-            Tab::Memory => 3,
-            Tab::Energy => 4,
-            Tab::Disk => 5,
-            Tab::Network => 2,
+            Tab::Cpu => ColKey::Cpu,
+            Tab::Memory => ColKey::Mem,
+            Tab::Energy => ColKey::Energy,
+            Tab::Disk => ColKey::Disk,
+            Tab::Network => ColKey::Cpu,
         }
     }
 
@@ -70,6 +70,128 @@ impl Tab {
     /// because there is no reliable per-process network data on macOS/Linux here.
     fn has_process_table(self) -> bool {
         !matches!(self, Tab::Network)
+    }
+}
+
+/// A column in the process table. The set is fixed and canonically ordered; the
+/// column chooser toggles which ones are visible. Only columns backed by real
+/// `sysinfo` data exist here — no placeholder/fabricated metrics.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColKey {
+    Pid,
+    Name,
+    Cpu,
+    Mem,
+    Energy,
+    Disk,
+    Ppid,
+    User,
+    Vmem,
+    RunTime,
+    Status,
+}
+
+impl ColKey {
+    /// Canonical order, also the order shown in the chooser.
+    const ALL: [ColKey; 11] = [
+        ColKey::Pid,
+        ColKey::Name,
+        ColKey::Cpu,
+        ColKey::Mem,
+        ColKey::Energy,
+        ColKey::Disk,
+        ColKey::Ppid,
+        ColKey::User,
+        ColKey::Vmem,
+        ColKey::RunTime,
+        ColKey::Status,
+    ];
+
+    fn id(self) -> &'static str {
+        match self {
+            ColKey::Pid => "pid",
+            ColKey::Name => "name",
+            ColKey::Cpu => "cpu",
+            ColKey::Mem => "mem",
+            ColKey::Energy => "energy",
+            ColKey::Disk => "disk",
+            ColKey::Ppid => "ppid",
+            ColKey::User => "user",
+            ColKey::Vmem => "vmem",
+            ColKey::RunTime => "runtime",
+            ColKey::Status => "status",
+        }
+    }
+
+    fn from_id(s: &str) -> Option<ColKey> {
+        ColKey::ALL.into_iter().find(|k| k.id() == s)
+    }
+
+    fn title(self) -> &'static str {
+        match self {
+            ColKey::Pid => "PID",
+            ColKey::Name => "Process Name",
+            ColKey::Cpu => "% CPU",
+            ColKey::Mem => "Memory",
+            ColKey::Energy => "Energy",
+            ColKey::Disk => "Disk I/O",
+            ColKey::Ppid => "Parent PID",
+            ColKey::User => "User",
+            ColKey::Vmem => "Virtual Mem",
+            ColKey::RunTime => "Run Time",
+            ColKey::Status => "Status",
+        }
+    }
+
+    fn width(self) -> f32 {
+        match self {
+            ColKey::Pid => 72.0,
+            ColKey::Name => 280.0,
+            ColKey::Cpu => 96.0,
+            ColKey::Mem => 110.0,
+            ColKey::Energy => 96.0,
+            ColKey::Disk => 120.0,
+            ColKey::Ppid => 96.0,
+            ColKey::User => 130.0,
+            ColKey::Vmem => 120.0,
+            ColKey::RunTime => 110.0,
+            ColKey::Status => 110.0,
+        }
+    }
+
+    fn right(self) -> bool {
+        matches!(
+            self,
+            ColKey::Pid
+                | ColKey::Cpu
+                | ColKey::Mem
+                | ColKey::Energy
+                | ColKey::Disk
+                | ColKey::Ppid
+                | ColKey::Vmem
+                | ColKey::RunTime
+        )
+    }
+
+    fn default_visible(self) -> bool {
+        matches!(
+            self,
+            ColKey::Pid | ColKey::Name | ColKey::Cpu | ColKey::Mem | ColKey::Energy | ColKey::Disk
+        )
+    }
+
+    /// The Process Name column is the human anchor — never hide it.
+    fn required(self) -> bool {
+        matches!(self, ColKey::Name)
+    }
+
+    fn to_column(self) -> Column {
+        let c = Column::new(self.id(), self.title()).width(px(self.width())).sortable();
+        if self.right() {
+            c.text_right()
+        } else {
+            c
+        }
     }
 }
 
@@ -95,6 +217,16 @@ struct ProcRow {
     /// Energy-impact proxy. sysinfo has no real "energy impact"; CPU usage is
     /// the dominant term in macOS's own figure, so we approximate with it.
     energy: f32,
+    /// Parent process id (real, from sysinfo).
+    ppid: Option<u32>,
+    /// Owning user name, resolved from the process uid.
+    user: SharedString,
+    /// Virtual memory size in bytes.
+    vmem: u64,
+    /// Wall-clock run time in seconds since the process started.
+    run_time: u64,
+    /// Process status (Running / Sleeping / …), for sorting + display.
+    status: SharedString,
 }
 
 /// Table delegate: owns the live `System` handle plus the current snapshot.
@@ -107,10 +239,17 @@ struct ProcessTableDelegate {
     all_rows: Vec<ProcRow>,
     /// Filtered + sorted rows actually shown.
     rows: Vec<ProcRow>,
+    /// The visible columns, in display order — a subset of `ColKey::ALL`.
+    visible: Vec<ColKey>,
+    /// `gpui-component` column descriptors mirroring `visible`.
     columns: Vec<Column>,
+    /// uid → username resolution table, refreshed alongside the process list.
+    users: Users,
     cpu_count: usize,
     filter: String,
-    sort_col: usize,
+    /// The column the rows are sorted by — identity-based so it survives the
+    /// visible set changing under it.
+    sort_key: ColKey,
     sort_asc: bool,
     /// The PID the user has selected. This is the source of truth for the
     /// selection — the table re-sorts every tick, so a stored row index would
@@ -121,27 +260,55 @@ struct ProcessTableDelegate {
 
 impl ProcessTableDelegate {
     fn new() -> Self {
+        let visible = load_visible_cols();
         let mut delegate = Self {
             system: System::new_all(),
             all_rows: Vec::new(),
             rows: Vec::new(),
-            columns: vec![
-                Column::new("pid", "PID").width(px(72.0)).text_right().sortable(),
-                Column::new("name", "Process").width(px(280.0)).sortable(),
-                Column::new("cpu", "% CPU").width(px(96.0)).text_right().sortable(),
-                Column::new("mem", "Memory").width(px(110.0)).text_right().sortable(),
-                Column::new("energy", "Energy").width(px(96.0)).text_right().sortable(),
-                Column::new("disk", "Disk I/O").width(px(120.0)).text_right().sortable(),
-            ],
+            columns: visible.iter().map(|k| k.to_column()).collect(),
+            visible,
+            users: Users::new_with_refreshed_list(),
             cpu_count: 1,
             filter: String::new(),
             // Default: busiest CPU first.
-            sort_col: 2,
+            sort_key: ColKey::Cpu,
             sort_asc: false,
             selected_pid: None,
         };
         delegate.refresh();
         delegate
+    }
+
+    /// Rebuild the `gpui-component` column list from the visible set.
+    fn rebuild_columns(&mut self) {
+        self.columns = self.visible.iter().map(|k| k.to_column()).collect();
+    }
+
+    /// Show or hide a column. The Process Name anchor can't be hidden, and we
+    /// never drop the last column. Returns whether anything changed.
+    fn toggle_col(&mut self, key: ColKey) -> bool {
+        if let Some(pos) = self.visible.iter().position(|&k| k == key) {
+            if key.required() || self.visible.len() <= 1 {
+                return false;
+            }
+            self.visible.remove(pos);
+            // If we hid the sort column, fall back to the first visible one.
+            if self.sort_key == key {
+                self.sort_key = self.visible[0];
+            }
+        } else {
+            // Re-insert in canonical order.
+            let canon = ColKey::ALL.iter().position(|&k| k == key).unwrap_or(0);
+            let insert_at = self
+                .visible
+                .iter()
+                .position(|&k| ColKey::ALL.iter().position(|&c| c == k).unwrap_or(0) > canon)
+                .unwrap_or(self.visible.len());
+            self.visible.insert(insert_at, key);
+        }
+        self.rebuild_columns();
+        save_visible_cols(&self.visible);
+        true
     }
 
     /// Pull a fresh snapshot from `sysinfo`, then re-apply the active filter/sort.
@@ -151,7 +318,9 @@ impl ProcessTableDelegate {
         self.system
             .refresh_processes(ProcessesToUpdate::All, true);
         self.cpu_count = self.system.cpus().len().max(1);
+        self.users.refresh();
 
+        let users = &self.users;
         self.all_rows = self
             .system
             .processes()
@@ -169,6 +338,12 @@ impl ProcessTableDelegate {
                     cmd_search.push_str(&arg.to_string_lossy());
                 }
                 cmd_search.make_ascii_lowercase();
+                let user = p
+                    .user_id()
+                    .and_then(|uid| users.get_user_by_id(uid))
+                    .map(|u| SharedString::from(u.name().to_string()))
+                    .or_else(|| p.user_id().map(|uid| SharedString::from(format!("uid {}", **uid))))
+                    .unwrap_or_else(|| SharedString::from("—"));
                 ProcRow {
                     pid: p.pid().as_u32(),
                     name: p.name().to_string_lossy().into_owned().into(),
@@ -177,6 +352,11 @@ impl ProcessTableDelegate {
                     mem: p.memory(),
                     disk: du.read_bytes + du.written_bytes,
                     energy: p.cpu_usage(),
+                    ppid: p.parent().map(|pp| pp.as_u32()),
+                    user,
+                    vmem: p.virtual_memory(),
+                    run_time: p.run_time(),
+                    status: SharedString::from(p.status().to_string()),
                 }
             })
             .collect();
@@ -200,21 +380,25 @@ impl ProcessTableDelegate {
                 .cloned()
                 .collect()
         };
-        Self::sort_rows(&mut rows, self.sort_col, self.sort_asc);
+        Self::sort_rows(&mut rows, self.sort_key, self.sort_asc);
         rows.truncate(300);
         self.rows = rows;
     }
 
-    fn sort_rows(rows: &mut [ProcRow], col: usize, asc: bool) {
+    fn sort_rows(rows: &mut [ProcRow], key: ColKey, asc: bool) {
         rows.sort_by(|a, b| {
-            let o = match col {
-                0 => a.pid.cmp(&b.pid),
-                1 => a.name.cmp(&b.name),
-                2 => a.cpu.partial_cmp(&b.cpu).unwrap_or(Ordering::Equal),
-                3 => a.mem.cmp(&b.mem),
-                4 => a.energy.partial_cmp(&b.energy).unwrap_or(Ordering::Equal),
-                5 => a.disk.cmp(&b.disk),
-                _ => Ordering::Equal,
+            let o = match key {
+                ColKey::Pid => a.pid.cmp(&b.pid),
+                ColKey::Name => a.name.cmp(&b.name),
+                ColKey::Cpu => a.cpu.partial_cmp(&b.cpu).unwrap_or(Ordering::Equal),
+                ColKey::Mem => a.mem.cmp(&b.mem),
+                ColKey::Energy => a.energy.partial_cmp(&b.energy).unwrap_or(Ordering::Equal),
+                ColKey::Disk => a.disk.cmp(&b.disk),
+                ColKey::Ppid => a.ppid.cmp(&b.ppid),
+                ColKey::User => a.user.cmp(&b.user),
+                ColKey::Vmem => a.vmem.cmp(&b.vmem),
+                ColKey::RunTime => a.run_time.cmp(&b.run_time),
+                ColKey::Status => a.status.cmp(&b.status),
             };
             if asc {
                 o
@@ -270,6 +454,52 @@ fn format_mem(bytes: u64) -> String {
     }
 }
 
+/// Format an elapsed-seconds duration as `H:MM:SS` (or `M:SS` under an hour).
+fn format_duration(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
+/// Path to the persisted visible-columns file.
+fn cols_config_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let dir =
+        std::path::Path::new(&home).join("Library/Application Support/rmac-activity-monitor");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("columns.txt"))
+}
+
+/// Load the visible column set (comma-separated ids), falling back to defaults.
+fn load_visible_cols() -> Vec<ColKey> {
+    let parsed: Option<Vec<ColKey>> = cols_config_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.split(',').filter_map(|t| ColKey::from_id(t.trim())).collect());
+    let cols = parsed.filter(|v: &Vec<ColKey>| !v.is_empty()).unwrap_or_else(|| {
+        ColKey::ALL.into_iter().filter(|k| k.default_visible()).collect()
+    });
+    // Process Name is the anchor — guarantee it's present.
+    if cols.contains(&ColKey::Name) {
+        cols
+    } else {
+        let mut c = cols;
+        c.insert(0, ColKey::Name);
+        c
+    }
+}
+
+fn save_visible_cols(cols: &[ColKey]) {
+    if let Some(p) = cols_config_path() {
+        let line = cols.iter().map(|k| k.id()).collect::<Vec<_>>().join(",");
+        let _ = std::fs::write(p, line);
+    }
+}
+
 /// Format a byte-rate (bytes per second) compactly.
 fn format_rate(bytes_per_s: f64) -> String {
     const KB: f64 = 1024.0;
@@ -304,7 +534,9 @@ impl TableDelegate for ProcessTableDelegate {
         window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) {
-        self.sort_col = col_ix;
+        if let Some(&key) = self.visible.get(col_ix) {
+            self.sort_key = key;
+        }
         self.sort_asc = matches!(sort, ColumnSort::Ascending);
         self.apply_view();
         // Rows just re-sorted, so the stored row index is stale — re-point the
@@ -359,14 +591,19 @@ impl TableDelegate for ProcessTableDelegate {
         _cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let row = &self.rows[row_ix];
-        let text: SharedString = match col_ix {
-            0 => row.pid.to_string().into(),
-            1 => row.name.clone(),
-            2 => format!("{:.1}", row.cpu).into(),
-            3 => format_mem(row.mem).into(),
-            4 => format!("{:.1}", row.energy).into(),
-            5 => format_mem(row.disk).into(),
-            _ => "".into(),
+        let key = self.visible.get(col_ix).copied().unwrap_or(ColKey::Name);
+        let text: SharedString = match key {
+            ColKey::Pid => row.pid.to_string().into(),
+            ColKey::Name => row.name.clone(),
+            ColKey::Cpu => format!("{:.1}", row.cpu).into(),
+            ColKey::Mem => format_mem(row.mem).into(),
+            ColKey::Energy => format!("{:.1}", row.energy).into(),
+            ColKey::Disk => format_mem(row.disk).into(),
+            ColKey::Ppid => row.ppid.map(|p| p.to_string()).unwrap_or_default().into(),
+            ColKey::User => row.user.clone(),
+            ColKey::Vmem => format_mem(row.vmem).into(),
+            ColKey::RunTime => format_duration(row.run_time).into(),
+            ColKey::Status => row.status.clone(),
         };
         div().child(text)
     }
@@ -422,6 +659,8 @@ struct MonitorView {
     agg: Aggregates,
     history: History,
     pending_kill: Option<PendingKill>,
+    /// Whether the column chooser dropdown is open.
+    cols_menu_open: bool,
 }
 
 impl MonitorView {
@@ -461,6 +700,7 @@ impl MonitorView {
             agg: Aggregates::default(),
             history: History::default(),
             pending_kill: None,
+            cols_menu_open: false,
         };
         view.refresh(cx);
 
@@ -574,9 +814,14 @@ impl MonitorView {
 
     fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         self.tab = tab;
+        self.cols_menu_open = false;
         self.table.update(cx, |state, cx| {
             let d = state.delegate_mut();
-            d.sort_col = tab.default_sort_col();
+            let want = tab.default_sort_key();
+            // Only adopt the tab's default sort if that column is visible.
+            if d.visible.contains(&want) {
+                d.sort_key = want;
+            }
             d.sort_asc = false;
             d.apply_view();
             resync_selection(state, cx);
@@ -638,6 +883,68 @@ impl MonitorView {
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search.update(cx, |s, cx| s.focus(window, cx));
+    }
+
+    /// Toggle a column's visibility from the chooser, rebuilding the table layout.
+    fn toggle_column(&mut self, key: ColKey, cx: &mut Context<Self>) {
+        self.table.update(cx, |state, cx| {
+            if state.delegate_mut().toggle_col(key) {
+                state.delegate_mut().apply_view();
+                resync_selection(state, cx);
+                state.refresh(cx);
+            }
+        });
+        cx.notify();
+    }
+
+    /// The column-chooser dropdown: a checklist of every available column.
+    fn render_columns_menu(&self, cx: &Context<Self>) -> impl IntoElement {
+        let visible = self.table.read(cx).delegate().visible.clone();
+        div()
+            .absolute()
+            .top(px(96.0))
+            .right(px(16.0))
+            .w(px(210.0))
+            .bg(mac::window())
+            .rounded(px(8.0))
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .py_1()
+            .child(
+                div()
+                    .px_3()
+                    .py_1()
+                    .text_size(px(11.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(mac::text_tertiary())
+                    .child("COLUMNS"),
+            )
+            .children(ColKey::ALL.into_iter().map(|key| {
+                let on = visible.contains(&key);
+                let disabled = key.required();
+                div()
+                    .id(SharedString::from(key.id()))
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .h(px(26.0))
+                    .px_3()
+                    .text_size(px(12.0))
+                    .text_color(if disabled { mac::text_tertiary() } else { mac::text() })
+                    .when(!disabled, |el: Stateful<gpui::Div>| {
+                        el.hover(|h| h.bg(mac::chrome())).on_click(cx.listener(move |this, _, _, cx| {
+                            this.toggle_column(key, cx);
+                        }))
+                    })
+                    .child(
+                        div()
+                            .w(px(14.0))
+                            .text_color(gpui::rgb(0x007aff))
+                            .child(if on { "✓" } else { "" }),
+                    )
+                    .child(div().flex_1().child(key.title()))
+            }))
     }
 
     fn stat_card(&self, label: &str, value: String, accent: gpui::Hsla) -> impl IntoElement {
@@ -832,6 +1139,17 @@ impl MonitorView {
                             .disabled(!has_sel)
                             .on_click(cx.listener(|this, _, _, cx| this.request_kill(true, cx))),
                     )
+                    .when(self.tab.has_process_table(), |el| {
+                        el.child(
+                            Button::new("columns")
+                                .label("Columns")
+                                .selected(self.cols_menu_open)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.cols_menu_open = !this.cols_menu_open;
+                                    cx.notify();
+                                })),
+                        )
+                    })
                     .child(div().w(px(220.0)).child(Input::new(&self.search).small())),
             )
     }
@@ -955,6 +1273,9 @@ impl Render for MonitorView {
                                 ),
                         ),
                 )
+            })
+            .when(self.cols_menu_open && self.tab.has_process_table(), |this| {
+                this.child(self.render_columns_menu(cx))
             })
             .children(self.render_confirm(cx))
     }

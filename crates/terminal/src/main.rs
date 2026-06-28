@@ -14,10 +14,11 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Entity,
+    div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div, Entity,
     FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
     KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, ScrollDelta, ScrollWheelEvent, StatefulInteractiveElement as _, Styled, Window,
+    Point, Render, ScrollDelta, ScrollWheelEvent, Stateful, StatefulInteractiveElement as _, Styled,
+    Window,
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::StyledExt as _;
@@ -42,7 +43,10 @@ const BG: u32 = 0x1e1e1e;
 /// macOS-style text selection fill (translucent blue over the grid).
 const SELECTION: u32 = 0x2f5d8c;
 
-gpui::actions!(terminal, [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear]);
+gpui::actions!(
+    terminal,
+    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab]
+);
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
 
@@ -198,6 +202,9 @@ impl TerminalView {
             KeyBinding::new("cmd-0", ZoomReset, Some("Terminal")),
             KeyBinding::new("cmd-a", SelectAll, Some("Terminal")),
             KeyBinding::new("cmd-k", Clear, Some("Terminal")),
+            KeyBinding::new("cmd-t", NewTab, Some("Terminal")),
+            KeyBinding::new("cmd-w", CloseTab, Some("Terminal")),
+            KeyBinding::new("cmd-shift-]", NextTab, Some("Terminal")),
         ]);
 
         let focus = cx.focus_handle();
@@ -229,6 +236,105 @@ impl TerminalView {
             selecting: false,
             scroll_accum: 0.0,
         }
+    }
+
+    fn new_tab(&mut self, cx: &mut Context<Self>) {
+        self.tabs.push(Session::spawn(self.cols.max(20), self.rows.max(5)));
+        self.active = self.tabs.len() - 1;
+        self.selection = None;
+        self.cols = 0; // force resize_to() to re-fit the new active session
+        cx.notify();
+    }
+
+    fn close_tab(&mut self, cx: &mut Context<Self>) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        self.tabs.remove(self.active);
+        if self.active >= self.tabs.len() {
+            self.active = self.tabs.len() - 1;
+        }
+        self.selection = None;
+        self.cols = 0;
+        cx.notify();
+    }
+
+    fn select_tab(&mut self, i: usize, cx: &mut Context<Self>) {
+        if i >= self.tabs.len() {
+            return;
+        }
+        self.active = i;
+        self.selection = None;
+        self.cols = 0;
+        cx.notify();
+    }
+
+    fn next_tab(&mut self, cx: &mut Context<Self>) {
+        if self.tabs.len() > 1 {
+            let next = (self.active + 1) % self.tabs.len();
+            self.select_tab(next, cx);
+        }
+    }
+
+    fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let n = self.tabs.len();
+        let active = self.active;
+        let mut bar = div()
+            .h(px(28.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .px_2()
+            .gap_1()
+            .bg(hsla(0x2a2a2a))
+            .border_b_1()
+            .border_color(hsla(0x3a3a3a));
+        for i in 0..n {
+            let is_active = i == active;
+            bar = bar.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .h(px(22.0))
+                    .px_2()
+                    .rounded(px(5.0))
+                    .when(is_active, |el: Div| el.bg(hsla(BG)))
+                    .child(
+                        div()
+                            .id(("tabname", i))
+                            .text_size(px(12.0))
+                            .text_color(hsla(if is_active { 0xffffff } else { 0x9a9a9a }))
+                            .child(format!("Terminal {}", i + 1))
+                            .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
+                    )
+                    .child(
+                        div()
+                            .id(("tabclose", i))
+                            .text_size(px(13.0))
+                            .text_color(hsla(0x888888))
+                            .child("×")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.active = i.min(this.tabs.len().saturating_sub(1));
+                                this.close_tab(cx);
+                            })),
+                    ),
+            );
+        }
+        bar.child(div().flex_1()).child(
+            div()
+                .id("newtab")
+                .w(px(22.0))
+                .h(px(22.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(5.0))
+                .text_size(px(15.0))
+                .text_color(hsla(0xaaaaaa))
+                .child("+")
+                .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
+        )
     }
 
     /// Clear the screen and scrollback (⌘K).
@@ -565,6 +671,7 @@ impl Render for TerminalView {
         };
         let rows = self.render_rows(&query);
         let searching = self.searching;
+        let multi = self.tabs.len() > 1;
         div()
             .size_full()
             .relative()
@@ -579,6 +686,7 @@ impl Render for TerminalView {
                     .text_size(px(13.0))
                     .child("Terminal"),
             ))
+            .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
                 div()
                     .track_focus(&self.focus)
@@ -601,6 +709,9 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_font(FONT_SIZE, cx)))
                     .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
                     .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
+                    .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
+                    .on_action(cx.listener(|this, _: &CloseTab, _, cx| this.close_tab(cx)))
+                    .on_action(cx.listener(|this, _: &NextTab, _, cx| this.next_tab(cx)))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,

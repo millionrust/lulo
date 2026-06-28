@@ -112,6 +112,11 @@ struct ProcessTableDelegate {
     filter: String,
     sort_col: usize,
     sort_asc: bool,
+    /// The PID the user has selected. This is the source of truth for the
+    /// selection — the table re-sorts every tick, so a stored row index would
+    /// drift onto a different process. The row index is derived from this for
+    /// rendering (and re-synced after every refresh/filter/sort).
+    selected_pid: Option<u32>,
 }
 
 impl ProcessTableDelegate {
@@ -133,6 +138,7 @@ impl ProcessTableDelegate {
             // Default: busiest CPU first.
             sort_col: 2,
             sort_asc: false,
+            selected_pid: None,
         };
         delegate.refresh();
         delegate
@@ -219,6 +225,37 @@ impl ProcessTableDelegate {
     }
 }
 
+/// Re-point the table's selected row at the stored PID after the rows have been
+/// rebuilt/re-sorted/filtered. If the PID has vanished entirely, forget it; if
+/// it is merely hidden by the current filter, keep the PID but clear the visible
+/// highlight so it returns when the filter is cleared.
+fn resync_selection(
+    state: &mut TableState<ProcessTableDelegate>,
+    cx: &mut Context<TableState<ProcessTableDelegate>>,
+) {
+    let (visible_ix, gone) = {
+        let d = state.delegate();
+        match d.selected_pid {
+            Some(pid) => (
+                d.rows.iter().position(|r| r.pid == pid),
+                !d.all_rows.iter().any(|r| r.pid == pid),
+            ),
+            None => (None, false),
+        }
+    };
+    if gone {
+        state.delegate_mut().selected_pid = None;
+    }
+    match visible_ix {
+        Some(ix) => state.set_selected_row(ix, cx),
+        None => {
+            if state.selected_row().is_some() {
+                state.clear_selection(cx);
+            }
+        }
+    }
+}
+
 fn format_mem(bytes: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = KB * 1024.0;
@@ -264,12 +301,15 @@ impl TableDelegate for ProcessTableDelegate {
         &mut self,
         col_ix: usize,
         sort: ColumnSort,
-        _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
     ) {
         self.sort_col = col_ix;
         self.sort_asc = matches!(sort, ColumnSort::Ascending);
         self.apply_view();
+        // Rows just re-sorted, so the stored row index is stale — re-point the
+        // highlight at the selected PID once the table is back on the stack.
+        cx.defer_in(window, |state, _window, cx| resync_selection(state, cx));
     }
 
     /// Right-clicking a row should also select it, so the context menu and the
@@ -283,8 +323,18 @@ impl TableDelegate for ProcessTableDelegate {
         div()
             .id(("row", row_ix))
             .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |state, _, _, cx| {
+                    let pid = state.delegate().rows.get(row_ix).map(|r| r.pid);
+                    state.delegate_mut().selected_pid = pid;
+                    state.set_selected_row(row_ix, cx);
+                }),
+            )
+            .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |state, _, _, cx| {
+                    let pid = state.delegate().rows.get(row_ix).map(|r| r.pid);
+                    state.delegate_mut().selected_pid = pid;
                     state.set_selected_row(row_ix, cx);
                 }),
             )
@@ -424,6 +474,7 @@ impl MonitorView {
         self.table.update(cx, |state, cx| {
             state.delegate_mut().filter = q;
             state.delegate_mut().apply_view();
+            resync_selection(state, cx);
             state.refresh(cx);
         });
         cx.notify();
@@ -476,6 +527,8 @@ impl MonitorView {
             agg.disk_read_rate = read as f64 / REFRESH_SECS;
             agg.disk_write_rate = write as f64 / REFRESH_SECS;
 
+            // Snapshot just rebuilt/re-sorted — keep the highlight on the same PID.
+            resync_selection(state, cx);
             state.refresh(cx);
         });
 
@@ -510,6 +563,7 @@ impl MonitorView {
             d.sort_col = tab.default_sort_col();
             d.sort_asc = false;
             d.apply_view();
+            resync_selection(state, cx);
             state.refresh(cx);
         });
         cx.notify();
@@ -517,12 +571,30 @@ impl MonitorView {
 
     fn selected_proc(&self, cx: &Context<Self>) -> Option<(u32, SharedString)> {
         let state = self.table.read(cx);
-        let ix = state.selected_row()?;
-        let row = state.delegate().rows.get(ix)?;
-        Some((row.pid, row.name.clone()))
+        let d = state.delegate();
+        let pid = d.selected_pid?;
+        let name = d
+            .rows
+            .iter()
+            .find(|r| r.pid == pid)
+            .or_else(|| d.all_rows.iter().find(|r| r.pid == pid))
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| SharedString::from(format!("PID {pid}")));
+        Some((pid, name))
     }
 
     fn request_kill(&mut self, force: bool, cx: &mut Context<Self>) {
+        // Capture whatever row is highlighted right now (covers keyboard nav,
+        // which moves the table's selected row without touching `selected_pid`).
+        self.table.update(cx, |state, _| {
+            if let Some(pid) = state
+                .selected_row()
+                .and_then(|ix| state.delegate().rows.get(ix))
+                .map(|r| r.pid)
+            {
+                state.delegate_mut().selected_pid = Some(pid);
+            }
+        });
         if let Some((pid, name)) = self.selected_proc(cx) {
             self.pending_kill = Some(PendingKill { pid, name, force });
             cx.notify();

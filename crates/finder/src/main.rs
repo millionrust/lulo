@@ -5,6 +5,8 @@
 //! shortcuts + right-click context menus, live search, clickable sort headers,
 //! hidden-file toggle, and live directory watching.
 
+mod pasteboard;
+
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
@@ -637,6 +639,10 @@ impl FinderView {
     }
 
     fn write_clip_text(&self, cx: &mut Context<Self>) {
+        // Native pasteboard: real file:// URLs so the system Finder (and any
+        // app) can paste the copied items.
+        pasteboard::write_file_urls(&self.clipboard);
+        // Plain-text fallback: newline-joined paths, for the text bridge.
         let text = self
             .clipboard
             .iter()
@@ -661,15 +667,20 @@ impl FinderView {
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
-        // Fall back to file paths on the system clipboard (text bridge).
+        // Nothing copied inside rmac Finder — pull from the system pasteboard so
+        // items copied in the real Finder (or elsewhere) can be pasted here.
         if self.clipboard.is_empty() {
-            if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
-                let paths: Vec<PathBuf> =
-                    text.lines().map(PathBuf::from).filter(|p| p.exists()).collect();
-                if !paths.is_empty() {
-                    self.clipboard = paths;
-                    self.clip_cut = false;
+            // Prefer the native file:// URLs; fall back to the text bridge.
+            let mut paths = pasteboard::read_file_urls();
+            paths.retain(|p| p.exists());
+            if paths.is_empty() {
+                if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
+                    paths = text.lines().map(PathBuf::from).filter(|p| p.exists()).collect();
                 }
+            }
+            if !paths.is_empty() {
+                self.clipboard = paths;
+                self.clip_cut = false;
             }
         }
         for src in self.clipboard.clone() {

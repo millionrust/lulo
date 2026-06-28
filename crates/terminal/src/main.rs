@@ -14,10 +14,12 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term};
 use gpui::{
-    div, px, ClipboardItem, Context, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, Styled, Window,
+    div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Entity,
+    FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
+    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, Render, ScrollDelta, ScrollWheelEvent, StatefulInteractiveElement as _, Styled, Window,
 };
+use gpui_component::input::{Input, InputState};
 use gpui_component::StyledExt as _;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use vte::ansi::{Color, NamedColor, Processor};
@@ -40,7 +42,9 @@ const BG: u32 = 0x1e1e1e;
 /// macOS-style text selection fill (translucent blue over the grid).
 const SELECTION: u32 = 0x2f5d8c;
 
-gpui::actions!(terminal, [Copy, Paste]);
+gpui::actions!(terminal, [Copy, Paste, Find]);
+/// Find-match highlight (macOS yellow).
+const FIND_HL: u32 = 0xffd60a;
 
 /// Grid geometry handed to the terminal model and the PTY.
 #[derive(Clone, Copy)]
@@ -114,7 +118,10 @@ struct TerminalView {
     master: Box<dyn MasterPty + Send>,
     cols: usize,
     rows: usize,
-    focus: gpui::FocusHandle,
+    focus: FocusHandle,
+    /// Find bar: input + whether it's open.
+    search: Entity<InputState>,
+    searching: bool,
     /// Active text selection (set while dragging, kept until next click).
     selection: Option<Selection>,
     /// True while the mouse button is held during a drag-select.
@@ -173,9 +180,13 @@ impl TerminalView {
         });
 
         // ⌘C / ⌘V copy & paste.
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
+        cx.observe(&search, |_, _, cx| cx.notify()).detach();
+
         cx.bind_keys([
             KeyBinding::new("cmd-c", Copy, Some("Terminal")),
             KeyBinding::new("cmd-v", Paste, Some("Terminal")),
+            KeyBinding::new("cmd-f", Find, Some("Terminal")),
         ]);
 
         let focus = cx.focus_handle();
@@ -199,10 +210,23 @@ impl TerminalView {
             cols: COLS,
             rows: ROWS,
             focus,
+            search,
+            searching: false,
             selection: None,
             selecting: false,
             scroll_accum: 0.0,
         }
+    }
+
+    fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.searching = !self.searching;
+        if self.searching {
+            let h = self.search.read(cx).focus_handle(cx);
+            window.focus(&h);
+        } else {
+            window.focus(&self.focus);
+        }
+        cx.notify();
     }
 
     /// Recompute the grid from the window size and propagate to the terminal + PTY.
@@ -377,7 +401,7 @@ impl TerminalView {
 
     /// Build the visible grid as one styled line per row (style runs), honoring
     /// the scrollback offset, selection highlight, and bold/italic/underline.
-    fn render_rows(&self) -> Vec<gpui::AnyElement> {
+    fn render_rows(&self, query: &str) -> Vec<gpui::AnyElement> {
         let Ok(term) = self.term.lock() else {
             return Vec::new();
         };
@@ -393,6 +417,32 @@ impl TerminalView {
         for i in 0..self.rows as i32 {
             let line_idx = i - offset;
             let row = &grid[Line(line_idx)];
+            // Columns covered by a find-match in this row (ASCII-approx).
+            let matched: Vec<bool> = if query.is_empty() {
+                Vec::new()
+            } else {
+                let text: String = (0..self.cols)
+                    .map(|c| {
+                        let ch = row[Column(c)].c;
+                        if ch == '\0' { ' ' } else { ch }
+                    })
+                    .collect::<String>()
+                    .to_lowercase();
+                let mut m = vec![false; self.cols];
+                let qlen = query.chars().count().max(1);
+                let mut start = 0;
+                while let Some(pos) = text.get(start..).and_then(|t| t.find(query)) {
+                    let s = start + pos;
+                    for k in s..(s + qlen).min(self.cols) {
+                        m[k] = true;
+                    }
+                    start = s + qlen;
+                    if start >= text.len() {
+                        break;
+                    }
+                }
+                m
+            };
             let mut spans: Vec<gpui::AnyElement> = Vec::new();
             let mut run = String::new();
             let mut run_style: Option<Style> = None;
@@ -416,6 +466,11 @@ impl TerminalView {
                     if !sel.is_empty() && sel.contains(line_idx, col) {
                         bg = hsla(SELECTION);
                     }
+                }
+                // Find-match highlight: yellow with dark text.
+                if matched.get(col).copied().unwrap_or(false) {
+                    bg = hsla(FIND_HL);
+                    fg = hsla(BG);
                 }
 
                 let style = Style {
@@ -455,9 +510,16 @@ impl TerminalView {
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.resize_to(window);
-        let rows = self.render_rows();
+        let query = if self.searching {
+            self.search.read(cx).value().to_lowercase()
+        } else {
+            String::new()
+        };
+        let rows = self.render_rows(&query);
+        let searching = self.searching;
         div()
             .size_full()
+            .relative()
             .v_flex()
             .bg(hsla(BG))
             .child(rmac_ui::toolbar(
@@ -479,6 +541,7 @@ impl Render for TerminalView {
                     }))
                     .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
                     .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
+                    .on_action(cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,
@@ -538,6 +601,34 @@ impl Render for TerminalView {
                     .v_flex()
                     .children(rows),
             )
+            .when(searching, |el| {
+                el.child(
+                    div()
+                        .absolute()
+                        .top(px(40.0))
+                        .right(px(12.0))
+                        .w(px(240.0))
+                        .h(px(30.0))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_2()
+                        .rounded(px(7.0))
+                        .bg(hsla(0xf0f0f0))
+                        .child(div().flex_1().child(Input::new(&self.search).appearance(false)))
+                        .child(
+                            div()
+                                .id("find-close")
+                                .text_color(hsla(0x666666))
+                                .child("×")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.searching = false;
+                                    window.focus(&this.focus);
+                                    cx.notify();
+                                })),
+                        ),
+                )
+            })
     }
 }
 

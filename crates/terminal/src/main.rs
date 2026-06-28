@@ -112,10 +112,58 @@ impl EventListener for EventProxy {
     fn send_event(&self, _: Event) {}
 }
 
-struct TerminalView {
+/// One terminal tab: its own PTY + parser-fed grid.
+struct Session {
     term: Arc<Mutex<Term<EventProxy>>>,
     writer: Box<dyn Write + Send>,
     master: Box<dyn MasterPty + Send>,
+}
+
+impl Session {
+    fn spawn(cols: usize, rows: usize) -> Session {
+        let size = TermSize { cols, lines: rows };
+        let pty = native_pty_system();
+        let pair = pty
+            .openpty(PtySize {
+                rows: rows as u16,
+                cols: cols as u16,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        let mut cmd = CommandBuilder::new(shell);
+        cmd.env("TERM", "xterm-256color");
+        if let Ok(dir) = std::env::current_dir() {
+            cmd.cwd(dir);
+        }
+        let _child = pair.slave.spawn_command(cmd).expect("spawn shell");
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().expect("reader");
+        let writer = pair.master.take_writer().expect("writer");
+        let term = Arc::new(Mutex::new(Term::new(Config::default(), &size, EventProxy)));
+        let term_reader = term.clone();
+        std::thread::spawn(move || {
+            let mut parser: Processor = Processor::new();
+            let mut buf = [0u8; 8192];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if let Ok(mut t) = term_reader.lock() {
+                            parser.advance(&mut *t, &buf[..n]);
+                        }
+                    }
+                }
+            }
+        });
+        Session { term, writer, master: pair.master }
+    }
+}
+
+struct TerminalView {
+    tabs: Vec<Session>,
+    active: usize,
     cols: usize,
     rows: usize,
     font_size: f32,
@@ -135,54 +183,8 @@ struct TerminalView {
 
 impl TerminalView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let size = TermSize {
-            cols: COLS,
-            lines: ROWS,
-        };
+        let session = Session::spawn(COLS, ROWS);
 
-        // Spawn the shell in a PTY.
-        let pty = native_pty_system();
-        let pair = pty
-            .openpty(PtySize {
-                rows: ROWS as u16,
-                cols: COLS as u16,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("openpty");
-
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-        let mut cmd = CommandBuilder::new(shell);
-        cmd.env("TERM", "xterm-256color");
-        if let Ok(dir) = std::env::current_dir() {
-            cmd.cwd(dir);
-        }
-        let _child = pair.slave.spawn_command(cmd).expect("spawn shell");
-        drop(pair.slave);
-
-        let mut reader = pair.master.try_clone_reader().expect("reader");
-        let writer = pair.master.take_writer().expect("writer");
-
-        let term = Arc::new(Mutex::new(Term::new(Config::default(), &size, EventProxy)));
-
-        // Reader thread: feed PTY bytes into the terminal model.
-        let term_reader = term.clone();
-        std::thread::spawn(move || {
-            let mut parser: Processor = Processor::new();
-            let mut buf = [0u8; 8192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        if let Ok(mut t) = term_reader.lock() {
-                            parser.advance(&mut *t, &buf[..n]);
-                        }
-                    }
-                }
-            }
-        });
-
-        // ⌘C / ⌘V copy & paste.
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
 
@@ -213,9 +215,8 @@ impl TerminalView {
         .detach();
 
         Self {
-            term,
-            writer,
-            master: pair.master,
+            tabs: vec![session],
+            active: 0,
             cols: COLS,
             rows: ROWS,
             font_size: FONT_SIZE,
@@ -232,7 +233,7 @@ impl TerminalView {
 
     /// Clear the screen and scrollback (⌘K).
     fn clear(&mut self, cx: &mut Context<Self>) {
-        if let Ok(mut t) = self.term.lock() {
+        if let Ok(mut t) = self.tabs[self.active].term.lock() {
             t.clear_screen(ClearMode::All);
             t.grid_mut().clear_history();
             t.scroll_display(Scroll::Bottom);
@@ -243,7 +244,7 @@ impl TerminalView {
 
     /// Select the entire buffer (scrollback history + visible screen).
     fn select_all(&mut self, cx: &mut Context<Self>) {
-        let hist = self
+        let hist = self.tabs[self.active]
             .term
             .lock()
             .ok()
@@ -288,10 +289,10 @@ impl TerminalView {
         }
         self.cols = cols;
         self.rows = rows;
-        if let Ok(mut t) = self.term.lock() {
+        if let Ok(mut t) = self.tabs[self.active].term.lock() {
             t.resize(TermSize { cols, lines: rows });
         }
-        let _ = self.master.resize(PtySize {
+        let _ = self.tabs[self.active].master.resize(PtySize {
             rows: rows as u16,
             cols: cols as u16,
             pixel_width: 0,
@@ -301,7 +302,7 @@ impl TerminalView {
 
     /// Current scrollback offset (0 = pinned to the live prompt).
     fn display_offset(&self) -> i32 {
-        self.term
+        self.tabs[self.active].term
             .lock()
             .map(|t| t.grid().display_offset() as i32)
             .unwrap_or(0)
@@ -323,7 +324,7 @@ impl TerminalView {
         if lines == 0 {
             return;
         }
-        if let Ok(mut t) = self.term.lock() {
+        if let Ok(mut t) = self.tabs[self.active].term.lock() {
             t.scroll_display(Scroll::Delta(lines));
         }
     }
@@ -363,11 +364,11 @@ impl TerminalView {
         };
         if !bytes.is_empty() {
             // Typing jumps the viewport back to the live prompt, like a real terminal.
-            if let Ok(mut t) = self.term.lock() {
+            if let Ok(mut t) = self.tabs[self.active].term.lock() {
                 t.scroll_display(Scroll::Bottom);
             }
-            let _ = self.writer.write_all(&bytes);
-            let _ = self.writer.flush();
+            let _ = self.tabs[self.active].writer.write_all(&bytes);
+            let _ = self.tabs[self.active].writer.flush();
         }
     }
 
@@ -383,11 +384,11 @@ impl TerminalView {
     /// Paste clipboard text into the PTY input stream.
     fn paste(&mut self, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
-            if let Ok(mut t) = self.term.lock() {
+            if let Ok(mut t) = self.tabs[self.active].term.lock() {
                 t.scroll_display(Scroll::Bottom);
             }
-            let _ = self.writer.write_all(text.as_bytes());
-            let _ = self.writer.flush();
+            let _ = self.tabs[self.active].writer.write_all(text.as_bytes());
+            let _ = self.tabs[self.active].writer.flush();
         }
     }
 
@@ -397,7 +398,7 @@ impl TerminalView {
     fn selection_text(&self) -> Option<String> {
         let sel = self.selection?;
         let (s, e) = sel.ordered();
-        let term = self.term.lock().ok()?;
+        let term = self.tabs[self.active].term.lock().ok()?;
         let grid = term.grid();
         let history = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
         let last_col = self.cols - 1;
@@ -449,7 +450,7 @@ impl TerminalView {
     /// Build the visible grid as one styled line per row (style runs), honoring
     /// the scrollback offset, selection highlight, and bold/italic/underline.
     fn render_rows(&self, query: &str) -> Vec<gpui::AnyElement> {
-        let Ok(term) = self.term.lock() else {
+        let Ok(term) = self.tabs[self.active].term.lock() else {
             return Vec::new();
         };
         let grid = term.grid();

@@ -77,12 +77,14 @@ never generic theme colors. Verify the *look* with a screenshot, not just a clea
 - **Phase 0 — Foundation** ✅ workspace + toolkit decision (GPUI).
 - **Phase 1 — Activity Monitor** ✅ DONE — `crates/activity-monitor` builds & runs on macOS. Live process table + summary, 2s auto-refresh. Proves the GPUI + gpui-component + sysinfo stack.
 - **Phase 2 — `rmac-ui` foundation** ✅ DONE — traffic-light titlebar, theme, fonts, `boot()`. Monitor wired onto it.
-- **Phase 3 — App suite** — Text Editor ✅ → Notes ✅ → Terminal ✅ → Finder ⏭️ NEXT → App Drawer → System Settings.
+- **Phase 3 — App suite ✅ COMPLETE** (all 7 build, run, screenshot-verified on macOS):
   - **Text Editor** ✅ — rope editor + native Open/Save; mac palette + unified toolbar.
   - **Notes** ✅ — 3-column Apple Notes fidelity; `.md` in `~/Documents/rmac-notes`; auto-save.
   - **Activity Monitor** ✅ — live process table + summary cards (mac palette).
   - **Terminal** ✅ — `alacritty_terminal` + `portable-pty` + GPUI grid; 256-color, block cursor, input. v1 limits: fixed 100×28, no scrollback/selection yet.
-  - **Finder** — next: `std::fs` + `notify`, `tree`/`sidebar`/`list`, yazi async arch.
+  - **Finder** ✅ — pixel-accurate from Apple-docs spec (`crates/finder/SPEC.md`): 52pt draggable toolbar, sidebar sections, filled folders, alt stripes, exact colors.
+  - **App Drawer** ✅ — Launchpad grid; real `.icns`→PNG icons (sips, cached); search; launch.
+  - **System Settings** ✅ — sidebar (account card + colored category tiles) + detail (hero + grouped cards). macOS = read-only mockup; Linux backends later.
 - **Phase 4 — Dock & shell** (Linux) — layer-shell dock (hover magnification, spring physics), top bar, Spotlight.
 - **Phase 5 — The *feel*** — inertial gestures (in compositor), global menu bar, Mission-Control overview, packaging as Ubuntu remix.
 

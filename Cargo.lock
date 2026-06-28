@@ -4727,6 +4727,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-system-settings"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "rmac-ui",
+ "rust-embed",
+]
+
+[[package]]
 name = "rmac-terminal"
 version = "0.1.0"
 dependencies = [

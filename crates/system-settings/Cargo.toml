@@ -1,0 +1,17 @@
+[package]
+name = "rmac-system-settings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rmac-system-settings"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui-component.workspace = true
+gpui-component-assets = "0.5"
+rmac-ui = { path = "../rmac-ui" }
+rust-embed = "8"

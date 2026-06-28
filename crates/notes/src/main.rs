@@ -1012,13 +1012,17 @@ fn parse_tags(raw: &str) -> Vec<String> {
 /// trailing `<!--tags: a, b-->` comment and is removed from the body.
 fn parse_doc(text: &str) -> (String, String, Vec<String>) {
     let mut tags = Vec::new();
-    let mut body_lines: Vec<&str> = Vec::new();
-    for line in text.lines() {
-        let t = line.trim();
-        if let Some(rest) = t.strip_prefix("<!--tags:").and_then(|r| r.strip_suffix("-->")) {
+    let mut body_lines: Vec<&str> = text.lines().collect();
+    // Tags live on the FINAL line only (trailing metadata). A `<!--tags: ...-->`
+    // comment anywhere else in the body is real content and must be preserved.
+    if let Some(last) = body_lines.last() {
+        if let Some(rest) = last
+            .trim()
+            .strip_prefix("<!--tags:")
+            .and_then(|r| r.strip_suffix("-->"))
+        {
             tags = parse_tags(rest);
-        } else {
-            body_lines.push(line);
+            body_lines.pop();
         }
     }
     let joined = body_lines.join("\n");

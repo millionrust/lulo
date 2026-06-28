@@ -1,0 +1,18 @@
+[package]
+name = "rmac-terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rmac-terminal"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui-component.workspace = true
+rmac-ui = { path = "../rmac-ui" }
+alacritty_terminal = "0.25"
+portable-pty = "0.9"
+vte = "0.15"

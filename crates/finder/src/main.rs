@@ -7,6 +7,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,7 +32,7 @@ actions!(
     finder,
     [
         NewFolder, RenameItem, Duplicate, MoveToTrash, DeleteItem, CopyItems, CutItems, PasteItems,
-        SelectAll, GoUp, ToggleHidden, OpenItems, QuickLook,
+        SelectAll, GoUp, ToggleHidden, OpenItems, QuickLook, GetInfo,
     ]
 );
 
@@ -105,12 +106,20 @@ struct Entry {
     mtime: SystemTime,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum PlaceKind {
+    Item,
+    Volume,
+    Tag,
+}
+
 #[derive(Clone)]
 struct Place {
     name: SharedString,
     path: PathBuf,
     icon: &'static str,
     tint: Hsla,
+    kind: PlaceKind,
 }
 
 struct Section {
@@ -142,6 +151,7 @@ struct FinderView {
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
     sections: Vec<Section>,
+    info: Option<usize>,
     dragging: bool,
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
@@ -158,21 +168,40 @@ impl FinderView {
             .unwrap_or_else(|| "Macintosh HD".to_string());
         let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
 
-        let p = |name: &str, path: PathBuf, icon: &'static str, tint: Hsla| Place {
+        let p = |name: &str, path: PathBuf, icon: &'static str, tint: Hsla, kind: PlaceKind| Place {
             name: name.to_string().into(),
             path,
             icon,
             tint,
+            kind,
         };
+
+        // Real mounted volumes.
+        let mut locations = vec![
+            p(&host, home.clone(), "icons/house.svg", drive_gray(), PlaceKind::Item),
+            p("Macintosh HD", "/".into(), "icons/hard-drive.svg", drive_gray(), PlaceKind::Item),
+        ];
+        if let Ok(rd) = std::fs::read_dir("/Volumes") {
+            for e in rd.flatten() {
+                let vp = e.path();
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name == "Macintosh HD" || name.starts_with('.') {
+                    continue;
+                }
+                locations.push(p(&name, vp, "icons/hard-drive.svg", drive_gray(), PlaceKind::Volume));
+            }
+        }
+
+        let tag = |name: &str, color: u32| p(name, PathBuf::new(), "", hsl(color), PlaceKind::Tag);
         let sections = vec![
             Section {
                 title: "Favorites".into(),
                 places: vec![
-                    p("Recents", home.clone(), "icons/clock.svg", accent()),
-                    p("Applications", "/Applications".into(), "icons/layout-grid.svg", accent()),
-                    p("Desktop", home.join("Desktop"), "icons/folder-fill.svg", accent()),
-                    p("Documents", home.join("Documents"), "icons/folder-fill.svg", accent()),
-                    p("Downloads", home.join("Downloads"), "icons/download.svg", accent()),
+                    p("Recents", home.clone(), "icons/clock.svg", accent(), PlaceKind::Item),
+                    p("Applications", "/Applications".into(), "icons/layout-grid.svg", accent(), PlaceKind::Item),
+                    p("Desktop", home.join("Desktop"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
+                    p("Documents", home.join("Documents"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
+                    p("Downloads", home.join("Downloads"), "icons/download.svg", accent(), PlaceKind::Item),
                 ],
             },
             Section {
@@ -182,13 +211,23 @@ impl FinderView {
                     if icloud.is_dir() { icloud } else { home.clone() },
                     "icons/cloud.svg",
                     accent(),
+                    PlaceKind::Item,
                 )],
             },
             Section {
                 title: "Locations".into(),
+                places: locations,
+            },
+            Section {
+                title: "Tags".into(),
                 places: vec![
-                    p("Macintosh HD", "/".into(), "icons/hard-drive.svg", drive_gray()),
-                    p(&host, home.clone(), "icons/house.svg", drive_gray()),
+                    tag("Red", 0xff3b30),
+                    tag("Orange", 0xff9500),
+                    tag("Yellow", 0xffcc00),
+                    tag("Green", 0x34c759),
+                    tag("Blue", 0x007aff),
+                    tag("Purple", 0xaf52de),
+                    tag("Gray", 0x8e8e93),
                 ],
             },
         ];
@@ -207,6 +246,7 @@ impl FinderView {
             KeyBinding::new("enter", RenameItem, Some("Finder")),
             KeyBinding::new("shift-cmd-.", ToggleHidden, Some("Finder")),
             KeyBinding::new("space", QuickLook, Some("Finder")),
+            KeyBinding::new("cmd-i", GetInfo, Some("Finder")),
         ]);
 
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -240,6 +280,7 @@ impl FinderView {
             back: Vec::new(),
             fwd: Vec::new(),
             sections,
+            info: None,
             dragging: false,
             focus,
             watcher,
@@ -658,10 +699,34 @@ impl FinderView {
 
     // ---- sidebar ----
     fn render_place(&self, p: &Place, cx: &Context<Self>) -> impl IntoElement {
-        let selected = self.cwd == p.path;
-        let path = p.path.clone();
-        div()
-            .id(SharedString::from(format!("place-{}-{}", p.name, p.path.display())))
+        let is_tag = p.kind == PlaceKind::Tag;
+        let selected = !is_tag && self.cwd == p.path;
+        let key = format!("{}-{}", p.name, p.path.display());
+
+        let leading: gpui::AnyElement = if is_tag {
+            div().w(px(12.0)).h(px(12.0)).flex_none().rounded_full().bg(p.tint).into_any_element()
+        } else {
+            icon(p.icon, 17.0, p.tint).into_any_element()
+        };
+
+        let np = p.path.clone();
+        let main = div()
+            .id(SharedString::from(format!("placemain-{key}")))
+            .flex_1()
+            .flex()
+            .items_center()
+            .gap_2()
+            .min_w(px(0.0))
+            .child(leading)
+            .child(div().flex_1().text_size(px(13.0)).text_color(label()).truncate().child(p.name.clone()))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if !is_tag {
+                    this.navigate(np.clone(), cx);
+                }
+            }));
+
+        let mut row = div()
+            .id(SharedString::from(format!("place-{key}")))
             .flex()
             .items_center()
             .gap_2()
@@ -669,10 +734,29 @@ impl FinderView {
             .px_2()
             .rounded(px(6.0))
             .when(selected, |el: Stateful<Div>| el.bg(hsl(0xd5d5da)))
-            .when(!selected, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x00000008))))
-            .child(icon(p.icon, 17.0, p.tint))
-            .child(div().text_size(px(13.0)).text_color(label()).child(p.name.clone()))
-            .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx)))
+            .when(!selected && !is_tag, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x00000008))))
+            .child(main);
+
+        if p.kind == PlaceKind::Volume {
+            let ep = p.path.clone();
+            row = row.child(
+                div()
+                    .id(SharedString::from(format!("eject-{key}")))
+                    .w(px(18.0))
+                    .h(px(18.0))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.0))
+                    .hover(|h| h.bg(hsl(0x00000012)))
+                    .child(icon("icons/eject.svg", 11.0, secondary()))
+                    .on_click(cx.listener(move |_this, _, _, _| {
+                        let _ = Command::new("diskutil").arg("eject").arg(&ep).spawn();
+                    })),
+            );
+        }
+        row
     }
 
     fn render_sidebar(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -966,8 +1050,14 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
+            .on_action(cx.listener(|this, _: &GetInfo, _, cx| this.get_info(cx)))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
                 match ev.keystroke.key.as_str() {
+                    "escape" => {
+                        if this.info.take().is_some() {
+                            cx.notify();
+                        }
+                    }
                     "down" => {
                         let next = this.anchor.map(|a| a + 1).unwrap_or(0).min(this.entries.len().saturating_sub(1));
                         this.select_single(next);
@@ -1037,12 +1127,105 @@ impl FinderView {
             let _ = Command::new("qlmanage").arg("-p").args(&paths).spawn();
         }
     }
+
+    fn get_info(&mut self, cx: &mut Context<Self>) {
+        self.info = self.selected.iter().next().copied();
+        cx.notify();
+    }
+
+    fn render_info(&self, ix: usize, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(e) = self.entries.get(ix) else {
+            return div();
+        };
+        let glyph = if e.is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
+        let glyph_color = if e.is_dir { accent() } else { secondary() };
+
+        let mut card = div()
+            .w(px(300.0))
+            .rounded(px(12.0))
+            .bg(hsl(0xfbfbfd))
+            .border_1()
+            .border_color(sep())
+            .shadow_lg()
+            .child(
+                // header bar with close
+                div()
+                    .h(px(28.0))
+                    .flex()
+                    .items_center()
+                    .px_2()
+                    .child(
+                        div()
+                            .id("info-close")
+                            .w(px(14.0))
+                            .h(px(14.0))
+                            .rounded_full()
+                            .bg(hsl(0xff5f57))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.info = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                // title block
+                div()
+                    .v_flex()
+                    .items_center()
+                    .gap_1()
+                    .pb_3()
+                    .px_4()
+                    .border_b_1()
+                    .border_color(sep())
+                    .child(icon(glyph, 56.0, glyph_color))
+                    .child(
+                        div()
+                            .text_size(px(15.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .text_center()
+                            .child(e.name.clone()),
+                    ),
+            );
+
+        for (k, v) in file_info(e) {
+            card = card.child(
+                div()
+                    .flex()
+                    .items_start()
+                    .gap_2()
+                    .px_4()
+                    .py_1()
+                    .text_size(px(12.0))
+                    .child(
+                        div()
+                            .w(px(96.0))
+                            .flex_none()
+                            .text_color(secondary())
+                            .text_right()
+                            .child(format!("{k}:")),
+                    )
+                    .child(div().flex_1().text_color(label()).child(v)),
+            );
+        }
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::rgba(0x00000026))
+            .child(card.pb_3())
+    }
 }
 
 impl Render for FinderView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let info = self.info;
         div()
             .size_full()
+            .relative()
             .v_flex()
             .bg(list_bg())
             .text_color(label())
@@ -1054,6 +1237,7 @@ impl Render for FinderView {
                     .child(self.render_sidebar(cx))
                     .child(self.render_list(cx)),
             )
+            .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))
     }
 }
 
@@ -1132,6 +1316,38 @@ fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
         };
         if asc { o } else { o.reverse() }
     });
+}
+
+fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
+    let md = std::fs::metadata(&e.path).ok();
+    let mut v: Vec<(&'static str, String)> = vec![("Kind", e.kind.to_string())];
+    if !e.is_dir {
+        v.push(("Size", format!("{} ({} bytes)", e.size, e.size_bytes)));
+    }
+    if let Some(parent) = e.path.parent() {
+        v.push(("Where", parent.display().to_string()));
+    }
+    if let Some(md) = &md {
+        if let Ok(created) = md.created() {
+            v.push(("Created", date_label(created)));
+        }
+    }
+    v.push(("Modified", e.modified.to_string()));
+    if let Some(md) = &md {
+        v.push(("Permissions", perm_string(md.permissions().mode())));
+    }
+    v
+}
+
+fn perm_string(mode: u32) -> String {
+    let mut s = String::with_capacity(9);
+    for shift in [6u32, 3, 0] {
+        let bits = (mode >> shift) & 0b111;
+        s.push(if bits & 0b100 != 0 { 'r' } else { '-' });
+        s.push(if bits & 0b010 != 0 { 'w' } else { '-' });
+        s.push(if bits & 0b001 != 0 { 'x' } else { '-' });
+    }
+    s
 }
 
 fn human_size(bytes: u64) -> String {

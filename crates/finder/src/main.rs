@@ -1,18 +1,39 @@
-//! rmac Finder — a pixel-accurate macOS Finder (list view). See SPEC.md.
+//! rmac Finder — a functional macOS-style file manager (list view). See SPEC.md.
+//!
+//! Beyond the pixel-accurate chrome: multi-selection, file operations
+//! (new folder, rename, duplicate, copy/cut/paste, move-to-trash), keyboard
+//! shortcuts + right-click context menus, live search, clickable sort headers,
+//! hidden-file toggle, and live directory watching.
 
 use std::borrow::Cow;
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, svg, AssetSource, ClickEvent, Context, Div, Hsla,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Render, Result, SharedString,
-    StatefulInteractiveElement as _, Stateful, Styled, Svg, Window,
+    actions, div, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource, ClickEvent,
+    Context, Div, FocusHandle, Focusable as _, Hsla, InteractiveElement as _, IntoElement,
+    KeyBinding, KeyDownEvent, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, Svg, Window,
 };
-use gpui_component::StyledExt as _;
+use gpui_component::{
+    input::{Input, InputEvent, InputState},
+    menu::{ContextMenuExt as _, PopupMenu},
+    StyledExt as _,
+};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-// ---- bundled icons (app SVGs + gpui-component fallback) ----
+actions!(
+    finder,
+    [
+        NewFolder, RenameItem, Duplicate, MoveToTrash, DeleteItem, CopyItems, CutItems, PasteItems,
+        SelectAll, GoUp, ToggleHidden, OpenItems,
+    ]
+);
+
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
 #[include = "icons/**/*.svg"]
@@ -38,7 +59,6 @@ impl AssetSource for CombinedAssets {
     }
 }
 
-// ---- spec colors (light mode) ----
 fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }
@@ -72,6 +92,8 @@ struct Entry {
     size: SharedString,
     modified: SharedString,
     kind: SharedString,
+    size_bytes: u64,
+    mtime: SystemTime,
 }
 
 #[derive(Clone)]
@@ -87,18 +109,38 @@ struct Section {
     places: Vec<Place>,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum SortKey {
+    Name,
+    Date,
+    Size,
+    Kind,
+}
+
 struct FinderView {
     cwd: PathBuf,
     entries: Vec<Entry>,
-    selected: Option<usize>,
+    selected: BTreeSet<usize>,
+    anchor: Option<usize>,
+    clipboard: Vec<PathBuf>,
+    clip_cut: bool,
+    renaming: Option<(usize, gpui::Entity<InputState>)>,
+    show_hidden: bool,
+    sort_key: SortKey,
+    sort_asc: bool,
+    query: gpui::Entity<InputState>,
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
     sections: Vec<Section>,
     dragging: bool,
+    focus: FocusHandle,
+    watcher: Option<RecommendedWatcher>,
+    watched: Option<PathBuf>,
+    dirty: Arc<AtomicBool>,
 }
 
 impl FinderView {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
         let host = home
             .file_name()
@@ -141,29 +183,107 @@ impl FinderView {
             },
         ];
 
+        // Keyboard shortcuts → actions (handled on the focused list).
+        cx.bind_keys([
+            KeyBinding::new("cmd-a", SelectAll, Some("Finder")),
+            KeyBinding::new("cmd-c", CopyItems, Some("Finder")),
+            KeyBinding::new("cmd-x", CutItems, Some("Finder")),
+            KeyBinding::new("cmd-v", PasteItems, Some("Finder")),
+            KeyBinding::new("cmd-d", Duplicate, Some("Finder")),
+            KeyBinding::new("cmd-backspace", MoveToTrash, Some("Finder")),
+            KeyBinding::new("shift-cmd-n", NewFolder, Some("Finder")),
+            KeyBinding::new("cmd-up", GoUp, Some("Finder")),
+            KeyBinding::new("cmd-down", OpenItems, Some("Finder")),
+            KeyBinding::new("enter", RenameItem, Some("Finder")),
+            KeyBinding::new("shift-cmd-.", ToggleHidden, Some("Finder")),
+        ]);
+
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        cx.observe(&query, |_, _, cx| cx.notify()).detach();
+
+        let dirty = Arc::new(AtomicBool::new(false));
+        let d2 = dirty.clone();
+        let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if res.is_ok() {
+                d2.store(true, Ordering::Relaxed);
+            }
+        })
+        .ok();
+
+        let focus = cx.focus_handle();
+        window.focus(&focus);
+
         let mut view = Self {
             cwd: home,
             entries: Vec::new(),
-            selected: None,
+            selected: BTreeSet::new(),
+            anchor: None,
+            clipboard: Vec::new(),
+            clip_cut: false,
+            renaming: None,
+            show_hidden: false,
+            sort_key: SortKey::Name,
+            sort_asc: true,
+            query,
             back: Vec::new(),
             fwd: Vec::new(),
             sections,
             dragging: false,
+            focus,
+            watcher,
+            watched: None,
+            dirty,
         };
         view.reload(cx);
+
+        // Live directory watching → reload on filesystem changes.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            cx.background_executor()
+                .timer(Duration::from_millis(600))
+                .await;
+            let r = this.update(cx, |this: &mut FinderView, cx| {
+                if this.dirty.swap(false, Ordering::Relaxed) {
+                    this.reload(cx);
+                }
+            });
+            if r.is_err() {
+                break;
+            }
+        })
+        .detach();
+
         view
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
+        // (Re)watch the current directory.
+        if let Some(w) = self.watcher.as_mut() {
+            if let Some(old) = self.watched.take() {
+                let _ = w.unwatch(&old);
+            }
+            if w.watch(&self.cwd, RecursiveMode::NonRecursive).is_ok() {
+                self.watched = Some(self.cwd.clone());
+            }
+        }
+
         let path = self.cwd.clone();
+        let show_hidden = self.show_hidden;
+        let key = self.sort_key;
+        let asc = self.sort_asc;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let entries = cx
                 .background_executor()
-                .spawn(async move { read_entries(&path) })
+                .spawn(async move {
+                    let mut v = read_entries(&path, show_hidden);
+                    sort_entries(&mut v, key, asc);
+                    v
+                })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 this.entries = entries;
-                this.selected = None;
+                this.selected.clear();
+                this.anchor = None;
+                this.renaming = None;
                 cx.notify();
             });
         })
@@ -196,7 +316,13 @@ impl FinderView {
         }
     }
 
-    fn open(&mut self, ix: usize, cx: &mut Context<Self>) {
+    fn go_up(&mut self, cx: &mut Context<Self>) {
+        if let Some(parent) = self.cwd.parent().map(|p| p.to_path_buf()) {
+            self.navigate(parent, cx);
+        }
+    }
+
+    fn open_index(&mut self, ix: usize, cx: &mut Context<Self>) {
         let Some(e) = self.entries.get(ix).cloned() else {
             return;
         };
@@ -207,15 +333,195 @@ impl FinderView {
         }
     }
 
-    fn title(&self) -> SharedString {
-        self.cwd
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Macintosh HD".to_string())
-            .into()
+    fn open_selected(&mut self, cx: &mut Context<Self>) {
+        let paths: Vec<(bool, PathBuf)> = self
+            .selected
+            .iter()
+            .filter_map(|&i| self.entries.get(i))
+            .map(|e| (e.is_dir, e.path.clone()))
+            .collect();
+        // Open a single folder by navigating; otherwise system-open files.
+        if let [(true, dir)] = paths.as_slice() {
+            self.navigate(dir.clone(), cx);
+        } else {
+            for (_, p) in paths {
+                cx.open_with_system(&p);
+            }
+        }
     }
 
-    // ---- 52pt unified toolbar (draggable) ----
+    // ---- selection ----
+    fn select_single(&mut self, ix: usize) {
+        self.selected.clear();
+        self.selected.insert(ix);
+        self.anchor = Some(ix);
+    }
+
+    fn handle_click(&mut self, ix: usize, cmd: bool, shift: bool) {
+        if cmd {
+            if !self.selected.remove(&ix) {
+                self.selected.insert(ix);
+            }
+            self.anchor = Some(ix);
+        } else if shift {
+            if let Some(a) = self.anchor {
+                let (lo, hi) = if a <= ix { (a, ix) } else { (ix, a) };
+                self.selected.clear();
+                for i in lo..=hi {
+                    self.selected.insert(i);
+                }
+            } else {
+                self.select_single(ix);
+            }
+        } else {
+            self.select_single(ix);
+        }
+    }
+
+    fn selected_paths(&self) -> Vec<PathBuf> {
+        self.selected
+            .iter()
+            .filter_map(|&i| self.entries.get(i))
+            .map(|e| e.path.clone())
+            .collect()
+    }
+
+    // ---- operations ----
+    fn new_folder(&mut self, cx: &mut Context<Self>) {
+        let path = unique_path(self.cwd.join("untitled folder"));
+        if std::fs::create_dir(&path).is_ok() {
+            self.reload(cx);
+        }
+    }
+
+    fn duplicate(&mut self, cx: &mut Context<Self>) {
+        for src in self.selected_paths() {
+            let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let ext = src.extension().map(|e| e.to_string_lossy().into_owned());
+            let copy_name = match &ext {
+                Some(e) => format!("{stem} copy.{e}"),
+                None => format!("{stem} copy"),
+            };
+            let dst = unique_path(self.cwd.join(copy_name));
+            let _ = copy_recursive(&src, &dst);
+        }
+        self.reload(cx);
+    }
+
+    fn move_to_trash(&mut self, cx: &mut Context<Self>) {
+        let paths = self.selected_paths();
+        if !paths.is_empty() {
+            let _ = trash::delete_all(&paths);
+            self.reload(cx);
+        }
+    }
+
+    fn delete_immediately(&mut self, cx: &mut Context<Self>) {
+        for p in self.selected_paths() {
+            if p.is_dir() {
+                let _ = std::fs::remove_dir_all(&p);
+            } else {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+        self.reload(cx);
+    }
+
+    fn copy(&mut self, _cx: &mut Context<Self>) {
+        self.clipboard = self.selected_paths();
+        self.clip_cut = false;
+    }
+
+    fn cut(&mut self, _cx: &mut Context<Self>) {
+        self.clipboard = self.selected_paths();
+        self.clip_cut = true;
+    }
+
+    fn paste(&mut self, cx: &mut Context<Self>) {
+        for src in self.clipboard.clone() {
+            let name = src.file_name().map(|n| n.to_owned()).unwrap_or_default();
+            let dst = unique_path(self.cwd.join(name));
+            if self.clip_cut {
+                if std::fs::rename(&src, &dst).is_err() {
+                    if copy_recursive(&src, &dst).is_ok() {
+                        let _ = if src.is_dir() {
+                            std::fs::remove_dir_all(&src)
+                        } else {
+                            std::fs::remove_file(&src)
+                        };
+                    }
+                }
+            } else {
+                let _ = copy_recursive(&src, &dst);
+            }
+        }
+        if self.clip_cut {
+            self.clipboard.clear();
+            self.clip_cut = false;
+        }
+        self.reload(cx);
+    }
+
+    fn select_all(&mut self, cx: &mut Context<Self>) {
+        self.selected = (0..self.entries.len()).collect();
+        cx.notify();
+    }
+
+    fn toggle_hidden(&mut self, cx: &mut Context<Self>) {
+        self.show_hidden = !self.show_hidden;
+        self.reload(cx);
+    }
+
+    fn set_sort(&mut self, key: SortKey, cx: &mut Context<Self>) {
+        if self.sort_key == key {
+            self.sort_asc = !self.sort_asc;
+        } else {
+            self.sort_key = key;
+            self.sort_asc = true;
+        }
+        sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+        self.selected.clear();
+        cx.notify();
+    }
+
+    // ---- rename ----
+    fn rename_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(&ix) = self.selected.iter().next() else {
+            return;
+        };
+        let Some(entry) = self.entries.get(ix) else {
+            return;
+        };
+        let name = entry.name.to_string();
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
+        cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| match ev {
+            InputEvent::PressEnter { .. } => this.rename_commit(cx),
+            InputEvent::Blur => this.renaming = None,
+            _ => {}
+        })
+        .detach();
+        let handle = input.read(cx).focus_handle(cx);
+        window.focus(&handle);
+        self.renaming = Some((ix, input));
+        cx.notify();
+    }
+
+    fn rename_commit(&mut self, cx: &mut Context<Self>) {
+        let Some((ix, input)) = self.renaming.take() else {
+            return;
+        };
+        let new_name = input.read(cx).value().to_string();
+        if let Some(entry) = self.entries.get(ix) {
+            let new_name = new_name.trim();
+            if !new_name.is_empty() && new_name != entry.name.as_ref() {
+                let dst = self.cwd.join(new_name);
+                let _ = std::fs::rename(&entry.path, &dst);
+            }
+        }
+        self.reload(cx);
+    }
+
+    // ---- chrome (toolbar) ----
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let nav = |id: &'static str, glyph: &'static str, enabled: bool| {
             div()
@@ -227,11 +533,7 @@ impl FinderView {
                 .justify_center()
                 .rounded(px(5.0))
                 .when(enabled, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0xe2e2e4))))
-                .child(icon(
-                    glyph,
-                    17.0,
-                    if enabled { hsl(0x3a3a3c) } else { tertiary() },
-                ))
+                .child(icon(glyph, 17.0, if enabled { hsl(0x3a3a3c) } else { tertiary() }))
         };
         let seg = |glyph: &'static str, active: bool| {
             div()
@@ -267,7 +569,7 @@ impl FinderView {
         };
 
         let search = div()
-            .w(px(180.0))
+            .w(px(200.0))
             .h(px(28.0))
             .flex()
             .items_center()
@@ -276,7 +578,7 @@ impl FinderView {
             .rounded(px(7.0))
             .bg(hsl(0xededef))
             .child(icon("icons/search.svg", 14.0, tertiary()))
-            .child(div().text_size(px(13.0)).text_color(tertiary()).child("Search"));
+            .child(div().flex_1().child(Input::new(&self.query).appearance(false)));
 
         div()
             .id("toolbar")
@@ -291,11 +593,11 @@ impl FinderView {
             .bg(toolbar_bg())
             .border_b_1()
             .border_color(sep())
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, _| this.dragging = true))
-            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, _| this.dragging = false))
-            .on_mouse_move(cx.listener(|this, _, window, _| {
-                if this.dragging {
-                    this.dragging = false;
+            .on_mouse_down(MouseButton::Left, cx.listener(|t, _, _, _| t.dragging = true))
+            .on_mouse_up(MouseButton::Left, cx.listener(|t, _, _, _| t.dragging = false))
+            .on_mouse_move(cx.listener(|t, _, window, _| {
+                if t.dragging {
+                    t.dragging = false;
                     window.start_window_move();
                 }
             }))
@@ -325,6 +627,14 @@ impl FinderView {
             .child(tool("icons/tag.svg"))
             .child(tool("icons/ellipsis.svg"))
             .child(search)
+    }
+
+    fn title(&self) -> SharedString {
+        self.cwd
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Macintosh HD".to_string())
+            .into()
     }
 
     // ---- sidebar ----
@@ -376,8 +686,63 @@ impl FinderView {
         col
     }
 
+    fn context_menu(menu: PopupMenu, has_selection: bool, can_paste: bool) -> PopupMenu {
+        let mut m = menu;
+        if has_selection {
+            m = m
+                .menu("Open", Box::new(OpenItems))
+                .menu("Rename", Box::new(RenameItem))
+                .menu("Duplicate", Box::new(Duplicate))
+                .separator()
+                .menu("Copy", Box::new(CopyItems))
+                .menu("Cut", Box::new(CutItems));
+        }
+        if can_paste {
+            m = m.menu("Paste Item", Box::new(PasteItems));
+        }
+        m = m.separator().menu("New Folder", Box::new(NewFolder));
+        if has_selection {
+            m = m
+                .separator()
+                .menu("Move to Trash", Box::new(MoveToTrash))
+                .menu("Delete Immediately", Box::new(DeleteItem));
+        }
+        m
+    }
+
     // ---- list ----
     fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let q = self.query.read(cx).value().to_lowercase();
+
+        let sort_caret = |key: SortKey| -> Option<Svg> {
+            if self.sort_key == key {
+                Some(icon(
+                    if self.sort_asc { "icons/chevron-up.svg" } else { "icons/chevron-down.svg" },
+                    11.0,
+                    tertiary(),
+                ))
+            } else {
+                None
+            }
+        };
+        let head = |w: Option<f32>, text: &'static str, key: SortKey, pl: bool| {
+            let caret = sort_caret(key);
+            let mut cell = div()
+                .id(text)
+                .flex()
+                .items_center()
+                .gap_1()
+                .when(pl, |el: Stateful<Div>| el.pl_4())
+                .when_some(w, |el, w| el.w(px(w)))
+                .when(w.is_none(), |el| el.flex_1())
+                .child(text)
+                .on_click(cx.listener(move |this, _, _, cx| this.set_sort(key, cx)));
+            if let Some(c) = caret {
+                cell = cell.child(c);
+            }
+            cell
+        };
+
         let header = div()
             .flex()
             .items_center()
@@ -387,22 +752,17 @@ impl FinderView {
             .border_color(sep())
             .text_size(px(12.0))
             .text_color(secondary())
-            .child(
-                div()
-                    .flex_1()
-                    .pl(px(22.0))
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child("Name")
-                    .child(icon("icons/chevron-up.svg", 11.0, tertiary())),
-            )
-            .child(div().w(px(DATE_W)).child("Date Modified"))
-            .child(div().w(px(SIZE_W)).flex().justify_end().child("Size"))
-            .child(div().w(px(KIND_W)).pl_3().child("Kind"));
+            .child(head(None, "Name", SortKey::Name, true))
+            .child(head(Some(DATE_W), "Date Modified", SortKey::Date, false))
+            .child(head(Some(SIZE_W), "Size", SortKey::Size, false))
+            .child(head(Some(KIND_W), "Kind", SortKey::Kind, true));
 
-        let rows = self.entries.iter().enumerate().map(|(ix, e)| {
-            let selected = self.selected == Some(ix);
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        for (ix, e) in self.entries.iter().enumerate() {
+            if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
+                continue;
+            }
+            let selected = self.selected.contains(&ix);
             let primary = if selected { white() } else { label() };
             let sub = if selected { white() } else { secondary() };
             let glyph = if e.is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
@@ -414,61 +774,114 @@ impl FinderView {
                 secondary()
             };
 
-            div()
-                .id(("row", ix))
-                .flex()
-                .items_center()
-                .h(px(24.0))
-                .px_2()
-                .text_size(px(13.0))
-                .when(selected, |el: Stateful<Div>| el.bg(sel()))
-                .when(!selected && ix % 2 == 1, |el: Stateful<Div>| el.bg(alt_row()))
-                .when(!selected, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x0000000a))))
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .items_center()
-                        .min_w(px(0.0))
-                        .child(
-                            div().w(px(16.0)).flex().justify_center().when(e.is_dir, |el: Div| {
+            let name_cell: gpui::AnyElement = match &self.renaming {
+                Some((ri, input)) if *ri == ix => div()
+                    .pl(px(6.0))
+                    .flex_1()
+                    .child(Input::new(input).appearance(true))
+                    .into_any_element(),
+                _ => div()
+                    .pl(px(6.0))
+                    .text_color(primary)
+                    .truncate()
+                    .child(e.name.clone())
+                    .into_any_element(),
+            };
+
+            rows.push(
+                div()
+                    .id(("row", ix))
+                    .flex()
+                    .items_center()
+                    .h(px(24.0))
+                    .px_2()
+                    .text_size(px(13.0))
+                    .when(selected, |el: Stateful<Div>| el.bg(sel()))
+                    .when(!selected && ix % 2 == 1, |el: Stateful<Div>| el.bg(alt_row()))
+                    .when(!selected, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x0000000a))))
+                    .child(
+                        div()
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .min_w(px(0.0))
+                            .child(div().w(px(16.0)).flex().justify_center().when(e.is_dir, |el: Div| {
                                 el.child(icon(
                                     "icons/chevron-right.svg",
                                     11.0,
                                     if selected { white() } else { tertiary() },
                                 ))
-                            }),
-                        )
-                        .child(icon(glyph, 16.0, icon_color))
-                        .child(
-                            div()
-                                .pl(px(6.0))
-                                .text_color(primary)
-                                .truncate()
-                                .child(e.name.clone()),
-                        ),
-                )
-                .child(div().w(px(DATE_W)).text_color(sub).child(e.modified.clone()))
-                .child(
-                    div()
-                        .w(px(SIZE_W))
-                        .flex()
-                        .justify_end()
-                        .text_color(sub)
-                        .child(e.size.clone()),
-                )
-                .child(div().w(px(KIND_W)).pl_3().text_color(sub).truncate().child(e.kind.clone()))
-                .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
-                    if ev.click_count() >= 2 {
-                        this.open(ix, cx);
-                    } else {
-                        this.selected = Some(ix);
+                            }))
+                            .child(icon(glyph, 16.0, icon_color))
+                            .child(name_cell),
+                    )
+                    .child(div().w(px(DATE_W)).text_color(sub).child(e.modified.clone()))
+                    .child(
+                        div()
+                            .w(px(SIZE_W))
+                            .flex()
+                            .justify_end()
+                            .text_color(sub)
+                            .child(e.size.clone()),
+                    )
+                    .child(div().w(px(KIND_W)).pl_3().text_color(sub).truncate().child(e.kind.clone()))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, _, window, cx| {
+                            if !this.selected.contains(&ix) {
+                                this.select_single(ix);
+                            }
+                            window.focus(&this.focus);
+                            cx.notify();
+                        }),
+                    )
+                    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                        if ev.click_count() >= 2 {
+                            this.open_index(ix, cx);
+                            return;
+                        }
+                        let m = ev.modifiers();
+                        this.handle_click(ix, m.platform, m.shift);
+                        window.focus(&this.focus);
                         cx.notify();
-                    }
-                }))
-        });
+                    }))
+                    .into_any_element(),
+            );
+        }
+
+        let has_sel = !self.selected.is_empty();
+        let can_paste = !self.clipboard.is_empty();
 
         div()
+            .track_focus(&self.focus)
+            .key_context("Finder")
+            .on_action(cx.listener(|this, _: &NewFolder, _, cx| this.new_folder(cx)))
+            .on_action(cx.listener(|this, _: &RenameItem, window, cx| this.rename_start(window, cx)))
+            .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
+            .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.move_to_trash(cx)))
+            .on_action(cx.listener(|this, _: &DeleteItem, _, cx| this.delete_immediately(cx)))
+            .on_action(cx.listener(|this, _: &CopyItems, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &CutItems, _, cx| this.cut(cx)))
+            .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
+            .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
+            .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                match ev.keystroke.key.as_str() {
+                    "down" => {
+                        let next = this.anchor.map(|a| a + 1).unwrap_or(0).min(this.entries.len().saturating_sub(1));
+                        this.select_single(next);
+                        cx.notify();
+                    }
+                    "up" => {
+                        let prev = this.anchor.map(|a| a.saturating_sub(1)).unwrap_or(0);
+                        this.select_single(prev);
+                        cx.notify();
+                    }
+                    _ => {}
+                }
+            }))
             .flex_1()
             .v_flex()
             .bg(list_bg())
@@ -478,7 +891,8 @@ impl FinderView {
                     .id("file-list")
                     .flex_1()
                     .overflow_y_scroll()
-                    .child(div().v_flex().children(rows)),
+                    .child(div().v_flex().children(rows))
+                    .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste)),
             )
     }
 }
@@ -503,44 +917,79 @@ impl Render for FinderView {
 
 // ---- helpers ----
 
-fn read_entries(dir: &PathBuf) -> Vec<Entry> {
+fn unique_path(path: PathBuf) -> PathBuf {
+    if !path.exists() {
+        return path;
+    }
+    let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| e.to_string_lossy().into_owned());
+    for n in 2..10_000 {
+        let name = match &ext {
+            Some(e) => format!("{stem} {n}.{e}"),
+            None => format!("{stem} {n}"),
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    path
+}
+
+fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir_all(dst)?;
+        for e in std::fs::read_dir(src)? {
+            let e = e?;
+            copy_recursive(&e.path(), &dst.join(e.file_name()))?;
+        }
+    } else {
+        std::fs::copy(src, dst)?;
+    }
+    Ok(())
+}
+
+fn read_entries(dir: &Path, show_hidden: bool) -> Vec<Entry> {
     let mut v: Vec<Entry> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(dir) {
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
+            if !show_hidden && name.starts_with('.') {
                 continue;
             }
             let path = e.path();
             let md = e.metadata().ok();
             let is_dir = md.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-            let size = if is_dir {
-                "--".to_string()
-            } else {
-                human_size(md.as_ref().map(|m| m.len()).unwrap_or(0))
-            };
-            let modified = md
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .map(date_label)
-                .unwrap_or_default();
+            let size_bytes = if is_dir { 0 } else { md.as_ref().map(|m| m.len()).unwrap_or(0) };
+            let mtime = md.as_ref().and_then(|m| m.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
+            let size = if is_dir { "--".to_string() } else { human_size(size_bytes) };
             let kind = kind_of(&path, is_dir);
             v.push(Entry {
                 name: name.into(),
                 path,
                 is_dir,
                 size: size.into(),
-                modified: modified.into(),
+                modified: date_label(mtime).into(),
                 kind: kind.into(),
+                size_bytes,
+                mtime,
             });
         }
     }
-    v.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
     v
+}
+
+fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
+    v.sort_by(|a, b| {
+        let o = match key {
+            SortKey::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            SortKey::Date => a.mtime.cmp(&b.mtime),
+            SortKey::Size => a.size_bytes.cmp(&b.size_bytes),
+            SortKey::Kind => a.kind.to_lowercase().cmp(&b.kind.to_lowercase()),
+        };
+        if asc { o } else { o.reverse() }
+    });
 }
 
 fn human_size(bytes: u64) -> String {
@@ -557,15 +1006,11 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-fn kind_of(path: &PathBuf, is_dir: bool) -> String {
+fn kind_of(path: &Path, is_dir: bool) -> String {
     if is_dir {
         return "Folder".to_string();
     }
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
     match ext.as_str() {
         "rs" => "Rust Source".into(),
         "toml" => "TOML Document".into(),
@@ -586,7 +1031,6 @@ fn kind_of(path: &PathBuf, is_dir: bool) -> String {
     }
 }
 
-/// macOS Finder date: "Today at 11:12 AM", "Yesterday at 1:30 PM", "18 Apr 2026 at 2:42 PM".
 fn date_label(t: SystemTime) -> String {
     let dt: DateTime<Local> = t.into();
     let now = Local::now();
@@ -614,7 +1058,7 @@ fn date_label(t: SystemTime) -> String {
 }
 
 fn main() {
-    rmac_ui::boot_unified_with_assets(CombinedAssets, 1100.0, 720.0, |_window, cx| {
-        FinderView::new(cx)
+    rmac_ui::boot_unified_with_assets(CombinedAssets, 1100.0, 720.0, |window, cx| {
+        FinderView::new(window, cx)
     });
 }

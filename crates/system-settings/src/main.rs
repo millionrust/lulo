@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use std::process::Command;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, svg, AssetSource, Context, Div, Hsla,
+    div, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource, Context, Div, Hsla,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement, Render, Result, SharedString,
     StatefulInteractiveElement as _, Stateful, Styled, Svg, Window,
 };
@@ -90,15 +90,21 @@ struct Settings {
     account: SharedString,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
+    search: gpui::Entity<gpui_component::input::InputState>,
     dragging: bool,
 }
 
 impl Settings {
-    fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let search = cx.new(|cx| {
+            gpui_component::input::InputState::new(window, cx).placeholder("Search")
+        });
+        cx.observe(&search, |_, _, cx| cx.notify()).detach();
         Self {
             account: account_name().into(),
             sections: categories(),
             selected: (1, 0), // General
+            search,
             dragging: false,
         }
     }
@@ -150,7 +156,12 @@ impl Settings {
             .rounded(px(7.0))
             .bg(hsl(0xdcdce0))
             .child(glyph("icons/search.svg", 13.0, secondary()))
-            .child(div().text_size(px(13.0)).text_color(secondary()).child("Search"));
+            .child(
+                div()
+                    .flex_1()
+                    .child(gpui_component::input::Input::new(&self.search).appearance(false)),
+            );
+        let q = self.search.read(cx).value().to_lowercase();
 
         let account = div()
             .flex()
@@ -205,11 +216,21 @@ impl Settings {
             .child(search)
             .child(account);
 
+        let mut first_section = true;
         for (si, section) in self.sections.iter().enumerate() {
-            if si > 0 {
+            let matching: Vec<(usize, &Category)> = section
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| q.is_empty() || c.name.to_lowercase().contains(&q))
+                .collect();
+            if matching.is_empty() {
+                continue;
+            }
+            if !first_section {
                 col = col.child(div().h(px(14.0)));
             }
-            for (ci, cat) in section.iter().enumerate() {
+            first_section = false;
+            for (ci, cat) in matching {
                 let selected = self.selected == (si, ci);
                 col = col.child(
                     div()

@@ -37,15 +37,59 @@ const TOP_PAD: f32 = 34.0 + 8.0;
 /// Pixels from the window left to the first column: 8pt content padding.
 const LEFT_PAD: f32 = 8.0;
 
-// One Dark-ish palette.
-const FG: u32 = 0xd4d4d4;
-const BG: u32 = 0x1e1e1e;
-/// macOS-style text selection fill (translucent blue over the grid).
-const SELECTION: u32 = 0x2f5d8c;
+/// A macOS Terminal–style color profile: window chrome + 16-color ANSI palette.
+#[derive(Clone, Copy)]
+struct Profile {
+    name: &'static str,
+    bg: u32,
+    fg: u32,
+    cursor: u32,
+    selection: u32,
+    /// ANSI colors: indices 0-7 normal, 8-15 bright.
+    ansi: [u32; 16],
+}
+
+/// Classic macOS Terminal.app ANSI palette (Basic profile colors).
+const MAC_ANSI: [u32; 16] = [
+    0x000000, 0x990000, 0x00a600, 0x999900, 0x0000b2, 0xb200b2, 0x00a6b2, 0xbfbfbf, 0x666666,
+    0xe50000, 0x00d900, 0xe5e500, 0x0000ff, 0xe500e5, 0x00e5e5, 0xe5e5e5,
+];
+
+/// One Dark ANSI palette (the rmac default look).
+const ONE_DARK: [u32; 16] = [
+    0x282c34, 0xe06c75, 0x98c379, 0xe5c07b, 0x61afef, 0xc678dd, 0x56b6c2, 0xabb2bf, 0x5c6370,
+    0xe06c75, 0x98c379, 0xe5c07b, 0x61afef, 0xc678dd, 0x56b6c2, 0xffffff,
+];
+
+/// Built-in profiles mirroring macOS Terminal.app presets. Index 0 is the
+/// rmac default (a dark One Dark variant); the rest match Terminal.app.
+static PROFILES: &[Profile] = &[
+    Profile { name: "rmac Dark", bg: 0x1e1e1e, fg: 0xd4d4d4, cursor: 0xd4d4d4, selection: 0x2f5d8c, ansi: ONE_DARK },
+    Profile { name: "Basic", bg: 0xffffff, fg: 0x000000, cursor: 0x000000, selection: 0xb4d5fe, ansi: MAC_ANSI },
+    Profile { name: "Pro", bg: 0x000000, fg: 0xf2f2f2, cursor: 0x4d4d4d, selection: 0x414141, ansi: MAC_ANSI },
+    Profile { name: "Homebrew", bg: 0x000000, fg: 0x00ff00, cursor: 0x23ff18, selection: 0x083905, ansi: MAC_ANSI },
+    Profile { name: "Grass", bg: 0x13773d, fg: 0xfff0a5, cursor: 0x8c1543, selection: 0x004d00, ansi: MAC_ANSI },
+    Profile { name: "Man Page", bg: 0xfef49c, fg: 0x000000, cursor: 0x7f7f7f, selection: 0xa3d7ff, ansi: MAC_ANSI },
+    Profile { name: "Novel", bg: 0xdfdbc3, fg: 0x3b2322, cursor: 0x73635a, selection: 0xa4a390, ansi: MAC_ANSI },
+    Profile { name: "Ocean", bg: 0x224fbc, fg: 0xffffff, cursor: 0x7f7f7f, selection: 0x216dff, ansi: MAC_ANSI },
+    Profile { name: "Red Sands", bg: 0x7a251e, fg: 0xd7c9a7, cursor: 0xffffff, selection: 0xa4a390, ansi: MAC_ANSI },
+];
+
+thread_local! {
+    /// The profile in effect for the current render pass, set at the top of
+    /// `render()` so the free color functions (`conv`/`named`/`indexed`) resolve
+    /// against the active palette without threading state through every call.
+    static ACTIVE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn active() -> &'static Profile {
+    let i = ACTIVE.with(|a| a.get());
+    PROFILES.get(i).unwrap_or(&PROFILES[0])
+}
 
 gpui::actions!(
     terminal,
-    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab, PrevTab]
+    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab, PrevTab, CycleProfile]
 );
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
@@ -183,6 +227,32 @@ struct TerminalView {
     selecting: bool,
     /// Fractional scroll-line accumulator for smooth trackpad scrolling.
     scroll_accum: f32,
+    /// Index into `PROFILES` for the active color scheme.
+    profile: usize,
+    /// Whether the profile picker dropdown is open.
+    picker_open: bool,
+}
+
+/// Path to the persisted profile-index file.
+fn profile_config_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let dir = std::path::Path::new(&home).join("Library/Application Support/rmac-terminal");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("profile.txt"))
+}
+
+fn load_profile() -> usize {
+    profile_config_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&i| i < PROFILES.len())
+        .unwrap_or(0)
+}
+
+fn save_profile(i: usize) {
+    if let Some(p) = profile_config_path() {
+        let _ = std::fs::write(p, i.to_string());
+    }
 }
 
 impl TerminalView {
@@ -206,6 +276,7 @@ impl TerminalView {
             KeyBinding::new("cmd-w", CloseTab, Some("Terminal")),
             KeyBinding::new("cmd-shift-]", NextTab, Some("Terminal")),
             KeyBinding::new("cmd-shift-[", PrevTab, Some("Terminal")),
+            KeyBinding::new("cmd-shift-p", CycleProfile, Some("Terminal")),
         ]);
 
         let focus = cx.focus_handle();
@@ -236,7 +307,23 @@ impl TerminalView {
             selection: None,
             selecting: false,
             scroll_accum: 0.0,
+            profile: load_profile(),
+            picker_open: false,
         }
+    }
+
+    fn set_profile(&mut self, i: usize, cx: &mut Context<Self>) {
+        if i < PROFILES.len() {
+            self.profile = i;
+            self.picker_open = false;
+            save_profile(i);
+            cx.notify();
+        }
+    }
+
+    fn cycle_profile(&mut self, cx: &mut Context<Self>) {
+        let next = (self.profile + 1) % PROFILES.len();
+        self.set_profile(next, cx);
     }
 
     fn new_tab(&mut self, cx: &mut Context<Self>) {
@@ -286,7 +373,7 @@ impl TerminalView {
 
     fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let n = self.tabs.len();
-        let active = self.active;
+        let active_tab = self.active;
         let mut bar = div()
             .h(px(28.0))
             .flex_none()
@@ -298,7 +385,7 @@ impl TerminalView {
             .border_b_1()
             .border_color(hsla(0x3a3a3a));
         for i in 0..n {
-            let is_active = i == active;
+            let is_active = i == active_tab;
             bar = bar.child(
                 div()
                     .flex()
@@ -307,7 +394,7 @@ impl TerminalView {
                     .h(px(22.0))
                     .px_2()
                     .rounded(px(5.0))
-                    .when(is_active, |el: Div| el.bg(hsla(BG)))
+                    .when(is_active, |el: Div| el.bg(hsla(active().bg)))
                     .child(
                         div()
                             .id(("tabname", i))
@@ -343,6 +430,72 @@ impl TerminalView {
                 .child("+")
                 .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
         )
+    }
+
+    /// The profile chip in the toolbar — shows the active scheme; click to
+    /// open the picker (matching Terminal.app's profile switcher).
+    fn profile_chip(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let name = PROFILES[self.profile].name;
+        div()
+            .id("profile-chip")
+            .flex()
+            .items_center()
+            .gap_1()
+            .px_2()
+            .py(px(2.0))
+            .rounded(px(5.0))
+            .text_size(px(11.0))
+            .text_color(hsla(0x444444))
+            .hover(|h| h.bg(hsla(0xe6e6e6)))
+            .child(name)
+            .child(div().text_size(px(9.0)).text_color(hsla(0x888888)).child("▼"))
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.picker_open = !this.picker_open;
+                cx.notify();
+            }))
+    }
+
+    /// The dropdown list of color profiles.
+    fn render_picker(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let active_idx = self.profile;
+        div()
+            .absolute()
+            .top(px(34.0))
+            .right_2()
+            .w(px(190.0))
+            .bg(hsla(0xffffff))
+            .rounded(px(8.0))
+            .border_1()
+            .border_color(hsla(0xd2d2d2))
+            .shadow_lg()
+            .py_1()
+            .children(PROFILES.iter().enumerate().map(|(i, p)| {
+                let is_active = i == active_idx;
+                div()
+                    .id(("profrow", i))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .h(px(26.0))
+                    .px_2()
+                    .text_size(px(12.0))
+                    .text_color(hsla(0x1d1d1d))
+                    .hover(|h| h.bg(hsla(0x4a90e2)).text_color(hsla(0xffffff)))
+                    .child(
+                        div()
+                            .w(px(14.0))
+                            .h(px(14.0))
+                            .rounded(px(3.0))
+                            .border_1()
+                            .border_color(hsla(0xbbbbbb))
+                            .bg(hsla(p.bg)),
+                    )
+                    .child(div().flex_1().child(p.name))
+                    .when(is_active, |el: Stateful<Div>| {
+                        el.child(div().text_color(hsla(0x4a90e2)).child("✓"))
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_profile(i, cx)))
+            }))
     }
 
     /// Clear the screen and scrollback (⌘K).
@@ -626,13 +779,13 @@ impl TerminalView {
                 // Selection highlight overrides the background.
                 if let Some(sel) = &self.selection {
                     if !sel.is_empty() && sel.contains(line_idx, col) {
-                        bg = hsla(SELECTION);
+                        bg = hsla(active().selection);
                     }
                 }
                 // Find-match highlight: yellow with dark text.
                 if matched.get(col).copied().unwrap_or(false) {
                     bg = hsla(FIND_HL);
-                    fg = hsla(BG);
+                    fg = hsla(active().bg);
                 }
 
                 let style = Style {
@@ -671,6 +824,7 @@ impl TerminalView {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        ACTIVE.with(|a| a.set(self.profile));
         self.resize_to(window);
         let query = if self.searching {
             self.search.read(cx).value().to_lowercase()
@@ -684,16 +838,28 @@ impl Render for TerminalView {
             .size_full()
             .relative()
             .v_flex()
-            .bg(hsla(BG))
+            .bg(hsla(active().bg))
             .child(rmac_ui::toolbar(
                 div()
                     .size_full()
+                    .relative()
                     .flex()
                     .items_center()
                     .justify_center()
                     .text_size(px(13.0))
-                    .child("Terminal"),
+                    .child("Terminal")
+                    .child(
+                        div()
+                            .absolute()
+                            .right_2()
+                            .top_0()
+                            .bottom_0()
+                            .flex()
+                            .items_center()
+                            .child(self.profile_chip(cx)),
+                    ),
             ))
+            .when(self.picker_open, |el: Div| el.child(self.render_picker(cx)))
             .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
                 div()
@@ -721,10 +887,14 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &CloseTab, _, cx| this.close_tab(cx)))
                     .on_action(cx.listener(|this, _: &NextTab, _, cx| this.next_tab(cx)))
                     .on_action(cx.listener(|this, _: &PrevTab, _, cx| this.prev_tab(cx)))
+                    .on_action(cx.listener(|this, _: &CycleProfile, _, cx| this.cycle_profile(cx)))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            if this.picker_open {
+                                this.picker_open = false;
+                            }
                             let offset = this.display_offset();
                             let cell = this.pos_to_cell(ev.position, offset);
                             this.selection = Some(Selection {
@@ -774,7 +944,7 @@ impl Render for TerminalView {
                     }))
                     .flex_1()
                     .p_2()
-                    .bg(hsla(BG))
+                    .bg(hsla(active().bg))
                     .font_family(FONT)
                     .text_size(px(self.font_size))
                     .v_flex()
@@ -844,43 +1014,35 @@ fn conv(c: Color) -> Hsla {
 
 fn named(n: NamedColor) -> (u8, u8, u8) {
     use NamedColor::*;
+    let p = active();
+    let ansi = |i: usize| split(p.ansi[i]);
     match n {
-        Background => split(BG),
-        Foreground | Cursor => split(FG),
-        Black => (0x28, 0x2c, 0x34),
-        Red | BrightRed => (0xe0, 0x6c, 0x75),
-        Green | BrightGreen => (0x98, 0xc3, 0x79),
-        Yellow | BrightYellow => (0xe5, 0xc0, 0x7b),
-        Blue | BrightBlue => (0x61, 0xaf, 0xef),
-        Magenta | BrightMagenta => (0xc6, 0x78, 0xdd),
-        Cyan | BrightCyan => (0x56, 0xb6, 0xc2),
-        White => (0xab, 0xb2, 0xbf),
-        BrightBlack => (0x5c, 0x63, 0x70),
-        BrightWhite => (0xff, 0xff, 0xff),
-        _ => split(FG),
+        Background => split(p.bg),
+        Foreground => split(p.fg),
+        Cursor => split(p.cursor),
+        Black => ansi(0),
+        Red => ansi(1),
+        Green => ansi(2),
+        Yellow => ansi(3),
+        Blue => ansi(4),
+        Magenta => ansi(5),
+        Cyan => ansi(6),
+        White => ansi(7),
+        BrightBlack => ansi(8),
+        BrightRed => ansi(9),
+        BrightGreen => ansi(10),
+        BrightYellow => ansi(11),
+        BrightBlue => ansi(12),
+        BrightMagenta => ansi(13),
+        BrightCyan => ansi(14),
+        BrightWhite => ansi(15),
+        _ => split(p.fg),
     }
 }
 
 fn indexed(i: u8) -> (u8, u8, u8) {
     match i {
-        0..=15 => named(match i {
-            0 => NamedColor::Black,
-            1 => NamedColor::Red,
-            2 => NamedColor::Green,
-            3 => NamedColor::Yellow,
-            4 => NamedColor::Blue,
-            5 => NamedColor::Magenta,
-            6 => NamedColor::Cyan,
-            7 => NamedColor::White,
-            8 => NamedColor::BrightBlack,
-            9 => NamedColor::BrightRed,
-            10 => NamedColor::BrightGreen,
-            11 => NamedColor::BrightYellow,
-            12 => NamedColor::BrightBlue,
-            13 => NamedColor::BrightMagenta,
-            14 => NamedColor::BrightCyan,
-            _ => NamedColor::BrightWhite,
-        }),
+        0..=15 => split(active().ansi[i as usize]),
         16..=231 => {
             let i = i - 16;
             let f = |v: u8| -> u8 {

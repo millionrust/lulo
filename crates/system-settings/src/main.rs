@@ -132,9 +132,32 @@ struct WifiNetwork {
     strength: u8, // 1..=3
 }
 
+/// Live battery readings (read once at launch via `pmset` + `ioreg`).
+struct BatteryInfo {
+    present: bool,
+    percent: String,
+    status: String,
+    source: String,
+    time_remaining: Option<String>,
+    cycle_count: Option<String>,
+    health_percent: Option<String>,
+    condition: String,
+}
+
+/// A connected display (read once at launch via `system_profiler`).
+struct DisplayInfo {
+    name: String,
+    resolution: String,
+    detail: Option<String>,
+    is_main: bool,
+}
+
 struct Settings {
     account: SharedString,
     sysinfo: SysInfo,
+    battery: Option<BatteryInfo>,
+    displays: Vec<DisplayInfo>,
+    gpu: String,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -426,9 +449,13 @@ impl Settings {
         ];
         let joined = saved.joined.filter(|&j| j < networks.len());
 
+        let (gpu, displays) = gather_displays();
         Self {
             account: account_name().into(),
             sysinfo: gather_sysinfo(),
+            battery: gather_battery(),
+            displays,
+            gpu,
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -691,6 +718,8 @@ impl Settings {
                 "General" => self.render_general(cx),
                 "Appearance" => self.render_appearance(cx),
                 "Sound" => self.render_sound(cx),
+                "Battery" => self.render_battery(),
+                "Displays" => self.render_displays(),
                 _ => self.render_generic(cx),
             }
         };
@@ -1119,6 +1148,91 @@ impl Settings {
         self.pane(vec![output_card, alert_card, toggles])
     }
 
+    // ---- Battery (real read-only) -------------------------------------
+
+    fn render_battery(&self) -> Div {
+        let green = hsl(0x34c759);
+        let gray = hsl(0x8e8e93);
+        match &self.battery {
+            Some(b) if b.present => {
+                let mut status_rows = vec![
+                    value_row("icons/battery-charging.svg", green, "Charge".into(), b.percent.clone().into()),
+                    value_row("icons/info.svg", gray, "Status".into(), b.status.clone().into()),
+                    value_row("icons/power.svg", gray, "Power Source".into(), b.source.clone().into()),
+                ];
+                if let Some(t) = &b.time_remaining {
+                    status_rows.push(value_row("icons/clock.svg", gray, "Time Remaining".into(), t.clone().into()));
+                }
+
+                let mut health_rows =
+                    vec![value_row("icons/heart-handshake.svg", green, "Condition".into(), b.condition.clone().into())];
+                if let Some(h) = &b.health_percent {
+                    health_rows.insert(0, value_row("icons/battery-charging.svg", green, "Maximum Capacity".into(), h.clone().into()));
+                }
+                if let Some(c) = &b.cycle_count {
+                    health_rows.push(value_row("icons/history.svg", gray, "Cycle Count".into(), c.clone().into()));
+                }
+
+                self.pane(vec![
+                    card(status_rows),
+                    section_header("Battery Health"),
+                    card(health_rows),
+                ])
+            }
+            _ => self.pane(vec![note_card(
+                "No battery detected — this Mac runs on continuous power.",
+            )]),
+        }
+    }
+
+    // ---- Displays (real read-only) ------------------------------------
+
+    fn render_displays(&self) -> Div {
+        let blue = hsl(0x0a84ff);
+        let gray = hsl(0x8e8e93);
+        let mut cards: Vec<Div> = Vec::new();
+
+        if self.displays.is_empty() {
+            cards.push(note_card("No displays were detected."));
+        }
+        for d in &self.displays {
+            // A dynamic section header (display name) — the static helper only
+            // takes &'static str, so build it inline.
+            let mut title: SharedString = d.name.clone().into();
+            if d.is_main {
+                title = format!("{} (Main)", d.name).into();
+            }
+            cards.push(
+                div()
+                    .px_1()
+                    .pt_2()
+                    .pb_1()
+                    .text_size(px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child(title),
+            );
+            let mut rows =
+                vec![value_row("icons/monitor.svg", blue, "Resolution".into(), d.resolution.clone().into())];
+            if let Some(det) = &d.detail {
+                rows.insert(0, value_row("icons/info.svg", gray, "Type".into(), det.clone().into()));
+            }
+            cards.push(card(rows));
+        }
+
+        if !self.gpu.is_empty() {
+            cards.push(section_header("Graphics"));
+            cards.push(card(vec![value_row(
+                "icons/settings.svg",
+                gray,
+                "Chipset".into(),
+                self.gpu.clone().into(),
+            )]));
+        }
+
+        self.pane(cards)
+    }
+
     // ---- subpages -----------------------------------------------------
 
     fn render_subpage(&self, sub: &SubPage, _cx: &Context<Self>) -> Div {
@@ -1506,6 +1620,100 @@ fn gather_sysinfo() -> SysInfo {
     let model = cmd("sysctl", &["-n", "hw.model"]).unwrap_or_else(|| "Mac".into());
 
     SysInfo { computer_name, os, chip, memory, model }
+}
+
+/// Capitalize the first letter of a word ("charged" → "Charged").
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Pull a top-level `"Key" = value` field out of `ioreg -r` output. The match
+/// requires the spaced ` = ` form so it skips the same key inside packed blobs.
+fn ioreg_field(io: &str, key: &str) -> Option<String> {
+    let needle = format!("{key} = ");
+    io.lines()
+        .map(|l| l.trim())
+        .find(|l| l.starts_with(&needle))
+        .map(|l| l[needle.len()..].trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Read battery state from `pmset -g batt` (live) + `ioreg` (health metrics).
+fn gather_battery() -> Option<BatteryInfo> {
+    let pm = cmd("pmset", &["-g", "batt"])?;
+    let source = pm
+        .lines()
+        .next()
+        .and_then(|l| l.split('\'').nth(1))
+        .unwrap_or("—")
+        .to_string();
+    let bline = pm.lines().find(|l| l.contains('%'))?;
+    let present = !bline.contains("present: false");
+    let parts: Vec<&str> = bline.split(';').collect();
+    let percent = parts
+        .first()
+        .and_then(|p| p.split_whitespace().find(|t| t.ends_with('%')))
+        .unwrap_or("—")
+        .to_string();
+    let status = capitalize(parts.get(1).map(|s| s.trim()).unwrap_or("—"));
+    let time_remaining = parts.get(2).map(|s| s.replace("remaining", "").trim().to_string()).filter(|s| {
+        !s.is_empty() && !s.starts_with("0:00") && !s.starts_with("(no estimate)") && !s.starts_with("not")
+    });
+
+    let io = cmd("ioreg", &["-rn", "AppleSmartBattery"]).unwrap_or_default();
+    let cycle_count = ioreg_field(&io, "\"CycleCount\"");
+    let raw_max = ioreg_field(&io, "\"AppleRawMaxCapacity\"").and_then(|s| s.parse::<f64>().ok());
+    let design = ioreg_field(&io, "\"DesignCapacity\"").and_then(|s| s.parse::<f64>().ok());
+    let health_percent = match (raw_max, design) {
+        (Some(m), Some(d)) if d > 0.0 => Some(format!("{}%", (m / d * 100.0).round() as i64)),
+        _ => None,
+    };
+    let condition = match ioreg_field(&io, "\"PermanentFailureStatus\"").as_deref() {
+        Some("0") | None => "Normal",
+        _ => "Service Recommended",
+    }
+    .to_string();
+
+    Some(BatteryInfo { present, percent, status, source, time_remaining, cycle_count, health_percent, condition })
+}
+
+/// Read attached displays + GPU from `system_profiler SPDisplaysDataType`.
+fn gather_displays() -> (String, Vec<DisplayInfo>) {
+    let out = match cmd("system_profiler", &["SPDisplaysDataType"]) {
+        Some(o) => o,
+        None => return (String::new(), Vec::new()),
+    };
+    let mut gpu = String::new();
+    let mut displays: Vec<DisplayInfo> = Vec::new();
+    for raw in out.lines() {
+        let indent = raw.len() - raw.trim_start().len();
+        let line = raw.trim();
+        if let Some(rest) = line.strip_prefix("Chipset Model:") {
+            if gpu.is_empty() {
+                gpu = rest.trim().to_string();
+            }
+        } else if indent == 8 && line.ends_with(':') && line != "Displays:" {
+            displays.push(DisplayInfo {
+                name: line.trim_end_matches(':').to_string(),
+                resolution: "—".into(),
+                detail: None,
+                is_main: false,
+            });
+        } else if let Some(d) = displays.last_mut() {
+            if let Some(r) = line.strip_prefix("Resolution:") {
+                d.resolution = r.trim().to_string();
+            } else if let Some(t) = line.strip_prefix("Display Type:") {
+                d.detail = Some(t.trim().to_string());
+            } else if line.starts_with("Main Display:") && line.ends_with("Yes") {
+                d.is_main = true;
+            }
+        }
+    }
+    (gpu, displays)
 }
 
 fn categories() -> Vec<Vec<Category>> {

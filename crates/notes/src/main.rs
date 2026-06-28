@@ -37,6 +37,7 @@ struct NotesView {
     selected: Option<usize>,
     title: Entity<InputState>,
     body: Entity<InputState>,
+    search: Entity<InputState>,
     last_saved: String,
 }
 
@@ -49,6 +50,8 @@ impl NotesView {
         // Title is single-line; body is multi-line soft-wrapped.
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
         let body = rmac_editor::multiline("Note", window, cx);
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        cx.observe(&search, |_, _, cx| cx.notify()).detach();
 
         let mut view = Self {
             notes: scan_notes(&dir),
@@ -56,6 +59,7 @@ impl NotesView {
             selected: None,
             title,
             body,
+            search,
             last_saved: String::new(),
         };
 
@@ -261,9 +265,16 @@ impl NotesView {
     }
 
     fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let q = self.search.read(cx).value().to_lowercase();
         let mut items: Vec<gpui::AnyElement> = Vec::new();
         let n = self.notes.len();
         for (ix, note) in self.notes.iter().enumerate() {
+            if !q.is_empty()
+                && !note.title.to_lowercase().contains(&q)
+                && !note.snippet.to_lowercase().contains(&q)
+            {
+                continue;
+            }
             let selected = self.selected == Some(ix);
             items.push(
                 div()
@@ -328,16 +339,33 @@ impl NotesView {
         }
 
         div()
-            .id("notes-scroll")
             .w(px(LIST_W))
             .h_full()
             .flex_shrink_0()
-            .py_1()
+            .v_flex()
             .bg(mac::list())
             .border_r_1()
             .border_color(mac::separator())
-            .overflow_y_scroll()
-            .child(div().v_flex().children(items))
+            .child(
+                div().px_2().py_2().child(
+                    div()
+                        .h(px(28.0))
+                        .flex()
+                        .items_center()
+                        .px_2()
+                        .rounded(px(7.0))
+                        .bg(gpui::rgb(0xededf0))
+                        .child(div().flex_1().child(Input::new(&self.search).appearance(false))),
+                ),
+            )
+            .child(
+                div()
+                    .id("notes-scroll")
+                    .flex_1()
+                    .py_1()
+                    .overflow_y_scroll()
+                    .child(div().v_flex().children(items)),
+            )
     }
 
     fn render_editor(&self, _cx: &Context<Self>) -> impl IntoElement {

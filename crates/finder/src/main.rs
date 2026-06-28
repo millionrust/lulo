@@ -7,7 +7,8 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -30,9 +31,17 @@ actions!(
     finder,
     [
         NewFolder, RenameItem, Duplicate, MoveToTrash, DeleteItem, CopyItems, CutItems, PasteItems,
-        SelectAll, GoUp, ToggleHidden, OpenItems,
+        SelectAll, GoUp, ToggleHidden, OpenItems, QuickLook,
     ]
 );
+
+#[derive(Clone, Copy, PartialEq)]
+enum ViewMode {
+    Icon,
+    List,
+    Column,
+    Gallery,
+}
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -126,6 +135,7 @@ struct FinderView {
     clip_cut: bool,
     renaming: Option<(usize, gpui::Entity<InputState>)>,
     show_hidden: bool,
+    view: ViewMode,
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,
@@ -196,6 +206,7 @@ impl FinderView {
             KeyBinding::new("cmd-down", OpenItems, Some("Finder")),
             KeyBinding::new("enter", RenameItem, Some("Finder")),
             KeyBinding::new("shift-cmd-.", ToggleHidden, Some("Finder")),
+            KeyBinding::new("space", QuickLook, Some("Finder")),
         ]);
 
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -222,6 +233,7 @@ impl FinderView {
             clip_cut: false,
             renaming: None,
             show_hidden: false,
+            view: ViewMode::List,
             sort_key: SortKey::Name,
             sort_asc: true,
             query,
@@ -535,16 +547,23 @@ impl FinderView {
                 .when(enabled, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0xe2e2e4))))
                 .child(icon(glyph, 17.0, if enabled { hsl(0x3a3a3c) } else { tertiary() }))
         };
-        let seg = |glyph: &'static str, active: bool| {
+        let cur = self.view;
+        let seg = |id: &'static str, glyph: &'static str, mode: ViewMode| {
+            let active = cur == mode;
             div()
+                .id(id)
                 .w(px(34.0))
                 .h(px(22.0))
                 .flex()
                 .items_center()
                 .justify_center()
                 .rounded(px(5.0))
-                .when(active, |el: Div| el.bg(white()))
+                .when(active, |el: Stateful<Div>| el.bg(white()))
                 .child(icon(glyph, 15.0, if active { label() } else { secondary() }))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.view = mode;
+                    cx.notify();
+                }))
         };
         let view_control = div()
             .flex()
@@ -553,10 +572,10 @@ impl FinderView {
             .p_0p5()
             .rounded(px(7.0))
             .bg(hsl(0xe2e2e4))
-            .child(seg("icons/layout-grid.svg", false))
-            .child(seg("icons/list.svg", true))
-            .child(seg("icons/columns-3.svg", false))
-            .child(seg("icons/image.svg", false));
+            .child(seg("v-icon", "icons/layout-grid.svg", ViewMode::Icon))
+            .child(seg("v-list", "icons/list.svg", ViewMode::List))
+            .child(seg("v-col", "icons/columns-3.svg", ViewMode::Column))
+            .child(seg("v-gal", "icons/image.svg", ViewMode::Gallery));
 
         let tool = |glyph: &'static str| {
             div()
@@ -851,6 +870,85 @@ impl FinderView {
 
         let has_sel = !self.selected.is_empty();
         let can_paste = !self.clipboard.is_empty();
+        let is_list = matches!(self.view, ViewMode::List | ViewMode::Column);
+
+        // Icon-grid tiles (Icon & Gallery modes).
+        let mut tiles: Vec<gpui::AnyElement> = Vec::new();
+        if !is_list {
+            for (ix, e) in self.entries.iter().enumerate() {
+                if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
+                    continue;
+                }
+                let selected = self.selected.contains(&ix);
+                let glyph = if e.is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
+                let icon_color = if e.is_dir { accent() } else { secondary() };
+                tiles.push(
+                    div()
+                        .id(("tile", ix))
+                        .w(px(104.0))
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_1()
+                        .px_1()
+                        .py_2()
+                        .child(icon(glyph, 52.0, icon_color))
+                        .child(
+                            div()
+                                .max_w(px(96.0))
+                                .px_1p5()
+                                .py_0p5()
+                                .rounded(px(4.0))
+                                .when(selected, |el: Div| el.bg(sel()))
+                                .text_size(px(12.0))
+                                .text_center()
+                                .truncate()
+                                .text_color(if selected { white() } else { label() })
+                                .child(e.name.clone()),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, _, window, cx| {
+                                if !this.selected.contains(&ix) {
+                                    this.select_single(ix);
+                                }
+                                window.focus(&this.focus);
+                                cx.notify();
+                            }),
+                        )
+                        .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                            if ev.click_count() >= 2 {
+                                this.open_index(ix, cx);
+                                return;
+                            }
+                            let m = ev.modifiers();
+                            this.handle_click(ix, m.platform, m.shift);
+                            window.focus(&this.focus);
+                            cx.notify();
+                        }))
+                        .into_any_element(),
+                );
+            }
+        }
+
+        let content = if is_list {
+            div()
+                .id("file-list")
+                .flex_1()
+                .overflow_y_scroll()
+                .child(div().v_flex().children(rows))
+                .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste))
+                .into_any_element()
+        } else {
+            div()
+                .id("icon-grid")
+                .flex_1()
+                .overflow_y_scroll()
+                .p_3()
+                .child(div().flex().flex_wrap().gap_2().children(tiles))
+                .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste))
+                .into_any_element()
+        };
 
         div()
             .track_focus(&self.focus)
@@ -867,6 +965,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
+            .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
                 match ev.keystroke.key.as_str() {
                     "down" => {
@@ -885,15 +984,58 @@ impl FinderView {
             .flex_1()
             .v_flex()
             .bg(list_bg())
-            .child(header)
-            .child(
+            .when(is_list, |el: Div| el.child(header))
+            .child(content)
+            .child(self.render_path_bar(cx))
+    }
+
+    fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut comps: Vec<(String, PathBuf)> = Vec::new();
+        let mut acc = PathBuf::new();
+        for c in self.cwd.components() {
+            acc.push(c.as_os_str());
+            let name = match c {
+                Component::RootDir => "Macintosh HD".to_string(),
+                Component::Normal(s) => s.to_string_lossy().into_owned(),
+                _ => continue,
+            };
+            comps.push((name, acc.clone()));
+        }
+        let n = comps.len();
+        let mut bar = div()
+            .h(px(24.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .px_3()
+            .gap_1()
+            .bg(toolbar_bg())
+            .border_t_1()
+            .border_color(sep())
+            .text_size(px(11.0))
+            .text_color(secondary());
+        for (i, (name, path)) in comps.into_iter().enumerate() {
+            bar = bar.child(
                 div()
-                    .id("file-list")
-                    .flex_1()
-                    .overflow_y_scroll()
-                    .child(div().v_flex().children(rows))
-                    .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste)),
-            )
+                    .id(SharedString::from(format!("crumb-{i}")))
+                    .px_1()
+                    .rounded(px(3.0))
+                    .hover(|h| h.bg(hsl(0x00000010)))
+                    .child(name)
+                    .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))),
+            );
+            if i + 1 < n {
+                bar = bar.child(icon("icons/chevron-right.svg", 9.0, tertiary()));
+            }
+        }
+        bar
+    }
+
+    fn quick_look(&mut self, _cx: &mut Context<Self>) {
+        let paths = self.selected_paths();
+        if !paths.is_empty() {
+            let _ = Command::new("qlmanage").arg("-p").args(&paths).spawn();
+        }
     }
 }
 

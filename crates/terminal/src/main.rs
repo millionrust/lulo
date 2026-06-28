@@ -59,7 +59,9 @@ impl EventListener for EventProxy {
 struct TerminalView {
     term: Arc<Mutex<Term<EventProxy>>>,
     writer: Box<dyn Write + Send>,
-    _master: Box<dyn MasterPty + Send>,
+    master: Box<dyn MasterPty + Send>,
+    cols: usize,
+    rows: usize,
     focus: gpui::FocusHandle,
 }
 
@@ -129,9 +131,35 @@ impl TerminalView {
         Self {
             term,
             writer,
-            _master: pair.master,
+            master: pair.master,
+            cols: COLS,
+            rows: ROWS,
             focus,
         }
+    }
+
+    /// Recompute the grid from the window size and propagate to the terminal + PTY.
+    fn resize_to(&mut self, window: &Window) {
+        let vp = window.viewport_size();
+        let w = f32::from(vp.width);
+        let h = f32::from(vp.height);
+        let cell_w = FONT_SIZE * 0.6;
+        let cols = (((w - 16.0) / cell_w).floor() as usize).max(20);
+        let rows = (((h - 34.0 - 16.0) / LINE_H).floor() as usize).max(5);
+        if cols == self.cols && rows == self.rows {
+            return;
+        }
+        self.cols = cols;
+        self.rows = rows;
+        if let Ok(mut t) = self.term.lock() {
+            t.resize(TermSize { cols, lines: rows });
+        }
+        let _ = self.master.resize(PtySize {
+            rows: rows as u16,
+            cols: cols as u16,
+            pixel_width: 0,
+            pixel_height: 0,
+        });
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent) {
@@ -178,15 +206,15 @@ impl TerminalView {
         let cursor_line = cursor.line.0;
         let cursor_col = cursor.column.0;
 
-        let mut rows: Vec<gpui::AnyElement> = Vec::with_capacity(ROWS);
-        for line in 0..ROWS as i32 {
+        let mut rows: Vec<gpui::AnyElement> = Vec::with_capacity(self.rows);
+        for line in 0..self.rows as i32 {
             let row = &grid[Line(line)];
             let mut spans: Vec<gpui::AnyElement> = Vec::new();
             let mut run = String::new();
             let mut run_fg = conv(Color::Named(NamedColor::Foreground));
             let mut run_bg = conv(Color::Named(NamedColor::Background));
 
-            for col in 0..COLS {
+            for col in 0..self.cols {
                 let cell = &row[Column(col)];
                 let mut fg = conv(cell.fg);
                 let mut bg = conv(cell.bg);
@@ -218,7 +246,8 @@ impl TerminalView {
 }
 
 impl Render for TerminalView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.resize_to(window);
         let rows = self.render_rows();
         div()
             .size_full()

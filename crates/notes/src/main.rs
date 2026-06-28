@@ -17,8 +17,8 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, prelude::FluentBuilder as _, px, AppContext as _, AnyElement, Context, Div,
     Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, KeyBinding,
-    MouseButton, ParentElement, Render, SharedString, StatefulInteractiveElement as _, Stateful,
-    Styled, Window,
+    KeyDownEvent, MouseButton, ParentElement, Render, SharedString,
+    StatefulInteractiveElement as _, Stateful, Styled, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
@@ -308,12 +308,11 @@ impl NotesView {
             return;
         };
         let input = cx.new(|cx| InputState::new(window, cx).default_value(name.clone()));
+        // Commit the typed name on Enter, or when focus leaves the field
+        // ("type name, click away"). Escape cancels via on_key_down before
+        // any blur fires, so a cancel never reaches this commit path.
         cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| match ev {
-            InputEvent::PressEnter { .. } => this.rename_folder_commit(cx),
-            InputEvent::Blur => {
-                this.renaming_folder = None;
-                cx.notify();
-            }
+            InputEvent::PressEnter { .. } | InputEvent::Blur => this.rename_folder_commit(cx),
             _ => {}
         })
         .detach();
@@ -348,6 +347,13 @@ impl NotesView {
             }
         }
         self.reload(preserve, cx);
+    }
+
+    /// Escape path: discard the rename and drop the edit field without renaming.
+    fn rename_folder_cancel(&mut self, cx: &mut Context<Self>) {
+        if self.renaming_folder.take().is_some() {
+            cx.notify();
+        }
     }
 
     fn delete_folder(&mut self, cx: &mut Context<Self>) {
@@ -524,6 +530,13 @@ impl NotesView {
                             .gap_2()
                             .px_2()
                             .py_1()
+                            // Escape cancels the rename (keeps the original name);
+                            // blur/Enter commit it.
+                            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                                if ev.keystroke.key == "escape" {
+                                    this.rename_folder_cancel(cx);
+                                }
+                            }))
                             .child(
                                 Icon::new(IconName::Folder)
                                     .text_color(mac::notes_accent())

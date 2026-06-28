@@ -275,11 +275,26 @@ impl EditorView {
     fn save_with(&mut self, then: Option<Pending>, window: &mut Window, cx: &mut Context<Self>) {
         let content = self.input.read(cx).value().to_string();
         if let Some(path) = self.path.clone() {
-            let _ = std::fs::write(&path, &content);
-            self.mark_clean(content);
-            cx.notify();
-            if let Some(pending) = then {
-                self.perform(pending, window, cx);
+            match std::fs::write(&path, &content) {
+                Ok(()) => {
+                    self.mark_clean(content);
+                    cx.notify();
+                    if let Some(pending) = then {
+                        self.perform(pending, window, cx);
+                    }
+                }
+                Err(err) => {
+                    // Write failed: keep dirty state and do NOT run the pending
+                    // (destructive) action, so unsaved changes are preserved.
+                    let answers = [PromptButton::ok("OK")];
+                    let _ = window.prompt(
+                        PromptLevel::Critical,
+                        "Failed to save the file.",
+                        Some(&format!("{}: {}", path.display(), err)),
+                        &answers,
+                        cx,
+                    );
+                }
             }
             return;
         }
@@ -289,13 +304,27 @@ impl EditorView {
             // Save-As was cancelled or failed: do NOT run the pending action,
             // so unsaved changes are preserved instead of silently discarded.
             let Ok(Ok(Some(path))) = rx.await else { return };
-            let _ = std::fs::write(&path, &content);
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.path = Some(path);
-                this.mark_clean(content);
-                cx.notify();
-                if let Some(pending) = then {
-                    this.perform(pending, window, cx);
+            let write_result = std::fs::write(&path, &content);
+            let _ = this.update_in(cx, |this, window, cx| match write_result {
+                Ok(()) => {
+                    this.path = Some(path);
+                    this.mark_clean(content);
+                    cx.notify();
+                    if let Some(pending) = then {
+                        this.perform(pending, window, cx);
+                    }
+                }
+                Err(err) => {
+                    // Write failed: keep dirty state and do NOT run the pending
+                    // (destructive) action, so unsaved changes are preserved.
+                    let answers = [PromptButton::ok("OK")];
+                    let _ = window.prompt(
+                        PromptLevel::Critical,
+                        "Failed to save the file.",
+                        Some(&format!("{}: {}", path.display(), err)),
+                        &answers,
+                        cx,
+                    );
                 }
             });
         })

@@ -42,7 +42,7 @@ const BG: u32 = 0x1e1e1e;
 /// macOS-style text selection fill (translucent blue over the grid).
 const SELECTION: u32 = 0x2f5d8c;
 
-gpui::actions!(terminal, [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset]);
+gpui::actions!(terminal, [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll]);
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
 
@@ -194,6 +194,7 @@ impl TerminalView {
             KeyBinding::new("cmd-+", ZoomIn, Some("Terminal")),
             KeyBinding::new("cmd--", ZoomOut, Some("Terminal")),
             KeyBinding::new("cmd-0", ZoomReset, Some("Terminal")),
+            KeyBinding::new("cmd-a", SelectAll, Some("Terminal")),
         ]);
 
         let focus = cx.focus_handle();
@@ -226,6 +227,21 @@ impl TerminalView {
             selecting: false,
             scroll_accum: 0.0,
         }
+    }
+
+    /// Select the entire buffer (scrollback history + visible screen).
+    fn select_all(&mut self, cx: &mut Context<Self>) {
+        let hist = self
+            .term
+            .lock()
+            .ok()
+            .map(|t| t.grid().history_size() as i32)
+            .unwrap_or(0);
+        self.selection = Some(Selection {
+            anchor: (-hist, 0),
+            head: (self.rows as i32 - 1, self.cols.saturating_sub(1)),
+        });
+        cx.notify();
     }
 
     /// Set the font size (clamped) and re-fit the grid to the window next frame.
@@ -570,6 +586,7 @@ impl Render for TerminalView {
                         this.set_font(s, cx);
                     }))
                     .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_font(FONT_SIZE, cx)))
+                    .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,

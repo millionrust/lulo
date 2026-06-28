@@ -22,7 +22,7 @@ use gpui::{
 use gpui_component::input::{Input, InputState};
 use gpui_component::StyledExt as _;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
-use vte::ansi::{Color, NamedColor, Processor};
+use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
 
 const COLS: usize = 100;
 const ROWS: usize = 28;
@@ -42,7 +42,7 @@ const BG: u32 = 0x1e1e1e;
 /// macOS-style text selection fill (translucent blue over the grid).
 const SELECTION: u32 = 0x2f5d8c;
 
-gpui::actions!(terminal, [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll]);
+gpui::actions!(terminal, [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear]);
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
 
@@ -195,6 +195,7 @@ impl TerminalView {
             KeyBinding::new("cmd--", ZoomOut, Some("Terminal")),
             KeyBinding::new("cmd-0", ZoomReset, Some("Terminal")),
             KeyBinding::new("cmd-a", SelectAll, Some("Terminal")),
+            KeyBinding::new("cmd-k", Clear, Some("Terminal")),
         ]);
 
         let focus = cx.focus_handle();
@@ -227,6 +228,17 @@ impl TerminalView {
             selecting: false,
             scroll_accum: 0.0,
         }
+    }
+
+    /// Clear the screen and scrollback (⌘K).
+    fn clear(&mut self, cx: &mut Context<Self>) {
+        if let Ok(mut t) = self.term.lock() {
+            t.clear_screen(ClearMode::All);
+            t.grid_mut().clear_history();
+            t.scroll_display(Scroll::Bottom);
+        }
+        self.selection = None;
+        cx.notify();
     }
 
     /// Select the entire buffer (scrollback history + visible screen).
@@ -587,6 +599,7 @@ impl Render for TerminalView {
                     }))
                     .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_font(FONT_SIZE, cx)))
                     .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+                    .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,

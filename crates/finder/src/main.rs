@@ -158,9 +158,17 @@ enum SortKey {
     Kind,
 }
 
+/// One browser tab — its own directory and navigation history.
+#[derive(Clone)]
+struct Tab {
+    cwd: PathBuf,
+    back: Vec<PathBuf>,
+    fwd: Vec<PathBuf>,
+}
+
 struct FinderView {
     cwd: PathBuf,
-    tabs: Vec<PathBuf>,
+    tabs: Vec<Tab>,
     active: usize,
     home: PathBuf,
     thumbs: std::collections::HashMap<PathBuf, PathBuf>,
@@ -295,7 +303,11 @@ impl FinderView {
 
         let mut view = Self {
             cwd: home.clone(),
-            tabs: vec![home.clone()],
+            tabs: vec![Tab {
+                cwd: home.clone(),
+                back: Vec::new(),
+                fwd: Vec::new(),
+            }],
             active: 0,
             home,
             thumbs: std::collections::HashMap::new(),
@@ -343,7 +355,7 @@ impl FinderView {
 
     fn reload(&mut self, cx: &mut Context<Self>) {
         if let Some(t) = self.tabs.get_mut(self.active) {
-            *t = self.cwd.clone();
+            t.cwd = self.cwd.clone();
         }
         // (Re)watch the current directory.
         if let Some(w) = self.watcher.as_mut() {
@@ -412,12 +424,33 @@ impl FinderView {
         .detach();
     }
 
+    /// Persist the active tab's live navigation state into the tab list.
+    fn save_tab(&mut self) {
+        if let Some(t) = self.tabs.get_mut(self.active) {
+            t.cwd = self.cwd.clone();
+            t.back = self.back.clone();
+            t.fwd = self.fwd.clone();
+        }
+    }
+
+    /// Load tab `i`'s state into the live fields.
+    fn load_tab(&mut self, i: usize) {
+        if let Some(t) = self.tabs.get(i) {
+            self.cwd = t.cwd.clone();
+            self.back = t.back.clone();
+            self.fwd = t.fwd.clone();
+        }
+    }
+
     fn new_tab(&mut self, cx: &mut Context<Self>) {
-        self.tabs.push(self.home.clone());
+        self.save_tab();
+        self.tabs.push(Tab {
+            cwd: self.home.clone(),
+            back: Vec::new(),
+            fwd: Vec::new(),
+        });
         self.active = self.tabs.len() - 1;
-        self.cwd = self.home.clone();
-        self.back.clear();
-        self.fwd.clear();
+        self.load_tab(self.active);
         self.reload(cx);
     }
 
@@ -425,26 +458,31 @@ impl FinderView {
         if self.tabs.len() <= 1 || i >= self.tabs.len() {
             return;
         }
+        let was_active = i == self.active;
+        if was_active {
+            self.save_tab();
+        }
         self.tabs.remove(i);
         if self.active >= self.tabs.len() {
             self.active = self.tabs.len() - 1;
         } else if self.active > i {
             self.active -= 1;
         }
-        self.cwd = self.tabs[self.active].clone();
-        self.back.clear();
-        self.fwd.clear();
-        self.reload(cx);
+        if was_active {
+            self.load_tab(self.active);
+            self.reload(cx);
+        } else {
+            cx.notify();
+        }
     }
 
     fn select_tab(&mut self, i: usize, cx: &mut Context<Self>) {
-        if i >= self.tabs.len() {
+        if i >= self.tabs.len() || i == self.active {
             return;
         }
+        self.save_tab();
         self.active = i;
-        self.cwd = self.tabs[i].clone();
-        self.back.clear();
-        self.fwd.clear();
+        self.load_tab(i);
         self.reload(cx);
     }
 
@@ -1238,9 +1276,10 @@ impl FinderView {
             .bg(hsl(0xeeeeef))
             .border_b_1()
             .border_color(sep());
-        for (i, path) in self.tabs.iter().enumerate() {
+        for (i, tab) in self.tabs.iter().enumerate() {
             let active = i == self.active;
-            let name = path
+            let name = tab
+                .cwd
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Macintosh HD".into());

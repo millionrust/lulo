@@ -621,7 +621,15 @@ impl FinderView {
     }
 
     fn select_all(&mut self, cx: &mut Context<Self>) {
-        self.selected = (0..self.entries.len()).collect();
+        // Only the entries currently visible (after the search filter).
+        let q = self.query.read(cx).value().to_lowercase();
+        self.selected = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| q.is_empty() || e.name.to_lowercase().contains(&q))
+            .map(|(i, _)| i)
+            .collect();
         cx.notify();
     }
 
@@ -673,7 +681,10 @@ impl FinderView {
             let new_name = new_name.trim();
             if !new_name.is_empty() && new_name != entry.name.as_ref() {
                 let dst = self.cwd.join(new_name);
-                let _ = std::fs::rename(&entry.path, &dst);
+                // Don't clobber an existing file/folder at the target name.
+                if !dst.exists() {
+                    let _ = std::fs::rename(&entry.path, &dst);
+                }
             }
         }
         self.reload(cx);

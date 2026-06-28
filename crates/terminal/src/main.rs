@@ -45,7 +45,7 @@ const SELECTION: u32 = 0x2f5d8c;
 
 gpui::actions!(
     terminal,
-    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab]
+    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab, PrevTab]
 );
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
@@ -205,6 +205,7 @@ impl TerminalView {
             KeyBinding::new("cmd-t", NewTab, Some("Terminal")),
             KeyBinding::new("cmd-w", CloseTab, Some("Terminal")),
             KeyBinding::new("cmd-shift-]", NextTab, Some("Terminal")),
+            KeyBinding::new("cmd-shift-[", PrevTab, Some("Terminal")),
         ]);
 
         let focus = cx.focus_handle();
@@ -273,6 +274,13 @@ impl TerminalView {
         if self.tabs.len() > 1 {
             let next = (self.active + 1) % self.tabs.len();
             self.select_tab(next, cx);
+        }
+    }
+
+    fn prev_tab(&mut self, cx: &mut Context<Self>) {
+        if self.tabs.len() > 1 {
+            let prev = (self.active + self.tabs.len() - 1) % self.tabs.len();
+            self.select_tab(prev, cx);
         }
     }
 
@@ -712,6 +720,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
                     .on_action(cx.listener(|this, _: &CloseTab, _, cx| this.close_tab(cx)))
                     .on_action(cx.listener(|this, _: &NextTab, _, cx| this.next_tab(cx)))
+                    .on_action(cx.listener(|this, _: &PrevTab, _, cx| this.prev_tab(cx)))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,

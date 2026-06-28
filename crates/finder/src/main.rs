@@ -290,6 +290,13 @@ impl FinderView {
 
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         cx.observe(&query, |_, _, cx| cx.notify()).detach();
+        // Pressing Return runs a recursive Spotlight search of the whole folder tree.
+        cx.subscribe(&query, |this, _input, ev: &InputEvent, cx| {
+            if let InputEvent::PressEnter { .. } = ev {
+                this.recursive_search(cx);
+            }
+        })
+        .detach();
 
         let dirty = Arc::new(AtomicBool::new(false));
         let d2 = dirty.clone();
@@ -1539,6 +1546,48 @@ impl FinderView {
     }
 
     /// Clicking a sidebar tag runs a Spotlight query for files with that tag.
+    /// Recursive Spotlight search of the current folder tree (Return in the search box).
+    fn recursive_search(&mut self, cx: &mut Context<Self>) {
+        let q = self.query.read(cx).value().to_string();
+        if q.trim().is_empty() {
+            return;
+        }
+        let cwd = self.cwd.clone();
+        let title: SharedString = format!("Search: {q}").into();
+        let key = self.sort_key;
+        let asc = self.sort_asc;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let entries = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut v = Command::new("mdfind")
+                        .arg("-onlyin")
+                        .arg(&cwd)
+                        .arg(&q)
+                        .output()
+                        .ok()
+                        .map(|o| {
+                            String::from_utf8_lossy(&o.stdout)
+                                .lines()
+                                .filter_map(|l| entry_for(Path::new(l)))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    sort_entries(&mut v, key, asc);
+                    v
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.entries = entries;
+                this.result_title = Some(title);
+                this.selected.clear();
+                this.anchor = None;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn tag_click(&mut self, name: SharedString, cx: &mut Context<Self>) {
         let query = format!("kMDItemUserTags == '{name}'c");
         let title: SharedString = format!("Tag: {name}").into();

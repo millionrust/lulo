@@ -262,7 +262,9 @@ impl AppDrawer {
         }
     }
 
-    fn tile(&self, app: &App, idx: usize, selected: bool, cx: &Context<Self>) -> impl IntoElement {
+    /// `pos` is the position in the currently-visible list (what `selected`
+    /// tracks); `path` is used for the launch path lookup.
+    fn tile(&self, app: &App, pos: usize, selected: bool, cx: &Context<Self>) -> impl IntoElement {
         let path = app.path.clone();
         div()
             .id(SharedString::from(format!("app-{}", app.path.display())))
@@ -294,12 +296,14 @@ impl AppDrawer {
                     .child(app.name.clone()),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.selected = idx;
+                this.selected = pos;
                 cx.open_with_system(&path);
             }))
     }
 
-    fn row(&self, app: &App, idx: usize, selected: bool, cx: &Context<Self>) -> impl IntoElement {
+    /// `pos` is the position in the currently-visible list (what `selected`
+    /// tracks); `path` is used for the launch path lookup.
+    fn row(&self, app: &App, pos: usize, selected: bool, cx: &Context<Self>) -> impl IntoElement {
         let path = app.path.clone();
         div()
             .id(SharedString::from(format!("row-{}", app.path.display())))
@@ -332,7 +336,7 @@ impl AppDrawer {
                     .child(app.category.label()),
             )
             .on_click(cx.listener(move |this, _, _, cx| {
-                this.selected = idx;
+                this.selected = pos;
                 cx.open_with_system(&path);
             }))
     }
@@ -442,7 +446,7 @@ impl Render for AppDrawer {
             let tiles = vis
                 .iter()
                 .enumerate()
-                .map(|(pos, &idx)| self.tile(&self.apps[idx], idx, pos == sel, cx))
+                .map(|(pos, &idx)| self.tile(&self.apps[idx], pos, pos == sel, cx))
                 .collect::<Vec<_>>();
             div()
                 .flex()
@@ -455,7 +459,7 @@ impl Render for AppDrawer {
             let rows = vis
                 .iter()
                 .enumerate()
-                .map(|(pos, &idx)| self.row(&self.apps[idx], idx, pos == sel, cx))
+                .map(|(pos, &idx)| self.row(&self.apps[idx], pos, pos == sel, cx))
                 .collect::<Vec<_>>();
             div()
                 .v_flex()

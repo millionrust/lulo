@@ -52,6 +52,10 @@ impl Tab {
     }
 
     /// The column the table sorts by (descending) when this tab is activated.
+    ///
+    /// Network has no per-process data source (sysinfo only exposes system-wide
+    /// interface counters), so it is summary-only and hides the table — the
+    /// returned column is unused there but kept sensible for safety.
     fn default_sort_col(self) -> usize {
         match self {
             Tab::Cpu => 2,
@@ -60,6 +64,12 @@ impl Tab {
             Tab::Disk => 5,
             Tab::Network => 2,
         }
+    }
+
+    /// Whether this tab shows the per-process table. Network is summary-only
+    /// because there is no reliable per-process network data on macOS/Linux here.
+    fn has_process_table(self) -> bool {
+        !matches!(self, Tab::Network)
     }
 }
 
@@ -821,14 +831,43 @@ impl Render for MonitorView {
             .child(rmac_ui::title_bar("Activity Monitor"))
             .child(self.render_toolbar(cx))
             .child(self.render_summary(cx))
-            .child(
-                // The live table fills the rest
-                div()
-                    .flex_1()
-                    .px_4()
-                    .pb_4()
-                    .child(Table::new(&self.table).stripe(true).bordered(true)),
-            )
+            .when(self.tab.has_process_table(), |this| {
+                this.child(
+                    // The live table fills the rest
+                    div()
+                        .flex_1()
+                        .px_4()
+                        .pb_4()
+                        .child(Table::new(&self.table).stripe(true).bordered(true)),
+                )
+            })
+            .when(!self.tab.has_process_table(), |this| {
+                this.child(
+                    div()
+                        .flex_1()
+                        .v_flex()
+                        .items_center()
+                        .justify_center()
+                        .gap_2()
+                        .px_4()
+                        .pb_4()
+                        .child(
+                            div()
+                                .text_size(px(13.0))
+                                .font_weight(mac::SEMIBOLD)
+                                .text_color(mac::text_secondary())
+                                .child("System-wide network activity"),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(mac::text_tertiary())
+                                .child(
+                                    "Per-process network usage isn't available from this data source — only the interface totals shown above.",
+                                ),
+                        ),
+                )
+            })
             .children(self.render_confirm(cx))
     }
 }

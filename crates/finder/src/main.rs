@@ -6,7 +6,9 @@
 //! hidden-file toggle, and live directory watching.
 
 use std::borrow::Cow;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
+use std::hash::{Hash, Hasher};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -16,7 +18,7 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    actions, div, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource, ClickEvent,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource, ClickEvent,
     Context, Div, FocusHandle, Focusable as _, Hsla, InteractiveElement as _, IntoElement,
     KeyBinding, KeyDownEvent, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
@@ -32,7 +34,7 @@ actions!(
     finder,
     [
         NewFolder, RenameItem, Duplicate, MoveToTrash, DeleteItem, CopyItems, CutItems, PasteItems,
-        SelectAll, GoUp, ToggleHidden, OpenItems, QuickLook, GetInfo,
+        SelectAll, GoUp, ToggleHidden, OpenItems, QuickLook, GetInfo, NewTab, CloseTab,
     ]
 );
 
@@ -137,6 +139,10 @@ enum SortKey {
 
 struct FinderView {
     cwd: PathBuf,
+    tabs: Vec<PathBuf>,
+    active: usize,
+    home: PathBuf,
+    thumbs: std::collections::HashMap<PathBuf, PathBuf>,
     entries: Vec<Entry>,
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
@@ -247,6 +253,8 @@ impl FinderView {
             KeyBinding::new("shift-cmd-.", ToggleHidden, Some("Finder")),
             KeyBinding::new("space", QuickLook, Some("Finder")),
             KeyBinding::new("cmd-i", GetInfo, Some("Finder")),
+            KeyBinding::new("cmd-t", NewTab, Some("Finder")),
+            KeyBinding::new("cmd-w", CloseTab, Some("Finder")),
         ]);
 
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -265,7 +273,11 @@ impl FinderView {
         window.focus(&focus);
 
         let mut view = Self {
-            cwd: home,
+            cwd: home.clone(),
+            tabs: vec![home.clone()],
+            active: 0,
+            home,
+            thumbs: std::collections::HashMap::new(),
             entries: Vec::new(),
             selected: BTreeSet::new(),
             anchor: None,
@@ -309,6 +321,9 @@ impl FinderView {
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
+        if let Some(t) = self.tabs.get_mut(self.active) {
+            *t = self.cwd.clone();
+        }
         // (Re)watch the current directory.
         if let Some(w) = self.watcher.as_mut() {
             if let Some(old) = self.watched.take() {
@@ -338,9 +353,78 @@ impl FinderView {
                 this.anchor = None;
                 this.renaming = None;
                 cx.notify();
+                this.gen_thumbs(cx);
             });
         })
         .detach();
+    }
+
+    /// Generate image thumbnails (sips → cached PNG) off the main thread.
+    fn gen_thumbs(&mut self, cx: &mut Context<Self>) {
+        let targets: Vec<PathBuf> = self
+            .entries
+            .iter()
+            .filter(|e| !e.is_dir && is_image(&e.path) && !self.thumbs.contains_key(&e.path))
+            .map(|e| e.path.clone())
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let results = cx
+                .background_executor()
+                .spawn(async move {
+                    let cache = thumb_cache_dir();
+                    targets
+                        .into_iter()
+                        .filter_map(|p| make_thumb(&p, &cache).map(|t| (p, t)))
+                        .collect::<Vec<_>>()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                for (p, t) in results {
+                    this.thumbs.insert(p, t);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn new_tab(&mut self, cx: &mut Context<Self>) {
+        self.tabs.push(self.home.clone());
+        self.active = self.tabs.len() - 1;
+        self.cwd = self.home.clone();
+        self.back.clear();
+        self.fwd.clear();
+        self.reload(cx);
+    }
+
+    fn close_tab(&mut self, i: usize, cx: &mut Context<Self>) {
+        if self.tabs.len() <= 1 || i >= self.tabs.len() {
+            return;
+        }
+        self.tabs.remove(i);
+        if self.active >= self.tabs.len() {
+            self.active = self.tabs.len() - 1;
+        } else if self.active > i {
+            self.active -= 1;
+        }
+        self.cwd = self.tabs[self.active].clone();
+        self.back.clear();
+        self.fwd.clear();
+        self.reload(cx);
+    }
+
+    fn select_tab(&mut self, i: usize, cx: &mut Context<Self>) {
+        if i >= self.tabs.len() {
+            return;
+        }
+        self.active = i;
+        self.cwd = self.tabs[i].clone();
+        self.back.clear();
+        self.fwd.clear();
+        self.reload(cx);
     }
 
     fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
@@ -966,6 +1050,14 @@ impl FinderView {
                 let selected = self.selected.contains(&ix);
                 let glyph = if e.is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
                 let icon_color = if e.is_dir { accent() } else { secondary() };
+                let visual: gpui::AnyElement = match self.thumbs.get(&e.path) {
+                    Some(t) => img(t.clone())
+                        .max_w(px(56.0))
+                        .max_h(px(50.0))
+                        .rounded(px(3.0))
+                        .into_any_element(),
+                    None => icon(glyph, 52.0, icon_color).into_any_element(),
+                };
                 tiles.push(
                     div()
                         .id(("tile", ix))
@@ -976,7 +1068,7 @@ impl FinderView {
                         .gap_1()
                         .px_1()
                         .py_2()
-                        .child(icon(glyph, 52.0, icon_color))
+                        .child(div().h(px(52.0)).flex().items_center().child(visual))
                         .child(
                             div()
                                 .max_w(px(96.0))
@@ -1051,6 +1143,11 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, _, cx| this.get_info(cx)))
+            .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
+            .on_action(cx.listener(|this, _: &CloseTab, _, cx| {
+                let a = this.active;
+                this.close_tab(a, cx);
+            }))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
                 match ev.keystroke.key.as_str() {
                     "escape" => {
@@ -1077,6 +1174,76 @@ impl FinderView {
             .when(is_list, |el: Div| el.child(header))
             .child(content)
             .child(self.render_path_bar(cx))
+    }
+
+    fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut bar = div()
+            .h(px(30.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .px_2()
+            .gap_1()
+            .bg(hsl(0xeeeeef))
+            .border_b_1()
+            .border_color(sep());
+        for (i, path) in self.tabs.iter().enumerate() {
+            let active = i == self.active;
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Macintosh HD".into());
+            bar = bar.child(
+                div()
+                    .id(SharedString::from(format!("tab-{i}")))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .h(px(22.0))
+                    .px_2()
+                    .rounded(px(5.0))
+                    .when(active, |el: Stateful<Div>| el.bg(white()))
+                    .when(!active, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x00000008))))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("tabname-{i}")))
+                            .text_size(px(12.0))
+                            .text_color(label())
+                            .child(name)
+                            .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("tabclose-{i}")))
+                            .w(px(14.0))
+                            .h(px(14.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(3.0))
+                            .text_size(px(12.0))
+                            .text_color(secondary())
+                            .hover(|h| h.bg(hsl(0x00000014)))
+                            .child("×")
+                            .on_click(cx.listener(move |this, _, _, cx| this.close_tab(i, cx))),
+                    ),
+            );
+        }
+        bar.child(div().flex_1()).child(
+            div()
+                .id("newtab")
+                .w(px(22.0))
+                .h(px(22.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(5.0))
+                .text_size(px(16.0))
+                .text_color(secondary())
+                .hover(|h| h.bg(hsl(0x00000008)))
+                .child("+")
+                .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
+        )
     }
 
     fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1223,6 +1390,7 @@ impl FinderView {
 impl Render for FinderView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let info = self.info;
+        let multi = self.tabs.len() > 1;
         div()
             .size_full()
             .relative()
@@ -1230,6 +1398,7 @@ impl Render for FinderView {
             .bg(list_bg())
             .text_color(label())
             .child(self.render_toolbar(cx))
+            .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
                 div()
                     .flex_1()
@@ -1316,6 +1485,40 @@ fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
         };
         if asc { o } else { o.reverse() }
     });
+}
+
+fn is_image(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "bmp" | "tiff" | "tif"
+    )
+}
+
+fn thumb_cache_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let dir = PathBuf::from(home).join("Library/Caches/rmac-finder-thumbs");
+    std::fs::create_dir_all(&dir).ok();
+    dir
+}
+
+fn make_thumb(src: &Path, cache: &Path) -> Option<PathBuf> {
+    let mut h = DefaultHasher::new();
+    src.hash(&mut h);
+    let out = cache.join(format!("{:x}.png", h.finish()));
+    if out.exists() {
+        return Some(out);
+    }
+    let ok = Command::new("sips")
+        .args(["-s", "format", "png", "-Z", "96", src.to_str()?, "--out", out.to_str()?])
+        .output()
+        .ok()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if ok && out.exists() {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 fn file_info(e: &Entry) -> Vec<(&'static str, String)> {

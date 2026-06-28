@@ -113,6 +113,13 @@ impl AppDrawer {
         // Typing in the search field re-anchors the cursor to the first match.
         cx.observe(&query, |this: &mut AppDrawer, _, cx| {
             this.selected = 0;
+            // If the active category filter no longer has any matches under the
+            // new search, drop back to "All" so we never show an empty view.
+            if let Some(c) = this.filter {
+                if !this.present_categories(cx).contains(&c) {
+                    this.filter = None;
+                }
+            }
             cx.notify();
         })
         .detach();

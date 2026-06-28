@@ -46,6 +46,27 @@ enum ViewMode {
     Gallery,
 }
 
+/// Drag payload: the file paths being dragged.
+struct DraggedPaths(Vec<PathBuf>);
+
+/// The little pill shown under the cursor while dragging.
+struct DragPreview {
+    count: usize,
+}
+impl Render for DragPreview {
+    fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let n = self.count;
+        div()
+            .px_2()
+            .py_0p5()
+            .rounded(px(6.0))
+            .bg(hsl(0x0a84ff))
+            .text_color(gpui::white())
+            .text_size(px(12.0))
+            .child(if n == 1 { "1 item".to_string() } else { format!("{n} items") })
+    }
+}
+
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
 #[include = "icons/**/*.svg"]
@@ -961,6 +982,15 @@ impl FinderView {
                 secondary()
             };
 
+            let drag_paths: Vec<PathBuf> = if selected {
+                self.selected_paths()
+            } else {
+                vec![e.path.clone()]
+            };
+            let drag_count = drag_paths.len();
+            let drop_dir = e.path.clone();
+            let row_is_dir = e.is_dir;
+
             let name_cell: gpui::AnyElement = match &self.renaming {
                 Some((ri, input)) if *ri == ix => div()
                     .pl(px(6.0))
@@ -1032,6 +1062,16 @@ impl FinderView {
                         window.focus(&this.focus);
                         cx.notify();
                     }))
+                    .on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                        cx.new(|_| DragPreview { count: drag_count })
+                    })
+                    .when(row_is_dir, |el: Stateful<Div>| {
+                        let dd = drop_dir.clone();
+                        el.drag_over::<DraggedPaths>(|s, _, _, _| s.bg(hsl(0xcfe5ff)))
+                            .on_drop(cx.listener(move |this, p: &DraggedPaths, _, cx| {
+                                this.drop_into(dd.clone(), &p.0, cx)
+                            }))
+                    })
                     .into_any_element(),
             );
         }
@@ -1293,6 +1333,24 @@ impl FinderView {
         if !paths.is_empty() {
             let _ = Command::new("qlmanage").arg("-p").args(&paths).spawn();
         }
+    }
+
+    fn drop_into(&mut self, dir: PathBuf, paths: &[PathBuf], cx: &mut Context<Self>) {
+        for src in paths {
+            if src == &dir || src.parent() == Some(dir.as_path()) {
+                continue;
+            }
+            let Some(name) = src.file_name() else { continue };
+            let dst = unique_path(dir.join(name));
+            if std::fs::rename(src, &dst).is_err() && copy_recursive(src, &dst).is_ok() {
+                if src.is_dir() {
+                    let _ = std::fs::remove_dir_all(src);
+                } else {
+                    let _ = std::fs::remove_file(src);
+                }
+            }
+        }
+        self.reload(cx);
     }
 
     fn get_info(&mut self, cx: &mut Context<Self>) {

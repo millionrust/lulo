@@ -4695,6 +4695,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-finder"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gpui",
+ "gpui-component",
+ "rmac-ui",
+]
+
+[[package]]
 name = "rmac-notes"
 version = "0.1.0"
 dependencies = [

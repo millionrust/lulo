@@ -16,7 +16,7 @@ use gpui_component::{
     button::{Button, ButtonGroup, ButtonVariants as _},
     input::{Input, InputState},
     menu::PopupMenu,
-    table::{Column, ColumnSort, Table, TableDelegate, TableState},
+    table::{Column, ColumnSort, Table, TableDelegate, TableEvent, TableState},
     Disableable as _, Selectable as _, Sizable as _, StyledExt as _,
 };
 use rmac_ui::mac;
@@ -433,6 +433,22 @@ impl MonitorView {
         // Re-filter live as the user types.
         cx.observe(&search, |this, _, cx| {
             this.apply_filter(cx);
+        })
+        .detach();
+
+        // Keyboard navigation moves the highlighted row via `set_selected_row`,
+        // which emits `SelectRow` but never touches `selected_pid`. Mirror the
+        // click-selection path here so keyboard selection is the source of truth
+        // for the target PID — otherwise a 2s background refresh could re-point
+        // the highlighted row at a different process before a kill is requested.
+        cx.subscribe(&table, |_this, table, event: &TableEvent, cx| {
+            if let TableEvent::SelectRow(row_ix) = event {
+                let row_ix = *row_ix;
+                table.update(cx, |state, _| {
+                    let pid = state.delegate().rows.get(row_ix).map(|r| r.pid);
+                    state.delegate_mut().selected_pid = pid;
+                });
+            }
         })
         .detach();
 

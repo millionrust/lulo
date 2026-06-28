@@ -76,6 +76,8 @@ struct PendingKill {
 struct ProcRow {
     pid: u32,
     name: SharedString,
+    /// Lower-cased command line / executable path, used for search matching only.
+    cmd_search: String,
     cpu: f32,
     mem: u64,
     /// Bytes read+written since the last refresh (a per-tick I/O proxy).
@@ -140,9 +142,21 @@ impl ProcessTableDelegate {
             .values()
             .map(|p| {
                 let du = p.disk_usage();
+                // Build a searchable haystack from the exe path + full command line
+                // so search can match on path/command, not just the process name.
+                let mut cmd_search = String::new();
+                if let Some(exe) = p.exe() {
+                    cmd_search.push_str(&exe.to_string_lossy());
+                }
+                for arg in p.cmd() {
+                    cmd_search.push(' ');
+                    cmd_search.push_str(&arg.to_string_lossy());
+                }
+                cmd_search.make_ascii_lowercase();
                 ProcRow {
                     pid: p.pid().as_u32(),
                     name: p.name().to_string_lossy().into_owned().into(),
+                    cmd_search,
                     cpu: p.cpu_usage(),
                     mem: p.memory(),
                     disk: du.read_bytes + du.written_bytes,
@@ -162,7 +176,11 @@ impl ProcessTableDelegate {
         } else {
             self.all_rows
                 .iter()
-                .filter(|r| r.name.to_lowercase().contains(&needle))
+                .filter(|r| {
+                    r.name.to_lowercase().contains(&needle)
+                        || r.pid.to_string().contains(&needle)
+                        || r.cmd_search.contains(&needle)
+                })
                 .cloned()
                 .collect()
         };
@@ -350,7 +368,7 @@ impl MonitorView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let table = cx.new(|cx| TableState::new(ProcessTableDelegate::new(), window, cx));
         let search =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search process name"));
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search name, PID or path"));
 
         // Re-filter live as the user types.
         cx.observe(&search, |this, _, cx| {

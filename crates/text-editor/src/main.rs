@@ -229,22 +229,37 @@ impl EditorView {
     }
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.save_with(None, window, cx);
+    }
+
+    /// Save the buffer; if `then` is set, run that pending action only **after**
+    /// the save has actually succeeded (important for the async Save-As path so
+    /// the destructive action never runs before the file is written).
+    fn save_with(&mut self, then: Option<Pending>, window: &mut Window, cx: &mut Context<Self>) {
         let content = self.input.read(cx).value().to_string();
         if let Some(path) = self.path.clone() {
             let _ = std::fs::write(&path, &content);
             self.mark_clean(content);
             cx.notify();
+            if let Some(pending) = then {
+                self.perform(pending, window, cx);
+            }
             return;
         }
         let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let rx = cx.prompt_for_new_path(&dir, Some("Untitled.txt"));
         cx.spawn_in(window, async move |this, cx| {
+            // Save-As was cancelled or failed: do NOT run the pending action,
+            // so unsaved changes are preserved instead of silently discarded.
             let Ok(Ok(Some(path))) = rx.await else { return };
             let _ = std::fs::write(&path, &content);
-            let _ = this.update_in(cx, |this, _window, cx| {
+            let _ = this.update_in(cx, |this, window, cx| {
                 this.path = Some(path);
                 this.mark_clean(content);
                 cx.notify();
+                if let Some(pending) = then {
+                    this.perform(pending, window, cx);
+                }
             });
         })
         .detach();
@@ -271,10 +286,7 @@ impl EditorView {
         cx.spawn_in(window, async move |this, cx| {
             let Ok(choice) = rx.await else { return };
             let _ = this.update_in(cx, |this, window, cx| match choice {
-                0 => {
-                    this.save(window, cx);
-                    this.perform(pending, window, cx);
-                }
+                0 => this.save_with(Some(pending), window, cx),
                 1 => this.perform(pending, window, cx),
                 _ => {}
             });
@@ -385,8 +397,7 @@ impl EditorView {
         if off + needle.len() <= hay.len() && &hay[off..off + needle.len()] == needle.as_str() {
             hay.replace_range(off..off + needle.len(), &repl);
             self.input.update(cx, |s, cx| s.set_value(hay, window, cx));
-            self.dirty = true;
-            self.recompute_matches(cx);
+            self.on_buffer_changed(cx);
             self.scroll_to_current(window, cx);
             cx.notify();
         }
@@ -404,9 +415,8 @@ impl EditorView {
         }
         let newv = hay.replace(&needle, &repl);
         self.input.update(cx, |s, cx| s.set_value(newv, window, cx));
-        self.dirty = true;
         self.current = 0;
-        self.recompute_matches(cx);
+        self.on_buffer_changed(cx);
         cx.notify();
     }
 

@@ -17,7 +17,7 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, prelude::FluentBuilder as _, px, AppContext as _, AnyElement, Context, Div,
     Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, KeyBinding,
-    KeyDownEvent, MouseButton, ParentElement, Render, SharedString,
+    KeyDownEvent, MouseButton, ParentElement, PromptButton, PromptLevel, Render, SharedString,
     StatefulInteractiveElement as _, Stateful, Styled, Window,
 };
 use gpui_component::{
@@ -356,12 +356,38 @@ impl NotesView {
         }
     }
 
-    fn delete_folder(&mut self, cx: &mut Context<Self>) {
+    fn delete_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let FolderSel::Folder(name) = self.folder_sel.clone() else {
             return;
         };
-        let _ = std::fs::remove_dir_all(self.dir.join(&name));
-        self.folder_sel = FolderSel::All;
+        // Persist any pending edits in the open note before touching the disk —
+        // the note may live inside the folder we're about to remove.
+        self.save_current(cx);
+        let answers = [PromptButton::ok("Delete"), PromptButton::cancel("Cancel")];
+        let rx = window.prompt(
+            PromptLevel::Warning,
+            &format!("Delete the folder \u{201c}{name}\u{201d}?"),
+            Some("All notes in this folder will be permanently deleted. This cannot be undone."),
+            &answers,
+            cx,
+        );
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let Ok(choice) = rx.await else { return };
+            if choice != 0 {
+                return;
+            }
+            let _ = this.update(cx, |this: &mut NotesView, cx| {
+                this.delete_folder_confirmed(&name, cx)
+            });
+        })
+        .detach();
+    }
+
+    fn delete_folder_confirmed(&mut self, name: &str, cx: &mut Context<Self>) {
+        let _ = std::fs::remove_dir_all(self.dir.join(name));
+        if self.folder_sel == FolderSel::Folder(name.to_string()) {
+            self.folder_sel = FolderSel::All;
+        }
         self.selected = None;
         self.last_saved.clear();
         self.reload(None, cx);
@@ -945,7 +971,9 @@ impl Render for NotesView {
             .on_action(cx.listener(|this, _: &RenameFolder, window, cx| {
                 this.rename_folder_start(window, cx)
             }))
-            .on_action(cx.listener(|this, _: &DeleteFolder, _, cx| this.delete_folder(cx)))
+            .on_action(cx.listener(|this, _: &DeleteFolder, window, cx| {
+                this.delete_folder(window, cx)
+            }))
             .size_full()
             .v_flex()
             .bg(mac::window())

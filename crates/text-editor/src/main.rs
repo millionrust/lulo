@@ -117,6 +117,43 @@ impl EditorView {
 
         let recovery_path = std::env::temp_dir().join("rmac-text-editor-recovery.txt");
 
+        // If an autosaved recovery file from a previous (crashed) session exists,
+        // offer to restore its contents once the view is live.
+        if let Ok(content) = std::fs::read_to_string(&recovery_path) {
+            if !content.is_empty() {
+                cx.spawn_in(window, async move |this, cx| {
+                    let answers = [
+                        PromptButton::ok("Restore"),
+                        PromptButton::new("Discard"),
+                    ];
+                    let Ok(rx) = this.update_in(cx, |_this, window, cx| {
+                        window.prompt(
+                            PromptLevel::Warning,
+                            "Recover unsaved changes?",
+                            Some("An autosaved document from a previous session was found."),
+                            &answers,
+                            cx,
+                        )
+                    }) else {
+                        return;
+                    };
+                    let Ok(choice) = rx.await else { return };
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        if choice == 0 {
+                            this.input
+                                .update(cx, |s, cx| s.set_value(content.clone(), window, cx));
+                            // Recovered text is unsaved relative to the empty baseline,
+                            // so this marks the buffer dirty and re-arms autosave.
+                            this.on_buffer_changed(cx);
+                        } else {
+                            let _ = std::fs::remove_file(&this.recovery_path);
+                        }
+                    });
+                })
+                .detach();
+            }
+        }
+
         Self {
             input,
             path: None,

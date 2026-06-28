@@ -180,6 +180,7 @@ struct FinderView {
     renaming: Option<(usize, gpui::Entity<InputState>)>,
     show_hidden: bool,
     view: ViewMode,
+    col_stack: Vec<PathBuf>,
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,
@@ -310,7 +311,7 @@ impl FinderView {
                 fwd: Vec::new(),
             }],
             active: 0,
-            home,
+            home: home.clone(),
             thumbs: std::collections::HashMap::new(),
             entries: Vec::new(),
             selected: BTreeSet::new(),
@@ -320,6 +321,7 @@ impl FinderView {
             renaming: None,
             show_hidden: false,
             view: ViewMode::List,
+            col_stack: vec![home.clone()],
             sort_key: SortKey::Name,
             sort_asc: true,
             query,
@@ -357,6 +359,7 @@ impl FinderView {
 
     fn reload(&mut self, cx: &mut Context<Self>) {
         self.result_title = None;
+        self.col_stack = vec![self.cwd.clone()];
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
         }
@@ -1161,11 +1164,12 @@ impl FinderView {
 
         let has_sel = !self.selected.is_empty();
         let can_paste = !self.clipboard.is_empty();
-        let is_list = matches!(self.view, ViewMode::List | ViewMode::Column);
+        let show_list = self.view == ViewMode::List;
+        let show_icons = matches!(self.view, ViewMode::Icon | ViewMode::Gallery);
 
         // Icon-grid tiles (Icon & Gallery modes).
         let mut tiles: Vec<gpui::AnyElement> = Vec::new();
-        if !is_list {
+        if show_icons {
             for (ix, e) in self.entries.iter().enumerate() {
                 if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
                     continue;
@@ -1230,23 +1234,23 @@ impl FinderView {
             }
         }
 
-        let content = if is_list {
-            div()
+        let content = match self.view {
+            ViewMode::List => div()
                 .id("file-list")
                 .flex_1()
                 .overflow_y_scroll()
                 .child(div().v_flex().children(rows))
                 .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste))
-                .into_any_element()
-        } else {
-            div()
+                .into_any_element(),
+            ViewMode::Column => self.render_columns(cx).into_any_element(),
+            _ => div()
                 .id("icon-grid")
                 .flex_1()
                 .overflow_y_scroll()
                 .p_3()
                 .child(div().flex().flex_wrap().gap_2().children(tiles))
                 .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste))
-                .into_any_element()
+                .into_any_element(),
         };
 
         div()
@@ -1298,7 +1302,7 @@ impl FinderView {
             .flex_1()
             .v_flex()
             .bg(list_bg())
-            .when(is_list, |el: Div| el.child(header))
+            .when(show_list, |el: Div| el.child(header))
             .child(content)
             .child(self.render_path_bar(cx))
     }
@@ -1372,6 +1376,83 @@ impl FinderView {
                 .child("+")
                 .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
         )
+    }
+
+    fn render_columns(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut row = div()
+            .id("columns")
+            .flex_1()
+            .flex()
+            .overflow_x_scroll()
+            .bg(list_bg());
+        for (ci, dir) in self.col_stack.iter().enumerate() {
+            let mut entries = read_entries(dir, self.show_hidden);
+            sort_entries(&mut entries, SortKey::Name, true);
+            let selected_child = self.col_stack.get(ci + 1).cloned();
+            let mut col = div()
+                .id(SharedString::from(format!("col-{ci}")))
+                .w(px(232.0))
+                .h_full()
+                .flex_none()
+                .border_r_1()
+                .border_color(sep())
+                .overflow_y_scroll()
+                .v_flex()
+                .py_1();
+            for e in entries {
+                let is_sel = selected_child.as_ref() == Some(&e.path);
+                let ep = e.path.clone();
+                let is_dir = e.is_dir;
+                let glyph = if is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
+                let icol = if is_sel {
+                    white()
+                } else if is_dir {
+                    accent()
+                } else {
+                    secondary()
+                };
+                col = col.child(
+                    div()
+                        .id(SharedString::from(format!("colrow-{ci}-{}", e.name)))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .h(px(22.0))
+                        .mx_1()
+                        .px_2()
+                        .rounded(px(5.0))
+                        .when(is_sel, |el: Stateful<Div>| el.bg(sel()))
+                        .when(!is_sel, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x0000000a))))
+                        .child(icon(glyph, 15.0, icol))
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_size(px(13.0))
+                                .truncate()
+                                .text_color(if is_sel { white() } else { label() })
+                                .child(e.name.clone()),
+                        )
+                        .when(is_dir, |el: Stateful<Div>| {
+                            el.child(icon(
+                                "icons/chevron-right.svg",
+                                10.0,
+                                if is_sel { white() } else { tertiary() },
+                            ))
+                        })
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if is_dir {
+                                this.col_stack.truncate(ci + 1);
+                                this.col_stack.push(ep.clone());
+                                cx.notify();
+                            } else {
+                                cx.open_with_system(&ep);
+                            }
+                        })),
+                );
+            }
+            row = row.child(col);
+        }
+        row
     }
 
     fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1753,6 +1834,17 @@ fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
     v.push(("Modified", e.modified.to_string()));
     if let Some(md) = &md {
         v.push(("Permissions", perm_string(md.permissions().mode())));
+    }
+    // Owner / group (names) via stat.
+    if let Ok(out) = Command::new("stat").args(["-f", "%Su\n%Sg", &e.path.to_string_lossy()]).output() {
+        let s = String::from_utf8_lossy(&out.stdout);
+        let mut lines = s.lines();
+        if let Some(o) = lines.next().filter(|l| !l.is_empty()) {
+            v.push(("Owner", o.to_string()));
+        }
+        if let Some(g) = lines.next().filter(|l| !l.is_empty()) {
+            v.push(("Group", g.to_string()));
+        }
     }
     v
 }

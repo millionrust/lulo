@@ -782,7 +782,13 @@ impl Settings {
             |s, v| s.wifi_on = v,
         )]);
 
-        let mut cards = vec![toggle];
+        let mut cards = vec![
+            note_card(
+                "Simulated pane: these Wi-Fi controls and networks are a demonstration. \
+                 They do not scan, join, or change your Mac's real Wi-Fi state.",
+            ),
+            toggle,
+        ];
 
         if on {
             // Known / current network
@@ -834,7 +840,13 @@ impl Settings {
             cx,
             |s, v| s.bluetooth_on = v,
         )]);
-        let mut cards = vec![toggle];
+        let mut cards = vec![
+            note_card(
+                "Simulated pane: these Bluetooth controls and devices are a demonstration. \
+                 They do not pair with or change your Mac's real Bluetooth state.",
+            ),
+            toggle,
+        ];
         if on {
             cards.push(card(vec![switch_row(
                 "icons/bluetooth.svg",
@@ -1231,6 +1243,30 @@ fn value_row(icon: &'static str, color: Hsla, title: SharedString, value: Shared
         .child(text_block(title, None))
         .child(div().text_size(px(13.0)).text_color(secondary()).child(value))
         .into_any_element()
+}
+
+/// An informational note card, e.g. to flag a pane as simulated/demo state
+/// rather than a reflection of (or control over) real system hardware.
+fn note_card(text: &'static str) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .mb_3()
+        .px_3()
+        .py_2p5()
+        .rounded(px(10.0))
+        .bg(hsl(0xfff6da))
+        .border_1()
+        .border_color(hsl(0xeedca0))
+        .child(glyph("icons/info.svg", 15.0, hsl(0xb8860b)))
+        .child(
+            div()
+                .flex_1()
+                .text_size(px(11.5))
+                .text_color(hsl(0x7a5c00))
+                .child(text),
+        )
 }
 
 /// A section header above a card (gray small caps-ish title).

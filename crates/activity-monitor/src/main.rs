@@ -13,8 +13,9 @@ use gpui::{
 };
 use gpui_component::{
     table::{Column, ColumnSort, Table, TableDelegate, TableState},
-    ActiveTheme as _, StyledExt as _,
+    StyledExt as _,
 };
+use rmac_ui::mac;
 use sysinfo::{ProcessesToUpdate, System};
 
 /// One row in the process table — a flat snapshot, cheap to clone/diff.
@@ -202,21 +203,31 @@ impl MonitorView {
         });
     }
 
-    fn stat_card(&self, label: &str, value: String, cx: &Context<Self>) -> impl IntoElement {
+    fn stat_card(&self, label: &str, value: String, accent: gpui::Hsla) -> impl IntoElement {
         div()
             .v_flex()
             .gap_1()
             .px_4()
             .py_3()
+            .min_w(px(150.0))
             .rounded(px(10.0))
-            .bg(cx.theme().secondary)
+            .bg(mac::chrome())
+            .border_1()
+            .border_color(mac::separator())
             .child(
                 div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(label.to_string()),
+                    .text_size(px(11.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(mac::text_tertiary())
+                    .child(label.to_uppercase()),
             )
-            .child(div().text_xl().child(value))
+            .child(
+                div()
+                    .text_size(px(24.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(accent)
+                    .child(value),
+            )
     }
 }
 
@@ -229,11 +240,14 @@ impl Render for MonitorView {
         );
         let proc_count = self.table.read(cx).delegate().rows.len();
 
+        let blue = gpui::rgb(0x007aff).into();
+        let green = gpui::rgb(0x28b463).into();
+
         div()
             .size_full()
             .v_flex()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
+            .bg(mac::window())
+            .text_color(mac::text())
             .child(rmac_ui::title_bar("Activity Monitor"))
             .child(
                 // Summary strip
@@ -241,9 +255,11 @@ impl Render for MonitorView {
                     .h_flex()
                     .gap_3()
                     .p_4()
-                    .child(self.stat_card("CPU Load", format!("{:.1}%", self.cpu_total), cx))
-                    .child(self.stat_card("Memory", mem_label, cx))
-                    .child(self.stat_card("Processes", proc_count.to_string(), cx)),
+                    .border_b_1()
+                    .border_color(mac::separator())
+                    .child(self.stat_card("CPU Load", format!("{:.1}%", self.cpu_total), blue))
+                    .child(self.stat_card("Memory", mem_label, green))
+                    .child(self.stat_card("Processes", proc_count.to_string(), mac::text())),
             )
             .child(
                 // The live table fills the rest

@@ -1,20 +1,21 @@
 //! rmac Text Editor — a fast, native TextEdit-style editor.
 //!
-//! Built on gpui-component's rope-backed `InputState` (multi-line + soft-wrap)
-//! with native Open/Save dialogs. The editing core here is what the Notes app
-//! will reuse (to be extracted into `rmac-editor`).
+//! Rope-backed `InputState` body on a clean white page, with a unified macOS
+//! toolbar (New / Open / Save) and native file dialogs. Shares the editing
+//! configuration with Notes via `rmac-editor`.
 
 use std::path::PathBuf;
 
 use gpui::{
-    div, AppContext as _, Context, Entity, IntoElement, ParentElement, PathPromptOptions, Render,
-    SharedString, Styled, Window,
+    div, px, Context, Entity, IntoElement, ParentElement, PathPromptOptions, Render, SharedString,
+    Styled, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
-    input::{Input, InputState},
-    ActiveTheme as _, StyledExt as _,
+    Icon, IconName, Sizable as _, Size, StyledExt as _,
 };
+use rmac_editor::{Input, InputState};
+use rmac_ui::mac;
 
 struct EditorView {
     input: Entity<InputState>,
@@ -23,16 +24,10 @@ struct EditorView {
 
 impl EditorView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .multi_line(true)
-                .soft_wrap(true)
-                .placeholder("Start typing…")
-        });
+        let input = rmac_editor::multiline("", window, cx);
         Self { input, path: None }
     }
 
-    /// Display name for the title strip.
     fn filename(&self) -> SharedString {
         match &self.path {
             Some(p) => p
@@ -45,8 +40,7 @@ impl EditorView {
     }
 
     fn new_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.input
-            .update(cx, |s, cx| s.set_value("", window, cx));
+        self.input.update(cx, |s, cx| s.set_value("", window, cx));
         self.path = None;
         cx.notify();
     }
@@ -78,14 +72,10 @@ impl EditorView {
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let content = self.input.read(cx).value().to_string();
-
-        // Known path → write directly.
         if let Some(path) = self.path.clone() {
             let _ = std::fs::write(&path, content);
             return;
         }
-
-        // Otherwise prompt for a destination.
         let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let rx = cx.prompt_for_new_path(&dir, Some("Untitled.txt"));
         cx.spawn_in(window, async move |this, cx| {
@@ -98,61 +88,78 @@ impl EditorView {
         })
         .detach();
     }
-}
 
-impl Render for EditorView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let toolbar = div()
-            .h_flex()
+    fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let row = div()
+            .size_full()
+            .flex()
             .items_center()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            .px_2()
             .child(
-                Button::new("new")
-                    .label("New")
-                    .ghost()
-                    .on_click(cx.listener(|this, _, window, cx| this.new_file(window, cx))),
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        Button::new("new")
+                            .icon(Icon::new(IconName::File).text_color(mac::text()))
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .tooltip("New")
+                            .on_click(cx.listener(|this, _, window, cx| this.new_file(window, cx))),
+                    )
+                    .child(
+                        Button::new("open")
+                            .icon(Icon::new(IconName::FolderOpen).text_color(mac::text()))
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .tooltip("Open")
+                            .on_click(cx.listener(|this, _, window, cx| this.open(window, cx))),
+                    ),
             )
             .child(
-                Button::new("open")
-                    .label("Open")
-                    .ghost()
-                    .on_click(cx.listener(|this, _, window, cx| this.open(window, cx))),
+                div()
+                    .flex_1()
+                    .flex()
+                    .justify_center()
+                    .text_size(px(13.0))
+                    .font_weight(mac::MEDIUM)
+                    .text_color(mac::text())
+                    .child(self.filename()),
             )
             .child(
                 Button::new("save")
                     .label("Save")
                     .primary()
+                    .with_size(Size::Small)
                     .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
-            )
-            .child(div().flex_1())
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(self.filename()),
             );
+        rmac_ui::toolbar(row)
+    }
+}
 
+impl Render for EditorView {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .v_flex()
-            .bg(cx.theme().background)
-            .text_color(cx.theme().foreground)
-            .child(rmac_ui::title_bar("Text Editor"))
-            .child(toolbar)
+            .bg(mac::window())
+            .text_color(mac::text())
+            .child(self.render_toolbar(cx))
             .child(
                 div()
                     .flex_1()
+                    .px(px(48.0))
+                    .py(px(20.0))
+                    .text_size(px(15.0))
+                    .line_height(px(23.0))
                     .child(Input::new(&self.input).h_full().appearance(false)),
             )
     }
 }
 
 fn main() {
-    rmac_ui::boot("Text Editor", 900.0, 640.0, |window, cx| {
+    rmac_ui::boot("Text Editor", 860.0, 640.0, |window, cx| {
         EditorView::new(window, cx)
     });
 }

@@ -13,3 +13,4 @@ path = "src/main.rs"
 gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui = { path = "../rmac-ui" }
+rmac-editor = { path = "../rmac-editor" }

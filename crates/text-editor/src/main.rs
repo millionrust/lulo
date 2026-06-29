@@ -12,7 +12,7 @@ use std::{path::PathBuf, time::Duration};
 
 use gpui::{
     actions, div, font, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement, PathPromptOptions, PromptButton, PromptLevel, Render,
+    IntoElement, KeyBinding, ParentElement, PathPromptOptions, Render,
     SharedString, StatefulInteractiveElement as _, Styled, StyledText, Subscription, TextRun,
     UnderlineStyle, Window,
 };
@@ -53,6 +53,17 @@ enum Pending {
     Close,
 }
 
+/// A modal alert awaiting the user, shown via the shared `rmac_ui::alert`.
+#[derive(Clone)]
+enum ActiveAlert {
+    /// A recovery file was found — Restore (load it) or Discard.
+    Recover(String),
+    /// The buffer is dirty before `Pending` — Save / Don't Save / Cancel.
+    ConfirmSave(Pending),
+    /// A save error — message + OK.
+    Error(String),
+}
+
 struct EditorView {
     input: Entity<InputState>,
     path: Option<PathBuf>,
@@ -82,6 +93,8 @@ struct EditorView {
     focus: FocusHandle,
     recovery_path: PathBuf,
     autosave_gen: u64,
+    /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
+    alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -130,43 +143,14 @@ impl EditorView {
         let recovery_path = std::env::temp_dir().join("rmac-text-editor-recovery.txt");
 
         // If an autosaved recovery file from a previous (crashed) session exists,
-        // offer to restore its contents once the view is live.
-        if let Ok(content) = std::fs::read_to_string(&recovery_path) {
-            if !content.is_empty() {
-                cx.spawn_in(window, async move |this, cx| {
-                    let answers = [
-                        PromptButton::ok("Restore"),
-                        PromptButton::new("Discard"),
-                    ];
-                    let Ok(rx) = this.update_in(cx, |_this, window, cx| {
-                        window.prompt(
-                            PromptLevel::Warning,
-                            "Recover unsaved changes?",
-                            Some("An autosaved document from a previous session was found."),
-                            &answers,
-                            cx,
-                        )
-                    }) else {
-                        return;
-                    };
-                    let Ok(choice) = rx.await else { return };
-                    let _ = this.update_in(cx, |this, window, cx| {
-                        if choice == 0 {
-                            this.input
-                                .update(cx, |s, cx| s.set_value(content.clone(), window, cx));
-                            // Recovered text is unsaved relative to the empty baseline,
-                            // so this marks the buffer dirty and re-arms autosave.
-                            this.on_buffer_changed(cx);
-                        } else {
-                            let _ = std::fs::remove_file(&this.recovery_path);
-                        }
-                    });
-                })
-                .detach();
-            }
-        }
+        // open the shared Recover alert once the view is live.
+        let alert = std::fs::read_to_string(&recovery_path)
+            .ok()
+            .filter(|c| !c.is_empty())
+            .map(ActiveAlert::Recover);
 
         Self {
+            alert,
             input,
             path: None,
             saved_value: String::new(),
@@ -324,14 +308,8 @@ impl EditorView {
                 Err(err) => {
                     // Write failed: keep dirty state and do NOT run the pending
                     // (destructive) action, so unsaved changes are preserved.
-                    let answers = [PromptButton::ok("OK")];
-                    let _ = window.prompt(
-                        PromptLevel::Critical,
-                        "Failed to save the file.",
-                        Some(&format!("{}: {}", path.display(), err)),
-                        &answers,
-                        cx,
-                    );
+                    self.alert = Some(ActiveAlert::Error(format!("{}: {}", path.display(), err)));
+                    cx.notify();
                 }
             }
             return;
@@ -355,14 +333,9 @@ impl EditorView {
                 Err(err) => {
                     // Write failed: keep dirty state and do NOT run the pending
                     // (destructive) action, so unsaved changes are preserved.
-                    let answers = [PromptButton::ok("OK")];
-                    let _ = window.prompt(
-                        PromptLevel::Critical,
-                        "Failed to save the file.",
-                        Some(&format!("{}: {}", path.display(), err)),
-                        &answers,
-                        cx,
-                    );
+                    this.alert =
+                        Some(ActiveAlert::Error(format!("{}: {}", path.display(), err)));
+                    cx.notify();
                 }
             });
         })
@@ -375,27 +348,42 @@ impl EditorView {
             self.perform(pending, window, cx);
             return;
         }
-        let answers = [
-            PromptButton::ok("Save"),
-            PromptButton::new("Don't Save"),
-            PromptButton::cancel("Cancel"),
-        ];
-        let rx = window.prompt(
-            PromptLevel::Warning,
-            "Do you want to save the changes you made?",
-            Some("Your changes will be lost if you don't save them."),
-            &answers,
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(choice) = rx.await else { return };
-            let _ = this.update_in(cx, |this, window, cx| match choice {
-                0 => this.save_with(Some(pending), window, cx),
-                1 => this.perform(pending, window, cx),
-                _ => {}
-            });
-        })
-        .detach();
+        self.alert = Some(ActiveAlert::ConfirmSave(pending));
+        cx.notify();
+    }
+
+    /// Primary (default) button of the active alert: Restore / Save / OK.
+    fn alert_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.alert.take() {
+            Some(ActiveAlert::Recover(content)) => {
+                self.input
+                    .update(cx, |s, cx| s.set_value(content, window, cx));
+                // Recovered text is unsaved relative to the empty baseline, so
+                // this marks the buffer dirty and re-arms autosave.
+                self.on_buffer_changed(cx);
+            }
+            Some(ActiveAlert::ConfirmSave(pending)) => self.save_with(Some(pending), window, cx),
+            Some(ActiveAlert::Error(_)) | None => {}
+        }
+        cx.notify();
+    }
+
+    /// Secondary button: Discard (recover) / Don't Save (confirm).
+    fn alert_secondary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        match self.alert.take() {
+            Some(ActiveAlert::Recover(_)) => {
+                let _ = std::fs::remove_file(&self.recovery_path);
+            }
+            Some(ActiveAlert::ConfirmSave(pending)) => self.perform(pending, window, cx),
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    /// Cancel / dismiss the alert without acting.
+    fn alert_cancel(&mut self, cx: &mut Context<Self>) {
+        self.alert = None;
+        cx.notify();
     }
 
     fn perform(&mut self, pending: Pending, window: &mut Window, cx: &mut Context<Self>) {
@@ -871,6 +859,48 @@ impl EditorView {
                     ))),
             )
     }
+
+    /// Build the shared modal alert for the current `ActiveAlert`.
+    fn render_alert(&self, alert: ActiveAlert, cx: &mut Context<Self>) -> impl IntoElement {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
+        let (title, message, buttons): (&str, String, Vec<gpui::AnyElement>) = match alert {
+            ActiveAlert::Recover(_) => (
+                "Recover unsaved changes?",
+                "An autosaved document from a previous session was found.".into(),
+                vec![
+                    rmac_ui::dialog_button("alert-discard", "Discard", Normal)
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("alert-restore", "Restore", Primary)
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
+                        .into_any_element(),
+                ],
+            ),
+            ActiveAlert::ConfirmSave(_) => (
+                "Do you want to save the changes you made?",
+                "Your changes will be lost if you don't save them.".into(),
+                vec![
+                    rmac_ui::dialog_button("alert-cancel", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("alert-dontsave", "Don't Save", Destructive)
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("alert-save", "Save", Primary)
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
+                        .into_any_element(),
+                ],
+            ),
+            ActiveAlert::Error(msg) => (
+                "Failed to save the file.",
+                msg,
+                vec![rmac_ui::dialog_button("alert-ok", "OK", Primary)
+                    .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                    .into_any_element()],
+            ),
+        };
+        rmac_ui::alert(title, message, buttons)
+    }
 }
 
 impl Render for EditorView {
@@ -923,6 +953,9 @@ impl Render for EditorView {
             })
             .when(self.rtf_runs.is_none(), |d| {
                 d.child(self.render_status_bar(cx))
+            })
+            .when_some(self.alert.clone(), |d, alert| {
+                d.child(self.render_alert(alert, cx))
             })
     }
 }

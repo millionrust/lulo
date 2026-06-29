@@ -97,6 +97,11 @@ impl EditorView {
                 this.on_buffer_changed(cx);
             }
         });
+        // Re-render the parent whenever the buffer notifies — InputEvent has no
+        // cursor-move variant, but `observe` fires on every `notify()` the input
+        // makes (including caret movement), keeping the line:col status live.
+        cx.observe(&input, |_, _, cx| cx.notify()).detach();
+
         // Live match recompute as the query is edited.
         let sub_find = cx.subscribe(&find_input, |this, _input, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
@@ -818,6 +823,54 @@ impl EditorView {
             .child(banner)
             .child(StyledText::new(text).with_runs(text_runs))
     }
+
+    /// Bottom status bar: live cursor line:column (1-based) on the left, and the
+    /// document's word + character counts on the right — like a real editor.
+    fn render_status_bar(&self, cx: &Context<Self>) -> impl IntoElement {
+        let st = self.input.read(cx);
+        let pos = st.cursor_position();
+        let value = st.value();
+        let chars = value.chars().count();
+        let words = value.split_whitespace().count();
+
+        let cell = |s: String| {
+            div()
+                .text_size(px(11.0))
+                .text_color(mac::text_secondary())
+                .child(s)
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .h(px(24.0))
+            .px_3()
+            .border_t_1()
+            .border_color(mac::separator())
+            .bg(mac::chrome())
+            .child(cell(format!(
+                "Ln {}, Col {}",
+                pos.line + 1,
+                pos.character + 1
+            )))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .child(cell(format!(
+                        "{} {}",
+                        words,
+                        if words == 1 { "word" } else { "words" }
+                    )))
+                    .child(cell(format!(
+                        "{} {}",
+                        chars,
+                        if chars == 1 { "char" } else { "chars" }
+                    ))),
+            )
+    }
 }
 
 impl Render for EditorView {
@@ -859,6 +912,7 @@ impl Render for EditorView {
             } else {
                 div()
                     .flex_1()
+                    .min_h(px(0.0))
                     .px(px(48.0))
                     .py(px(20.0))
                     .font_family(font_family)
@@ -866,6 +920,9 @@ impl Render for EditorView {
                     .line_height(px(size * 1.5))
                     .child(Input::new(&self.input).h_full().appearance(false))
                     .into_any_element()
+            })
+            .when(self.rtf_runs.is_none(), |d| {
+                d.child(self.render_status_bar(cx))
             })
     }
 }

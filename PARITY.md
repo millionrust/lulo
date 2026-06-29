@@ -25,8 +25,9 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
   chooser** (five extra real columns, persisted), **per-core CPU bars**, a
   double-click **process inspector**, and a real **per-interface Network table**
   (interface name, cumulative + per-interval rates, busiest-first).
-- **Text Editor** ✅ — find/replace, dirty-state + safe prompts, autosave, and a
-  **formatted RTF viewer** (NSAttributedString → styled runs).
+- **Text Editor** ✅ — find/replace, dirty-state + safe prompts, autosave, a
+  **formatted RTF viewer** (NSAttributedString → styled runs), and a **status
+  bar** (live cursor Ln/Col + word/char counts).
 - **App Drawer** ✅ — scan/icons/search/launch, keyboard nav, grid/list toggle,
   category filter, and a right-click menu (Open / Reveal in Finder).
 

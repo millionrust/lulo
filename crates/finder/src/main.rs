@@ -900,7 +900,26 @@ impl FinderView {
             .child(view_control)
             .child(tool("icons/share-2.svg"))
             .child(tool("icons/tag.svg"))
-            .child(tool("icons/ellipsis.svg"))
+            // The ⋯ button opens the item context menu (anchored below itself).
+            .child(
+                div()
+                    .id("more")
+                    .w(px(30.0))
+                    .h(px(24.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(5.0))
+                    .hover(|h| h.bg(hsl(0xe2e2e4)))
+                    .child(icon("icons/ellipsis.svg", 16.0, secondary()))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.menu_at = Some(ev.position);
+                            cx.notify();
+                        }),
+                    ),
+            )
             .child(search)
     }
 

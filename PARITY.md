@@ -8,8 +8,10 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
 
 ## App status
 - **Finder** ✅ — multi-select, file ops, shortcuts, context menus, tabs, columns,
-  Quick Look, DnD, tags, Get Info, recursive Spotlight search, native
+  Quick Look, DnD, **tag-search sidebar** (live `mdfind`), **real Recents**
+  (Spotlight last-used query), Get Info, recursive Spotlight search, native
   NSPasteboard file copy/paste, and a **status bar** (item count + free space).
+  (Toolbar Share/Tag/⋯ are decorative; the ⋯ opens the item context menu.)
 - **Terminal** ✅ — real PTY, true-color, resize, scrollback, mouse selection,
   copy/paste, find, font-zoom, clear, tabs, **9 color profiles** (picker via
   chip / ⌘⇧P / right-click), and a **right-click menu**.
@@ -18,7 +20,7 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
   subpage (real `df`), and a real **audio device list** in Sound (output/input
   device names via `system_profiler`, system default marked).
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
-  image/PDF attachments, a word/character-count footer, and **pinned notes**
+  image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).
 - **Activity Monitor** ✅ — live table, process selection + Quit/Force Quit,
   search, five tabbed panes with sparklines, sortable columns, a **column
@@ -72,6 +74,6 @@ These need capabilities GPUI doesn't expose; documented honestly rather than moc
 - Verify *look and behavior* with screenshots / real synthetic clicks (CGEvent),
   never just a clean compile. Native interop (pasteboard, RTF) is covered by
   round-trip unit tests against the live system APIs.
-- Shared infra: gpui actions + keybindings, context menus (gpui-component
-  PopupMenu), custom SVG asset pipeline, `rmac_ui::mac` tokens, and `objc2`
+- Shared infra: gpui actions + keybindings, our own `rmac_ui::ContextMenu`
+  + `rmac_ui::alert`, custom SVG asset pipeline, `rmac_ui::mac` tokens, and `objc2`
   AppKit interop (macOS-gated) for the pasteboard and RTF readers.

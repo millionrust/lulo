@@ -24,7 +24,7 @@ use gpui::{
 use gpui_component::{
     button::{Button, ButtonVariants as _},
     input::InputEvent,
-    menu::{ContextMenuExt as _, PopupMenu},
+    menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu},
     Disableable as _, Icon, IconName, Sizable as _, Size, StyledExt as _,
 };
 use rmac_editor::{Input, InputState};
@@ -33,7 +33,39 @@ use rmac_ui::mac;
 const FOLDERS_W: f32 = 200.0;
 const LIST_W: f32 = 292.0;
 
-actions!(notes, [NewNote, NewFolder, DeleteNote, TogglePreview, RenameFolder, DeleteFolder, TogglePin]);
+actions!(notes, [NewNote, NewFolder, DeleteNote, TogglePreview, RenameFolder, DeleteFolder, TogglePin, SortByEdited, SortByCreated, SortByTitle]);
+
+/// The order the note list is sorted in (matches macOS Notes' View ▸ Sort By).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SortBy {
+    Edited,
+    Created,
+    Title,
+}
+
+impl SortBy {
+    fn label(self) -> &'static str {
+        match self {
+            SortBy::Edited => "Date Edited",
+            SortBy::Created => "Date Created",
+            SortBy::Title => "Title",
+        }
+    }
+    fn id(self) -> &'static str {
+        match self {
+            SortBy::Edited => "edited",
+            SortBy::Created => "created",
+            SortBy::Title => "title",
+        }
+    }
+    fn from_id(s: &str) -> Self {
+        match s {
+            "created" => SortBy::Created,
+            "title" => SortBy::Title,
+            _ => SortBy::Edited,
+        }
+    }
+}
 
 /// Which folder the user is browsing. `All` is the virtual "All Notes" view.
 #[derive(Clone, PartialEq)]
@@ -55,6 +87,9 @@ struct Note {
     snippet: SharedString,
     date: SharedString,
     tags: Vec<String>,
+    /// Raw modified / created times, for the Sort By order.
+    mtime: SystemTime,
+    ctime: SystemTime,
 }
 
 struct NotesView {
@@ -74,6 +109,8 @@ struct NotesView {
     last_saved: String,
     /// Paths of pinned notes (sort to the top), persisted to a `.pinned` file.
     pinned: HashSet<PathBuf>,
+    /// Order the note list is sorted in, persisted to a `.sort` file.
+    sort_by: SortBy,
     focus: FocusHandle,
 }
 
@@ -101,6 +138,7 @@ impl NotesView {
         cx.observe(&tags_input, |_, _, cx| cx.notify()).detach();
 
         let pinned = load_pins(&dir);
+        let sort_by = load_sort(&dir);
         let mut view = Self {
             notes: Vec::new(),
             folders: Vec::new(),
@@ -115,6 +153,7 @@ impl NotesView {
             preview: false,
             last_saved: String::new(),
             pinned,
+            sort_by,
             focus: cx.focus_handle(),
         };
         view.reload(None, cx);
@@ -167,6 +206,17 @@ impl NotesView {
         cx.notify();
     }
 
+    /// Change the note-list sort order, persist it, and re-sort the list.
+    fn set_sort(&mut self, sort: SortBy, cx: &mut Context<Self>) {
+        if self.sort_by == sort {
+            return;
+        }
+        self.sort_by = sort;
+        save_sort(&self.dir, sort);
+        self.reload(None, cx);
+        cx.notify();
+    }
+
     fn reload(&mut self, preserve: Option<PathBuf>, cx: &mut Context<Self>) {
         let keep = preserve.or_else(|| {
             self.selected
@@ -175,8 +225,14 @@ impl NotesView {
         });
 
         let mut notes = scan_notes(&self.dir);
-        // Drop pins whose files no longer exist, then sort pinned notes first
-        // (stable, so date order is preserved within each group).
+        // Apply the chosen sort order, then sort pinned notes first (stable, so
+        // the chosen order is preserved within each group).
+        match self.sort_by {
+            SortBy::Edited => notes.sort_by(|a, b| b.mtime.cmp(&a.mtime)),
+            SortBy::Created => notes.sort_by(|a, b| b.ctime.cmp(&a.ctime)),
+            SortBy::Title => notes
+                .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+        }
         self.pinned.retain(|p| p.exists());
         notes.sort_by_key(|n| !self.pinned.contains(&n.path));
         self.notes = notes;
@@ -487,7 +543,35 @@ impl NotesView {
                     .flex()
                     .items_center()
                     .justify_end()
+                    .gap_1()
                     .pr_3()
+                    .child(
+                        Button::new("sort")
+                            .icon(IconName::SortDescending)
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .tooltip("Sort By")
+                            .dropdown_menu({
+                                let current = self.sort_by;
+                                move |menu, _, _| {
+                                    menu.menu_with_check(
+                                        SortBy::Edited.label(),
+                                        current == SortBy::Edited,
+                                        Box::new(SortByEdited),
+                                    )
+                                    .menu_with_check(
+                                        SortBy::Created.label(),
+                                        current == SortBy::Created,
+                                        Box::new(SortByCreated),
+                                    )
+                                    .menu_with_check(
+                                        SortBy::Title.label(),
+                                        current == SortBy::Title,
+                                        Box::new(SortByTitle),
+                                    )
+                                }
+                            }),
+                    )
                     .child(
                         Button::new("compose")
                             .icon(IconName::Plus)
@@ -1101,6 +1185,9 @@ impl Render for NotesView {
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
+            .on_action(cx.listener(|this, _: &SortByEdited, _, cx| this.set_sort(SortBy::Edited, cx)))
+            .on_action(cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortBy::Created, cx)))
+            .on_action(cx.listener(|this, _: &SortByTitle, _, cx| this.set_sort(SortBy::Title, cx)))
             .on_action(cx.listener(|this, _: &RenameFolder, window, cx| {
                 this.rename_folder_start(window, cx)
             }))
@@ -1294,10 +1381,15 @@ fn collect_notes(dir: &PathBuf, folder: Option<String>, out: &mut Vec<(Note, Sys
         if path.extension().and_then(|x| x.to_str()) != Some("md") {
             continue;
         }
-        let mtime = e
-            .metadata()
-            .and_then(|m| m.modified())
+        let md = e.metadata().ok();
+        let mtime = md
+            .as_ref()
+            .and_then(|m| m.modified().ok())
             .unwrap_or(SystemTime::UNIX_EPOCH);
+        let ctime = md
+            .as_ref()
+            .and_then(|m| m.created().ok())
+            .unwrap_or(mtime);
         let raw = std::fs::read_to_string(&path).unwrap_or_default();
         let (t, b, tags) = parse_doc(&raw);
         let meta = format!("{t}\n{b}");
@@ -1309,6 +1401,8 @@ fn collect_notes(dir: &PathBuf, folder: Option<String>, out: &mut Vec<(Note, Sys
                 tags,
                 folder: folder.clone(),
                 path,
+                mtime,
+                ctime,
             },
             mtime,
         ));
@@ -1338,6 +1432,17 @@ fn load_pins(dir: &PathBuf) -> HashSet<PathBuf> {
 fn save_pins(dir: &PathBuf, pins: &HashSet<PathBuf>) {
     let body = pins.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
     let _ = std::fs::write(dir.join(".pinned"), body);
+}
+
+/// Load the persisted sort order from `<dir>/.sort` (defaults to Date Edited).
+fn load_sort(dir: &PathBuf) -> SortBy {
+    std::fs::read_to_string(dir.join(".sort"))
+        .map(|s| SortBy::from_id(s.trim()))
+        .unwrap_or(SortBy::Edited)
+}
+
+fn save_sort(dir: &PathBuf, sort: SortBy) {
+    let _ = std::fs::write(dir.join(".sort"), sort.id());
 }
 
 fn scan_notes(dir: &PathBuf) -> Vec<Note> {

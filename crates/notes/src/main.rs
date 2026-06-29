@@ -10,6 +10,7 @@
 //! editor has a format bar that inserts markdown blocks (headings, bullet
 //! lists, checklists) and a live preview that renders them with macOS styling.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -32,7 +33,7 @@ use rmac_ui::mac;
 const FOLDERS_W: f32 = 200.0;
 const LIST_W: f32 = 292.0;
 
-actions!(notes, [NewNote, NewFolder, DeleteNote, TogglePreview, RenameFolder, DeleteFolder]);
+actions!(notes, [NewNote, NewFolder, DeleteNote, TogglePreview, RenameFolder, DeleteFolder, TogglePin]);
 
 /// Which folder the user is browsing. `All` is the virtual "All Notes" view.
 #[derive(Clone, PartialEq)]
@@ -71,6 +72,8 @@ struct NotesView {
     search: Entity<InputState>,
     preview: bool,
     last_saved: String,
+    /// Paths of pinned notes (sort to the top), persisted to a `.pinned` file.
+    pinned: HashSet<PathBuf>,
     focus: FocusHandle,
 }
 
@@ -97,6 +100,7 @@ impl NotesView {
         // Re-render tag pills as the user edits the tags field.
         cx.observe(&tags_input, |_, _, cx| cx.notify()).detach();
 
+        let pinned = load_pins(&dir);
         let mut view = Self {
             notes: Vec::new(),
             folders: Vec::new(),
@@ -110,6 +114,7 @@ impl NotesView {
             search,
             preview: false,
             last_saved: String::new(),
+            pinned,
             focus: cx.focus_handle(),
         };
         view.reload(None, cx);
@@ -148,6 +153,20 @@ impl NotesView {
     }
 
     /// Rescan folders and notes from disk, preserving the open note by path.
+    /// Pin or unpin the selected note (sorts it to the top), persisting the set.
+    fn toggle_pin(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.selected.and_then(|i| self.notes.get(i)).map(|n| n.path.clone())
+        else {
+            return;
+        };
+        if !self.pinned.remove(&path) {
+            self.pinned.insert(path.clone());
+        }
+        save_pins(&self.dir, &self.pinned);
+        self.reload(Some(path), cx);
+        cx.notify();
+    }
+
     fn reload(&mut self, preserve: Option<PathBuf>, cx: &mut Context<Self>) {
         let keep = preserve.or_else(|| {
             self.selected
@@ -155,7 +174,12 @@ impl NotesView {
                 .map(|n| n.path.clone())
         });
 
-        self.notes = scan_notes(&self.dir);
+        let mut notes = scan_notes(&self.dir);
+        // Drop pins whose files no longer exist, then sort pinned notes first
+        // (stable, so date order is preserved within each group).
+        self.pinned.retain(|p| p.exists());
+        notes.sort_by_key(|n| !self.pinned.contains(&n.path));
+        self.notes = notes;
         let names = scan_folders(&self.dir);
         self.folders = names
             .into_iter()
@@ -671,11 +695,28 @@ impl NotesView {
             .map(|(ix, _)| ix)
             .collect();
 
+        let any_pinned = visible.iter().any(|&ix| self.pinned.contains(&self.notes[ix].path));
+        let mut header_pinned = false;
+        let mut header_notes = false;
+
         let last = visible.len().saturating_sub(1);
         for (pos, &ix) in visible.iter().enumerate() {
             let note = &self.notes[ix];
             let selected = self.selected == Some(ix);
+            let is_pinned = self.pinned.contains(&note.path);
             let tags = note.tags.clone();
+
+            // Section headers, macOS-style: "Pinned" then "Notes".
+            if any_pinned {
+                if is_pinned && !header_pinned {
+                    header_pinned = true;
+                    items.push(list_section_header("Pinned"));
+                } else if !is_pinned && !header_notes {
+                    header_notes = true;
+                    items.push(list_section_header("Notes"));
+                }
+            }
+
             items.push(
                 div()
                     .id(("note", ix))
@@ -693,11 +734,25 @@ impl NotesView {
                             .gap_0p5()
                             .child(
                                 div()
-                                    .text_size(px(14.0))
-                                    .font_weight(mac::SEMIBOLD)
-                                    .text_color(mac::text())
-                                    .truncate()
-                                    .child(note.title.clone()),
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .when(is_pinned, |el| {
+                                        el.child(
+                                            Icon::new(IconName::Star)
+                                                .text_color(mac::notes_accent())
+                                                .with_size(Size::XSmall),
+                                        )
+                                    })
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .text_size(px(14.0))
+                                            .font_weight(mac::SEMIBOLD)
+                                            .text_color(mac::text())
+                                            .truncate()
+                                            .child(note.title.clone()),
+                                    ),
                             )
                             .child(
                                 div()
@@ -734,6 +789,17 @@ impl NotesView {
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.select(ix, window, cx)),
                     )
+                    // Right-click selects this note so the menu acts on it.
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, _, window, cx| this.select(ix, window, cx)),
+                    )
+                    .context_menu(move |menu: PopupMenu, _, _| {
+                        let label = if is_pinned { "Unpin Note" } else { "Pin Note" };
+                        menu.menu(label, Box::new(TogglePin))
+                            .separator()
+                            .menu("Delete Note", Box::new(DeleteNote))
+                    })
                     .into_any_element(),
             );
             if pos != last {
@@ -1034,6 +1100,7 @@ impl Render for NotesView {
                 this.preview = !this.preview;
                 cx.notify();
             }))
+            .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
             .on_action(cx.listener(|this, _: &RenameFolder, window, cx| {
                 this.rename_folder_start(window, cx)
             }))
@@ -1246,6 +1313,31 @@ fn collect_notes(dir: &PathBuf, folder: Option<String>, out: &mut Vec<(Note, Sys
             mtime,
         ));
     }
+}
+
+/// A small all-caps section header for the note list ("Pinned" / "Notes").
+fn list_section_header(title: &'static str) -> AnyElement {
+    div()
+        .px_4()
+        .pt_2()
+        .pb_1()
+        .text_size(px(11.0))
+        .font_weight(mac::SEMIBOLD)
+        .text_color(mac::text_tertiary())
+        .child(title)
+        .into_any_element()
+}
+
+/// Load the set of pinned note paths from `<dir>/.pinned` (one path per line).
+fn load_pins(dir: &PathBuf) -> HashSet<PathBuf> {
+    std::fs::read_to_string(dir.join(".pinned"))
+        .map(|s| s.lines().filter(|l| !l.is_empty()).map(PathBuf::from).collect())
+        .unwrap_or_default()
+}
+
+fn save_pins(dir: &PathBuf, pins: &HashSet<PathBuf>) {
+    let body = pins.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
+    let _ = std::fs::write(dir.join(".pinned"), body);
 }
 
 fn scan_notes(dir: &PathBuf) -> Vec<Note> {

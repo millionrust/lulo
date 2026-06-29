@@ -593,6 +593,7 @@ fn scan_apps() -> Vec<App> {
         PathBuf::from("/System/Applications"),
         PathBuf::from("/System/Applications/Utilities"),
     ];
+    let mut pairs: Vec<(String, PathBuf)> = Vec::new();
     for dir in dirs {
         if let Ok(rd) = std::fs::read_dir(&dir) {
             for e in rd.flatten() {
@@ -607,24 +608,107 @@ fn scan_apps() -> Vec<App> {
                 if name.is_empty() || !seen.insert(name.clone()) {
                     continue;
                 }
-                let category = categorize(&name, &path);
-                apps.push(App {
-                    name: name.into(),
-                    path,
-                    icon: None,
-                    category,
-                });
+                pairs.push((name, path));
             }
         }
     }
+    // Categories read each app's Info.plist (a subprocess), so resolve them in
+    // parallel to keep startup fast.
+    let cats = parallel_categorize(&pairs);
+    apps.extend(pairs.into_iter().zip(cats).map(|((name, path), category)| App {
+        name: name.into(),
+        path,
+        icon: None,
+        category,
+    }));
     apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     apps
 }
 
-/// Derive an App-Library-style category from the install folder and a keyword
-/// map over the app name. The folder rules win first (Utilities folders, the
-/// `/System/Applications` system bucket), then a best-effort name match.
+/// Resolve every app's category concurrently (each read is an independent
+/// subprocess), preserving input order.
+fn parallel_categorize(pairs: &[(String, PathBuf)]) -> Vec<Category> {
+    let n = pairs.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let workers = 8.min(n);
+    let chunk = n.div_ceil(workers);
+    let mut result = vec![Category::Other; n];
+    std::thread::scope(|s| {
+        let mut handles = Vec::new();
+        for (ci, slice) in pairs.chunks(chunk).enumerate() {
+            handles.push((ci, s.spawn(move || {
+                slice.iter().map(|(name, path)| categorize(name, path)).collect::<Vec<_>>()
+            })));
+        }
+        for (ci, h) in handles {
+            if let Ok(part) = h.join() {
+                let start = ci * chunk;
+                for (i, c) in part.into_iter().enumerate() {
+                    result[start + i] = c;
+                }
+            }
+        }
+    });
+    result
+}
+
+/// The real `LSApplicationCategoryType` from an app's Info.plist, mapped to a
+/// bucket — or `None` if the app declares no category.
+fn real_category(path: &Path) -> Option<Category> {
+    let info = path.join("Contents/Info");
+    let out = Command::new("defaults")
+        .arg("read")
+        .arg(&info)
+        .arg("LSApplicationCategoryType")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_lowercase();
+    if s.is_empty() {
+        return None;
+    }
+    // Apple values look like "public.app-category.developer-tools".
+    Some(if s.contains("developer") {
+        Category::Developer
+    } else if s.contains("game") {
+        Category::Games
+    } else if s.contains("music")
+        || s.contains("video")
+        || s.contains("photo")
+        || s.contains("entertainment")
+        || s.contains("graphics")
+    {
+        Category::Media
+    } else if s.contains("social") || s.contains("news") {
+        Category::Internet
+    } else if s.contains("utilit") {
+        Category::Utilities
+    } else if s.contains("productivity")
+        || s.contains("business")
+        || s.contains("finance")
+        || s.contains("reference")
+        || s.contains("education")
+        || s.contains("weather")
+    {
+        Category::Productivity
+    } else {
+        Category::Other
+    })
+}
+
+/// Derive an App-Library-style category. The app's real declared
+/// `LSApplicationCategoryType` wins; only when a bundle declares none do we fall
+/// back to install-folder rules and a best-effort name match.
 fn categorize(name: &str, path: &Path) -> Category {
+    // Prefer the app's real declared category; fall back to the heuristic only
+    // when the bundle declares none.
+    if let Some(c) = real_category(path) {
+        return c;
+    }
     let p = path.to_string_lossy();
     if p.contains("/Utilities/") {
         return Category::Utilities;

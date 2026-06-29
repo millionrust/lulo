@@ -610,7 +610,16 @@ impl Settings {
                     window.start_window_move();
                 }
             }))
-            .child(div().w(px(SIDEBAR_W)).h_full().bg(sidebar_bg()))
+            .child(
+                div()
+                    .w(px(SIDEBAR_W))
+                    .h_full()
+                    .bg(sidebar_bg())
+                    .flex()
+                    .items_center()
+                    .pl(px(13.0))
+                    .child(rmac_ui::traffic_lights()),
+            )
             .child(
                 div()
                     .flex_1()

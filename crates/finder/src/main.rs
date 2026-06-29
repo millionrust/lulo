@@ -856,7 +856,7 @@ impl FinderView {
             .flex()
             .items_center()
             .gap_2()
-            .pl(px(82.0))
+            .pl(px(13.0))
             .pr_3()
             .bg(toolbar_bg())
             .border_b_1()
@@ -869,6 +869,7 @@ impl FinderView {
                     window.start_window_move();
                 }
             }))
+            .child(div().mr_1().child(rmac_ui::traffic_lights()))
             .child(
                 div()
                     .flex()

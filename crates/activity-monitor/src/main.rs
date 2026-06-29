@@ -4,6 +4,8 @@
 //! `sysinfo` as the data layer. Runs on macOS today (Metal) and targets
 //! Ubuntu/Wayland (Vulkan) later — the same binary, no webview, instant launch.
 
+mod cpu_ticks;
+
 use std::cmp::Ordering;
 use std::time::Duration;
 
@@ -684,6 +686,10 @@ struct MonitorView {
     /// Network tab's interface table. (name, total received, total sent,
     /// received this interval, sent this interval).
     net_ifaces: Vec<NetIface>,
+    /// Cumulative CPU ticks from the previous refresh, for the User/System/Idle
+    /// delta. `cpu_split` is the latest (user%, system%, idle%) breakdown.
+    prev_cpu_ticks: Option<[u64; 4]>,
+    cpu_split: Option<(f32, f32, f32)>,
 }
 
 /// One row in the Network tab's per-interface table.
@@ -742,6 +748,8 @@ impl MonitorView {
             cols_menu_open: false,
             inspect_pid: None,
             net_ifaces: Vec::new(),
+            prev_cpu_ticks: None,
+            cpu_split: None,
         };
         view.refresh(cx);
 
@@ -779,6 +787,14 @@ impl MonitorView {
 
     /// Refresh the table snapshot and recompute the summary aggregates.
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        // Real host-wide CPU User/System/Idle split from the mach tick delta.
+        if let Some(now) = cpu_ticks::read() {
+            if let Some(prev) = self.prev_cpu_ticks {
+                self.cpu_split = cpu_ticks::split(prev, now);
+            }
+            self.prev_cpu_ticks = Some(now);
+        }
+
         self.networks.refresh(true);
         let (net_recv, net_sent) = self
             .networks
@@ -1237,7 +1253,8 @@ impl MonitorView {
         let (cards, samples, accent): (Vec<gpui::AnyElement>, &[f32], gpui::Hsla) = match self.tab
         {
             Tab::Cpu => {
-                let cards = vec![
+                let red = gpui::rgb(0xff3b30).into();
+                let mut cards = vec![
                     self.stat_card("CPU Load", format!("{:.1}%", self.agg.cpu_total), blue)
                         .into_any_element(),
                     self.stat_card("Cores", self.agg.per_core.len().to_string(), mac::text())
@@ -1249,6 +1266,21 @@ impl MonitorView {
                     )
                     .into_any_element(),
                 ];
+                // Real User/System/Idle split (mach host_statistics tick delta).
+                if let Some((user, system, idle)) = self.cpu_split {
+                    cards.push(
+                        self.stat_card("System", format!("{:.1}%", system), red)
+                            .into_any_element(),
+                    );
+                    cards.push(
+                        self.stat_card("User", format!("{:.1}%", user), blue)
+                            .into_any_element(),
+                    );
+                    cards.push(
+                        self.stat_card("Idle", format!("{:.1}%", idle), mac::text_secondary())
+                            .into_any_element(),
+                    );
+                }
                 (cards, self.history.cpu.as_slice(), blue)
             }
             Tab::Memory => {

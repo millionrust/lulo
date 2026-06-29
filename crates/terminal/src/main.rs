@@ -321,10 +321,6 @@ impl TerminalView {
         }
     }
 
-    fn cycle_profile(&mut self, cx: &mut Context<Self>) {
-        let next = (self.profile + 1) % PROFILES.len();
-        self.set_profile(next, cx);
-    }
 
     fn new_tab(&mut self, cx: &mut Context<Self>) {
         self.tabs.push(Session::spawn(self.cols.max(20), self.rows.max(5)));
@@ -449,6 +445,9 @@ impl TerminalView {
             .hover(|h| h.bg(hsla(0xe6e6e6)))
             .child(name)
             .child(div().text_size(px(9.0)).text_color(hsla(0x888888)).child("▼"))
+            // The chip lives inside the draggable TitleBar; stop the press from
+            // reaching the title-bar's window-move handler so the click lands.
+            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
             .on_click(cx.listener(|this, _, _, cx| {
                 this.picker_open = !this.picker_open;
                 cx.notify();
@@ -887,7 +886,12 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &CloseTab, _, cx| this.close_tab(cx)))
                     .on_action(cx.listener(|this, _: &NextTab, _, cx| this.next_tab(cx)))
                     .on_action(cx.listener(|this, _: &PrevTab, _, cx| this.prev_tab(cx)))
-                    .on_action(cx.listener(|this, _: &CycleProfile, _, cx| this.cycle_profile(cx)))
+                    .on_action(cx.listener(|this, _: &CycleProfile, _, cx| {
+                        // ⌘⇧P opens the profile picker (the title-bar chip can't
+                        // reliably receive clicks, so the keyboard is the path in).
+                        this.picker_open = !this.picker_open;
+                        cx.notify();
+                    }))
                     // Drag to select a cell range.
                     .on_mouse_down(
                         MouseButton::Left,

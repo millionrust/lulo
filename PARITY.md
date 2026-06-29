@@ -31,6 +31,19 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
 - **App Drawer** ✅ — scan/icons/search/launch, keyboard nav, grid/list toggle,
   category filter, and a right-click menu (Open / Reveal in Finder).
 
+## Shared component library (`rmac-ui`)
+Every app now shares one macOS-fidelity component layer instead of per-app
+modals, third-party menus, or the framework's native prompt:
+- **Alert / dialog** — `rmac_ui::alert` (scrim + card + primary/normal/destructive
+  pill buttons). Replaced GPUI's `window.prompt()` in the Text Editor (recover /
+  unsaved-changes guard / save error) and Notes (folder delete).
+- **ContextMenu** — our own right-click popover (dispatches GPUI actions itself,
+  dismisses on click-away via a `DismissMenu` action). Replaced gpui-component's
+  `PopupMenu` in Terminal, Notes, Finder, and App Drawer.
+- **Traffic lights** — the OS lights are hidden off-screen; `rmac_ui::title_bar` /
+  `toolbar` draw our own red/yellow/green controls (glyph-on-hover) wired to
+  `remove_window` / `minimize_window` / `zoom_window`. Adopted by all 7 apps.
+
 ## Framework-blocked (GPUI 0.2.2 limitations — not faked)
 These need capabilities GPUI doesn't expose; documented honestly rather than mocked:
 - **Native drag-OUT to other apps** (Finder drag-to-Finder, App Drawer drag-to-Dock):

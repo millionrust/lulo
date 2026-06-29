@@ -191,6 +191,8 @@ struct FinderView {
     sections: Vec<Section>,
     info: Option<usize>,
     result_title: Option<SharedString>,
+    /// Free space on the current volume (bytes), read once per navigation.
+    free_bytes: Option<u64>,
     dragging: bool,
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
@@ -339,6 +341,7 @@ impl FinderView {
             sections,
             info: None,
             result_title: None,
+            free_bytes: None,
             dragging: false,
             focus,
             watcher,
@@ -387,16 +390,18 @@ impl FinderView {
         let key = self.sort_key;
         let asc = self.sort_asc;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let entries = cx
+            let (entries, free) = cx
                 .background_executor()
                 .spawn(async move {
                     let mut v = read_entries(&path, show_hidden);
                     sort_entries(&mut v, key, asc);
-                    v
+                    let free = free_space(&path);
+                    (v, free)
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 this.entries = entries;
+                this.free_bytes = free;
                 this.selected.clear();
                 this.anchor = None;
                 this.renaming = None;
@@ -1256,6 +1261,7 @@ impl FinderView {
             ViewMode::List => div()
                 .id("file-list")
                 .flex_1()
+                .min_h(px(0.0))
                 .overflow_y_scroll()
                 .child(div().v_flex().children(rows))
                 .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste))
@@ -1264,6 +1270,7 @@ impl FinderView {
             _ => div()
                 .id("icon-grid")
                 .flex_1()
+                .min_h(px(0.0))
                 .overflow_y_scroll()
                 .p_3()
                 .child(div().flex().flex_wrap().gap_2().children(tiles))
@@ -1319,10 +1326,12 @@ impl FinderView {
             }))
             .flex_1()
             .v_flex()
+            .overflow_hidden()
             .bg(list_bg())
             .when(show_list, |el: Div| el.child(header))
             .child(content)
             .child(self.render_path_bar(cx))
+            .child(self.render_status_bar())
     }
 
     fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1471,6 +1480,37 @@ impl FinderView {
             row = row.child(col);
         }
         row
+    }
+
+    /// macOS-style status bar: item / selection count + free space available.
+    fn render_status_bar(&self) -> impl IntoElement {
+        let n = self.entries.len();
+        let sel = self.selected.len();
+        let count = if sel > 0 {
+            format!("{sel} of {n} selected")
+        } else {
+            format!("{n} item{}", if n == 1 { "" } else { "s" })
+        };
+        let free = self
+            .free_bytes
+            .map(|b| format!("{} available", human_size(b)))
+            .unwrap_or_default();
+        div()
+            .h(px(22.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap_2()
+            .bg(toolbar_bg())
+            .border_t_1()
+            .border_color(sep())
+            .text_size(px(11.0))
+            .text_color(secondary())
+            .child(count)
+            .when(!free.is_empty(), |el| {
+                el.child(div().text_color(tertiary()).child("•")).child(free)
+            })
     }
 
     fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1736,6 +1776,7 @@ impl Render for FinderView {
             .child(
                 div()
                     .flex_1()
+                    .min_h(px(0.0))
                     .flex()
                     .child(self.render_sidebar(cx))
                     .child(self.render_list(cx)),
@@ -1918,6 +1959,19 @@ fn perm_string(mode: u32) -> String {
         s.push(if bits & 0b001 != 0 { 'x' } else { '-' });
     }
     s
+}
+
+/// Free space (bytes) on the volume containing `path`, via `df -k`.
+fn free_space(path: &Path) -> Option<u64> {
+    let out = Command::new("df").arg("-k").arg(path).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    // Second line, 4th column = available 1K-blocks.
+    let line = text.lines().nth(1)?;
+    let avail_k: u64 = line.split_whitespace().nth(3)?.parse().ok()?;
+    Some(avail_k * 1024)
 }
 
 fn human_size(bytes: u64) -> String {

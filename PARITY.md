@@ -8,24 +8,24 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
 
 ## App status
 - **Finder** ✅ — multi-select, file ops, shortcuts, context menus, tabs, columns,
-  Quick Look, DnD, tags, Get Info, recursive Spotlight search, and **native
-  NSPasteboard file copy/paste** (interoperable with the real Finder).
+  Quick Look, DnD, tags, Get Info, recursive Spotlight search, native
+  NSPasteboard file copy/paste, and a **status bar** (item count + free space).
 - **Terminal** ✅ — real PTY, true-color, resize, scrollback, mouse selection,
-  copy/paste, find, font-zoom, clear, **tabs**, and **9 color profiles** (picker
-  via ⌘⇧P, persisted).
-- **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview, and
-  image/PDF attachments.
+  copy/paste, find, font-zoom, clear, tabs, **9 color profiles** (picker via
+  chip / ⌘⇧P / right-click), and a **right-click menu**.
+- **System Settings** ✅ — navigation + search, interactive persisted controls,
+  subpage history, and live **Battery / Displays / Network** panes.
+- **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
+  image/PDF attachments, a word/character-count footer, and **pinned notes**
+  (Pinned/Notes sections, persisted).
 - **Activity Monitor** ✅ — live table, process selection + Quit/Force Quit,
-  search, five tabbed panes with sparklines, sortable columns, and a **column
-  chooser** with five extra real-data columns (Parent PID, User, Virtual Mem,
-  Run Time, Status), persisted.
+  search, five tabbed panes with sparklines, sortable columns, a **column
+  chooser** (five extra real columns, persisted), **per-core CPU bars**, and a
+  double-click **process inspector**.
 - **Text Editor** ✅ — find/replace, dirty-state + safe prompts, autosave, and a
   **formatted RTF viewer** (NSAttributedString → styled runs).
 - **App Drawer** ✅ — scan/icons/search/launch, keyboard nav, grid/list toggle,
   category filter, and a right-click menu (Open / Reveal in Finder).
-- **System Settings** ✅ — navigation + search, interactive controls with
-  persisted state, subpage history, real reads (Appearance, hostname, chip,
-  memory), and live **Battery** + **Displays** panes.
 
 ## Framework-blocked (GPUI 0.2.2 limitations — not faked)
 These need capabilities GPUI doesn't expose; documented honestly rather than mocked:

@@ -17,12 +17,12 @@ use std::time::Duration;
 
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, Entity,
-    FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement,
-    Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
+    FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Render, SharedString, Stateful, StatefulInteractiveElement as _,
+    Styled, Window,
 };
 use gpui_component::{
     input::{Input, InputState},
-    menu::{ContextMenuExt as _, PopupMenu},
     StyledExt as _,
 };
 use rmac_ui::mac;
@@ -101,6 +101,8 @@ struct AppDrawer {
     filter: Option<Category>,
     /// Cursor into the currently-visible (filtered) list.
     selected: usize,
+    /// Where the right-click context menu is open (window-relative), if any.
+    menu_at: Option<Point<Pixels>>,
     /// Columns in the grid as last laid out — used for up/down navigation.
     cols: usize,
 }
@@ -173,6 +175,7 @@ impl AppDrawer {
             view: ViewMode::Grid,
             filter: None,
             selected: 0,
+            menu_at: None,
             cols: 6,
         }
     }
@@ -250,9 +253,10 @@ impl AppDrawer {
     }
 
     /// The right-click menu shared by grid tiles and list rows.
-    fn app_menu(menu: PopupMenu) -> PopupMenu {
-        menu.menu("Open", Box::new(OpenApp))
-            .menu("Reveal in Finder", Box::new(RevealInFinder))
+    fn app_menu(pos: Point<Pixels>) -> rmac_ui::ContextMenu {
+        rmac_ui::ContextMenu::new(pos)
+            .item("Open", Box::new(OpenApp))
+            .item("Reveal in Finder", Box::new(RevealInFinder))
     }
 
     fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -336,12 +340,12 @@ impl AppDrawer {
             // Right-click selects this tile so the menu acts on it.
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, _, _, cx| {
+                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
                     this.selected = pos;
+                    this.menu_at = Some(ev.position);
                     cx.notify();
                 }),
             )
-            .context_menu(|menu, _, _| Self::app_menu(menu))
     }
 
     /// `pos` is the position in the currently-visible list (what `selected`
@@ -384,12 +388,12 @@ impl AppDrawer {
             }))
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, _, _, cx| {
+                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
                     this.selected = pos;
+                    this.menu_at = Some(ev.position);
                     cx.notify();
                 }),
             )
-            .context_menu(|menu, _, _| Self::app_menu(menu))
     }
 
     fn view_toggle(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -535,6 +539,10 @@ impl Render for AppDrawer {
             .on_action(cx.listener(|this, _: &ClearSearch, window, cx| {
                 this.clear_search(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
+                this.menu_at = None;
+                cx.notify();
+            }))
             .size_full()
             .v_flex()
             .bg(gpui::rgb(0xf5f5f7))
@@ -567,6 +575,9 @@ impl Render for AppDrawer {
                     .pb_8()
                     .child(body),
             )
+            .when_some(self.menu_at, |el: Div, pos| {
+                el.child(Self::app_menu(pos).render())
+            })
     }
 }
 

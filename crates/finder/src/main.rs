@@ -22,12 +22,12 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource,
     ClickEvent, ClipboardItem, Context, Div, ExternalPaths, FocusHandle, Focusable as _, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, ParentElement,
-    Render, Result, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Window,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::{
     input::{Input, InputEvent, InputState},
-    menu::{ContextMenuExt as _, PopupMenu},
     StyledExt as _,
 };
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -179,6 +179,8 @@ struct FinderView {
     anchor: Option<usize>,
     clipboard: Vec<PathBuf>,
     clip_cut: bool,
+    /// Where the right-click context menu is open (window-relative), if any.
+    menu_at: Option<Point<Pixels>>,
     renaming: Option<(usize, gpui::Entity<InputState>)>,
     show_hidden: bool,
     view: ViewMode,
@@ -326,6 +328,7 @@ impl FinderView {
             thumbs: std::collections::HashMap::new(),
             entries: Vec::new(),
             selected: BTreeSet::new(),
+            menu_at: None,
             anchor: None,
             clipboard: Vec::new(),
             clip_cut: false,
@@ -1004,26 +1007,30 @@ impl FinderView {
         col
     }
 
-    fn context_menu(menu: PopupMenu, has_selection: bool, can_paste: bool) -> PopupMenu {
-        let mut m = menu;
+    fn build_context_menu(
+        pos: Point<Pixels>,
+        has_selection: bool,
+        can_paste: bool,
+    ) -> rmac_ui::ContextMenu {
+        let mut m = rmac_ui::ContextMenu::new(pos);
         if has_selection {
             m = m
-                .menu("Open", Box::new(OpenItems))
-                .menu("Rename", Box::new(RenameItem))
-                .menu("Duplicate", Box::new(Duplicate))
+                .item("Open", Box::new(OpenItems))
+                .item("Rename", Box::new(RenameItem))
+                .item("Duplicate", Box::new(Duplicate))
                 .separator()
-                .menu("Copy", Box::new(CopyItems))
-                .menu("Cut", Box::new(CutItems));
+                .item("Copy", Box::new(CopyItems))
+                .item("Cut", Box::new(CutItems));
         }
         if can_paste {
-            m = m.menu("Paste Item", Box::new(PasteItems));
+            m = m.item("Paste Item", Box::new(PasteItems));
         }
-        m = m.separator().menu("New Folder", Box::new(NewFolder));
+        m = m.separator().item("New Folder", Box::new(NewFolder));
         if has_selection {
             m = m
                 .separator()
-                .menu("Move to Trash", Box::new(MoveToTrash))
-                .menu("Delete Immediately", Box::new(DeleteItem));
+                .item("Move to Trash", Box::new(MoveToTrash))
+                .danger_item("Delete Immediately", Box::new(DeleteItem));
         }
         m
     }
@@ -1154,11 +1161,12 @@ impl FinderView {
                     .child(div().w(px(KIND_W)).pl_3().text_color(sub).truncate().child(e.kind.clone()))
                     .on_mouse_down(
                         MouseButton::Right,
-                        cx.listener(move |this, _, window, cx| {
+                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
                             if !this.selected.contains(&ix) {
                                 this.select_single(ix);
                             }
                             window.focus(&this.focus);
+                            this.menu_at = Some(ev.position);
                             cx.notify();
                         }),
                     )
@@ -1186,8 +1194,6 @@ impl FinderView {
             );
         }
 
-        let has_sel = !self.selected.is_empty();
-        let can_paste = !self.clipboard.is_empty();
         let show_list = self.view == ViewMode::List;
         let show_icons = matches!(self.view, ViewMode::Icon | ViewMode::Gallery);
 
@@ -1235,11 +1241,12 @@ impl FinderView {
                         )
                         .on_mouse_down(
                             MouseButton::Right,
-                            cx.listener(move |this, _, window, cx| {
+                            cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
                                 if !this.selected.contains(&ix) {
                                     this.select_single(ix);
                                 }
                                 window.focus(&this.focus);
+                                this.menu_at = Some(ev.position);
                                 cx.notify();
                             }),
                         )
@@ -1265,7 +1272,13 @@ impl FinderView {
                 .min_h(px(0.0))
                 .overflow_y_scroll()
                 .child(div().v_flex().children(rows))
-                .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                        this.menu_at = Some(ev.position);
+                        cx.notify();
+                    }),
+                )
                 .into_any_element(),
             ViewMode::Column => self.render_columns(cx).into_any_element(),
             _ => div()
@@ -1275,7 +1288,13 @@ impl FinderView {
                 .overflow_y_scroll()
                 .p_3()
                 .child(div().flex().flex_wrap().gap_2().children(tiles))
-                .context_menu(move |menu, _, _| Self::context_menu(menu, has_sel, can_paste))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                        this.menu_at = Some(ev.position);
+                        cx.notify();
+                    }),
+                )
                 .into_any_element(),
         };
 
@@ -1766,12 +1785,19 @@ impl Render for FinderView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let info = self.info;
         let multi = self.tabs.len() > 1;
+        let menu_at = self.menu_at;
+        let has_sel = !self.selected.is_empty();
+        let can_paste = !self.clipboard.is_empty();
         div()
             .size_full()
             .relative()
             .v_flex()
             .bg(list_bg())
             .text_color(label())
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
+                this.menu_at = None;
+                cx.notify();
+            }))
             .child(self.render_toolbar(cx))
             .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
@@ -1783,6 +1809,9 @@ impl Render for FinderView {
                     .child(self.render_list(cx)),
             )
             .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))
+            .when_some(menu_at, |el, pos| {
+                el.child(Self::build_context_menu(pos, has_sel, can_paste).render())
+            })
     }
 }
 

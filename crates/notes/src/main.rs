@@ -18,13 +18,13 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, prelude::FluentBuilder as _, px, AppContext as _, AnyElement, Context, Div,
     Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, KeyBinding,
-    KeyDownEvent, MouseButton, ParentElement, PromptButton, PromptLevel, Render, SharedString,
-    StatefulInteractiveElement as _, Stateful, Styled, Window,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, PromptButton,
+    PromptLevel, Render, SharedString, StatefulInteractiveElement as _, Stateful, Styled, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
     input::InputEvent,
-    menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu},
+    menu::DropdownMenu as _,
     Disableable as _, Icon, IconName, Sizable as _, Size, StyledExt as _,
 };
 use rmac_editor::{Input, InputState};
@@ -111,7 +111,16 @@ struct NotesView {
     pinned: HashSet<PathBuf>,
     /// Order the note list is sorted in, persisted to a `.sort` file.
     sort_by: SortBy,
+    /// Open right-click menu: window-relative position + which menu.
+    menu: Option<(Point<Pixels>, NoteMenuKind)>,
     focus: FocusHandle,
+}
+
+/// Which right-click menu is open in Notes.
+#[derive(Clone, Copy)]
+enum NoteMenuKind {
+    Folder,
+    Note,
 }
 
 impl NotesView {
@@ -154,6 +163,7 @@ impl NotesView {
             last_saved: String::new(),
             pinned,
             sort_by,
+            menu: None,
             focus: cx.focus_handle(),
         };
         view.reload(None, cx);
@@ -747,15 +757,12 @@ impl NotesView {
                 // Right-click selects this folder so the context-menu actions target it.
                 .on_mouse_down(
                     MouseButton::Right,
-                    cx.listener(move |this, _, window, cx| {
-                        this.select_folder(FolderSel::Folder(sel_menu.clone()), window, cx)
+                    cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                        this.select_folder(FolderSel::Folder(sel_menu.clone()), window, cx);
+                        this.menu = Some((ev.position, NoteMenuKind::Folder));
+                        cx.notify();
                     }),
-                )
-                .context_menu(|menu: PopupMenu, _, _| {
-                    menu.menu("Rename Folder", Box::new(RenameFolder))
-                        .separator()
-                        .menu("Delete Folder", Box::new(DeleteFolder))
-                });
+                );
             col = col.child(row);
         }
 
@@ -876,14 +883,12 @@ impl NotesView {
                     // Right-click selects this note so the menu acts on it.
                     .on_mouse_down(
                         MouseButton::Right,
-                        cx.listener(move |this, _, window, cx| this.select(ix, window, cx)),
+                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                            this.select(ix, window, cx);
+                            this.menu = Some((ev.position, NoteMenuKind::Note));
+                            cx.notify();
+                        }),
                     )
-                    .context_menu(move |menu: PopupMenu, _, _| {
-                        let label = if is_pinned { "Unpin Note" } else { "Pin Note" };
-                        menu.menu(label, Box::new(TogglePin))
-                            .separator()
-                            .menu("Delete Note", Box::new(DeleteNote))
-                    })
                     .into_any_element(),
             );
             if pos != last {
@@ -1194,6 +1199,10 @@ impl Render for NotesView {
             .on_action(cx.listener(|this, _: &DeleteFolder, window, cx| {
                 this.delete_folder(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
+                this.menu = None;
+                cx.notify();
+            }))
             .size_full()
             .v_flex()
             .bg(mac::window())
@@ -1207,6 +1216,29 @@ impl Render for NotesView {
                     .child(self.render_list(cx))
                     .child(div().flex_1().child(self.render_editor(cx))),
             )
+            .when_some(self.menu, |el: Div, (pos, kind)| {
+                let menu = match kind {
+                    NoteMenuKind::Folder => rmac_ui::ContextMenu::new(pos)
+                        .item("Rename Folder", Box::new(RenameFolder))
+                        .separator()
+                        .danger_item("Delete Folder", Box::new(DeleteFolder)),
+                    NoteMenuKind::Note => {
+                        let pinned = self
+                            .selected
+                            .and_then(|i| self.notes.get(i))
+                            .map(|n| self.pinned.contains(&n.path))
+                            .unwrap_or(false);
+                        rmac_ui::ContextMenu::new(pos)
+                            .item(
+                                if pinned { "Unpin Note" } else { "Pin Note" },
+                                Box::new(TogglePin),
+                            )
+                            .separator()
+                            .danger_item("Delete Note", Box::new(DeleteNote))
+                    }
+                };
+                el.child(menu.render())
+            })
     }
 }
 

@@ -136,6 +136,8 @@ enum PlaceKind {
     Item,
     Volume,
     Tag,
+    /// Recently-used files (a live Spotlight query, not a folder).
+    Recents,
 }
 
 #[derive(Clone)]
@@ -236,44 +238,45 @@ impl FinderView {
         }
 
         let tag = |name: &str, color: u32| p(name, PathBuf::new(), "", hsl(color), PlaceKind::Tag);
-        let sections = vec![
-            Section {
-                title: "Favorites".into(),
-                places: vec![
-                    p("Recents", home.clone(), "icons/clock.svg", accent(), PlaceKind::Item),
-                    p("Applications", "/Applications".into(), "icons/layout-grid.svg", accent(), PlaceKind::Item),
-                    p("Desktop", home.join("Desktop"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
-                    p("Documents", home.join("Documents"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
-                    p("Downloads", home.join("Downloads"), "icons/download.svg", accent(), PlaceKind::Item),
-                ],
-            },
-            Section {
+        let mut sections = vec![Section {
+            title: "Favorites".into(),
+            places: vec![
+                p("Recents", PathBuf::new(), "icons/clock.svg", accent(), PlaceKind::Recents),
+                p("Applications", "/Applications".into(), "icons/layout-grid.svg", accent(), PlaceKind::Item),
+                p("Desktop", home.join("Desktop"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
+                p("Documents", home.join("Documents"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
+                p("Downloads", home.join("Downloads"), "icons/download.svg", accent(), PlaceKind::Item),
+            ],
+        }];
+        // Only show iCloud Drive when the real CloudDocs folder exists.
+        if icloud.is_dir() {
+            sections.push(Section {
                 title: "iCloud".into(),
                 places: vec![p(
                     "iCloud Drive",
-                    if icloud.is_dir() { icloud } else { home.clone() },
+                    icloud,
                     "icons/cloud.svg",
                     accent(),
                     PlaceKind::Item,
                 )],
-            },
-            Section {
-                title: "Locations".into(),
-                places: locations,
-            },
-            Section {
-                title: "Tags".into(),
-                places: vec![
-                    tag("Red", 0xff3b30),
-                    tag("Orange", 0xff9500),
-                    tag("Yellow", 0xffcc00),
-                    tag("Green", 0x34c759),
-                    tag("Blue", 0x007aff),
-                    tag("Purple", 0xaf52de),
-                    tag("Gray", 0x8e8e93),
-                ],
-            },
-        ];
+            });
+        }
+        sections.push(Section {
+            title: "Locations".into(),
+            places: locations,
+        });
+        sections.push(Section {
+            title: "Tags".into(),
+            places: vec![
+                tag("Red", 0xff3b30),
+                tag("Orange", 0xff9500),
+                tag("Yellow", 0xffcc00),
+                tag("Green", 0x34c759),
+                tag("Blue", 0x007aff),
+                tag("Purple", 0xaf52de),
+                tag("Gray", 0x8e8e93),
+            ],
+        });
 
         // Keyboard shortcuts → actions (handled on the focused list).
         cx.bind_keys([
@@ -926,6 +929,7 @@ impl FinderView {
 
         let np = p.path.clone();
         let tag_name = p.name.clone();
+        let kind = p.kind;
         let main = div()
             .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
@@ -935,12 +939,10 @@ impl FinderView {
             .min_w(px(0.0))
             .child(leading)
             .child(div().flex_1().text_size(px(13.0)).text_color(label()).truncate().child(p.name.clone()))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                if is_tag {
-                    this.tag_click(tag_name.clone(), cx);
-                } else {
-                    this.navigate(np.clone(), cx);
-                }
+            .on_click(cx.listener(move |this, _, _, cx| match kind {
+                PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
+                PlaceKind::Recents => this.recents_click(cx),
+                _ => this.navigate(np.clone(), cx),
             }));
 
         let mut row = div()
@@ -1686,6 +1688,48 @@ impl FinderView {
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 this.entries = entries;
                 this.result_title = Some(title);
+                this.selected.clear();
+                this.anchor = None;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Show real recently-used files (Spotlight `kMDItemLastUsedDate`), newest
+    /// first — the honest backing for the "Recents" sidebar entry.
+    fn recents_click(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let entries = cx
+                .background_executor()
+                .spawn(async move {
+                    let out = Command::new("mdfind")
+                        .arg("kMDItemLastUsedDate >= $time.today(-30)")
+                        .output()
+                        .ok();
+                    let mut v: Vec<(Entry, std::time::SystemTime)> = out
+                        .map(|o| {
+                            String::from_utf8_lossy(&o.stdout)
+                                .lines()
+                                .filter_map(|l| {
+                                    let p = Path::new(l);
+                                    let used = std::fs::metadata(p)
+                                        .and_then(|m| m.accessed())
+                                        .unwrap_or(std::time::UNIX_EPOCH);
+                                    entry_for(p).map(|e| (e, used))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    // Newest-used first, capped so the list stays manageable.
+                    v.sort_by(|a, b| b.1.cmp(&a.1));
+                    v.truncate(200);
+                    v.into_iter().map(|(e, _)| e).collect::<Vec<_>>()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.entries = entries;
+                this.result_title = Some("Recents".into());
                 this.selected.clear();
                 this.anchor = None;
                 cx.notify();

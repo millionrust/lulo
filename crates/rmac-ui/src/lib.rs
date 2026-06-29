@@ -149,36 +149,42 @@ pub fn traffic_lights() -> impl IntoElement {
         ))
 }
 
+/// Overlay our traffic lights in the left gutter (x=13) of a `TitleBar`. The
+/// `TitleBar` forces its own children into an 80px left-padded zone, so the
+/// lights are layered as a sibling anchored to the bar's true left edge.
+fn with_traffic_lights(bar: impl IntoElement) -> impl IntoElement {
+    div()
+        .relative()
+        .w_full()
+        .flex_shrink_0()
+        .child(bar)
+        .child(
+            div()
+                .absolute()
+                .left(px(13.0))
+                .top_0()
+                .bottom_0()
+                .flex()
+                .items_center()
+                .child(traffic_lights()),
+        )
+}
+
 /// The shared title bar: our own traffic lights on the left, centered title.
 /// Apps put this at the top of their root `div`. The bar stays draggable via
 /// gpui-component's `TitleBar` container.
 pub fn title_bar(title: impl Into<SharedString>) -> impl IntoElement {
     let title: SharedString = title.into();
-    TitleBar::new().child(
-        div()
-            .size_full()
-            .relative()
-            .flex()
-            .items_center()
-            .child(
-                div()
-                    .absolute()
-                    .left(px(13.0))
-                    .top_0()
-                    .bottom_0()
-                    .flex()
-                    .items_center()
-                    .child(traffic_lights()),
-            )
-            .child(
-                div()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_sm()
-                    .child(title),
-            ),
+    with_traffic_lights(
+        TitleBar::new().child(
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_sm()
+                .child(title),
+        ),
     )
 }
 
@@ -301,11 +307,14 @@ pub mod mac {
 }
 
 /// A unified macOS toolbar/title bar with the chrome color and a hairline base.
-/// Children are laid out after the 80px traffic-light gutter.
+/// Children are laid out after the 80px traffic-light gutter, into which our own
+/// traffic lights are drawn (absolutely anchored at the window's top-left).
 pub fn toolbar(children: impl IntoElement) -> impl IntoElement {
     use gpui::Styled as _;
-    TitleBar::new()
-        .bg(mac::chrome())
-        .border_color(mac::separator())
-        .child(children)
+    with_traffic_lights(
+        TitleBar::new()
+            .bg(mac::chrome())
+            .border_color(mac::separator())
+            .child(children),
+    )
 }

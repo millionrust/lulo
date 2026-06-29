@@ -1473,6 +1473,7 @@ impl MonitorView {
     }
 
     fn render_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
         let p = self.pending_kill.clone()?;
         let verb = if p.force { "Force Quit" } else { "Quit" };
         let body = format!(
@@ -1481,60 +1482,19 @@ impl MonitorView {
             p.name,
             p.pid
         );
-        let dialog = div()
-            .v_flex()
-            .gap_4()
-            .w(px(380.0))
-            .p_5()
-            .rounded(px(12.0))
-            .bg(mac::window())
-            .border_1()
-            .border_color(mac::separator())
-            .shadow_lg()
-            .child(
-                div()
-                    .text_size(px(15.0))
-                    .font_weight(mac::SEMIBOLD)
-                    .text_color(mac::text())
-                    .child(format!("{verb} Process")),
-            )
-            .child(
-                div()
-                    .text_size(px(13.0))
-                    .text_color(mac::text_secondary())
-                    .child(body),
-            )
-            .child(
-                div()
-                    .h_flex()
-                    .justify_end()
-                    .gap_2()
-                    .child(
-                        Button::new("cancel")
-                            .label("Cancel")
-                            .on_click(cx.listener(|this, _, _, cx| this.cancel_kill(cx))),
-                    )
-                    .child(
-                        Button::new("confirm")
-                            .label(verb)
-                            .when(p.force, |b| b.danger())
-                            .when(!p.force, |b| b.primary())
-                            .on_click(cx.listener(|this, _, _, cx| this.confirm_kill(cx))),
-                    ),
-            );
-
-        Some(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(gpui::rgba(0x00000040))
-                .child(dialog),
-        )
+        let confirm_kind = if p.force { Destructive } else { Primary };
+        Some(rmac_ui::alert(
+            format!("{verb} Process"),
+            body,
+            vec![
+                rmac_ui::dialog_button("kill-cancel", "Cancel", Normal)
+                    .on_click(cx.listener(|this, _, _, cx| this.cancel_kill(cx)))
+                    .into_any_element(),
+                rmac_ui::dialog_button("kill-confirm", verb, confirm_kind)
+                    .on_click(cx.listener(|this, _, _, cx| this.confirm_kill(cx)))
+                    .into_any_element(),
+            ],
+        ))
     }
 
     /// The double-click process inspector — a detail panel of real `sysinfo` data.

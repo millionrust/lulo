@@ -124,13 +124,12 @@ struct SysInfo {
     serial: String,
 }
 
-// ---- a single Wi-Fi network (mock backend) ------------------------------
-
+/// A real Bluetooth device parsed from `system_profiler SPBluetoothDataType`.
 #[derive(Clone)]
-struct WifiNetwork {
-    name: SharedString,
-    secure: bool,
-    strength: u8, // 1..=3
+struct BtDevice {
+    name: String,
+    connected: bool,
+    kind: String,
 }
 
 /// Live battery readings (read once at launch via `pmset` + `ioreg`).
@@ -205,11 +204,15 @@ struct Settings {
     wifi_on: bool,
     ask_to_join: bool,
     joined: Option<usize>,
-    networks: Vec<WifiNetwork>,
+    /// Real current Wi-Fi network name (from `networksetup`), or `None` if not
+    /// associated (e.g. on Ethernet).
+    wifi_current: Option<String>,
 
     // Bluetooth
     bluetooth_on: bool,
     bt_discoverable: bool,
+    /// Real paired/known Bluetooth devices (from `system_profiler`).
+    bt_devices: Vec<BtDevice>,
 
     // Appearance
     appearance: Appearance,
@@ -475,14 +478,9 @@ impl Settings {
         let alert_volume = mk_slider(cx, saved.alert_volume);
         let balance = mk_slider(cx, saved.balance);
 
-        // Clamp a possibly out-of-range saved network selection.
-        let networks = vec![
-            WifiNetwork { name: "lmes-5G".into(), secure: true, strength: 3 },
-            WifiNetwork { name: "lmes-guest".into(), secure: false, strength: 2 },
-            WifiNetwork { name: "Studio".into(), secure: true, strength: 2 },
-            WifiNetwork { name: "CoffeeHouse".into(), secure: false, strength: 1 },
-        ];
-        let joined = saved.joined.filter(|&j| j < networks.len());
+        let joined = saved.joined;
+        let wifi_current = gather_wifi_current();
+        let bt_devices = gather_bluetooth();
 
         let (gpu, displays) = gather_displays();
         Self {
@@ -505,10 +503,11 @@ impl Settings {
             wifi_on: saved.wifi_on,
             ask_to_join: saved.ask_to_join,
             joined,
-            networks,
+            wifi_current,
 
             bluetooth_on: saved.bluetooth_on,
             bt_discoverable: saved.bt_discoverable,
+            bt_devices,
 
             appearance: saved.appearance_enum(),
             accent_idx: saved.accent_idx,
@@ -859,36 +858,33 @@ impl Settings {
             |s, v| s.wifi_on = v,
         )]);
 
+        let _ = view;
         let mut cards = vec![
             note_card(
-                "Simulated pane: these Wi-Fi controls and networks are a demonstration. \
-                 They do not scan, join, or change your Mac's real Wi-Fi state.",
+                "The Wi-Fi toggle is local to this app and joining isn't supported. \
+                 The current network below is read live from the system.",
             ),
             toggle,
         ];
 
         if on {
-            // Known / current network
-            if let Some(j) = self.joined {
-                let net = &self.networks[j];
-                cards.push(card(vec![value_row(
+            // Real current network, read from `networksetup`.
+            let status_row = match &self.wifi_current {
+                Some(ssid) => value_row(
                     "icons/wifi.svg",
                     accent(),
-                    net.name.clone(),
+                    ssid.clone().into(),
                     "Connected".into(),
-                )]));
-            }
-
-            // Other networks
-            let other: Vec<AnyElement> = self
-                .networks
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| Some(*i) != self.joined)
-                .map(|(i, net)| network_row(view.clone(), i, net.clone()))
-                .collect();
-            cards.push(section_header("Other Networks"));
-            cards.push(card(other));
+                ),
+                None => value_row(
+                    "icons/wifi.svg",
+                    secondary(),
+                    "Not connected".into(),
+                    "No Wi-Fi network".into(),
+                ),
+            };
+            cards.push(section_header("Network"));
+            cards.push(card(vec![status_row]));
 
             cards.push(card(vec![switch_row(
                 "icons/wifi.svg",
@@ -919,8 +915,9 @@ impl Settings {
         )]);
         let mut cards = vec![
             note_card(
-                "Simulated pane: these Bluetooth controls and devices are a demonstration. \
-                 They do not pair with or change your Mac's real Bluetooth state.",
+                "The Bluetooth on/off and discoverable toggles are local to this app \
+                 (they don't change your Mac's real Bluetooth state). The device list \
+                 below is read live from the system.",
             ),
             toggle,
         ];
@@ -934,12 +931,45 @@ impl Settings {
                 cx,
                 |s, v| s.bt_discoverable = v,
             )]));
-            cards.push(section_header("My Devices"));
-            cards.push(card(vec![
-                value_row("icons/volume-2.svg", secondary(), "Studio Display Speakers".into(), "Connected".into()),
-                value_row("icons/bluetooth.svg", secondary(), "Magic Keyboard".into(), "Connected".into()),
-                value_row("icons/bluetooth.svg", secondary(), "Magic Trackpad".into(), "Not Connected".into()),
-            ]));
+
+            let connected: Vec<AnyElement> = self
+                .bt_devices
+                .iter()
+                .filter(|d| d.connected)
+                .map(|d| {
+                    value_row(
+                        "icons/bluetooth.svg",
+                        accent(),
+                        d.name.clone().into(),
+                        if d.kind.is_empty() { "Connected".into() } else { d.kind.clone().into() },
+                    )
+                })
+                .collect();
+            if !connected.is_empty() {
+                cards.push(section_header("Connected"));
+                cards.push(card(connected));
+            }
+
+            let others: Vec<AnyElement> = self
+                .bt_devices
+                .iter()
+                .filter(|d| !d.connected)
+                .map(|d| {
+                    value_row(
+                        "icons/bluetooth.svg",
+                        secondary(),
+                        d.name.clone().into(),
+                        if d.kind.is_empty() { "Not Connected".into() } else { d.kind.clone().into() },
+                    )
+                })
+                .collect();
+            if !others.is_empty() {
+                cards.push(section_header("Devices"));
+                cards.push(card(others));
+            }
+            if self.bt_devices.is_empty() {
+                cards.push(note_card("No paired Bluetooth devices found."));
+            }
         }
         self.pane(cards)
     }
@@ -953,7 +983,7 @@ impl Settings {
                 nav_row(view.clone(), "icons/info.svg", hsl(0x8e8e93), "About".into(),
                     Some(self.sysinfo.model.clone().into()), SubPage::About),
                 nav_row(view.clone(), "icons/refresh-cw.svg", hsl(0x8e8e93), "Software Update".into(),
-                    Some("Up to date".into()), SubPage::SoftwareUpdate),
+                    Some(self.sysinfo.os.clone().into()), SubPage::SoftwareUpdate),
                 nav_row(view.clone(), "icons/database.svg", hsl(0x8e8e93), "Storage".into(),
                     None, SubPage::Storage),
             ]),
@@ -1410,11 +1440,18 @@ impl Settings {
             SubPage::About => ("About".into(), self.about_body()),
             SubPage::SoftwareUpdate => (
                 "Software Update".into(),
-                card(vec![
-                    value_row("icons/refresh-cw.svg", hsl(0x34c759), "macOS".into(),
-                        format!("{} — up to date", self.sysinfo.os).into()),
-                    value_row("icons/refresh-cw.svg", secondary(), "Automatic updates".into(), "On".into()),
-                ]),
+                div()
+                    .v_flex()
+                    .child(card(vec![value_row(
+                        "icons/refresh-cw.svg",
+                        secondary(),
+                        "Current version".into(),
+                        self.sysinfo.os.clone().into(),
+                    )]))
+                    .child(note_card(
+                        "rmac reads the installed macOS version but does not check Apple's \
+                         update servers, so it can't report available updates.",
+                    )),
             ),
             SubPage::Storage => ("Storage".into(), self.storage_body()),
             SubPage::Placeholder { icon, color, title } => (
@@ -1622,27 +1659,6 @@ fn nav_row(
         .into_any_element()
 }
 
-/// A Wi-Fi network row: click to "join" it.
-fn network_row(view: Entity<Settings>, idx: usize, net: WifiNetwork) -> AnyElement {
-    let bars = "▂▄▆".chars().take(net.strength as usize).collect::<String>();
-    row_base()
-        .id(ElementId::from(SharedString::from(format!("net-{idx}"))))
-        .cursor_pointer()
-        .hover(|h| h.bg(hsl(0x00000006)))
-        .child(tile("icons/wifi.svg", accent(), 22.0))
-        .child(text_block(net.name.clone(), None))
-        .when(net.secure, |r| r.child(glyph("icons/lock.svg", 13.0, secondary())))
-        .child(div().text_size(px(13.0)).text_color(secondary()).child(bars))
-        .on_click(move |_, _, cx| {
-            view.update(cx, |s, cx| {
-                s.joined = Some(idx);
-                s.persist(cx);
-                cx.notify();
-            });
-        })
-        .into_any_element()
-}
-
 /// A segmented control over a fixed set of options; `set` writes the index.
 fn segmented(
     view: Entity<Settings>,
@@ -1755,6 +1771,67 @@ fn appearance_is_dark() -> bool {
     cmd("defaults", &["read", "-g", "AppleInterfaceStyle"])
         .map(|s| s.eq_ignore_ascii_case("Dark"))
         .unwrap_or(false)
+}
+
+/// The real current Wi-Fi network name, or `None` if not associated.
+fn gather_wifi_current() -> Option<String> {
+    let out = cmd("networksetup", &["-getairportnetwork", "en0"])?;
+    // "Current Wi-Fi Network: <SSID>" when connected, otherwise a "not
+    // associated" message we treat as None.
+    out.split_once(':')
+        .map(|(_, v)| v.trim().to_string())
+        .filter(|s| !s.is_empty() && !out.contains("not associated"))
+}
+
+/// Real paired/known Bluetooth devices from `system_profiler SPBluetoothDataType`.
+/// Connected devices first, capped to a reasonable number for the list.
+fn gather_bluetooth() -> Vec<BtDevice> {
+    let Some(out) = cmd("system_profiler", &["SPBluetoothDataType"]) else {
+        return Vec::new();
+    };
+    let mut devices: Vec<BtDevice> = Vec::new();
+    let mut connected = false;
+    let mut cur: Option<BtDevice> = None;
+    let flush = |cur: &mut Option<BtDevice>, out: &mut Vec<BtDevice>| {
+        if let Some(d) = cur.take() {
+            out.push(d);
+        }
+    };
+    for line in out.lines() {
+        let t = line.trim();
+        if t == "Connected:" {
+            flush(&mut cur, &mut devices);
+            connected = true;
+            continue;
+        }
+        if t == "Not Connected:" {
+            flush(&mut cur, &mut devices);
+            connected = false;
+            continue;
+        }
+        // A device-name line ends with ':' and has no "key: value" body. Skip
+        // the controller's own header rows ("Bluetooth", "Bluetooth Controller").
+        if t.ends_with(':') && !t.contains(": ") {
+            flush(&mut cur, &mut devices);
+            let name = t.trim_end_matches(':').trim().to_string();
+            let is_header = name.is_empty()
+                || name == "Bluetooth"
+                || name == "Bluetooth Controller"
+                || name == "Controller";
+            if !is_header {
+                cur = Some(BtDevice { name, connected, kind: String::new() });
+            }
+        } else if let Some(d) = cur.as_mut() {
+            if let Some(rest) = t.strip_prefix("Minor Type:") {
+                d.kind = rest.trim().to_string();
+            }
+        }
+    }
+    flush(&mut cur, &mut devices);
+    // Connected first, then by name; trim the list so the pane stays compact.
+    devices.sort_by(|a, b| b.connected.cmp(&a.connected).then(a.name.cmp(&b.name)));
+    devices.truncate(12);
+    devices
 }
 
 fn account_name() -> String {

@@ -161,15 +161,18 @@ impl EventListener for EventProxy {
     fn send_event(&self, _: Event) {}
 }
 
-/// One terminal tab: its own PTY + parser-fed grid.
+/// One terminal tab: its own PTY + parser-fed grid. `master` is `None` for a
+/// failed session (PTY/shell couldn't start) — it still renders an error grid.
 struct Session {
     term: Arc<Mutex<Term<EventProxy>>>,
     writer: Box<dyn Write + Send>,
-    master: Box<dyn MasterPty + Send>,
+    master: Option<Box<dyn MasterPty + Send>>,
 }
 
 impl Session {
-    fn spawn(cols: usize, rows: usize) -> Session {
+    /// Start a real shell in a PTY. Returns an error string (rather than
+    /// panicking) if the PTY or shell can't be created, so the app stays alive.
+    fn spawn(cols: usize, rows: usize) -> Result<Session, String> {
         let size = TermSize { cols, lines: rows };
         let pty = native_pty_system();
         let pair = pty
@@ -179,17 +182,26 @@ impl Session {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .expect("openpty");
+            .map_err(|e| format!("openpty failed: {e}"))?;
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
         let mut cmd = CommandBuilder::new(shell);
         cmd.env("TERM", "xterm-256color");
         if let Ok(dir) = std::env::current_dir() {
             cmd.cwd(dir);
         }
-        let _child = pair.slave.spawn_command(cmd).expect("spawn shell");
+        let _child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| format!("could not start shell: {e}"))?;
         drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().expect("reader");
-        let writer = pair.master.take_writer().expect("writer");
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| format!("reader failed: {e}"))?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| format!("writer failed: {e}"))?;
         let term = Arc::new(Mutex::new(Term::new(Config::default(), &size, EventProxy)));
         let term_reader = term.clone();
         std::thread::spawn(move || {
@@ -206,7 +218,20 @@ impl Session {
                 }
             }
         });
-        Session { term, writer, master: pair.master }
+        Ok(Session { term, writer, master: Some(pair.master) })
+    }
+
+    /// A no-PTY session that just displays an error message in its grid, so a
+    /// shell-startup failure degrades gracefully instead of crashing.
+    fn failed(cols: usize, rows: usize, msg: &str) -> Session {
+        let size = TermSize { cols, lines: rows };
+        let term = Arc::new(Mutex::new(Term::new(Config::default(), &size, EventProxy)));
+        if let Ok(mut t) = term.lock() {
+            let mut parser: Processor = Processor::new();
+            let text = format!("\r\n  Terminal unavailable — {msg}\r\n");
+            parser.advance(&mut *t, text.as_bytes());
+        }
+        Session { term, writer: Box::new(std::io::sink()), master: None }
     }
 }
 
@@ -260,7 +285,8 @@ fn save_profile(i: usize) {
 
 impl TerminalView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let session = Session::spawn(COLS, ROWS);
+        let session =
+            Session::spawn(COLS, ROWS).unwrap_or_else(|e| Session::failed(COLS, ROWS, &e));
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
@@ -327,7 +353,9 @@ impl TerminalView {
 
 
     fn new_tab(&mut self, cx: &mut Context<Self>) {
-        self.tabs.push(Session::spawn(self.cols.max(20), self.rows.max(5)));
+        let (c, r) = (self.cols.max(20), self.rows.max(5));
+        self.tabs
+            .push(Session::spawn(c, r).unwrap_or_else(|e| Session::failed(c, r, &e)));
         self.active = self.tabs.len() - 1;
         self.selection = None;
         self.cols = 0; // force resize_to() to re-fit the new active session
@@ -553,12 +581,14 @@ impl TerminalView {
         if let Ok(mut t) = self.tabs[self.active].term.lock() {
             t.resize(TermSize { cols, lines: rows });
         }
-        let _ = self.tabs[self.active].master.resize(PtySize {
-            rows: rows as u16,
-            cols: cols as u16,
-            pixel_width: 0,
-            pixel_height: 0,
-        });
+        if let Some(master) = self.tabs[self.active].master.as_ref() {
+            let _ = master.resize(PtySize {
+                rows: rows as u16,
+                cols: cols as u16,
+                pixel_width: 0,
+                pixel_height: 0,
+            });
+        }
     }
 
     /// Current scrollback offset (0 = pinned to the live prompt).

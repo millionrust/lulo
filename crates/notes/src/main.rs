@@ -1198,6 +1198,7 @@ impl Render for NotesView {
                 this.menu = None;
                 cx.notify();
             }))
+            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
             .size_full()
             .v_flex()
             .bg(mac::window())

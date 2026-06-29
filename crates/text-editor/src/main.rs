@@ -933,6 +933,13 @@ impl Render for EditorView {
             .on_action(
                 cx.listener(|this, _: &CloseWindow, window, cx| this.guarded(Pending::Close, window, cx)),
             )
+            // The custom red traffic light dispatches RequestClose — route it
+            // through the same unsaved-changes guard so closes aren't silent.
+            .on_action(
+                cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                    this.guarded(Pending::Close, window, cx)
+                }),
+            )
             .bg(mac::window())
             .text_color(mac::text())
             .child(self.render_toolbar(cx))

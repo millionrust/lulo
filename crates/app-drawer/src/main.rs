@@ -543,6 +543,7 @@ impl Render for AppDrawer {
                 this.menu_at = None;
                 cx.notify();
             }))
+            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
             .size_full()
             .v_flex()
             .bg(gpui::rgb(0xf5f5f7))

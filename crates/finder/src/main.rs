@@ -1798,6 +1798,7 @@ impl Render for FinderView {
                 this.menu_at = None;
                 cx.notify();
             }))
+            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
             .child(self.render_toolbar(cx))
             .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(

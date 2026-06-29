@@ -1648,6 +1648,7 @@ impl Render for MonitorView {
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)))
             .on_action(cx.listener(|this, _: &ConfirmKill, _, cx| this.confirm_kill(cx)))
             .on_action(cx.listener(|this, _: &CancelKill, _, cx| this.cancel_kill(cx)))
+            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
             .size_full()
             .v_flex()
             .bg(mac::window())

@@ -17,7 +17,7 @@ use gpui_component::{Root, TitleBar};
 
 mod components;
 pub use components::{
-    alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu,
+    alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu, RequestClose,
 };
 
 // Re-exports so apps depend on one crate for theming; these also bring the
@@ -135,7 +135,9 @@ pub fn traffic_lights() -> impl IntoElement {
             "tl-close",
             rgb(0xff5f57).into(),
             "✕",
-            |window, _| window.remove_window(),
+            // Route through the app's close guard (e.g. unsaved-changes prompt)
+            // rather than closing the window directly. Apps bind `RequestClose`.
+            |window, cx| window.dispatch_action(Box::new(components::RequestClose), cx),
         ))
         .child(traffic_light(
             "tl-min",

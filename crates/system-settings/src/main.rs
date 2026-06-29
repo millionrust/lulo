@@ -1471,6 +1471,7 @@ impl Render for Settings {
             .track_focus(&self.focus)
             .key_context("SystemSettings")
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
+            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
             .bg(pane_bg())
             .text_color(label())
             .child(self.render_topbar(cx))

@@ -18,7 +18,7 @@ use gpui_component::StyledExt as _;
 
 use crate::mac;
 
-gpui::actions!(rmac_ui, [DismissMenu]);
+gpui::actions!(rmac_ui, [DismissMenu, RequestClose]);
 
 /// Visual role of a dialog button (drives fill / text color).
 #[derive(Clone, Copy, PartialEq, Eq)]

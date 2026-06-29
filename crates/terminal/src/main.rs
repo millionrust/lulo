@@ -890,6 +890,9 @@ impl Render for TerminalView {
                         this.menu_at = None;
                         cx.notify();
                     }))
+                    .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
+                        window.remove_window()
+                    }))
                     .on_action(cx.listener(|this, _: &ShowProfiles, _, cx| {
                         // Right-click → Profiles… — a guaranteed mouse path to the
                         // picker (the picker rows are clickable body overlays).

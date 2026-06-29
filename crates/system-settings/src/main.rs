@@ -152,6 +152,18 @@ struct DisplayInfo {
     is_main: bool,
 }
 
+/// An audio device and whether it's the system default.
+struct AudioDevice {
+    name: String,
+    is_default: bool,
+}
+
+/// Audio output/input devices (read once at launch via `system_profiler`).
+struct AudioInfo {
+    outputs: Vec<AudioDevice>,
+    inputs: Vec<AudioDevice>,
+}
+
 /// Boot-volume storage usage (read once at launch via `df`).
 struct StorageInfo {
     volume: String,
@@ -179,6 +191,7 @@ struct Settings {
     gpu: String,
     network: NetworkInfo,
     storage: StorageInfo,
+    audio: AudioInfo,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -479,6 +492,7 @@ impl Settings {
             gpu,
             network: gather_network(),
             storage: gather_storage(),
+            audio: gather_audio(),
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -1169,7 +1183,34 @@ impl Settings {
             ),
         ]);
 
-        self.pane(vec![output_card, alert_card, toggles])
+        let output_devices = self.audio_device_card("Output Device", &self.audio.outputs);
+        let input_devices = self.audio_device_card("Input Device", &self.audio.inputs);
+
+        self.pane(vec![output_card, alert_card, toggles, output_devices, input_devices])
+    }
+
+    /// A card listing real audio devices, with the system default checked.
+    fn audio_device_card(&self, title: &'static str, devices: &[AudioDevice]) -> Div {
+        if devices.is_empty() {
+            return div();
+        }
+        let blue = hsl(0x0a84ff);
+        let rows: Vec<AnyElement> = devices
+            .iter()
+            .map(|d| {
+                row_base()
+                    .child(tile("icons/volume-2.svg", blue, 22.0))
+                    .child(text_block(d.name.clone().into(), None))
+                    .when(d.is_default, |el| {
+                        el.child(
+                            div().text_size(px(12.0)).text_color(secondary()).child("Default"),
+                        )
+                        .child(glyph("icons/check.svg", 13.0, blue))
+                    })
+                    .into_any_element()
+            })
+            .collect();
+        div().v_flex().child(section_header(title)).child(card(rows))
     }
 
     // ---- Battery (real read-only) -------------------------------------
@@ -1790,6 +1831,58 @@ fn gather_battery() -> Option<BatteryInfo> {
     .to_string();
 
     Some(BatteryInfo { present, percent, status, source, time_remaining, cycle_count, health_percent, condition })
+}
+
+/// Read audio output/input devices via `system_profiler SPAudioDataType`.
+fn gather_audio() -> AudioInfo {
+    let out = cmd("system_profiler", &["SPAudioDataType"]).unwrap_or_default();
+    let mut outputs: Vec<AudioDevice> = Vec::new();
+    let mut inputs: Vec<AudioDevice> = Vec::new();
+
+    let mut cur: Option<String> = None;
+    let (mut has_out, mut has_in, mut def_out, mut def_in) = (false, false, false, false);
+
+    let mut flush = |cur: &mut Option<String>, ho: bool, hi: bool, dofl: bool, difl: bool| {
+        if let Some(name) = cur.take() {
+            if ho {
+                outputs.push(AudioDevice { name: name.clone(), is_default: dofl });
+            }
+            if hi {
+                inputs.push(AudioDevice { name, is_default: difl });
+            }
+        }
+    };
+
+    for raw in out.lines() {
+        let indent = raw.len() - raw.trim_start().len();
+        let line = raw.trim();
+        if indent == 8 && line.ends_with(':') {
+            flush(&mut cur, has_out, has_in, def_out, def_in);
+            cur = Some(line.trim_end_matches(':').to_string());
+            has_out = false;
+            has_in = false;
+            def_out = false;
+            def_in = false;
+        } else if cur.is_some() {
+            if line.starts_with("Output Source:") {
+                has_out = true;
+            }
+            if line.starts_with("Input Source:") {
+                has_in = true;
+            }
+            if line.starts_with("Default Output Device:") && line.ends_with("Yes") {
+                def_out = true;
+                has_out = true;
+            }
+            if line.starts_with("Default Input Device:") && line.ends_with("Yes") {
+                def_in = true;
+                has_in = true;
+            }
+        }
+    }
+    flush(&mut cur, has_out, has_in, def_out, def_in);
+
+    AudioInfo { outputs, inputs }
 }
 
 /// Format bytes as decimal GB (matching macOS storage display).

@@ -18,8 +18,8 @@ use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, prelude::FluentBuilder as _, px, AppContext as _, AnyElement, Context, Div,
     Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, KeyBinding,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, PromptButton,
-    PromptLevel, Render, SharedString, StatefulInteractiveElement as _, Stateful, Styled, Window,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
+    StatefulInteractiveElement as _, Stateful, Styled, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
@@ -113,6 +113,8 @@ struct NotesView {
     sort_by: SortBy,
     /// Open right-click menu: window-relative position + which menu.
     menu: Option<(Point<Pixels>, NoteMenuKind)>,
+    /// Folder name awaiting a delete confirmation (shared alert), if any.
+    confirm_delete_folder: Option<String>,
     focus: FocusHandle,
 }
 
@@ -164,6 +166,7 @@ impl NotesView {
             pinned,
             sort_by,
             menu: None,
+            confirm_delete_folder: None,
             focus: cx.focus_handle(),
         };
         view.reload(None, cx);
@@ -446,31 +449,23 @@ impl NotesView {
         }
     }
 
-    fn delete_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn delete_folder(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let FolderSel::Folder(name) = self.folder_sel.clone() else {
             return;
         };
         // Persist any pending edits in the open note before touching the disk —
         // the note may live inside the folder we're about to remove.
         self.save_current(cx);
-        let answers = [PromptButton::ok("Delete"), PromptButton::cancel("Cancel")];
-        let rx = window.prompt(
-            PromptLevel::Warning,
-            &format!("Delete the folder \u{201c}{name}\u{201d}?"),
-            Some("All notes in this folder will be permanently deleted. This cannot be undone."),
-            &answers,
-            cx,
-        );
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let Ok(choice) = rx.await else { return };
-            if choice != 0 {
-                return;
-            }
-            let _ = this.update(cx, |this: &mut NotesView, cx| {
-                this.delete_folder_confirmed(&name, cx)
-            });
-        })
-        .detach();
+        self.confirm_delete_folder = Some(name);
+        cx.notify();
+    }
+
+    /// Confirm button of the delete-folder alert.
+    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
+        if let Some(name) = self.confirm_delete_folder.take() {
+            self.delete_folder_confirmed(&name, cx);
+        }
+        cx.notify();
     }
 
     fn delete_folder_confirmed(&mut self, name: &str, cx: &mut Context<Self>) {
@@ -1238,6 +1233,25 @@ impl Render for NotesView {
                     }
                 };
                 el.child(menu.render())
+            })
+            .when_some(self.confirm_delete_folder.clone(), |el: Div, name| {
+                use rmac_ui::DialogButtonKind::{Destructive, Normal};
+                el.child(rmac_ui::alert(
+                    format!("Delete the folder \u{201c}{name}\u{201d}?"),
+                    "All notes in this folder will be permanently deleted. This cannot be undone."
+                        .to_string(),
+                    vec![
+                        rmac_ui::dialog_button("del-cancel", "Cancel", Normal)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.confirm_delete_folder = None;
+                                cx.notify();
+                            }))
+                            .into_any_element(),
+                        rmac_ui::dialog_button("del-confirm", "Delete", Destructive)
+                            .on_click(cx.listener(|this, _, _, cx| this.confirm_delete(cx)))
+                            .into_any_element(),
+                    ],
+                ))
             })
     }
 }

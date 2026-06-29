@@ -598,11 +598,20 @@ impl TableDelegate for ProcessTableDelegate {
 
     fn context_menu(
         &mut self,
-        _row_ix: usize,
+        row_ix: usize,
         menu: PopupMenu,
         _window: &mut Window,
         _cx: &mut Context<TableState<Self>>,
     ) -> PopupMenu {
+        // The Table doesn't select a row on right-click, so target the row under
+        // the cursor here — otherwise Quit/Force Quit would act on a previously
+        // left-selected (different) row. This menu stays on gpui-component's
+        // Table widget: its right-click menu is intrinsic to the widget (the
+        // right-clicked row index isn't otherwise exposed), so swapping in
+        // rmac_ui::ContextMenu would mean reimplementing the table's hit-testing.
+        if let Some(row) = self.rows.get(row_ix) {
+            self.selected_pid = Some(row.pid);
+        }
         menu.menu("Quit", Box::new(QuitProcess))
             .menu("Force Quit", Box::new(ForceQuitProcess))
     }

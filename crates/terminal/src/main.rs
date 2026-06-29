@@ -20,9 +20,10 @@ use gpui::{
     Point, Render, ScrollDelta, ScrollWheelEvent, Stateful, StatefulInteractiveElement as _, Styled,
     Window,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputState};
 use gpui_component::menu::ContextMenuExt as _;
-use gpui_component::StyledExt as _;
+use gpui_component::{Selectable as _, Sizable as _, StyledExt as _};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
 
@@ -90,7 +91,7 @@ fn active() -> &'static Profile {
 
 gpui::actions!(
     terminal,
-    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab, PrevTab, CycleProfile]
+    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab, PrevTab, CycleProfile, ShowProfiles]
 );
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
@@ -433,22 +434,13 @@ impl TerminalView {
     /// open the picker (matching Terminal.app's profile switcher).
     fn profile_chip(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let name = PROFILES[self.profile].name;
-        div()
-            .id("profile-chip")
-            .flex()
-            .items_center()
-            .gap_1()
-            .px_2()
-            .py(px(2.0))
-            .rounded(px(5.0))
-            .text_size(px(11.0))
-            .text_color(hsla(0x444444))
-            .hover(|h| h.bg(hsla(0xe6e6e6)))
-            .child(name)
-            .child(div().text_size(px(9.0)).text_color(hsla(0x888888)).child("▼"))
-            // The chip lives inside the draggable TitleBar; stop the press from
-            // reaching the title-bar's window-move handler so the click lands.
-            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
+        // A gpui-component Button — unlike a raw div, it receives clicks inside
+        // the draggable TitleBar (same pattern as other apps' toolbar buttons).
+        Button::new("profile-chip")
+            .label(format!("{name}  ▼"))
+            .ghost()
+            .small()
+            .selected(self.picker_open)
             .on_click(cx.listener(|this, _, _, cx| {
                 this.picker_open = !this.picker_open;
                 cx.notify();
@@ -840,26 +832,26 @@ impl Render for TerminalView {
             .v_flex()
             .bg(hsla(active().bg))
             .child(rmac_ui::toolbar(
+                // Three flex sections: a left spacer balances the right chip so
+                // "Terminal" stays centered. No absolute positioning — that broke
+                // click hit-testing for the chip inside the TitleBar.
                 div()
                     .size_full()
-                    .relative()
                     .flex()
                     .items_center()
-                    .justify_center()
                     .text_size(px(13.0))
+                    .child(div().flex_1())
                     .child("Terminal")
                     .child(
                         div()
-                            .absolute()
-                            .right_2()
-                            .top_0()
-                            .bottom_0()
+                            .flex_1()
                             .flex()
                             .items_center()
+                            .justify_end()
+                            .pr_2()
                             .child(self.profile_chip(cx)),
                     ),
             ))
-            .when(self.picker_open, |el: Div| el.child(self.render_picker(cx)))
             .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
                 div()
@@ -888,9 +880,14 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &NextTab, _, cx| this.next_tab(cx)))
                     .on_action(cx.listener(|this, _: &PrevTab, _, cx| this.prev_tab(cx)))
                     .on_action(cx.listener(|this, _: &CycleProfile, _, cx| {
-                        // ⌘⇧P opens the profile picker (the title-bar chip can't
-                        // reliably receive clicks, so the keyboard is the path in).
+                        // ⌘⇧P toggles the profile picker.
                         this.picker_open = !this.picker_open;
+                        cx.notify();
+                    }))
+                    .on_action(cx.listener(|this, _: &ShowProfiles, _, cx| {
+                        // Right-click → Profiles… — a guaranteed mouse path to the
+                        // picker (the picker rows are clickable body overlays).
+                        this.picker_open = true;
                         cx.notify();
                     }))
                     // Drag to select a cell range.
@@ -960,6 +957,8 @@ impl Render for TerminalView {
                             .menu("Select All", Box::new(SelectAll))
                             .separator()
                             .menu("Clear", Box::new(Clear))
+                            .separator()
+                            .menu("Profiles…", Box::new(ShowProfiles))
                     }),
             )
             .when(searching, |el| {
@@ -990,6 +989,9 @@ impl Render for TerminalView {
                         ),
                 )
             })
+            // The picker is an absolute overlay — render it LAST so it paints on
+            // top of the opaque terminal body instead of behind it.
+            .when(self.picker_open, |el: Div| el.child(self.render_picker(cx)))
     }
 }
 

@@ -661,6 +661,8 @@ struct MonitorView {
     pending_kill: Option<PendingKill>,
     /// Whether the column chooser dropdown is open.
     cols_menu_open: bool,
+    /// PID whose detail inspector is open (double-click a row).
+    inspect_pid: Option<u32>,
 }
 
 impl MonitorView {
@@ -680,14 +682,20 @@ impl MonitorView {
         // click-selection path here so keyboard selection is the source of truth
         // for the target PID — otherwise a 2s background refresh could re-point
         // the highlighted row at a different process before a kill is requested.
-        cx.subscribe(&table, |_this, table, event: &TableEvent, cx| {
-            if let TableEvent::SelectRow(row_ix) = event {
+        cx.subscribe(&table, |this, table, event: &TableEvent, cx| match event {
+            TableEvent::SelectRow(row_ix) => {
                 let row_ix = *row_ix;
                 table.update(cx, |state, _| {
                     let pid = state.delegate().rows.get(row_ix).map(|r| r.pid);
                     state.delegate_mut().selected_pid = pid;
                 });
             }
+            TableEvent::DoubleClickedRow(row_ix) => {
+                let pid = table.read(cx).delegate().rows.get(*row_ix).map(|r| r.pid);
+                this.inspect_pid = pid;
+                cx.notify();
+            }
+            _ => {}
         })
         .detach();
 
@@ -701,6 +709,7 @@ impl MonitorView {
             history: History::default(),
             pending_kill: None,
             cols_menu_open: false,
+            inspect_pid: None,
         };
         view.refresh(cx);
 
@@ -876,7 +885,11 @@ impl MonitorView {
     }
 
     fn cancel_kill(&mut self, cx: &mut Context<Self>) {
-        if self.pending_kill.take().is_some() {
+        // Escape also dismisses the inspector and the column chooser.
+        if self.pending_kill.take().is_some()
+            || self.inspect_pid.take().is_some()
+            || std::mem::take(&mut self.cols_menu_open)
+        {
             cx.notify();
         }
     }
@@ -1278,6 +1291,106 @@ impl MonitorView {
                 .child(dialog),
         )
     }
+
+    /// The double-click process inspector — a detail panel of real `sysinfo` data.
+    fn render_inspector(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+        let pid = self.inspect_pid?;
+        let state = self.table.read(cx);
+        let d = state.delegate();
+        let row = d.rows.iter().chain(d.all_rows.iter()).find(|r| r.pid == pid)?;
+        let path = d
+            .system
+            .process(Pid::from_u32(pid))
+            .and_then(|p| p.exe().map(|e| e.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "—".into());
+
+        let info_row = |label: &str, value: String| {
+            div()
+                .h_flex()
+                .items_center()
+                .justify_between()
+                .gap_4()
+                .py_1p5()
+                .border_b_1()
+                .border_color(mac::separator())
+                .child(div().text_size(px(12.0)).text_color(mac::text_secondary()).child(label.to_string()))
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .font_weight(mac::MEDIUM)
+                        .text_color(mac::text())
+                        .child(value),
+                )
+        };
+
+        let dialog = div()
+            .v_flex()
+            .gap_1()
+            .w(px(420.0))
+            .p_5()
+            .rounded(px(12.0))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .justify_between()
+                    .pb_2()
+                    .child(
+                        div()
+                            .text_size(px(16.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .text_color(mac::text())
+                            .child(row.name.clone()),
+                    )
+                    .child(
+                        Button::new("inspect-close")
+                            .label("Done")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.inspect_pid = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(info_row("Process ID (PID)", row.pid.to_string()))
+            .child(info_row("Parent PID", row.ppid.map(|p| p.to_string()).unwrap_or_else(|| "—".into())))
+            .child(info_row("User", row.user.to_string()))
+            .child(info_row("Status", row.status.to_string()))
+            .child(info_row("% CPU", format!("{:.1}", row.cpu)))
+            .child(info_row("Memory", format_mem(row.mem)))
+            .child(info_row("Virtual Memory", format_mem(row.vmem)))
+            .child(info_row("Disk I/O", format_mem(row.disk)))
+            .child(info_row("Run Time", format_duration(row.run_time)))
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .pt_2()
+                    .child(div().text_size(px(12.0)).text_color(mac::text_secondary()).child("Path"))
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(mac::text())
+                            .child(path),
+                    ),
+            );
+
+        Some(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(gpui::rgba(0x00000040))
+                .child(dialog),
+        )
+    }
 }
 
 impl Render for MonitorView {
@@ -1338,6 +1451,7 @@ impl Render for MonitorView {
                 this.child(self.render_columns_menu(cx))
             })
             .children(self.render_confirm(cx))
+            .children(self.render_inspector(cx))
     }
 }
 

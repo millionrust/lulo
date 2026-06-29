@@ -10,7 +10,7 @@
 //! app's root element or opaque siblings paint over it.
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, Action, AnyElement, ElementId,
+    anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, ElementId,
     InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, Point,
     SharedString, StatefulInteractiveElement as _, Styled as _,
 };
@@ -220,10 +220,8 @@ impl ContextMenu {
 
     /// Build the overlay element. Render this as the LAST child of the app root.
     pub fn render(self) -> impl IntoElement {
+        let pos = self.pos;
         let mut panel = div()
-            .absolute()
-            .left(self.pos.x)
-            .top(self.pos.y)
             .min_w(px(190.0))
             .py(px(5.0))
             .rounded(px(8.0))
@@ -287,6 +285,16 @@ impl ContextMenu {
             .on_mouse_down(MouseButton::Right, |_, window, cx| {
                 window.dispatch_action(Box::new(DismissMenu), cx);
             })
-            .child(panel)
+            // Anchor the panel at the cursor but clamp it inside the window so a
+            // menu opened near the bottom/right edge never renders off-screen.
+            .child(
+                deferred(
+                    anchored()
+                        .position(pos)
+                        .snap_to_window_with_margin(px(8.0))
+                        .child(panel),
+                )
+                .with_priority(1),
+            )
     }
 }

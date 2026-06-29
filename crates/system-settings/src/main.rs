@@ -121,6 +121,7 @@ struct SysInfo {
     chip: String,
     memory: String,
     model: String,
+    serial: String,
 }
 
 // ---- a single Wi-Fi network (mock backend) ------------------------------
@@ -1444,6 +1445,7 @@ impl Settings {
             value_row("icons/settings.svg", secondary(), "Chip".into(), si.chip.clone().into()),
             value_row("icons/database.svg", secondary(), "Memory".into(), si.memory.clone().into()),
             value_row("icons/refresh-cw.svg", secondary(), "macOS".into(), si.os.clone().into()),
+            value_row("icons/info.svg", secondary(), "Serial Number".into(), si.serial.clone().into()),
         ])
     }
 }
@@ -1771,7 +1773,18 @@ fn gather_sysinfo() -> SysInfo {
 
     let model = cmd("sysctl", &["-n", "hw.model"]).unwrap_or_else(|| "Mac".into());
 
-    SysInfo { computer_name, os, chip, memory, model }
+    // Serial number from the IOPlatformExpertDevice registry node.
+    let serial = cmd("ioreg", &["-rd1", "-c", "IOPlatformExpertDevice"])
+        .and_then(|out| {
+            out.lines()
+                .find(|l| l.contains("IOPlatformSerialNumber"))
+                .and_then(|l| l.split('=').nth(1))
+                .map(|v| v.trim().trim_matches('"').to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "—".into());
+
+    SysInfo { computer_name, os, chip, memory, model, serial }
 }
 
 /// Capitalize the first letter of a word ("charged" → "Charged").

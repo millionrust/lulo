@@ -14,14 +14,17 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
   copy/paste, find, font-zoom, clear, tabs, **9 color profiles** (picker via
   chip / ⌘⇧P / right-click), and a **right-click menu**.
 - **System Settings** ✅ — navigation + search, interactive persisted controls,
-  subpage history, and live **Battery / Displays / Network** panes.
+  subpage history, live **Battery / Displays / Network** panes, a **Storage**
+  subpage (real `df`), and a real **audio device list** in Sound (output/input
+  device names via `system_profiler`, system default marked).
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image/PDF attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).
 - **Activity Monitor** ✅ — live table, process selection + Quit/Force Quit,
   search, five tabbed panes with sparklines, sortable columns, a **column
-  chooser** (five extra real columns, persisted), **per-core CPU bars**, and a
-  double-click **process inspector**.
+  chooser** (five extra real columns, persisted), **per-core CPU bars**, a
+  double-click **process inspector**, and a real **per-interface Network table**
+  (interface name, cumulative + per-interval rates, busiest-first).
 - **Text Editor** ✅ — find/replace, dirty-state + safe prompts, autosave, and a
   **formatted RTF viewer** (NSAttributedString → styled runs).
 - **App Drawer** ✅ — scan/icons/search/launch, keyboard nav, grid/list toggle,

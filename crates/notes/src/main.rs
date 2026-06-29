@@ -668,7 +668,7 @@ impl NotesView {
                             .text_size(px(11.0))
                             .font_weight(mac::SEMIBOLD)
                             .text_color(mac::text_tertiary())
-                            .child("ICLOUD"),
+                            .child("ON MY MAC"),
                     )
                     .child(
                         Button::new("new-folder")

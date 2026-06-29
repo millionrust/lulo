@@ -999,6 +999,63 @@ impl MonitorView {
             .child(div().flex().items_end().gap(px(1.0)).size_full().children(bars))
     }
 
+    /// Per-core CPU usage bars for the CPU pane (real `sysinfo` per-core data).
+    fn render_core_bars(&self) -> impl IntoElement {
+        let blue = gpui::rgb(0x007aff);
+        let cores = self.agg.per_core.clone();
+        div()
+            .v_flex()
+            .gap_2()
+            .pt_3()
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(mac::text_tertiary())
+                    .child("CPU CORES"),
+            )
+            .child(
+                div().flex().flex_wrap().gap_x_4().gap_y_2().children(
+                    cores.into_iter().enumerate().map(|(i, usage)| {
+                        let frac = (usage / 100.0).clamp(0.0, 1.0);
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .w(px(160.0))
+                            .child(
+                                div()
+                                    .w(px(48.0))
+                                    .text_size(px(11.0))
+                                    .text_color(mac::text_secondary())
+                                    .child(format!("Core {}", i + 1)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .h(px(6.0))
+                                    .rounded(px(3.0))
+                                    .bg(mac::chrome())
+                                    .child(
+                                        div()
+                                            .h_full()
+                                            .w(gpui::relative(frac))
+                                            .rounded(px(3.0))
+                                            .bg(blue),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .w(px(34.0))
+                                    .text_size(px(11.0))
+                                    .text_color(mac::text())
+                                    .child(format!("{:.0}%", usage)),
+                            )
+                    }),
+                ),
+            )
+    }
+
     fn render_summary(&self, cx: &Context<Self>) -> impl IntoElement {
         let blue = gpui::rgb(0x007aff).into();
         let green = gpui::rgb(0x28b463).into();
@@ -1092,6 +1149,9 @@ impl MonitorView {
             .border_color(mac::separator())
             .child(div().h_flex().gap_3().children(cards))
             .child(self.sparkline(&samples, accent))
+            .when(matches!(self.tab, Tab::Cpu) && !self.agg.per_core.is_empty(), |el| {
+                el.child(self.render_core_bars())
+            })
     }
 
     fn render_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {

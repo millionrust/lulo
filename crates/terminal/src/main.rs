@@ -21,6 +21,7 @@ use gpui::{
     Window,
 };
 use gpui_component::input::{Input, InputState};
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::StyledExt as _;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
@@ -952,7 +953,14 @@ impl Render for TerminalView {
                     .font_family(FONT)
                     .text_size(px(self.font_size))
                     .v_flex()
-                    .children(rows),
+                    .children(rows)
+                    .context_menu(|menu, _, _| {
+                        menu.menu("Copy", Box::new(Copy))
+                            .menu("Paste", Box::new(Paste))
+                            .menu("Select All", Box::new(SelectAll))
+                            .separator()
+                            .menu("Clear", Box::new(Clear))
+                    }),
             )
             .when(searching, |el| {
                 el.child(

@@ -17,12 +17,12 @@ use std::time::Duration;
 
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, Entity,
-    FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ParentElement, Render,
-    SharedString,
-    Stateful, StatefulInteractiveElement as _, Styled, Window,
+    FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement,
+    Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{
     input::{Input, InputState},
+    menu::{ContextMenuExt as _, PopupMenu},
     StyledExt as _,
 };
 use rmac_ui::mac;
@@ -34,7 +34,7 @@ const ACCENT: u32 = 0x0a84ff;
 
 actions!(
     app_drawer,
-    [MoveLeft, MoveRight, MoveUp, MoveDown, Launch, ClearSearch]
+    [MoveLeft, MoveRight, MoveUp, MoveDown, Launch, ClearSearch, OpenApp, RevealInFinder]
 );
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -228,6 +228,33 @@ impl AppDrawer {
         }
     }
 
+    fn selected_app_path(&self, cx: &gpui::App) -> Option<PathBuf> {
+        let vis = self.visible_indices(cx);
+        let &idx = vis.get(self.selected.min(vis.len().saturating_sub(1)))?;
+        self.apps.get(idx).map(|a| a.path.clone())
+    }
+
+    /// Reveal the selected app in the real Finder. GPUI can't initiate a native
+    /// drag out to the Dock/desktop, so this is the honest bridge: it takes you
+    /// to the app in Finder, where it can be dragged onto the Dock.
+    fn reveal_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = self.selected_app_path(cx) {
+            let _ = Command::new("open").arg("-R").arg(&path).spawn();
+        }
+    }
+
+    fn open_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(path) = self.selected_app_path(cx) {
+            cx.open_with_system(&path);
+        }
+    }
+
+    /// The right-click menu shared by grid tiles and list rows.
+    fn app_menu(menu: PopupMenu) -> PopupMenu {
+        menu.menu("Open", Box::new(OpenApp))
+            .menu("Reveal in Finder", Box::new(RevealInFinder))
+    }
+
     fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.query
             .update(cx, |st, cx| st.set_value("", window, cx));
@@ -306,6 +333,15 @@ impl AppDrawer {
                 this.selected = pos;
                 cx.open_with_system(&path);
             }))
+            // Right-click selects this tile so the menu acts on it.
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, _, _, cx| {
+                    this.selected = pos;
+                    cx.notify();
+                }),
+            )
+            .context_menu(|menu, _, _| Self::app_menu(menu))
     }
 
     /// `pos` is the position in the currently-visible list (what `selected`
@@ -346,6 +382,14 @@ impl AppDrawer {
                 this.selected = pos;
                 cx.open_with_system(&path);
             }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, _, _, cx| {
+                    this.selected = pos;
+                    cx.notify();
+                }),
+            )
+            .context_menu(|menu, _, _| Self::app_menu(menu))
     }
 
     fn view_toggle(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -486,6 +530,8 @@ impl Render for AppDrawer {
             .on_action(cx.listener(|this, _: &MoveUp, _, cx| this.move_by(0, -1, cx)))
             .on_action(cx.listener(|this, _: &MoveDown, _, cx| this.move_by(0, 1, cx)))
             .on_action(cx.listener(|this, _: &Launch, _, cx| this.launch_selected(cx)))
+            .on_action(cx.listener(|this, _: &OpenApp, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &RevealInFinder, _, cx| this.reveal_selected(cx)))
             .on_action(cx.listener(|this, _: &ClearSearch, window, cx| {
                 this.clear_search(window, cx)
             }))

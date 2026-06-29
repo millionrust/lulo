@@ -14,3 +14,12 @@ gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui = { path = "../rmac-ui" }
 rmac-editor = { path = "../rmac-editor" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+    "NSAttributedString", "NSString", "NSData", "NSRange", "NSValue", "NSDictionary",
+] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSAttributedString", "NSFont", "NSFontDescriptor", "NSColor", "NSColorSpace",
+] }

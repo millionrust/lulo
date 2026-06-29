@@ -6,12 +6,15 @@
 //! autosave to a recovery file, and a Format affordance (monospace + font
 //! size). Shares the editing configuration with Notes via `rmac-editor`.
 
+mod rtf;
+
 use std::{path::PathBuf, time::Duration};
 
 use gpui::{
-    actions, div, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
+    actions, div, font, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
     IntoElement, KeyBinding, ParentElement, PathPromptOptions, PromptButton, PromptLevel, Render,
-    SharedString, Styled, Subscription, Window,
+    SharedString, StatefulInteractiveElement as _, Styled, StyledText, Subscription, TextRun,
+    UnderlineStyle, Window,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui_component::{
@@ -70,6 +73,10 @@ struct EditorView {
     // Format
     mono: bool,
     font_size: f32,
+
+    /// When an `.rtf` is opened, its parsed styled runs for the formatted
+    /// preview. `Some` puts the editor in read-only RTF-viewer mode.
+    rtf_runs: Option<Vec<rtf::RtfRun>>,
 
     // Infra
     focus: FocusHandle,
@@ -167,6 +174,7 @@ impl EditorView {
             current: 0,
             mono: false,
             font_size: 15.0,
+            rtf_runs: None,
             focus: cx.focus_handle(),
             recovery_path,
             autosave_gen: 0,
@@ -235,8 +243,20 @@ impl EditorView {
     fn do_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.input.update(cx, |s, cx| s.set_value("", window, cx));
         self.path = None;
+        self.rtf_runs = None;
         self.mark_clean(String::new());
         cx.notify();
+    }
+
+    /// Leave the read-only RTF preview and continue editing the extracted text
+    /// as a new untitled plain-text document — the original `.rtf` is never
+    /// overwritten.
+    fn edit_as_plain_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.rtf_runs.take().is_some() {
+            self.path = None;
+            self.dirty = true; // an unsaved derived document
+            cx.notify();
+        }
     }
 
     fn do_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -251,13 +271,22 @@ impl EditorView {
             let Some(path) = paths.into_iter().next() else {
                 return;
             };
-            let Ok(content) = std::fs::read_to_string(&path) else {
+            let Ok(bytes) = std::fs::read(&path) else {
                 return;
+            };
+            // `.rtf` files open as a read-only formatted preview; the editable
+            // body holds the extracted plain text.
+            let is_rtf = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("rtf"));
+            let rtf_runs = if is_rtf { rtf::parse_rtf(&bytes) } else { None };
+            let content = match &rtf_runs {
+                Some(runs) => runs.iter().map(|r| r.text.as_str()).collect::<String>(),
+                None => String::from_utf8_lossy(&bytes).into_owned(),
             };
             let _ = this.update_in(cx, |this, window, cx| {
                 this.input
                     .update(cx, |s, cx| s.set_value(content.clone(), window, cx));
                 this.path = Some(path);
+                this.rtf_runs = rtf_runs;
                 this.mark_clean(content);
                 cx.notify();
             });
@@ -273,6 +302,10 @@ impl EditorView {
     /// the save has actually succeeded (important for the async Save-As path so
     /// the destructive action never runs before the file is written).
     fn save_with(&mut self, then: Option<Pending>, window: &mut Window, cx: &mut Context<Self>) {
+        // The RTF preview is read-only — never write plain text over the .rtf.
+        if self.rtf_runs.is_some() {
+            return;
+        }
         let content = self.input.read(cx).value().to_string();
         if let Some(path) = self.path.clone() {
             match std::fs::write(&path, &content) {
@@ -704,6 +737,87 @@ impl EditorView {
 
         col
     }
+
+    /// The read-only formatted RTF preview: a banner plus styled text built from
+    /// the parsed runs (weight / italic / underline / color preserved).
+    fn render_rtf_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let base = if self.mono { rmac_ui::MONO_FONT } else { rmac_ui::UI_FONT };
+        let size = self.font_size;
+        let runs = self.rtf_runs.as_deref().unwrap_or(&[]);
+
+        let mut text = String::new();
+        let mut text_runs: Vec<TextRun> = Vec::new();
+        for r in runs {
+            if r.text.is_empty() {
+                continue;
+            }
+            let family = r.family.clone().unwrap_or_else(|| base.to_string());
+            let mut f = font(family);
+            if r.bold {
+                f = f.bold();
+            }
+            if r.italic {
+                f = f.italic();
+            }
+            let color = r
+                .color
+                .map(|(rr, gg, bb)| {
+                    gpui::rgb(((rr as u32) << 16) | ((gg as u32) << 8) | bb as u32).into()
+                })
+                .unwrap_or_else(mac::text);
+            text_runs.push(TextRun {
+                len: r.text.len(),
+                font: f,
+                color,
+                background_color: None,
+                underline: r.underline.then(|| UnderlineStyle {
+                    thickness: px(1.0),
+                    color: None,
+                    wavy: false,
+                }),
+                strikethrough: None,
+            });
+            text.push_str(&r.text);
+        }
+
+        let banner = div()
+            .flex_none()
+            .h_flex()
+            .items_center()
+            .justify_between()
+            .mb_4()
+            .px_3()
+            .py_2()
+            .rounded(px(8.0))
+            .bg(mac::chrome())
+            .border_1()
+            .border_color(mac::separator())
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child("Read-only RTF preview — formatting shown as in the document."),
+            )
+            .child(
+                Button::new("edit-plain")
+                    .label("Edit as Plain Text")
+                    .small()
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.edit_as_plain_text(window, cx)),
+                    ),
+            );
+
+        div()
+            .id("rtf-preview")
+            .flex_1()
+            .overflow_y_scroll()
+            .px(px(48.0))
+            .py(px(20.0))
+            .text_size(px(size))
+            .line_height(px(size * 1.5))
+            .child(banner)
+            .child(StyledText::new(text).with_runs(text_runs))
+    }
 }
 
 impl Render for EditorView {
@@ -740,7 +854,9 @@ impl Render for EditorView {
             .text_color(mac::text())
             .child(self.render_toolbar(cx))
             .when(self.find_open, |d| d.child(self.render_find_bar(cx)))
-            .child(
+            .child(if self.rtf_runs.is_some() {
+                self.render_rtf_preview(cx).into_any_element()
+            } else {
                 div()
                     .flex_1()
                     .px(px(48.0))
@@ -748,8 +864,9 @@ impl Render for EditorView {
                     .font_family(font_family)
                     .text_size(px(size))
                     .line_height(px(size * 1.5))
-                    .child(Input::new(&self.input).h_full().appearance(false)),
-            )
+                    .child(Input::new(&self.input).h_full().appearance(false))
+                    .into_any_element()
+            })
     }
 }
 

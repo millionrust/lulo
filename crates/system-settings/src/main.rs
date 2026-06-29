@@ -152,12 +152,24 @@ struct DisplayInfo {
     is_main: bool,
 }
 
+/// Primary network connection (read once at launch).
+struct NetworkInfo {
+    service: String,
+    interface: String,
+    connected: bool,
+    ip: Option<String>,
+    router: Option<String>,
+    dns: Option<String>,
+    mac: Option<String>,
+}
+
 struct Settings {
     account: SharedString,
     sysinfo: SysInfo,
     battery: Option<BatteryInfo>,
     displays: Vec<DisplayInfo>,
     gpu: String,
+    network: NetworkInfo,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -456,6 +468,7 @@ impl Settings {
             battery: gather_battery(),
             displays,
             gpu,
+            network: gather_network(),
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -720,6 +733,7 @@ impl Settings {
                 "Sound" => self.render_sound(cx),
                 "Battery" => self.render_battery(),
                 "Displays" => self.render_displays(),
+                "Network" => self.render_network(),
                 _ => self.render_generic(cx),
             }
         };
@@ -1233,6 +1247,50 @@ impl Settings {
         self.pane(cards)
     }
 
+    // ---- Network (real read-only) -------------------------------------
+
+    fn render_network(&self) -> Div {
+        let blue = hsl(0x0a84ff);
+        let gray = hsl(0x8e8e93);
+        let green = hsl(0x34c759);
+        let n = &self.network;
+
+        let status_color = if n.connected { green } else { gray };
+        let mut conn_rows = vec![value_row(
+            "icons/globe.svg",
+            status_color,
+            "Status".into(),
+            if n.connected { "Connected".into() } else { "Not Connected".into() },
+        )];
+        conn_rows.push(value_row(
+            "icons/wifi.svg",
+            blue,
+            "Service".into(),
+            format!("{} ({})", n.service, n.interface).into(),
+        ));
+
+        let mut detail_rows: Vec<AnyElement> = Vec::new();
+        if let Some(ip) = &n.ip {
+            detail_rows.push(value_row("icons/globe.svg", gray, "IP Address".into(), ip.clone().into()));
+        }
+        if let Some(r) = &n.router {
+            detail_rows.push(value_row("icons/folder-symlink.svg", gray, "Router".into(), r.clone().into()));
+        }
+        if let Some(d) = &n.dns {
+            detail_rows.push(value_row("icons/info.svg", gray, "DNS Server".into(), d.clone().into()));
+        }
+        if let Some(m) = &n.mac {
+            detail_rows.push(value_row("icons/key.svg", gray, "Hardware Address".into(), m.clone().into()));
+        }
+
+        let mut cards = vec![card(conn_rows)];
+        if !detail_rows.is_empty() {
+            cards.push(section_header("TCP/IP"));
+            cards.push(card(detail_rows));
+        }
+        self.pane(cards)
+    }
+
     // ---- subpages -----------------------------------------------------
 
     fn render_subpage(&self, sub: &SubPage, _cx: &Context<Self>) -> Div {
@@ -1679,6 +1737,63 @@ fn gather_battery() -> Option<BatteryInfo> {
     .to_string();
 
     Some(BatteryInfo { present, percent, status, source, time_remaining, cycle_count, health_percent, condition })
+}
+
+/// Read the primary network connection (interface, IP, router, DNS, MAC).
+fn gather_network() -> NetworkInfo {
+    let default_route = cmd("route", &["-n", "get", "default"]).unwrap_or_default();
+    let field = |key: &str| -> Option<String> {
+        default_route.lines().find_map(|l| {
+            let l = l.trim();
+            l.strip_prefix(key).map(|s| s.trim().to_string())
+        })
+    };
+    let interface = field("interface:").unwrap_or_default();
+    let router = field("gateway:");
+
+    // Map the interface to its hardware-port name (e.g. "Wi-Fi", "Ethernet").
+    let ports = cmd("networksetup", &["-listallhardwareports"]).unwrap_or_default();
+    let mut service = "Network".to_string();
+    let mut mac = None;
+    if !interface.is_empty() {
+        for block in ports.split("Hardware Port:") {
+            if block.lines().any(|l| l.trim() == format!("Device: {interface}")) {
+                if let Some(name) = block.lines().next() {
+                    service = name.trim().to_string();
+                }
+                mac = block.lines().find_map(|l| {
+                    l.trim().strip_prefix("Ethernet Address:").map(|s| s.trim().to_string())
+                });
+            }
+        }
+    }
+
+    let ip = if interface.is_empty() {
+        None
+    } else {
+        cmd("ipconfig", &["getifaddr", &interface])
+    };
+
+    let dns = cmd("scutil", &["--dns"]).and_then(|o| {
+        o.lines().find_map(|l| {
+            let l = l.trim();
+            if l.starts_with("nameserver[0]") {
+                l.split(':').nth(1).map(|s| s.trim().to_string())
+            } else {
+                None
+            }
+        })
+    });
+
+    NetworkInfo {
+        connected: ip.is_some(),
+        service,
+        interface,
+        ip,
+        router,
+        dns,
+        mac,
+    }
 }
 
 /// Read attached displays + GPU from `system_profiler SPDisplaysDataType`.

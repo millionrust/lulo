@@ -40,9 +40,16 @@ These need capabilities GPUI doesn't expose; documented honestly rather than moc
 - **GPU / cache per-process metrics** (Activity Monitor): require Metal/IOKit not
   linked; no fabricated columns were added. (macOS Activity Monitor also has no
   GPU/Cache *tab* — its five tabs already exist here.)
-- **Clickable children inside the title bar**: gpui-component's `TitleBar` doesn't
-  reliably pass clicks to custom children, so the Terminal profile picker opens
-  via ⌘⇧P rather than a title-bar chip click.
+
+## Layout/paint gotchas learned (GPUI)
+- **Absolute overlays must be the LAST child** — GPUI paints children in order,
+  so an absolute panel added before an opaque sibling is hidden behind it (this
+  silently broke the Terminal profile picker until moved to render last).
+- **Flex children default to content-size min-height** — a scroll area in a
+  flex column won't shrink (pushing later siblings off-screen) without
+  `min_h(0)` on it and every flex ancestor; fixed the Finder/Notes bottom bars.
+- Title-bar buttons (gpui-component `Button`) DO receive clicks; raw `div`s in an
+  `absolute` container inside the `TitleBar` don't — use a `Button` in flex flow.
 
 ## Notes
 - Verify *look and behavior* with screenshots / real synthetic clicks (CGEvent),

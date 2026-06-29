@@ -8,11 +8,15 @@
 //! `rmac_ui::boot(...)` from `main()`.
 
 use gpui::{
-    div, point, px, size, App, AppContext as _, Application, Bounds, Context, IntoElement,
-    ParentElement as _, Render, SharedString, Styled as _, TitlebarOptions, Window, WindowBounds,
+    div, point, px, rgb, rgba, size, App, AppContext as _, Application, Bounds, Context, ElementId,
+    Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, TitlebarOptions, Window, WindowBounds,
     WindowOptions,
 };
 use gpui_component::{Root, TitleBar};
+
+mod components;
+pub use components::{alert, dialog, dialog_button, DialogButtonKind};
 
 // Re-exports so apps depend on one crate for theming; these also bring the
 // traits into scope here for `.v_flex()`, `cx.theme()`, etc.
@@ -35,14 +39,17 @@ pub fn window_options(width: f32, height: f32) -> WindowOptions {
         titlebar: Some(TitlebarOptions {
             title: None,
             appears_transparent: true,
-            traffic_light_position: Some(point(px(12.0), px(12.0))),
+            // Push the OS traffic lights off-screen — rmac draws its own in the
+            // title bar (see `title_bar`). The window keeps a full-size content
+            // view so our chrome draws to the top edge.
+            traffic_light_position: Some(point(px(-200.0), px(0.0))),
         }),
         ..Default::default()
     }
 }
 
 /// Window options for an app with a **unified 52pt toolbar** (Finder-style):
-/// traffic lights positioned for the taller bar.
+/// our own traffic lights are drawn by the app's toolbar.
 pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::new(
@@ -52,7 +59,8 @@ pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
         titlebar: Some(TitlebarOptions {
             title: None,
             appears_transparent: true,
-            traffic_light_position: Some(point(px(19.0), px(19.0))),
+            // OS traffic lights hidden off-screen; rmac draws its own.
+            traffic_light_position: Some(point(px(-200.0), px(0.0))),
         }),
         ..Default::default()
     }
@@ -89,18 +97,88 @@ pub fn boot_unified_with_assets<A, V, F>(
         });
 }
 
-/// The shared title bar: traffic-light gutter on the left, centered title.
-/// Apps put this at the top of their root `div`.
+/// One traffic-light button: a colored circle that reveals its glyph on hover
+/// and runs `on_click` (a window-control action). The glyph is always present
+/// but transparent until hover, giving the macOS reveal-on-hover effect.
+fn traffic_light(
+    id: impl Into<ElementId>,
+    color: Hsla,
+    glyph: &'static str,
+    on_click: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .size(px(12.0))
+        .rounded_full()
+        .bg(color)
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_size(px(9.0))
+        .font_weight(mac::BOLD)
+        .text_color(rgba(0x00000000))
+        .hover(|s| s.text_color(rgba(0x00000088)))
+        .child(glyph)
+        .on_click(move |_, window, cx| on_click(window, cx))
+}
+
+/// The rmac traffic-light cluster (close / minimize / zoom), wired to the GPUI
+/// window controls. Reusable so unified-toolbar apps can place it themselves.
+pub fn traffic_lights() -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .child(traffic_light(
+            "tl-close",
+            rgb(0xff5f57).into(),
+            "✕",
+            |window, _| window.remove_window(),
+        ))
+        .child(traffic_light(
+            "tl-min",
+            rgb(0xfebc2e).into(),
+            "—",
+            |window, _| window.minimize_window(),
+        ))
+        .child(traffic_light(
+            "tl-zoom",
+            rgb(0x28c840).into(),
+            "+",
+            |window, _| window.zoom_window(),
+        ))
+}
+
+/// The shared title bar: our own traffic lights on the left, centered title.
+/// Apps put this at the top of their root `div`. The bar stays draggable via
+/// gpui-component's `TitleBar` container.
 pub fn title_bar(title: impl Into<SharedString>) -> impl IntoElement {
     let title: SharedString = title.into();
     TitleBar::new().child(
         div()
             .size_full()
+            .relative()
             .flex()
             .items_center()
-            .justify_center()
-            .text_sm()
-            .child(title),
+            .child(
+                div()
+                    .absolute()
+                    .left(px(13.0))
+                    .top_0()
+                    .bottom_0()
+                    .flex()
+                    .items_center()
+                    .child(traffic_lights()),
+            )
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_sm()
+                    .child(title),
+            ),
     )
 }
 
@@ -199,6 +277,16 @@ pub mod mac {
     pub fn hover() -> Hsla { rgba(0x0000000a).into() }
     /// Neutral (unfocused) selection fill in source lists.
     pub fn sidebar_selection() -> Hsla { rgba(0x00000014).into() }
+
+    // Accents (shared by buttons, menus, selections)
+    /// System blue — primary actions, selection, focus.
+    pub fn accent() -> Hsla { rgb(0x007aff).into() }
+    /// System red — destructive actions.
+    pub fn danger() -> Hsla { rgb(0xff3b30).into() }
+    /// On-accent text (white).
+    pub fn on_accent() -> Hsla { rgb(0xffffff).into() }
+    /// Scrim behind a modal dialog (~22% black).
+    pub fn scrim() -> Hsla { rgba(0x00000038).into() }
 
     // Notes accent family (yellow)
     pub fn notes_accent() -> Hsla { rgb(0xffc40c).into() }

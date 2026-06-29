@@ -780,6 +780,28 @@ impl NotesView {
             )
     }
 
+    /// Footer with live word + character counts for the active note body.
+    fn render_count_footer(&self, cx: &Context<Self>) -> impl IntoElement {
+        let body = self.body.read(cx).value().to_string();
+        let words = body.split_whitespace().count();
+        let chars = body.chars().count();
+        div()
+            .flex_none()
+            .h(px(22.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap_2()
+            .border_t_1()
+            .border_color(mac::separator())
+            .bg(mac::window())
+            .text_size(px(11.0))
+            .text_color(mac::text_tertiary())
+            .child(format!("{words} word{}", if words == 1 { "" } else { "s" }))
+            .child(div().text_color(mac::text_tertiary()).child("•"))
+            .child(format!("{chars} character{}", if chars == 1 { "" } else { "s" }))
+    }
+
     fn render_format_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let preview = self.preview;
         let btn = |id: &'static str, label: &'static str, tip: &'static str, tok: &'static str, cx: &mut Context<Self>| {
@@ -971,6 +993,7 @@ impl NotesView {
                 } else {
                     div()
                         .flex_1()
+                        .min_h(px(0.0))
                         .px(px(44.0))
                         .pt_2()
                         .pb_4()
@@ -980,6 +1003,7 @@ impl NotesView {
                         .child(Input::new(&self.body).h_full().appearance(false))
                         .into_any_element()
                 })
+                .child(self.render_count_footer(cx))
                 .into_any_element()
         } else {
             div()

@@ -1355,6 +1355,61 @@ impl MonitorView {
             .when(matches!(self.tab, Tab::Cpu) && !self.agg.per_core.is_empty(), |el| {
                 el.child(self.render_core_bars())
             })
+            .when(matches!(self.tab, Tab::Memory) && self.agg.mem_total > 0, |el| {
+                el.child(self.render_mem_pressure())
+            })
+    }
+
+    /// The macOS Memory Pressure indicator: a colored bar whose fill tracks the
+    /// real used/total ratio, in the green / yellow / red zones Activity Monitor
+    /// uses. Real data — `sysinfo` used memory (active + wired + compressed).
+    fn render_mem_pressure(&self) -> impl IntoElement {
+        let frac = (self.agg.mem_used as f32 / self.agg.mem_total as f32).clamp(0.0, 1.0);
+        let (color, label): (gpui::Hsla, &str) = if frac < 0.60 {
+            (gpui::rgb(0x28b463).into(), "Normal")
+        } else if frac < 0.80 {
+            (gpui::rgb(0xff9500).into(), "Elevated")
+        } else {
+            (gpui::rgb(0xff3b30).into(), "High")
+        };
+        div()
+            .v_flex()
+            .gap_2()
+            .pt_1()
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .text_color(mac::text_tertiary())
+                            .child("MEMORY PRESSURE"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .text_color(color)
+                            .child(label),
+                    ),
+            )
+            .child(
+                div()
+                    .h(px(10.0))
+                    .w_full()
+                    .rounded(px(5.0))
+                    .bg(mac::chrome())
+                    .child(
+                        div()
+                            .h_full()
+                            .w(gpui::relative(frac))
+                            .rounded(px(5.0))
+                            .bg(color),
+                    ),
+            )
     }
 
     fn render_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {

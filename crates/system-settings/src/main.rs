@@ -1456,7 +1456,18 @@ impl Settings {
             SubPage::Storage => ("Storage".into(), self.storage_body()),
             SubPage::Placeholder { icon, color, title } => (
                 title.clone(),
-                card(vec![value_row(*icon, *color, title.clone(), "Not configured".into())]),
+                div()
+                    .v_flex()
+                    .child(card(vec![value_row(
+                        *icon,
+                        *color,
+                        title.clone(),
+                        "Not implemented".into(),
+                    )]))
+                    .child(note_card(
+                        "This pane isn't built in rmac yet — it doesn't read or change \
+                         any real system setting.",
+                    )),
             ),
         };
 
@@ -1773,9 +1784,32 @@ fn appearance_is_dark() -> bool {
         .unwrap_or(false)
 }
 
+/// Discover the Wi-Fi hardware port's device (e.g. `en0`, `en1`) instead of
+/// assuming `en0`.
+fn wifi_device() -> Option<String> {
+    let out = cmd("networksetup", &["-listallhardwareports"])?;
+    // Blocks look like: "Hardware Port: Wi-Fi\nDevice: en0\n...". Find the
+    // Device line that follows the Wi-Fi port.
+    let mut lines = out.lines();
+    while let Some(line) = lines.next() {
+        if line.trim_start().starts_with("Hardware Port:") && line.contains("Wi-Fi") {
+            for next in lines.by_ref() {
+                if let Some(dev) = next.trim_start().strip_prefix("Device:") {
+                    return Some(dev.trim().to_string());
+                }
+                if next.trim().is_empty() {
+                    break;
+                }
+            }
+        }
+    }
+    None
+}
+
 /// The real current Wi-Fi network name, or `None` if not associated.
 fn gather_wifi_current() -> Option<String> {
-    let out = cmd("networksetup", &["-getairportnetwork", "en0"])?;
+    let dev = wifi_device().unwrap_or_else(|| "en0".to_string());
+    let out = cmd("networksetup", &["-getairportnetwork", &dev])?;
     // "Current Wi-Fi Network: <SSID>" when connected, otherwise a "not
     // associated" message we treat as None.
     out.split_once(':')

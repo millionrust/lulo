@@ -392,6 +392,9 @@ impl FinderView {
         }
 
         let path = self.cwd.clone();
+        // Compared on completion so a slow read for a directory we've since
+        // navigated away from doesn't clobber the current listing.
+        let read_path = path.clone();
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
@@ -406,6 +409,10 @@ impl FinderView {
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
+                // Drop stale results from a superseded navigation.
+                if this.cwd != read_path {
+                    return;
+                }
                 this.entries = entries;
                 this.free_bytes = free;
                 this.selected.clear();
@@ -1732,15 +1739,18 @@ impl FinderView {
                                 .lines()
                                 .filter_map(|l| {
                                     let p = Path::new(l);
-                                    let used = std::fs::metadata(p)
-                                        .and_then(|m| m.accessed())
+                                    // Order by modified time — reliable and matches
+                                    // the visible "Date Modified" column (filesystem
+                                    // atime is noisy/disabled under relatime).
+                                    let when = std::fs::metadata(p)
+                                        .and_then(|m| m.modified())
                                         .unwrap_or(std::time::UNIX_EPOCH);
-                                    entry_for(p).map(|e| (e, used))
+                                    entry_for(p).map(|e| (e, when))
                                 })
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default();
-                    // Newest-used first, capped so the list stays manageable.
+                    // Most recently modified first, capped so the list stays manageable.
                     v.sort_by(|a, b| b.1.cmp(&a.1));
                     v.truncate(200);
                     v.into_iter().map(|(e, _)| e).collect::<Vec<_>>()

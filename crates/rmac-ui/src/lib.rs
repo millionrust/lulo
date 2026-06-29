@@ -16,7 +16,9 @@ use gpui::{
 use gpui_component::{Root, TitleBar};
 
 mod components;
-pub use components::{alert, dialog, dialog_button, DialogButtonKind};
+pub use components::{
+    alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu,
+};
 
 // Re-exports so apps depend on one crate for theming; these also bring the
 // traits into scope here for `.v_flex()`, `cx.theme()`, etc.

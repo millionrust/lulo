@@ -22,7 +22,6 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputState};
-use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::{Selectable as _, Sizable as _, StyledExt as _};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
@@ -233,6 +232,8 @@ struct TerminalView {
     profile: usize,
     /// Whether the profile picker dropdown is open.
     picker_open: bool,
+    /// Where the right-click context menu is open (window-relative), if any.
+    menu_at: Option<Point<Pixels>>,
 }
 
 /// Path to the persisted profile-index file.
@@ -311,6 +312,7 @@ impl TerminalView {
             scroll_accum: 0.0,
             profile: load_profile(),
             picker_open: false,
+            menu_at: None,
         }
     }
 
@@ -884,6 +886,10 @@ impl Render for TerminalView {
                         this.picker_open = !this.picker_open;
                         cx.notify();
                     }))
+                    .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
+                        this.menu_at = None;
+                        cx.notify();
+                    }))
                     .on_action(cx.listener(|this, _: &ShowProfiles, _, cx| {
                         // Right-click → Profiles… — a guaranteed mouse path to the
                         // picker (the picker rows are clickable body overlays).
@@ -951,15 +957,13 @@ impl Render for TerminalView {
                     .text_size(px(self.font_size))
                     .v_flex()
                     .children(rows)
-                    .context_menu(|menu, _, _| {
-                        menu.menu("Copy", Box::new(Copy))
-                            .menu("Paste", Box::new(Paste))
-                            .menu("Select All", Box::new(SelectAll))
-                            .separator()
-                            .menu("Clear", Box::new(Clear))
-                            .separator()
-                            .menu("Profiles…", Box::new(ShowProfiles))
-                    }),
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.menu_at = Some(ev.position);
+                            cx.notify();
+                        }),
+                    ),
             )
             .when(searching, |el| {
                 el.child(
@@ -992,6 +996,20 @@ impl Render for TerminalView {
             // The picker is an absolute overlay — render it LAST so it paints on
             // top of the opaque terminal body instead of behind it.
             .when(self.picker_open, |el: Div| el.child(self.render_picker(cx)))
+            // The right-click context menu paints above everything else.
+            .when_some(self.menu_at, |el: Div, pos| {
+                el.child(
+                    rmac_ui::ContextMenu::new(pos)
+                        .item("Copy", Box::new(Copy))
+                        .item("Paste", Box::new(Paste))
+                        .item("Select All", Box::new(SelectAll))
+                        .separator()
+                        .item("Clear", Box::new(Clear))
+                        .separator()
+                        .item("Profiles…", Box::new(ShowProfiles))
+                        .render(),
+                )
+            })
     }
 }
 

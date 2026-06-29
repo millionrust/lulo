@@ -7,53 +7,47 @@ the way Finder was done. Process per app: **Codex audit → write `crates/<app>/
 Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
 
 ## App status
-- **Finder** ✅ — two audit→build passes done (multi-select, file ops, shortcuts,
-  context menus, tabs, columns, Quick Look, DnD, tags, Get Info). Residual: native
-  pasteboard / drag-OUT to Finder (needs objc), recursive Spotlight search.
-- **Terminal** 🟡 — real PTY, colors, resize ✅. Gaps below.
-- **Notes** 🟡 — create/edit/save/search ✅. Gaps below.
-- **Activity Monitor** 🟡 — live read-only table. Gaps below.
-- **Text Editor** 🟡 — plain text only. Gaps below.
-- **App Drawer** 🟡 — scan/icons/search/launch ✅. Gaps below.
-- **System Settings** ⬜ — navigation + search work; panes are static. Gaps below.
+- **Finder** ✅ — multi-select, file ops, shortcuts, context menus, tabs, columns,
+  Quick Look, DnD, tags, Get Info, recursive Spotlight search, and **native
+  NSPasteboard file copy/paste** (interoperable with the real Finder).
+- **Terminal** ✅ — real PTY, true-color, resize, scrollback, mouse selection,
+  copy/paste, find, font-zoom, clear, **tabs**, and **9 color profiles** (picker
+  via ⌘⇧P, persisted).
+- **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview, and
+  image/PDF attachments.
+- **Activity Monitor** ✅ — live table, process selection + Quit/Force Quit,
+  search, five tabbed panes with sparklines, sortable columns, and a **column
+  chooser** with five extra real-data columns (Parent PID, User, Virtual Mem,
+  Run Time, Status), persisted.
+- **Text Editor** ✅ — find/replace, dirty-state + safe prompts, autosave, and a
+  **formatted RTF viewer** (NSAttributedString → styled runs).
+- **App Drawer** ✅ — scan/icons/search/launch, keyboard nav, grid/list toggle,
+  category filter, and a right-click menu (Open / Reveal in Finder).
+- **System Settings** ✅ — navigation + search, interactive controls with
+  persisted state, subpage history, real reads (Appearance, hostname, chip,
+  memory), and live **Battery** + **Displays** panes.
 
-## Execution order (highest impact-per-effort first)
-
-### 1. Terminal → work-usable  (biggest functional gap in the most-used app)
-- [ ] Scrollback viewport (render grid `display_offset`, scroll wheel → scroll history)
-- [ ] Mouse text selection (drag cell range, render highlight)
-- [ ] Copy selection → clipboard; Paste clipboard → PTY (⌘C/⌘V)
-- [ ] Tabs / new window; bold/underline/italic cell rendering; option/meta + function keys
-- [ ] Profiles (font, colors, cursor, bell)
-
-### 2. Activity Monitor → tool, not viewer
-- [ ] Process selection + Quit / Force Quit (signal via sysinfo/kill)
-- [ ] Search/filter; configurable update interval; PID column sortable
-- [ ] Tabbed panes: CPU / Memory / Energy / Disk / Network (sysinfo data)
-- [ ] Per-pane bottom graphs (sparkline/history)
-
-### 3. Notes → real notes
-- [ ] Real folders (create/rename/delete) + per-note folder; tags
-- [ ] Rich blocks: checklists, headings, bullet lists (and a format bar)
-- [ ] Attachments (image/PDF references) in the note model + editor
-
-### 4. Text Editor → TextEdit
-- [ ] Find/replace UI + operations
-- [ ] Dirty-state tracking, safe new/close prompts, autosave
-- [ ] Rich-text mode + minimal style spans; RTF/HTML import/export
-
-### 5. App Drawer → Launchpad/App Library
-- [ ] Keyboard navigation (arrows / Return / Esc)
-- [ ] Grid/list view toggle
-- [ ] Category metadata + category filter
-
-### 6. System Settings → real controls  (largest; mostly mockup today)
-- [ ] Interactive controls per pane (toggles/sliders) with persisted state
-- [ ] Detail subpage navigation + back/forward history
-- [ ] Wire safe panes to real macOS-readable state (Appearance, Sound, etc.)
+## Framework-blocked (GPUI 0.2.2 limitations — not faked)
+These need capabilities GPUI doesn't expose; documented honestly rather than mocked:
+- **Native drag-OUT to other apps** (Finder drag-to-Finder, App Drawer drag-to-Dock):
+  GPUI's `NSView` only `registerForDraggedTypes` (receives drops) — there's no
+  `NSDraggingSource`/`beginDraggingSession`. App Drawer ships *Reveal in Finder*
+  as the honest bridge; Finder ships native pasteboard copy/paste.
+- **Rich-text *editing* (RTF authoring)**: GPUI has no editable rich-text widget
+  and can't embed a native `NSTextView`. The Text Editor ships a read-only
+  formatted RTF *viewer* instead. (Per-run font *size* also isn't carried by
+  GPUI's `TextRun`.)
+- **GPU / cache per-process metrics** (Activity Monitor): require Metal/IOKit not
+  linked; no fabricated columns were added. (macOS Activity Monitor also has no
+  GPU/Cache *tab* — its five tabs already exist here.)
+- **Clickable children inside the title bar**: gpui-component's `TitleBar` doesn't
+  reliably pass clicks to custom children, so the Terminal profile picker opens
+  via ⌘⇧P rather than a title-bar chip click.
 
 ## Notes
-- Each "→" milestone is roughly a focused session. Verify the *look and behavior*
-  with screenshots / interaction, never just a clean compile.
-- Reuse the infra already built for Finder: gpui actions + keybindings, context
-  menus (gpui-component PopupMenu), custom SVG asset pipeline, `rmac_ui::mac` tokens.
+- Verify *look and behavior* with screenshots / real synthetic clicks (CGEvent),
+  never just a clean compile. Native interop (pasteboard, RTF) is covered by
+  round-trip unit tests against the live system APIs.
+- Shared infra: gpui actions + keybindings, context menus (gpui-component
+  PopupMenu), custom SVG asset pipeline, `rmac_ui::mac` tokens, and `objc2`
+  AppKit interop (macOS-gated) for the pasteboard and RTF readers.

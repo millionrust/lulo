@@ -152,6 +152,14 @@ struct DisplayInfo {
     is_main: bool,
 }
 
+/// Boot-volume storage usage (read once at launch via `df`).
+struct StorageInfo {
+    volume: String,
+    total: u64,
+    used: u64,
+    avail: u64,
+}
+
 /// Primary network connection (read once at launch).
 struct NetworkInfo {
     service: String,
@@ -170,6 +178,7 @@ struct Settings {
     displays: Vec<DisplayInfo>,
     gpu: String,
     network: NetworkInfo,
+    storage: StorageInfo,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -469,6 +478,7 @@ impl Settings {
             displays,
             gpu,
             network: gather_network(),
+            storage: gather_storage(),
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -1291,6 +1301,57 @@ impl Settings {
         self.pane(cards)
     }
 
+    /// Real boot-volume storage usage with a macOS-style fill bar.
+    fn storage_body(&self) -> Div {
+        let s = &self.storage;
+        let frac = if s.total > 0 { (s.used as f32 / s.total as f32).clamp(0.0, 1.0) } else { 0.0 };
+
+        let bar_card = div()
+            .v_flex()
+            .gap_2()
+            .mb_3()
+            .p_4()
+            .rounded(px(10.0))
+            .bg(card_bg())
+            .border_1()
+            .border_color(sep())
+            .child(
+                div()
+                    .h_flex()
+                    .justify_between()
+                    .items_baseline()
+                    .child(
+                        div()
+                            .text_size(px(15.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(s.volume.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(secondary())
+                            .child(format!("{} available of {}", fmt_gb(s.avail), fmt_gb(s.total))),
+                    ),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .h(px(10.0))
+                    .rounded(px(5.0))
+                    .bg(hsl(0xe5e5ea))
+                    .child(div().h_full().w(gpui::relative(frac)).rounded(px(5.0)).bg(accent())),
+            );
+
+        let rows = card(vec![
+            value_row("icons/database.svg", accent(), "Capacity".into(), fmt_gb(s.total).into()),
+            value_row("icons/database.svg", hsl(0xff9500), "Used".into(), fmt_gb(s.used).into()),
+            value_row("icons/database.svg", hsl(0x34c759), "Available".into(), fmt_gb(s.avail).into()),
+        ]);
+
+        div().v_flex().child(bar_card).child(rows)
+    }
+
     // ---- subpages -----------------------------------------------------
 
     fn render_subpage(&self, sub: &SubPage, _cx: &Context<Self>) -> Div {
@@ -1304,15 +1365,7 @@ impl Settings {
                     value_row("icons/refresh-cw.svg", secondary(), "Automatic updates".into(), "On".into()),
                 ]),
             ),
-            SubPage::Storage => (
-                "Storage".into(),
-                card(vec![
-                    value_row("icons/database.svg", accent(), "Macintosh HD".into(), "Available".into()),
-                    value_row("icons/folder-symlink.svg", hsl(0xff9500), "Applications".into(), "—".into()),
-                    value_row("icons/image.svg", hsl(0x30b0c7), "Photos".into(), "—".into()),
-                    value_row("icons/database.svg", secondary(), "System Data".into(), "—".into()),
-                ]),
-            ),
+            SubPage::Storage => ("Storage".into(), self.storage_body()),
             SubPage::Placeholder { icon, color, title } => (
                 title.clone(),
                 card(vec![value_row(*icon, *color, title.clone(), "Not configured".into())]),
@@ -1737,6 +1790,33 @@ fn gather_battery() -> Option<BatteryInfo> {
     .to_string();
 
     Some(BatteryInfo { present, percent, status, source, time_remaining, cycle_count, health_percent, condition })
+}
+
+/// Format bytes as decimal GB (matching macOS storage display).
+fn fmt_gb(bytes: u64) -> String {
+    format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
+}
+
+/// Read boot-volume storage usage via `df -k /`.
+fn gather_storage() -> StorageInfo {
+    let line = cmd("df", &["-k", "/"]).and_then(|o| o.lines().nth(1).map(|s| s.to_string()));
+    let cols: Vec<u64> = line
+        .as_deref()
+        .map(|l| l.split_whitespace().skip(1).take(3).filter_map(|c| c.parse().ok()).collect())
+        .unwrap_or_default();
+    let total = cols.first().copied().unwrap_or(0) * 1024;
+    let avail = cols.get(2).copied().unwrap_or(0) * 1024;
+    // macOS shows "used" as capacity minus free; derive it from total - available.
+    let used = total.saturating_sub(avail);
+    let volume = cmd("diskutil", &["info", "/"])
+        .and_then(|o| {
+            o.lines().find_map(|l| {
+                l.split_once("Volume Name:").map(|(_, v)| v.trim().to_string())
+            })
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Macintosh HD".into());
+    StorageInfo { volume, total, used, avail }
 }
 
 /// Read the primary network connection (interface, IP, router, DNS, MAC).

@@ -216,8 +216,9 @@ struct ProcRow {
     mem: u64,
     /// Bytes read+written since the last refresh (a per-tick I/O proxy).
     disk: u64,
-    /// Energy-impact proxy. sysinfo has no real "energy impact"; CPU usage is
-    /// the dominant term in macOS's own figure, so we approximate with it.
+    /// Energy-impact approximation. macOS's exact figure is proprietary; we
+    /// combine the two real energy-relevant signals sysinfo exposes — CPU usage
+    /// plus this interval's disk I/O — so it isn't merely a copy of %CPU.
     energy: f32,
     /// Parent process id (real, from sysinfo).
     ppid: Option<u32>,
@@ -353,7 +354,11 @@ impl ProcessTableDelegate {
                     cpu: p.cpu_usage(),
                     mem: p.memory(),
                     disk: du.read_bytes + du.written_bytes,
-                    energy: p.cpu_usage(),
+                    // Approximate energy impact from the two real signals we have:
+                    // CPU usage (the dominant term) plus this interval's disk I/O
+                    // (≈0.5 per MB). Distinct from raw %CPU, not a copy of it.
+                    energy: p.cpu_usage()
+                        + ((du.read_bytes + du.written_bytes) as f32 / 1_048_576.0) * 0.5,
                     ppid: p.parent().map(|pp| pp.as_u32()),
                     user,
                     vmem: p.virtual_memory(),

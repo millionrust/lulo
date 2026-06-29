@@ -514,6 +514,23 @@ fn format_rate(bytes_per_s: f64) -> String {
     }
 }
 
+/// Format a cumulative byte count compactly (e.g. "3.42 GB").
+fn format_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    let b = bytes as f64;
+    if b >= GB {
+        format!("{:.2} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.0} KB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 impl TableDelegate for ProcessTableDelegate {
     fn columns_count(&self, _cx: &App) -> usize {
         self.columns.len()
@@ -663,6 +680,20 @@ struct MonitorView {
     cols_menu_open: bool,
     /// PID whose detail inspector is open (double-click a row).
     inspect_pid: Option<u32>,
+    /// Per-interface cumulative byte counters, snapshotted each refresh for the
+    /// Network tab's interface table. (name, total received, total sent,
+    /// received this interval, sent this interval).
+    net_ifaces: Vec<NetIface>,
+}
+
+/// One row in the Network tab's per-interface table.
+#[derive(Clone)]
+struct NetIface {
+    name: String,
+    total_recv: u64,
+    total_sent: u64,
+    recv_rate: f64,
+    sent_rate: f64,
 }
 
 impl MonitorView {
@@ -710,6 +741,7 @@ impl MonitorView {
             pending_kill: None,
             cols_menu_open: false,
             inspect_pid: None,
+            net_ifaces: Vec::new(),
         };
         view.refresh(cx);
 
@@ -755,6 +787,28 @@ impl MonitorView {
             .fold((0u64, 0u64), |(r, t), d| {
                 (r + d.received(), t + d.transmitted())
             });
+
+        // Per-interface snapshot for the Network tab table. `received()` /
+        // `transmitted()` are the bytes since the previous refresh (the
+        // interval delta); `total_*` are the cumulative counters.
+        self.net_ifaces = self
+            .networks
+            .list()
+            .iter()
+            .map(|(name, d)| NetIface {
+                name: name.clone(),
+                total_recv: d.total_received(),
+                total_sent: d.total_transmitted(),
+                recv_rate: d.received() as f64 / REFRESH_SECS,
+                sent_rate: d.transmitted() as f64 / REFRESH_SECS,
+            })
+            .collect();
+        // Busiest interfaces first, then named order for stability.
+        self.net_ifaces.sort_by(|a, b| {
+            (b.total_recv + b.total_sent)
+                .cmp(&(a.total_recv + a.total_sent))
+                .then_with(|| a.name.cmp(&b.name))
+        });
 
         let mut agg = Aggregates::default();
         self.table.update(cx, |state, cx| {
@@ -1066,6 +1120,110 @@ impl MonitorView {
                             )
                     }),
                 ),
+            )
+    }
+
+    /// The Network tab body: a real per-interface table (sysinfo `Networks`)
+    /// since there is no reliable per-process network data on this platform.
+    fn render_network_pane(&self) -> impl IntoElement {
+        let teal = gpui::rgb(0x32ade6);
+        // Column widths (interface label flexes, figures are fixed/right-aligned).
+        let figure = |s: String, color: gpui::Hsla| {
+            div()
+                .w(px(110.0))
+                .text_size(px(12.0))
+                .text_color(color)
+                .text_right()
+                .child(s)
+        };
+
+        let header = div()
+            .h_flex()
+            .items_center()
+            .px_3()
+            .py_2()
+            .border_b_1()
+            .border_color(mac::separator())
+            .child(
+                div()
+                    .flex_1()
+                    .text_size(px(11.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(mac::text_tertiary())
+                    .child("INTERFACE"),
+            )
+            .children(["RCVD", "SENT", "↓ RATE", "↑ RATE"].into_iter().map(|h| {
+                div()
+                    .w(px(110.0))
+                    .text_size(px(11.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(mac::text_tertiary())
+                    .text_right()
+                    .child(h)
+            }));
+
+        let rows: Vec<gpui::AnyElement> = self
+            .net_ifaces
+            .iter()
+            .enumerate()
+            .map(|(i, iface)| {
+                let active = iface.recv_rate + iface.sent_rate > 0.0;
+                div()
+                    .h_flex()
+                    .items_center()
+                    .px_3()
+                    .py_1p5()
+                    .when(i % 2 == 1, |el| el.bg(mac::hover()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .size(px(7.0))
+                                    .rounded_full()
+                                    .bg(if active { teal.into() } else { mac::text_tertiary() }),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .text_color(mac::text())
+                                    .child(iface.name.clone()),
+                            ),
+                    )
+                    .child(figure(format_bytes(iface.total_recv), mac::text()))
+                    .child(figure(format_bytes(iface.total_sent), mac::text()))
+                    .child(figure(
+                        format_rate(iface.recv_rate),
+                        if active { teal.into() } else { mac::text_secondary() },
+                    ))
+                    .child(figure(
+                        format_rate(iface.sent_rate),
+                        if active { teal.into() } else { mac::text_secondary() },
+                    ))
+                    .into_any_element()
+            })
+            .collect();
+
+        div()
+            .flex_1()
+            .min_h(px(0.0))
+            .px_4()
+            .pb_4()
+            .child(
+                div()
+                    .id("net-iface-table")
+                    .size_full()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .border_1()
+                    .border_color(mac::separator())
+                    .rounded(px(8.0))
+                    .bg(mac::window())
+                    .child(header)
+                    .children(rows),
             )
     }
 
@@ -1421,31 +1579,7 @@ impl Render for MonitorView {
                 )
             })
             .when(!self.tab.has_process_table(), |this| {
-                this.child(
-                    div()
-                        .flex_1()
-                        .v_flex()
-                        .items_center()
-                        .justify_center()
-                        .gap_2()
-                        .px_4()
-                        .pb_4()
-                        .child(
-                            div()
-                                .text_size(px(13.0))
-                                .font_weight(mac::SEMIBOLD)
-                                .text_color(mac::text_secondary())
-                                .child("System-wide network activity"),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(12.0))
-                                .text_color(mac::text_tertiary())
-                                .child(
-                                    "Per-process network usage isn't available from this data source — only the interface totals shown above.",
-                                ),
-                        ),
-                )
+                this.child(self.render_network_pane())
             })
             .when(self.cols_menu_open && self.tab.has_process_table(), |this| {
                 this.child(self.render_columns_menu(cx))

@@ -59,6 +59,9 @@ jobs:
       - name: Run tests
         run: cargo test --locked --workspace --all-features
 
+      - name: Test performance harness
+        run: python3 -m unittest scripts/test_measure_baseline.py
+
   macos:
     name: macOS checks
     runs-on: macos-15
@@ -85,6 +88,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --locked --workspace --all-features
+
+      - name: Test performance harness
+        run: python3 -m unittest scripts/test_measure_baseline.py
 
   upstream-gpui-linux:
     name: Current GPUI Linux runtime gate

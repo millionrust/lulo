@@ -7,6 +7,8 @@
 //! Apps render `rmac_ui::title_bar(...)` at the top of their view and call
 //! `rmac_ui::boot(...)` from `main()`.
 
+use std::{env, fs};
+
 use gpui::{
     div, point, px, rgb, rgba, size, App, AppContext as _, Application, Bounds, Context, ElementId,
     Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
@@ -29,6 +31,23 @@ pub use gpui_component::{ActiveTheme, StyledExt};
 pub const UI_FONT: &str = "Inter";
 /// Preferred monospace font (Terminal, Text Editor, code).
 pub const MONO_FONT: &str = "JetBrains Mono";
+
+const BENCHMARK_READY_FILE_ENV: &str = "RMAC_BENCHMARK_READY_FILE";
+
+/// Writes an opt-in marker after the window completes its first frame.
+///
+/// The performance harness sets the environment variable. Normal application
+/// launches do not set it and perform no filesystem I/O.
+fn mark_benchmark_first_frame(window: &Window) {
+    let Some(path) = env::var_os(BENCHMARK_READY_FILE_ENV) else {
+        return;
+    };
+
+    window.on_next_frame(move |_, _| {
+        fs::write(&path, b"ready\n")
+            .unwrap_or_else(|error| panic!("write benchmark marker {path:?}: {error}"));
+    });
+}
 
 /// Standard window options for an rmac app window: macOS traffic lights in the
 /// canonical position, transparent titlebar so our chrome draws through.
@@ -88,7 +107,9 @@ where
                     cx,
                 );
                 let view = cx.new(|cx| build(window, cx));
-                cx.new(|cx| Root::new(view, window, cx))
+                let root = cx.new(|cx| Root::new(view, window, cx));
+                mark_benchmark_first_frame(window);
+                root
             })
             .expect("failed to open window");
             cx.activate(true);
@@ -227,7 +248,9 @@ pub fn boot_with_assets<A, V, F>(
                     cx,
                 );
                 let view = cx.new(|cx| build(window, cx));
-                cx.new(|cx| Root::new(view, window, cx))
+                let root = cx.new(|cx| Root::new(view, window, cx));
+                mark_benchmark_first_frame(window);
+                root
             })
             .expect("failed to open window");
 

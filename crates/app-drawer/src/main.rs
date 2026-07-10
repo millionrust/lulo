@@ -13,7 +13,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
 
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, Entity,
@@ -121,7 +120,8 @@ impl AppDrawer {
         let apps = scan_apps();
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
 
-        // Typing in the search field re-anchors the cursor to the first match.
+        // Typing in the search field re-anchors the cursor to the first match
+        // and is the redraw trigger for live filtering.
         cx.observe(&query, |this: &mut AppDrawer, _, cx| {
             this.selected = 0;
             // If the active category filter no longer has any matches under the
@@ -163,17 +163,6 @@ impl AppDrawer {
                 }
                 cx.notify();
             });
-        })
-        .detach();
-
-        // Live search re-filter.
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(120))
-                .await;
-            if this.update(cx, |_, cx| cx.notify()).is_err() {
-                break;
-            }
         })
         .detach();
 

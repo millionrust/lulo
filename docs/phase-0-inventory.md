@@ -111,8 +111,9 @@ new ignored error.
 
 ## polling and redraw inventory
 
-- App Drawer requests a redraw every 120 ms even though input observation is
-  already installed. Remove this during the `rmac-apps` port.
+- App Drawer's former 120 ms redraw timer was removed on 2026-07-10. Search
+  input and icon extraction completion now request the redraws they need;
+  Linux catalog-change notifications remain part of the `rmac-apps` port.
 - Terminal's former 33 ms redraw timer was replaced with a bounded PTY/model
   wake channel on 2026-07-10. Bursts coalesce and the UI task sleeps when idle;
   Linux confirmation remains part of the reference-PC performance pass.

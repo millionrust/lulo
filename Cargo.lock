@@ -4783,6 +4783,7 @@ dependencies = [
 name = "rmac-app-drawer"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
  "gpui",
  "gpui-component",
  "rmac-apps",
@@ -4793,6 +4794,7 @@ dependencies = [
 name = "rmac-apps"
 version = "0.1.0"
 dependencies = [
+ "notify",
  "rmac-portal",
 ]
 

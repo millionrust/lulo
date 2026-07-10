@@ -15,6 +15,7 @@ use std::path::Path;
 use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 use std::process::Command;
+use std::time::Duration;
 
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, Entity,
@@ -117,11 +118,12 @@ struct AppDrawer {
     /// Columns in the grid as last laid out — used for up/down navigation.
     cols: usize,
     catalog_error: Option<SharedString>,
+    _catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 }
 
 impl AppDrawer {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let (apps, catalog_error) = scan_apps();
+        let (apps, mut catalog_error) = scan_apps();
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
 
         // Typing in the search field re-anchors the cursor to the first match
@@ -145,10 +147,9 @@ impl AppDrawer {
         // Extract macOS bundle icons off the main thread, then fill them in.
         #[cfg(target_os = "macos")]
         {
-            let snapshot: Vec<(usize, String, PathBuf)> = apps
+            let snapshot: Vec<(String, PathBuf)> = apps
                 .iter()
-                .enumerate()
-                .map(|(i, a)| (i, a.name.to_string(), a.path.clone()))
+                .map(|a| (a.name.to_string(), a.path.clone()))
                 .collect();
             cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
                 let icons = cx
@@ -157,13 +158,16 @@ impl AppDrawer {
                         let cache = cache_dir();
                         snapshot
                             .into_iter()
-                            .map(|(i, name, path)| (i, extract_icon(&name, &path, &cache)))
+                            .map(|(name, path)| {
+                                let icon = extract_icon(&name, &path, &cache);
+                                (path, icon)
+                            })
                             .collect::<Vec<_>>()
                     })
                     .await;
                 let _ = this.update(cx, |this: &mut AppDrawer, cx| {
-                    for (i, icon) in icons {
-                        if let Some(a) = this.apps.get_mut(i) {
+                    for (path, icon) in icons {
+                        if let Some(a) = this.apps.iter_mut().find(|app| app.path == path) {
                             a.icon = icon;
                         }
                     }
@@ -172,6 +176,57 @@ impl AppDrawer {
             })
             .detach();
         }
+
+        // Native filesystem notifications wake this task only when an app
+        // entry changes. The capacity-one channel coalesces event bursts before
+        // discovery and icon/category work runs off the UI thread.
+        let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
+        let catalog_watcher = match rmac_apps::watch_catalog(move || {
+            signal_catalog_change(&catalog_events);
+        }) {
+            Ok(watcher) => Some(watcher),
+            Err(error) => {
+                if catalog_error.is_none() {
+                    catalog_error = Some(
+                        format!("Applications loaded, but live updates are unavailable: {error}")
+                            .into(),
+                    );
+                }
+                None
+            }
+        };
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while catalog_event_rx.recv().await.is_ok() {
+                for _ in 0..10 {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(200))
+                        .await;
+                    if catalog_event_rx.try_recv().is_err() {
+                        break;
+                    }
+                }
+                while catalog_event_rx.try_recv().is_ok() {}
+
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let (mut apps, error) = scan_apps();
+                        #[cfg(target_os = "macos")]
+                        hydrate_icons(&mut apps);
+                        (apps, error)
+                    })
+                    .await;
+                if this
+                    .update(cx, |this: &mut AppDrawer, cx| {
+                        this.replace_catalog(result.0, result.1, cx)
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
 
         Self {
             apps,
@@ -183,7 +238,46 @@ impl AppDrawer {
             menu_at: None,
             cols: 6,
             catalog_error,
+            _catalog_watcher: catalog_watcher,
         }
+    }
+
+    fn replace_catalog(
+        &mut self,
+        apps: Vec<App>,
+        error: Option<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(error) = error {
+            // A transient read failure should not erase a usable catalog.
+            self.catalog_error = Some(error);
+            cx.notify();
+            return;
+        }
+
+        let previous_visible = self.visible_indices(cx);
+        let selected_path = previous_visible
+            .get(self.selected.min(previous_visible.len().saturating_sub(1)))
+            .and_then(|index| self.apps.get(*index))
+            .map(|app| app.path.clone());
+        self.apps = apps;
+        self.catalog_error = None;
+        self.menu_at = None;
+        if self
+            .filter
+            .is_some_and(|filter| !self.present_categories(cx).contains(&filter))
+        {
+            self.filter = None;
+        }
+        let visible = self.visible_indices(cx);
+        self.selected = selected_path
+            .and_then(|path| {
+                visible
+                    .iter()
+                    .position(|index| self.apps[*index].path == path)
+            })
+            .unwrap_or(0);
+        cx.notify();
     }
 
     /// Indices into `self.apps` that pass the current category + search filter.
@@ -683,6 +777,10 @@ fn scan_apps() -> (Vec<App>, Option<SharedString>) {
     (apps, None)
 }
 
+fn signal_catalog_change(sender: &async_channel::Sender<()>) {
+    let _ = sender.try_send(());
+}
+
 /// Resolve every app's category concurrently (each read is an independent
 /// subprocess), preserving input order.
 #[cfg(target_os = "macos")]
@@ -890,6 +988,14 @@ fn cache_dir() -> PathBuf {
     dir
 }
 
+#[cfg(target_os = "macos")]
+fn hydrate_icons(apps: &mut [App]) {
+    let cache = cache_dir();
+    for app in apps {
+        app.icon = extract_icon(&app.name, &app.path, &cache);
+    }
+}
+
 /// Find an app's `.icns`, convert to a cached 128px PNG (cached across launches).
 #[cfg(target_os = "macos")]
 fn extract_icon(name: &str, app: &Path, cache: &Path) -> Option<PathBuf> {
@@ -972,4 +1078,20 @@ fn main() {
         ]);
         drawer
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_change_bursts_coalesce() {
+        let (sender, receiver) = async_channel::bounded(1);
+
+        signal_catalog_change(&sender);
+        signal_catalog_change(&sender);
+        signal_catalog_change(&sender);
+
+        assert_eq!(receiver.len(), 1);
+    }
 }

@@ -52,8 +52,10 @@ the corresponding service interface and tests.
 `rmac-apps` now provides the cross-platform catalog boundary. On Linux it scans
 XDG application directories with user override/Hidden semantics, filters
 desktop visibility and `TryExec`, expands `Exec` field codes without a shell,
-and resolves absolute, hicolor/Adwaita, or pixmaps icons. Full active-theme
-inheritance and catalog-change notifications remain follow-up work. App reveal
+and resolves absolute, hicolor/Adwaita, or pixmaps icons. Native catalog watches
+now refresh App Drawer after debounced install, removal, and desktop-entry
+changes while preserving its active search, category, and selection. Full
+active-theme inheritance remains follow-up work. App reveal
 uses `rmac-portal` OpenDirectory on Linux, with an `xdg-open` fallback, while
 macOS retains Finder reveal.
 
@@ -166,8 +168,9 @@ data-changing Linux path may add a new ignored error.
   debounced into one reload and the UI task sleeps until the watched directory
   actually changes.
 - App Drawer's former 120 ms redraw timer was removed on 2026-07-10. Search
-  input and icon extraction completion now request the redraws they need;
-  Linux catalog-change notifications remain part of the `rmac-apps` port.
+  input and icon extraction completion now request the redraws they need. Its
+  `rmac-apps` catalog watcher now sleeps between native filesystem events and
+  coalesces event bursts into one background rescan.
 - Terminal's former 33 ms redraw timer was replaced with a bounded PTY/model
   wake channel on 2026-07-10. Bursts coalesce and the UI task sleeps when idle;
   Linux confirmation remains part of the reference-PC performance pass.

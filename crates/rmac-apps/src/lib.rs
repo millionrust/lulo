@@ -7,6 +7,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Application {
     pub id: String,
@@ -26,6 +28,46 @@ pub enum LaunchSpec {
         working_dir: Option<PathBuf>,
         terminal: bool,
     },
+}
+
+/// Keeps native watches for installed-application directories alive.
+pub struct CatalogWatcher {
+    _watcher: RecommendedWatcher,
+}
+
+/// Notify `on_change` when an application entry may have been added, removed,
+/// or edited. Access-only events are ignored, and directories that are absent
+/// are skipped so a minimal installation can still open the catalog.
+pub fn watch_catalog(on_change: impl Fn() + Send + 'static) -> io::Result<CatalogWatcher> {
+    let mut watcher = notify::recommended_watcher(move |result: notify::Result<Event>| {
+        if result.as_ref().is_ok_and(catalog_event_is_relevant) {
+            on_change();
+        }
+    })
+    .map_err(io::Error::other)?;
+
+    let mut existing = 0;
+    let mut watched = 0;
+    let mut last_error = None;
+    for directory in catalog_directories()
+        .into_iter()
+        .filter(|directory| directory.is_dir())
+    {
+        existing += 1;
+        // One unavailable system directory must not disable watches for every
+        // other XDG data directory.
+        match watcher.watch(&directory, RecursiveMode::Recursive) {
+            Ok(()) => watched += 1,
+            Err(error) => last_error = Some(error),
+        }
+    }
+    if existing > 0 && watched == 0 {
+        return Err(io::Error::other(
+            last_error.expect("an existing directory produced a watch result"),
+        ));
+    }
+
+    Ok(CatalogWatcher { _watcher: watcher })
 }
 
 pub fn discover() -> io::Result<Vec<Application>> {
@@ -80,12 +122,7 @@ fn terminal_command(program: &str, args: &[String]) -> Command {
 
 #[cfg(target_os = "macos")]
 fn discover_macos() -> io::Result<Vec<Application>> {
-    let directories = [
-        PathBuf::from("/Applications"),
-        PathBuf::from("/Applications/Utilities"),
-        PathBuf::from("/System/Applications"),
-        PathBuf::from("/System/Applications/Utilities"),
-    ];
+    let directories = catalog_directories();
     let mut seen = HashSet::new();
     let mut applications = Vec::new();
     for directory in directories {
@@ -116,6 +153,49 @@ fn discover_macos() -> io::Result<Vec<Application>> {
     }
     sort_applications(&mut applications);
     Ok(applications)
+}
+
+#[cfg(target_os = "macos")]
+fn catalog_directories() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from("/Applications"),
+        PathBuf::from("/Applications/Utilities"),
+        PathBuf::from("/System/Applications"),
+        PathBuf::from("/System/Applications/Utilities"),
+    ]
+}
+
+#[cfg(not(target_os = "macos"))]
+fn catalog_directories() -> Vec<PathBuf> {
+    Environment::current().application_dirs()
+}
+
+fn catalog_event_is_relevant(event: &Event) -> bool {
+    if matches!(event.kind, EventKind::Access(_)) {
+        return false;
+    }
+    // Some backends report an empty path list for an overflow/rescan event.
+    event.paths.is_empty()
+        || event
+            .paths
+            .iter()
+            .any(|path| catalog_path_is_relevant(path))
+}
+
+#[cfg(target_os = "macos")]
+fn catalog_path_is_relevant(path: &Path) -> bool {
+    path.ancestors().any(|ancestor| {
+        ancestor
+            .extension()
+            .and_then(|extension| extension.to_str())
+            == Some("app")
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn catalog_path_is_relevant(path: &Path) -> bool {
+    path.extension().and_then(|extension| extension.to_str()) == Some("desktop")
+        || path.file_name().and_then(|name| name.to_str()) == Some("applications")
 }
 
 #[derive(Clone)]
@@ -506,6 +586,26 @@ mod tests {
     fn malformed_exec_and_unknown_field_codes_are_rejected() {
         assert!(tokenize_exec("demo \"unterminated").is_none());
         assert!(expand_exec("demo %Z", "Demo", None, Path::new("demo.desktop")).is_none());
+    }
+
+    #[test]
+    fn catalog_events_ignore_reads_and_unrelated_files() {
+        use notify::event::{AccessKind, AccessMode, CreateKind};
+
+        let read = Event::new(EventKind::Access(AccessKind::Open(AccessMode::Read)))
+            .add_path(PathBuf::from("/usr/share/applications/demo.desktop"));
+        let unrelated = Event::new(EventKind::Create(CreateKind::File))
+            .add_path(PathBuf::from("/usr/share/applications/readme.txt"));
+        #[cfg(not(target_os = "macos"))]
+        let catalog_entry = Event::new(EventKind::Create(CreateKind::File))
+            .add_path(PathBuf::from("/usr/share/applications/demo.desktop"));
+        #[cfg(target_os = "macos")]
+        let catalog_entry = Event::new(EventKind::Create(CreateKind::File))
+            .add_path(PathBuf::from("/Applications/Demo.app/Contents/Info.plist"));
+
+        assert!(!catalog_event_is_relevant(&read));
+        assert!(!catalog_event_is_relevant(&unrelated));
+        assert!(catalog_event_is_relevant(&catalog_entry));
     }
 
     #[test]

@@ -14,8 +14,6 @@ use std::hash::{Hash, Hasher};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
@@ -248,7 +246,6 @@ struct FinderView {
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
     watched: Option<PathBuf>,
-    dirty: Arc<AtomicBool>,
 }
 
 impl FinderView {
@@ -403,11 +400,12 @@ impl FinderView {
         })
         .detach();
 
-        let dirty = Arc::new(AtomicBool::new(false));
-        let d2 = dirty.clone();
+        // The bounded channel bridges notify's callback thread to GPUI. A
+        // capacity of one coalesces filesystem-event bursts into one reload.
+        let (fs_events, fs_event_rx) = async_channel::bounded(1);
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if res.is_ok() {
-                d2.store(true, Ordering::Relaxed);
+                let _ = fs_events.try_send(());
             }
         })
         .ok();
@@ -448,22 +446,30 @@ impl FinderView {
             focus,
             watcher,
             watched: None,
-            dirty,
         };
         view.reload(cx);
 
         // Live directory watching → reload on filesystem changes.
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(600))
-                .await;
-            let r = this.update(cx, |this: &mut FinderView, cx| {
-                if this.dirty.swap(false, Ordering::Relaxed) {
-                    this.reload(cx);
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while fs_event_rx.recv().await.is_ok() {
+                // FSEvents can deliver a rapid sequence for one logical
+                // operation. Wait for 200 ms of quiet, but cap continuous
+                // churn at two seconds so the view cannot remain stale.
+                for _ in 0..10 {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(200))
+                        .await;
+                    if fs_event_rx.try_recv().is_err() {
+                        break;
+                    }
                 }
-            });
-            if r.is_err() {
-                break;
+                while fs_event_rx.try_recv().is_ok() {}
+                if this
+                    .update(cx, |this: &mut FinderView, cx| this.reload_after_event(cx))
+                    .is_err()
+                {
+                    break;
+                }
             }
         })
         .detach();
@@ -472,18 +478,31 @@ impl FinderView {
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
+        self.reload_inner(cx, true);
+    }
+
+    /// Refresh after a watcher event without spawning `df`; free space changes
+    /// slowly and is refreshed on navigation and explicit file operations.
+    fn reload_after_event(&mut self, cx: &mut Context<Self>) {
+        self.reload_inner(cx, false);
+    }
+
+    fn reload_inner(&mut self, cx: &mut Context<Self>, refresh_free_space: bool) {
         self.result_title = None;
         self.col_stack = vec![self.cwd.clone()];
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
         }
-        // (Re)watch the current directory.
-        if let Some(w) = self.watcher.as_mut() {
-            if let Some(old) = self.watched.take() {
-                let _ = w.unwatch(&old);
-            }
-            if w.watch(&self.cwd, RecursiveMode::NonRecursive).is_ok() {
-                self.watched = Some(self.cwd.clone());
+        // Reconfigure the watcher only after navigation. Re-watching the same
+        // directory in response to its own event can create a reload storm.
+        if self.watched.as_ref() != Some(&self.cwd) {
+            if let Some(w) = self.watcher.as_mut() {
+                if let Some(old) = self.watched.take() {
+                    let _ = w.unwatch(&old);
+                }
+                if w.watch(&self.cwd, RecursiveMode::NonRecursive).is_ok() {
+                    self.watched = Some(self.cwd.clone());
+                }
             }
         }
 
@@ -500,7 +519,7 @@ impl FinderView {
                 .spawn(async move {
                     let mut v = read_entries(&path, show_hidden);
                     sort_entries(&mut v, key, asc);
-                    let free = free_space(&path);
+                    let free = refresh_free_space.then(|| free_space(&path));
                     (v, free)
                 })
                 .await;
@@ -510,7 +529,9 @@ impl FinderView {
                     return;
                 }
                 this.entries = entries;
-                this.free_bytes = free;
+                if let Some(free) = free {
+                    this.free_bytes = free;
+                }
                 this.selected.clear();
                 this.anchor = None;
                 this.renaming = None;
@@ -2375,4 +2396,21 @@ fn main() {
     rmac_ui::boot_unified_with_assets(CombinedAssets, 1100.0, 720.0, |window, cx| {
         FinderView::new(window, cx)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn filesystem_event_bursts_coalesce_until_consumed() {
+        let (sender, receiver) = async_channel::bounded(1);
+
+        sender.try_send(()).expect("first event should wake the UI");
+        assert!(sender.try_send(()).is_err(), "burst should stay bounded");
+        receiver
+            .try_recv()
+            .expect("the queued wake should be available");
+        sender
+            .try_send(())
+            .expect("a new event should queue after consumption");
+    }
 }

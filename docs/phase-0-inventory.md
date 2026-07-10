@@ -114,6 +114,10 @@ new ignored error.
 
 ## polling and redraw inventory
 
+- Finder's former 600 ms filesystem-event polling bridge was replaced on
+  2026-07-10 with a bounded, event-triggered watcher channel. Event bursts are
+  debounced into one reload and the UI task sleeps until the watched directory
+  actually changes.
 - App Drawer's former 120 ms redraw timer was removed on 2026-07-10. Search
   input and icon extraction completion now request the redraws they need;
   Linux catalog-change notifications remain part of the `rmac-apps` port.

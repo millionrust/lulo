@@ -4784,8 +4784,13 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui-component",
+ "rmac-apps",
  "rmac-ui",
 ]
+
+[[package]]
+name = "rmac-apps"
+version = "0.1.0"
 
 [[package]]
 name = "rmac-editor"

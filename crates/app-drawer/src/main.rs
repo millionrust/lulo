@@ -1,8 +1,7 @@
 //! rmac App Drawer — a Launchpad / App-Library-style app grid.
 //!
-//! Scans the standard application folders, extracts each app's real icon
-//! (`.icns` → cached PNG via `sips`, off the main thread), and renders a
-//! searchable grid. Clicking an app launches it.
+//! Uses `rmac-apps` to discover macOS bundles or Linux desktop entries, resolves
+//! real icons, and renders a searchable grid. Clicking an app launches it.
 //!
 //! Beyond the basic grid this adds App-Library-style ergonomics:
 //!   * keyboard navigation — arrow keys move a selection cursor over the grid
@@ -11,7 +10,10 @@
 //!   * a category derived per app (from its folder + a name keyword map) and a
 //!     category filter bar.
 
-use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
+use std::path::Path;
+use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use gpui::{
@@ -98,6 +100,7 @@ struct App {
     path: PathBuf,
     icon: Option<PathBuf>,
     category: Category,
+    launch: rmac_apps::LaunchSpec,
 }
 
 struct AppDrawer {
@@ -113,11 +116,12 @@ struct AppDrawer {
     menu_at: Option<Point<Pixels>>,
     /// Columns in the grid as last laid out — used for up/down navigation.
     cols: usize,
+    catalog_error: Option<SharedString>,
 }
 
 impl AppDrawer {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let apps = scan_apps();
+        let (apps, catalog_error) = scan_apps();
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
 
         // Typing in the search field re-anchors the cursor to the first match
@@ -138,33 +142,36 @@ impl AppDrawer {
         let focus = cx.focus_handle();
         focus.focus(window);
 
-        // Extract icons off the main thread, then fill them in.
-        let snapshot: Vec<(usize, String, PathBuf)> = apps
-            .iter()
-            .enumerate()
-            .map(|(i, a)| (i, a.name.to_string(), a.path.clone()))
-            .collect();
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let icons = cx
-                .background_executor()
-                .spawn(async move {
-                    let cache = cache_dir();
-                    snapshot
-                        .into_iter()
-                        .map(|(i, name, path)| (i, extract_icon(&name, &path, &cache)))
-                        .collect::<Vec<_>>()
-                })
-                .await;
-            let _ = this.update(cx, |this: &mut AppDrawer, cx| {
-                for (i, icon) in icons {
-                    if let Some(a) = this.apps.get_mut(i) {
-                        a.icon = icon;
+        // Extract macOS bundle icons off the main thread, then fill them in.
+        #[cfg(target_os = "macos")]
+        {
+            let snapshot: Vec<(usize, String, PathBuf)> = apps
+                .iter()
+                .enumerate()
+                .map(|(i, a)| (i, a.name.to_string(), a.path.clone()))
+                .collect();
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                let icons = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let cache = cache_dir();
+                        snapshot
+                            .into_iter()
+                            .map(|(i, name, path)| (i, extract_icon(&name, &path, &cache)))
+                            .collect::<Vec<_>>()
+                    })
+                    .await;
+                let _ = this.update(cx, |this: &mut AppDrawer, cx| {
+                    for (i, icon) in icons {
+                        if let Some(a) = this.apps.get_mut(i) {
+                            a.icon = icon;
+                        }
                     }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
 
         Self {
             apps,
@@ -175,6 +182,7 @@ impl AppDrawer {
             selected: 0,
             menu_at: None,
             cols: 6,
+            catalog_error,
         }
     }
 
@@ -224,29 +232,46 @@ impl AppDrawer {
     fn launch_selected(&mut self, cx: &mut Context<Self>) {
         let vis = self.visible_indices(cx);
         if let Some(&idx) = vis.get(self.selected.min(vis.len().saturating_sub(1))) {
-            let path = self.apps[idx].path.clone();
-            cx.open_with_system(&path);
+            let launch = self.apps[idx].launch.clone();
+            self.launch_application(&launch, cx);
         }
     }
 
-    fn selected_app_path(&self, cx: &gpui::App) -> Option<PathBuf> {
+    fn selected_app(&self, cx: &gpui::App) -> Option<rmac_apps::Application> {
         let vis = self.visible_indices(cx);
         let &idx = vis.get(self.selected.min(vis.len().saturating_sub(1)))?;
-        self.apps.get(idx).map(|a| a.path.clone())
+        self.apps.get(idx).map(|app| rmac_apps::Application {
+            id: app.path.to_string_lossy().into_owned(),
+            name: app.name.to_string(),
+            source: app.path.clone(),
+            icon: app.icon.clone(),
+            categories: Vec::new(),
+            launch: app.launch.clone(),
+        })
+    }
+
+    fn launch_application(&mut self, launch: &rmac_apps::LaunchSpec, cx: &mut Context<Self>) {
+        self.catalog_error = rmac_apps::launch(launch)
+            .err()
+            .map(|error| format!("Could not launch application: {error}").into());
+        cx.notify();
     }
 
     /// Reveal the selected app in the real Finder. GPUI can't initiate a native
     /// drag out to the Dock/desktop, so this is the honest bridge: it takes you
     /// to the app in Finder, where it can be dragged onto the Dock.
     fn reveal_selected(&mut self, cx: &mut Context<Self>) {
-        if let Some(path) = self.selected_app_path(cx) {
-            let _ = Command::new("open").arg("-R").arg(&path).spawn();
+        if let Some(application) = self.selected_app(cx) {
+            self.catalog_error = rmac_apps::reveal(&application)
+                .err()
+                .map(|error| format!("Could not show application: {error}").into());
+            cx.notify();
         }
     }
 
     fn open_selected(&mut self, cx: &mut Context<Self>) {
-        if let Some(path) = self.selected_app_path(cx) {
-            cx.open_with_system(&path);
+        if let Some(application) = self.selected_app(cx) {
+            self.launch_application(&application.launch, cx);
         }
     }
 
@@ -254,7 +279,7 @@ impl AppDrawer {
     fn app_menu(pos: Point<Pixels>) -> rmac_ui::ContextMenu {
         rmac_ui::ContextMenu::new(pos)
             .item("Open", Box::new(OpenApp))
-            .item("Reveal in Finder", Box::new(RevealInFinder))
+            .item("Show in Folder", Box::new(RevealInFinder))
     }
 
     fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -300,7 +325,7 @@ impl AppDrawer {
     /// `pos` is the position in the currently-visible list (what `selected`
     /// tracks); `path` is used for the launch path lookup.
     fn tile(&self, app: &App, pos: usize, selected: bool, cx: &Context<Self>) -> impl IntoElement {
-        let path = app.path.clone();
+        let launch = app.launch.clone();
         div()
             .id(SharedString::from(format!("app-{}", app.path.display())))
             .w(px(TILE_W))
@@ -332,7 +357,7 @@ impl AppDrawer {
             )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = pos;
-                cx.open_with_system(&path);
+                this.launch_application(&launch, cx);
             }))
             // Right-click selects this tile so the menu acts on it.
             .on_mouse_down(
@@ -348,7 +373,7 @@ impl AppDrawer {
     /// `pos` is the position in the currently-visible list (what `selected`
     /// tracks); `path` is used for the launch path lookup.
     fn row(&self, app: &App, pos: usize, selected: bool, cx: &Context<Self>) -> impl IntoElement {
-        let path = app.path.clone();
+        let launch = app.launch.clone();
         div()
             .id(SharedString::from(format!("row-{}", app.path.display())))
             .flex()
@@ -381,7 +406,7 @@ impl AppDrawer {
             )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = pos;
-                cx.open_with_system(&path);
+                this.launch_application(&launch, cx);
             }))
             .on_mouse_down(
                 MouseButton::Right,
@@ -498,6 +523,7 @@ impl Render for AppDrawer {
 
         let vis = self.visible_indices(cx);
         let sel = self.selected.min(vis.len().saturating_sub(1));
+        let catalog_error = self.catalog_error.clone();
 
         let body: gpui::AnyElement = if self.view == ViewMode::Grid {
             let tiles = vis
@@ -553,6 +579,30 @@ impl Render for AppDrawer {
             .bg(gpui::rgb(0xf5f5f7))
             .text_color(mac::text())
             .child(rmac_ui::title_bar("Applications"))
+            .when_some(catalog_error, |drawer, message| {
+                drawer.child(
+                    div()
+                        .id("catalog-error")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(gpui::rgba(0xff3b301f))
+                        .border_b_1()
+                        .border_color(gpui::rgba(0xff3b3059))
+                        .text_size(px(12.0))
+                        .text_color(gpui::rgb(0xc62828))
+                        .cursor_pointer()
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.catalog_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .child(
                 // toolbar: centered search with the view toggle pinned right.
                 div()
@@ -588,54 +638,48 @@ impl Render for AppDrawer {
 
 // ---- app discovery & icon extraction ----
 
-fn scan_apps() -> Vec<App> {
-    let mut apps: Vec<App> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let dirs = [
-        PathBuf::from("/Applications"),
-        PathBuf::from("/Applications/Utilities"),
-        PathBuf::from("/System/Applications"),
-        PathBuf::from("/System/Applications/Utilities"),
-    ];
-    let mut pairs: Vec<(String, PathBuf)> = Vec::new();
-    for dir in dirs {
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            for e in rd.flatten() {
-                let path = e.path();
-                if path.extension().and_then(|x| x.to_str()) != Some("app") {
-                    continue;
-                }
-                let name = path
-                    .file_stem()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                if name.is_empty() || !seen.insert(name.clone()) {
-                    continue;
-                }
-                pairs.push((name, path));
-            }
+fn scan_apps() -> (Vec<App>, Option<SharedString>) {
+    let catalog = match rmac_apps::discover() {
+        Ok(catalog) => catalog,
+        Err(error) => {
+            return (
+                Vec::new(),
+                Some(format!("Could not load applications: {error}").into()),
+            );
         }
-    }
-    // Categories read each app's Info.plist (a subprocess), so resolve them in
-    // parallel to keep startup fast.
-    let cats = parallel_categorize(&pairs);
-    apps.extend(
-        pairs
-            .into_iter()
-            .zip(cats)
-            .map(|((name, path), category)| App {
-                name: name.into(),
-                path,
-                icon: None,
-                category,
-            }),
-    );
-    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    apps
+    };
+
+    #[cfg(target_os = "macos")]
+    let categories = {
+        let pairs = catalog
+            .iter()
+            .map(|application| (application.name.clone(), application.source.clone()))
+            .collect::<Vec<_>>();
+        parallel_categorize(&pairs)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let categories = catalog
+        .iter()
+        .map(|application| categorize_desktop(&application.categories))
+        .collect::<Vec<_>>();
+
+    let apps = catalog
+        .into_iter()
+        .zip(categories)
+        .map(|(application, category)| App {
+            name: application.name.into(),
+            path: application.source,
+            icon: application.icon,
+            category,
+            launch: application.launch,
+        })
+        .collect();
+    (apps, None)
 }
 
 /// Resolve every app's category concurrently (each read is an independent
 /// subprocess), preserving input order.
+#[cfg(target_os = "macos")]
 fn parallel_categorize(pairs: &[(String, PathBuf)]) -> Vec<Category> {
     let n = pairs.len();
     if n == 0 {
@@ -671,6 +715,7 @@ fn parallel_categorize(pairs: &[(String, PathBuf)]) -> Vec<Category> {
 
 /// The real `LSApplicationCategoryType` from an app's Info.plist, mapped to a
 /// bucket — or `None` if the app declares no category.
+#[cfg(target_os = "macos")]
 fn real_category(path: &Path) -> Option<Category> {
     let info = path.join("Contents/Info");
     let out = Command::new("defaults")
@@ -718,6 +763,7 @@ fn real_category(path: &Path) -> Option<Category> {
 /// Derive an App-Library-style category. The app's real declared
 /// `LSApplicationCategoryType` wins; only when a bundle declares none do we fall
 /// back to install-folder rules and a best-effort name match.
+#[cfg(target_os = "macos")]
 fn categorize(name: &str, path: &Path) -> Category {
     // Prefer the app's real declared category; fall back to the heuristic only
     // when the bundle declares none.
@@ -804,6 +850,33 @@ fn categorize(name: &str, path: &Path) -> Category {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn categorize_desktop(categories: &[String]) -> Category {
+    let has = |names: &[&str]| {
+        categories
+            .iter()
+            .any(|category| names.contains(&category.as_str()))
+    };
+    if has(&["Game"]) {
+        Category::Games
+    } else if has(&["Development", "IDE", "Building", "Debugger"]) {
+        Category::Developer
+    } else if has(&["Network", "WebBrowser", "Email", "InstantMessaging"]) {
+        Category::Internet
+    } else if has(&["AudioVideo", "Audio", "Video", "Graphics", "Photography"]) {
+        Category::Media
+    } else if has(&["Office", "Education", "Science", "Finance"]) {
+        Category::Productivity
+    } else if has(&["Settings", "System"]) {
+        Category::System
+    } else if has(&["Utility", "FileTools", "Archiving"]) {
+        Category::Utilities
+    } else {
+        Category::Other
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn cache_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let dir = PathBuf::from(home).join("Library/Caches/rmac-app-drawer");
@@ -812,6 +885,7 @@ fn cache_dir() -> PathBuf {
 }
 
 /// Find an app's `.icns`, convert to a cached 128px PNG (cached across launches).
+#[cfg(target_os = "macos")]
 fn extract_icon(name: &str, app: &Path, cache: &Path) -> Option<PathBuf> {
     let safe: String = name
         .chars()
@@ -844,6 +918,7 @@ fn extract_icon(name: &str, app: &Path, cache: &Path) -> Option<PathBuf> {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn icns_path(app: &Path) -> Option<PathBuf> {
     let resources = app.join("Contents/Resources");
     let plist = app.join("Contents/Info.plist");

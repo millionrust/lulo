@@ -49,8 +49,11 @@ the corresponding service interface and tests.
 - reveals apps with `open -R`;
 - stores cache under `~/Library/Caches`.
 
-Replacement: `rmac-apps` using desktop entries, icon theme lookup, XDG cache,
-and safe desktop-entry launch expansion.
+`rmac-apps` now provides the cross-platform catalog boundary. On Linux it scans
+XDG application directories with user override/Hidden semantics, filters
+desktop visibility and `TryExec`, expands `Exec` field codes without a shell,
+and resolves absolute, hicolor/Adwaita, or pixmaps icons. Full active-theme
+inheritance and catalog-change notifications remain follow-up work.
 
 ### Finder
 
@@ -174,7 +177,6 @@ data-changing Linux path may add a new ignored error.
 
 ## missing foundations
 
-- no Linux application catalog abstraction;
 - no portal client crate;
 - no shared versioned-format and migration registry;
 - no Linux system-service layer;

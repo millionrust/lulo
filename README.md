@@ -30,6 +30,7 @@ Shared crates:
 - `rmac-ui` — visual tokens, window setup, dialogs, and context menus.
 - `rmac-editor` — shared multiline editor construction and text helpers.
 - `rmac-storage` — atomic filesystem writes, durable cleanup, and typed failures.
+- `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 
 Phase 1 diagnostic:
 

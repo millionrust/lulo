@@ -21,6 +21,7 @@ gpui-component-assets = "=0.5.1"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
+rmac-apps = { version = "=0.1.0", path = "crates/rmac-apps" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-storage = { version = "=0.1.0", path = "crates/rmac-storage" }
 rmac-ui = { version = "=0.1.0", path = "crates/rmac-ui" }

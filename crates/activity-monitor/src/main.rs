@@ -22,7 +22,9 @@ use gpui_component::{
     Disableable as _, Selectable as _, Sizable as _, StyledExt as _,
 };
 use rmac_ui::mac;
-use sysinfo::{Networks, Pid, ProcessesToUpdate, Signal, System, Users};
+use sysinfo::{
+    Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
+};
 
 gpui::actions!(
     activity_monitor,
@@ -219,7 +221,7 @@ struct ProcRow {
     pid: u32,
     name: SharedString,
     /// Lower-cased command line / executable path, used for search matching only.
-    cmd_search: String,
+    cmd_search: SharedString,
     cpu: f32,
     mem: u64,
     /// Bytes read+written since the last refresh (a per-tick I/O proxy).
@@ -254,7 +256,8 @@ struct ProcessTableDelegate {
     visible: Vec<ColKey>,
     /// `gpui-component` column descriptors mirroring `visible`.
     columns: Vec<Column>,
-    /// uid → username resolution table, refreshed alongside the process list.
+    /// uid → username resolution table. Accounts are stable over a monitor
+    /// session, so this is loaded once rather than refreshed every two seconds.
     users: Users,
     cpu_count: usize,
     filter: String,
@@ -273,7 +276,7 @@ impl ProcessTableDelegate {
     fn new() -> Self {
         let visible = load_visible_cols();
         let mut delegate = Self {
-            system: System::new_all(),
+            system: System::new(),
             all_rows: Vec::new(),
             rows: Vec::new(),
             columns: visible.iter().map(|k| k.to_column()).collect(),
@@ -324,11 +327,22 @@ impl ProcessTableDelegate {
 
     /// Pull a fresh snapshot from `sysinfo`, then re-apply the active filter/sort.
     fn refresh(&mut self) {
-        self.system.refresh_cpu_all();
+        // Frequency and static CPU metadata do not change on this screen; only
+        // refresh usage deltas on the two-second sampling path.
+        self.system.refresh_cpu_usage();
         self.system.refresh_memory();
-        self.system.refresh_processes(ProcessesToUpdate::All, true);
+        self.system.refresh_processes_specifics(
+            ProcessesToUpdate::All,
+            true,
+            ProcessRefreshKind::nothing()
+                .with_cpu()
+                .with_memory()
+                .with_disk_usage()
+                .with_exe(UpdateKind::OnlyIfNotSet)
+                .with_cmd(UpdateKind::OnlyIfNotSet)
+                .with_user(UpdateKind::OnlyIfNotSet),
+        );
         self.cpu_count = self.system.cpus().len().max(1);
-        self.users.refresh();
 
         let users = &self.users;
         self.all_rows = self
@@ -348,6 +362,8 @@ impl ProcessTableDelegate {
                     cmd_search.push_str(&arg.to_string_lossy());
                 }
                 cmd_search.make_ascii_lowercase();
+                let cpu = p.cpu_usage();
+                let disk = du.read_bytes + du.written_bytes;
                 let user = p
                     .user_id()
                     .and_then(|uid| users.get_user_by_id(uid))
@@ -360,15 +376,14 @@ impl ProcessTableDelegate {
                 ProcRow {
                     pid: p.pid().as_u32(),
                     name: p.name().to_string_lossy().into_owned().into(),
-                    cmd_search,
-                    cpu: p.cpu_usage(),
+                    cmd_search: cmd_search.into(),
+                    cpu,
                     mem: p.memory(),
-                    disk: du.read_bytes + du.written_bytes,
+                    disk,
                     // Approximate energy impact from the two real signals we have:
                     // CPU usage (the dominant term) plus this interval's disk I/O
                     // (≈0.5 per MB). Distinct from raw %CPU, not a copy of it.
-                    energy: p.cpu_usage()
-                        + ((du.read_bytes + du.written_bytes) as f32 / 1_048_576.0) * 0.5,
+                    energy: cpu + (disk as f32 / 1_048_576.0) * 0.5,
                     ppid: p.parent().map(|pp| pp.as_u32()),
                     user,
                     vmem: p.virtual_memory(),
@@ -384,22 +399,22 @@ impl ProcessTableDelegate {
     /// Rebuild `rows` from `all_rows` using the current filter and sort.
     fn apply_view(&mut self) {
         let needle = self.filter.to_lowercase();
-        let mut rows: Vec<ProcRow> = if needle.is_empty() {
-            self.all_rows.clone()
-        } else {
-            self.all_rows
-                .iter()
-                .filter(|r| {
-                    r.name.to_lowercase().contains(&needle)
-                        || r.pid.to_string().contains(&needle)
-                        || r.cmd_search.contains(&needle)
-                })
-                .cloned()
-                .collect()
-        };
-        Self::sort_rows(&mut rows, self.sort_key, self.sort_asc);
-        rows.truncate(300);
-        self.rows = rows;
+        // `all_rows` has no externally meaningful order. Sort it in place, then
+        // clone only the at-most-300 visible rows instead of cloning the entire
+        // process list before sorting and truncating it.
+        Self::sort_rows(&mut self.all_rows, self.sort_key, self.sort_asc);
+        self.rows = self
+            .all_rows
+            .iter()
+            .filter(|r| {
+                needle.is_empty()
+                    || r.name.to_lowercase().contains(&needle)
+                    || r.pid.to_string().contains(&needle)
+                    || r.cmd_search.contains(&needle)
+            })
+            .take(300)
+            .cloned()
+            .collect();
     }
 
     fn sort_rows(rows: &mut [ProcRow], key: ColKey, asc: bool) {
@@ -876,7 +891,6 @@ impl MonitorView {
             agg.swap_used = delegate.system.used_swap();
             agg.swap_total = delegate.system.total_swap();
 
-            let disk_bytes: u64 = delegate.all_rows.iter().map(|r| r.disk).sum();
             // Split is approximate; we only have the combined per-row figure here,
             // so re-derive read/write from the live processes.
             let (read, write) =
@@ -888,7 +902,6 @@ impl MonitorView {
                         let du = p.disk_usage();
                         (r + du.read_bytes, w + du.written_bytes)
                     });
-            let _ = disk_bytes;
             agg.disk_read_rate = read as f64 / REFRESH_SECS;
             agg.disk_write_rate = write as f64 / REFRESH_SECS;
 

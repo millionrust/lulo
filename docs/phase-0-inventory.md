@@ -121,8 +121,10 @@ new ignored error.
   wake channel on 2026-07-10. Bursts coalesce and the UI task sleeps when idle;
   Linux confirmation remains part of the reference-PC performance pass.
 - Activity Monitor refreshes on a two-second metric interval; this interval is
-  domain work and remains appropriate, but rendering should occur only after a
-  completed refresh.
+  domain work and remains appropriate. Since 2026-07-10 the collector requests
+  CPU usage without static frequency data, loads user metadata once, and clones
+  only the bounded visible process rows. Rendering still occurs after each
+  completed sample.
 
 ## missing foundations
 

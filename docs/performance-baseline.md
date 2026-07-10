@@ -88,6 +88,31 @@ well inside Terminal's 900 ms budget. The idle improvement is material but does
 not yet meet the provisional 0.3% goal. The Linux reference-PC run must confirm
 the event-driven behavior under Wayland and identify the remaining base cost.
 
+## App Drawer event-driven redraw follow-up
+
+Revision `72b2e22c1545691d98f1c067525cf4b1f757d5ed` removed App Drawer's
+unconditional 120 ms redraw timer. Search input already notified its observer,
+and the asynchronous icon pass already notified GPUI after updating the model,
+so the timer repainted unchanged state between real events.
+
+After warming the persistent icon cache, two consecutive clean-revision runs
+reported 0.70% idle CPU. The later run produced this comparison:
+
+| Metric | Original `59235ff` | Event-driven `72b2e22` | Change |
+|---|---:|---:|---:|
+| Warm startup median | 333.1 ms | 365.7 ms | +32.6 ms |
+| Warm startup p95 | 347.1 ms | 387.7 ms | +40.6 ms |
+| Idle CPU | 7.10% | 0.70% | -90.1% |
+| Idle RSS | 89.5 MiB | 89.9 MiB | +0.4 MiB |
+
+Startup remains inside the 500 ms simple-app budget. Cold icon-cache discovery
+is a separate active workload: it overlapped early three-second settling
+windows and produced unstable idle samples while the cache was being populated.
+The stable figure above therefore describes quiescent idle, not first-run icon
+indexing. App Drawer still misses the provisional 0.3% idle goal; Linux catalog
+events and icon-cache lifecycle need separate measurements during its
+`rmac-apps` port.
+
 ## Limits and next evidence
 
 These measurements are a reproducible comparison point, not release evidence.

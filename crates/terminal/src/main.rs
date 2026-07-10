@@ -5,7 +5,10 @@
 //! background thread reads PTY output and feeds the parser; model changes wake
 //! the view, which renders the grid and writes keystrokes back to the PTY.
 
+mod storage;
+
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use alacritty_terminal::event::EventListener;
@@ -17,7 +20,7 @@ use gpui::{
     div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div, Entity,
     FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
     KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, Stateful,
+    ParentElement, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
@@ -357,30 +360,66 @@ struct TerminalView {
     profile: usize,
     /// Whether the profile picker dropdown is open.
     picker_open: bool,
+    persistence_error: Option<SharedString>,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<Point<Pixels>>,
 }
 
-/// Path to the persisted profile-index file.
-fn profile_config_path() -> Option<std::path::PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    let dir = std::path::Path::new(&home).join("Library/Application Support/rmac-terminal");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("profile.txt"))
+/// Path to the persisted stable profile-name file.
+fn profile_config_path() -> Result<PathBuf, storage::Failure> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
+        storage::Failure::message(
+            storage::Operation::ResolveConfigPath,
+            Path::new("profile.txt"),
+            "HOME is not set",
+        )
+    })?;
+    #[cfg(target_os = "macos")]
+    let dir = home.join("Library/Application Support/rmac-terminal");
+    #[cfg(not(target_os = "macos"))]
+    let dir = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path.join("rmac-terminal"),
+        _ => home.join(".config/rmac-terminal"),
+    };
+    Ok(dir.join("profile.txt"))
 }
 
-fn load_profile() -> usize {
-    profile_config_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| s.trim().parse::<usize>().ok())
-        .filter(|&i| i < PROFILES.len())
-        .unwrap_or(0)
-}
-
-fn save_profile(i: usize) {
-    if let Some(p) = profile_config_path() {
-        let _ = std::fs::write(p, i.to_string());
+fn parse_profile(content: &str) -> Result<(usize, bool), String> {
+    let value = content.trim();
+    if value.is_empty() {
+        return Err("profile preference is empty".into());
     }
+    if let Some(index) = PROFILES.iter().position(|profile| profile.name == value) {
+        return Ok((index, false));
+    }
+    if let Ok(index) = value.parse::<usize>() {
+        return (index < PROFILES.len())
+            .then_some((index, true))
+            .ok_or_else(|| format!("legacy profile index {index} is out of range"));
+    }
+    Err(format!("unknown terminal profile '{value}'"))
+}
+
+fn load_profile() -> Result<(usize, bool), storage::Failure> {
+    let path = profile_config_path()?;
+    match storage::load_optional(&storage::RealStorage, &path)? {
+        Some(content) => parse_profile(&content).map_err(|detail| {
+            storage::Failure::message(storage::Operation::LoadProfile, &path, detail)
+        }),
+        None => Ok((0, false)),
+    }
+}
+
+fn save_profile(index: usize) -> Result<(), storage::Failure> {
+    let path = profile_config_path()?;
+    let profile = PROFILES.get(index).ok_or_else(|| {
+        storage::Failure::message(
+            storage::Operation::SaveProfile,
+            &path,
+            format!("profile index {index} is out of range"),
+        )
+    })?;
+    storage::save(&storage::RealStorage, &path, profile.name)
 }
 
 impl TerminalView {
@@ -411,6 +450,16 @@ impl TerminalView {
 
         let focus = cx.focus_handle();
         window.focus(&focus);
+        let (profile, persistence_error) = match load_profile() {
+            Ok((profile, legacy_index)) => {
+                let migration_error = legacy_index
+                    .then(|| save_profile(profile).err())
+                    .flatten()
+                    .map(|failure| SharedString::from(failure.to_string()));
+                (profile, migration_error)
+            }
+            Err(failure) => (0, Some(SharedString::from(failure.to_string()))),
+        };
 
         // PTY/model events wake this task. The bounded channel coalesces output
         // bursts while leaving the application fully asleep when nothing changes.
@@ -438,8 +487,9 @@ impl TerminalView {
             selection: None,
             selecting: false,
             scroll_accum: 0.0,
-            profile: load_profile(),
+            profile,
             picker_open: false,
+            persistence_error,
             menu_at: None,
         }
     }
@@ -448,7 +498,9 @@ impl TerminalView {
         if i < PROFILES.len() {
             self.profile = i;
             self.picker_open = false;
-            save_profile(i);
+            self.persistence_error = save_profile(i)
+                .err()
+                .map(|failure| failure.to_string().into());
             cx.notify();
         }
     }
@@ -971,6 +1023,7 @@ impl Render for TerminalView {
         let rows = self.render_rows(&query);
         let searching = self.searching;
         let multi = self.tabs.len() > 1;
+        let persistence_error = self.persistence_error.clone();
         div()
             .size_full()
             .relative()
@@ -1166,6 +1219,33 @@ impl Render for TerminalView {
                         .render(),
                 )
             })
+            .when_some(persistence_error, |terminal, message| {
+                terminal.child(
+                    div()
+                        .id("persistence-error")
+                        .absolute()
+                        .left(px(8.0))
+                        .right(px(8.0))
+                        .bottom(px(8.0))
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .py_2()
+                        .rounded(px(7.0))
+                        .bg(gpui::rgba(0x7f1d1ddd))
+                        .text_size(px(12.0))
+                        .text_color(gpui::white())
+                        .shadow_lg()
+                        .cursor_pointer()
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.persistence_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
     }
 }
 
@@ -1285,5 +1365,20 @@ mod tests {
         assert_eq!(shell_program(None), "/bin/sh");
         assert_eq!(shell_program(Some("  ".to_string())), "/bin/sh");
         assert_eq!(shell_program(Some("/bin/fish".to_string())), "/bin/fish");
+    }
+
+    #[test]
+    fn stable_profile_names_and_legacy_indices_are_supported() {
+        for (index, profile) in PROFILES.iter().enumerate() {
+            assert_eq!(parse_profile(profile.name), Ok((index, false)));
+            assert_eq!(parse_profile(&index.to_string()), Ok((index, true)));
+        }
+    }
+
+    #[test]
+    fn malformed_or_unknown_profiles_are_reported() {
+        assert!(parse_profile("").is_err());
+        assert!(parse_profile("Not a Profile").is_err());
+        assert!(parse_profile(&PROFILES.len().to_string()).is_err());
     }
 }

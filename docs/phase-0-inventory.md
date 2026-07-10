@@ -97,12 +97,10 @@ support where useful.
 
 ## ignored data-changing errors
 
-The prototype deliberately discards several filesystem results. Highest-risk
-areas:
+The prototype deliberately discards one remaining data-changing result:
 
 - Finder native pasteboard writes (the AppKit API does not expose a useful
-  per-item result);
-- Terminal profile preferences.
+  per-item result).
 
 Since 2026-07-10 Finder create/copy/rename/delete/trash and move paths report
 typed failures in the UI. Cross-device fallback occurs only for `EXDEV`; copy
@@ -136,6 +134,12 @@ adjacent-temp atomic storage owned by the root view. Missing preferences keep
 the default columns; unreadable, empty, duplicated, or unknown column data is
 reported, while the required Process Name column and canonical display order
 are restored before the table is built.
+
+Terminal profile preferences now use XDG/macOS paths and typed, adjacent-temp
+atomic storage. Stable profile names replace fragile array indices; legacy
+numeric preferences are imported and migrated on launch. Missing preferences
+select the default profile, while unreadable, unknown, or out-of-range values
+are reported in a non-disruptive overlay that does not alter PTY geometry.
 
 Migration rule: preference writes move to atomic `rmac-storage` operations. No
 data-changing Linux path may add a new ignored error.

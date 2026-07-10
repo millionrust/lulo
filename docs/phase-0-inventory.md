@@ -102,7 +102,6 @@ areas:
 
 - Finder native pasteboard writes (the AppKit API does not expose a useful
   per-item result);
-- Text Editor recovery-file writes/removal;
 - System Settings persistence;
 - Activity Monitor column preferences;
 - Terminal profile preferences.
@@ -121,6 +120,13 @@ with typed failures. Failed autosaves remain dirty and retryable; navigation and
 window close stop when pending edits cannot be saved. Folder rename/delete,
 note create/delete, and attachment copy failures remain visible, and attachment
 copies cannot overwrite an existing destination.
+
+Text Editor document and recovery writes now use adjacent-temp atomic
+replacement with typed failures. Recovery timers are generation-checked and
+write only while the buffer is dirty; clean transitions invalidate pending
+timers. Recovery removal failures remain visible and block New/Close or an
+explicit discard, while cancelling an Open dialog keeps the current draft
+recoverable.
 
 Migration rule: preference writes move to atomic `rmac-storage` operations. No
 data-changing Linux path may add a new ignored error.

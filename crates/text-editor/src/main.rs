@@ -7,6 +7,7 @@
 //! size). Shares the editing configuration with Notes via `rmac-editor`.
 
 mod rtf;
+mod storage;
 
 use std::{path::PathBuf, time::Duration};
 
@@ -53,6 +54,26 @@ enum Pending {
     Close,
 }
 
+#[derive(Default)]
+struct RecoveryClock {
+    generation: u64,
+}
+
+impl RecoveryClock {
+    fn arm(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.generation
+    }
+
+    fn invalidate(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    fn should_write(&self, generation: u64, dirty: bool) -> bool {
+        dirty && self.generation == generation
+    }
+}
+
 /// A modal alert awaiting the user, shown via the shared `rmac_ui::alert`.
 #[derive(Clone)]
 enum ActiveAlert {
@@ -60,8 +81,11 @@ enum ActiveAlert {
     Recover(String),
     /// The buffer is dirty before `Pending` — Save / Don't Save / Cancel.
     ConfirmSave(Pending),
-    /// A save error — message + OK.
-    Error(String),
+    /// A document open/save error — title + message + OK.
+    Error {
+        title: &'static str,
+        message: String,
+    },
 }
 
 struct EditorView {
@@ -92,7 +116,8 @@ struct EditorView {
     // Infra
     focus: FocusHandle,
     recovery_path: PathBuf,
-    autosave_gen: u64,
+    recovery_clock: RecoveryClock,
+    recovery_error: Option<SharedString>,
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
     alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,
@@ -144,10 +169,11 @@ impl EditorView {
 
         // If an autosaved recovery file from a previous (crashed) session exists,
         // open the shared Recover alert once the view is live.
-        let alert = std::fs::read_to_string(&recovery_path)
-            .ok()
-            .filter(|c| !c.is_empty())
-            .map(ActiveAlert::Recover);
+        let (alert, recovery_error) =
+            match storage::load_recovery(&storage::RealStorage, &recovery_path) {
+                Ok(content) => (content.map(ActiveAlert::Recover), None),
+                Err(failure) => (None, Some(failure.to_string().into())),
+            };
 
         Self {
             alert,
@@ -166,7 +192,8 @@ impl EditorView {
             rtf_runs: None,
             focus: cx.focus_handle(),
             recovery_path,
-            autosave_gen: 0,
+            recovery_clock: RecoveryClock::default(),
+            recovery_error,
             _subscriptions: vec![sub_main, sub_find],
         }
     }
@@ -190,31 +217,61 @@ impl EditorView {
         if self.find_open {
             self.recompute_matches(cx);
         }
-        self.schedule_autosave(cx);
+        if self.dirty {
+            self.schedule_autosave(cx);
+        } else {
+            self.clear_recovery(cx);
+        }
         cx.notify();
     }
 
     /// Debounced autosave: each edit bumps a generation token and arms a timer;
     /// only the most recent timer actually writes the recovery file.
     fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
-        self.autosave_gen += 1;
-        let gen = self.autosave_gen;
+        let generation = self.recovery_clock.arm();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(2)).await;
             let _ = this.update(cx, |this, cx| {
-                if this.autosave_gen == gen {
+                if this.recovery_clock.should_write(generation, this.dirty) {
                     let content = this.input.read(cx).value().to_string();
-                    let _ = std::fs::write(&this.recovery_path, content);
+                    match storage::write(
+                        &storage::RealStorage,
+                        storage::Operation::SaveRecovery,
+                        &this.recovery_path,
+                        content,
+                    ) {
+                        Ok(()) => this.recovery_error = None,
+                        Err(failure) => this.record_recovery_failure(failure, cx),
+                    }
                 }
             });
         })
         .detach();
     }
 
-    fn mark_clean(&mut self, value: String) {
+    fn record_recovery_failure(&mut self, failure: storage::Failure, cx: &mut Context<Self>) {
+        self.recovery_error = Some(failure.to_string().into());
+        cx.notify();
+    }
+
+    fn clear_recovery(&mut self, cx: &mut Context<Self>) -> bool {
+        self.recovery_clock.invalidate();
+        match storage::remove_recovery(&storage::RealStorage, &self.recovery_path) {
+            Ok(()) => {
+                self.recovery_error = None;
+                true
+            }
+            Err(failure) => {
+                self.record_recovery_failure(failure, cx);
+                false
+            }
+        }
+    }
+
+    fn mark_clean(&mut self, value: String, cx: &mut Context<Self>) -> bool {
         self.saved_value = value;
         self.dirty = false;
-        let _ = std::fs::remove_file(&self.recovery_path);
+        self.clear_recovery(cx)
     }
 
     // ── File operations ─────────────────────────────────────────────────
@@ -231,7 +288,7 @@ impl EditorView {
         self.input.update(cx, |s, cx| s.set_value("", window, cx));
         self.path = None;
         self.rtf_runs = None;
-        self.mark_clean(String::new());
+        self.mark_clean(String::new(), cx);
         cx.notify();
     }
 
@@ -242,6 +299,7 @@ impl EditorView {
         if self.rtf_runs.take().is_some() {
             self.path = None;
             self.dirty = true; // an unsaved derived document
+            self.schedule_autosave(cx);
             cx.notify();
         }
     }
@@ -260,8 +318,22 @@ impl EditorView {
             let Some(path) = paths.into_iter().next() else {
                 return;
             };
-            let Ok(bytes) = std::fs::read(&path) else {
-                return;
+            let bytes = match storage::read(
+                &storage::RealStorage,
+                storage::Operation::LoadDocument,
+                &path,
+            ) {
+                Ok(bytes) => bytes,
+                Err(failure) => {
+                    let _ = this.update_in(cx, |this, _, cx| {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Failed to open the file.",
+                            message: failure.to_string(),
+                        });
+                        cx.notify();
+                    });
+                    return;
+                }
             };
             // `.rtf` files open as a read-only formatted preview; the editable
             // body holds the extracted plain text.
@@ -278,7 +350,7 @@ impl EditorView {
                     .update(cx, |s, cx| s.set_value(content.clone(), window, cx));
                 this.path = Some(path);
                 this.rtf_runs = rtf_runs;
-                this.mark_clean(content);
+                this.mark_clean(content, cx);
                 cx.notify();
             });
         })
@@ -299,18 +371,28 @@ impl EditorView {
         }
         let content = self.input.read(cx).value().to_string();
         if let Some(path) = self.path.clone() {
-            match std::fs::write(&path, &content) {
+            match storage::write(
+                &storage::RealStorage,
+                storage::Operation::SaveDocument,
+                &path,
+                &content,
+            ) {
                 Ok(()) => {
-                    self.mark_clean(content);
+                    let recovery_cleared = self.mark_clean(content, cx);
                     cx.notify();
-                    if let Some(pending) = then {
-                        self.perform(pending, window, cx);
+                    if recovery_cleared {
+                        if let Some(pending) = then {
+                            self.perform(pending, window, cx);
+                        }
                     }
                 }
-                Err(err) => {
+                Err(failure) => {
                     // Write failed: keep dirty state and do NOT run the pending
                     // (destructive) action, so unsaved changes are preserved.
-                    self.alert = Some(ActiveAlert::Error(format!("{}: {}", path.display(), err)));
+                    self.alert = Some(ActiveAlert::Error {
+                        title: "Failed to save the file.",
+                        message: failure.to_string(),
+                    });
                     cx.notify();
                 }
             }
@@ -322,20 +404,30 @@ impl EditorView {
             // Save-As was cancelled or failed: do NOT run the pending action,
             // so unsaved changes are preserved instead of silently discarded.
             let Ok(Ok(Some(path))) = rx.await else { return };
-            let write_result = std::fs::write(&path, &content);
+            let write_result = storage::write(
+                &storage::RealStorage,
+                storage::Operation::SaveDocument,
+                &path,
+                &content,
+            );
             let _ = this.update_in(cx, |this, window, cx| match write_result {
                 Ok(()) => {
                     this.path = Some(path);
-                    this.mark_clean(content);
+                    let recovery_cleared = this.mark_clean(content, cx);
                     cx.notify();
-                    if let Some(pending) = then {
-                        this.perform(pending, window, cx);
+                    if recovery_cleared {
+                        if let Some(pending) = then {
+                            this.perform(pending, window, cx);
+                        }
                     }
                 }
-                Err(err) => {
+                Err(failure) => {
                     // Write failed: keep dirty state and do NOT run the pending
                     // (destructive) action, so unsaved changes are preserved.
-                    this.alert = Some(ActiveAlert::Error(format!("{}: {}", path.display(), err)));
+                    this.alert = Some(ActiveAlert::Error {
+                        title: "Failed to save the file.",
+                        message: failure.to_string(),
+                    });
                     cx.notify();
                 }
             });
@@ -346,7 +438,9 @@ impl EditorView {
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.
     fn guarded(&mut self, pending: Pending, window: &mut Window, cx: &mut Context<Self>) {
         if !self.dirty {
-            self.perform(pending, window, cx);
+            if self.clear_recovery(cx) {
+                self.perform(pending, window, cx);
+            }
             return;
         }
         self.alert = Some(ActiveAlert::ConfirmSave(pending));
@@ -364,7 +458,7 @@ impl EditorView {
                 self.on_buffer_changed(cx);
             }
             Some(ActiveAlert::ConfirmSave(pending)) => self.save_with(Some(pending), window, cx),
-            Some(ActiveAlert::Error(_)) | None => {}
+            Some(ActiveAlert::Error { .. }) | None => {}
         }
         cx.notify();
     }
@@ -372,10 +466,20 @@ impl EditorView {
     /// Secondary button: Discard (recover) / Don't Save (confirm).
     fn alert_secondary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.alert.take() {
-            Some(ActiveAlert::Recover(_)) => {
-                let _ = std::fs::remove_file(&self.recovery_path);
+            Some(ActiveAlert::Recover(content)) => {
+                if !self.clear_recovery(cx) {
+                    self.alert = Some(ActiveAlert::Recover(content));
+                }
             }
-            Some(ActiveAlert::ConfirmSave(pending)) => self.perform(pending, window, cx),
+            Some(ActiveAlert::ConfirmSave(pending)) => {
+                // Keep the draft recoverable while the Open picker is active:
+                // cancelling the picker leaves the current document intact.
+                if matches!(pending, Pending::Open) || self.clear_recovery(cx) {
+                    self.perform(pending, window, cx);
+                } else {
+                    self.alert = Some(ActiveAlert::ConfirmSave(pending));
+                }
+            }
             _ => {}
         }
         cx.notify();
@@ -900,9 +1004,9 @@ impl EditorView {
                         .into_any_element(),
                 ],
             ),
-            ActiveAlert::Error(msg) => (
-                "Failed to save the file.",
-                msg,
+            ActiveAlert::Error { title, message } => (
+                title,
+                message,
                 vec![rmac_ui::dialog_button("alert-ok", "OK", Primary)
                     .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
                     .into_any_element()],
@@ -920,6 +1024,7 @@ impl Render for EditorView {
             rmac_ui::UI_FONT
         };
         let size = self.font_size;
+        let recovery_error = self.recovery_error.clone();
 
         div()
             .size_full()
@@ -950,6 +1055,30 @@ impl Render for EditorView {
             .bg(mac::window())
             .text_color(mac::text())
             .child(self.render_toolbar(cx))
+            .when_some(recovery_error, |editor, message| {
+                editor.child(
+                    div()
+                        .id("recovery-error")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(gpui::rgba(0xff3b301f))
+                        .border_b_1()
+                        .border_color(gpui::rgba(0xff3b3059))
+                        .text_size(px(12.0))
+                        .text_color(gpui::rgb(0xc62828))
+                        .cursor_pointer()
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.recovery_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .when(self.find_open, |d| d.child(self.render_find_bar(cx)))
             .child(if self.rtf_runs.is_some() {
                 self.render_rtf_preview(cx).into_any_element()
@@ -978,4 +1107,31 @@ fn main() {
     rmac_ui::boot("Text Editor", 860.0, 640.0, |window, cx| {
         EditorView::new(window, cx)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RecoveryClock;
+
+    #[test]
+    fn clean_transition_invalidates_a_pending_recovery_write() {
+        let mut clock = RecoveryClock::default();
+        let pending = clock.arm();
+
+        assert!(clock.should_write(pending, true));
+        assert!(!clock.should_write(pending, false));
+
+        clock.invalidate();
+        assert!(!clock.should_write(pending, true));
+    }
+
+    #[test]
+    fn newer_edit_invalidates_an_older_recovery_write() {
+        let mut clock = RecoveryClock::default();
+        let older = clock.arm();
+        let newer = clock.arm();
+
+        assert!(!clock.should_write(older, true));
+        assert!(clock.should_write(newer, true));
+    }
 }

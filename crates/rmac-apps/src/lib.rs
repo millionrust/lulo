@@ -63,20 +63,8 @@ pub fn launch(spec: &LaunchSpec) -> io::Result<Child> {
     }
 }
 
-pub fn reveal(application: &Application) -> io::Result<Child> {
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg("-R")
-            .arg(&application.source)
-            .spawn()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Command::new("xdg-open")
-            .arg(application.source.parent().unwrap_or(&application.source))
-            .spawn()
-    }
+pub async fn reveal(application: &Application) -> Result<(), rmac_portal::Error> {
+    rmac_portal::show_item(&application.source).await
 }
 
 fn terminal_command(program: &str, args: &[String]) -> Command {

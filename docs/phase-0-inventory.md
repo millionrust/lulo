@@ -53,7 +53,9 @@ the corresponding service interface and tests.
 XDG application directories with user override/Hidden semantics, filters
 desktop visibility and `TryExec`, expands `Exec` field codes without a shell,
 and resolves absolute, hicolor/Adwaita, or pixmaps icons. Full active-theme
-inheritance and catalog-change notifications remain follow-up work.
+inheritance and catalog-change notifications remain follow-up work. App reveal
+uses `rmac-portal` OpenDirectory on Linux, with an `xdg-open` fallback, while
+macOS retains Finder reveal.
 
 ### Finder
 
@@ -177,7 +179,6 @@ data-changing Linux path may add a new ignored error.
 
 ## missing foundations
 
-- no portal client crate;
 - no shared versioned-format and migration registry;
 - no Linux system-service layer;
 - no compositor event model or niri client;

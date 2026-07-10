@@ -262,10 +262,16 @@ impl AppDrawer {
     /// to the app in Finder, where it can be dragged onto the Dock.
     fn reveal_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(application) = self.selected_app(cx) {
-            self.catalog_error = rmac_apps::reveal(&application)
-                .err()
-                .map(|error| format!("Could not show application: {error}").into());
-            cx.notify();
+            cx.spawn(async move |this, cx| {
+                let result = rmac_apps::reveal(&application).await;
+                let _ = this.update(cx, |this, cx| {
+                    this.catalog_error = result
+                        .err()
+                        .map(|error| format!("Could not show application: {error}").into());
+                    cx.notify();
+                });
+            })
+            .detach();
         }
     }
 

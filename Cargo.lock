@@ -217,6 +217,7 @@ dependencies = [
  "rand 0.9.4",
  "serde",
  "serde_repr",
+ "tokio",
  "url",
  "zbus",
 ]
@@ -4791,6 +4792,9 @@ dependencies = [
 [[package]]
 name = "rmac-apps"
 version = "0.1.0"
+dependencies = [
+ "rmac-portal",
+]
 
 [[package]]
 name = "rmac-editor"
@@ -4837,6 +4841,13 @@ dependencies = [
  "gpui",
  "gpui-component",
  "rmac-ui",
+]
+
+[[package]]
+name = "rmac-portal"
+version = "0.1.0"
+dependencies = [
+ "ashpd 0.12.3",
 ]
 
 [[package]]
@@ -6139,7 +6150,9 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 
@@ -7746,6 +7759,7 @@ dependencies = [
  "rustix 1.1.4",
  "serde",
  "serde_repr",
+ "tokio",
  "tracing",
  "uds_windows",
  "uuid",

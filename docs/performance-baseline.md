@@ -54,17 +54,18 @@ idle result predates the event-driven redraw fix documented below.
 ## Budget comparison
 
 The Phase 0 provisional warm-launch budgets are 500 ms p95 for simple apps and
-900 ms for Finder and Terminal. Six applications pass their applicable budget.
-System Settings fails the simple-app budget by 602.8 ms; its synchronous system
-discovery must move off the first-frame path during its service-layer port.
+900 ms for Finder and Terminal. At the immutable starting revision, six
+applications pass and System Settings fails the simple-app budget by 602.8 ms.
+The follow-up below moves its discovery off the first-frame path and clears the
+failure.
 
 The provisional idle CPU budget is 0.3% per normal app. None of the original
 prototypes passes it. Terminal and App Drawer were the priority outliers, which
 matched their known 33 ms and 120 ms redraw loops in the Phase 0 inventory.
-Activity Monitor's periodic metric refresh is legitimate domain work, but its
-current 2.70% result still needs profiling and an explicit active-refresh
-budget. RSS is recorded as the starting point for setting per-app memory
-budgets; no memory pass/fail threshold has been approved yet.
+Activity Monitor's periodic metric refresh is legitimate domain work; the
+follow-up below profiles it and defines a separate active-refresh budget. RSS
+is recorded as the starting point for setting per-app memory budgets; no memory
+pass/fail threshold has been approved yet.
 
 ## Terminal event-driven redraw follow-up
 
@@ -136,6 +137,39 @@ confirmation; the snapshot has no polling loop, but its completion latency is
 not yet a separate harness metric. The Linux service adapters should report
 their sections independently so one slow subsystem cannot hold every hardware
 pane in the loading state.
+
+## Activity Monitor refresh follow-up
+
+Revision `7e36406e854b5d0f975c443ddf9cd9bcd88d8483` kept the two-second
+sampling cadence while narrowing each collection pass. It requests CPU usage
+without frequency data, loads the stable user table once, requests command and
+user metadata only when not already cached, avoids a discarded disk
+aggregation, and clones at most the 300 visible rows after sorting.
+
+The first post-link run reproduced the original 2.70% CPU result. Three
+subsequent clean-revision ten-second samples reported 1.40%, 2.50%, and 1.70%
+(2.10% median), showing that this short window is sensitive to collector and
+host warmup. The last of those runs produced this same-window comparison:
+
+| Metric | Original `59235ff` | Bounded refresh `7e36406` | Change |
+|---|---:|---:|---:|
+| Warm startup median | 164.5 ms | 161.8 ms | -2.7 ms |
+| Warm startup p95 | 166.3 ms | 163.0 ms | -3.3 ms |
+| Active-refresh CPU | 2.70% | 1.70% | -37.0% |
+| RSS | 80.0 MiB | 79.3 MiB | -0.7 MiB |
+
+A native ten-second stack sample across five refreshes found the active work in
+macOS process-enumeration calls (`sysctl` and `proc_pidinfo`); the main event
+loop otherwise slept. Disabling `sysinfo`'s parallel collector increased CPU to
+3.90%, so that experiment was rejected.
+
+Activity Monitor is not a quiescent app and is exempt from the normal 0.3%
+idle target while monitoring. Its provisional active-refresh budget is 2.5%
+CPU averaged over 30 seconds at the two-second cadence. Two clean-revision
+30-second samples measured 1.03% and 2.07%, both passing. The Linux reference
+PC must repeat the same cadence and window, record process count, and verify
+that collection does not cause visible frame stalls before this budget becomes
+a cross-platform release threshold.
 
 ## Limits and next evidence
 

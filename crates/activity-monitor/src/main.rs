@@ -5,8 +5,10 @@
 //! Ubuntu/Wayland (Vulkan) later — the same binary, no webview, instant launch.
 
 mod cpu_ticks;
+mod storage;
 
 use std::cmp::Ordering;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui::{
@@ -86,7 +88,7 @@ impl Tab {
 /// A column in the process table. The set is fixed and canonically ordered; the
 /// column chooser toggles which ones are visible. Only columns backed by real
 /// `sysinfo` data exist here — no placeholder/fabricated metrics.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ColKey {
     Pid,
     Name,
@@ -273,8 +275,7 @@ struct ProcessTableDelegate {
 }
 
 impl ProcessTableDelegate {
-    fn new() -> Self {
-        let visible = load_visible_cols();
+    fn new(visible: Vec<ColKey>) -> Self {
         let mut delegate = Self {
             system: System::new(),
             all_rows: Vec::new(),
@@ -321,7 +322,6 @@ impl ProcessTableDelegate {
             self.visible.insert(insert_at, key);
         }
         self.rebuild_columns();
-        save_visible_cols(&self.visible);
         true
     }
 
@@ -499,45 +499,78 @@ fn format_duration(secs: u64) -> String {
 }
 
 /// Path to the persisted visible-columns file.
-fn cols_config_path() -> Option<std::path::PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    let dir = std::path::Path::new(&home).join("Library/Application Support/rmac-activity-monitor");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("columns.txt"))
+fn cols_config_path() -> Result<PathBuf, storage::Failure> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
+        storage::Failure::message(
+            storage::Operation::ResolveConfigPath,
+            Path::new("columns.txt"),
+            "HOME is not set",
+        )
+    })?;
+    #[cfg(target_os = "macos")]
+    let dir = home.join("Library/Application Support/rmac-activity-monitor");
+    #[cfg(not(target_os = "macos"))]
+    let dir = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path.join("rmac-activity-monitor"),
+        _ => home.join(".config/rmac-activity-monitor"),
+    };
+    Ok(dir.join("columns.txt"))
 }
 
-/// Load the visible column set (comma-separated ids), falling back to defaults.
-fn load_visible_cols() -> Vec<ColKey> {
-    let parsed: Option<Vec<ColKey>> = cols_config_path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|s| {
-            s.split(',')
-                .filter_map(|t| ColKey::from_id(t.trim()))
-                .collect()
-        });
-    let cols = parsed
-        .filter(|v: &Vec<ColKey>| !v.is_empty())
-        .unwrap_or_else(|| {
-            ColKey::ALL
-                .into_iter()
-                .filter(|k| k.default_visible())
-                .collect()
-        });
-    // Process Name is the anchor — guarantee it's present.
-    if cols.contains(&ColKey::Name) {
-        cols
-    } else {
-        let mut c = cols;
-        c.insert(0, ColKey::Name);
-        c
+fn default_visible_cols() -> Vec<ColKey> {
+    ColKey::ALL
+        .into_iter()
+        .filter(|key| key.default_visible())
+        .collect()
+}
+
+fn parse_visible_cols(content: &str) -> Result<Vec<ColKey>, String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err("column preferences are empty".into());
+    }
+    let mut selected = Vec::new();
+    for token in trimmed.split(',') {
+        let id = token.trim();
+        if id.is_empty() {
+            return Err("column preferences contain an empty id".into());
+        }
+        let key = ColKey::from_id(id).ok_or_else(|| format!("unknown column id '{id}'"))?;
+        if selected.contains(&key) {
+            return Err(format!("column id '{id}' is duplicated"));
+        }
+        selected.push(key);
+    }
+
+    // Always restore the required name anchor and normalize display order to
+    // the canonical table order, even if an older file used another order.
+    Ok(ColKey::ALL
+        .into_iter()
+        .filter(|key| key.required() || selected.contains(key))
+        .collect())
+}
+
+/// Load the visible column set, treating a missing file as first launch.
+fn load_visible_cols() -> Result<Vec<ColKey>, storage::Failure> {
+    let path = cols_config_path()?;
+    match storage::load_optional(&storage::RealStorage, &path)? {
+        Some(content) => parse_visible_cols(&content).map_err(|detail| {
+            storage::Failure::message(storage::Operation::LoadColumns, &path, detail)
+        }),
+        None => Ok(default_visible_cols()),
     }
 }
 
-fn save_visible_cols(cols: &[ColKey]) {
-    if let Some(p) = cols_config_path() {
-        let line = cols.iter().map(|k| k.id()).collect::<Vec<_>>().join(",");
-        let _ = std::fs::write(p, line);
-    }
+fn format_visible_cols(cols: &[ColKey]) -> String {
+    cols.iter()
+        .map(|key| key.id())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn save_visible_cols(cols: &[ColKey]) -> Result<(), storage::Failure> {
+    let path = cols_config_path()?;
+    storage::save(&storage::RealStorage, &path, format_visible_cols(cols))
 }
 
 /// Format a byte-rate (bytes per second) compactly.
@@ -727,6 +760,7 @@ struct MonitorView {
     pending_kill: Option<PendingKill>,
     /// Whether the column chooser dropdown is open.
     cols_menu_open: bool,
+    persistence_error: Option<SharedString>,
     /// PID whose detail inspector is open (double-click a row).
     inspect_pid: Option<u32>,
     /// Per-interface cumulative byte counters, snapshotted each refresh for the
@@ -751,7 +785,14 @@ struct NetIface {
 
 impl MonitorView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let table = cx.new(|cx| TableState::new(ProcessTableDelegate::new(), window, cx));
+        let (visible, persistence_error) = match load_visible_cols() {
+            Ok(visible) => (visible, None),
+            Err(failure) => (
+                default_visible_cols(),
+                Some(SharedString::from(failure.to_string())),
+            ),
+        };
+        let table = cx.new(|cx| TableState::new(ProcessTableDelegate::new(visible), window, cx));
         let search =
             cx.new(|cx| InputState::new(window, cx).placeholder("Search name, PID or path"));
 
@@ -793,6 +834,7 @@ impl MonitorView {
             history: History::default(),
             pending_kill: None,
             cols_menu_open: false,
+            persistence_error,
             inspect_pid: None,
             net_ifaces: Vec::new(),
             prev_cpu_ticks: None,
@@ -1013,22 +1055,35 @@ impl MonitorView {
 
     /// Toggle a column's visibility from the chooser, rebuilding the table layout.
     fn toggle_column(&mut self, key: ColKey, cx: &mut Context<Self>) {
-        self.table.update(cx, |state, cx| {
+        let visible = self.table.update(cx, |state, cx| {
             if state.delegate_mut().toggle_col(key) {
                 state.delegate_mut().apply_view();
                 resync_selection(state, cx);
                 state.refresh(cx);
+                Some(state.delegate().visible.clone())
+            } else {
+                None
             }
         });
+        if let Some(visible) = visible {
+            self.persistence_error = save_visible_cols(&visible)
+                .err()
+                .map(|failure| failure.to_string().into());
+        }
         cx.notify();
     }
 
     /// The column-chooser dropdown: a checklist of every available column.
     fn render_columns_menu(&self, cx: &Context<Self>) -> impl IntoElement {
         let visible = self.table.read(cx).delegate().visible.clone();
+        let top = if self.persistence_error.is_some() {
+            130.0
+        } else {
+            96.0
+        };
         div()
             .absolute()
-            .top(px(96.0))
+            .top(px(top))
             .right(px(16.0))
             .w(px(210.0))
             .bg(mac::window())
@@ -1680,6 +1735,7 @@ impl MonitorView {
 
 impl Render for MonitorView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let persistence_error = self.persistence_error.clone();
         div()
             .track_focus(&self.focus)
             .key_context("ActivityMonitor")
@@ -1699,6 +1755,30 @@ impl Render for MonitorView {
             .text_color(mac::text())
             .child(rmac_ui::title_bar("Activity Monitor"))
             .child(self.render_toolbar(cx))
+            .when_some(persistence_error, |monitor, message| {
+                monitor.child(
+                    div()
+                        .id("persistence-error")
+                        .h(px(34.0))
+                        .flex_none()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(gpui::rgba(0xff3b301f))
+                        .border_b_1()
+                        .border_color(gpui::rgba(0xff3b3059))
+                        .text_size(px(12.0))
+                        .text_color(gpui::rgb(0xc62828))
+                        .cursor_pointer()
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.persistence_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .child(self.render_summary(cx))
             .when(self.tab.has_process_table(), |this| {
                 this.child(
@@ -1739,4 +1819,33 @@ fn main() {
         window.focus(&view.focus);
         view
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_visible_cols, parse_visible_cols, ColKey};
+
+    #[test]
+    fn visible_columns_round_trip_in_canonical_order() {
+        let expected = vec![ColKey::Pid, ColKey::Name, ColKey::Mem, ColKey::Status];
+
+        let parsed = parse_visible_cols(&format_visible_cols(&expected)).unwrap();
+
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn malformed_column_preferences_are_reported() {
+        assert!(parse_visible_cols("").is_err());
+        assert!(parse_visible_cols("name,unknown").is_err());
+        assert!(parse_visible_cols("name,name").is_err());
+        assert!(parse_visible_cols("name,").is_err());
+    }
+
+    #[test]
+    fn required_name_column_is_restored_and_order_is_normalized() {
+        let parsed = parse_visible_cols("status,pid").unwrap();
+
+        assert_eq!(parsed, vec![ColKey::Pid, ColKey::Name, ColKey::Status]);
+    }
 }

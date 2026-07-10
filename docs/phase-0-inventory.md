@@ -102,7 +102,6 @@ areas:
 
 - Finder native pasteboard writes (the AppKit API does not expose a useful
   per-item result);
-- Activity Monitor column preferences;
 - Terminal profile preferences.
 
 Since 2026-07-10 Finder create/copy/rename/delete/trash and move paths report
@@ -131,6 +130,12 @@ System Settings now loads and saves its XDG/macOS configuration through typed,
 adjacent-temp atomic storage. Missing configuration remains a normal first
 launch; unreadable or malformed existing state is reported in the UI, and
 persisted indices and slider values are bounded before rendering.
+
+Activity Monitor column preferences now use XDG/macOS paths and typed,
+adjacent-temp atomic storage owned by the root view. Missing preferences keep
+the default columns; unreadable, empty, duplicated, or unknown column data is
+reported, while the required Process Name column and canonical display order
+are restored before the table is built.
 
 Migration rule: preference writes move to atomic `rmac-storage` operations. No
 data-changing Linux path may add a new ignored error.

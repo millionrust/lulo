@@ -94,12 +94,23 @@ Use `--release` when measuring startup, memory, or animation performance:
 cargo run --release -p rmac-activity-monitor
 ```
 
+Run the repeatable seven-application startup, idle CPU, and RSS baseline with:
+
+```sh
+python3 scripts/measure-baseline.py
+```
+
+The generated JSON stays under ignored `target/baselines/`. See
+[`docs/performance-baseline.md`](docs/performance-baseline.md) for the committed
+macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
+
 ## Documentation
 
 - [`PLAN_V2.md`](PLAN_V2.md) — current execution roadmap and acceptance gates.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — current and target architecture.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — change and verification rules.
 - [`docs/phase-0-inventory.md`](docs/phase-0-inventory.md) — starting technical-debt inventory.
+- [`docs/performance-baseline.md`](docs/performance-baseline.md) — reproducible startup, idle CPU, and RSS evidence.
 - [`docs/decisions/0001-gpui-linux-gate.md`](docs/decisions/0001-gpui-linux-gate.md) — framework migration gate.
 - [`docs/decisions/0002-gpui-version-policy.md`](docs/decisions/0002-gpui-version-policy.md) — exact pins, upgrade cadence, promotion, and rollback policy.
 - [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md) — pinned upstream comparison and pending Linux gates.

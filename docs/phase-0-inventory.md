@@ -16,6 +16,7 @@
 | Strict Clippy | passing after Phase 0 cleanup |
 | Workspace tests | passing on macOS arm64 |
 | Runtime validation | macOS prototype only; Ubuntu 26.04 pending Phase 1 |
+| Performance baseline | first-frame startup, idle CPU, and RSS captured on macOS arm64 |
 
 The test count is the largest immediate quality gap. Passing tests currently
 prove compilation and three narrow native/parser behaviors, not application
@@ -142,12 +143,13 @@ Completed in the initial implementation pass:
 - Ubuntu/macOS CI definition;
 - build/run and contribution documentation;
 - architecture and platform-debt inventory;
-- complete macOS workspace test run.
+- complete macOS workspace test run;
+- repeatable seven-application performance harness and macOS baseline report.
 
 Still requires external evidence:
 
 - first successful Ubuntu CI run;
-- startup, idle CPU, wakeup, memory, and frame-time measurement harness;
+- wakeup, interactive frame-time, GPU, and energy measurement;
+- Ubuntu reference-hardware performance baseline;
 - license/dependency policy (`cargo-deny`) after allowed licenses are reviewed;
 - Ubuntu 26.04 runtime/GPU/IME/accessibility validation in Phase 1.
-

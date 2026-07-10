@@ -85,3 +85,50 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace --all-features
+
+  upstream-gpui-linux:
+    name: Current GPUI Linux compile gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install GPUI system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clang \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libssl-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
+
+      - name: Install experiment Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --component clippy --component rustfmt
+
+      - name: Cache experiment Cargo data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            experiments/gpui-upstream-lab/target
+          key: ${{ runner.os }}-upstream-gpui-${{ hashFiles('experiments/gpui-upstream-lab/Cargo.lock', 'experiments/gpui-upstream-lab/rust-toolchain.toml') }}
+
+      - name: Check experiment formatting
+        working-directory: experiments/gpui-upstream-lab
+        run: cargo fmt --all -- --check
+
+      - name: Check Wayland probes
+        working-directory: experiments/gpui-upstream-lab
+        run: cargo clippy --bins --features wayland -- -D warnings

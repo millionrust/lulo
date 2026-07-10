@@ -1,0 +1,23 @@
+[package]
+name = "rmac-gpui-upstream-lab"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[features]
+default = []
+wayland = ["gpui_platform/wayland"]
+x11 = ["gpui_platform/x11"]
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui" }
+gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
+
+[[bin]]
+name = "a11y"
+path = "src/bin/a11y.rs"
+
+[[bin]]
+name = "layer-shell"
+path = "src/bin/layer_shell.rs"

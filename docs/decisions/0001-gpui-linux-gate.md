@@ -66,7 +66,8 @@ No option may silently waive accessibility or layer-shell requirements.
 
 - `docs/gpui-0.2.2-stable-spike.md`
 - `crates/platform-lab`
+- `docs/gpui-current-upstream-spike.md`
+- `experiments/gpui-upstream-lab`
 - GPUI 0.2.2 source in the Cargo registry
 - current upstream GPUI README and accessibility implementation linked from
   `PLAN_V2.md`
-

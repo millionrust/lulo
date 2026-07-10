@@ -40,6 +40,19 @@ The lab exercises GPUI input, clipboard, file chooser, external file drop,
 scrolling, and scaling behavior without coupling the experiment to a product
 application. See [`docs/gpui-0.2.2-stable-spike.md`](docs/gpui-0.2.2-stable-spike.md).
 
+The separate current-upstream experiment probes APIs unavailable in the stable
+release without changing product dependencies:
+
+```sh
+cd experiments/gpui-upstream-lab
+cargo run --bin a11y
+# Linux/Wayland only:
+cargo run --features wayland --bin layer-shell
+```
+
+See [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md)
+for the evidence collected so far and the remaining Ubuntu runtime protocol.
+
 ## Prerequisites
 
 The repository pins Rust in `rust-toolchain.toml`; `rustup` installs the correct
@@ -88,6 +101,7 @@ cargo run --release -p rmac-activity-monitor
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — change and verification rules.
 - [`docs/phase-0-inventory.md`](docs/phase-0-inventory.md) — starting technical-debt inventory.
 - [`docs/decisions/0001-gpui-linux-gate.md`](docs/decisions/0001-gpui-linux-gate.md) — framework migration gate.
+- [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md) — pinned upstream comparison and pending Linux gates.
 - [`PLAN.md`](PLAN.md) and [`PARITY.md`](PARITY.md) — prototype history.
 
 ## License

@@ -1,0 +1,44 @@
+# Current-upstream GPUI gate
+
+This experiment answers two questions that the crates.io GPUI 0.2.2 platform
+lab cannot answer:
+
+1. Does GPUI's current AccessKit integration expose useful roles, names,
+   states, values, focus order, and actions to Orca on Ubuntu/Wayland?
+2. Does GPUI's layer-shell support produce a reliable top panel under niri,
+   including around fullscreen windows and monitor changes?
+
+It is deliberately excluded from the product Cargo workspace. The product
+remains on the released GPUI 0.2.2 and Rust 1.94.1 while this experiment pins
+Zed revision `76c93968da5b8b8809bdd72e4ad9e7d0e946bad0` and Rust 1.95.0.
+
+## macOS compile and smoke test
+
+Run from this directory so the experiment's toolchain file takes effect:
+
+```sh
+cargo check --bin a11y
+cargo run --bin a11y
+cargo run --bin layer-shell # expected to exit with an unsupported-platform message
+```
+
+## Ubuntu 26.04 Wayland gate
+
+Install the native build dependencies listed by current upstream GPUI, then:
+
+```sh
+cargo check --features wayland --bins
+cargo run --features wayland --bin a11y
+cargo run --features wayland --bin layer-shell
+```
+
+With Orca running, verify the application/heading/spin-button/switch roles,
+their labels and state/value changes, Tab and Shift-Tab order, and Orca-issued
+increment/decrement actions. Under niri, verify that the layer-shell surface is
+40 logical pixels high, reserves that space, spans the active monitor's top
+edge, does not steal keyboard focus, survives monitor changes, and behaves as
+specified when another window is fullscreen.
+
+Record the compositor, display protocol, scale factors, GPU/driver, Orca
+version, and pass/fail evidence in `docs/gpui-current-upstream-spike.md` before
+changing any product dependency.

@@ -100,17 +100,22 @@ support where useful.
 The prototype deliberately discards several filesystem results. Highest-risk
 areas:
 
-- Finder trash, permanent delete, rename, move fallback, and clipboard copy;
+- Finder native pasteboard writes (the AppKit API does not expose a useful
+  per-item result);
 - Notes folder rename/delete and pin/sort persistence;
 - Text Editor recovery-file writes/removal;
 - System Settings persistence;
 - Activity Monitor column preferences;
 - Terminal profile preferences.
 
-Migration rule: destructive Finder operations are fixed first and gain typed
-results, progress, cancellation, and fault-injection tests. Preference writes
-move to atomic `rmac-storage` operations. No data-changing Linux path may add a
-new ignored error.
+Since 2026-07-10 Finder create/copy/rename/delete/trash and move paths report
+typed failures in the UI. Cross-device fallback occurs only for `EXDEV`; copy
+or source-removal failures retain recoverable paths, and injected faults cover
+permission, copy, delete, and source-removal failures. Progress and
+cancellation remain required before large operations are release-ready.
+
+Migration rule: preference writes move to atomic `rmac-storage` operations. No
+data-changing Linux path may add a new ignored error.
 
 ## polling and redraw inventory
 

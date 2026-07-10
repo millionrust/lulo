@@ -5,6 +5,7 @@
 //! shortcuts + right-click context menus, live search, clickable sort headers,
 //! hidden-file toggle, and live directory watching.
 
+mod file_ops;
 mod pasteboard;
 
 use std::borrow::Cow;
@@ -240,6 +241,7 @@ struct FinderView {
     sections: Vec<Section>,
     info: Option<usize>,
     result_title: Option<SharedString>,
+    operation_error: Option<SharedString>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
     dragging: bool,
@@ -441,6 +443,7 @@ impl FinderView {
             sections,
             info: None,
             result_title: None,
+            operation_error: None,
             free_bytes: None,
             dragging: false,
             focus,
@@ -732,15 +735,38 @@ impl FinderView {
             .collect()
     }
 
+    fn record_operation_failures(
+        &mut self,
+        failures: Vec<file_ops::Failure>,
+        cx: &mut Context<Self>,
+    ) {
+        self.operation_error = failures.first().map(|first| {
+            if failures.len() == 1 {
+                first.to_string().into()
+            } else {
+                format!("{} (and {} more failures)", first, failures.len() - 1).into()
+            }
+        });
+        cx.notify();
+    }
+
+    fn finish_file_operations(&mut self, failures: Vec<file_ops::Failure>, cx: &mut Context<Self>) {
+        self.record_operation_failures(failures, cx);
+        self.reload(cx);
+    }
+
     // ---- operations ----
     fn new_folder(&mut self, cx: &mut Context<Self>) {
         let path = unique_path(self.cwd.join("untitled folder"));
-        if std::fs::create_dir(&path).is_ok() {
-            self.reload(cx);
-        }
+        let failures = file_ops::create_folder(&file_ops::RealFileSystem, &path)
+            .err()
+            .into_iter()
+            .collect();
+        self.finish_file_operations(failures, cx);
     }
 
     fn duplicate(&mut self, cx: &mut Context<Self>) {
+        let mut failures = Vec::new();
         for src in self.selected_paths() {
             let stem = src
                 .file_stem()
@@ -752,28 +778,40 @@ impl FinderView {
                 None => format!("{stem} copy"),
             };
             let dst = unique_path(self.cwd.join(copy_name));
-            let _ = copy_item(&src, &dst);
+            if let Err(failure) = file_ops::copy(&file_ops::RealFileSystem, &src, &dst) {
+                failures.push(failure);
+            }
         }
-        self.reload(cx);
+        self.finish_file_operations(failures, cx);
     }
 
     fn move_to_trash(&mut self, cx: &mut Context<Self>) {
         let paths = self.selected_paths();
         if !paths.is_empty() {
-            let _ = trash::delete_all(&paths);
-            self.reload(cx);
+            let failures = trash::delete_all(&paths)
+                .err()
+                .map(|error| {
+                    file_ops::Failure::message(
+                        file_ops::Operation::Trash,
+                        &paths[0],
+                        None,
+                        error.to_string(),
+                    )
+                })
+                .into_iter()
+                .collect();
+            self.finish_file_operations(failures, cx);
         }
     }
 
     fn delete_immediately(&mut self, cx: &mut Context<Self>) {
+        let mut failures = Vec::new();
         for p in self.selected_paths() {
-            if p.is_dir() {
-                let _ = std::fs::remove_dir_all(&p);
-            } else {
-                let _ = std::fs::remove_file(&p);
+            if let Err(failure) = file_ops::delete(&file_ops::RealFileSystem, &p) {
+                failures.push(failure);
             }
         }
-        self.reload(cx);
+        self.finish_file_operations(failures, cx);
     }
 
     fn write_clip_text(&self, cx: &mut Context<Self>) {
@@ -825,26 +863,28 @@ impl FinderView {
                 self.clip_cut = false;
             }
         }
+        let mut failures = Vec::new();
+        let mut cut_failures = Vec::new();
         for src in self.clipboard.clone() {
             let name = src.file_name().map(|n| n.to_owned()).unwrap_or_default();
             let dst = unique_path(self.cwd.join(name));
             if self.clip_cut {
-                if std::fs::rename(&src, &dst).is_err() && copy_item(&src, &dst).is_ok() {
-                    let _ = if src.is_dir() {
-                        std::fs::remove_dir_all(&src)
-                    } else {
-                        std::fs::remove_file(&src)
-                    };
+                if let Err(failure) = file_ops::move_item(&file_ops::RealFileSystem, &src, &dst) {
+                    failures.push(failure);
+                    cut_failures.push(src);
                 }
-            } else {
-                let _ = copy_item(&src, &dst);
+            } else if let Err(failure) = file_ops::copy(&file_ops::RealFileSystem, &src, &dst) {
+                failures.push(failure);
             }
         }
         if self.clip_cut {
-            self.clipboard.clear();
-            self.clip_cut = false;
+            self.clipboard = cut_failures;
+            self.clip_cut = !self.clipboard.is_empty();
+            if self.clip_cut {
+                self.write_clip_text(cx);
+            }
         }
-        self.reload(cx);
+        self.finish_file_operations(failures, cx);
     }
 
     fn select_all(&mut self, cx: &mut Context<Self>) {
@@ -910,7 +950,21 @@ impl FinderView {
                 let dst = self.cwd.join(new_name);
                 // Don't clobber an existing file/folder at the target name.
                 if !dst.exists() {
-                    let _ = std::fs::rename(&entry.path, &dst);
+                    let failures = file_ops::rename(&file_ops::RealFileSystem, &entry.path, &dst)
+                        .err()
+                        .into_iter()
+                        .collect();
+                    self.record_operation_failures(failures, cx);
+                } else {
+                    self.record_operation_failures(
+                        vec![file_ops::Failure::message(
+                            file_ops::Operation::Rename,
+                            &entry.path,
+                            Some(&dst),
+                            "an item with that name already exists",
+                        )],
+                        cx,
+                    );
                 }
             }
         }
@@ -1816,6 +1870,7 @@ impl FinderView {
     }
 
     fn drop_into(&mut self, dir: PathBuf, paths: &[PathBuf], cx: &mut Context<Self>) {
+        let mut failures = Vec::new();
         for src in paths {
             if src == &dir || src.parent() == Some(dir.as_path()) {
                 continue;
@@ -1824,26 +1879,25 @@ impl FinderView {
                 continue;
             };
             let dst = unique_path(dir.join(name));
-            if std::fs::rename(src, &dst).is_err() && copy_item(src, &dst).is_ok() {
-                if src.is_dir() {
-                    let _ = std::fs::remove_dir_all(src);
-                } else {
-                    let _ = std::fs::remove_file(src);
-                }
+            if let Err(failure) = file_ops::move_item(&file_ops::RealFileSystem, src, &dst) {
+                failures.push(failure);
             }
         }
-        self.reload(cx);
+        self.finish_file_operations(failures, cx);
     }
 
     /// Files dropped from another app (Finder, etc.) → copy into the current dir.
     fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        let mut failures = Vec::new();
         for src in paths {
             if let Some(name) = src.file_name() {
                 let dst = unique_path(self.cwd.join(name));
-                let _ = copy_item(&src, &dst);
+                if let Err(failure) = file_ops::copy(&file_ops::RealFileSystem, &src, &dst) {
+                    failures.push(failure);
+                }
             }
         }
-        self.reload(cx);
+        self.finish_file_operations(failures, cx);
     }
 
     fn get_info(&mut self, cx: &mut Context<Self>) {
@@ -2067,6 +2121,7 @@ impl Render for FinderView {
         let menu_at = self.menu_at;
         let has_sel = !self.selected.is_empty();
         let can_paste = !self.clipboard.is_empty();
+        let operation_error = self.operation_error.clone();
         div()
             .size_full()
             .relative()
@@ -2081,6 +2136,42 @@ impl Render for FinderView {
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
             .child(self.render_toolbar(cx))
+            .when_some(operation_error, |el, message| {
+                el.child(
+                    div()
+                        .id("operation-error")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(hsl(0xffe9e7))
+                        .border_b_1()
+                        .border_color(hsl(0xf2b8b5))
+                        .text_size(px(12.0))
+                        .text_color(hsl(0x9f1c17))
+                        .cursor_pointer()
+                        .child(
+                            div()
+                                .w(px(16.0))
+                                .h(px(16.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .bg(hsl(0xc9342d))
+                                .text_color(white())
+                                .child("!"),
+                        )
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.operation_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
                 div()
@@ -2125,16 +2216,11 @@ fn unique_path(path: PathBuf) -> PathBuf {
 /// Copy preserving macOS metadata (xattrs, resource forks, ACLs, packages) via
 /// `ditto`, falling back to a plain recursive copy if ditto is unavailable.
 fn copy_item(src: &Path, dst: &Path) -> std::io::Result<()> {
-    let ok = Command::new("ditto")
-        .arg(src)
-        .arg(dst)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if ok {
-        Ok(())
-    } else {
-        copy_recursive(src, dst)
+    match Command::new("ditto").arg(src).arg(dst).status() {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(std::io::Error::other(format!("ditto failed with {status}"))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => copy_recursive(src, dst),
+        Err(error) => Err(error),
     }
 }
 

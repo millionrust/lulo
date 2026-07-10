@@ -37,7 +37,11 @@ pub fn title_from_body(body: &str, fallback: &str) -> String {
         .find(|l| !l.is_empty())
         .map(|l| {
             let t: String = l.trim_start_matches('#').trim().chars().take(60).collect();
-            if t.is_empty() { fallback.to_string() } else { t }
+            if t.is_empty() {
+                fallback.to_string()
+            } else {
+                t
+            }
         })
         .unwrap_or_else(|| fallback.to_string())
 }

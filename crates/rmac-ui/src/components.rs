@@ -171,7 +171,10 @@ impl ContextMenu {
     /// Start a menu anchored at `pos` (window-relative, e.g. a right-click's
     /// `event.position`).
     pub fn new(pos: Point<Pixels>) -> Self {
-        Self { pos, items: Vec::new() }
+        Self {
+            pos,
+            items: Vec::new(),
+        }
     }
 
     /// Append a normal item that dispatches `action` when chosen.
@@ -235,7 +238,11 @@ impl ContextMenu {
             match entry {
                 MenuEntry::Separator => {
                     panel = panel.child(
-                        div().my(px(4.0)).mx(px(8.0)).h(px(1.0)).bg(mac::separator()),
+                        div()
+                            .my(px(4.0))
+                            .mx(px(8.0))
+                            .h(px(1.0))
+                            .bg(mac::separator()),
                     );
                 }
                 MenuEntry::Item {
@@ -262,7 +269,10 @@ impl ContextMenu {
                         .child(div().child(label))
                         .when_some(shortcut, |el, sc| {
                             el.child(
-                                div().text_size(px(12.0)).text_color(mac::text_tertiary()).child(sc),
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(mac::text_tertiary())
+                                    .child(sc),
                             )
                         })
                         .on_click(move |_, window, cx| {

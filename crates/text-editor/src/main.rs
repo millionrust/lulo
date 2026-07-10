@@ -10,13 +10,13 @@ mod rtf;
 
 use std::{path::PathBuf, time::Duration};
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     actions, div, font, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement, PathPromptOptions, Render,
-    SharedString, StatefulInteractiveElement as _, Styled, StyledText, Subscription, TextRun,
-    UnderlineStyle, Window,
+    IntoElement, KeyBinding, ParentElement, PathPromptOptions, Render, SharedString,
+    StatefulInteractiveElement as _, Styled, StyledText, Subscription, TextRun, UnderlineStyle,
+    Window,
 };
-use gpui::prelude::FluentBuilder as _;
 use gpui_component::{
     button::{Button, ButtonVariants as _},
     input::{InputEvent, InputState, Position, RopeExt as _},
@@ -200,9 +200,7 @@ impl EditorView {
         self.autosave_gen += 1;
         let gen = self.autosave_gen;
         cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_secs(2))
-                .await;
+            cx.background_executor().timer(Duration::from_secs(2)).await;
             let _ = this.update(cx, |this, cx| {
                 if this.autosave_gen == gen {
                     let content = this.input.read(cx).value().to_string();
@@ -256,7 +254,9 @@ impl EditorView {
             prompt: None,
         });
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(paths))) = rx.await else { return };
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
             let Some(path) = paths.into_iter().next() else {
                 return;
             };
@@ -265,7 +265,9 @@ impl EditorView {
             };
             // `.rtf` files open as a read-only formatted preview; the editable
             // body holds the extracted plain text.
-            let is_rtf = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("rtf"));
+            let is_rtf = path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("rtf"));
             let rtf_runs = if is_rtf { rtf::parse_rtf(&bytes) } else { None };
             let content = match &rtf_runs {
                 Some(runs) => runs.iter().map(|r| r.text.as_str()).collect::<String>(),
@@ -333,8 +335,7 @@ impl EditorView {
                 Err(err) => {
                     // Write failed: keep dirty state and do NOT run the pending
                     // (destructive) action, so unsaved changes are preserved.
-                    this.alert =
-                        Some(ActiveAlert::Error(format!("{}: {}", path.display(), err)));
+                    this.alert = Some(ActiveAlert::Error(format!("{}: {}", path.display(), err)));
                     cx.notify();
                 }
             });
@@ -734,7 +735,11 @@ impl EditorView {
     /// The read-only formatted RTF preview: a banner plus styled text built from
     /// the parsed runs (weight / italic / underline / color preserved).
     fn render_rtf_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let base = if self.mono { rmac_ui::MONO_FONT } else { rmac_ui::UI_FONT };
+        let base = if self.mono {
+            rmac_ui::MONO_FONT
+        } else {
+            rmac_ui::UI_FONT
+        };
         let size = self.font_size;
         let runs = self.rtf_runs.as_deref().unwrap_or(&[]);
 
@@ -869,7 +874,9 @@ impl EditorView {
                 "An autosaved document from a previous session was found.".into(),
                 vec![
                     rmac_ui::dialog_button("alert-discard", "Discard", Normal)
-                        .on_click(cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)),
+                        )
                         .into_any_element(),
                     rmac_ui::dialog_button("alert-restore", "Restore", Primary)
                         .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
@@ -884,7 +891,9 @@ impl EditorView {
                         .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
                         .into_any_element(),
                     rmac_ui::dialog_button("alert-dontsave", "Don't Save", Destructive)
-                        .on_click(cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)),
+                        )
                         .into_any_element(),
                     rmac_ui::dialog_button("alert-save", "Save", Primary)
                         .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
@@ -930,16 +939,14 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
             .on_action(cx.listener(|this, _: &IncreaseFont, _, cx| this.increase_font(cx)))
             .on_action(cx.listener(|this, _: &DecreaseFont, _, cx| this.decrease_font(cx)))
-            .on_action(
-                cx.listener(|this, _: &CloseWindow, window, cx| this.guarded(Pending::Close, window, cx)),
-            )
+            .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
+                this.guarded(Pending::Close, window, cx)
+            }))
             // The custom red traffic light dispatches RequestClose — route it
             // through the same unsaved-changes guard so closes aren't silent.
-            .on_action(
-                cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
-                    this.guarded(Pending::Close, window, cx)
-                }),
-            )
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                this.guarded(Pending::Close, window, cx)
+            }))
             .bg(mac::window())
             .text_color(mac::text())
             .child(self.render_toolbar(cx))

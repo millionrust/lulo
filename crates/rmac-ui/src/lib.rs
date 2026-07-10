@@ -71,12 +71,8 @@ pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
 /// Like [`boot_with_assets`] but for unified-toolbar apps (Finder, System
 /// Settings) — the window reserves a taller titlebar and positions the traffic
 /// lights for a 52pt bar. The app renders its own toolbar at the top.
-pub fn boot_unified_with_assets<A, V, F>(
-    assets: A,
-    width: f32,
-    height: f32,
-    build: F,
-) where
+pub fn boot_unified_with_assets<A, V, F>(assets: A, width: f32, height: f32, build: F)
+where
     A: gpui::AssetSource,
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
@@ -157,21 +153,16 @@ pub fn traffic_lights() -> impl IntoElement {
 /// `TitleBar` forces its own children into an 80px left-padded zone, so the
 /// lights are layered as a sibling anchored to the bar's true left edge.
 fn with_traffic_lights(bar: impl IntoElement) -> impl IntoElement {
-    div()
-        .relative()
-        .w_full()
-        .flex_shrink_0()
-        .child(bar)
-        .child(
-            div()
-                .absolute()
-                .left(px(13.0))
-                .top_0()
-                .bottom_0()
-                .flex()
-                .items_center()
-                .child(traffic_lights()),
-        )
+    div().relative().w_full().flex_shrink_0().child(bar).child(
+        div()
+            .absolute()
+            .left(px(13.0))
+            .top_0()
+            .bottom_0()
+            .flex()
+            .items_center()
+            .child(traffic_lights()),
+    )
 }
 
 /// The shared title bar: our own traffic lights on the left, centered title.
@@ -264,44 +255,76 @@ pub mod mac {
 
     // Surfaces
     /// Window / editor content background.
-    pub fn window() -> Hsla { rgb(0xffffff).into() }
+    pub fn window() -> Hsla {
+        rgb(0xffffff).into()
+    }
     /// Unified toolbar / window chrome.
-    pub fn chrome() -> Hsla { rgb(0xf6f6f6).into() }
+    pub fn chrome() -> Hsla {
+        rgb(0xf6f6f6).into()
+    }
     /// Source list (sidebar) background.
-    pub fn sidebar() -> Hsla { rgb(0xf2f2f2).into() }
+    pub fn sidebar() -> Hsla {
+        rgb(0xf2f2f2).into()
+    }
     /// Middle list column background.
-    pub fn list() -> Hsla { rgb(0xffffff).into() }
+    pub fn list() -> Hsla {
+        rgb(0xffffff).into()
+    }
 
     // Text
     /// Primary label color (near-black).
-    pub fn text() -> Hsla { rgb(0x1d1d1f).into() }
+    pub fn text() -> Hsla {
+        rgb(0x1d1d1f).into()
+    }
     /// Secondary label (systemGray).
-    pub fn text_secondary() -> Hsla { rgb(0x86868b).into() }
+    pub fn text_secondary() -> Hsla {
+        rgb(0x86868b).into()
+    }
     /// Tertiary label (section headers, counts).
-    pub fn text_tertiary() -> Hsla { rgb(0xaeaeb2).into() }
+    pub fn text_tertiary() -> Hsla {
+        rgb(0xaeaeb2).into()
+    }
 
     // Lines & fills
     /// Hairline separator (~8% black).
-    pub fn separator() -> Hsla { rgba(0x00000014).into() }
+    pub fn separator() -> Hsla {
+        rgba(0x00000014).into()
+    }
     /// Hover fill on rows/controls.
-    pub fn hover() -> Hsla { rgba(0x0000000a).into() }
+    pub fn hover() -> Hsla {
+        rgba(0x0000000a).into()
+    }
     /// Neutral (unfocused) selection fill in source lists.
-    pub fn sidebar_selection() -> Hsla { rgba(0x00000014).into() }
+    pub fn sidebar_selection() -> Hsla {
+        rgba(0x00000014).into()
+    }
 
     // Accents (shared by buttons, menus, selections)
     /// System blue — primary actions, selection, focus.
-    pub fn accent() -> Hsla { rgb(0x007aff).into() }
+    pub fn accent() -> Hsla {
+        rgb(0x007aff).into()
+    }
     /// System red — destructive actions.
-    pub fn danger() -> Hsla { rgb(0xff3b30).into() }
+    pub fn danger() -> Hsla {
+        rgb(0xff3b30).into()
+    }
     /// On-accent text (white).
-    pub fn on_accent() -> Hsla { rgb(0xffffff).into() }
+    pub fn on_accent() -> Hsla {
+        rgb(0xffffff).into()
+    }
     /// Scrim behind a modal dialog (~22% black).
-    pub fn scrim() -> Hsla { rgba(0x00000038).into() }
+    pub fn scrim() -> Hsla {
+        rgba(0x00000038).into()
+    }
 
     // Notes accent family (yellow)
-    pub fn notes_accent() -> Hsla { rgb(0xffc40c).into() }
+    pub fn notes_accent() -> Hsla {
+        rgb(0xffc40c).into()
+    }
     /// Soft yellow row highlight for the selected note (focused).
-    pub fn notes_selection() -> Hsla { rgb(0xfdeaa3).into() }
+    pub fn notes_selection() -> Hsla {
+        rgb(0xfdeaa3).into()
+    }
 
     // Type weights (SF on macOS via the system font)
     pub const REGULAR: FontWeight = FontWeight::NORMAL;

@@ -26,7 +26,13 @@ use sysinfo::{Networks, Pid, ProcessesToUpdate, Signal, System, Users};
 
 gpui::actions!(
     activity_monitor,
-    [QuitProcess, ForceQuitProcess, FocusSearch, CancelKill, ConfirmKill]
+    [
+        QuitProcess,
+        ForceQuitProcess,
+        FocusSearch,
+        CancelKill,
+        ConfirmKill
+    ]
 );
 
 /// Which top-level pane is active. Each tab re-focuses the table on a different
@@ -188,7 +194,9 @@ impl ColKey {
     }
 
     fn to_column(self) -> Column {
-        let c = Column::new(self.id(), self.title()).width(px(self.width())).sortable();
+        let c = Column::new(self.id(), self.title())
+            .width(px(self.width()))
+            .sortable();
         if self.right() {
             c.text_right()
         } else {
@@ -318,8 +326,7 @@ impl ProcessTableDelegate {
     fn refresh(&mut self) {
         self.system.refresh_cpu_all();
         self.system.refresh_memory();
-        self.system
-            .refresh_processes(ProcessesToUpdate::All, true);
+        self.system.refresh_processes(ProcessesToUpdate::All, true);
         self.cpu_count = self.system.cpus().len().max(1);
         self.users.refresh();
 
@@ -345,7 +352,10 @@ impl ProcessTableDelegate {
                     .user_id()
                     .and_then(|uid| users.get_user_by_id(uid))
                     .map(|u| SharedString::from(u.name().to_string()))
-                    .or_else(|| p.user_id().map(|uid| SharedString::from(format!("uid {}", **uid))))
+                    .or_else(|| {
+                        p.user_id()
+                            .map(|uid| SharedString::from(format!("uid {}", **uid)))
+                    })
                     .unwrap_or_else(|| SharedString::from("—"));
                 ProcRow {
                     pid: p.pid().as_u32(),
@@ -476,8 +486,7 @@ fn format_duration(secs: u64) -> String {
 /// Path to the persisted visible-columns file.
 fn cols_config_path() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME")?;
-    let dir =
-        std::path::Path::new(&home).join("Library/Application Support/rmac-activity-monitor");
+    let dir = std::path::Path::new(&home).join("Library/Application Support/rmac-activity-monitor");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("columns.txt"))
 }
@@ -486,10 +495,19 @@ fn cols_config_path() -> Option<std::path::PathBuf> {
 fn load_visible_cols() -> Vec<ColKey> {
     let parsed: Option<Vec<ColKey>> = cols_config_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|s| s.split(',').filter_map(|t| ColKey::from_id(t.trim())).collect());
-    let cols = parsed.filter(|v: &Vec<ColKey>| !v.is_empty()).unwrap_or_else(|| {
-        ColKey::ALL.into_iter().filter(|k| k.default_visible()).collect()
-    });
+        .map(|s| {
+            s.split(',')
+                .filter_map(|t| ColKey::from_id(t.trim()))
+                .collect()
+        });
+    let cols = parsed
+        .filter(|v: &Vec<ColKey>| !v.is_empty())
+        .unwrap_or_else(|| {
+            ColKey::ALL
+                .into_iter()
+                .filter(|k| k.default_visible())
+                .collect()
+        });
     // Process Name is the anchor — guarantee it's present.
     if cols.contains(&ColKey::Name) {
         cols
@@ -768,19 +786,15 @@ impl MonitorView {
         view.refresh(cx);
 
         // Auto-refresh loop — every 2s, off the render path.
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_secs(2))
-                    .await;
-                let Some(this) = this.upgrade() else { break };
-                let updated = cx.update_entity(&this, |view: &mut MonitorView, cx| {
-                    view.refresh(cx);
-                    cx.notify();
-                });
-                if updated.is_err() {
-                    break;
-                }
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            cx.background_executor().timer(Duration::from_secs(2)).await;
+            let Some(this) = this.upgrade() else { break };
+            let updated = cx.update_entity(&this, |view: &mut MonitorView, cx| {
+                view.refresh(cx);
+                cx.notify();
+            });
+            if updated.is_err() {
+                break;
             }
         })
         .detach();
@@ -865,13 +879,15 @@ impl MonitorView {
             let disk_bytes: u64 = delegate.all_rows.iter().map(|r| r.disk).sum();
             // Split is approximate; we only have the combined per-row figure here,
             // so re-derive read/write from the live processes.
-            let (read, write) = delegate.system.processes().values().fold(
-                (0u64, 0u64),
-                |(r, w), p| {
-                    let du = p.disk_usage();
-                    (r + du.read_bytes, w + du.written_bytes)
-                },
-            );
+            let (read, write) =
+                delegate
+                    .system
+                    .processes()
+                    .values()
+                    .fold((0u64, 0u64), |(r, w), p| {
+                        let du = p.disk_usage();
+                        (r + du.read_bytes, w + du.written_bytes)
+                    });
             let _ = disk_bytes;
             agg.disk_read_rate = read as f64 / REFRESH_SECS;
             agg.disk_write_rate = write as f64 / REFRESH_SECS;
@@ -1028,11 +1044,17 @@ impl MonitorView {
                     .h(px(26.0))
                     .px_3()
                     .text_size(px(12.0))
-                    .text_color(if disabled { mac::text_tertiary() } else { mac::text() })
+                    .text_color(if disabled {
+                        mac::text_tertiary()
+                    } else {
+                        mac::text()
+                    })
                     .when(!disabled, |el: Stateful<gpui::Div>| {
-                        el.hover(|h| h.bg(mac::chrome())).on_click(cx.listener(move |this, _, _, cx| {
-                            this.toggle_column(key, cx);
-                        }))
+                        el.hover(|h| h.bg(mac::chrome())).on_click(cx.listener(
+                            move |this, _, _, cx| {
+                                this.toggle_column(key, cx);
+                            },
+                        ))
                     })
                     .child(
                         div()
@@ -1093,7 +1115,14 @@ impl MonitorView {
             .items_end()
             .gap(px(1.0))
             .px_1()
-            .child(div().flex().items_end().gap(px(1.0)).size_full().children(bars))
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(px(1.0))
+                    .size_full()
+                    .children(bars),
+            )
     }
 
     /// Per-core CPU usage bars for the CPU pane (real `sysinfo` per-core data).
@@ -1111,46 +1140,44 @@ impl MonitorView {
                     .text_color(mac::text_tertiary())
                     .child("CPU CORES"),
             )
-            .child(
-                div().flex().flex_wrap().gap_x_4().gap_y_2().children(
-                    cores.into_iter().enumerate().map(|(i, usage)| {
-                        let frac = (usage / 100.0).clamp(0.0, 1.0);
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_2()
-                            .w(px(160.0))
-                            .child(
-                                div()
-                                    .w(px(48.0))
-                                    .text_size(px(11.0))
-                                    .text_color(mac::text_secondary())
-                                    .child(format!("Core {}", i + 1)),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .h(px(6.0))
-                                    .rounded(px(3.0))
-                                    .bg(mac::chrome())
-                                    .child(
-                                        div()
-                                            .h_full()
-                                            .w(gpui::relative(frac))
-                                            .rounded(px(3.0))
-                                            .bg(blue),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .w(px(34.0))
-                                    .text_size(px(11.0))
-                                    .text_color(mac::text())
-                                    .child(format!("{:.0}%", usage)),
-                            )
-                    }),
-                ),
-            )
+            .child(div().flex().flex_wrap().gap_x_4().gap_y_2().children(
+                cores.into_iter().enumerate().map(|(i, usage)| {
+                    let frac = (usage / 100.0).clamp(0.0, 1.0);
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .w(px(160.0))
+                        .child(
+                            div()
+                                .w(px(48.0))
+                                .text_size(px(11.0))
+                                .text_color(mac::text_secondary())
+                                .child(format!("Core {}", i + 1)),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .h(px(6.0))
+                                .rounded(px(3.0))
+                                .bg(mac::chrome())
+                                .child(
+                                    div()
+                                        .h_full()
+                                        .w(gpui::relative(frac))
+                                        .rounded(px(3.0))
+                                        .bg(blue),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .w(px(34.0))
+                                .text_size(px(11.0))
+                                .text_color(mac::text())
+                                .child(format!("{:.0}%", usage)),
+                        )
+                }),
+            ))
     }
 
     /// The Network tab body: a real per-interface table (sysinfo `Networks`)
@@ -1210,12 +1237,11 @@ impl MonitorView {
                             .h_flex()
                             .items_center()
                             .gap_2()
-                            .child(
-                                div()
-                                    .size(px(7.0))
-                                    .rounded_full()
-                                    .bg(if active { teal.into() } else { mac::text_tertiary() }),
-                            )
+                            .child(div().size(px(7.0)).rounded_full().bg(if active {
+                                teal.into()
+                            } else {
+                                mac::text_tertiary()
+                            }))
                             .child(
                                 div()
                                     .text_size(px(13.0))
@@ -1227,34 +1253,37 @@ impl MonitorView {
                     .child(figure(format_bytes(iface.total_sent), mac::text()))
                     .child(figure(
                         format_rate(iface.recv_rate),
-                        if active { teal.into() } else { mac::text_secondary() },
+                        if active {
+                            teal.into()
+                        } else {
+                            mac::text_secondary()
+                        },
                     ))
                     .child(figure(
                         format_rate(iface.sent_rate),
-                        if active { teal.into() } else { mac::text_secondary() },
+                        if active {
+                            teal.into()
+                        } else {
+                            mac::text_secondary()
+                        },
                     ))
                     .into_any_element()
             })
             .collect();
 
-        div()
-            .flex_1()
-            .min_h(px(0.0))
-            .px_4()
-            .pb_4()
-            .child(
-                div()
-                    .id("net-iface-table")
-                    .size_full()
-                    .min_h(px(0.0))
-                    .overflow_y_scroll()
-                    .border_1()
-                    .border_color(mac::separator())
-                    .rounded(px(8.0))
-                    .bg(mac::window())
-                    .child(header)
-                    .children(rows),
-            )
+        div().flex_1().min_h(px(0.0)).px_4().pb_4().child(
+            div()
+                .id("net-iface-table")
+                .size_full()
+                .min_h(px(0.0))
+                .overflow_y_scroll()
+                .border_1()
+                .border_color(mac::separator())
+                .rounded(px(8.0))
+                .bg(mac::window())
+                .child(header)
+                .children(rows),
+        )
     }
 
     fn render_summary(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -1264,8 +1293,7 @@ impl MonitorView {
         let purple = gpui::rgb(0xaf52de).into();
         let teal = gpui::rgb(0x32ade6).into();
 
-        let (cards, samples, accent): (Vec<gpui::AnyElement>, &[f32], gpui::Hsla) = match self.tab
-        {
+        let (cards, samples, accent): (Vec<gpui::AnyElement>, &[f32], gpui::Hsla) = match self.tab {
             Tab::Cpu => {
                 let red = gpui::rgb(0xff3b30).into();
                 let mut cards = vec![
@@ -1332,8 +1360,12 @@ impl MonitorView {
                         orange,
                     )
                     .into_any_element(),
-                    self.stat_card("CPU Load", format!("{:.1}%", self.agg.cpu_total), mac::text())
-                        .into_any_element(),
+                    self.stat_card(
+                        "CPU Load",
+                        format!("{:.1}%", self.agg.cpu_total),
+                        mac::text(),
+                    )
+                    .into_any_element(),
                 ];
                 (cards, self.history.energy.as_slice(), orange)
             }
@@ -1366,12 +1398,14 @@ impl MonitorView {
             .border_color(mac::separator())
             .child(div().h_flex().gap_3().children(cards))
             .child(self.sparkline(&samples, accent))
-            .when(matches!(self.tab, Tab::Cpu) && !self.agg.per_core.is_empty(), |el| {
-                el.child(self.render_core_bars())
-            })
-            .when(matches!(self.tab, Tab::Memory) && self.agg.mem_total > 0, |el| {
-                el.child(self.render_mem_pressure())
-            })
+            .when(
+                matches!(self.tab, Tab::Cpu) && !self.agg.per_core.is_empty(),
+                |el| el.child(self.render_core_bars()),
+            )
+            .when(
+                matches!(self.tab, Tab::Memory) && self.agg.mem_total > 0,
+                |el| el.child(self.render_mem_pressure()),
+            )
     }
 
     /// The macOS Memory Pressure indicator: a colored bar whose fill tracks the
@@ -1516,7 +1550,11 @@ impl MonitorView {
         let pid = self.inspect_pid?;
         let state = self.table.read(cx);
         let d = state.delegate();
-        let row = d.rows.iter().chain(d.all_rows.iter()).find(|r| r.pid == pid)?;
+        let row = d
+            .rows
+            .iter()
+            .chain(d.all_rows.iter())
+            .find(|r| r.pid == pid)?;
         let path = d
             .system
             .process(Pid::from_u32(pid))
@@ -1532,7 +1570,12 @@ impl MonitorView {
                 .py_1p5()
                 .border_b_1()
                 .border_color(mac::separator())
-                .child(div().text_size(px(12.0)).text_color(mac::text_secondary()).child(label.to_string()))
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child(label.to_string()),
+                )
                 .child(
                     div()
                         .text_size(px(12.0))
@@ -1575,7 +1618,12 @@ impl MonitorView {
                     ),
             )
             .child(info_row("Process ID (PID)", row.pid.to_string()))
-            .child(info_row("Parent PID", row.ppid.map(|p| p.to_string()).unwrap_or_else(|| "—".into())))
+            .child(info_row(
+                "Parent PID",
+                row.ppid
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "—".into()),
+            ))
             .child(info_row("User", row.user.to_string()))
             .child(info_row("Status", row.status.to_string()))
             .child(info_row("% CPU", format!("{:.1}", row.cpu)))
@@ -1588,7 +1636,12 @@ impl MonitorView {
                     .v_flex()
                     .gap_1()
                     .pt_2()
-                    .child(div().text_size(px(12.0)).text_color(mac::text_secondary()).child("Path"))
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(mac::text_secondary())
+                            .child("Path"),
+                    )
                     .child(
                         div()
                             .text_size(px(11.0))
@@ -1619,10 +1672,14 @@ impl Render for MonitorView {
             .key_context("ActivityMonitor")
             .on_action(cx.listener(|this, _: &QuitProcess, _, cx| this.request_kill(false, cx)))
             .on_action(cx.listener(|this, _: &ForceQuitProcess, _, cx| this.request_kill(true, cx)))
-            .on_action(cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &ConfirmKill, _, cx| this.confirm_kill(cx)))
             .on_action(cx.listener(|this, _: &CancelKill, _, cx| this.cancel_kill(cx)))
-            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            )
             .size_full()
             .v_flex()
             .bg(mac::window())
@@ -1643,9 +1700,10 @@ impl Render for MonitorView {
             .when(!self.tab.has_process_table(), |this| {
                 this.child(self.render_network_pane())
             })
-            .when(self.cols_menu_open && self.tab.has_process_table(), |this| {
-                this.child(self.render_columns_menu(cx))
-            })
+            .when(
+                self.cols_menu_open && self.tab.has_process_table(),
+                |this| this.child(self.render_columns_menu(cx)),
+            )
             .children(self.render_confirm(cx))
             .children(self.render_inspector(cx))
     }
@@ -1657,7 +1715,11 @@ fn main() {
         cx.bind_keys([
             gpui::KeyBinding::new("cmd-f", FocusSearch, Some("ActivityMonitor")),
             gpui::KeyBinding::new("cmd-backspace", QuitProcess, Some("ActivityMonitor")),
-            gpui::KeyBinding::new("shift-cmd-backspace", ForceQuitProcess, Some("ActivityMonitor")),
+            gpui::KeyBinding::new(
+                "shift-cmd-backspace",
+                ForceQuitProcess,
+                Some("ActivityMonitor"),
+            ),
             gpui::KeyBinding::new("enter", ConfirmKill, Some("ActivityMonitor")),
             gpui::KeyBinding::new("escape", CancelKill, Some("ActivityMonitor")),
         ]);

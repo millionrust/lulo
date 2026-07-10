@@ -80,7 +80,10 @@ mod tests {
         // The pasteboard normalises /tmp → /private/tmp; compare by file name +
         // existence rather than exact string.
         assert_eq!(got.len(), want.len(), "got {got:?}");
-        assert!(got.iter().all(|p| p.exists()), "all read paths exist: {got:?}");
+        assert!(
+            got.iter().all(|p| p.exists()),
+            "all read paths exist: {got:?}"
+        );
         assert!(got.iter().any(|p| p.ends_with("true")));
     }
 }

@@ -34,7 +34,16 @@ const ACCENT: u32 = 0x0a84ff;
 
 actions!(
     app_drawer,
-    [MoveLeft, MoveRight, MoveUp, MoveDown, Launch, ClearSearch, OpenApp, RevealInFinder]
+    [
+        MoveLeft,
+        MoveRight,
+        MoveUp,
+        MoveDown,
+        Launch,
+        ClearSearch,
+        OpenApp,
+        RevealInFinder
+    ]
 );
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -186,7 +195,7 @@ impl AppDrawer {
         self.apps
             .iter()
             .enumerate()
-            .filter(|(_, a)| self.filter.map_or(true, |c| a.category == c))
+            .filter(|(_, a)| self.filter.is_none_or(|c| a.category == c))
             .filter(|(_, a)| q.is_empty() || a.name.to_lowercase().contains(&q))
             .map(|(i, _)| i)
             .collect()
@@ -260,8 +269,7 @@ impl AppDrawer {
     }
 
     fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.query
-            .update(cx, |st, cx| st.set_value("", window, cx));
+        self.query.update(cx, |st, cx| st.set_value("", window, cx));
         self.selected = 0;
         self.focus.focus(window);
         cx.notify();
@@ -412,7 +420,11 @@ impl AppDrawer {
                         .path(glyph)
                         .w(px(15.0))
                         .h(px(15.0))
-                        .text_color(if active { mac::text() } else { mac::text_secondary() }),
+                        .text_color(if active {
+                            mac::text()
+                        } else {
+                            mac::text_secondary()
+                        }),
                 )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.view = mode;
@@ -442,24 +454,25 @@ impl AppDrawer {
 
     fn category_bar(&self, cx: &Context<Self>) -> impl IntoElement {
         let present = self.present_categories(cx);
-        let pill = |id: SharedString, label: SharedString, active: bool, target: Option<Category>| {
-            div()
-                .id(id)
-                .px_3()
-                .py_1()
-                .rounded(px(13.0))
-                .text_size(px(12.0))
-                .when(active, |d: Stateful<Div>| {
-                    d.bg(gpui::rgb(ACCENT)).text_color(gpui::white())
-                })
-                .when(!active, |d: Stateful<Div>| {
-                    d.bg(gpui::rgb(0xe9e9eb))
-                        .text_color(mac::text())
-                        .hover(|h| h.bg(gpui::rgb(0xdedee1)))
-                })
-                .child(label)
-                .on_click(cx.listener(move |this, _, _, cx| this.set_filter(target, cx)))
-        };
+        let pill =
+            |id: SharedString, label: SharedString, active: bool, target: Option<Category>| {
+                div()
+                    .id(id)
+                    .px_3()
+                    .py_1()
+                    .rounded(px(13.0))
+                    .text_size(px(12.0))
+                    .when(active, |d: Stateful<Div>| {
+                        d.bg(gpui::rgb(ACCENT)).text_color(gpui::white())
+                    })
+                    .when(!active, |d: Stateful<Div>| {
+                        d.bg(gpui::rgb(0xe9e9eb))
+                            .text_color(mac::text())
+                            .hover(|h| h.bg(gpui::rgb(0xdedee1)))
+                    })
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_filter(target, cx)))
+            };
 
         let mut bar = div()
             .flex()
@@ -536,14 +549,16 @@ impl Render for AppDrawer {
             .on_action(cx.listener(|this, _: &Launch, _, cx| this.launch_selected(cx)))
             .on_action(cx.listener(|this, _: &OpenApp, _, cx| this.open_selected(cx)))
             .on_action(cx.listener(|this, _: &RevealInFinder, _, cx| this.reveal_selected(cx)))
-            .on_action(cx.listener(|this, _: &ClearSearch, window, cx| {
-                this.clear_search(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &ClearSearch, window, cx| this.clear_search(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
                 this.menu_at = None;
                 cx.notify();
             }))
-            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            )
             .size_full()
             .v_flex()
             .bg(gpui::rgb(0xf5f5f7))
@@ -615,12 +630,17 @@ fn scan_apps() -> Vec<App> {
     // Categories read each app's Info.plist (a subprocess), so resolve them in
     // parallel to keep startup fast.
     let cats = parallel_categorize(&pairs);
-    apps.extend(pairs.into_iter().zip(cats).map(|((name, path), category)| App {
-        name: name.into(),
-        path,
-        icon: None,
-        category,
-    }));
+    apps.extend(
+        pairs
+            .into_iter()
+            .zip(cats)
+            .map(|((name, path), category)| App {
+                name: name.into(),
+                path,
+                icon: None,
+                category,
+            }),
+    );
     apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     apps
 }
@@ -638,9 +658,15 @@ fn parallel_categorize(pairs: &[(String, PathBuf)]) -> Vec<Category> {
     std::thread::scope(|s| {
         let mut handles = Vec::new();
         for (ci, slice) in pairs.chunks(chunk).enumerate() {
-            handles.push((ci, s.spawn(move || {
-                slice.iter().map(|(name, path)| categorize(name, path)).collect::<Vec<_>>()
-            })));
+            handles.push((
+                ci,
+                s.spawn(move || {
+                    slice
+                        .iter()
+                        .map(|(name, path)| categorize(name, path))
+                        .collect::<Vec<_>>()
+                }),
+            ));
         }
         for (ci, h) in handles {
             if let Ok(part) = h.join() {
@@ -716,21 +742,51 @@ fn categorize(name: &str, path: &Path) -> Category {
     let n = name.to_lowercase();
 
     const INTERNET: &[&str] = &[
-        "safari", "mail", "messages", "facetime", "chrome", "firefox", "edge", "news",
-        "contacts", "freeform", "maps",
+        "safari", "mail", "messages", "facetime", "chrome", "firefox", "edge", "news", "contacts",
+        "freeform", "maps",
     ];
     const MEDIA: &[&str] = &[
-        "music", "tv", "photos", "podcasts", "quicktime", "books", "voice memos",
-        "image capture", "photo booth", "garageband", "imovie",
+        "music",
+        "tv",
+        "photos",
+        "podcasts",
+        "quicktime",
+        "books",
+        "voice memos",
+        "image capture",
+        "photo booth",
+        "garageband",
+        "imovie",
     ];
     const PRODUCTIVITY: &[&str] = &[
-        "calendar", "notes", "reminders", "numbers", "pages", "keynote", "stocks",
-        "weather", "calculator", "dictionary", "home", "clock", "shortcuts", "preview",
-        "stickies", "textedit", "font book",
+        "calendar",
+        "notes",
+        "reminders",
+        "numbers",
+        "pages",
+        "keynote",
+        "stocks",
+        "weather",
+        "calculator",
+        "dictionary",
+        "home",
+        "clock",
+        "shortcuts",
+        "preview",
+        "stickies",
+        "textedit",
+        "font book",
     ];
     const DEVELOPER: &[&str] = &[
-        "xcode", "terminal", "script editor", "automator", "console", "instruments",
-        "simulator", "visual studio", "code",
+        "xcode",
+        "terminal",
+        "script editor",
+        "automator",
+        "console",
+        "instruments",
+        "simulator",
+        "visual studio",
+        "code",
     ];
     const GAMES: &[&str] = &["chess", "game center"];
 
@@ -751,9 +807,8 @@ fn categorize(name: &str, path: &Path) -> Category {
         || name == "Find My"
         || name == "Passwords"
         || name == "Tips"
+        || p.starts_with("/System/Applications")
     {
-        Category::System
-    } else if p.starts_with("/System/Applications") {
         Category::System
     } else {
         Category::Other
@@ -806,7 +861,11 @@ fn icns_path(app: &Path) -> Option<PathBuf> {
 
     // Preferred: the icon named by CFBundleIconFile.
     if let Ok(out) = Command::new("/usr/libexec/PlistBuddy")
-        .args(["-c", "Print :CFBundleIconFile", plist.to_string_lossy().as_ref()])
+        .args([
+            "-c",
+            "Print :CFBundleIconFile",
+            plist.to_string_lossy().as_ref(),
+        ])
         .output()
     {
         let name = String::from_utf8_lossy(&out.stdout).trim().to_string();

@@ -15,10 +15,10 @@ use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term};
 use gpui::{
     div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div, Entity,
-    FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
-    KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, ScrollDelta, ScrollWheelEvent, Stateful, StatefulInteractiveElement as _, Styled,
-    Window,
+    FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, Stateful,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputState};
@@ -65,15 +65,78 @@ const ONE_DARK: [u32; 16] = [
 /// Built-in profiles mirroring macOS Terminal.app presets. Index 0 is the
 /// rmac default (a dark One Dark variant); the rest match Terminal.app.
 static PROFILES: &[Profile] = &[
-    Profile { name: "rmac Dark", bg: 0x1e1e1e, fg: 0xd4d4d4, cursor: 0xd4d4d4, selection: 0x2f5d8c, ansi: ONE_DARK },
-    Profile { name: "Basic", bg: 0xffffff, fg: 0x000000, cursor: 0x000000, selection: 0xb4d5fe, ansi: MAC_ANSI },
-    Profile { name: "Pro", bg: 0x000000, fg: 0xf2f2f2, cursor: 0x4d4d4d, selection: 0x414141, ansi: MAC_ANSI },
-    Profile { name: "Homebrew", bg: 0x000000, fg: 0x00ff00, cursor: 0x23ff18, selection: 0x083905, ansi: MAC_ANSI },
-    Profile { name: "Grass", bg: 0x13773d, fg: 0xfff0a5, cursor: 0x8c1543, selection: 0x004d00, ansi: MAC_ANSI },
-    Profile { name: "Man Page", bg: 0xfef49c, fg: 0x000000, cursor: 0x7f7f7f, selection: 0xa3d7ff, ansi: MAC_ANSI },
-    Profile { name: "Novel", bg: 0xdfdbc3, fg: 0x3b2322, cursor: 0x73635a, selection: 0xa4a390, ansi: MAC_ANSI },
-    Profile { name: "Ocean", bg: 0x224fbc, fg: 0xffffff, cursor: 0x7f7f7f, selection: 0x216dff, ansi: MAC_ANSI },
-    Profile { name: "Red Sands", bg: 0x7a251e, fg: 0xd7c9a7, cursor: 0xffffff, selection: 0xa4a390, ansi: MAC_ANSI },
+    Profile {
+        name: "rmac Dark",
+        bg: 0x1e1e1e,
+        fg: 0xd4d4d4,
+        cursor: 0xd4d4d4,
+        selection: 0x2f5d8c,
+        ansi: ONE_DARK,
+    },
+    Profile {
+        name: "Basic",
+        bg: 0xffffff,
+        fg: 0x000000,
+        cursor: 0x000000,
+        selection: 0xb4d5fe,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Pro",
+        bg: 0x000000,
+        fg: 0xf2f2f2,
+        cursor: 0x4d4d4d,
+        selection: 0x414141,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Homebrew",
+        bg: 0x000000,
+        fg: 0x00ff00,
+        cursor: 0x23ff18,
+        selection: 0x083905,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Grass",
+        bg: 0x13773d,
+        fg: 0xfff0a5,
+        cursor: 0x8c1543,
+        selection: 0x004d00,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Man Page",
+        bg: 0xfef49c,
+        fg: 0x000000,
+        cursor: 0x7f7f7f,
+        selection: 0xa3d7ff,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Novel",
+        bg: 0xdfdbc3,
+        fg: 0x3b2322,
+        cursor: 0x73635a,
+        selection: 0xa4a390,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Ocean",
+        bg: 0x224fbc,
+        fg: 0xffffff,
+        cursor: 0x7f7f7f,
+        selection: 0x216dff,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Red Sands",
+        bg: 0x7a251e,
+        fg: 0xd7c9a7,
+        cursor: 0xffffff,
+        selection: 0xa4a390,
+        ansi: MAC_ANSI,
+    },
 ];
 
 thread_local! {
@@ -90,7 +153,22 @@ fn active() -> &'static Profile {
 
 gpui::actions!(
     terminal,
-    [Copy, Paste, Find, ZoomIn, ZoomOut, ZoomReset, SelectAll, Clear, NewTab, CloseTab, NextTab, PrevTab, CycleProfile, ShowProfiles]
+    [
+        Copy,
+        Paste,
+        Find,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
+        SelectAll,
+        Clear,
+        NewTab,
+        CloseTab,
+        NextTab,
+        PrevTab,
+        CycleProfile,
+        ShowProfiles
+    ]
 );
 /// Find-match highlight (macOS yellow).
 const FIND_HL: u32 = 0xffd60a;
@@ -218,7 +296,11 @@ impl Session {
                 }
             }
         });
-        Ok(Session { term, writer, master: Some(pair.master) })
+        Ok(Session {
+            term,
+            writer,
+            master: Some(pair.master),
+        })
     }
 
     /// A no-PTY session that just displays an error message in its grid, so a
@@ -231,7 +313,11 @@ impl Session {
             let text = format!("\r\n  Terminal unavailable — {msg}\r\n");
             parser.advance(&mut *t, text.as_bytes());
         }
-        Session { term, writer: Box::new(std::io::sink()), master: None }
+        Session {
+            term,
+            writer: Box::new(std::io::sink()),
+            master: None,
+        }
     }
 }
 
@@ -350,7 +436,6 @@ impl TerminalView {
             cx.notify();
         }
     }
-
 
     fn new_tab(&mut self, cx: &mut Context<Self>) {
         let (c, r) = (self.cols.max(20), self.rows.max(5));
@@ -593,7 +678,8 @@ impl TerminalView {
 
     /// Current scrollback offset (0 = pinned to the live prompt).
     fn display_offset(&self) -> i32 {
-        self.tabs[self.active].term
+        self.tabs[self.active]
+            .term
             .lock()
             .map(|t| t.grid().display_offset() as i32)
             .unwrap_or(0)
@@ -605,7 +691,8 @@ impl TerminalView {
     fn pos_to_cell(&self, pos: Point<Pixels>, offset: i32) -> (i32, usize) {
         let x = f32::from(pos.x);
         let y = f32::from(pos.y);
-        let col = (((x - LEFT_PAD) / self.cell_w).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
+        let col =
+            (((x - LEFT_PAD) / self.cell_w).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
         let row = (((y - TOP_PAD) / self.line_h).floor() as i32).clamp(0, self.rows as i32 - 1);
         (row - offset, col)
     }
@@ -719,8 +806,7 @@ impl TerminalView {
             }
             // The row soft-wraps when its final cell is flagged WRAPLINE and the
             // selection reaches that cell, so the next row continues this line.
-            let wrapped = c1 >= last_col
-                && row[Column(last_col)].flags.contains(Flags::WRAPLINE);
+            let wrapped = c1 >= last_col && row[Column(last_col)].flags.contains(Flags::WRAPLINE);
 
             if !first && !prev_wrapped {
                 out.push('\n');
@@ -763,7 +849,11 @@ impl TerminalView {
                 let text: String = (0..self.cols)
                     .map(|c| {
                         let ch = row[Column(c)].c;
-                        if ch == '\0' { ' ' } else { ch }
+                        if ch == '\0' {
+                            ' '
+                        } else {
+                            ch
+                        }
                     })
                     .collect::<String>()
                     .to_lowercase();
@@ -772,8 +862,8 @@ impl TerminalView {
                 let mut start = 0;
                 while let Some(pos) = text.get(start..).and_then(|t| t.find(query)) {
                     let s = start + pos;
-                    for k in s..(s + qlen).min(self.cols) {
-                        m[k] = true;
+                    for matched in m.iter_mut().take((s + qlen).min(self.cols)).skip(s) {
+                        *matched = true;
                     }
                     start = s + qlen;
                     if start >= text.len() {
@@ -840,7 +930,13 @@ impl TerminalView {
                 }
             }
 
-            rows.push(div().flex().h(px(self.line_h)).children(spans).into_any_element());
+            rows.push(
+                div()
+                    .flex()
+                    .h(px(self.line_h))
+                    .children(spans)
+                    .into_any_element(),
+            );
         }
         rows
     }
@@ -895,7 +991,9 @@ impl Render for TerminalView {
                     }))
                     .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
                     .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
-                    .on_action(cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)))
+                    .on_action(
+                        cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)),
+                    )
                     .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
                         let s = this.font_size + 1.0;
                         this.set_font(s, cx);
@@ -904,7 +1002,9 @@ impl Render for TerminalView {
                         let s = this.font_size - 1.0;
                         this.set_font(s, cx);
                     }))
-                    .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_font(FONT_SIZE, cx)))
+                    .on_action(
+                        cx.listener(|this, _: &ZoomReset, _, cx| this.set_font(FONT_SIZE, cx)),
+                    )
                     .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
                     .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
                     .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
@@ -920,9 +1020,11 @@ impl Render for TerminalView {
                         this.menu_at = None;
                         cx.notify();
                     }))
-                    .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
-                        window.remove_window()
-                    }))
+                    .on_action(
+                        cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
+                            window.remove_window()
+                        }),
+                    )
                     .on_action(cx.listener(|this, _: &ShowProfiles, _, cx| {
                         // Right-click → Profiles… — a guaranteed mouse path to the
                         // picker (the picker rows are clickable body overlays).
@@ -1012,7 +1114,11 @@ impl Render for TerminalView {
                         .px_2()
                         .rounded(px(7.0))
                         .bg(hsla(0xf0f0f0))
-                        .child(div().flex_1().child(Input::new(&self.search).appearance(false)))
+                        .child(
+                            div()
+                                .flex_1()
+                                .child(Input::new(&self.search).appearance(false)),
+                        )
                         .child(
                             div()
                                 .id("find-close")

@@ -15,8 +15,8 @@ use std::process::Command;
 use gpui::{
     actions, div, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
     AssetSource, Context, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement as _,
-    IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString,
-    StatefulInteractiveElement as _, Stateful, Styled, Svg, Window,
+    IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::slider::{Slider, SliderState};
 use gpui_component::switch::Switch;
@@ -52,17 +52,38 @@ actions!(system_settings, [GoBack]);
 fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }
-fn sidebar_bg() -> Hsla { hsl(0xe7e7ea) }
-fn pane_bg() -> Hsla { hsl(0xf2f2f4) }
-fn card_bg() -> Hsla { hsl(0xffffff) }
-fn accent() -> Hsla { hsl(0x0a84ff) }
-fn label() -> Hsla { hsl(0x1d1d1f) }
-fn secondary() -> Hsla { hsl(0x86868b) }
-fn sep() -> Hsla { hsl(0xe5e5e5) }
-fn white() -> Hsla { gpui::white() }
+fn sidebar_bg() -> Hsla {
+    hsl(0xe7e7ea)
+}
+fn pane_bg() -> Hsla {
+    hsl(0xf2f2f4)
+}
+fn card_bg() -> Hsla {
+    hsl(0xffffff)
+}
+fn accent() -> Hsla {
+    hsl(0x0a84ff)
+}
+fn label() -> Hsla {
+    hsl(0x1d1d1f)
+}
+fn secondary() -> Hsla {
+    hsl(0x86868b)
+}
+fn sep() -> Hsla {
+    hsl(0xe5e5e5)
+}
+fn white() -> Hsla {
+    gpui::white()
+}
 
 fn glyph(path: &'static str, size: f32, color: Hsla) -> Svg {
-    svg().path(path).w(px(size)).h(px(size)).text_color(color).flex_none()
+    svg()
+        .path(path)
+        .w(px(size))
+        .h(px(size))
+        .text_color(color)
+        .flex_none()
 }
 
 /// A colored rounded-square icon tile (SF-symbol-on-color, like Settings).
@@ -111,7 +132,11 @@ enum SubPage {
     SoftwareUpdate,
     Storage,
     /// A generic placeholder detail page identified by its row label.
-    Placeholder { icon: &'static str, color: Hsla, title: SharedString },
+    Placeholder {
+        icon: &'static str,
+        color: Hsla,
+        title: SharedString,
+    },
 }
 
 /// Real, read-only macOS facts gathered once at launch.
@@ -246,7 +271,15 @@ const ACCENTS: &[(&str, u32)] = &[
     ("Graphite", 0x8e8e93),
 ];
 
-const ALERT_SOUNDS: &[&str] = &["Boop", "Breeze", "Bubble", "Crystal", "Funk", "Heroine", "Submarine"];
+const ALERT_SOUNDS: &[&str] = &[
+    "Boop",
+    "Breeze",
+    "Bubble",
+    "Crystal",
+    "Funk",
+    "Heroine",
+    "Submarine",
+];
 
 // ---- on-disk persistence -------------------------------------------------
 //
@@ -322,7 +355,9 @@ fn config_path() -> Option<PathBuf> {
 
 impl Persisted {
     fn load() -> Self {
-        let Some(path) = config_path() else { return Self::default() };
+        let Some(path) = config_path() else {
+            return Self::default();
+        };
         match std::fs::read_to_string(&path) {
             Ok(content) => Self::parse(&content),
             Err(_) => Self::default(),
@@ -389,12 +424,11 @@ impl Persisted {
     /// their default and malformed values are ignored.
     fn parse(content: &str) -> Self {
         let mut p = Self::default();
-        let body = content
-            .trim()
-            .trim_start_matches('{')
-            .trim_end_matches('}');
+        let body = content.trim().trim_start_matches('{').trim_end_matches('}');
         for part in body.split(',') {
-            let part = part.trim().trim_matches(|c: char| c.is_whitespace() || c == '\n');
+            let part = part
+                .trim()
+                .trim_matches(|c: char| c.is_whitespace() || c == '\n');
             if part.is_empty() {
                 continue;
             }
@@ -456,9 +490,8 @@ impl Persisted {
 
 impl Settings {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search = cx.new(|cx| {
-            gpui_component::input::InputState::new(window, cx).placeholder("Search")
-        });
+        let search =
+            cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Search"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
 
         // Load persisted interactive state (falls back to sensible defaults).
@@ -466,7 +499,13 @@ impl Settings {
 
         // Sliders persist their value; observing them writes the config on change.
         let mk_slider = |cx: &mut Context<Self>, val: f32| {
-            let s = cx.new(|_| SliderState::new().min(0.0).max(100.0).step(1.0).default_value(val));
+            let s = cx.new(|_| {
+                SliderState::new()
+                    .min(0.0)
+                    .max(100.0)
+                    .step(1.0)
+                    .default_value(val)
+            });
             cx.observe(&s, |this, _, cx| {
                 this.persist(cx);
                 cx.notify();
@@ -601,8 +640,14 @@ impl Settings {
             .flex_none()
             .w_full()
             .flex()
-            .on_mouse_down(MouseButton::Left, cx.listener(|t, _, _, _| t.dragging = true))
-            .on_mouse_up(MouseButton::Left, cx.listener(|t, _, _, _| t.dragging = false))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|t, _, _, _| t.dragging = true),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|t, _, _, _| t.dragging = false),
+            )
             .on_mouse_move(cx.listener(|t, _, window, _| {
                 if t.dragging {
                     t.dragging = false;
@@ -733,7 +778,9 @@ impl Settings {
                         .px_2()
                         .rounded(px(6.0))
                         .when(selected, |el: Stateful<Div>| el.bg(accent()))
-                        .when(!selected, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x00000008))))
+                        .when(!selected, |el: Stateful<Div>| {
+                            el.hover(|h| h.bg(hsl(0x00000008)))
+                        })
                         .child(tile(cat.icon, cat.color, 20.0))
                         .child(
                             div()
@@ -777,7 +824,14 @@ impl Settings {
             .h_full()
             .bg(pane_bg())
             .overflow_y_scroll()
-            .child(div().max_w(px(560.0)).mx_auto().px_5().pb_8().child(content))
+            .child(
+                div()
+                    .max_w(px(560.0))
+                    .mx_auto()
+                    .px_5()
+                    .pb_8()
+                    .child(content),
+            )
     }
 
     fn render_hero(&self) -> Div {
@@ -941,7 +995,11 @@ impl Settings {
                         "icons/bluetooth.svg",
                         accent(),
                         d.name.clone().into(),
-                        if d.kind.is_empty() { "Connected".into() } else { d.kind.clone().into() },
+                        if d.kind.is_empty() {
+                            "Connected".into()
+                        } else {
+                            d.kind.clone().into()
+                        },
                     )
                 })
                 .collect();
@@ -959,7 +1017,11 @@ impl Settings {
                         "icons/bluetooth.svg",
                         secondary(),
                         d.name.clone().into(),
-                        if d.kind.is_empty() { "Not Connected".into() } else { d.kind.clone().into() },
+                        if d.kind.is_empty() {
+                            "Not Connected".into()
+                        } else {
+                            d.kind.clone().into()
+                        },
                     )
                 })
                 .collect();
@@ -980,12 +1042,30 @@ impl Settings {
         let view = cx.entity();
         let cards = vec![
             card(vec![
-                nav_row(view.clone(), "icons/info.svg", hsl(0x8e8e93), "About".into(),
-                    Some(self.sysinfo.model.clone().into()), SubPage::About),
-                nav_row(view.clone(), "icons/refresh-cw.svg", hsl(0x8e8e93), "Software Update".into(),
-                    Some(self.sysinfo.os.clone().into()), SubPage::SoftwareUpdate),
-                nav_row(view.clone(), "icons/database.svg", hsl(0x8e8e93), "Storage".into(),
-                    None, SubPage::Storage),
+                nav_row(
+                    view.clone(),
+                    "icons/info.svg",
+                    hsl(0x8e8e93),
+                    "About".into(),
+                    Some(self.sysinfo.model.clone().into()),
+                    SubPage::About,
+                ),
+                nav_row(
+                    view.clone(),
+                    "icons/refresh-cw.svg",
+                    hsl(0x8e8e93),
+                    "Software Update".into(),
+                    Some(self.sysinfo.os.clone().into()),
+                    SubPage::SoftwareUpdate,
+                ),
+                nav_row(
+                    view.clone(),
+                    "icons/database.svg",
+                    hsl(0x8e8e93),
+                    "Storage".into(),
+                    None,
+                    SubPage::Storage,
+                ),
             ]),
             card(vec![switch_row(
                 "icons/folder-symlink.svg",
@@ -997,16 +1077,25 @@ impl Settings {
                 |s, v| s.handoff = v,
             )]),
             {
-                let mut c = div().v_flex().mb_3().rounded(px(10.0)).bg(card_bg()).border_1().border_color(sep());
+                let mut c = div()
+                    .v_flex()
+                    .mb_3()
+                    .rounded(px(10.0))
+                    .bg(card_bg())
+                    .border_1()
+                    .border_color(sep());
                 c = c.child(label_row("AirDrop", None));
                 c = c.child(div().h(px(1.0)).bg(sep()).mx_3());
-                c = c.child(segmented(
-                    view.clone(),
-                    "airdrop-seg",
-                    &["No One", "Contacts Only", "Everyone"],
-                    self.airdrop_idx,
-                    |s, i| s.airdrop_idx = i,
-                ).p_3());
+                c = c.child(
+                    segmented(
+                        view.clone(),
+                        "airdrop-seg",
+                        &["No One", "Contacts Only", "Everyone"],
+                        self.airdrop_idx,
+                        |s, i| s.airdrop_idx = i,
+                    )
+                    .p_3(),
+                );
                 c
             },
             card(vec![switch_row(
@@ -1093,7 +1182,9 @@ impl Settings {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .when(selected, |el| el.border_2().border_color(white()).shadow_sm())
+                        .when(selected, |el| {
+                            el.border_2().border_color(white()).shadow_sm()
+                        })
                         .when(selected, |el| {
                             el.child(glyph("icons/check.svg", 12.0, white()))
                         })
@@ -1116,7 +1207,15 @@ impl Settings {
                 .border_color(sep())
                 .child(label_row("Accent color", None))
                 .child(div().h(px(1.0)).bg(sep()).mx_3())
-                .child(div().flex().gap_2().items_center().flex_wrap().p_3().children(swatches))
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .items_center()
+                        .flex_wrap()
+                        .p_3()
+                        .children(swatches),
+                )
         };
 
         let toggles = card(vec![
@@ -1144,7 +1243,11 @@ impl Settings {
             "icons/info.svg",
             secondary(),
             "Current system appearance".into(),
-            if appearance_is_dark() { "Dark".into() } else { "Light".into() },
+            if appearance_is_dark() {
+                "Dark".into()
+            } else {
+                "Light".into()
+            },
         )]);
 
         self.pane(vec![appearance_card, accent_card, toggles, system_note])
@@ -1166,9 +1269,17 @@ impl Settings {
             .bg(card_bg())
             .border_1()
             .border_color(sep())
-            .child(slider_row("Output volume", &self.output_volume, format!("{out}%").into()))
+            .child(slider_row(
+                "Output volume",
+                &self.output_volume,
+                format!("{out}%").into(),
+            ))
             .child(div().h(px(1.0)).bg(sep()).mx_3())
-            .child(slider_row("Balance", &self.balance, format!("{bal}").into()))
+            .child(slider_row(
+                "Balance",
+                &self.balance,
+                format!("{bal}").into(),
+            ))
             .child(div().h(px(1.0)).bg(sep()).mx_3())
             .child(switch_row(
                 "icons/volume-2.svg",
@@ -1187,7 +1298,10 @@ impl Settings {
             .bg(card_bg())
             .border_1()
             .border_color(sep())
-            .child(label_row("Alert sound", Some(ALERT_SOUNDS[self.alert_idx].into())))
+            .child(label_row(
+                "Alert sound",
+                Some(ALERT_SOUNDS[self.alert_idx].into()),
+            ))
             .child(div().h(px(1.0)).bg(sep()).mx_3())
             .child(
                 segmented_dynamic(
@@ -1200,7 +1314,11 @@ impl Settings {
                 .p_3(),
             )
             .child(div().h(px(1.0)).bg(sep()).mx_3())
-            .child(slider_row("Alert volume", &self.alert_volume, format!("{alert}%").into()));
+            .child(slider_row(
+                "Alert volume",
+                &self.alert_volume,
+                format!("{alert}%").into(),
+            ));
 
         let toggles = card(vec![
             switch_row(
@@ -1226,7 +1344,13 @@ impl Settings {
         let output_devices = self.audio_device_card("Output Device", &self.audio.outputs);
         let input_devices = self.audio_device_card("Input Device", &self.audio.inputs);
 
-        self.pane(vec![output_card, alert_card, toggles, output_devices, input_devices])
+        self.pane(vec![
+            output_card,
+            alert_card,
+            toggles,
+            output_devices,
+            input_devices,
+        ])
     }
 
     /// A card listing real audio devices, with the system default checked.
@@ -1243,14 +1367,20 @@ impl Settings {
                     .child(text_block(d.name.clone().into(), None))
                     .when(d.is_default, |el| {
                         el.child(
-                            div().text_size(px(12.0)).text_color(secondary()).child("Default"),
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(secondary())
+                                .child("Default"),
                         )
                         .child(glyph("icons/check.svg", 13.0, blue))
                     })
                     .into_any_element()
             })
             .collect();
-        div().v_flex().child(section_header(title)).child(card(rows))
+        div()
+            .v_flex()
+            .child(section_header(title))
+            .child(card(rows))
     }
 
     // ---- Battery (real read-only) -------------------------------------
@@ -1261,21 +1391,58 @@ impl Settings {
         match &self.battery {
             Some(b) if b.present => {
                 let mut status_rows = vec![
-                    value_row("icons/battery-charging.svg", green, "Charge".into(), b.percent.clone().into()),
-                    value_row("icons/info.svg", gray, "Status".into(), b.status.clone().into()),
-                    value_row("icons/power.svg", gray, "Power Source".into(), b.source.clone().into()),
+                    value_row(
+                        "icons/battery-charging.svg",
+                        green,
+                        "Charge".into(),
+                        b.percent.clone().into(),
+                    ),
+                    value_row(
+                        "icons/info.svg",
+                        gray,
+                        "Status".into(),
+                        b.status.clone().into(),
+                    ),
+                    value_row(
+                        "icons/power.svg",
+                        gray,
+                        "Power Source".into(),
+                        b.source.clone().into(),
+                    ),
                 ];
                 if let Some(t) = &b.time_remaining {
-                    status_rows.push(value_row("icons/clock.svg", gray, "Time Remaining".into(), t.clone().into()));
+                    status_rows.push(value_row(
+                        "icons/clock.svg",
+                        gray,
+                        "Time Remaining".into(),
+                        t.clone().into(),
+                    ));
                 }
 
-                let mut health_rows =
-                    vec![value_row("icons/heart-handshake.svg", green, "Condition".into(), b.condition.clone().into())];
+                let mut health_rows = vec![value_row(
+                    "icons/heart-handshake.svg",
+                    green,
+                    "Condition".into(),
+                    b.condition.clone().into(),
+                )];
                 if let Some(h) = &b.health_percent {
-                    health_rows.insert(0, value_row("icons/battery-charging.svg", green, "Maximum Capacity".into(), h.clone().into()));
+                    health_rows.insert(
+                        0,
+                        value_row(
+                            "icons/battery-charging.svg",
+                            green,
+                            "Maximum Capacity".into(),
+                            h.clone().into(),
+                        ),
+                    );
                 }
                 if let Some(c) = &b.cycle_count {
-                    health_rows.push(value_row("icons/history.svg", gray, "Cycle Count".into(), c.clone().into()));
+                    health_rows.push(value_row(
+                        "icons/history.svg",
+                        gray,
+                        "Cycle Count".into(),
+                        c.clone().into(),
+                    ));
                 }
 
                 self.pane(vec![
@@ -1317,10 +1484,17 @@ impl Settings {
                     .text_color(secondary())
                     .child(title),
             );
-            let mut rows =
-                vec![value_row("icons/monitor.svg", blue, "Resolution".into(), d.resolution.clone().into())];
+            let mut rows = vec![value_row(
+                "icons/monitor.svg",
+                blue,
+                "Resolution".into(),
+                d.resolution.clone().into(),
+            )];
             if let Some(det) = &d.detail {
-                rows.insert(0, value_row("icons/info.svg", gray, "Type".into(), det.clone().into()));
+                rows.insert(
+                    0,
+                    value_row("icons/info.svg", gray, "Type".into(), det.clone().into()),
+                );
             }
             cards.push(card(rows));
         }
@@ -1351,7 +1525,11 @@ impl Settings {
             "icons/globe.svg",
             status_color,
             "Status".into(),
-            if n.connected { "Connected".into() } else { "Not Connected".into() },
+            if n.connected {
+                "Connected".into()
+            } else {
+                "Not Connected".into()
+            },
         )];
         conn_rows.push(value_row(
             "icons/wifi.svg",
@@ -1362,16 +1540,36 @@ impl Settings {
 
         let mut detail_rows: Vec<AnyElement> = Vec::new();
         if let Some(ip) = &n.ip {
-            detail_rows.push(value_row("icons/globe.svg", gray, "IP Address".into(), ip.clone().into()));
+            detail_rows.push(value_row(
+                "icons/globe.svg",
+                gray,
+                "IP Address".into(),
+                ip.clone().into(),
+            ));
         }
         if let Some(r) = &n.router {
-            detail_rows.push(value_row("icons/folder-symlink.svg", gray, "Router".into(), r.clone().into()));
+            detail_rows.push(value_row(
+                "icons/folder-symlink.svg",
+                gray,
+                "Router".into(),
+                r.clone().into(),
+            ));
         }
         if let Some(d) = &n.dns {
-            detail_rows.push(value_row("icons/info.svg", gray, "DNS Server".into(), d.clone().into()));
+            detail_rows.push(value_row(
+                "icons/info.svg",
+                gray,
+                "DNS Server".into(),
+                d.clone().into(),
+            ));
         }
         if let Some(m) = &n.mac {
-            detail_rows.push(value_row("icons/key.svg", gray, "Hardware Address".into(), m.clone().into()));
+            detail_rows.push(value_row(
+                "icons/key.svg",
+                gray,
+                "Hardware Address".into(),
+                m.clone().into(),
+            ));
         }
 
         let mut cards = vec![card(conn_rows)];
@@ -1385,7 +1583,11 @@ impl Settings {
     /// Real boot-volume storage usage with a macOS-style fill bar.
     fn storage_body(&self) -> Div {
         let s = &self.storage;
-        let frac = if s.total > 0 { (s.used as f32 / s.total as f32).clamp(0.0, 1.0) } else { 0.0 };
+        let frac = if s.total > 0 {
+            (s.used as f32 / s.total as f32).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
 
         let bar_card = div()
             .v_flex()
@@ -1412,7 +1614,11 @@ impl Settings {
                         div()
                             .text_size(px(13.0))
                             .text_color(secondary())
-                            .child(format!("{} available of {}", fmt_gb(s.avail), fmt_gb(s.total))),
+                            .child(format!(
+                                "{} available of {}",
+                                fmt_gb(s.avail),
+                                fmt_gb(s.total)
+                            )),
                     ),
             )
             .child(
@@ -1421,13 +1627,34 @@ impl Settings {
                     .h(px(10.0))
                     .rounded(px(5.0))
                     .bg(hsl(0xe5e5ea))
-                    .child(div().h_full().w(gpui::relative(frac)).rounded(px(5.0)).bg(accent())),
+                    .child(
+                        div()
+                            .h_full()
+                            .w(gpui::relative(frac))
+                            .rounded(px(5.0))
+                            .bg(accent()),
+                    ),
             );
 
         let rows = card(vec![
-            value_row("icons/database.svg", accent(), "Capacity".into(), fmt_gb(s.total).into()),
-            value_row("icons/database.svg", hsl(0xff9500), "Used".into(), fmt_gb(s.used).into()),
-            value_row("icons/database.svg", hsl(0x34c759), "Available".into(), fmt_gb(s.avail).into()),
+            value_row(
+                "icons/database.svg",
+                accent(),
+                "Capacity".into(),
+                fmt_gb(s.total).into(),
+            ),
+            value_row(
+                "icons/database.svg",
+                hsl(0xff9500),
+                "Used".into(),
+                fmt_gb(s.used).into(),
+            ),
+            value_row(
+                "icons/database.svg",
+                hsl(0x34c759),
+                "Available".into(),
+                fmt_gb(s.avail).into(),
+            ),
         ]);
 
         div().v_flex().child(bar_card).child(rows)
@@ -1459,7 +1686,7 @@ impl Settings {
                 div()
                     .v_flex()
                     .child(card(vec![value_row(
-                        *icon,
+                        icon,
                         *color,
                         title.clone(),
                         "Not implemented".into(),
@@ -1497,12 +1724,42 @@ impl Settings {
     fn about_body(&self) -> Div {
         let si = &self.sysinfo;
         card(vec![
-            value_row("icons/info.svg", secondary(), "Name".into(), si.computer_name.clone().into()),
-            value_row("icons/monitor.svg", secondary(), "Model".into(), si.model.clone().into()),
-            value_row("icons/settings.svg", secondary(), "Chip".into(), si.chip.clone().into()),
-            value_row("icons/database.svg", secondary(), "Memory".into(), si.memory.clone().into()),
-            value_row("icons/refresh-cw.svg", secondary(), "macOS".into(), si.os.clone().into()),
-            value_row("icons/info.svg", secondary(), "Serial Number".into(), si.serial.clone().into()),
+            value_row(
+                "icons/info.svg",
+                secondary(),
+                "Name".into(),
+                si.computer_name.clone().into(),
+            ),
+            value_row(
+                "icons/monitor.svg",
+                secondary(),
+                "Model".into(),
+                si.model.clone().into(),
+            ),
+            value_row(
+                "icons/settings.svg",
+                secondary(),
+                "Chip".into(),
+                si.chip.clone().into(),
+            ),
+            value_row(
+                "icons/database.svg",
+                secondary(),
+                "Memory".into(),
+                si.memory.clone().into(),
+            ),
+            value_row(
+                "icons/refresh-cw.svg",
+                secondary(),
+                "macOS".into(),
+                si.os.clone().into(),
+            ),
+            value_row(
+                "icons/info.svg",
+                secondary(),
+                "Serial Number".into(),
+                si.serial.clone().into(),
+            ),
         ])
     }
 }
@@ -1519,7 +1776,9 @@ impl Render for Settings {
             .track_focus(&self.focus)
             .key_context("SystemSettings")
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
-            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            )
             .bg(pane_bg())
             .text_color(label())
             .child(self.render_topbar(cx))
@@ -1538,13 +1797,20 @@ const SIDEBAR_W: f32 = 248.0;
 // ---- row / control builders ----------------------------------------------
 
 fn row_base() -> Div {
-    div().flex().items_center().gap_3().min_h(px(44.0)).px_3().py_2()
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .min_h(px(44.0))
+        .px_3()
+        .py_2()
 }
 
 fn text_block(title: SharedString, sub: Option<SharedString>) -> Div {
-    let mut b = div().v_flex().flex_1().child(
-        div().text_size(px(13.0)).text_color(label()).child(title),
-    );
+    let mut b = div()
+        .v_flex()
+        .flex_1()
+        .child(div().text_size(px(13.0)).text_color(label()).child(title));
     if let Some(s) = sub {
         b = b.child(div().text_size(px(11.0)).text_color(secondary()).child(s));
     }
@@ -1554,7 +1820,11 @@ fn text_block(title: SharedString, sub: Option<SharedString>) -> Div {
 /// A plain card-section label row (no control).
 fn label_row(title: &'static str, value: Option<SharedString>) -> Div {
     let mut r = row_base().child(
-        div().flex_1().text_size(px(13.0)).text_color(label()).child(title),
+        div()
+            .flex_1()
+            .text_size(px(13.0))
+            .text_color(label())
+            .child(title),
     );
     if let Some(v) = value {
         r = r.child(div().text_size(px(13.0)).text_color(secondary()).child(v));
@@ -1563,11 +1833,21 @@ fn label_row(title: &'static str, value: Option<SharedString>) -> Div {
 }
 
 /// A read-only row with a right-aligned value.
-fn value_row(icon: &'static str, color: Hsla, title: SharedString, value: SharedString) -> AnyElement {
+fn value_row(
+    icon: &'static str,
+    color: Hsla,
+    title: SharedString,
+    value: SharedString,
+) -> AnyElement {
     row_base()
         .child(tile(icon, color, 22.0))
         .child(text_block(title, None))
-        .child(div().text_size(px(13.0)).text_color(secondary()).child(value))
+        .child(
+            div()
+                .text_size(px(13.0))
+                .text_color(secondary())
+                .child(value),
+        )
         .into_any_element()
 }
 
@@ -1638,9 +1918,24 @@ fn switch_row(
 /// A slider row (state held in its own SliderState entity).
 fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedString) -> Div {
     row_base()
-        .child(div().w(px(110.0)).flex_none().text_size(px(13.0)).text_color(label()).child(title))
+        .child(
+            div()
+                .w(px(110.0))
+                .flex_none()
+                .text_size(px(13.0))
+                .text_color(label())
+                .child(title),
+        )
         .child(div().flex_1().child(Slider::new(state).w_full()))
-        .child(div().w(px(44.0)).flex_none().text_right().text_size(px(12.0)).text_color(secondary()).child(value))
+        .child(
+            div()
+                .w(px(44.0))
+                .flex_none()
+                .text_right()
+                .text_size(px(12.0))
+                .text_color(secondary())
+                .child(value),
+        )
 }
 
 /// A clickable navigation row that pushes a subpage onto the back stack.
@@ -1694,7 +1989,11 @@ fn segmented(
                 .cursor_pointer()
                 .text_size(px(12.0))
                 .when(is_sel, |el| el.bg(accent()).text_color(white()))
-                .when(!is_sel, |el| el.bg(hsl(0xe9e9ec)).text_color(label()).hover(|h| h.bg(hsl(0xdedee2))))
+                .when(!is_sel, |el| {
+                    el.bg(hsl(0xe9e9ec))
+                        .text_color(label())
+                        .hover(|h| h.bg(hsl(0xdedee2)))
+                })
                 .child(*opt)
                 .on_click(move |_, _, cx| {
                     v.update(cx, |s, cx| {
@@ -1732,7 +2031,11 @@ fn segmented_dynamic(
                 .cursor_pointer()
                 .text_size(px(12.0))
                 .when(is_sel, |el| el.bg(accent()).text_color(white()))
-                .when(!is_sel, |el| el.bg(hsl(0xe9e9ec)).text_color(label()).hover(|h| h.bg(hsl(0xdedee2))))
+                .when(!is_sel, |el| {
+                    el.bg(hsl(0xe9e9ec))
+                        .text_color(label())
+                        .hover(|h| h.bg(hsl(0xdedee2)))
+                })
                 .child(*opt)
                 .on_click(move |_, _, cx| {
                     v.update(cx, |s, cx| {
@@ -1853,7 +2156,11 @@ fn gather_bluetooth() -> Vec<BtDevice> {
                 || name == "Bluetooth Controller"
                 || name == "Controller";
             if !is_header {
-                cur = Some(BtDevice { name, connected, kind: String::new() });
+                cur = Some(BtDevice {
+                    name,
+                    connected,
+                    kind: String::new(),
+                });
             }
         } else if let Some(d) = cur.as_mut() {
             if let Some(rest) = t.strip_prefix("Minor Type:") {
@@ -1905,7 +2212,14 @@ fn gather_sysinfo() -> SysInfo {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "—".into());
 
-    SysInfo { computer_name, os, chip, memory, model, serial }
+    SysInfo {
+        computer_name,
+        os,
+        chip,
+        memory,
+        model,
+        serial,
+    }
 }
 
 /// Capitalize the first letter of a word ("charged" → "Charged").
@@ -1946,9 +2260,15 @@ fn gather_battery() -> Option<BatteryInfo> {
         .unwrap_or("—")
         .to_string();
     let status = capitalize(parts.get(1).map(|s| s.trim()).unwrap_or("—"));
-    let time_remaining = parts.get(2).map(|s| s.replace("remaining", "").trim().to_string()).filter(|s| {
-        !s.is_empty() && !s.starts_with("0:00") && !s.starts_with("(no estimate)") && !s.starts_with("not")
-    });
+    let time_remaining = parts
+        .get(2)
+        .map(|s| s.replace("remaining", "").trim().to_string())
+        .filter(|s| {
+            !s.is_empty()
+                && !s.starts_with("0:00")
+                && !s.starts_with("(no estimate)")
+                && !s.starts_with("not")
+        });
 
     let io = cmd("ioreg", &["-rn", "AppleSmartBattery"]).unwrap_or_default();
     let cycle_count = ioreg_field(&io, "\"CycleCount\"");
@@ -1964,7 +2284,16 @@ fn gather_battery() -> Option<BatteryInfo> {
     }
     .to_string();
 
-    Some(BatteryInfo { present, percent, status, source, time_remaining, cycle_count, health_percent, condition })
+    Some(BatteryInfo {
+        present,
+        percent,
+        status,
+        source,
+        time_remaining,
+        cycle_count,
+        health_percent,
+        condition,
+    })
 }
 
 /// Read audio output/input devices via `system_profiler SPAudioDataType`.
@@ -1979,10 +2308,16 @@ fn gather_audio() -> AudioInfo {
     let mut flush = |cur: &mut Option<String>, ho: bool, hi: bool, dofl: bool, difl: bool| {
         if let Some(name) = cur.take() {
             if ho {
-                outputs.push(AudioDevice { name: name.clone(), is_default: dofl });
+                outputs.push(AudioDevice {
+                    name: name.clone(),
+                    is_default: dofl,
+                });
             }
             if hi {
-                inputs.push(AudioDevice { name, is_default: difl });
+                inputs.push(AudioDevice {
+                    name,
+                    is_default: difl,
+                });
             }
         }
     };
@@ -2029,7 +2364,13 @@ fn gather_storage() -> StorageInfo {
     let line = cmd("df", &["-k", "/"]).and_then(|o| o.lines().nth(1).map(|s| s.to_string()));
     let cols: Vec<u64> = line
         .as_deref()
-        .map(|l| l.split_whitespace().skip(1).take(3).filter_map(|c| c.parse().ok()).collect())
+        .map(|l| {
+            l.split_whitespace()
+                .skip(1)
+                .take(3)
+                .filter_map(|c| c.parse().ok())
+                .collect()
+        })
         .unwrap_or_default();
     let total = cols.first().copied().unwrap_or(0) * 1024;
     let avail = cols.get(2).copied().unwrap_or(0) * 1024;
@@ -2038,12 +2379,18 @@ fn gather_storage() -> StorageInfo {
     let volume = cmd("diskutil", &["info", "/"])
         .and_then(|o| {
             o.lines().find_map(|l| {
-                l.split_once("Volume Name:").map(|(_, v)| v.trim().to_string())
+                l.split_once("Volume Name:")
+                    .map(|(_, v)| v.trim().to_string())
             })
         })
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Macintosh HD".into());
-    StorageInfo { volume, total, used, avail }
+    StorageInfo {
+        volume,
+        total,
+        used,
+        avail,
+    }
 }
 
 /// Read the primary network connection (interface, IP, router, DNS, MAC).
@@ -2064,12 +2411,17 @@ fn gather_network() -> NetworkInfo {
     let mut mac = None;
     if !interface.is_empty() {
         for block in ports.split("Hardware Port:") {
-            if block.lines().any(|l| l.trim() == format!("Device: {interface}")) {
+            if block
+                .lines()
+                .any(|l| l.trim() == format!("Device: {interface}"))
+            {
                 if let Some(name) = block.lines().next() {
                     service = name.trim().to_string();
                 }
                 mac = block.lines().find_map(|l| {
-                    l.trim().strip_prefix("Ethernet Address:").map(|s| s.trim().to_string())
+                    l.trim()
+                        .strip_prefix("Ethernet Address:")
+                        .map(|s| s.trim().to_string())
                 });
             }
         }
@@ -2153,15 +2505,14 @@ fn categories() -> Vec<Vec<Category>> {
         color,
         label: label.to_string().into(),
     };
-    let cat = |name: &str, icon: &'static str, color: Hsla, desc: &str, cards: Vec<Vec<Row>>| {
-        Category {
+    let cat =
+        |name: &str, icon: &'static str, color: Hsla, desc: &str, cards: Vec<Vec<Row>>| Category {
             name: name.to_string().into(),
             icon,
             color,
             desc: desc.to_string().into(),
             cards,
-        }
-    };
+        };
 
     vec![
         vec![

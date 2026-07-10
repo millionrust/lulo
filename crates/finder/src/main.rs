@@ -35,8 +35,22 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 actions!(
     finder,
     [
-        NewFolder, RenameItem, Duplicate, MoveToTrash, DeleteItem, CopyItems, CutItems, PasteItems,
-        SelectAll, GoUp, ToggleHidden, OpenItems, QuickLook, GetInfo, NewTab, CloseTab,
+        NewFolder,
+        RenameItem,
+        Duplicate,
+        MoveToTrash,
+        DeleteItem,
+        CopyItems,
+        CutItems,
+        PasteItems,
+        SelectAll,
+        GoUp,
+        ToggleHidden,
+        OpenItems,
+        QuickLook,
+        GetInfo,
+        NewTab,
+        CloseTab,
     ]
 );
 
@@ -65,7 +79,11 @@ impl Render for DragPreview {
             .bg(hsl(0x0a84ff))
             .text_color(gpui::white())
             .text_size(px(12.0))
-            .child(if n == 1 { "1 item".to_string() } else { format!("{n} items") })
+            .child(if n == 1 {
+                "1 item".to_string()
+            } else {
+                format!("{n} items")
+            })
     }
 }
 
@@ -97,21 +115,50 @@ impl AssetSource for CombinedAssets {
 fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }
-fn list_bg() -> Hsla { hsl(0xffffff) }
-fn toolbar_bg() -> Hsla { hsl(0xf6f6f6) }
-fn sidebar_bg() -> Hsla { hsl(0xe9e9ed) }
-fn alt_row() -> Hsla { hsl(0xf4f5f5) }
-fn sel() -> Hsla { hsl(0x0063e1) }
-fn accent() -> Hsla { hsl(0x007aff) }
-fn sep() -> Hsla { hsl(0xe5e5e5) }
-fn label() -> Hsla { hsl(0x272727) }
-fn secondary() -> Hsla { hsl(0x808080) }
-fn tertiary() -> Hsla { hsl(0xbfbfbf) }
-fn drive_gray() -> Hsla { hsl(0x808080) }
-fn white() -> Hsla { gpui::white() }
+fn list_bg() -> Hsla {
+    hsl(0xffffff)
+}
+fn toolbar_bg() -> Hsla {
+    hsl(0xf6f6f6)
+}
+fn sidebar_bg() -> Hsla {
+    hsl(0xe9e9ed)
+}
+fn alt_row() -> Hsla {
+    hsl(0xf4f5f5)
+}
+fn sel() -> Hsla {
+    hsl(0x0063e1)
+}
+fn accent() -> Hsla {
+    hsl(0x007aff)
+}
+fn sep() -> Hsla {
+    hsl(0xe5e5e5)
+}
+fn label() -> Hsla {
+    hsl(0x272727)
+}
+fn secondary() -> Hsla {
+    hsl(0x808080)
+}
+fn tertiary() -> Hsla {
+    hsl(0xbfbfbf)
+}
+fn drive_gray() -> Hsla {
+    hsl(0x808080)
+}
+fn white() -> Hsla {
+    gpui::white()
+}
 
 fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
-    svg().path(path).w(px(size)).h(px(size)).text_color(color).flex_none()
+    svg()
+        .path(path)
+        .w(px(size))
+        .h(px(size))
+        .text_color(color)
+        .flex_none()
 }
 
 const SIDEBAR_W: f32 = 190.0;
@@ -213,18 +260,31 @@ impl FinderView {
             .unwrap_or_else(|| "Macintosh HD".to_string());
         let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
 
-        let p = |name: &str, path: PathBuf, icon: &'static str, tint: Hsla, kind: PlaceKind| Place {
-            name: name.to_string().into(),
-            path,
-            icon,
-            tint,
-            kind,
-        };
+        let p =
+            |name: &str, path: PathBuf, icon: &'static str, tint: Hsla, kind: PlaceKind| Place {
+                name: name.to_string().into(),
+                path,
+                icon,
+                tint,
+                kind,
+            };
 
         // Real mounted volumes.
         let mut locations = vec![
-            p(&host, home.clone(), "icons/house.svg", drive_gray(), PlaceKind::Item),
-            p("Macintosh HD", "/".into(), "icons/hard-drive.svg", drive_gray(), PlaceKind::Item),
+            p(
+                &host,
+                home.clone(),
+                "icons/house.svg",
+                drive_gray(),
+                PlaceKind::Item,
+            ),
+            p(
+                "Macintosh HD",
+                "/".into(),
+                "icons/hard-drive.svg",
+                drive_gray(),
+                PlaceKind::Item,
+            ),
         ];
         if let Ok(rd) = std::fs::read_dir("/Volumes") {
             for e in rd.flatten() {
@@ -233,7 +293,13 @@ impl FinderView {
                 if name == "Macintosh HD" || name.starts_with('.') {
                     continue;
                 }
-                locations.push(p(&name, vp, "icons/hard-drive.svg", drive_gray(), PlaceKind::Volume));
+                locations.push(p(
+                    &name,
+                    vp,
+                    "icons/hard-drive.svg",
+                    drive_gray(),
+                    PlaceKind::Volume,
+                ));
             }
         }
 
@@ -241,11 +307,41 @@ impl FinderView {
         let mut sections = vec![Section {
             title: "Favorites".into(),
             places: vec![
-                p("Recents", PathBuf::new(), "icons/clock.svg", accent(), PlaceKind::Recents),
-                p("Applications", "/Applications".into(), "icons/layout-grid.svg", accent(), PlaceKind::Item),
-                p("Desktop", home.join("Desktop"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
-                p("Documents", home.join("Documents"), "icons/folder-fill.svg", accent(), PlaceKind::Item),
-                p("Downloads", home.join("Downloads"), "icons/download.svg", accent(), PlaceKind::Item),
+                p(
+                    "Recents",
+                    PathBuf::new(),
+                    "icons/clock.svg",
+                    accent(),
+                    PlaceKind::Recents,
+                ),
+                p(
+                    "Applications",
+                    "/Applications".into(),
+                    "icons/layout-grid.svg",
+                    accent(),
+                    PlaceKind::Item,
+                ),
+                p(
+                    "Desktop",
+                    home.join("Desktop"),
+                    "icons/folder-fill.svg",
+                    accent(),
+                    PlaceKind::Item,
+                ),
+                p(
+                    "Documents",
+                    home.join("Documents"),
+                    "icons/folder-fill.svg",
+                    accent(),
+                    PlaceKind::Item,
+                ),
+                p(
+                    "Downloads",
+                    home.join("Downloads"),
+                    "icons/download.svg",
+                    accent(),
+                    PlaceKind::Item,
+                ),
             ],
         }];
         // Only show iCloud Drive when the real CloudDocs folder exists.
@@ -625,7 +721,10 @@ impl FinderView {
 
     fn duplicate(&mut self, cx: &mut Context<Self>) {
         for src in self.selected_paths() {
-            let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let stem = src
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
             let ext = src.extension().map(|e| e.to_string_lossy().into_owned());
             let copy_name = match &ext {
                 Some(e) => format!("{stem} copy.{e}"),
@@ -693,7 +792,11 @@ impl FinderView {
             paths.retain(|p| p.exists());
             if paths.is_empty() {
                 if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
-                    paths = text.lines().map(PathBuf::from).filter(|p| p.exists()).collect();
+                    paths = text
+                        .lines()
+                        .map(PathBuf::from)
+                        .filter(|p| p.exists())
+                        .collect();
                 }
             }
             if !paths.is_empty() {
@@ -705,14 +808,12 @@ impl FinderView {
             let name = src.file_name().map(|n| n.to_owned()).unwrap_or_default();
             let dst = unique_path(self.cwd.join(name));
             if self.clip_cut {
-                if std::fs::rename(&src, &dst).is_err() {
-                    if copy_item(&src, &dst).is_ok() {
-                        let _ = if src.is_dir() {
-                            std::fs::remove_dir_all(&src)
-                        } else {
-                            std::fs::remove_file(&src)
-                        };
-                    }
+                if std::fs::rename(&src, &dst).is_err() && copy_item(&src, &dst).is_ok() {
+                    let _ = if src.is_dir() {
+                        std::fs::remove_dir_all(&src)
+                    } else {
+                        std::fs::remove_file(&src)
+                    };
                 }
             } else {
                 let _ = copy_item(&src, &dst);
@@ -806,8 +907,14 @@ impl FinderView {
                 .items_center()
                 .justify_center()
                 .rounded(px(5.0))
-                .when(enabled, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0xe2e2e4))))
-                .child(icon(glyph, 17.0, if enabled { hsl(0x3a3a3c) } else { tertiary() }))
+                .when(enabled, |el: Stateful<Div>| {
+                    el.hover(|h| h.bg(hsl(0xe2e2e4)))
+                })
+                .child(icon(
+                    glyph,
+                    17.0,
+                    if enabled { hsl(0x3a3a3c) } else { tertiary() },
+                ))
         };
         let cur = self.view;
         let seg = |id: &'static str, glyph: &'static str, mode: ViewMode| {
@@ -821,7 +928,11 @@ impl FinderView {
                 .justify_center()
                 .rounded(px(5.0))
                 .when(active, |el: Stateful<Div>| el.bg(white()))
-                .child(icon(glyph, 15.0, if active { label() } else { secondary() }))
+                .child(icon(
+                    glyph,
+                    15.0,
+                    if active { label() } else { secondary() },
+                ))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.view = mode;
                     cx.notify();
@@ -859,7 +970,11 @@ impl FinderView {
             .rounded(px(7.0))
             .bg(hsl(0xededef))
             .child(icon("icons/search.svg", 14.0, tertiary()))
-            .child(div().flex_1().child(Input::new(&self.query).appearance(false)));
+            .child(
+                div()
+                    .flex_1()
+                    .child(Input::new(&self.query).appearance(false)),
+            );
 
         div()
             .id("toolbar")
@@ -874,8 +989,14 @@ impl FinderView {
             .bg(toolbar_bg())
             .border_b_1()
             .border_color(sep())
-            .on_mouse_down(MouseButton::Left, cx.listener(|t, _, _, _| t.dragging = true))
-            .on_mouse_up(MouseButton::Left, cx.listener(|t, _, _, _| t.dragging = false))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|t, _, _, _| t.dragging = true),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|t, _, _, _| t.dragging = false),
+            )
             .on_mouse_move(cx.listener(|t, _, window, _| {
                 if t.dragging {
                     t.dragging = false;
@@ -888,12 +1009,14 @@ impl FinderView {
                     .flex()
                     .items_center()
                     .gap_0p5()
-                    .child(nav("back", "icons/chevron-left.svg", !self.back.is_empty()).on_click(
-                        cx.listener(|this, _, _, cx| this.go_back(cx)),
-                    ))
-                    .child(nav("fwd", "icons/chevron-right.svg", !self.fwd.is_empty()).on_click(
-                        cx.listener(|this, _, _, cx| this.go_forward(cx)),
-                    )),
+                    .child(
+                        nav("back", "icons/chevron-left.svg", !self.back.is_empty())
+                            .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
+                    )
+                    .child(
+                        nav("fwd", "icons/chevron-right.svg", !self.fwd.is_empty())
+                            .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
+                    ),
             )
             .child(
                 div()
@@ -948,7 +1071,13 @@ impl FinderView {
         let key = format!("{}-{}", p.name, p.path.display());
 
         let leading: gpui::AnyElement = if is_tag {
-            div().w(px(12.0)).h(px(12.0)).flex_none().rounded_full().bg(p.tint).into_any_element()
+            div()
+                .w(px(12.0))
+                .h(px(12.0))
+                .flex_none()
+                .rounded_full()
+                .bg(p.tint)
+                .into_any_element()
         } else {
             icon(p.icon, 17.0, p.tint).into_any_element()
         };
@@ -964,7 +1093,14 @@ impl FinderView {
             .gap_2()
             .min_w(px(0.0))
             .child(leading)
-            .child(div().flex_1().text_size(px(13.0)).text_color(label()).truncate().child(p.name.clone()))
+            .child(
+                div()
+                    .flex_1()
+                    .text_size(px(13.0))
+                    .text_color(label())
+                    .truncate()
+                    .child(p.name.clone()),
+            )
             .on_click(cx.listener(move |this, _, _, cx| match kind {
                 PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
                 PlaceKind::Recents => this.recents_click(cx),
@@ -980,7 +1116,9 @@ impl FinderView {
             .px_2()
             .rounded(px(6.0))
             .when(selected, |el: Stateful<Div>| el.bg(hsl(0xd5d5da)))
-            .when(!selected && !is_tag, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x00000008))))
+            .when(!selected && !is_tag, |el: Stateful<Div>| {
+                el.hover(|h| h.bg(hsl(0x00000008)))
+            })
             .child(main);
 
         if p.kind == PlaceKind::Volume {
@@ -1070,7 +1208,11 @@ impl FinderView {
         let sort_caret = |key: SortKey| -> Option<Svg> {
             if self.sort_key == key {
                 Some(icon(
-                    if self.sort_asc { "icons/chevron-up.svg" } else { "icons/chevron-down.svg" },
+                    if self.sort_asc {
+                        "icons/chevron-up.svg"
+                    } else {
+                        "icons/chevron-down.svg"
+                    },
                     11.0,
                     tertiary(),
                 ))
@@ -1118,7 +1260,11 @@ impl FinderView {
             let selected = self.selected.contains(&ix);
             let primary = if selected { white() } else { label() };
             let sub = if selected { white() } else { secondary() };
-            let glyph = if e.is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
+            let glyph = if e.is_dir {
+                "icons/folder-fill.svg"
+            } else {
+                "icons/file-fill.svg"
+            };
             let icon_color = if selected {
                 white()
             } else if e.is_dir {
@@ -1159,25 +1305,37 @@ impl FinderView {
                     .px_2()
                     .text_size(px(13.0))
                     .when(selected, |el: Stateful<Div>| el.bg(sel()))
-                    .when(!selected && ix % 2 == 1, |el: Stateful<Div>| el.bg(alt_row()))
-                    .when(!selected, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x0000000a))))
+                    .when(!selected && ix % 2 == 1, |el: Stateful<Div>| {
+                        el.bg(alt_row())
+                    })
+                    .when(!selected, |el: Stateful<Div>| {
+                        el.hover(|h| h.bg(hsl(0x0000000a)))
+                    })
                     .child(
                         div()
                             .flex_1()
                             .flex()
                             .items_center()
                             .min_w(px(0.0))
-                            .child(div().w(px(16.0)).flex().justify_center().when(e.is_dir, |el: Div| {
-                                el.child(icon(
-                                    "icons/chevron-right.svg",
-                                    11.0,
-                                    if selected { white() } else { tertiary() },
-                                ))
-                            }))
+                            .child(div().w(px(16.0)).flex().justify_center().when(
+                                e.is_dir,
+                                |el: Div| {
+                                    el.child(icon(
+                                        "icons/chevron-right.svg",
+                                        11.0,
+                                        if selected { white() } else { tertiary() },
+                                    ))
+                                },
+                            ))
                             .child(icon(glyph, 16.0, icon_color))
                             .child(name_cell),
                     )
-                    .child(div().w(px(DATE_W)).text_color(sub).child(e.modified.clone()))
+                    .child(
+                        div()
+                            .w(px(DATE_W))
+                            .text_color(sub)
+                            .child(e.modified.clone()),
+                    )
                     .child(
                         div()
                             .w(px(SIZE_W))
@@ -1186,7 +1344,14 @@ impl FinderView {
                             .text_color(sub)
                             .child(e.size.clone()),
                     )
-                    .child(div().w(px(KIND_W)).pl_3().text_color(sub).truncate().child(e.kind.clone()))
+                    .child(
+                        div()
+                            .w(px(KIND_W))
+                            .pl_3()
+                            .text_color(sub)
+                            .truncate()
+                            .child(e.kind.clone()),
+                    )
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
@@ -1233,7 +1398,11 @@ impl FinderView {
                     continue;
                 }
                 let selected = self.selected.contains(&ix);
-                let glyph = if e.is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
+                let glyph = if e.is_dir {
+                    "icons/folder-fill.svg"
+                } else {
+                    "icons/file-fill.svg"
+                };
                 let icon_color = if e.is_dir { accent() } else { secondary() };
                 let visual: gpui::AnyElement = match self.thumbs.get(&e.path) {
                     Some(t) => img(t.clone())
@@ -1330,7 +1499,9 @@ impl FinderView {
             .track_focus(&self.focus)
             .key_context("Finder")
             .on_action(cx.listener(|this, _: &NewFolder, _, cx| this.new_folder(cx)))
-            .on_action(cx.listener(|this, _: &RenameItem, window, cx| this.rename_start(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &RenameItem, window, cx| this.rename_start(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
             .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.move_to_trash(cx)))
             .on_action(cx.listener(|this, _: &DeleteItem, _, cx| this.delete_immediately(cx)))
@@ -1356,7 +1527,11 @@ impl FinderView {
                         }
                     }
                     "down" => {
-                        let next = this.anchor.map(|a| a + 1).unwrap_or(0).min(this.entries.len().saturating_sub(1));
+                        let next = this
+                            .anchor
+                            .map(|a| a + 1)
+                            .unwrap_or(0)
+                            .min(this.entries.len().saturating_sub(1));
                         this.select_single(next);
                         cx.notify();
                     }
@@ -1410,7 +1585,9 @@ impl FinderView {
                     .px_2()
                     .rounded(px(5.0))
                     .when(active, |el: Stateful<Div>| el.bg(white()))
-                    .when(!active, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x00000008))))
+                    .when(!active, |el: Stateful<Div>| {
+                        el.hover(|h| h.bg(hsl(0x00000008)))
+                    })
                     .child(
                         div()
                             .id(SharedString::from(format!("tabname-{i}")))
@@ -1478,7 +1655,11 @@ impl FinderView {
                 let is_sel = selected_child.as_ref() == Some(&e.path);
                 let ep = e.path.clone();
                 let is_dir = e.is_dir;
-                let glyph = if is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
+                let glyph = if is_dir {
+                    "icons/folder-fill.svg"
+                } else {
+                    "icons/file-fill.svg"
+                };
                 let icol = if is_sel {
                     white()
                 } else if is_dir {
@@ -1497,7 +1678,9 @@ impl FinderView {
                         .px_2()
                         .rounded(px(5.0))
                         .when(is_sel, |el: Stateful<Div>| el.bg(sel()))
-                        .when(!is_sel, |el: Stateful<Div>| el.hover(|h| h.bg(hsl(0x0000000a))))
+                        .when(!is_sel, |el: Stateful<Div>| {
+                            el.hover(|h| h.bg(hsl(0x0000000a)))
+                        })
                         .child(icon(glyph, 15.0, icol))
                         .child(
                             div()
@@ -1557,7 +1740,8 @@ impl FinderView {
             .text_color(secondary())
             .child(count)
             .when(!free.is_empty(), |el| {
-                el.child(div().text_color(tertiary()).child("•")).child(free)
+                el.child(div().text_color(tertiary()).child("•"))
+                    .child(free)
             })
     }
 
@@ -1615,7 +1799,9 @@ impl FinderView {
             if src == &dir || src.parent() == Some(dir.as_path()) {
                 continue;
             }
-            let Some(name) = src.file_name() else { continue };
+            let Some(name) = src.file_name() else {
+                continue;
+            };
             let dst = unique_path(dir.join(name));
             if std::fs::rename(src, &dst).is_err() && copy_item(src, &dst).is_ok() {
                 if src.is_dir() {
@@ -1771,7 +1957,11 @@ impl FinderView {
         let Some(e) = self.entries.get(ix) else {
             return div();
         };
-        let glyph = if e.is_dir { "icons/folder-fill.svg" } else { "icons/file-fill.svg" };
+        let glyph = if e.is_dir {
+            "icons/folder-fill.svg"
+        } else {
+            "icons/file-fill.svg"
+        };
         let glyph_color = if e.is_dir { accent() } else { secondary() };
 
         let mut card = div()
@@ -1783,23 +1973,18 @@ impl FinderView {
             .shadow_lg()
             .child(
                 // header bar with close
-                div()
-                    .h(px(28.0))
-                    .flex()
-                    .items_center()
-                    .px_2()
-                    .child(
-                        div()
-                            .id("info-close")
-                            .w(px(14.0))
-                            .h(px(14.0))
-                            .rounded_full()
-                            .bg(hsl(0xff5f57))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.info = None;
-                                cx.notify();
-                            })),
-                    ),
+                div().h(px(28.0)).flex().items_center().px_2().child(
+                    div()
+                        .id("info-close")
+                        .w(px(14.0))
+                        .h(px(14.0))
+                        .rounded_full()
+                        .bg(hsl(0xff5f57))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.info = None;
+                            cx.notify();
+                        })),
+                ),
             )
             .child(
                 // title block
@@ -1871,7 +2056,9 @@ impl Render for FinderView {
                 this.menu_at = None;
                 cx.notify();
             }))
-            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            )
             .child(self.render_toolbar(cx))
             .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
@@ -1896,7 +2083,10 @@ fn unique_path(path: PathBuf) -> PathBuf {
         return path;
     }
     let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let ext = path.extension().map(|e| e.to_string_lossy().into_owned());
     for n in 2..10_000 {
         let name = match &ext {
@@ -1944,9 +2134,20 @@ fn entry_for(path: &Path) -> Option<Entry> {
     let name = path.file_name()?.to_string_lossy().into_owned();
     let md = std::fs::symlink_metadata(path).ok();
     let is_dir = md.as_ref().map(|m| m.is_dir()).unwrap_or(false);
-    let size_bytes = if is_dir { 0 } else { md.as_ref().map(|m| m.len()).unwrap_or(0) };
-    let mtime = md.as_ref().and_then(|m| m.modified().ok()).unwrap_or(SystemTime::UNIX_EPOCH);
-    let size = if is_dir { "--".to_string() } else { human_size(size_bytes) };
+    let size_bytes = if is_dir {
+        0
+    } else {
+        md.as_ref().map(|m| m.len()).unwrap_or(0)
+    };
+    let mtime = md
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let size = if is_dir {
+        "--".to_string()
+    } else {
+        human_size(size_bytes)
+    };
     let kind = kind_of(path, is_dir);
     Some(Entry {
         name: name.into(),
@@ -1984,13 +2185,21 @@ fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
             SortKey::Size => a.size_bytes.cmp(&b.size_bytes),
             SortKey::Kind => a.kind.to_lowercase().cmp(&b.kind.to_lowercase()),
         };
-        if asc { o } else { o.reverse() }
+        if asc {
+            o
+        } else {
+            o.reverse()
+        }
     });
 }
 
 fn is_image(path: &Path) -> bool {
     matches!(
-        path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase().as_str(),
+        path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase()
+            .as_str(),
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "bmp" | "tiff" | "tif"
     )
 }
@@ -2010,7 +2219,16 @@ fn make_thumb(src: &Path, cache: &Path) -> Option<PathBuf> {
         return Some(out);
     }
     let ok = Command::new("sips")
-        .args(["-s", "format", "png", "-Z", "96", src.to_str()?, "--out", out.to_str()?])
+        .args([
+            "-s",
+            "format",
+            "png",
+            "-Z",
+            "96",
+            src.to_str()?,
+            "--out",
+            out.to_str()?,
+        ])
         .output()
         .ok()
         .map(|o| o.status.success())
@@ -2041,7 +2259,10 @@ fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
         v.push(("Permissions", perm_string(md.permissions().mode())));
     }
     // Owner / group (names) via stat.
-    if let Ok(out) = Command::new("stat").args(["-f", "%Su\n%Sg", &e.path.to_string_lossy()]).output() {
+    if let Ok(out) = Command::new("stat")
+        .args(["-f", "%Su\n%Sg", &e.path.to_string_lossy()])
+        .output()
+    {
         let s = String::from_utf8_lossy(&out.stdout);
         let mut lines = s.lines();
         if let Some(o) = lines.next().filter(|l| !l.is_empty()) {
@@ -2096,7 +2317,11 @@ fn kind_of(path: &Path, is_dir: bool) -> String {
     if is_dir {
         return "Folder".to_string();
     }
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     match ext.as_str() {
         "rs" => "Rust Source".into(),
         "toml" => "TOML Document".into(),
@@ -2133,7 +2358,10 @@ fn date_label(t: SystemTime) -> String {
         }
     };
     let time = format!("{}:{:02} {}", h12, dt.minute(), ap);
-    let days = now.date_naive().signed_duration_since(dt.date_naive()).num_days();
+    let days = now
+        .date_naive()
+        .signed_duration_since(dt.date_naive())
+        .num_days();
     if days == 0 {
         format!("Today at {time}")
     } else if days == 1 {

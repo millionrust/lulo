@@ -11,15 +11,15 @@
 //! lists, checklists) and a live preview that renders them with macOS styling.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    actions, div, prelude::FluentBuilder as _, px, AppContext as _, AnyElement, Context, Div,
+    actions, div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Div,
     Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, KeyBinding,
     KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
-    StatefulInteractiveElement as _, Stateful, Styled, Window,
+    Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants as _},
@@ -33,7 +33,21 @@ use rmac_ui::mac;
 const FOLDERS_W: f32 = 200.0;
 const LIST_W: f32 = 292.0;
 
-actions!(notes, [NewNote, NewFolder, DeleteNote, TogglePreview, RenameFolder, DeleteFolder, TogglePin, SortByEdited, SortByCreated, SortByTitle]);
+actions!(
+    notes,
+    [
+        NewNote,
+        NewFolder,
+        DeleteNote,
+        TogglePreview,
+        RenameFolder,
+        DeleteFolder,
+        TogglePin,
+        SortByEdited,
+        SortByCreated,
+        SortByTitle
+    ]
+);
 
 /// The order the note list is sorted in (matches macOS Notes' View ▸ Sort By).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -175,18 +189,16 @@ impl NotesView {
             view.select(0, window, cx);
         }
 
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(1500))
-                    .await;
-                let Some(this) = this.upgrade() else { break };
-                if cx
-                    .update_entity(&this, |view: &mut NotesView, cx| view.save_current(cx))
-                    .is_err()
-                {
-                    break;
-                }
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            cx.background_executor()
+                .timer(Duration::from_millis(1500))
+                .await;
+            let Some(this) = this.upgrade() else { break };
+            if cx
+                .update_entity(&this, |view: &mut NotesView, cx| view.save_current(cx))
+                .is_err()
+            {
+                break;
             }
         })
         .detach();
@@ -207,7 +219,10 @@ impl NotesView {
     /// Rescan folders and notes from disk, preserving the open note by path.
     /// Pin or unpin the selected note (sorts it to the top), persisting the set.
     fn toggle_pin(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.selected.and_then(|i| self.notes.get(i)).map(|n| n.path.clone())
+        let Some(path) = self
+            .selected
+            .and_then(|i| self.notes.get(i))
+            .map(|n| n.path.clone())
         else {
             return;
         };
@@ -243,8 +258,9 @@ impl NotesView {
         match self.sort_by {
             SortBy::Edited => notes.sort_by(|a, b| b.mtime.cmp(&a.mtime)),
             SortBy::Created => notes.sort_by(|a, b| b.ctime.cmp(&a.ctime)),
-            SortBy::Title => notes
-                .sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+            SortBy::Title => {
+                notes.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            }
         }
         self.pinned.retain(|p| p.exists());
         notes.sort_by_key(|n| !self.pinned.contains(&n.path));
@@ -321,7 +337,9 @@ impl NotesView {
 
     fn select(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.save_current(cx);
-        let Some(note) = self.notes.get(ix) else { return };
+        let Some(note) = self.notes.get(ix) else {
+            return;
+        };
         let text = std::fs::read_to_string(&note.path).unwrap_or_default();
         self.load_doc(&text, window, cx);
         self.selected = Some(ix);
@@ -420,7 +438,10 @@ impl NotesView {
             return;
         };
         let new_name = input.read(cx).value().trim().to_string();
-        let mut preserve = self.selected.and_then(|i| self.notes.get(i)).map(|n| n.path.clone());
+        let mut preserve = self
+            .selected
+            .and_then(|i| self.notes.get(i))
+            .map(|n| n.path.clone());
         if !new_name.is_empty() && new_name != old {
             let src = self.dir.join(&old);
             let dst = self.dir.join(&new_name);
@@ -490,7 +511,9 @@ impl NotesView {
         });
         let dir = self.dir.clone();
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(paths))) = rx.await else { return };
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
             let Some(src) = paths.into_iter().next() else {
                 return;
             };
@@ -583,9 +606,7 @@ impl NotesView {
                             .ghost()
                             .with_size(Size::Medium)
                             .tooltip("New Note")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.new_note(window, cx)),
-                            ),
+                            .on_click(cx.listener(|this, _, window, cx| this.new_note(window, cx))),
                     ),
             )
             .child(
@@ -601,9 +622,9 @@ impl NotesView {
                             .ghost()
                             .with_size(Size::Medium)
                             .tooltip("Delete Note")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.delete_current(window, cx)
-                            })),
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.delete_current(window, cx)),
+                            ),
                     ),
             );
         rmac_ui::toolbar(row)
@@ -622,8 +643,12 @@ impl NotesView {
             .px_2()
             .py_1p5()
             .rounded(px(6.0))
-            .when(all_selected, |el: Stateful<Div>| el.bg(mac::sidebar_selection()))
-            .when(!all_selected, |el: Stateful<Div>| el.hover(|h| h.bg(mac::hover())))
+            .when(all_selected, |el: Stateful<Div>| {
+                el.bg(mac::sidebar_selection())
+            })
+            .when(!all_selected, |el: Stateful<Div>| {
+                el.hover(|h| h.bg(mac::hover()))
+            })
             .child(
                 Icon::new(IconName::Folder)
                     .text_color(mac::notes_accent())
@@ -642,9 +667,9 @@ impl NotesView {
                     .text_color(mac::text_tertiary())
                     .child(all_count.to_string()),
             )
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.select_folder(FolderSel::All, window, cx)
-            }));
+            .on_click(
+                cx.listener(|this, _, window, cx| this.select_folder(FolderSel::All, window, cx)),
+            );
 
         let mut col = div()
             .w(px(FOLDERS_W))
@@ -725,8 +750,12 @@ impl NotesView {
                 .px_2()
                 .py_1p5()
                 .rounded(px(6.0))
-                .when(selected, |el: Stateful<Div>| el.bg(mac::sidebar_selection()))
-                .when(!selected, |el: Stateful<Div>| el.hover(|h| h.bg(mac::hover())))
+                .when(selected, |el: Stateful<Div>| {
+                    el.bg(mac::sidebar_selection())
+                })
+                .when(!selected, |el: Stateful<Div>| {
+                    el.hover(|h| h.bg(mac::hover()))
+                })
                 .child(
                     Icon::new(IconName::Folder)
                         .text_color(mac::notes_accent())
@@ -781,7 +810,9 @@ impl NotesView {
             .map(|(ix, _)| ix)
             .collect();
 
-        let any_pinned = visible.iter().any(|&ix| self.pinned.contains(&self.notes[ix].path));
+        let any_pinned = visible
+            .iter()
+            .any(|&ix| self.pinned.contains(&self.notes[ix].path));
         let mut header_pinned = false;
         let mut header_notes = false;
 
@@ -872,9 +903,7 @@ impl NotesView {
                                 )
                             }),
                     )
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.select(ix, window, cx)),
-                    )
+                    .on_click(cx.listener(move |this, _, window, cx| this.select(ix, window, cx)))
                     // Right-click selects this note so the menu acts on it.
                     .on_mouse_down(
                         MouseButton::Right,
@@ -887,7 +916,10 @@ impl NotesView {
                     .into_any_element(),
             );
             if pos != last {
-                let next_selected = visible.get(pos + 1).map(|&n| self.selected == Some(n)).unwrap_or(false);
+                let next_selected = visible
+                    .get(pos + 1)
+                    .map(|&n| self.selected == Some(n))
+                    .unwrap_or(false);
                 if !selected && !next_selected {
                     items.push(
                         div()
@@ -917,7 +949,11 @@ impl NotesView {
                         .px_2()
                         .rounded(px(7.0))
                         .bg(gpui::rgb(0xededf0))
-                        .child(div().flex_1().child(Input::new(&self.search).appearance(false))),
+                        .child(
+                            div()
+                                .flex_1()
+                                .child(Input::new(&self.search).appearance(false)),
+                        ),
                 ),
             )
             .child(
@@ -949,21 +985,28 @@ impl NotesView {
             .text_color(mac::text_tertiary())
             .child(format!("{words} word{}", if words == 1 { "" } else { "s" }))
             .child(div().text_color(mac::text_tertiary()).child("•"))
-            .child(format!("{chars} character{}", if chars == 1 { "" } else { "s" }))
+            .child(format!(
+                "{chars} character{}",
+                if chars == 1 { "" } else { "s" }
+            ))
     }
 
     fn render_format_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let preview = self.preview;
-        let btn = |id: &'static str, label: &'static str, tip: &'static str, tok: &'static str, cx: &mut Context<Self>| {
+        let btn = |id: &'static str,
+                   label: &'static str,
+                   tip: &'static str,
+                   tok: &'static str,
+                   cx: &mut Context<Self>| {
             Button::new(id)
                 .label(label)
                 .ghost()
                 .with_size(Size::Small)
                 .disabled(preview)
                 .tooltip(tip)
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.insert_token(tok, window, cx)
-                }))
+                .on_click(
+                    cx.listener(move |this, _, window, cx| this.insert_token(tok, window, cx)),
+                )
         };
         div()
             .flex()
@@ -989,7 +1032,11 @@ impl NotesView {
             .child(div().flex_1())
             .child(
                 Button::new("preview")
-                    .icon(if preview { IconName::EyeOff } else { IconName::Eye })
+                    .icon(if preview {
+                        IconName::EyeOff
+                    } else {
+                        IconName::Eye
+                    })
                     .label(if preview { "Edit" } else { "Preview" })
                     .ghost()
                     .with_size(Size::Small)
@@ -1036,8 +1083,9 @@ impl NotesView {
                     .text_color(mac::text())
                     .child(rest.to_string())
                     .into_any_element()
-            } else if let Some(rest) =
-                trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* "))
+            } else if let Some(rest) = trimmed
+                .strip_prefix("- ")
+                .or_else(|| trimmed.strip_prefix("* "))
             {
                 div()
                     .flex()
@@ -1177,28 +1225,34 @@ impl Render for NotesView {
             .key_context("Notes")
             .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note(window, cx)))
             .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
-            .on_action(cx.listener(|this, _: &DeleteNote, window, cx| {
-                this.delete_current(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &DeleteNote, window, cx| this.delete_current(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &TogglePreview, _, cx| {
                 this.preview = !this.preview;
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
-            .on_action(cx.listener(|this, _: &SortByEdited, _, cx| this.set_sort(SortBy::Edited, cx)))
-            .on_action(cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortBy::Created, cx)))
+            .on_action(
+                cx.listener(|this, _: &SortByEdited, _, cx| this.set_sort(SortBy::Edited, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortBy::Created, cx)),
+            )
             .on_action(cx.listener(|this, _: &SortByTitle, _, cx| this.set_sort(SortBy::Title, cx)))
             .on_action(cx.listener(|this, _: &RenameFolder, window, cx| {
                 this.rename_folder_start(window, cx)
             }))
-            .on_action(cx.listener(|this, _: &DeleteFolder, window, cx| {
-                this.delete_folder(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &DeleteFolder, window, cx| this.delete_folder(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
                 this.menu = None;
                 cx.notify();
             }))
-            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()))
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            )
             .size_full()
             .v_flex()
             .bg(mac::window())
@@ -1273,7 +1327,12 @@ fn tag_pill(tag: String) -> impl IntoElement {
 }
 
 /// A checklist row in the preview, with a clickable box.
-fn checklist_row(line_ix: usize, checked: bool, text: &str, cx: &mut Context<NotesView>) -> AnyElement {
+fn checklist_row(
+    line_ix: usize,
+    checked: bool,
+    text: &str,
+    cx: &mut Context<NotesView>,
+) -> AnyElement {
     let box_el = div()
         .id(("check", line_ix))
         .w(px(18.0))
@@ -1284,10 +1343,18 @@ fn checklist_row(line_ix: usize, checked: bool, text: &str, cx: &mut Context<Not
         .justify_center()
         .rounded(px(4.0))
         .border_1()
-        .border_color(if checked { mac::notes_accent() } else { mac::text_tertiary() })
+        .border_color(if checked {
+            mac::notes_accent()
+        } else {
+            mac::text_tertiary()
+        })
         .when(checked, |el: Stateful<Div>| el.bg(mac::notes_accent()))
         .when(checked, |el: Stateful<Div>| {
-            el.child(Icon::new(IconName::Check).text_color(mac::text()).with_size(Size::XSmall))
+            el.child(
+                Icon::new(IconName::Check)
+                    .text_color(mac::text())
+                    .with_size(Size::XSmall),
+            )
         })
         .on_click(cx.listener(move |this, _, window, cx| this.toggle_check(line_ix, window, cx)));
 
@@ -1300,7 +1367,11 @@ fn checklist_row(line_ix: usize, checked: bool, text: &str, cx: &mut Context<Not
             div()
                 .flex_1()
                 .text_size(px(16.0))
-                .text_color(if checked { mac::text_secondary() } else { mac::text() })
+                .text_color(if checked {
+                    mac::text_secondary()
+                } else {
+                    mac::text()
+                })
                 .child(text.to_string()),
         )
         .into_any_element()
@@ -1361,7 +1432,11 @@ fn title_of(body: &str) -> String {
         .find(|l| !l.is_empty())
         .map(|l| {
             let t: String = l.trim_start_matches('#').trim().chars().take(60).collect();
-            if t.is_empty() { "New Note".to_string() } else { t }
+            if t.is_empty() {
+                "New Note".to_string()
+            } else {
+                t
+            }
         })
         .unwrap_or_else(|| "New Note".to_string())
 }
@@ -1381,7 +1456,10 @@ fn snippet_of(body: &str) -> String {
 fn date_label(t: SystemTime) -> String {
     let dt: DateTime<Local> = t.into();
     let now = Local::now();
-    let days = now.date_naive().signed_duration_since(dt.date_naive()).num_days();
+    let days = now
+        .date_naive()
+        .signed_duration_since(dt.date_naive())
+        .num_days();
     if days == 0 {
         let h = dt.hour();
         let (h12, ap) = if h == 0 {
@@ -1403,7 +1481,7 @@ fn date_label(t: SystemTime) -> String {
     }
 }
 
-fn scan_folders(dir: &PathBuf) -> Vec<String> {
+fn scan_folders(dir: &Path) -> Vec<String> {
     let mut v: Vec<String> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -1411,7 +1489,9 @@ fn scan_folders(dir: &PathBuf) -> Vec<String> {
         .filter_map(|e| {
             let p = e.path();
             if p.is_dir() {
-                p.file_name().and_then(|n| n.to_str()).map(|s| s.to_string())
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|s| s.to_string())
             } else {
                 None
             }
@@ -1421,8 +1501,10 @@ fn scan_folders(dir: &PathBuf) -> Vec<String> {
     v
 }
 
-fn collect_notes(dir: &PathBuf, folder: Option<String>, out: &mut Vec<(Note, SystemTime)>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+fn collect_notes(dir: &Path, folder: Option<String>, out: &mut Vec<(Note, SystemTime)>) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.flatten() {
         let path = e.path();
         if path.extension().and_then(|x| x.to_str()) != Some("md") {
@@ -1433,10 +1515,7 @@ fn collect_notes(dir: &PathBuf, folder: Option<String>, out: &mut Vec<(Note, Sys
             .as_ref()
             .and_then(|m| m.modified().ok())
             .unwrap_or(SystemTime::UNIX_EPOCH);
-        let ctime = md
-            .as_ref()
-            .and_then(|m| m.created().ok())
-            .unwrap_or(mtime);
+        let ctime = md.as_ref().and_then(|m| m.created().ok()).unwrap_or(mtime);
         let raw = std::fs::read_to_string(&path).unwrap_or_default();
         let (t, b, tags) = parse_doc(&raw);
         let meta = format!("{t}\n{b}");
@@ -1470,29 +1549,38 @@ fn list_section_header(title: &'static str) -> AnyElement {
 }
 
 /// Load the set of pinned note paths from `<dir>/.pinned` (one path per line).
-fn load_pins(dir: &PathBuf) -> HashSet<PathBuf> {
+fn load_pins(dir: &Path) -> HashSet<PathBuf> {
     std::fs::read_to_string(dir.join(".pinned"))
-        .map(|s| s.lines().filter(|l| !l.is_empty()).map(PathBuf::from).collect())
+        .map(|s| {
+            s.lines()
+                .filter(|l| !l.is_empty())
+                .map(PathBuf::from)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-fn save_pins(dir: &PathBuf, pins: &HashSet<PathBuf>) {
-    let body = pins.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
+fn save_pins(dir: &Path, pins: &HashSet<PathBuf>) {
+    let body = pins
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
     let _ = std::fs::write(dir.join(".pinned"), body);
 }
 
 /// Load the persisted sort order from `<dir>/.sort` (defaults to Date Edited).
-fn load_sort(dir: &PathBuf) -> SortBy {
+fn load_sort(dir: &Path) -> SortBy {
     std::fs::read_to_string(dir.join(".sort"))
         .map(|s| SortBy::from_id(s.trim()))
         .unwrap_or(SortBy::Edited)
 }
 
-fn save_sort(dir: &PathBuf, sort: SortBy) {
+fn save_sort(dir: &Path, sort: SortBy) {
     let _ = std::fs::write(dir.join(".sort"), sort.id());
 }
 
-fn scan_notes(dir: &PathBuf) -> Vec<Note> {
+fn scan_notes(dir: &Path) -> Vec<Note> {
     let mut entries: Vec<(Note, SystemTime)> = Vec::new();
     collect_notes(dir, None, &mut entries);
     for name in scan_folders(dir) {
@@ -1502,7 +1590,7 @@ fn scan_notes(dir: &PathBuf) -> Vec<Note> {
     entries.into_iter().map(|(n, _)| n).collect()
 }
 
-fn unique_path(dir: &PathBuf) -> PathBuf {
+fn unique_path(dir: &Path) -> PathBuf {
     let mut n = 1;
     loop {
         let path = dir.join(format!("note-{n}.md"));
@@ -1513,7 +1601,7 @@ fn unique_path(dir: &PathBuf) -> PathBuf {
     }
 }
 
-fn unique_folder(dir: &PathBuf) -> PathBuf {
+fn unique_folder(dir: &Path) -> PathBuf {
     let mut n = 0;
     loop {
         let name = if n == 0 {

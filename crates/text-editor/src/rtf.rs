@@ -74,15 +74,25 @@ mod imp {
         let mut runs: Vec<RtfRun> = Vec::new();
         let mut i: usize = 0;
         while i < total {
-            let limit = NSRange { location: i, length: total - i };
-            let mut eff = NSRange { location: 0, length: 0 };
+            let limit = NSRange {
+                location: i,
+                length: total - i,
+            };
+            let mut eff = NSRange {
+                location: 0,
+                length: 0,
+            };
 
             // Split on the *whole* attribute dictionary so a run is constant in
             // font, color, and underline together — otherwise a color change
             // inside one font would be missed.
-            let _attrs = unsafe { attr.attributesAtIndex_longestEffectiveRange_inRange(i, &mut eff, limit) };
+            let _attrs =
+                unsafe { attr.attributesAtIndex_longestEffectiveRange_inRange(i, &mut eff, limit) };
             let run_range = if eff.length == 0 {
-                NSRange { location: i, length: total - i }
+                NSRange {
+                    location: i,
+                    length: total - i,
+                }
             } else {
                 eff
             };
@@ -110,7 +120,14 @@ mod imp {
                 .and_then(|o| o.downcast::<NSColor>().ok())
                 .and_then(|c| color_rgb(&c));
 
-            runs.push(RtfRun { text, family, bold, italic, underline, color });
+            runs.push(RtfRun {
+                text,
+                family,
+                bold,
+                italic,
+                underline,
+                color,
+            });
             i += run_range.length.max(1);
         }
         Some(runs)
@@ -123,15 +140,24 @@ mod imp {
         i: usize,
         limit: NSRange,
     ) -> Option<Retained<AnyObject>> {
-        let mut scratch = NSRange { location: 0, length: 0 };
-        unsafe { attr.attribute_atIndex_longestEffectiveRange_inRange(name, i, &mut scratch, limit) }
+        let mut scratch = NSRange {
+            location: 0,
+            length: 0,
+        };
+        unsafe {
+            attr.attribute_atIndex_longestEffectiveRange_inRange(name, i, &mut scratch, limit)
+        }
     }
 
     fn color_rgb(c: &NSColor) -> Option<(u8, u8, u8)> {
         let space = NSColorSpace::sRGBColorSpace();
         let rgb = c.colorUsingColorSpace(&space)?;
         let to_u8 = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        Some((to_u8(rgb.redComponent()), to_u8(rgb.greenComponent()), to_u8(rgb.blueComponent())))
+        Some((
+            to_u8(rgb.redComponent()),
+            to_u8(rgb.greenComponent()),
+            to_u8(rgb.blueComponent()),
+        ))
     }
 }
 
@@ -146,8 +172,14 @@ mod tests {
         let runs = parse_rtf(rtf).expect("valid rtf");
         let joined: String = runs.iter().map(|r| r.text.as_str()).collect();
         assert!(joined.contains("bold"), "text preserved: {joined:?}");
-        assert!(runs.iter().any(|r| r.bold && r.text.contains("bold")), "{runs:?}");
-        assert!(runs.iter().any(|r| r.italic && r.text.contains("it")), "{runs:?}");
+        assert!(
+            runs.iter().any(|r| r.bold && r.text.contains("bold")),
+            "{runs:?}"
+        );
+        assert!(
+            runs.iter().any(|r| r.italic && r.text.contains("it")),
+            "{runs:?}"
+        );
     }
 
     #[test]

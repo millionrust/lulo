@@ -12,5 +12,6 @@ path = "src/main.rs"
 [dependencies]
 gpui.workspace = true
 gpui-component.workspace = true
+rmac-storage.workspace = true
 sysinfo.workspace = true
 rmac-ui.workspace = true

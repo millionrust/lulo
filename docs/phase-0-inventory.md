@@ -88,12 +88,13 @@ a tested cross-platform read-only parser. Rich-text editing remains out of scope
 
 ### Persistence paths
 
-Activity Monitor and Terminal use `~/Library/Application Support`; Notes uses
-`~/Documents/rmac-notes`. System Settings already contains an XDG config-path
-branch.
+Activity Monitor, Terminal, and System Settings now use XDG configuration paths
+on Linux and `~/Library/Application Support` on macOS. Notes intentionally uses
+`~/Documents/rmac-notes`; Text Editor recovery still uses the temporary
+directory.
 
-Replacement: `rmac-storage` and XDG base directories, with migration/import
-support where useful.
+`rmac-storage` now supplies shared atomic filesystem primitives. Moving Text
+Editor recovery to XDG state storage, with legacy import, remains outstanding.
 
 ## ignored data-changing errors
 
@@ -141,6 +142,12 @@ numeric preferences are imported and migrated on launch. Missing preferences
 select the default profile, while unreadable, unknown, or out-of-range values
 are reported in a non-disruptive overlay that does not alter PTY geometry.
 
+The five persistence consumers above now share `rmac-storage` for adjacent-temp
+replacement, directory durability, no-clobber copies, partial-copy cleanup, and
+injectable filesystem faults. App-local adapters retain their domain operation
+labels and parsing rules; the duplicated filesystem implementations and tests
+were removed.
+
 Migration rule: preference writes move to atomic `rmac-storage` operations. No
 data-changing Linux path may add a new ignored error.
 
@@ -166,7 +173,7 @@ data-changing Linux path may add a new ignored error.
 
 - no Linux application catalog abstraction;
 - no portal client crate;
-- no shared atomic/versioned persistence;
+- no shared versioned-format and migration registry;
 - no Linux system-service layer;
 - no compositor event model or niri client;
 - no UI semantic/accessibility test harness;

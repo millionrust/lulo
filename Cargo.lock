@@ -4773,6 +4773,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui-component",
+ "rmac-storage",
  "rmac-ui",
  "sysinfo 0.33.1",
 ]
@@ -4820,6 +4821,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "rmac-editor",
+ "rmac-storage",
  "rmac-ui",
 ]
 
@@ -4833,12 +4835,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-storage"
+version = "0.1.0"
+
+[[package]]
 name = "rmac-system-settings"
 version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-storage",
  "rmac-ui",
  "rust-embed",
 ]
@@ -4852,6 +4859,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "portable-pty",
+ "rmac-storage",
  "rmac-ui",
  "vte",
 ]
@@ -4866,6 +4874,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "rmac-editor",
+ "rmac-storage",
  "rmac-ui",
 ]
 

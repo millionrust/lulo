@@ -14,6 +14,7 @@ gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui.workspace = true
 rmac-editor.workspace = true
+rmac-storage.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true

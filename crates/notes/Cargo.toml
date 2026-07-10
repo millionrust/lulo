@@ -14,4 +14,5 @@ gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui.workspace = true
 rmac-editor.workspace = true
+rmac-storage.workspace = true
 chrono.workspace = true

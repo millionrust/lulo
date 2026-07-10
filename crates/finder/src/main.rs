@@ -15,6 +15,8 @@ use std::hash::{Hash, Hasher};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
@@ -67,6 +69,21 @@ struct DraggedPaths(Vec<PathBuf>);
 /// The little pill shown under the cursor while dragging.
 struct DragPreview {
     count: usize,
+}
+
+enum TransferEvent {
+    Progress { processed: usize, total: usize },
+    Finished(file_ops::TransferReport),
+}
+
+#[derive(Clone)]
+struct ActiveTransfer {
+    label: SharedString,
+    processed: usize,
+    total: usize,
+    cancel: Arc<AtomicBool>,
+    cancelling: bool,
+    keep_unfinished_in_clipboard: bool,
 }
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -242,12 +259,21 @@ struct FinderView {
     info: Option<usize>,
     result_title: Option<SharedString>,
     operation_error: Option<SharedString>,
+    transfer: Option<ActiveTransfer>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
     dragging: bool,
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
     watched: Option<PathBuf>,
+}
+
+impl Drop for FinderView {
+    fn drop(&mut self) {
+        if let Some(transfer) = &self.transfer {
+            transfer.cancel.store(true, Ordering::Release);
+        }
+    }
 }
 
 impl FinderView {
@@ -444,6 +470,7 @@ impl FinderView {
             info: None,
             result_title: None,
             operation_error: None,
+            transfer: None,
             free_bytes: None,
             dragging: false,
             focus,
@@ -755,6 +782,107 @@ impl FinderView {
         self.reload(cx);
     }
 
+    fn block_mutation_during_transfer(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.transfer.is_none() {
+            return false;
+        }
+        self.operation_error = Some("Wait for the current file operation to finish".into());
+        cx.notify();
+        true
+    }
+
+    fn start_transfer(
+        &mut self,
+        label: &'static str,
+        tasks: Vec<file_ops::TransferTask>,
+        keep_unfinished_in_clipboard: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if tasks.is_empty() {
+            return;
+        }
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.operation_error = None;
+        self.transfer = Some(ActiveTransfer {
+            label: label.into(),
+            processed: 0,
+            total: tasks.len(),
+            cancel: cancel.clone(),
+            cancelling: false,
+            keep_unfinished_in_clipboard,
+        });
+        cx.notify();
+
+        let (events, event_rx) = async_channel::unbounded();
+        cx.background_executor()
+            .spawn(async move {
+                let progress_events = events.clone();
+                let report = file_ops::execute_transfers(
+                    &file_ops::RealFileSystem,
+                    &tasks,
+                    &cancel,
+                    move |processed, total| {
+                        let _ = progress_events
+                            .send_blocking(TransferEvent::Progress { processed, total });
+                    },
+                );
+                let _ = events.send_blocking(TransferEvent::Finished(report));
+            })
+            .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = event_rx.recv().await {
+                let finished = matches!(event, TransferEvent::Finished(_));
+                if this
+                    .update(cx, |this: &mut FinderView, cx| match event {
+                        TransferEvent::Progress { processed, total } => {
+                            if let Some(transfer) = this.transfer.as_mut() {
+                                transfer.processed = processed;
+                                transfer.total = total;
+                            }
+                            cx.notify();
+                        }
+                        TransferEvent::Finished(report) => {
+                            let keep_clipboard = this
+                                .transfer
+                                .as_ref()
+                                .is_some_and(|transfer| transfer.keep_unfinished_in_clipboard);
+                            this.transfer = None;
+                            if keep_clipboard {
+                                this.clipboard = report.unfinished_moves;
+                                this.clip_cut = !this.clipboard.is_empty();
+                                if this.clip_cut {
+                                    this.write_clip_text(cx);
+                                }
+                            }
+                            this.record_operation_failures(report.failures, cx);
+                            this.reload(cx);
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                if finished {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn cancel_transfer(&mut self, cx: &mut Context<Self>) {
+        if let Some(transfer) = self.transfer.as_mut() {
+            transfer.cancel.store(true, Ordering::Release);
+            transfer.cancelling = true;
+            cx.notify();
+        }
+    }
+
     // ---- operations ----
     fn new_folder(&mut self, cx: &mut Context<Self>) {
         let path = unique_path(self.cwd.join("untitled folder"));
@@ -766,7 +894,8 @@ impl FinderView {
     }
 
     fn duplicate(&mut self, cx: &mut Context<Self>) {
-        let mut failures = Vec::new();
+        let mut tasks = Vec::new();
+        let mut destinations = BTreeSet::new();
         for src in self.selected_paths() {
             let stem = src
                 .file_stem()
@@ -777,15 +906,21 @@ impl FinderView {
                 Some(e) => format!("{stem} copy.{e}"),
                 None => format!("{stem} copy"),
             };
-            let dst = unique_path(self.cwd.join(copy_name));
-            if let Err(failure) = file_ops::copy(&file_ops::RealFileSystem, &src, &dst) {
-                failures.push(failure);
-            }
+            let dst = unique_path_avoiding(self.cwd.join(copy_name), &destinations);
+            destinations.insert(dst.clone());
+            tasks.push(file_ops::TransferTask {
+                kind: file_ops::TransferKind::Copy,
+                source: src,
+                destination: dst,
+            });
         }
-        self.finish_file_operations(failures, cx);
+        self.start_transfer("Duplicating", tasks, false, cx);
     }
 
     fn move_to_trash(&mut self, cx: &mut Context<Self>) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
         let paths = self.selected_paths();
         if !paths.is_empty() {
             let failures = trash::delete_all(&paths)
@@ -805,6 +940,9 @@ impl FinderView {
     }
 
     fn delete_immediately(&mut self, cx: &mut Context<Self>) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
         let mut failures = Vec::new();
         for p in self.selected_paths() {
             if let Err(failure) = file_ops::delete(&file_ops::RealFileSystem, &p) {
@@ -863,28 +1001,29 @@ impl FinderView {
                 self.clip_cut = false;
             }
         }
-        let mut failures = Vec::new();
-        let mut cut_failures = Vec::new();
+        let kind = if self.clip_cut {
+            file_ops::TransferKind::Move
+        } else {
+            file_ops::TransferKind::Copy
+        };
+        let mut tasks = Vec::new();
+        let mut destinations = BTreeSet::new();
         for src in self.clipboard.clone() {
             let name = src.file_name().map(|n| n.to_owned()).unwrap_or_default();
-            let dst = unique_path(self.cwd.join(name));
-            if self.clip_cut {
-                if let Err(failure) = file_ops::move_item(&file_ops::RealFileSystem, &src, &dst) {
-                    failures.push(failure);
-                    cut_failures.push(src);
-                }
-            } else if let Err(failure) = file_ops::copy(&file_ops::RealFileSystem, &src, &dst) {
-                failures.push(failure);
-            }
+            let dst = unique_path_avoiding(self.cwd.join(name), &destinations);
+            destinations.insert(dst.clone());
+            tasks.push(file_ops::TransferTask {
+                kind,
+                source: src,
+                destination: dst,
+            });
         }
-        if self.clip_cut {
-            self.clipboard = cut_failures;
-            self.clip_cut = !self.clipboard.is_empty();
-            if self.clip_cut {
-                self.write_clip_text(cx);
-            }
-        }
-        self.finish_file_operations(failures, cx);
+        self.start_transfer(
+            if self.clip_cut { "Moving" } else { "Copying" },
+            tasks,
+            self.clip_cut,
+            cx,
+        );
     }
 
     fn select_all(&mut self, cx: &mut Context<Self>) {
@@ -919,6 +1058,9 @@ impl FinderView {
 
     // ---- rename ----
     fn rename_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
         let Some(&ix) = self.selected.iter().next() else {
             return;
         };
@@ -1870,7 +2012,8 @@ impl FinderView {
     }
 
     fn drop_into(&mut self, dir: PathBuf, paths: &[PathBuf], cx: &mut Context<Self>) {
-        let mut failures = Vec::new();
+        let mut tasks = Vec::new();
+        let mut destinations = BTreeSet::new();
         for src in paths {
             if src == &dir || src.parent() == Some(dir.as_path()) {
                 continue;
@@ -1878,26 +2021,33 @@ impl FinderView {
             let Some(name) = src.file_name() else {
                 continue;
             };
-            let dst = unique_path(dir.join(name));
-            if let Err(failure) = file_ops::move_item(&file_ops::RealFileSystem, src, &dst) {
-                failures.push(failure);
-            }
+            let dst = unique_path_avoiding(dir.join(name), &destinations);
+            destinations.insert(dst.clone());
+            tasks.push(file_ops::TransferTask {
+                kind: file_ops::TransferKind::Move,
+                source: src.clone(),
+                destination: dst,
+            });
         }
-        self.finish_file_operations(failures, cx);
+        self.start_transfer("Moving", tasks, false, cx);
     }
 
     /// Files dropped from another app (Finder, etc.) → copy into the current dir.
     fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
-        let mut failures = Vec::new();
+        let mut tasks = Vec::new();
+        let mut destinations = BTreeSet::new();
         for src in paths {
             if let Some(name) = src.file_name() {
-                let dst = unique_path(self.cwd.join(name));
-                if let Err(failure) = file_ops::copy(&file_ops::RealFileSystem, &src, &dst) {
-                    failures.push(failure);
-                }
+                let dst = unique_path_avoiding(self.cwd.join(name), &destinations);
+                destinations.insert(dst.clone());
+                tasks.push(file_ops::TransferTask {
+                    kind: file_ops::TransferKind::Copy,
+                    source: src,
+                    destination: dst,
+                });
             }
         }
-        self.finish_file_operations(failures, cx);
+        self.start_transfer("Copying", tasks, false, cx);
     }
 
     fn get_info(&mut self, cx: &mut Context<Self>) {
@@ -2122,6 +2272,7 @@ impl Render for FinderView {
         let has_sel = !self.selected.is_empty();
         let can_paste = !self.clipboard.is_empty();
         let operation_error = self.operation_error.clone();
+        let transfer = self.transfer.clone();
         div()
             .size_full()
             .relative()
@@ -2172,6 +2323,44 @@ impl Render for FinderView {
                         })),
                 )
             })
+            .when_some(transfer, |el, transfer| {
+                let action = if transfer.cancelling {
+                    "Cancelling…"
+                } else {
+                    "Cancel"
+                };
+                el.child(
+                    div()
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(hsl(0xe8f3ff))
+                        .border_b_1()
+                        .border_color(hsl(0xb8d8f5))
+                        .text_size(px(12.0))
+                        .text_color(hsl(0x175b91))
+                        .child(div().flex_1().child(format!(
+                            "{} — {} of {} items",
+                            transfer.label, transfer.processed, transfer.total
+                        )))
+                        .child(
+                            div()
+                                .id("cancel-transfer")
+                                .px_2()
+                                .py_0p5()
+                                .rounded(px(5.0))
+                                .bg(white())
+                                .border_1()
+                                .border_color(hsl(0x9fc7eb))
+                                .cursor_pointer()
+                                .child(action)
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_transfer(cx))),
+                        ),
+                )
+            })
             .when(multi, |el: Div| el.child(self.render_tabs(cx)))
             .child(
                 div()
@@ -2191,7 +2380,11 @@ impl Render for FinderView {
 // ---- helpers ----
 
 fn unique_path(path: PathBuf) -> PathBuf {
-    if !path.exists() {
+    unique_path_avoiding(path, &BTreeSet::new())
+}
+
+fn unique_path_avoiding(path: PathBuf, reserved: &BTreeSet<PathBuf>) -> PathBuf {
+    if !path.exists() && !reserved.contains(&path) {
         return path;
     }
     let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
@@ -2206,7 +2399,7 @@ fn unique_path(path: PathBuf) -> PathBuf {
             None => format!("{stem} {n}"),
         };
         let candidate = parent.join(name);
-        if !candidate.exists() {
+        if !candidate.exists() && !reserved.contains(&candidate) {
             return candidate;
         }
     }
@@ -2216,23 +2409,82 @@ fn unique_path(path: PathBuf) -> PathBuf {
 /// Copy preserving macOS metadata (xattrs, resource forks, ACLs, packages) via
 /// `ditto`, falling back to a plain recursive copy if ditto is unavailable.
 fn copy_item(src: &Path, dst: &Path) -> std::io::Result<()> {
-    match Command::new("ditto").arg(src).arg(dst).status() {
-        Ok(status) if status.success() => Ok(()),
-        Ok(status) => Err(std::io::Error::other(format!("ditto failed with {status}"))),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => copy_recursive(src, dst),
+    copy_item_cancellable(src, dst, &AtomicBool::new(false))
+}
+
+fn copy_item_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> std::io::Result<()> {
+    if cancel.load(Ordering::Acquire) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "copy cancelled",
+        ));
+    }
+    match Command::new("ditto").arg(src).arg(dst).spawn() {
+        Ok(mut child) => loop {
+            if cancel.load(Ordering::Acquire) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "copy cancelled",
+                ));
+            }
+            match child.try_wait()? {
+                Some(status) if status.success() => return Ok(()),
+                Some(status) => {
+                    return Err(std::io::Error::other(format!("ditto failed with {status}")));
+                }
+                None => std::thread::sleep(Duration::from_millis(25)),
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            copy_recursive_cancellable(src, dst, cancel)
+        }
         Err(error) => Err(error),
     }
 }
 
-fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if src.is_dir() {
-        std::fs::create_dir_all(dst)?;
+fn copy_recursive_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> std::io::Result<()> {
+    use std::io::{Read as _, Write as _};
+
+    if cancel.load(Ordering::Acquire) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "copy cancelled",
+        ));
+    }
+    let metadata = std::fs::symlink_metadata(src)?;
+    if metadata.file_type().is_symlink() {
+        std::os::unix::fs::symlink(std::fs::read_link(src)?, dst)?;
+    } else if metadata.is_dir() {
+        std::fs::create_dir(dst)?;
         for e in std::fs::read_dir(src)? {
             let e = e?;
-            copy_recursive(&e.path(), &dst.join(e.file_name()))?;
+            copy_recursive_cancellable(&e.path(), &dst.join(e.file_name()), cancel)?;
         }
+        std::fs::set_permissions(dst, metadata.permissions())?;
     } else {
-        std::fs::copy(src, dst)?;
+        let mut source = std::fs::File::open(src)?;
+        let mut destination = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(dst)?;
+        let mut buffer = vec![0u8; 256 * 1024];
+        loop {
+            if cancel.load(Ordering::Acquire) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "copy cancelled",
+                ));
+            }
+            let read = source.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            destination.write_all(&buffer[..read])?;
+        }
+        destination.sync_all()?;
+        std::fs::set_permissions(dst, metadata.permissions())?;
     }
     Ok(())
 }
@@ -2486,6 +2738,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn filesystem_event_bursts_coalesce_until_consumed() {
         let (sender, receiver) = async_channel::bounded(1);
@@ -2498,5 +2752,22 @@ mod tests {
         sender
             .try_send(())
             .expect("a new event should queue after consumption");
+    }
+
+    #[test]
+    fn transfer_destinations_do_not_collide_with_reserved_batch_paths() {
+        let original = PathBuf::from(format!(
+            "/tmp/rmac-reserved-destination-{}",
+            std::process::id()
+        ));
+        let reserved = BTreeSet::from([original.clone()]);
+
+        let destination = unique_path_avoiding(original, &reserved);
+
+        assert!(!reserved.contains(&destination));
+        assert!(destination.ends_with(format!(
+            "rmac-reserved-destination-{} 2",
+            std::process::id()
+        )));
     }
 }

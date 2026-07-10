@@ -1,6 +1,7 @@
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Operation {
@@ -99,6 +100,17 @@ pub(crate) trait FileSystem {
     fn create_dir(&self, path: &Path) -> io::Result<()>;
     fn rename(&self, source: &Path, destination: &Path) -> io::Result<()>;
     fn copy(&self, source: &Path, destination: &Path) -> io::Result<()>;
+    fn copy_cancellable(
+        &self,
+        source: &Path,
+        destination: &Path,
+        cancel: &AtomicBool,
+    ) -> io::Result<()> {
+        if cancel.load(Ordering::Acquire) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
+        }
+        self.copy(source, destination)
+    }
     fn remove(&self, path: &Path) -> io::Result<()>;
 }
 
@@ -117,6 +129,15 @@ impl FileSystem for RealFileSystem {
         crate::copy_item(source, destination)
     }
 
+    fn copy_cancellable(
+        &self,
+        source: &Path,
+        destination: &Path,
+        cancel: &AtomicBool,
+    ) -> io::Result<()> {
+        crate::copy_item_cancellable(source, destination, cancel)
+    }
+
     fn remove(&self, path: &Path) -> io::Result<()> {
         if std::fs::symlink_metadata(path)?.file_type().is_dir() {
             std::fs::remove_dir_all(path)
@@ -131,15 +152,20 @@ pub(crate) fn create_folder(fs: &impl FileSystem, path: &Path) -> Result<(), Fai
         .map_err(|error| Failure::from_io(Operation::CreateFolder, path, None, error))
 }
 
-pub(crate) fn copy(fs: &impl FileSystem, source: &Path, destination: &Path) -> Result<(), Failure> {
-    fs.copy(source, destination).map_err(|error| {
-        Failure::from_io(Operation::Copy, source, Some(destination), error).with_recovery_detail(
-            format!(
-                "A partial destination may remain at {}",
-                destination.display()
-            ),
-        )
-    })
+fn copy_cancellable(
+    fs: &impl FileSystem,
+    source: &Path,
+    destination: &Path,
+    cancel: &AtomicBool,
+) -> Result<(), Failure> {
+    fs.copy_cancellable(source, destination, cancel)
+        .map_err(|error| {
+            Failure::from_io(Operation::Copy, source, Some(destination), error)
+                .with_recovery_detail(format!(
+                    "A partial destination may remain at {}",
+                    destination.display()
+                ))
+        })
 }
 
 pub(crate) fn delete(fs: &impl FileSystem, path: &Path) -> Result<(), Failure> {
@@ -160,11 +186,29 @@ pub(crate) fn rename(
 /// deleting the source fails after a successful copy, both paths are retained
 /// and reported. Automatically deleting the destination would be unsafe if a
 /// different process won a destination-path race.
+#[cfg(test)]
 pub(crate) fn move_item(
     fs: &impl FileSystem,
     source: &Path,
     destination: &Path,
 ) -> Result<(), Failure> {
+    move_item_cancellable(fs, source, destination, &AtomicBool::new(false))
+}
+
+fn move_item_cancellable(
+    fs: &impl FileSystem,
+    source: &Path,
+    destination: &Path,
+    cancel: &AtomicBool,
+) -> Result<(), Failure> {
+    if cancel.load(Ordering::Acquire) {
+        return Err(Failure::from_io(
+            Operation::Move,
+            source,
+            Some(destination),
+            io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
+        ));
+    }
     match fs.rename(source, destination) {
         Ok(()) => return Ok(()),
         Err(error) if error.kind() != io::ErrorKind::CrossesDevices => {
@@ -178,7 +222,19 @@ pub(crate) fn move_item(
         Err(_) => {}
     }
 
-    copy(fs, source, destination)?;
+    copy_cancellable(fs, source, destination, cancel)?;
+    if cancel.load(Ordering::Acquire) {
+        return Err(Failure::from_io(
+            Operation::Move,
+            source,
+            Some(destination),
+            io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
+        )
+        .with_recovery_detail(format!(
+            "The source was retained; a copy may remain at {}",
+            destination.display()
+        )));
+    }
     if let Err(error) = fs.remove(source) {
         return Err(
             Failure::from_io(Operation::Move, source, Some(destination), error)
@@ -189,6 +245,78 @@ pub(crate) fn move_item(
         );
     }
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TransferKind {
+    Copy,
+    Move,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TransferTask {
+    pub(crate) kind: TransferKind,
+    pub(crate) source: PathBuf,
+    pub(crate) destination: PathBuf,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct TransferReport {
+    pub(crate) processed: usize,
+    pub(crate) failures: Vec<Failure>,
+    pub(crate) unfinished_moves: Vec<PathBuf>,
+    pub(crate) cancelled: bool,
+}
+
+pub(crate) fn execute_transfers(
+    fs: &impl FileSystem,
+    tasks: &[TransferTask],
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(usize, usize),
+) -> TransferReport {
+    let mut report = TransferReport::default();
+    for (index, task) in tasks.iter().enumerate() {
+        if cancel.load(Ordering::Acquire) {
+            report.cancelled = true;
+            report.unfinished_moves.extend(
+                tasks[index..]
+                    .iter()
+                    .filter(|task| task.kind == TransferKind::Move)
+                    .map(|task| task.source.clone()),
+            );
+            break;
+        }
+
+        let result = match task.kind {
+            TransferKind::Copy => copy_cancellable(fs, &task.source, &task.destination, cancel),
+            TransferKind::Move => {
+                move_item_cancellable(fs, &task.source, &task.destination, cancel)
+            }
+        };
+        report.processed += 1;
+        progress(report.processed, tasks.len());
+
+        if let Err(failure) = result {
+            if task.kind == TransferKind::Move {
+                report.unfinished_moves.push(task.source.clone());
+            }
+            if failure.error_kind == io::ErrorKind::Interrupted {
+                report.cancelled = true;
+                // Cancellation can leave a partial or completed destination.
+                // Keep the typed recovery detail visible to the user.
+                report.failures.push(failure);
+                report.unfinished_moves.extend(
+                    tasks[index + 1..]
+                        .iter()
+                        .filter(|task| task.kind == TransferKind::Move)
+                        .map(|task| task.source.clone()),
+                );
+                break;
+            }
+            report.failures.push(failure);
+        }
+    }
+    report
 }
 
 #[cfg(test)]
@@ -350,5 +478,105 @@ mod tests {
         assert_eq!(failure.operation, Operation::Delete);
         assert_eq!(failure.error_kind, io::ErrorKind::PermissionDenied);
         assert_eq!(&*fs.calls.borrow(), &["remove:protected"]);
+    }
+
+    #[test]
+    fn cancellation_before_a_batch_preserves_every_unfinished_move() {
+        let fs = FakeFileSystem::with(Ok(()), Ok(()), vec![]);
+        let cancel = AtomicBool::new(true);
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Move,
+            source: "source".into(),
+            destination: "dest".into(),
+        }];
+
+        let report = execute_transfers(&fs, &tasks, &cancel, |_, _| {});
+
+        assert!(report.cancelled);
+        assert_eq!(report.processed, 0);
+        assert_eq!(report.unfinished_moves, vec![PathBuf::from("source")]);
+        assert!(fs.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn batch_reports_item_progress_in_order() {
+        let fs = FakeFileSystem::with(Ok(()), Ok(()), vec![]);
+        let cancel = AtomicBool::new(false);
+        let tasks = vec![
+            TransferTask {
+                kind: TransferKind::Copy,
+                source: "one".into(),
+                destination: "one-copy".into(),
+            },
+            TransferTask {
+                kind: TransferKind::Copy,
+                source: "two".into(),
+                destination: "two-copy".into(),
+            },
+        ];
+        let mut progress = Vec::new();
+
+        let report = execute_transfers(&fs, &tasks, &cancel, |processed, total| {
+            progress.push((processed, total));
+        });
+
+        assert_eq!(report.processed, 2);
+        assert!(report.failures.is_empty());
+        assert_eq!(progress, vec![(1, 2), (2, 2)]);
+    }
+
+    #[test]
+    fn cancellation_after_cross_device_copy_never_removes_the_source() {
+        struct CancelAfterCopy<'a> {
+            cancel: &'a AtomicBool,
+            calls: RefCell<Vec<&'static str>>,
+        }
+
+        impl FileSystem for CancelAfterCopy<'_> {
+            fn create_dir(&self, _path: &Path) -> io::Result<()> {
+                Ok(())
+            }
+
+            fn rename(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+                self.calls.borrow_mut().push("rename");
+                Err(io::Error::new(
+                    io::ErrorKind::CrossesDevices,
+                    "cross-device",
+                ))
+            }
+
+            fn copy(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+                self.calls.borrow_mut().push("copy");
+                self.cancel.store(true, Ordering::Release);
+                Ok(())
+            }
+
+            fn remove(&self, _path: &Path) -> io::Result<()> {
+                self.calls.borrow_mut().push("remove");
+                Ok(())
+            }
+        }
+
+        let cancel = AtomicBool::new(false);
+        let fs = CancelAfterCopy {
+            cancel: &cancel,
+            calls: RefCell::new(Vec::new()),
+        };
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Move,
+            source: "source".into(),
+            destination: "dest".into(),
+        }];
+
+        let report = execute_transfers(&fs, &tasks, &cancel, |_, _| {});
+
+        assert!(report.cancelled);
+        assert_eq!(report.unfinished_moves, vec![PathBuf::from("source")]);
+        assert_eq!(report.failures.len(), 1);
+        assert!(report.failures[0]
+            .recovery_detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("source was retained")));
+        assert_eq!(&*fs.calls.borrow(), &["rename", "copy"]);
     }
 }

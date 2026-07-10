@@ -112,7 +112,10 @@ Since 2026-07-10 Finder create/copy/rename/delete/trash and move paths report
 typed failures in the UI. Cross-device fallback occurs only for `EXDEV`; copy
 or source-removal failures retain recoverable paths, and injected faults cover
 permission, copy, delete, and source-removal failures. Progress and
-cancellation remain required before large operations are release-ready.
+cancellation run through a background transfer worker: the UI reports completed
+items, cancellation terminates `ditto` or the chunked portable fallback, and
+source removal is skipped once cancellation is observed. Byte-level progress
+and guided cleanup for partial cancelled destinations remain future work.
 
 Migration rule: preference writes move to atomic `rmac-storage` operations. No
 data-changing Linux path may add a new ignored error.

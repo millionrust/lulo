@@ -48,6 +48,9 @@ JSON is written under ignored `target/baselines/` output.
 | Terminal | 127.3 ms | 130.2 ms | 10.29% | 71.7 MiB |
 | Text Editor | 126.4 ms | 130.8 ms | 0.60% | 67.7 MiB |
 
+The table above is the immutable `59235ff` starting point. Terminal's original
+idle result predates the event-driven redraw fix documented below.
+
 ## Budget comparison
 
 The Phase 0 provisional warm-launch budgets are 500 ms p95 for simple apps and
@@ -55,13 +58,35 @@ The Phase 0 provisional warm-launch budgets are 500 ms p95 for simple apps and
 System Settings fails the simple-app budget by 602.8 ms; its synchronous system
 discovery must move off the first-frame path during its service-layer port.
 
-The provisional idle CPU budget is 0.3% per normal app. None of the current
-prototypes passes it. Terminal and App Drawer are the priority outliers, which
-matches the known 33 ms and 120 ms redraw loops in the Phase 0 inventory.
+The provisional idle CPU budget is 0.3% per normal app. None of the original
+prototypes passes it. Terminal and App Drawer were the priority outliers, which
+matched their known 33 ms and 120 ms redraw loops in the Phase 0 inventory.
 Activity Monitor's periodic metric refresh is legitimate domain work, but its
 current 2.70% result still needs profiling and an explicit active-refresh
 budget. RSS is recorded as the starting point for setting per-app memory
 budgets; no memory pass/fail threshold has been approved yet.
+
+## Terminal event-driven redraw follow-up
+
+Revision `2e40ffc3b1d776222a2f2184f4dde1439fcdfad4` replaced Terminal's
+unconditional 33 ms timer with a bounded async channel. The blocking PTY reader
+wakes GPUI only after model input; a channel capacity of one coalesces output
+bursts while preserving the newest grid state. The shell fallback also changed
+from macOS-specific `/bin/zsh` to portable `/bin/sh` when `$SHELL` is absent.
+
+The same release-mode harness and machine produced this clean-revision result:
+
+| Metric | Original `59235ff` | Event-driven `2e40ffc` | Change |
+|---|---:|---:|---:|
+| Warm startup median | 127.3 ms | 129.1 ms | +1.8 ms |
+| Warm startup p95 | 130.2 ms | 135.7 ms | +5.5 ms |
+| Idle CPU | 10.29% | 1.00% | -90.3% |
+| Idle RSS | 71.7 MiB | 71.5 MiB | -0.2 MiB |
+
+The startup difference is small relative to run-to-run launch noise and remains
+well inside Terminal's 900 ms budget. The idle improvement is material but does
+not yet meet the provisional 0.3% goal. The Linux reference-PC run must confirm
+the event-driven behavior under Wayland and identify the remaining base cost.
 
 ## Limits and next evidence
 

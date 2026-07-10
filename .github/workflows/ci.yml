@@ -70,6 +70,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check Linux reference tooling
+        run: |
+          bash -n scripts/linux/collect-reference-evidence.sh \
+            scripts/linux/run-reference-gates.sh
+          bash scripts/linux/collect-reference-evidence.sh /tmp/rmac-linux-evidence
+          test -s /tmp/rmac-linux-evidence/environment.txt
+
       - name: Run Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 

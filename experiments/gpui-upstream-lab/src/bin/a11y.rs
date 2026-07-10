@@ -3,6 +3,7 @@ use gpui::{
     KeyBinding, Role, SharedString, Toggled, Window, WindowBounds, WindowOptions,
 };
 use gpui_platform::application;
+use rmac_gpui_upstream_lab::mark_first_frame;
 
 actions!(rmac_a11y_lab, [Tab, TabPrevious]);
 
@@ -16,6 +17,7 @@ impl AccessibilityLab {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        mark_first_frame(window, "a11y");
         Self {
             count: 0,
             enabled: false,

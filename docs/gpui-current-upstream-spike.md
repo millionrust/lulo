@@ -18,7 +18,8 @@ applications or their transitive dependency graph.
 Both the Git revision and the experiment's resolved `Cargo.lock` are committed.
 `target/` remains ignored because it is generated build output.
 The regular product checks still use the stable workspace; a separate Linux CI
-job compiles both upstream probes with the Wayland feature and Rust 1.95.0.
+job compiles and smoke-tests both upstream probes with the Wayland feature and
+Rust 1.95.0.
 
 ## Implemented probes
 
@@ -69,9 +70,30 @@ cargo clippy --locked --bins --features wayland -- -D warnings
 ```
 
 Both commands passed. This type-checks the Linux-only layer-shell module and
-the AccessKit/AT-SPI, Wayland, and Vulkan dependency paths. It is valuable
-compile evidence, but a container without a compositor, GPU, D-Bus session, or
-Orca cannot satisfy any runtime gate below.
+the AccessKit/AT-SPI, Wayland, and Vulkan dependency paths.
+
+## Automated Linux runtime evidence
+
+On 2026-07-10, `scripts/nested-wayland-smoke.sh` also passed in an ARM64 Debian
+Bookworm container with Sway 1.7. It used wlroots' headless backend and Pixman
+renderer for the compositor, Mesa lavapipe for GPUI's Vulkan renderer, and an
+isolated D-Bus/AT-SPI session.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Wayland layer-shell availability | Pass | `wayland-info` advertised `zwlr_layer_shell_v1` version 4 |
+| GPUI rendering | Pass | Both probes wrote their opt-in marker after the first completed frame |
+| Layer-shell placement | Pass | Sway mapped the 640x40 top-layer surface across the top edge |
+| Exclusive zone | Pass | Sway IPC reported the normal workspace at logical `y = 40` |
+| Semantic tree | Pass | AT-SPI exposed the heading, spin button, and toggle button with their expected names |
+| Assistive actions and state | Pass | AT-SPI click incremented the numeric value from 0 to 1 and changed the switch to `pressed` |
+| Process health | Pass | Both probes remained alive after all assertions |
+
+The same script now runs in the dedicated Ubuntu CI job after strict Wayland
+Clippy. This is a deterministic protocol and accessibility smoke gate. It does
+not exercise Orca speech output, physical GPU drivers, GNOME or niri behavior,
+mixed-scale or multi-display layouts, fullscreen interactions, keyboard focus,
+or the required soak duration; those remain part of the manual protocol below.
 
 ## Ubuntu 26.04 runtime protocol
 
@@ -102,7 +124,7 @@ scale factors, and Orca version with every result.
 
 ## Decision status
 
-**Pending Linux runtime evidence.** Do not migrate the product workspace yet.
-The API gap seen in released GPUI 0.2.2 is plausibly resolved upstream, and the
-integration is small enough to test, but the decisive Orca, Wayland, scaling,
-focus, fullscreen, and soak gates remain open.
+**Automated Linux smoke passed; manual acceptance is pending.** Do not migrate
+the product workspace yet. The released GPUI 0.2.2 API gap is plausibly resolved
+upstream and the basic Linux protocol paths now work, but the decisive Orca,
+GNOME/niri, hardware, scaling, focus, fullscreen, and soak gates remain open.

@@ -87,9 +87,11 @@ jobs:
         run: cargo test --locked --workspace --all-features
 
   upstream-gpui-linux:
-    name: Current GPUI Linux compile gate
+    name: Current GPUI Linux runtime gate
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      CARGO_BUILD_JOBS: 2
 
     steps:
       - name: Check out repository
@@ -99,9 +101,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
+            at-spi2-core \
             clang \
+            dbus \
+            jq \
             libfontconfig1-dev \
             libfreetype-dev \
+            libglib2.0-bin \
             libssl-dev \
             libvulkan-dev \
             libwayland-dev \
@@ -111,7 +117,11 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
-            libxkbcommon-x11-dev
+            libxkbcommon-x11-dev \
+            mesa-vulkan-drivers \
+            python3-pyatspi \
+            sway \
+            wayland-utils
 
       - name: Install experiment Rust toolchain
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy --component rustfmt
@@ -132,3 +142,7 @@ jobs:
       - name: Check Wayland probes
         working-directory: experiments/gpui-upstream-lab
         run: cargo clippy --locked --bins --features wayland -- -D warnings
+
+      - name: Run nested Wayland smoke checks
+        working-directory: experiments/gpui-upstream-lab
+        run: dbus-run-session -- bash scripts/nested-wayland-smoke.sh

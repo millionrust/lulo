@@ -3,6 +3,10 @@
 **/*.rs.bk
 *.pdb
 
+# Python tooling
+__pycache__/
+*.py[cod]
+
 # Cargo (workspace target may be redirected via CARGO_TARGET_DIR)
 target/
 

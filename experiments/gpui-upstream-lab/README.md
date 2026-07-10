@@ -42,3 +42,18 @@ specified when another window is fullscreen.
 Record the compositor, display protocol, scale factors, GPU/driver, Orca
 version, and pass/fail evidence in `docs/gpui-current-upstream-spike.md` before
 changing any product dependency.
+
+## Automated nested-compositor smoke test
+
+On Linux with Sway, Mesa's software Vulkan driver, `wayland-info`, `jq`, D-Bus,
+GSettings, AT-SPI, and Python pyatspi installed, run:
+
+```sh
+dbus-run-session -- bash scripts/nested-wayland-smoke.sh
+```
+
+The script builds both Wayland probes, starts a headless nested Sway session,
+requires both windows to finish a GPUI frame, verifies the layer-shell protocol
+and 40-pixel exclusive zone, and checks semantic roles, names, numeric value,
+click actions, and toggled state over AT-SPI. It is a deterministic smoke gate,
+not a replacement for the Ubuntu/niri/GNOME/Orca hardware protocol.

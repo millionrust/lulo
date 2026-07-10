@@ -5,6 +5,7 @@ mod linux_wayland {
         WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
+    use rmac_gpui_upstream_lab::mark_first_frame;
 
     struct LayerShellLab;
 
@@ -38,12 +39,14 @@ mod linux_wayland {
                         anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
                         keyboard_interactivity: KeyboardInteractivity::None,
                         exclusive_zone: Some(px(40.)),
-                        exclusive_edge: Some(Anchor::TOP),
                         ..Default::default()
                     }),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|_| LayerShellLab),
+                |window, cx| {
+                    mark_first_frame(window, "layer-shell");
+                    cx.new(|_| LayerShellLab)
+                },
             )
             .expect("open the layer-shell surface");
         });

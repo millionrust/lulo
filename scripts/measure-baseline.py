@@ -37,6 +37,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--idle-seconds", type=float, default=10.0)
     parser.add_argument("--startup-timeout", type=float, default=20.0)
     parser.add_argument(
+        "--package",
+        action="append",
+        choices=[package for _, package in APPS],
+        dest="packages",
+        help="measure only this package; may be repeated",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("target/baselines/latest.json"),
@@ -51,9 +58,9 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def build_apps(repo: Path) -> None:
+def build_apps(repo: Path, apps: tuple[tuple[str, str], ...]) -> None:
     command = ["cargo", "build", "--release", "--locked"]
-    for _, package in APPS:
+    for _, package in apps:
         command.extend(("--package", package))
     subprocess.run(command, cwd=repo, check=True)
 
@@ -212,8 +219,11 @@ def main() -> int:
     args = parse_args()
     repo = Path(__file__).resolve().parent.parent
     output = args.output if args.output.is_absolute() else repo / args.output
+    apps = tuple(
+        app for app in APPS if args.packages is None or app[1] in args.packages
+    )
     if not args.skip_build:
-        build_apps(repo)
+        build_apps(repo, apps)
 
     results: dict[str, object] = {
         "schema_version": 1,
@@ -240,13 +250,14 @@ def main() -> int:
             "settle_seconds": args.settle_seconds,
             "idle_seconds": args.idle_seconds,
             "startup_timeout": args.startup_timeout,
+            "packages": [package for _, package in apps],
         },
         "applications": {},
     }
 
     with tempfile.TemporaryDirectory(prefix="rmac-baseline-") as directory:
         temp_root = Path(directory)
-        for display_name, package in APPS:
+        for display_name, package in apps:
             print(f"Measuring {display_name}...", flush=True)
             app_temp = temp_root / package
             app_temp.mkdir()

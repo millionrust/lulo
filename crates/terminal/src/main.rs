@@ -2,13 +2,13 @@
 //!
 //! The Zed stack: `alacritty_terminal` drives the grid/escape-sequence state,
 //! `portable-pty` runs the user's shell, and GPUI renders the cell grid. A
-//! background thread reads PTY output and feeds the parser; the view renders
-//! the grid each frame and writes keystrokes back to the PTY.
+//! background thread reads PTY output and feeds the parser; model changes wake
+//! the view, which renders the grid and writes keystrokes back to the PTY.
 
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
-use alacritty_terminal::event::{Event, EventListener};
+use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
@@ -25,6 +25,8 @@ use gpui_component::input::{Input, InputState};
 use gpui_component::{Selectable as _, Sizable as _, StyledExt as _};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
+
+type RedrawSender = async_channel::Sender<()>;
 
 const COLS: usize = 100;
 const ROWS: usize = 28;
@@ -232,11 +234,20 @@ struct Style {
     strike: bool,
 }
 
-/// No-op event listener — we poll the grid on a render timer instead.
 #[derive(Clone)]
 struct EventProxy;
-impl EventListener for EventProxy {
-    fn send_event(&self, _: Event) {}
+
+impl EventListener for EventProxy {}
+
+/// Coalesce any number of PTY/model events into one pending UI repaint.
+fn request_redraw(redraw: &RedrawSender) {
+    let _ = redraw.try_send(());
+}
+
+fn shell_program(configured: Option<String>) -> String {
+    configured
+        .filter(|shell| !shell.trim().is_empty())
+        .unwrap_or_else(|| "/bin/sh".to_string())
 }
 
 /// One terminal tab: its own PTY + parser-fed grid. `master` is `None` for a
@@ -250,7 +261,7 @@ struct Session {
 impl Session {
     /// Start a real shell in a PTY. Returns an error string (rather than
     /// panicking) if the PTY or shell can't be created, so the app stays alive.
-    fn spawn(cols: usize, rows: usize) -> Result<Session, String> {
+    fn spawn(cols: usize, rows: usize, redraw: RedrawSender) -> Result<Session, String> {
         let size = TermSize { cols, lines: rows };
         let pty = native_pty_system();
         let pair = pty
@@ -261,7 +272,7 @@ impl Session {
                 pixel_height: 0,
             })
             .map_err(|e| format!("openpty failed: {e}"))?;
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        let shell = shell_program(std::env::var("SHELL").ok());
         let mut cmd = CommandBuilder::new(shell);
         cmd.env("TERM", "xterm-256color");
         if let Ok(dir) = std::env::current_dir() {
@@ -292,9 +303,11 @@ impl Session {
                         if let Ok(mut t) = term_reader.lock() {
                             parser.advance(&mut *t, &buf[..n]);
                         }
+                        request_redraw(&redraw);
                     }
                 }
             }
+            request_redraw(&redraw);
         });
         Ok(Session {
             term,
@@ -323,6 +336,7 @@ impl Session {
 
 struct TerminalView {
     tabs: Vec<Session>,
+    redraw: RedrawSender,
     active: usize,
     cols: usize,
     rows: usize,
@@ -371,8 +385,9 @@ fn save_profile(i: usize) {
 
 impl TerminalView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let session =
-            Session::spawn(COLS, ROWS).unwrap_or_else(|e| Session::failed(COLS, ROWS, &e));
+        let (redraw, redraw_rx) = async_channel::bounded(1);
+        let session = Session::spawn(COLS, ROWS, redraw.clone())
+            .unwrap_or_else(|e| Session::failed(COLS, ROWS, &e));
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
@@ -397,19 +412,20 @@ impl TerminalView {
         let focus = cx.focus_handle();
         window.focus(&focus);
 
-        // Redraw timer — keeps the view in sync with the model.
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(33))
-                .await;
-            if this.update(cx, |_, cx| cx.notify()).is_err() {
-                break;
+        // PTY/model events wake this task. The bounded channel coalesces output
+        // bursts while leaving the application fully asleep when nothing changes.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while redraw_rx.recv().await.is_ok() {
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
             }
         })
         .detach();
 
         Self {
             tabs: vec![session],
+            redraw,
             active: 0,
             cols: COLS,
             rows: ROWS,
@@ -439,8 +455,9 @@ impl TerminalView {
 
     fn new_tab(&mut self, cx: &mut Context<Self>) {
         let (c, r) = (self.cols.max(20), self.rows.max(5));
-        self.tabs
-            .push(Session::spawn(c, r).unwrap_or_else(|e| Session::failed(c, r, &e)));
+        self.tabs.push(
+            Session::spawn(c, r, self.redraw.clone()).unwrap_or_else(|e| Session::failed(c, r, &e)),
+        );
         self.active = self.tabs.len() - 1;
         self.selection = None;
         self.cols = 0; // force resize_to() to re-fit the new active session
@@ -1244,4 +1261,29 @@ fn main() {
     rmac_ui::boot("Terminal", 820.0, 560.0, |window, cx| {
         TerminalView::new(window, cx)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redraw_requests_coalesce_until_the_ui_consumes_one() {
+        let (sender, receiver) = async_channel::bounded(1);
+
+        request_redraw(&sender);
+        request_redraw(&sender);
+        request_redraw(&sender);
+
+        assert_eq!(receiver.len(), 1);
+        assert_eq!(receiver.try_recv(), Ok(()));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn shell_fallback_is_portable_and_ignores_empty_configuration() {
+        assert_eq!(shell_program(None), "/bin/sh");
+        assert_eq!(shell_program(Some("  ".to_string())), "/bin/sh");
+        assert_eq!(shell_program(Some("/bin/fish".to_string())), "/bin/fish");
+    }
 }

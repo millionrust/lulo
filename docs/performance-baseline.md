@@ -22,6 +22,9 @@ Run from the repository root:
 python3 scripts/measure-baseline.py
 ```
 
+For a focused regression measurement, pass `--package` one or more times. For
+example: `python3 scripts/measure-baseline.py --package rmac-terminal`.
+
 The harness builds all seven applications in release mode. For each app, it
 performs one excluded warm-up followed by five measured launches. Startup is
 the elapsed time from spawning the binary until `rmac-ui` reports completion of

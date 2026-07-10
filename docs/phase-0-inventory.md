@@ -113,8 +113,9 @@ new ignored error.
 
 - App Drawer requests a redraw every 120 ms even though input observation is
   already installed. Remove this during the `rmac-apps` port.
-- Terminal requests a redraw every 33 ms to observe PTY changes. Replace this
-  with PTY/model change notifications before performance acceptance.
+- Terminal's former 33 ms redraw timer was replaced with a bounded PTY/model
+  wake channel on 2026-07-10. Bursts coalesce and the UI task sleeps when idle;
+  Linux confirmation remains part of the reference-PC performance pass.
 - Activity Monitor refreshes on a two-second metric interval; this interval is
   domain work and remains appropriate, but rendering should occur only after a
   completed refresh.

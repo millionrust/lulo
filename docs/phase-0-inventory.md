@@ -73,7 +73,10 @@ Linux thumbnail/preview providers.
 - `sw_vers`, macOS `sysctl` keys, and `diskutil` for system/storage details.
 
 Replacement: NetworkManager, BlueZ, UPower, PipeWire/WirePlumber, standard
-system information, and explicit capability detection.
+system information, and explicit capability detection. Since 2026-07-10 the
+prototype gathers these read-only facts in a background snapshot after the
+first frame; the Linux adapters must preserve that non-blocking boundary and
+replace the all-at-once snapshot with service-specific updates where useful.
 
 ### Text Editor
 

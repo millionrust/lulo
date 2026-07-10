@@ -139,7 +139,8 @@ enum SubPage {
     },
 }
 
-/// Real, read-only macOS facts gathered once at launch.
+/// Real, read-only macOS facts gathered after the first frame.
+#[derive(Default)]
 struct SysInfo {
     computer_name: String,
     os: String,
@@ -157,7 +158,7 @@ struct BtDevice {
     kind: String,
 }
 
-/// Live battery readings (read once at launch via `pmset` + `ioreg`).
+/// Live battery readings (read once after launch via `pmset` + `ioreg`).
 struct BatteryInfo {
     present: bool,
     percent: String,
@@ -183,13 +184,15 @@ struct AudioDevice {
     is_default: bool,
 }
 
-/// Audio output/input devices (read once at launch via `system_profiler`).
+/// Audio output/input devices (read once after launch via `system_profiler`).
+#[derive(Default)]
 struct AudioInfo {
     outputs: Vec<AudioDevice>,
     inputs: Vec<AudioDevice>,
 }
 
-/// Boot-volume storage usage (read once at launch via `df`).
+/// Boot-volume storage usage (read once after launch via `df`).
+#[derive(Default)]
 struct StorageInfo {
     volume: String,
     total: u64,
@@ -197,7 +200,8 @@ struct StorageInfo {
     avail: u64,
 }
 
-/// Primary network connection (read once at launch).
+/// Primary network connection (read once after launch).
+#[derive(Default)]
 struct NetworkInfo {
     service: String,
     interface: String,
@@ -209,6 +213,7 @@ struct NetworkInfo {
 }
 
 struct Settings {
+    system_data_loading: bool,
     account: SharedString,
     sysinfo: SysInfo,
     battery: Option<BatteryInfo>,
@@ -258,6 +263,20 @@ struct Settings {
     handoff: bool,
     airdrop_idx: usize,
     airplay_receiver: bool,
+}
+
+/// Read-only system data that is slow enough to keep off the first-frame path.
+struct SystemSnapshot {
+    account: String,
+    sysinfo: SysInfo,
+    battery: Option<BatteryInfo>,
+    displays: Vec<DisplayInfo>,
+    gpu: String,
+    network: NetworkInfo,
+    storage: StorageInfo,
+    audio: AudioInfo,
+    wifi_current: Option<String>,
+    bt_devices: Vec<BtDevice>,
 }
 
 const ACCENTS: &[(&str, u32)] = &[
@@ -517,20 +536,33 @@ impl Settings {
         let alert_volume = mk_slider(cx, saved.alert_volume);
         let balance = mk_slider(cx, saved.balance);
 
-        let joined = saved.joined;
-        let wifi_current = gather_wifi_current();
-        let bt_devices = gather_bluetooth();
+        // Hardware discovery launches multiple platform commands, including
+        // system_profiler. Keep it off the first-frame path and redraw once the
+        // complete read-only snapshot is available.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let snapshot = cx
+                .background_executor()
+                .spawn(async { gather_system_snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.apply_system_snapshot(snapshot);
+                cx.notify();
+            });
+        })
+        .detach();
 
-        let (gpu, displays) = gather_displays();
         Self {
-            account: account_name().into(),
-            sysinfo: gather_sysinfo(),
-            battery: gather_battery(),
-            displays,
-            gpu,
-            network: gather_network(),
-            storage: gather_storage(),
-            audio: gather_audio(),
+            system_data_loading: true,
+            account: std::env::var("USER")
+                .unwrap_or_else(|_| "User".into())
+                .into(),
+            sysinfo: SysInfo::default(),
+            battery: None,
+            displays: Vec::new(),
+            gpu: String::new(),
+            network: NetworkInfo::default(),
+            storage: StorageInfo::default(),
+            audio: AudioInfo::default(),
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -541,12 +573,12 @@ impl Settings {
 
             wifi_on: saved.wifi_on,
             ask_to_join: saved.ask_to_join,
-            joined,
-            wifi_current,
+            joined: saved.joined,
+            wifi_current: None,
 
             bluetooth_on: saved.bluetooth_on,
             bt_discoverable: saved.bt_discoverable,
-            bt_devices,
+            bt_devices: Vec::new(),
 
             appearance: saved.appearance_enum(),
             accent_idx: saved.accent_idx,
@@ -565,6 +597,20 @@ impl Settings {
             airdrop_idx: saved.airdrop_idx,
             airplay_receiver: saved.airplay_receiver,
         }
+    }
+
+    fn apply_system_snapshot(&mut self, snapshot: SystemSnapshot) {
+        self.account = snapshot.account.into();
+        self.sysinfo = snapshot.sysinfo;
+        self.battery = snapshot.battery;
+        self.displays = snapshot.displays;
+        self.gpu = snapshot.gpu;
+        self.network = snapshot.network;
+        self.storage = snapshot.storage;
+        self.audio = snapshot.audio;
+        self.wifi_current = snapshot.wifi_current;
+        self.bt_devices = snapshot.bt_devices;
+        self.system_data_loading = false;
     }
 
     /// Capture the current interactive state and write it to disk.
@@ -830,6 +876,9 @@ impl Settings {
                     .mx_auto()
                     .px_5()
                     .pb_8()
+                    .when(self.system_data_loading, |el| {
+                        el.child(note_card("Loading system information…"))
+                    })
                     .child(content),
             )
     }
@@ -2079,6 +2128,22 @@ fn cmd(program: &str, args: &[&str]) -> Option<String> {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+fn gather_system_snapshot() -> SystemSnapshot {
+    let (gpu, displays) = gather_displays();
+    SystemSnapshot {
+        account: account_name(),
+        sysinfo: gather_sysinfo(),
+        battery: gather_battery(),
+        displays,
+        gpu,
+        network: gather_network(),
+        storage: gather_storage(),
+        audio: gather_audio(),
+        wifi_current: gather_wifi_current(),
+        bt_devices: gather_bluetooth(),
+    }
 }
 
 fn appearance_is_dark() -> bool {

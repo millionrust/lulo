@@ -102,7 +102,6 @@ areas:
 
 - Finder native pasteboard writes (the AppKit API does not expose a useful
   per-item result);
-- System Settings persistence;
 - Activity Monitor column preferences;
 - Terminal profile preferences.
 
@@ -127,6 +126,11 @@ write only while the buffer is dirty; clean transitions invalidate pending
 timers. Recovery removal failures remain visible and block New/Close or an
 explicit discard, while cancelling an Open dialog keeps the current draft
 recoverable.
+
+System Settings now loads and saves its XDG/macOS configuration through typed,
+adjacent-temp atomic storage. Missing configuration remains a normal first
+launch; unreadable or malformed existing state is reported in the UI, and
+persisted indices and slider values are bounded before rendering.
 
 Migration rule: preference writes move to atomic `rmac-storage` operations. No
 data-changing Linux path may add a new ignored error.

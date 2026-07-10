@@ -8,8 +8,10 @@
 //! ⌘[). Where it is safe and read-only, panes reflect real macOS state
 //! (appearance, computer name, macOS version, chip, memory).
 
+mod storage;
+
 use std::borrow::Cow;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use gpui::{
@@ -229,6 +231,7 @@ struct Settings {
     focus: FocusHandle,
     focused_once: bool,
     dragging: bool,
+    persistence_error: Option<SharedString>,
 
     // Wi-Fi
     wifi_on: bool,
@@ -308,7 +311,7 @@ const ALERT_SOUNDS: &[&str] = &[
 // avoid pulling extra dependencies into the workspace lockfile.
 
 /// A snapshot of all persisted interactive state.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 struct Persisted {
     wifi_on: bool,
     ask_to_join: bool,
@@ -358,37 +361,40 @@ impl Default for Persisted {
     }
 }
 
-fn config_path() -> Option<PathBuf> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
+fn config_path() -> Result<PathBuf, storage::Failure> {
+    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
+        storage::Failure::message(
+            storage::Operation::ResolveConfigPath,
+            Path::new("settings.json"),
+            "HOME is not set",
+        )
+    })?;
     #[cfg(target_os = "macos")]
     let dir = home.join("Library/Application Support/rmac-system-settings");
     #[cfg(not(target_os = "macos"))]
     let dir = {
-        match std::env::var_os("XDG_CONFIG_HOME") {
-            Some(x) => PathBuf::from(x).join("rmac-system-settings"),
-            None => home.join(".config/rmac-system-settings"),
+        match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
+            Some(x) if x.is_absolute() => x.join("rmac-system-settings"),
+            _ => home.join(".config/rmac-system-settings"),
         }
     };
-    Some(dir.join("settings.json"))
+    Ok(dir.join("settings.json"))
 }
 
 impl Persisted {
-    fn load() -> Self {
-        let Some(path) = config_path() else {
-            return Self::default();
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(content) => Self::parse(&content),
-            Err(_) => Self::default(),
+    fn load() -> Result<Self, storage::Failure> {
+        let path = config_path()?;
+        match storage::load_optional(&storage::RealStorage, &path)? {
+            Some(content) => Self::parse(&content).map_err(|detail| {
+                storage::Failure::message(storage::Operation::LoadSettings, &path, detail)
+            }),
+            None => Ok(Self::default()),
         }
     }
 
-    fn save(&self) {
-        let Some(path) = config_path() else { return };
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(&path, self.to_json());
+    fn save(&self) -> Result<(), storage::Failure> {
+        let path = config_path()?;
+        storage::save(&storage::RealStorage, &path, self.to_json())
     }
 
     fn to_json(&self) -> String {
@@ -439,11 +445,15 @@ impl Persisted {
         )
     }
 
-    /// Parse a flat JSON object of numeric values; unknown/missing keys keep
-    /// their default and malformed values are ignored.
-    fn parse(content: &str) -> Self {
+    /// Parse a flat JSON object of numeric values. Unknown or missing keys keep
+    /// their defaults; malformed recognized values reject the existing file.
+    fn parse(content: &str) -> Result<Self, String> {
         let mut p = Self::default();
-        let body = content.trim().trim_start_matches('{').trim_end_matches('}');
+        let trimmed = content.trim();
+        if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+            return Err("settings file is not a complete JSON object".into());
+        }
+        let body = &trimmed[1..trimmed.len() - 1];
         for part in body.split(',') {
             let part = part
                 .trim()
@@ -451,16 +461,42 @@ impl Persisted {
             if part.is_empty() {
                 continue;
             }
-            let mut it = part.splitn(2, ':');
-            let key = it.next().unwrap_or("").trim().trim_matches('"');
-            let raw = match it.next() {
-                Some(v) => v.trim().trim_matches('"'),
-                None => continue,
-            };
-            let num: f64 = match raw.parse() {
-                Ok(n) => n,
-                Err(_) => continue,
-            };
+            let (raw_key, raw) = part
+                .split_once(':')
+                .ok_or_else(|| "settings entry is missing ':'".to_string())?;
+            let key = raw_key.trim().trim_matches('"');
+            let recognized = matches!(
+                key,
+                "wifi_on"
+                    | "ask_to_join"
+                    | "joined"
+                    | "bluetooth_on"
+                    | "bt_discoverable"
+                    | "appearance"
+                    | "accent_idx"
+                    | "show_color_in_menu"
+                    | "large_sidebar"
+                    | "output_volume"
+                    | "alert_volume"
+                    | "balance"
+                    | "mute"
+                    | "play_on_startup"
+                    | "play_ui_sounds"
+                    | "alert_idx"
+                    | "handoff"
+                    | "airdrop_idx"
+                    | "airplay_receiver"
+            );
+            if !recognized {
+                continue;
+            }
+            let raw = raw.trim().trim_matches('"');
+            let num: f64 = raw
+                .parse()
+                .map_err(|_| format!("setting '{key}' is not numeric"))?;
+            if !num.is_finite() {
+                return Err(format!("setting '{key}' is not finite"));
+            }
             let truthy = num != 0.0;
             match key {
                 "wifi_on" => p.wifi_on = truthy,
@@ -495,7 +531,10 @@ impl Persisted {
         if p.airdrop_idx > 2 {
             p.airdrop_idx = 1;
         }
-        p
+        p.output_volume = p.output_volume.clamp(0.0, 100.0);
+        p.alert_volume = p.alert_volume.clamp(0.0, 100.0);
+        p.balance = p.balance.clamp(0.0, 100.0);
+        Ok(p)
     }
 
     fn appearance_enum(&self) -> Appearance {
@@ -513,8 +552,12 @@ impl Settings {
             cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Search"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
 
-        // Load persisted interactive state (falls back to sensible defaults).
-        let saved = Persisted::load();
+        // A missing config is a normal first launch. Existing-but-unreadable or
+        // malformed state falls back safely and remains visible to the user.
+        let (saved, persistence_error) = match Persisted::load() {
+            Ok(saved) => (saved, None),
+            Err(failure) => (Persisted::default(), Some(failure.to_string().into())),
+        };
 
         // Sliders persist their value; observing them writes the config on change.
         let mk_slider = |cx: &mut Context<Self>, val: f32| {
@@ -570,6 +613,7 @@ impl Settings {
             focus: cx.focus_handle(),
             focused_once: false,
             dragging: false,
+            persistence_error,
 
             wifi_on: saved.wifi_on,
             ask_to_join: saved.ask_to_join,
@@ -614,7 +658,7 @@ impl Settings {
     }
 
     /// Capture the current interactive state and write it to disk.
-    fn persist(&self, cx: &App) {
+    fn persist(&mut self, cx: &App) {
         let snapshot = Persisted {
             wifi_on: self.wifi_on,
             ask_to_join: self.ask_to_join,
@@ -640,7 +684,10 @@ impl Settings {
             airdrop_idx: self.airdrop_idx,
             airplay_receiver: self.airplay_receiver,
         };
-        snapshot.save();
+        self.persistence_error = snapshot
+            .save()
+            .err()
+            .map(|failure| failure.to_string().into());
     }
 
     fn current(&self) -> &Category {
@@ -1819,6 +1866,7 @@ impl Render for Settings {
             self.focused_once = true;
             window.focus(&self.focus);
         }
+        let persistence_error = self.persistence_error.clone();
         div()
             .size_full()
             .v_flex()
@@ -1831,6 +1879,30 @@ impl Render for Settings {
             .bg(pane_bg())
             .text_color(label())
             .child(self.render_topbar(cx))
+            .when_some(persistence_error, |settings, message| {
+                settings.child(
+                    div()
+                        .id("persistence-error")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(gpui::rgba(0xff3b301f))
+                        .border_b_1()
+                        .border_color(gpui::rgba(0xff3b3059))
+                        .text_size(px(12.0))
+                        .text_color(gpui::rgb(0xc62828))
+                        .cursor_pointer()
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.persistence_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .child(
                 div()
                     .flex_1()
@@ -2638,4 +2710,66 @@ fn main() {
         cx.bind_keys([KeyBinding::new("cmd-[", GoBack, Some("SystemSettings"))]);
         Settings::new(window, cx)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Persisted;
+
+    #[test]
+    fn persisted_settings_round_trip() {
+        let expected = Persisted {
+            wifi_on: false,
+            ask_to_join: false,
+            joined: Some(3),
+            bluetooth_on: false,
+            bt_discoverable: false,
+            appearance: 2,
+            accent_idx: 4,
+            show_color_in_menu: false,
+            large_sidebar: true,
+            output_volume: 31.0,
+            alert_volume: 42.0,
+            balance: 63.0,
+            mute: true,
+            play_on_startup: false,
+            play_ui_sounds: false,
+            alert_idx: 5,
+            handoff: false,
+            airdrop_idx: 2,
+            airplay_receiver: true,
+        };
+
+        let parsed = Persisted::parse(&expected.to_json()).unwrap();
+
+        assert_eq!(parsed, expected);
+    }
+
+    #[test]
+    fn malformed_existing_settings_are_reported() {
+        assert!(Persisted::parse("{\"wifi_on\": nope}").is_err());
+        assert!(Persisted::parse("{\"wifi_on\": 1").is_err());
+    }
+
+    #[test]
+    fn persisted_ranges_are_safe_for_ui_controls() {
+        let parsed = Persisted::parse(
+            r#"{
+                "output_volume": 999,
+                "alert_volume": -10,
+                "balance": 101,
+                "accent_idx": 999,
+                "alert_idx": 999,
+                "airdrop_idx": 999
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(parsed.output_volume, 100.0);
+        assert_eq!(parsed.alert_volume, 0.0);
+        assert_eq!(parsed.balance, 100.0);
+        assert_eq!(parsed.accent_idx, 0);
+        assert_eq!(parsed.alert_idx, 0);
+        assert_eq!(parsed.airdrop_idx, 1);
+    }
 }

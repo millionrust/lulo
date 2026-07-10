@@ -13,13 +13,13 @@ path = "src/main.rs"
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
-rmac-ui = { path = "../rmac-ui" }
-chrono = "0.4"
-rust-embed = "8"
+rmac-ui.workspace = true
+chrono.workspace = true
+rust-embed.workspace = true
 trash = "5"
 notify = "7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSString", "NSURL"] }
-objc2-app-kit = { version = "0.3", features = ["NSPasteboard"] }
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["NSArray", "NSString", "NSURL"] }
+objc2-app-kit = { workspace = true, features = ["NSPasteboard"] }

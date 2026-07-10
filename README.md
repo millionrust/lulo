@@ -86,6 +86,7 @@ cargo build --locked --workspace
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
+cargo deny --locked --log-level error check
 ```
 
 Use `--release` when measuring startup, memory, or animation performance:
@@ -111,6 +112,7 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — change and verification rules.
 - [`docs/phase-0-inventory.md`](docs/phase-0-inventory.md) — starting technical-debt inventory.
 - [`docs/performance-baseline.md`](docs/performance-baseline.md) — reproducible startup, idle CPU, and RSS evidence.
+- [`docs/dependency-policy.md`](docs/dependency-policy.md) — advisory, license, dependency, and source rules.
 - [`docs/decisions/0001-gpui-linux-gate.md`](docs/decisions/0001-gpui-linux-gate.md) — framework migration gate.
 - [`docs/decisions/0002-gpui-version-policy.md`](docs/decisions/0002-gpui-version-policy.md) — exact pins, upgrade cadence, promotion, and rollback policy.
 - [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md) — pinned upstream comparison and pending Linux gates.

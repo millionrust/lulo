@@ -12,14 +12,14 @@ path = "src/main.rs"
 [dependencies]
 gpui.workspace = true
 gpui-component.workspace = true
-rmac-ui = { path = "../rmac-ui" }
-rmac-editor = { path = "../rmac-editor" }
+rmac-ui.workspace = true
+rmac-editor.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = [
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = [
     "NSAttributedString", "NSString", "NSData", "NSRange", "NSValue", "NSDictionary",
 ] }
-objc2-app-kit = { version = "0.3", features = [
+objc2-app-kit = { workspace = true, features = [
     "NSAttributedString", "NSFont", "NSFontDescriptor", "NSColor", "NSColorSpace",
 ] }

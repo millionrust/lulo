@@ -17,10 +17,16 @@ Run these commands before handing off a change:
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
+cargo deny --locked --log-level error check
 ```
 
-CI runs the same checks on Ubuntu and macOS. A change is not complete while any
-required job is red.
+CI enforces these checks across the Ubuntu, macOS, and dedicated dependency
+policy jobs. A change is not complete while any required job is red.
+
+Install the policy tool with
+`cargo install --locked cargo-deny --version 0.19.8`. Advisory exceptions and
+license additions require a written scope and removal/review condition in
+`docs/dependency-policy.md`.
 
 ## Code rules
 

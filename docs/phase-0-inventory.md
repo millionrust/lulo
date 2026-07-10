@@ -141,6 +141,7 @@ Completed in the initial implementation pass:
 - repository-wide formatting;
 - strict Clippy cleanup;
 - Ubuntu/macOS CI definition;
+- enforced advisory, dependency-source, and license policy;
 - build/run and contribution documentation;
 - architecture and platform-debt inventory;
 - complete macOS workspace test run;
@@ -151,5 +152,4 @@ Still requires external evidence:
 - first successful Ubuntu CI run;
 - wakeup, interactive frame-time, GPU, and energy measurement;
 - Ubuntu reference-hardware performance baseline;
-- license/dependency policy (`cargo-deny`) after allowed licenses are reviewed;
 - Ubuntu 26.04 runtime/GPU/IME/accessibility validation in Phase 1.

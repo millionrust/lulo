@@ -13,5 +13,5 @@ path = "src/main.rs"
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
-rmac-ui = { path = "../rmac-ui" }
-rust-embed = "8"
+rmac-ui.workspace = true
+rust-embed.workspace = true

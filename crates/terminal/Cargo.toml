@@ -12,7 +12,7 @@ path = "src/main.rs"
 [dependencies]
 gpui.workspace = true
 gpui-component.workspace = true
-rmac-ui = { path = "../rmac-ui" }
+rmac-ui.workspace = true
 alacritty_terminal = "0.25"
 portable-pty = "0.9"
 vte = "0.15"

@@ -30,6 +30,16 @@ Shared crates:
 - `rmac-ui` — visual tokens, window setup, dialogs, and context menus.
 - `rmac-editor` — shared multiline editor construction and text helpers.
 
+Phase 1 diagnostic:
+
+```sh
+cargo run -p rmac-platform-lab
+```
+
+The lab exercises GPUI input, clipboard, file chooser, external file drop,
+scrolling, and scaling behavior without coupling the experiment to a product
+application. See [`docs/gpui-0.2.2-stable-spike.md`](docs/gpui-0.2.2-stable-spike.md).
+
 ## Prerequisites
 
 The repository pins Rust in `rust-toolchain.toml`; `rustup` installs the correct
@@ -77,10 +87,10 @@ cargo run --release -p rmac-activity-monitor
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — current and target architecture.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — change and verification rules.
 - [`docs/phase-0-inventory.md`](docs/phase-0-inventory.md) — starting technical-debt inventory.
+- [`docs/decisions/0001-gpui-linux-gate.md`](docs/decisions/0001-gpui-linux-gate.md) — framework migration gate.
 - [`PLAN.md`](PLAN.md) and [`PARITY.md`](PARITY.md) — prototype history.
 
 ## License
 
 MIT. See [`LICENSE`](LICENSE). Third-party dependencies and assets retain their
 respective licenses.
-

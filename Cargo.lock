@@ -4823,6 +4823,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-platform-lab"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "rmac-ui",
+]
+
+[[package]]
 name = "rmac-system-settings"
 version = "0.1.0"
 dependencies = [

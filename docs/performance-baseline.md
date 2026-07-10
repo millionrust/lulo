@@ -113,6 +113,30 @@ indexing. App Drawer still misses the provisional 0.3% idle goal; Linux catalog
 events and icon-cache lifecycle need separate measurements during its
 `rmac-apps` port.
 
+## System Settings asynchronous discovery follow-up
+
+Revision `a1de00cccb27f4388a11733051e3bbac4aaa5882` moved read-only hardware
+discovery off the first-frame path. Persisted controls and the settings shell
+render immediately with an explicit loading banner; a background task gathers
+the system snapshot, applies it atomically, and requests one redraw.
+
+A second clean-revision run, after the release build and first launch were
+warm, produced this comparison:
+
+| Metric | Original `59235ff` | Async discovery `a1de00c` | Change |
+|---|---:|---:|---:|
+| Warm startup median | 986.7 ms | 147.8 ms | -838.9 ms |
+| Warm startup p95 | 1,102.8 ms | 149.2 ms | -953.6 ms |
+| Idle CPU | 0.60% | 0.90% | +0.30 pp |
+| Idle RSS | 71.2 MiB | 72.1 MiB | +0.9 MiB |
+
+Warm p95 improved by 86.5% and now passes the 500 ms simple-app budget with
+350.8 ms of headroom. The small idle and RSS increases require Linux
+confirmation; the snapshot has no polling loop, but its completion latency is
+not yet a separate harness metric. The Linux service adapters should report
+their sections independently so one slow subsystem cannot hold every hardware
+pane in the loading state.
+
 ## Limits and next evidence
 
 These measurements are a reproducible comparison point, not release evidence.

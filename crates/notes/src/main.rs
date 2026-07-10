@@ -10,6 +10,8 @@
 //! editor has a format bar that inserts markdown blocks (headings, bullet
 //! lists, checklists) and a live preview that renders them with macOS styling.
 
+mod storage;
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -129,6 +131,7 @@ struct NotesView {
     menu: Option<(Point<Pixels>, NoteMenuKind)>,
     /// Folder name awaiting a delete confirmation (shared alert), if any.
     confirm_delete_folder: Option<String>,
+    storage_error: Option<SharedString>,
     focus: FocusHandle,
 }
 
@@ -143,7 +146,13 @@ impl NotesView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         let dir = PathBuf::from(home).join("Documents").join("rmac-notes");
-        std::fs::create_dir_all(&dir).ok();
+        let mut storage_error = storage::create_dir(
+            &storage::RealStorage,
+            storage::Operation::CreateFolder,
+            &dir,
+        )
+        .err()
+        .map(|failure| failure.to_string().into());
 
         cx.bind_keys([
             KeyBinding::new("cmd-n", NewNote, Some("Notes")),
@@ -162,8 +171,14 @@ impl NotesView {
         // Re-render tag pills as the user edits the tags field.
         cx.observe(&tags_input, |_, _, cx| cx.notify()).detach();
 
-        let pinned = load_pins(&dir);
-        let sort_by = load_sort(&dir);
+        let pinned = load_pins(&dir).unwrap_or_else(|failure| {
+            storage_error = Some(failure.to_string().into());
+            HashSet::new()
+        });
+        let sort_by = load_sort(&dir).unwrap_or_else(|failure| {
+            storage_error = Some(failure.to_string().into());
+            SortBy::Edited
+        });
         let mut view = Self {
             notes: Vec::new(),
             folders: Vec::new(),
@@ -181,6 +196,7 @@ impl NotesView {
             sort_by,
             menu: None,
             confirm_delete_folder: None,
+            storage_error,
             focus: cx.focus_handle(),
         };
         view.reload(None, cx);
@@ -226,12 +242,18 @@ impl NotesView {
         else {
             return;
         };
-        if !self.pinned.remove(&path) {
-            self.pinned.insert(path.clone());
+        let mut next = self.pinned.clone();
+        if !next.remove(&path) {
+            next.insert(path.clone());
         }
-        save_pins(&self.dir, &self.pinned);
-        self.reload(Some(path), cx);
-        cx.notify();
+        match save_pins(&self.dir, &next) {
+            Ok(()) => {
+                self.pinned = next;
+                self.storage_error = None;
+                self.reload(Some(path), cx);
+            }
+            Err(failure) => self.record_storage_failure(failure, cx),
+        }
     }
 
     /// Change the note-list sort order, persist it, and re-sort the list.
@@ -239,10 +261,14 @@ impl NotesView {
         if self.sort_by == sort {
             return;
         }
-        self.sort_by = sort;
-        save_sort(&self.dir, sort);
-        self.reload(None, cx);
-        cx.notify();
+        match save_sort(&self.dir, sort) {
+            Ok(()) => {
+                self.sort_by = sort;
+                self.storage_error = None;
+                self.reload(None, cx);
+            }
+            Err(failure) => self.record_storage_failure(failure, cx),
+        }
     }
 
     fn reload(&mut self, preserve: Option<PathBuf>, cx: &mut Context<Self>) {
@@ -313,34 +339,60 @@ impl NotesView {
             .update(cx, |s, cx| s.set_value(tags.join(", "), window, cx));
     }
 
-    fn save_current(&mut self, cx: &mut Context<Self>) {
-        let Some(ix) = self.selected else { return };
+    fn record_storage_failure(&mut self, failure: storage::Failure, cx: &mut Context<Self>) {
+        self.storage_error = Some(failure.to_string().into());
+        cx.notify();
+    }
+
+    fn save_current(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(ix) = self.selected else { return true };
         let doc = self.doc(cx);
         if doc == self.last_saved {
-            return;
+            return true;
         }
         // Compute every derived value before taking a mutable borrow of `notes`.
         let t = self.title.read(cx).value().to_string();
         let b = self.body.read(cx).value().to_string();
         let meta = format!("{t}\n{b}");
         let tags = parse_tags(&self.tags_input.read(cx).value());
+        let Some(path) = self.notes.get(ix).map(|note| note.path.clone()) else {
+            return true;
+        };
+        if let Err(failure) = storage::write(
+            &storage::RealStorage,
+            storage::Operation::SaveNote,
+            &path,
+            &doc,
+        ) {
+            self.record_storage_failure(failure, cx);
+            return false;
+        }
         if let Some(note) = self.notes.get_mut(ix) {
-            std::fs::write(&note.path, &doc).ok();
             note.title = title_of(&meta).into();
             note.snippet = snippet_of(&meta).into();
             note.date = date_label(SystemTime::now()).into();
             note.tags = tags;
             self.last_saved = doc;
+            self.storage_error = None;
             cx.notify();
         }
+        true
     }
 
     fn select(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.save_current(cx);
-        let Some(note) = self.notes.get(ix) else {
+        if !self.save_current(cx) {
+            return;
+        }
+        let Some(path) = self.notes.get(ix).map(|note| note.path.clone()) else {
             return;
         };
-        let text = std::fs::read_to_string(&note.path).unwrap_or_default();
+        let text = match storage::read(&storage::RealStorage, storage::Operation::LoadNote, &path) {
+            Ok(text) => text,
+            Err(failure) => {
+                self.record_storage_failure(failure, cx);
+                return;
+            }
+        };
         self.load_doc(&text, window, cx);
         self.selected = Some(ix);
         self.last_saved = self.doc(cx);
@@ -348,14 +400,32 @@ impl NotesView {
     }
 
     fn new_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.save_current(cx);
+        if !self.save_current(cx) {
+            return;
+        }
         let target = match &self.folder_sel {
             FolderSel::Folder(n) => self.dir.join(n),
             FolderSel::All => self.dir.clone(),
         };
-        std::fs::create_dir_all(&target).ok();
+        if let Err(failure) = storage::create_dir(
+            &storage::RealStorage,
+            storage::Operation::CreateFolder,
+            &target,
+        ) {
+            self.record_storage_failure(failure, cx);
+            return;
+        }
         let path = unique_path(&target);
-        std::fs::write(&path, "").ok();
+        if let Err(failure) = storage::write(
+            &storage::RealStorage,
+            storage::Operation::CreateNote,
+            &path,
+            "",
+        ) {
+            self.record_storage_failure(failure, cx);
+            return;
+        }
+        self.storage_error = None;
         self.reload(Some(path.clone()), cx);
         if let Some(ix) = self.notes.iter().position(|n| n.path == path) {
             self.select(ix, window, cx);
@@ -369,8 +439,19 @@ impl NotesView {
         if ix >= self.notes.len() {
             return;
         }
-        let note = self.notes.remove(ix);
-        std::fs::remove_file(&note.path).ok();
+        let path = self.notes[ix].path.clone();
+        if let Err(failure) =
+            storage::remove_file(&storage::RealStorage, storage::Operation::DeleteNote, &path)
+        {
+            self.record_storage_failure(failure, cx);
+            return;
+        }
+        self.storage_error = None;
+        if self.pinned.remove(&path) {
+            if let Err(failure) = save_pins(&self.dir, &self.pinned) {
+                self.record_storage_failure(failure, cx);
+            }
+        }
         self.selected = None;
         self.last_saved.clear();
         self.reload(None, cx);
@@ -387,7 +468,9 @@ impl NotesView {
     // ---- folders ----
 
     fn select_folder(&mut self, sel: FolderSel, window: &mut Window, cx: &mut Context<Self>) {
-        self.save_current(cx);
+        if !self.save_current(cx) {
+            return;
+        }
         self.folder_sel = sel;
         self.renaming_folder = None;
         match self.notes.iter().position(|n| self.in_folder(n)) {
@@ -408,7 +491,15 @@ impl NotesView {
             .and_then(|n| n.to_str())
             .unwrap_or("New Folder")
             .to_string();
-        std::fs::create_dir_all(&path).ok();
+        if let Err(failure) = storage::create_dir(
+            &storage::RealStorage,
+            storage::Operation::CreateFolder,
+            &path,
+        ) {
+            self.record_storage_failure(failure, cx);
+            return;
+        }
+        self.storage_error = None;
         self.reload(None, cx);
         self.folder_sel = FolderSel::Folder(name.clone());
         self.rename_folder_start(window, cx);
@@ -446,11 +537,39 @@ impl NotesView {
             let src = self.dir.join(&old);
             let dst = self.dir.join(&new_name);
             if !dst.exists() {
-                let _ = std::fs::rename(&src, &dst);
+                if let Err(failure) = storage::rename(
+                    &storage::RealStorage,
+                    storage::Operation::RenameFolder,
+                    &src,
+                    &dst,
+                ) {
+                    self.record_storage_failure(failure, cx);
+                    self.reload(preserve, cx);
+                    return;
+                }
+                self.storage_error = None;
                 // The open note moved with its folder — remap its path.
                 if let Some(p) = preserve.clone() {
                     if let Ok(rel) = p.strip_prefix(&src) {
                         preserve = Some(dst.join(rel));
+                    }
+                }
+                let mut pins_changed = false;
+                self.pinned = self
+                    .pinned
+                    .iter()
+                    .map(|path| {
+                        if let Ok(relative) = path.strip_prefix(&src) {
+                            pins_changed = true;
+                            dst.join(relative)
+                        } else {
+                            path.clone()
+                        }
+                    })
+                    .collect();
+                if pins_changed {
+                    if let Err(failure) = save_pins(&self.dir, &self.pinned) {
+                        self.record_storage_failure(failure, cx);
                     }
                 }
                 if let FolderSel::Folder(n) = &self.folder_sel {
@@ -458,6 +577,15 @@ impl NotesView {
                         self.folder_sel = FolderSel::Folder(new_name.clone());
                     }
                 }
+            } else {
+                self.record_storage_failure(
+                    storage::Failure::message(
+                        storage::Operation::RenameFolder,
+                        &src,
+                        "a folder with that name already exists",
+                    ),
+                    cx,
+                );
             }
         }
         self.reload(preserve, cx);
@@ -476,7 +604,9 @@ impl NotesView {
         };
         // Persist any pending edits in the open note before touching the disk —
         // the note may live inside the folder we're about to remove.
-        self.save_current(cx);
+        if !self.save_current(cx) {
+            return;
+        }
         self.confirm_delete_folder = Some(name);
         cx.notify();
     }
@@ -490,7 +620,23 @@ impl NotesView {
     }
 
     fn delete_folder_confirmed(&mut self, name: &str, cx: &mut Context<Self>) {
-        let _ = std::fs::remove_dir_all(self.dir.join(name));
+        let path = self.dir.join(name);
+        if let Err(failure) = storage::remove_dir_all(
+            &storage::RealStorage,
+            storage::Operation::DeleteFolder,
+            &path,
+        ) {
+            self.record_storage_failure(failure, cx);
+            return;
+        }
+        self.storage_error = None;
+        let previous_pin_count = self.pinned.len();
+        self.pinned.retain(|pinned| !pinned.starts_with(&path));
+        if self.pinned.len() != previous_pin_count {
+            if let Err(failure) = save_pins(&self.dir, &self.pinned) {
+                self.record_storage_failure(failure, cx);
+            }
+        }
         if self.folder_sel == FolderSel::Folder(name.to_string()) {
             self.folder_sel = FolderSel::All;
         }
@@ -517,16 +663,28 @@ impl NotesView {
             let Some(src) = paths.into_iter().next() else {
                 return;
             };
-            let name = src
+            let requested_name = src
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "image".to_string());
-            let dst = dir.join(&name);
-            if std::fs::copy(&src, &dst).is_ok() {
-                let _ = this.update_in(cx, |this, window, cx| {
+            let dst = unique_named_path(&dir, &requested_name);
+            let name = dst
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or(requested_name);
+            let result = storage::copy(
+                &storage::RealStorage,
+                storage::Operation::Attach,
+                &src,
+                &dst,
+            );
+            let _ = this.update_in(cx, |this, window, cx| match result {
+                Ok(()) => {
+                    this.storage_error = None;
                     this.insert_token(&format!("\n![]({name})\n"), window, cx);
-                });
-            }
+                }
+                Err(failure) => this.record_storage_failure(failure, cx),
+            });
         })
         .detach();
     }
@@ -1220,6 +1378,7 @@ impl NotesView {
 
 impl Render for NotesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let storage_error = self.storage_error.clone();
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
@@ -1250,14 +1409,40 @@ impl Render for NotesView {
                 this.menu = None;
                 cx.notify();
             }))
-            .on_action(
-                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
-            )
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                if this.save_current(cx) {
+                    window.remove_window();
+                }
+            }))
             .size_full()
             .v_flex()
             .bg(mac::window())
             .text_color(mac::text())
             .child(self.render_toolbar(cx))
+            .when_some(storage_error, |el, message| {
+                el.child(
+                    div()
+                        .id("storage-error")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(gpui::rgba(0xff3b301f))
+                        .border_b_1()
+                        .border_color(gpui::rgba(0xff3b3059))
+                        .text_size(px(12.0))
+                        .text_color(gpui::rgb(0xc62828))
+                        .cursor_pointer()
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.storage_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .child(
                 div()
                     .flex_1()
@@ -1549,35 +1734,52 @@ fn list_section_header(title: &'static str) -> AnyElement {
 }
 
 /// Load the set of pinned note paths from `<dir>/.pinned` (one path per line).
-fn load_pins(dir: &Path) -> HashSet<PathBuf> {
-    std::fs::read_to_string(dir.join(".pinned"))
-        .map(|s| {
+fn load_pins(dir: &Path) -> Result<HashSet<PathBuf>, storage::Failure> {
+    let path = dir.join(".pinned");
+    match storage::read(&storage::RealStorage, storage::Operation::LoadPins, &path) {
+        Ok(contents) => Ok({
+            let s = contents;
             s.lines()
                 .filter(|l| !l.is_empty())
                 .map(PathBuf::from)
                 .collect()
-        })
-        .unwrap_or_default()
+        }),
+        Err(failure) if failure.error_kind == std::io::ErrorKind::NotFound => Ok(HashSet::new()),
+        Err(failure) => Err(failure),
+    }
 }
 
-fn save_pins(dir: &Path, pins: &HashSet<PathBuf>) {
+fn save_pins(dir: &Path, pins: &HashSet<PathBuf>) -> Result<(), storage::Failure> {
     let body = pins
         .iter()
         .map(|p| p.display().to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    let _ = std::fs::write(dir.join(".pinned"), body);
+    storage::write(
+        &storage::RealStorage,
+        storage::Operation::SavePins,
+        &dir.join(".pinned"),
+        body,
+    )
 }
 
 /// Load the persisted sort order from `<dir>/.sort` (defaults to Date Edited).
-fn load_sort(dir: &Path) -> SortBy {
-    std::fs::read_to_string(dir.join(".sort"))
-        .map(|s| SortBy::from_id(s.trim()))
-        .unwrap_or(SortBy::Edited)
+fn load_sort(dir: &Path) -> Result<SortBy, storage::Failure> {
+    let path = dir.join(".sort");
+    match storage::read(&storage::RealStorage, storage::Operation::LoadSort, &path) {
+        Ok(contents) => Ok(SortBy::from_id(contents.trim())),
+        Err(failure) if failure.error_kind == std::io::ErrorKind::NotFound => Ok(SortBy::Edited),
+        Err(failure) => Err(failure),
+    }
 }
 
-fn save_sort(dir: &Path, sort: SortBy) {
-    let _ = std::fs::write(dir.join(".sort"), sort.id());
+fn save_sort(dir: &Path, sort: SortBy) -> Result<(), storage::Failure> {
+    storage::write(
+        &storage::RealStorage,
+        storage::Operation::SaveSort,
+        &dir.join(".sort"),
+        sort.id(),
+    )
 }
 
 fn scan_notes(dir: &Path) -> Vec<Note> {
@@ -1599,6 +1801,29 @@ fn unique_path(dir: &Path) -> PathBuf {
         }
         n += 1;
     }
+}
+
+fn unique_named_path(dir: &Path, name: &str) -> PathBuf {
+    let requested = dir.join(name);
+    if !requested.exists() {
+        return requested;
+    }
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("attachment");
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    for suffix in 2..10_000 {
+        let candidate = match extension {
+            Some(extension) => dir.join(format!("{stem} {suffix}.{extension}")),
+            None => dir.join(format!("{stem} {suffix}")),
+        };
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    requested
 }
 
 fn unique_folder(dir: &Path) -> PathBuf {

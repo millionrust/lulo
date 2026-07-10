@@ -102,7 +102,6 @@ areas:
 
 - Finder native pasteboard writes (the AppKit API does not expose a useful
   per-item result);
-- Notes folder rename/delete and pin/sort persistence;
 - Text Editor recovery-file writes/removal;
 - System Settings persistence;
 - Activity Monitor column preferences;
@@ -116,6 +115,12 @@ cancellation run through a background transfer worker: the UI reports completed
 items, cancellation terminates `ditto` or the chunked portable fallback, and
 source removal is skipped once cancellation is observed. Byte-level progress
 and guided cleanup for partial cancelled destinations remain future work.
+
+Notes note bodies, pin state, and sort state now use adjacent-temp atomic writes
+with typed failures. Failed autosaves remain dirty and retryable; navigation and
+window close stop when pending edits cannot be saved. Folder rename/delete,
+note create/delete, and attachment copy failures remain visible, and attachment
+copies cannot overwrite an existing destination.
 
 Migration rule: preference writes move to atomic `rmac-storage` operations. No
 data-changing Linux path may add a new ignored error.

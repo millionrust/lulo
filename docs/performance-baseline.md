@@ -171,6 +171,32 @@ PC must repeat the same cadence and window, record process count, and verify
 that collection does not cause visible frame stalls before this budget becomes
 a cross-platform release threshold.
 
+## Finder event-driven watcher follow-up
+
+Revision `b08aa153baa6d12c84140690d3a862e0d7cd5b49` replaced Finder's 600 ms
+atomic-flag polling bridge with a capacity-one event channel. Watcher bursts
+wait for a 200 ms quiet edge, continuous churn is capped at one reload every
+two seconds, and watcher-triggered reloads reuse cached volume-space data
+instead of launching `df`. Navigation and Finder's own file operations still
+refresh immediately.
+
+The final clean-revision run produced this comparison:
+
+| Metric | Original `59235ff` | Event-driven `b08aa15` | Change |
+|---|---:|---:|---:|
+| Warm startup median | 132.4 ms | 129.2 ms | -3.2 ms |
+| Warm startup p95 | 136.1 ms | 132.9 ms | -3.2 ms |
+| Idle CPU | 0.80% | 0.80% | no change |
+| Idle RSS | 73.7 MiB | 73.6 MiB | -0.1 MiB |
+
+The event-driven design removes periodic wakeups without regressing the
+real-home measurement, but the starting directory was not quiescent during
+these samples and real events still require directory reads. Finder therefore
+still misses the provisional 0.3% normal-app target. The Linux reference pass
+must measure both a controlled unchanged directory and a deterministic event
+burst so idle wakeups, event latency, and active rescan cost are reported
+separately.
+
 ## Limits and next evidence
 
 These measurements are a reproducible comparison point, not release evidence.

@@ -9,7 +9,7 @@
 mod rtf;
 mod storage;
 
-use std::{path::PathBuf, time::Duration};
+use std::{path::Path, path::PathBuf, time::Duration};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -116,11 +116,45 @@ struct EditorView {
     // Infra
     focus: FocusHandle,
     recovery_path: PathBuf,
+    legacy_recovery_path: Option<PathBuf>,
     recovery_clock: RecoveryClock,
     recovery_error: Option<SharedString>,
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
     alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,
+}
+
+fn platform_recovery_path() -> Result<PathBuf, storage::Failure> {
+    recovery_path_for_platform(
+        cfg!(target_os = "macos"),
+        std::env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+        std::env::var_os("HOME").map(PathBuf::from),
+    )
+}
+
+fn recovery_path_for_platform(
+    macos: bool,
+    xdg_state_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Result<PathBuf, storage::Failure> {
+    if !macos {
+        if let Some(path) = xdg_state_home.filter(|path| path.is_absolute()) {
+            return Ok(path.join("rmac-text-editor/recovery.txt"));
+        }
+    }
+
+    let home = home.ok_or_else(|| {
+        storage::Failure::message(
+            storage::Operation::ResolveRecoveryPath,
+            Path::new("recovery.txt"),
+            "HOME is not set and XDG_STATE_HOME is unavailable",
+        )
+    })?;
+    if macos {
+        Ok(home.join("Library/Application Support/rmac-text-editor/recovery.txt"))
+    } else {
+        Ok(home.join(".local/state/rmac-text-editor/recovery.txt"))
+    }
 }
 
 impl EditorView {
@@ -165,15 +199,34 @@ impl EditorView {
             KeyBinding::new("cmd-w", CloseWindow, Some(CTX)),
         ]);
 
-        let recovery_path = std::env::temp_dir().join("rmac-text-editor-recovery.txt");
-
-        // If an autosaved recovery file from a previous (crashed) session exists,
-        // open the shared Recover alert once the view is live.
-        let (alert, recovery_error) =
-            match storage::load_recovery(&storage::RealStorage, &recovery_path) {
-                Ok(content) => (content.map(ActiveAlert::Recover), None),
-                Err(failure) => (None, Some(failure.to_string().into())),
-            };
+        let legacy_path = std::env::temp_dir().join("rmac-text-editor-recovery.txt");
+        let (recovery_path, loaded) = match platform_recovery_path() {
+            Ok(recovery_path) => {
+                let loaded = storage::load_migrating_recovery(
+                    &storage::RealStorage,
+                    &recovery_path,
+                    &legacy_path,
+                );
+                (recovery_path, loaded)
+            }
+            Err(failure) => {
+                let content = storage::load_recovery(&storage::RealStorage, &legacy_path)
+                    .ok()
+                    .flatten();
+                (
+                    legacy_path.clone(),
+                    storage::LoadedRecovery {
+                        content,
+                        legacy_path: None,
+                        warning: Some(failure),
+                    },
+                )
+            }
+        };
+        let alert = loaded.content.map(ActiveAlert::Recover);
+        let recovery_error = loaded
+            .warning
+            .map(|failure| SharedString::from(failure.to_string()));
 
         Self {
             alert,
@@ -192,6 +245,7 @@ impl EditorView {
             rtf_runs: None,
             focus: cx.focus_handle(),
             recovery_path,
+            legacy_recovery_path: loaded.legacy_path,
             recovery_clock: RecoveryClock::default(),
             recovery_error,
             _subscriptions: vec![sub_main, sub_find],
@@ -234,13 +288,14 @@ impl EditorView {
             let _ = this.update(cx, |this, cx| {
                 if this.recovery_clock.should_write(generation, this.dirty) {
                     let content = this.input.read(cx).value().to_string();
-                    match storage::write(
+                    match storage::save_recovery(
                         &storage::RealStorage,
                         storage::Operation::SaveRecovery,
                         &this.recovery_path,
                         content,
                     ) {
-                        Ok(()) => this.recovery_error = None,
+                        Ok(()) if this.legacy_recovery_path.is_none() => this.recovery_error = None,
+                        Ok(()) => {}
                         Err(failure) => this.record_recovery_failure(failure, cx),
                     }
                 }
@@ -256,8 +311,13 @@ impl EditorView {
 
     fn clear_recovery(&mut self, cx: &mut Context<Self>) -> bool {
         self.recovery_clock.invalidate();
-        match storage::remove_recovery(&storage::RealStorage, &self.recovery_path) {
+        match storage::remove_recoveries(
+            &storage::RealStorage,
+            &self.recovery_path,
+            self.legacy_recovery_path.as_deref(),
+        ) {
             Ok(()) => {
+                self.legacy_recovery_path = None;
                 self.recovery_error = None;
                 true
             }
@@ -1111,7 +1171,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::RecoveryClock;
+    use super::{recovery_path_for_platform, RecoveryClock};
+    use std::path::PathBuf;
 
     #[test]
     fn clean_transition_invalidates_a_pending_recovery_write() {
@@ -1133,5 +1194,40 @@ mod tests {
 
         assert!(!clock.should_write(older, true));
         assert!(clock.should_write(newer, true));
+    }
+
+    #[test]
+    fn recovery_paths_follow_xdg_and_macos_conventions() {
+        let linux_xdg = recovery_path_for_platform(
+            false,
+            Some(PathBuf::from("/var/state")),
+            Some(PathBuf::from("/home/user")),
+        )
+        .unwrap();
+        let linux_fallback = recovery_path_for_platform(
+            false,
+            Some(PathBuf::from("relative-state")),
+            Some(PathBuf::from("/home/user")),
+        )
+        .unwrap();
+        let macos = recovery_path_for_platform(
+            true,
+            Some(PathBuf::from("/ignored")),
+            Some(PathBuf::from("/Users/user")),
+        )
+        .unwrap();
+
+        assert_eq!(
+            linux_xdg,
+            PathBuf::from("/var/state/rmac-text-editor/recovery.txt")
+        );
+        assert_eq!(
+            linux_fallback,
+            PathBuf::from("/home/user/.local/state/rmac-text-editor/recovery.txt")
+        );
+        assert_eq!(
+            macos,
+            PathBuf::from("/Users/user/Library/Application Support/rmac-text-editor/recovery.txt")
+        );
     }
 }

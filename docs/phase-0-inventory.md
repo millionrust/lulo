@@ -90,11 +90,11 @@ a tested cross-platform read-only parser. Rich-text editing remains out of scope
 
 Activity Monitor, Terminal, and System Settings now use XDG configuration paths
 on Linux and `~/Library/Application Support` on macOS. Notes intentionally uses
-`~/Documents/rmac-notes`; Text Editor recovery still uses the temporary
-directory.
+`~/Documents/rmac-notes`. Text Editor recovery uses XDG state storage on Linux
+and Application Support on macOS.
 
-`rmac-storage` now supplies shared atomic filesystem primitives. Moving Text
-Editor recovery to XDG state storage, with legacy import, remains outstanding.
+`rmac-storage` supplies the shared atomic filesystem primitives and Text Editor
+imports its former temporary-directory recovery file on launch.
 
 ## ignored data-changing errors
 
@@ -123,7 +123,10 @@ replacement with typed failures. Recovery timers are generation-checked and
 write only while the buffer is dirty; clean transitions invalidate pending
 timers. Recovery removal failures remain visible and block New/Close or an
 explicit discard, while cancelling an Open dialog keeps the current draft
-recoverable.
+recoverable. Recovery state now lives under XDG state/Application Support; the
+former temporary file is migrated atomically. Migration or cleanup failures
+retain the legacy path, and destructive actions attempt both copies before
+continuing.
 
 System Settings now loads and saves its XDG/macOS configuration through typed,
 adjacent-temp atomic storage. Missing configuration remains a normal first

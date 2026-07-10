@@ -82,10 +82,10 @@ sudo apt-get install --yes \
 ## Build and verify
 
 ```sh
-cargo build --workspace
+cargo build --locked --workspace
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace --all-features
 ```
 
 Use `--release` when measuring startup, memory, or animation performance:
@@ -101,6 +101,7 @@ cargo run --release -p rmac-activity-monitor
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — change and verification rules.
 - [`docs/phase-0-inventory.md`](docs/phase-0-inventory.md) — starting technical-debt inventory.
 - [`docs/decisions/0001-gpui-linux-gate.md`](docs/decisions/0001-gpui-linux-gate.md) — framework migration gate.
+- [`docs/decisions/0002-gpui-version-policy.md`](docs/decisions/0002-gpui-version-policy.md) — exact pins, upgrade cadence, promotion, and rollback policy.
 - [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md) — pinned upstream comparison and pending Linux gates.
 - [`PLAN.md`](PLAN.md) and [`PARITY.md`](PARITY.md) — prototype history.
 

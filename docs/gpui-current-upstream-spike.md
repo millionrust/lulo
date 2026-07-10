@@ -57,6 +57,22 @@ The macOS result proves that current upstream's application split and semantic
 API can be integrated in a bounded crate. It does not prove Linux accessibility
 or shell behavior.
 
+## Linux compile-only evidence
+
+On 2026-07-10, the committed experiment was mounted read-only into a clean
+ARM64 Debian Bookworm container using Rust 1.95.0. The container installed the
+same GPUI native development libraries as the Linux CI job and ran:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --bins --features wayland -- -D warnings
+```
+
+Both commands passed. This type-checks the Linux-only layer-shell module and
+the AccessKit/AT-SPI, Wayland, and Vulkan dependency paths. It is valuable
+compile evidence, but a container without a compositor, GPU, D-Bus session, or
+Orca cannot satisfy any runtime gate below.
+
 ## Ubuntu 26.04 runtime protocol
 
 Run on both GNOME Wayland and niri where specified. Capture the GPUI lab commit,

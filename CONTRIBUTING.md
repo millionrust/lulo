@@ -15,8 +15,8 @@ Run these commands before handing off a change:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace --all-features
 ```
 
 CI runs the same checks on Ubuntu and macOS. A change is not complete while any
@@ -34,6 +34,8 @@ required job is red.
 - Add a fake implementation for every new platform service.
 - Preserve unknown fields and variants when decoding forward-compatible IPC.
 - Use XDG base directories on Linux and version persisted formats.
+- Follow `docs/decisions/0002-gpui-version-policy.md` for every GPUI-family
+  dependency change. Framework upgrades must be isolated from feature work.
 
 ## Tests
 
@@ -66,4 +68,3 @@ A feature is done only when its acceptance criteria and failure states work,
 the required checks pass, accessibility behavior is verified, errors are
 actionable, documentation is current, and a reviewer can reproduce the result
 from a clean checkout.
-

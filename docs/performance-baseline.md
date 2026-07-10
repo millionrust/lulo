@@ -197,6 +197,30 @@ must measure both a controlled unchanged directory and a deterministic event
 burst so idle wakeups, event latency, and active rescan cost are reported
 separately.
 
+## Finder background-transfer smoke follow-up
+
+Revision `77e5e62184a85a23b8099fabd86cdbd16b839b45` moved copy, duplicate,
+paste, and drag/drop transfers off the GPUI thread. The UI reports item
+progress and exposes cancellation; cancellation terminates the macOS `ditto`
+child or interrupts the portable fallback between 256 KiB chunks, and a move
+checks cancellation before deleting its source.
+
+The clean-revision startup/idle smoke run produced this comparison against the
+event-driven watcher revision:
+
+| Metric | Watcher `b08aa15` | Transfer worker `77e5e62` | Change |
+|---|---:|---:|---:|
+| Warm startup median | 129.2 ms | 163.0 ms | +33.8 ms |
+| Warm startup p95 | 132.9 ms | 172.1 ms | +39.2 ms |
+| Idle CPU | 0.80% | 0.80% | no change |
+| Idle RSS | 73.6 MiB | 75.0 MiB | +1.4 MiB |
+
+Finder remains 727.9 ms inside its 900 ms startup budget. This is only a
+launch/idle smoke test; transfer correctness is covered by injected worker
+tests, but release evidence still needs a deterministic large-file and
+directory journey that records UI frame stalls, byte throughput, cancellation
+latency, and recoverable partial destinations.
+
 ## Limits and next evidence
 
 These measurements are a reproducible comparison point, not release evidence.

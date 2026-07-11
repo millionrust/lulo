@@ -41,6 +41,7 @@ Shared crates:
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
 - `rmac-shell-status-linux` — coalesced D-Bus and PipeWire status refresh events.
+- `rmac-shell-runtime` — live shell orchestration, source health, and last-known-good state.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
 
 Phase 1 diagnostic:

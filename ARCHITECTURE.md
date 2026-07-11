@@ -183,7 +183,11 @@ it and subscribes to NetworkManager, BlueZ, UPower/power-profile D-Bus paths and
 the PipeWire object monitor. It publishes coalesced refresh hints rather than
 claiming signal payloads are authoritative state. Service snapshot reads remain
 off the render path, and transport loss is explicit instead of silently leaving
-menu-bar indicators stale.
+menu-bar indicators stale. `rmac-shell-runtime` combines those hints with niri
+and shell-settings streams, keeps the last known good status through transient
+source failures, and publishes source health separately. A health-only update
+is available to diagnostics but is explicitly marked as not requiring a shell
+frame.
 
 ## Persistence
 

@@ -17,6 +17,7 @@ ashpd = "0.12.3"
 async-channel = "2"
 async-io = "2"
 async-process = "2"
+blocking = "1"
 chrono = "0.4"
 gpui = "=0.2.2"
 gpui-component = "=0.5.1"
@@ -48,6 +49,7 @@ rmac-session = { version = "=0.1.0", path = "crates/rmac-session" }
 rmac-shell-settings = { version = "=0.1.0", path = "crates/rmac-shell-settings" }
 rmac-shell-status = { version = "=0.1.0", path = "crates/rmac-shell-status" }
 rmac-shell-status-linux = { version = "=0.1.0", path = "crates/rmac-shell-status-linux" }
+rmac-shell-runtime = { version = "=0.1.0", path = "crates/rmac-shell-runtime" }
 rmac-shortcuts = { version = "=0.1.0", path = "crates/rmac-shortcuts" }
 rmac-storage = { version = "=0.1.0", path = "crates/rmac-storage" }
 rmac-thumbnails = { version = "=0.1.0", path = "crates/rmac-thumbnails" }

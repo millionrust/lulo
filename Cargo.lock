@@ -5025,6 +5025,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "blocking",
+ "futures-util",
+ "rmac-audio",
+ "rmac-bluetooth",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-network",
+ "rmac-power",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-status-linux",
+]
+
+[[package]]
 name = "rmac-shell-settings"
 version = "0.1.0"
 dependencies = [

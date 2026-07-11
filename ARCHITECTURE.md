@@ -45,6 +45,16 @@ It depends only on serialization crates. The direct niri adapter is a lower
 layer and must tolerate the source event stream's non-atomic cross-collection
 ordering and future JSON additions.
 
+`rmac-compositor-niri` is that lower layer. It connects directly to
+`$NIRI_SOCKET`, opens the event stream before querying outputs and layer
+surfaces on separate sockets, and publishes one coherent domain snapshot only
+after niri's complete initial workspace and window events arrive. It then
+forwards incremental domain events. Socket loss produces explicit connection
+states and bounded reconnect backoff; a replacement stream always rebuilds
+state from scratch. The adapter inspects each JSON envelope before typed
+deserialization so a future event variant remains an `Event::Unknown` instead
+of taking down the shell.
+
 The intended crate map and migration phases are specified in `PLAN_V2.md`.
 
 ## UI and update model

@@ -345,6 +345,17 @@ pub struct State {
 }
 
 impl State {
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            outputs: self.outputs.values().cloned().collect(),
+            workspaces: self.workspaces.values().cloned().collect(),
+            windows: self.windows.values().cloned().collect(),
+            layer_surfaces: self.layer_surfaces.values().cloned().collect(),
+            focus: self.focus.clone(),
+            activation: self.activation.clone(),
+        }
+    }
+
     pub fn apply(&mut self, event: Event) -> Change {
         match event {
             Event::Snapshot { snapshot } => {

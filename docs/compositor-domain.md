@@ -42,10 +42,11 @@ The model was checked against the official niri IPC 26.4 documentation:
 The official contract says the event stream provides complete initial
 workspace/window state, but related replacement events are not always atomic;
 for example, a workspace may disappear before the corresponding window update.
-It also warns that patch versions may add Rust fields and enum variants. C2 must
-therefore decode JSON defensively, use separate event/action sockets, reconnect
-from a new complete stream, and translate unknown input into the domain’s
-forward-compatible path.
+The corresponding Rust crate warns that versions may add fields and enum
+variants. The adapter therefore uses a private, reviewed wire model, decodes
+JSON defensively, uses separate event/action sockets, reconnects from a new
+complete stream, and translates unknown input into the domain’s
+forward-compatible path without linking the GPL-licensed helper crate.
 
 ## Invariants
 

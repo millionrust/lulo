@@ -20,7 +20,7 @@ chrono = "0.4"
 gpui = "=0.2.2"
 gpui-component = "=0.5.1"
 gpui-component-assets = "=0.5.1"
-futures-util = "0.3"
+futures-util = { version = "0.3", features = ["io"] }
 image = "0.25.10"
 kdl = { version = "=6.5.0", features = ["v1-fallback"] }
 notify = "7"
@@ -32,6 +32,7 @@ rmac-appearance = { version = "=0.1.0", path = "crates/rmac-appearance" }
 rmac-appearance-portal = { version = "=0.1.0", path = "crates/rmac-appearance-portal" }
 rmac-bluetooth = { version = "=0.1.0", path = "crates/rmac-bluetooth" }
 rmac-compositor = { version = "=0.1.0", path = "crates/rmac-compositor" }
+rmac-compositor-niri = { version = "=0.1.0", path = "crates/rmac-compositor-niri" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }

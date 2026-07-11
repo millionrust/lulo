@@ -170,10 +170,13 @@ Shell preferences have their own GPUI- and compositor-free authority in
 `rmac-shell-settings`. Its versioned snapshot covers pinned applications, Dock
 placement/output/autohide/magnification behavior, clock and meaningful
 indicators, default and per-output wallpaper selection, current Focus choice,
-and per-provider privacy/network policy. Separate shell processes watch one XDG
-configuration file and refresh from authority after coalesced change events.
-Writes atomically replace both the primary and last-known-good documents;
-schema migration and corrupt-primary recovery happen below every UI surface.
+per-provider privacy/network policy, and Spotlight exclusions/removable-media
+opt-in. Exclusions are bounded, unique, normalized absolute paths; shell text
+and URI forms never enter the search boundary. Separate shell processes watch
+one XDG configuration file and refresh from authority after coalesced change
+events. Writes atomically replace both the primary and last-known-good
+documents; schema migration and corrupt-primary recovery happen below every UI
+surface.
 
 Live shell chrome has a separate read boundary. `rmac-shell-status` reduces
 focused compositor identity and complete network, VPN, Bluetooth, audio, power,
@@ -256,9 +259,13 @@ passes cancellation into bounded filename/recent-document searches, and
 evaluates a deliberately small arithmetic grammar. File results are declared
 private before admission and retain an explicit Reveal alternate; providers
 run behind an exact-descriptor check so an unadmitted adapter receives no
-query. `rmac-launcher-system` is the separate execution boundary. It validates
-the typed action again, launches the preserved application specification off
-the UI executor, and opens/reveals files through `rmac-portal`. Settings
+query. Filename traversal prunes excluded roots before descent and stays on the
+root filesystem unless removable media was explicitly enabled. Recent records
+must still exist, remain in scope, and cannot bypass exclusions through a
+symlink alias. `rmac-launcher-system` is the separate execution boundary. It
+validates the typed action again, launches the preserved application
+specification off the UI executor, and opens/reveals files through
+`rmac-portal`. Settings
 navigation and clipboard writes are delegated to the live overlay surface,
 where the GPUI context exists. Receipts contain only an activation ID and
 outcome kind; default errors redact paths, copied text, and backend detail.

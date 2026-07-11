@@ -86,7 +86,12 @@ print private action payloads.
   They accept only an absolute root, return only absolute deduplicated paths,
   pass the query cancellation flag into `rmac-search`, and declare private
   content before the request is admitted. Open is primary and Reveal is the
-  explicit alternate action.
+  explicit alternate action. Versioned shell settings supply bounded absolute
+  exclusions and an explicit removable-mount opt-in. Excluded directories are
+  pruned before filesystem descent; search stays on the root device by default.
+  Results are rechecked for existence, scope, exclusions, and device boundary,
+  including canonical checks that prevent recent-document symlink aliases from
+  escaping an exclusion. Deleted recent records are silently omitted.
 - Calculator evaluates finite arithmetic with precedence, parentheses, unary
   signs, a 256-byte input bound, and no scripting or function surface. Its
   result is a typed copy-text action.

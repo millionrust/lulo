@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use rmac_storage::{Backend, Failure, FileSystem};
 use serde::{Deserialize, Serialize};
 
-const CURRENT_VERSION: u32 = 2;
+const CURRENT_VERSION: u32 = 3;
 const MAX_PINNED_APPS: usize = 128;
+const MAX_SPOTLIGHT_EXCLUSIONS: usize = 128;
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -193,6 +194,17 @@ impl Default for ProviderPolicy {
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct SpotlightSettings {
+    /// Absolute directory roots omitted from filename and recent-document
+    /// results. Shell text and URI forms are deliberately unsupported.
+    pub excluded_paths: Vec<String>,
+    /// Search across filesystem device boundaries. Off by default so mounted
+    /// removable media is never traversed merely by opening the launcher.
+    pub include_removable_mounts: bool,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ShellSettings {
@@ -203,6 +215,7 @@ pub struct ShellSettings {
     pub wallpaper: WallpaperSettings,
     pub focus: FocusSettings,
     pub providers: BTreeMap<ProviderId, ProviderPolicy>,
+    pub spotlight: SpotlightSettings,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -483,6 +496,16 @@ impl<B: Backend> ShellSettingsStore<B> {
                     migrated_from: Some(1),
                 }))
             }
+            2 => {
+                let stored: StoredSettings = serde_json::from_value(envelope).map_err(|error| {
+                    Failure::message(Operation::ParseSettings, path, error.to_string())
+                })?;
+                validate(&stored.settings, path)?;
+                Ok(Some(Loaded {
+                    settings: stored.settings,
+                    migrated_from: Some(2),
+                }))
+            }
             version if version == u64::from(CURRENT_VERSION) => {
                 let stored: StoredSettings = serde_json::from_value(envelope).map_err(|error| {
                     Failure::message(Operation::ParseSettings, path, error.to_string())
@@ -497,7 +520,7 @@ impl<B: Backend> ShellSettingsStore<B> {
             other => Err(Failure::message(
                 Operation::ParseSettings,
                 path,
-                format!("unsupported shell settings version {other}; expected 1 or 2"),
+                format!("unsupported shell settings version {other}; expected 1, 2, or 3"),
             )),
         }
     }
@@ -634,6 +657,33 @@ fn validate(settings: &ShellSettings, path: &Path) -> Result<(), Error> {
     for provider in settings.providers.keys() {
         validate_identifier(&provider.0, "provider", path)?;
     }
+    if settings.spotlight.excluded_paths.len() > MAX_SPOTLIGHT_EXCLUSIONS {
+        return Err(invalid(
+            path,
+            "Spotlight exclusions exceed the 128-item safety limit",
+        ));
+    }
+    let mut exclusions = BTreeSet::new();
+    for exclusion in &settings.spotlight.excluded_paths {
+        validate_identifier(exclusion, "Spotlight exclusion", path)?;
+        let exclusion_path = Path::new(exclusion);
+        if !exclusion_path.is_absolute()
+            || exclusion_path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::CurDir | std::path::Component::ParentDir
+                )
+            })
+        {
+            return Err(invalid(
+                path,
+                "Spotlight exclusions must be normalized absolute paths",
+            ));
+        }
+        if !exclusions.insert(exclusion) {
+            return Err(invalid(path, "Spotlight exclusions must be unique"));
+        }
+    }
     Ok(())
 }
 
@@ -749,6 +799,10 @@ mod tests {
                     allow_network: false,
                 },
             )]),
+            spotlight: SpotlightSettings {
+                excluded_paths: vec!["/home/test/Private".into()],
+                include_removable_mounts: true,
+            },
             ..ShellSettings::default()
         }
     }
@@ -832,8 +886,11 @@ mod tests {
             r#"{"version":2,"settings":{"future":true,"dock":{"future":42}}}"#,
         )
         .unwrap();
-        assert_eq!(store.load().unwrap().settings, ShellSettings::default());
+        let migrated = store.load().unwrap();
+        assert_eq!(migrated.settings, ShellSettings::default());
+        assert_eq!(migrated.migrated_from, Some(2));
 
+        std::fs::remove_file(root.join("shell.json.last-good")).unwrap();
         std::fs::write(store.path(), r#"{"version":99,"settings":{}}"#).unwrap();
         let error = store.load().unwrap_err();
         assert_eq!(error.operation, Operation::ParseSettings);
@@ -854,6 +911,13 @@ mod tests {
         duplicate.focus.enabled = true;
         duplicate.focus.ends_at_unix_ms = None;
         assert!(validate(&duplicate, path).is_err());
+
+        let mut invalid_exclusion = ShellSettings::default();
+        invalid_exclusion.spotlight.excluded_paths = vec!["relative/private".into()];
+        assert!(validate(&invalid_exclusion, path).is_err());
+        invalid_exclusion.spotlight.excluded_paths =
+            vec!["/home/test/Private".into(), "/home/test/Private".into()];
+        assert!(validate(&invalid_exclusion, path).is_err());
     }
 
     #[test]

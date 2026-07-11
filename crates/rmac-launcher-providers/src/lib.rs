@@ -222,6 +222,8 @@ impl FileSearch for SystemFileSearch {
 #[derive(Clone, Debug)]
 pub struct FileProvider<S = SystemFileSearch> {
     root: PathBuf,
+    excluded_roots: Vec<PathBuf>,
+    include_removable_mounts: bool,
     search: S,
 }
 
@@ -229,6 +231,8 @@ impl FileProvider<SystemFileSearch> {
     pub fn system(root: PathBuf) -> Self {
         Self {
             root,
+            excluded_roots: Vec::new(),
+            include_removable_mounts: false,
             search: SystemFileSearch,
         }
     }
@@ -236,7 +240,50 @@ impl FileProvider<SystemFileSearch> {
 
 impl<S> FileProvider<S> {
     pub fn new(root: PathBuf, search: S) -> Self {
-        Self { root, search }
+        Self {
+            root,
+            excluded_roots: Vec::new(),
+            include_removable_mounts: false,
+            search,
+        }
+    }
+
+    pub fn scoped(
+        root: PathBuf,
+        settings: &rmac_shell_settings::SpotlightSettings,
+        search: S,
+    ) -> Result<Self, ProviderError> {
+        if !root.is_absolute() {
+            return Err(ProviderError {
+                detail: "file search root must be absolute".into(),
+            });
+        }
+        let mut seen = BTreeSet::new();
+        let mut excluded_roots = Vec::new();
+        for excluded in &settings.excluded_paths {
+            let path = PathBuf::from(excluded);
+            if !path.is_absolute()
+                || path.components().any(|component| {
+                    matches!(
+                        component,
+                        std::path::Component::CurDir | std::path::Component::ParentDir
+                    )
+                })
+            {
+                return Err(ProviderError {
+                    detail: "file exclusions must be normalized absolute paths".into(),
+                });
+            }
+            if seen.insert(path.clone()) {
+                excluded_roots.push(path);
+            }
+        }
+        Ok(Self {
+            root,
+            excluded_roots,
+            include_removable_mounts: settings.include_removable_mounts,
+            search,
+        })
     }
 }
 
@@ -264,6 +311,8 @@ impl<S: FileSearch> Provider for FileProvider<S> {
         }
         let mut options = rmac_search::Options::new(cancellation.flag());
         options.limit = PROVIDER_LIMIT;
+        options.excluded_roots = &self.excluded_roots;
+        options.stay_on_filesystem = !self.include_removable_mounts;
         let paths = if query.trim().is_empty() {
             self.search.recents(options)
         } else {
@@ -273,13 +322,60 @@ impl<S: FileSearch> Provider for FileProvider<S> {
             detail: error.to_string(),
         })?;
         let mut seen = BTreeSet::new();
-        Ok(paths
-            .into_iter()
-            .filter(|path| path.is_absolute() && seen.insert(path.clone()))
-            .filter_map(|path| file_result(path, query))
-            .take(PROVIDER_LIMIT)
-            .collect())
+        let mut results = Vec::new();
+        for path in paths {
+            if cancellation.is_cancelled() {
+                return Err(cancelled());
+            }
+            if !self.path_allowed(&path, query) || !seen.insert(path.clone()) {
+                continue;
+            }
+            if let Some(result) = file_result(path, query) {
+                results.push(result);
+                if results.len() == PROVIDER_LIMIT {
+                    break;
+                }
+            }
+        }
+        Ok(results)
     }
+}
+
+impl<S> FileProvider<S> {
+    fn path_allowed(&self, path: &Path, query: &str) -> bool {
+        path.is_absolute()
+            && path.exists()
+            && !self
+                .excluded_roots
+                .iter()
+                .any(|excluded| excluded_path(path, excluded))
+            && (path.starts_with(&self.root)
+                || (query.trim().is_empty() && self.include_removable_mounts))
+            && (self.include_removable_mounts || same_filesystem(&self.root, path))
+    }
+}
+
+fn excluded_path(path: &Path, excluded: &Path) -> bool {
+    path.starts_with(excluded)
+        || path.canonicalize().is_ok_and(|path| {
+            excluded
+                .canonicalize()
+                .is_ok_and(|excluded| path.starts_with(excluded))
+        })
+}
+
+#[cfg(unix)]
+fn same_filesystem(left: &Path, right: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+
+    left.metadata()
+        .and_then(|left| right.metadata().map(|right| left.dev() == right.dev()))
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn same_filesystem(_: &Path, _: &Path) -> bool {
+    true
 }
 
 fn file_result(path: PathBuf, query: &str) -> Option<SearchResult> {
@@ -494,6 +590,7 @@ fn cancelled() -> ProviderError {
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
@@ -568,23 +665,44 @@ mod tests {
             Ok(self.paths.clone())
         }
 
-        fn recents(&self, _: rmac_search::Options<'_>) -> Result<Vec<PathBuf>, rmac_search::Error> {
+        fn recents(
+            &self,
+            options: rmac_search::Options<'_>,
+        ) -> Result<Vec<PathBuf>, rmac_search::Error> {
+            if options.cancel.load(Ordering::Acquire) {
+                return Err(rmac_search::Error::Cancelled);
+            }
             Ok(self.paths.clone())
         }
     }
 
     #[test]
-    fn file_provider_is_private_deduplicated_and_revealable() {
-        let provider = FileProvider::new(
-            PathBuf::from("/home/alex"),
+    fn file_provider_is_private_scoped_deduplicated_and_revealable() {
+        let root = temporary_directory("scope");
+        let excluded = root.join("Private");
+        std::fs::create_dir_all(&excluded).expect("create test directories");
+        let report = root.join("Report.txt");
+        let secret = excluded.join("Secret Report.txt");
+        std::fs::write(&report, b"report").expect("write report");
+        std::fs::write(&secret, b"secret").expect("write secret");
+        let settings = rmac_shell_settings::SpotlightSettings {
+            excluded_paths: vec![excluded.to_string_lossy().into_owned()],
+            include_removable_mounts: false,
+        };
+        let provider = FileProvider::scoped(
+            root.clone(),
+            &settings,
             FakeFileSearch {
                 paths: vec![
-                    PathBuf::from("/home/alex/Report.txt"),
-                    PathBuf::from("/home/alex/Report.txt"),
+                    report.clone(),
+                    report,
+                    secret,
+                    root.join("stale-report.txt"),
                     PathBuf::from("relative.txt"),
                 ],
             },
-        );
+        )
+        .expect("scope is valid");
         assert!(provider.descriptor().privacy.private_content);
         let results = provider
             .search("report", &Cancellation::default())
@@ -594,6 +712,49 @@ mod tests {
             results[0].alternate,
             Some(Action::RevealFile { .. })
         ));
+        std::fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn recent_documents_outside_the_root_require_removable_mount_opt_in() {
+        let root = temporary_directory("home");
+        let external = temporary_directory("external");
+        std::fs::create_dir_all(&root).expect("create root");
+        std::fs::create_dir_all(&external).expect("create external root");
+        let document = external.join("External.txt");
+        std::fs::write(&document, b"external").expect("write external file");
+
+        let default_provider = FileProvider::new(
+            root.clone(),
+            FakeFileSearch {
+                paths: vec![document.clone()],
+            },
+        );
+        assert!(default_provider
+            .search("", &Cancellation::default())
+            .expect("recent search succeeds")
+            .is_empty());
+
+        let opted_in = FileProvider::scoped(
+            root.clone(),
+            &rmac_shell_settings::SpotlightSettings {
+                excluded_paths: Vec::new(),
+                include_removable_mounts: true,
+            },
+            FakeFileSearch {
+                paths: vec![document],
+            },
+        )
+        .expect("scope is valid");
+        assert_eq!(
+            opted_in
+                .search("", &Cancellation::default())
+                .expect("recent search succeeds")
+                .len(),
+            1
+        );
+        std::fs::remove_dir_all(root).expect("remove root");
+        std::fs::remove_dir_all(external).expect("remove external root");
     }
 
     #[test]
@@ -655,5 +816,16 @@ mod tests {
             .map(|descriptor| (descriptor.id.clone(), descriptor.category))
             .collect();
         assert_eq!(unique.len(), descriptors.len());
+    }
+
+    fn temporary_directory(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "rmac-launcher-providers-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock follows epoch")
+                .as_nanos()
+        ))
     }
 }

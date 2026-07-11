@@ -70,6 +70,8 @@ pub struct Options<'a> {
     pub include_hidden: bool,
     pub limit: usize,
     pub cancel: &'a AtomicBool,
+    pub excluded_roots: &'a [PathBuf],
+    pub stay_on_filesystem: bool,
 }
 
 impl<'a> Options<'a> {
@@ -78,6 +80,8 @@ impl<'a> Options<'a> {
             include_hidden: false,
             limit: DEFAULT_LIMIT,
             cancel,
+            excluded_roots: &[],
+            stay_on_filesystem: true,
         }
     }
 }
@@ -117,21 +121,33 @@ impl SearchProvider for SystemSearchProvider {
         query: &str,
         options: Options<'_>,
     ) -> Result<Vec<PathBuf>, Error> {
-        spotlight(&["-onlyin", &root.to_string_lossy(), query], options)
+        spotlight(
+            &["-onlyin", &root.to_string_lossy(), query],
+            Some(root),
+            options,
+        )
     }
 
     fn recents(&self, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
-        spotlight(&["kMDItemLastUsedDate >= $time.today(-30)"], options)
+        spotlight(&["kMDItemLastUsedDate >= $time.today(-30)"], None, options)
     }
 
     fn tagged(&self, tag: &str, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
         let escaped = tag.replace('\\', "\\\\").replace('\'', "\\'");
-        spotlight(&[&format!("kMDItemUserTags == '{escaped}'c")], options)
+        spotlight(
+            &[&format!("kMDItemUserTags == '{escaped}'c")],
+            None,
+            options,
+        )
     }
 }
 
 #[cfg(target_os = "macos")]
-fn spotlight(arguments: &[&str], options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
+fn spotlight(
+    arguments: &[&str],
+    root: Option<&Path>,
+    options: Options<'_>,
+) -> Result<Vec<PathBuf>, Error> {
     check_cancelled(options.cancel)?;
     let output = Command::new("mdfind")
         .args(arguments)
@@ -148,10 +164,17 @@ fn spotlight(arguments: &[&str], options: Options<'_>) -> Result<Vec<PathBuf>, E
             message: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         });
     }
+    let root_device = root.and_then(device_for_path);
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .map(PathBuf::from)
-        .filter(|path| path.exists())
+        .filter(|path| {
+            path.exists()
+                && !is_excluded(path, options.excluded_roots)
+                && (!options.stay_on_filesystem
+                    || root_device.is_none()
+                    || device_for_path(path) == root_device)
+        })
         .take(options.limit)
         .collect())
 }
@@ -193,11 +216,12 @@ fn filesystem_search(
     query: &str,
     options: Options<'_>,
 ) -> Result<Vec<PathBuf>, Error> {
-    root.metadata().map_err(|source| Error::Io {
+    let root_metadata = root.metadata().map_err(|source| Error::Io {
         operation: "search",
         path: root.to_path_buf(),
         source,
     })?;
+    let root_device = device(&root_metadata);
     let query = query.trim().to_lowercase();
     if query.is_empty() || options.limit == 0 {
         return Ok(Vec::new());
@@ -208,9 +232,18 @@ fn filesystem_search(
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| {
-            entry.depth() == 0
-                || options.include_hidden
-                || !entry.file_name().to_string_lossy().starts_with('.')
+            if entry.depth() == 0 {
+                return true;
+            }
+            if is_lexically_excluded(entry.path(), options.excluded_roots)
+                || (!options.include_hidden && entry.file_name().to_string_lossy().starts_with('.'))
+            {
+                return false;
+            }
+            !entry.file_type().is_dir()
+                || !options.stay_on_filesystem
+                || root_device.is_none()
+                || entry.metadata().ok().and_then(|metadata| device(&metadata)) == root_device
         });
     for result in walker {
         check_cancelled(options.cancel)?;
@@ -284,6 +317,7 @@ fn recent_from_path(path: &Path, options: Options<'_>) -> Result<Vec<PathBuf>, E
                     .and_then(|href| url::Url::parse(&href).ok())
                     .and_then(|url| url.to_file_path().ok())
                     .filter(|path| path.exists())
+                    .filter(|path| !is_excluded(path, options.excluded_roots))
                 {
                     bookmarks.push((modified, path));
                 }
@@ -308,6 +342,42 @@ fn recent_from_path(path: &Path, options: Options<'_>) -> Result<Vec<PathBuf>, E
         .filter(|path| seen.insert(path.clone()))
         .take(options.limit)
         .collect())
+}
+
+fn is_excluded(path: &Path, excluded_roots: &[PathBuf]) -> bool {
+    if is_lexically_excluded(path, excluded_roots) {
+        return true;
+    }
+    let Ok(canonical) = path.canonicalize() else {
+        return false;
+    };
+    excluded_roots.iter().any(|excluded| {
+        excluded
+            .canonicalize()
+            .is_ok_and(|excluded| canonical.starts_with(excluded))
+    })
+}
+
+fn is_lexically_excluded(path: &Path, excluded_roots: &[PathBuf]) -> bool {
+    excluded_roots
+        .iter()
+        .any(|excluded| path.starts_with(excluded))
+}
+
+#[cfg(unix)]
+fn device(metadata: &std::fs::Metadata) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    Some(metadata.dev())
+}
+
+#[cfg(not(unix))]
+fn device(_: &std::fs::Metadata) -> Option<u64> {
+    None
+}
+
+fn device_for_path(path: &Path) -> Option<u64> {
+    path.metadata().ok().and_then(|metadata| device(&metadata))
 }
 
 fn check_cancelled(cancel: &AtomicBool) -> Result<(), Error> {
@@ -377,6 +447,68 @@ mod tests {
 
         let paths = recent_from_path(&xbel, Options::new(&cancel)).unwrap();
         assert_eq!(paths, [newer, older]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn filename_and_recent_searches_prune_excluded_roots_and_stale_records() {
+        let root = temporary_directory("exclusions");
+        let included = root.join("Documents");
+        let excluded = root.join("Private");
+        std::fs::create_dir_all(&included).unwrap();
+        std::fs::create_dir_all(&excluded).unwrap();
+        let visible = included.join("Visible Report.txt");
+        let secret = excluded.join("Secret Report.txt");
+        let stale = root.join("Deleted Report.txt");
+        std::fs::write(&visible, b"visible").unwrap();
+        std::fs::write(&secret, b"secret").unwrap();
+        let cancel = AtomicBool::new(false);
+        let exclusions = vec![excluded.clone()];
+        let mut options = Options::new(&cancel);
+        options.excluded_roots = &exclusions;
+
+        assert_eq!(
+            filesystem_search(&root, "report", options).unwrap(),
+            [visible.clone()]
+        );
+
+        let xbel = root.join("recently-used.xbel");
+        let visible_url = url::Url::from_file_path(&visible).unwrap();
+        let secret_url = url::Url::from_file_path(&secret).unwrap();
+        let stale_url = url::Url::from_file_path(&stale).unwrap();
+        std::fs::write(
+            &xbel,
+            format!(
+                "<?xml version=\"1.0\"?><xbel version=\"1.0\">\
+                 <bookmark href=\"{secret_url}\" modified=\"2026-03-01T00:00:00Z\"/>\
+                 <bookmark href=\"{stale_url}\" modified=\"2026-02-01T00:00:00Z\"/>\
+                 <bookmark href=\"{visible_url}\" modified=\"2026-01-01T00:00:00Z\"/>\
+                 </xbel>"
+            ),
+        )
+        .unwrap();
+        assert_eq!(recent_from_path(&xbel, options).unwrap(), [visible]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_exclusions_cover_recent_paths_reached_through_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = temporary_directory("symlink-exclusion");
+        let excluded = root.join("Private");
+        let alias = root.join("Alias");
+        std::fs::create_dir_all(&excluded).unwrap();
+        let secret = excluded.join("Secret.txt");
+        std::fs::write(&secret, b"secret").unwrap();
+        symlink(&excluded, &alias).unwrap();
+        let aliased_secret = alias.join("Secret.txt");
+        assert!(aliased_secret.exists());
+        assert!(is_excluded(
+            &aliased_secret,
+            std::slice::from_ref(&excluded)
+        ));
         std::fs::remove_dir_all(root).unwrap();
     }
 

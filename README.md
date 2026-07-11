@@ -45,7 +45,7 @@ Shared crates:
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
 - `rmac-places` — safe XDG Downloads resolution and typed Trash state.
 - `rmac-places-system` — filesystem/portal places and confirmed multi-trash operations.
-- `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.
+- `rmac-search` — cancellable, exclusion-aware Spotlight/filesystem/recent-document search.
 - `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.

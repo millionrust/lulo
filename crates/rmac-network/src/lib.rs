@@ -113,6 +113,50 @@ pub struct NetworkSnapshot {
     pub devices: Vec<NetworkDevice>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VpnState {
+    #[default]
+    Disconnected,
+    Connecting,
+    Connected,
+    Disconnecting,
+    Unknown,
+}
+
+impl VpnState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Disconnected => "Not Connected",
+            Self::Connecting => "Connecting…",
+            Self::Connected => "Connected",
+            Self::Disconnecting => "Disconnecting…",
+            Self::Unknown => "Unknown",
+        }
+    }
+
+    pub fn is_enabled(self) -> bool {
+        matches!(
+            self,
+            Self::Connecting | Self::Connected | Self::Disconnecting
+        )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VpnProfile {
+    /// Stable, platform-owned identifier. Treat as opaque outside this crate.
+    pub identifier: String,
+    pub name: String,
+    pub service: String,
+    pub state: VpnState,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VpnSnapshot {
+    pub available: bool,
+    pub profiles: Vec<VpnProfile>,
+}
+
 #[derive(Debug)]
 pub struct Error {
     operation: &'static str,
@@ -160,6 +204,14 @@ pub fn network_snapshot() -> Result<NetworkSnapshot, Error> {
     system_network_snapshot()
 }
 
+pub fn vpn_snapshot() -> Result<VpnSnapshot, Error> {
+    system_vpn_snapshot()
+}
+
+pub fn set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
+    system_set_vpn_enabled(identifier, enabled)
+}
+
 #[cfg(not(target_os = "macos"))]
 fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
     linux_network_snapshot()
@@ -168,6 +220,26 @@ fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
 #[cfg(target_os = "macos")]
 fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
     macos_network_snapshot()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_vpn_snapshot() -> Result<VpnSnapshot, Error> {
+    linux_vpn_snapshot()
+}
+
+#[cfg(target_os = "macos")]
+fn system_vpn_snapshot() -> Result<VpnSnapshot, Error> {
+    macos_vpn_snapshot()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
+    linux_set_vpn_enabled(identifier, enabled)
+}
+
+#[cfg(target_os = "macos")]
+fn system_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
+    macos_set_vpn_enabled(identifier, enabled)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -397,6 +469,156 @@ fn linux_network_snapshot() -> Result<NetworkSnapshot, Error> {
         primary_connection,
         devices,
     })
+}
+
+#[cfg(not(target_os = "macos"))]
+struct VpnRecord {
+    profile: VpnProfile,
+    connection_path: zbus::zvariant::OwnedObjectPath,
+    active_path: Option<zbus::zvariant::OwnedObjectPath>,
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_vpn_snapshot() -> Result<VpnSnapshot, Error> {
+    let connection = system_connection("connect to NetworkManager")?;
+    let mut records = linux_vpn_records(&connection)?;
+    let mut profiles = records
+        .drain(..)
+        .map(|record| record.profile)
+        .collect::<Vec<_>>();
+    sort_vpn_profiles(&mut profiles);
+    Ok(VpnSnapshot {
+        available: true,
+        profiles,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
+    use zbus::zvariant::OwnedObjectPath;
+
+    let connection = system_connection("connect to NetworkManager")?;
+    let record = linux_vpn_records(&connection)?
+        .into_iter()
+        .find(|record| record.profile.identifier == identifier)
+        .ok_or_else(|| Error::new("find VPN profile", "the profile no longer exists"))?;
+    let manager = manager_proxy(&connection)?;
+    if enabled {
+        if record.active_path.is_some() {
+            return Ok(());
+        }
+        let root = OwnedObjectPath::try_from("/")
+            .map_err(|error| Error::new("prepare VPN activation", error.to_string()))?;
+        manager
+            .call::<_, _, OwnedObjectPath>(
+                "ActivateConnection",
+                &(record.connection_path, root.clone(), root),
+            )
+            .map_err(|error| Error::new("connect VPN", error.to_string()))?;
+    } else if let Some(active_path) = record.active_path {
+        manager
+            .call::<_, _, ()>("DeactivateConnection", &(active_path,))
+            .map_err(|error| Error::new("disconnect VPN", error.to_string()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_vpn_records(connection: &zbus::blocking::Connection) -> Result<Vec<VpnRecord>, Error> {
+    use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+
+    let manager = manager_proxy(connection)?;
+    let active_paths = manager
+        .get_property::<Vec<OwnedObjectPath>>("ActiveConnections")
+        .map_err(|error| Error::new("list active connections", error.to_string()))?;
+    let mut active = HashMap::<String, (VpnState, OwnedObjectPath)>::new();
+    for path in active_paths {
+        let proxy = zbus::blocking::Proxy::new(
+            connection,
+            "org.freedesktop.NetworkManager",
+            path.as_str(),
+            "org.freedesktop.NetworkManager.Connection.Active",
+        )
+        .map_err(|error| Error::new("open active connection", error.to_string()))?;
+        let connection_type = proxy.get_property::<String>("Type").unwrap_or_default();
+        let is_vpn = proxy
+            .get_property::<bool>("Vpn")
+            .unwrap_or_else(|_| is_vpn_connection_type(&connection_type));
+        if !is_vpn && !is_vpn_connection_type(&connection_type) {
+            continue;
+        }
+        let Some(identifier) = proxy
+            .get_property::<String>("Uuid")
+            .ok()
+            .filter(|value| !value.is_empty())
+        else {
+            continue;
+        };
+        let state = proxy
+            .get_property::<u32>("State")
+            .map(vpn_state_from_network_manager)
+            .unwrap_or(VpnState::Connecting);
+        drop(proxy);
+        active.insert(identifier, (state, path));
+    }
+
+    let settings = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        "/org/freedesktop/NetworkManager/Settings",
+        "org.freedesktop.NetworkManager.Settings",
+    )
+    .map_err(|error| Error::new("open saved network connections", error.to_string()))?;
+    let connection_paths = settings
+        .call::<_, _, Vec<OwnedObjectPath>>("ListConnections", &())
+        .map_err(|error| Error::new("list saved network connections", error.to_string()))?;
+    let mut records = Vec::new();
+    for path in connection_paths {
+        let proxy = zbus::blocking::Proxy::new(
+            connection,
+            "org.freedesktop.NetworkManager",
+            path.as_str(),
+            "org.freedesktop.NetworkManager.Settings.Connection",
+        )
+        .map_err(|error| Error::new("open saved network connection", error.to_string()))?;
+        let settings = proxy
+            .call::<_, _, HashMap<String, HashMap<String, OwnedValue>>>("GetSettings", &())
+            .map_err(|error| Error::new("read saved network connection", error.to_string()))?;
+        drop(proxy);
+        let Some(connection_settings) = settings.get("connection") else {
+            continue;
+        };
+        let Some(connection_type) = property_string(connection_settings, "type") else {
+            continue;
+        };
+        if !is_vpn_connection_type(&connection_type) {
+            continue;
+        }
+        let Some(identifier) = property_string(connection_settings, "uuid") else {
+            continue;
+        };
+        let name = property_string(connection_settings, "id")
+            .unwrap_or_else(|| "VPN Connection".to_string());
+        let service_type = settings
+            .get("vpn")
+            .and_then(|vpn| property_string(vpn, "service-type"));
+        let (state, active_path) = active
+            .remove(&identifier)
+            .map_or((VpnState::Disconnected, None), |(state, path)| {
+                (state, Some(path))
+            });
+        records.push(VpnRecord {
+            profile: VpnProfile {
+                identifier,
+                name,
+                service: vpn_service_label(&connection_type, service_type.as_deref()),
+                state,
+            },
+            connection_path: path,
+            active_path,
+        });
+    }
+    Ok(records)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -672,6 +894,24 @@ fn macos_network_snapshot() -> Result<NetworkSnapshot, Error> {
 }
 
 #[cfg(target_os = "macos")]
+fn macos_vpn_snapshot() -> Result<VpnSnapshot, Error> {
+    let output = network_command("scutil", &["--nc", "list"])?;
+    Ok(VpnSnapshot {
+        available: true,
+        profiles: parse_macos_vpn_profiles(&output),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
+    network_command(
+        "scutil",
+        &["--nc", if enabled { "start" } else { "stop" }, identifier],
+    )?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 fn network_command(program: &'static str, arguments: &[&str]) -> Result<String, Error> {
     let output = Command::new(program)
         .args(arguments)
@@ -816,6 +1056,84 @@ fn device_kind_order(kind: DeviceKind) -> u8 {
     }
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
+fn is_vpn_connection_type(connection_type: &str) -> bool {
+    matches!(connection_type, "vpn" | "wireguard")
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn vpn_state_from_network_manager(value: u32) -> VpnState {
+    match value {
+        1 => VpnState::Connecting,
+        2 => VpnState::Connected,
+        3 => VpnState::Disconnecting,
+        4 => VpnState::Disconnected,
+        _ => VpnState::Unknown,
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn vpn_service_label(connection_type: &str, service_type: Option<&str>) -> String {
+    if connection_type == "wireguard" {
+        return "WireGuard".to_string();
+    }
+    match service_type.and_then(|service| service.rsplit('.').next()) {
+        Some("openvpn") => "OpenVPN".to_string(),
+        Some("openconnect") => "OpenConnect".to_string(),
+        Some("vpnc") => "Cisco VPN".to_string(),
+        Some("pptp") => "PPTP".to_string(),
+        Some("strongswan") | Some("libreswan") => "IPsec".to_string(),
+        Some(service) if !service.is_empty() => service.to_string(),
+        _ => "VPN".to_string(),
+    }
+}
+
+fn sort_vpn_profiles(profiles: &mut [VpnProfile]) {
+    profiles.sort_by(|left, right| {
+        right
+            .state
+            .is_enabled()
+            .cmp(&left.state.is_enabled())
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            .then_with(|| left.identifier.cmp(&right.identifier))
+    });
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn parse_macos_vpn_profiles(output: &str) -> Vec<VpnProfile> {
+    let mut profiles = output
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim().trim_start_matches('*').trim();
+            let (raw_state, remainder) = line.strip_prefix('(')?.split_once(')')?;
+            let remainder = remainder.trim();
+            let (_, description) = remainder.split_once(char::is_whitespace)?;
+            let (name, service) = description
+                .rsplit_once(" [")
+                .map(|(name, service)| (name.trim(), service.trim_end_matches(']')))
+                .unwrap_or((description.trim(), "VPN"));
+            if name.is_empty() {
+                return None;
+            }
+            let state = match raw_state.trim() {
+                "Connected" => VpnState::Connected,
+                "Connecting" => VpnState::Connecting,
+                "Disconnecting" => VpnState::Disconnecting,
+                "Disconnected" => VpnState::Disconnected,
+                _ => VpnState::Unknown,
+            };
+            Some(VpnProfile {
+                identifier: name.to_string(),
+                name: name.to_string(),
+                service: service.to_string(),
+                state,
+            })
+        })
+        .collect::<Vec<_>>();
+    sort_vpn_profiles(&mut profiles);
+    profiles
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -920,5 +1238,33 @@ mod tests {
         assert_eq!(devices[0].interface, "eth0");
         assert_eq!(devices[1].interface, "wlan0");
         assert_eq!(devices[2].interface, "eth1");
+    }
+
+    #[test]
+    fn vpn_types_states_and_services_are_normalized() {
+        assert!(is_vpn_connection_type("vpn"));
+        assert!(is_vpn_connection_type("wireguard"));
+        assert!(!is_vpn_connection_type("802-3-ethernet"));
+        assert_eq!(vpn_state_from_network_manager(1), VpnState::Connecting);
+        assert_eq!(vpn_state_from_network_manager(2), VpnState::Connected);
+        assert_eq!(
+            vpn_service_label("vpn", Some("org.freedesktop.NetworkManager.openvpn")),
+            "OpenVPN"
+        );
+        assert_eq!(vpn_service_label("wireguard", None), "WireGuard");
+    }
+
+    #[test]
+    fn macos_vpn_fixture_is_parsed_and_active_profiles_sort_first() {
+        let profiles = parse_macos_vpn_profiles(
+            "Available network connection services in the current set (*=enabled):\n\
+             * (Disconnected) 11111111-1111-1111-1111-111111111111 Office [VPN:IPSec]\n\
+             * (Connected) 22222222-2222-2222-2222-222222222222 Home Tunnel [VPN:L2TP]",
+        );
+        assert_eq!(profiles.len(), 2);
+        assert_eq!(profiles[0].name, "Home Tunnel");
+        assert_eq!(profiles[0].state, VpnState::Connected);
+        assert_eq!(profiles[0].service, "VPN:L2TP");
+        assert_eq!(profiles[1].name, "Office");
     }
 }

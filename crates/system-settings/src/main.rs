@@ -215,10 +215,16 @@ struct Settings {
     wifi_error: Option<SharedString>,
     bluetooth_error: Option<SharedString>,
     network_error: Option<SharedString>,
+    vpn_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
     network_busy: bool,
+
+    // VPN
+    vpn: rmac_network::VpnSnapshot,
+    vpn_loading: bool,
+    vpn_busy: Option<String>,
 
     // Wi-Fi
     wifi_available: bool,
@@ -620,6 +626,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_network::vpn_snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_vpn_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -643,9 +661,14 @@ impl Settings {
             wifi_error: None,
             bluetooth_error: None,
             network_error: None,
+            vpn_error: None,
 
             network_loading: true,
             network_busy: false,
+
+            vpn: rmac_network::VpnSnapshot::default(),
+            vpn_loading: true,
+            vpn_busy: None,
 
             wifi_available: false,
             wifi_loading: true,
@@ -745,6 +768,65 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_network_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_vpn_update(
+        &mut self,
+        result: std::result::Result<rmac_network::VpnSnapshot, rmac_network::Error>,
+    ) {
+        self.vpn_loading = false;
+        self.vpn_busy = None;
+        match result {
+            Ok(snapshot) => {
+                self.vpn = snapshot;
+                self.vpn_error = None;
+            }
+            Err(error) => {
+                self.vpn_error = Some(format!("Could not update VPN: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_vpn(&mut self, cx: &mut Context<Self>) {
+        if self.vpn_loading || self.vpn_busy.is_some() {
+            return;
+        }
+        self.vpn_busy = Some(String::new());
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_network::vpn_snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_vpn_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_vpn_enabled(&mut self, identifier: String, enabled: bool, cx: &mut Context<Self>) {
+        if self.vpn_loading || self.vpn_busy.is_some() {
+            return;
+        }
+        self.vpn_busy = Some(identifier.clone());
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_network::set_vpn_enabled(&identifier, enabled)?;
+                    std::thread::sleep(Duration::from_millis(500));
+                    rmac_network::vpn_snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_vpn_update(result);
                 cx.notify();
             });
         })
@@ -1169,6 +1251,7 @@ impl Settings {
                 "Battery" => self.render_battery(),
                 "Displays" => self.render_displays(),
                 "Network" => self.render_network(cx),
+                "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(cx),
             }
         };
@@ -2140,6 +2223,134 @@ impl Settings {
         self.pane(cards)
     }
 
+    // ---- VPN ----------------------------------------------------------
+
+    fn render_vpn(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let connected = self
+            .vpn
+            .profiles
+            .iter()
+            .filter(|profile| profile.state == rmac_network::VpnState::Connected)
+            .count();
+        let status = match connected {
+            0 => "No VPN Connected".to_string(),
+            1 => "1 VPN Connected".to_string(),
+            count => format!("{count} VPNs Connected"),
+        };
+        let refresh_view = view.clone();
+        let refresh_label = if self.vpn_busy.is_some() {
+            "Refreshing…"
+        } else {
+            "Refresh"
+        };
+        let mut cards = vec![card(vec![value_row(
+            "icons/key.svg",
+            if connected > 0 {
+                hsl(0x34c759)
+            } else {
+                secondary()
+            },
+            "Status".into(),
+            status.into(),
+        )])];
+        cards.push(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_1()
+                .pt_2()
+                .pb_1()
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(secondary())
+                        .child("VPN Configurations"),
+                )
+                .child(
+                    div()
+                        .id("vpn-refresh")
+                        .px_2()
+                        .py_1()
+                        .rounded(px(6.0))
+                        .text_size(px(12.0))
+                        .text_color(accent())
+                        .cursor_pointer()
+                        .hover(|hover| hover.bg(hsl(0x00000008)))
+                        .child(refresh_label)
+                        .on_click(move |_, _, cx| {
+                            refresh_view.update(cx, |settings, cx| settings.refresh_vpn(cx));
+                        }),
+                ),
+        );
+        if self.vpn_loading {
+            cards.push(note_card("Loading VPN configurations from the system…"));
+            return self.pane(cards);
+        }
+        if !self.vpn.available {
+            cards.push(note_card(
+                "The system VPN service is not available on this computer.",
+            ));
+            return self.pane(cards);
+        }
+        if self.vpn.profiles.is_empty() {
+            cards.push(note_card(
+                "No VPN configurations are installed. Profile import will be added next.",
+            ));
+            return self.pane(cards);
+        }
+
+        let rows = self
+            .vpn
+            .profiles
+            .iter()
+            .map(|profile| {
+                let identifier = profile.identifier.clone();
+                let switch_identifier = identifier.clone();
+                let profile_view = view.clone();
+                let applying = self.vpn_busy.as_deref() == Some(identifier.as_str());
+                let subtitle = if applying {
+                    format!("{} · Applying change…", profile.service)
+                } else {
+                    format!("{} · {}", profile.service, profile.state.label())
+                };
+                let control = Switch::new(ElementId::from(SharedString::from(format!(
+                    "vpn-{identifier}"
+                ))))
+                .checked(profile.state.is_enabled())
+                .on_click(move |enabled, _, cx| {
+                    let identifier = switch_identifier.clone();
+                    profile_view.update(cx, |settings, cx| {
+                        settings.set_vpn_enabled(identifier, *enabled, cx)
+                    });
+                });
+                row_base()
+                    .child(tile(
+                        "icons/key.svg",
+                        if profile.state == rmac_network::VpnState::Connected {
+                            hsl(0x34c759)
+                        } else {
+                            accent()
+                        },
+                        22.0,
+                    ))
+                    .child(text_block(
+                        profile.name.clone().into(),
+                        Some(subtitle.into()),
+                    ))
+                    .child(control)
+                    .into_any_element()
+            })
+            .collect();
+        cards.push(card(rows));
+        cards.push(note_card(
+            "Connections are controlled by the system network service. Authentication prompts are handled by the installed VPN plugin.",
+        ));
+        self.pane(cards)
+    }
+
     /// Real boot-volume storage usage with a macOS-style fill bar.
     fn storage_body(&self) -> Div {
         let s = &self.storage;
@@ -2334,7 +2545,8 @@ impl Render for Settings {
             .clone()
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
-            .or_else(|| self.network_error.clone());
+            .or_else(|| self.network_error.clone())
+            .or_else(|| self.vpn_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -2370,6 +2582,7 @@ impl Render for Settings {
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
+                            this.vpn_error = None;
                             cx.notify();
                         })),
                 )

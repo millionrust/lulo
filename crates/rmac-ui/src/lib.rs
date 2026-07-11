@@ -26,9 +26,9 @@ pub use components::{
     alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu, RequestClose,
 };
 pub use controls::{
-    Button, ButtonRole, CollectionState, InputState, List, ListRow, SearchField, Slider,
-    SliderAxis, SliderEvent, SliderState, Table, Tabs, TextField, Toggle, ToggleState, Tree,
-    TreeRow,
+    Button, ButtonRole, CollectionState, InputEvent, InputState, List, ListRow, Position, RopeExt,
+    SearchField, Slider, SliderAxis, SliderEvent, SliderState, Table, Tabs, TextField, Toggle,
+    ToggleState, Tree, TreeRow,
 };
 pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{EmptyState, Progress, ProgressStatus, Toast, ToastKind, Tooltip};
@@ -111,6 +111,7 @@ where
         .with_assets(assets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
+            components::init(cx);
             start_theme_runtime(cx);
             cx.open_window(window_options_unified(width, height), move |window, cx| {
                 gpui_component::theme::Theme::change(
@@ -251,6 +252,7 @@ pub fn boot_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
+            components::init(cx);
             start_theme_runtime(cx);
 
             cx.open_window(window_options(width, height), move |window, cx| {

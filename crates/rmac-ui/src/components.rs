@@ -10,15 +10,21 @@
 //! app's root element or opaque siblings paint over it.
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, ElementId,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, Point,
-    SharedString, StatefulInteractiveElement as _, Styled as _,
+    anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, ElementId,
+    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement as _, Pixels,
+    Point, SharedString, Styled as _,
 };
 use gpui_component::StyledExt as _;
 
-use crate::{mac, Button, ButtonRole};
+use crate::{mac, Button, ButtonRole, ListRow};
 
 gpui::actions!(rmac_ui, [DismissMenu, RequestClose]);
+
+const MENU_CONTEXT: &str = "RmacContextMenu";
+
+pub(crate) fn init(cx: &mut App) {
+    cx.bind_keys([KeyBinding::new("escape", DismissMenu, Some(MENU_CONTEXT))]);
+}
 
 /// Visual role of a dialog button (drives fill / text color).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -84,6 +90,7 @@ pub fn alert(
 
     let card = div()
         .v_flex()
+        .tab_group()
         .w(px(300.0))
         .p(px(20.0))
         .gap_2()
@@ -209,6 +216,7 @@ impl ContextMenu {
         let mut panel = div()
             .min_w(px(190.0))
             .py(px(5.0))
+            .tab_group()
             .rounded(px(8.0))
             .bg(mac::window())
             .border_1()
@@ -234,20 +242,13 @@ impl ContextMenu {
                     danger,
                 } => {
                     let base = if danger { mac::danger() } else { mac::text() };
-                    let row = div()
-                        .id(("rmac-menu-item", i))
+                    let content = div()
+                        .w_full()
                         .h_flex()
                         .items_center()
                         .justify_between()
                         .gap_4()
-                        .h(px(24.0))
-                        .mx(px(5.0))
-                        .px(px(8.0))
-                        .rounded(px(5.0))
-                        .text_size(px(13.0))
                         .text_color(base)
-                        .cursor_pointer()
-                        .hover(|s| s.bg(mac::accent()).text_color(mac::on_accent()))
                         .child(div().child(label))
                         .when_some(shortcut, |el, sc| {
                             el.child(
@@ -256,8 +257,11 @@ impl ContextMenu {
                                     .text_color(mac::text_tertiary())
                                     .child(sc),
                             )
-                        })
-                        .on_click(move |_, window, cx| {
+                        });
+                    let row = ListRow::new(("rmac-menu-item", i), content)
+                        .mx(px(5.0))
+                        .px(px(8.0))
+                        .on_activate(move |_, window, cx| {
                             window.dispatch_action(action.boxed_clone(), cx);
                             window.dispatch_action(Box::new(DismissMenu), cx);
                         });
@@ -271,6 +275,7 @@ impl ContextMenu {
             .absolute()
             .inset_0()
             .id("rmac-menu-scrim")
+            .key_context(MENU_CONTEXT)
             .on_mouse_down(MouseButton::Left, |_, window, cx| {
                 window.dispatch_action(Box::new(DismissMenu), cx);
             })

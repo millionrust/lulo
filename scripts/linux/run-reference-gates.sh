@@ -46,6 +46,7 @@ run_gate() {
 
 cd "$repo_root"
 run_gate format cargo fmt --all -- --check
+run_gate shared-controls bash scripts/check-shared-controls.sh
 run_gate clippy cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 run_gate tests cargo test --locked --workspace --all-features
 if command -v cargo-deny >/dev/null 2>&1; then

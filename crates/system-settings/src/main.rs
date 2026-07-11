@@ -22,8 +22,8 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_ui::{
-    EmptyState, ListRow, Progress, SearchField, Slider, SliderEvent, SliderState, Toast, ToastKind,
-    Toggle,
+    EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent, SliderState,
+    Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]
@@ -182,7 +182,7 @@ struct Settings {
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
-    search: Entity<gpui_component::input::InputState>,
+    search: Entity<InputState>,
     focus: FocusHandle,
     focused_once: bool,
     dragging: bool,
@@ -585,8 +585,7 @@ impl Settings {
     }
 
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let search =
-            cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Search"));
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
 
         // A missing config is a normal first launch. Existing-but-unreadable or

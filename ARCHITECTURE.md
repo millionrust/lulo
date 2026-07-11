@@ -70,6 +70,10 @@ and dismissible service/persistence failures.
 The shared Button supports text, icons, compact sizes, selected state, and
 dropdown triggers. Terminal uses it for the profile control; Terminal, Finder,
 and App Drawer use shared text/search fields exclusively.
+All seven product apps are prohibited from importing upstream Button, Input,
+Switch, Slider, or Table modules by `scripts/check-shared-controls.sh`, which is
+run in CI and the Linux reference gate. Alerts form a tab group, and context
+menus use focusable rows plus a menu-scoped Escape binding.
 
 - GPUI entities own view state and subscriptions.
 - Render methods must not perform filesystem access, subprocess work, or D-Bus

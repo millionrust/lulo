@@ -18,13 +18,10 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, StyledText, Subscription, TextRun, UnderlineStyle,
     Window,
 };
-use gpui_component::{
-    button::{Button, ButtonVariants as _},
-    input::{InputEvent, InputState, Position, RopeExt as _},
-    Icon, IconName, Selectable as _, Sizable as _, Size, StyledExt as _,
+use gpui_component::{Icon, IconName, Size, StyledExt as _};
+use rmac_ui::{
+    mac, Button, InputEvent, InputState, Position, RopeExt as _, SearchField, TextField,
 };
-use rmac_editor::Input;
-use rmac_ui::mac;
 
 const CTX: &str = "TextEditor";
 
@@ -710,7 +707,7 @@ impl EditorView {
                     .items_center()
                     .gap_1()
                     .child(
-                        Button::new("new")
+                        Button::new("new", "")
                             .icon(Icon::new(IconName::File).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
@@ -718,7 +715,7 @@ impl EditorView {
                             .on_click(cx.listener(|this, _, window, cx| this.new_file(window, cx))),
                     )
                     .child(
-                        Button::new("open")
+                        Button::new("open", "")
                             .icon(Icon::new(IconName::FolderOpen).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
@@ -726,7 +723,7 @@ impl EditorView {
                             .on_click(cx.listener(|this, _, window, cx| this.open(window, cx))),
                     )
                     .child(
-                        Button::new("find")
+                        Button::new("find", "")
                             .icon(Icon::new(IconName::Search).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
@@ -763,8 +760,7 @@ impl EditorView {
                     .items_center()
                     .gap_1()
                     .child(
-                        Button::new("mono")
-                            .label("Mono")
+                        Button::new("mono", "Mono")
                             .ghost()
                             .with_size(Size::Small)
                             .selected(self.mono)
@@ -772,7 +768,7 @@ impl EditorView {
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_mono(cx))),
                     )
                     .child(
-                        Button::new("font-dec")
+                        Button::new("font-dec", "")
                             .icon(Icon::new(IconName::Minus).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Small)
@@ -780,7 +776,7 @@ impl EditorView {
                             .on_click(cx.listener(|this, _, _, cx| this.decrease_font(cx))),
                     )
                     .child(
-                        Button::new("font-inc")
+                        Button::new("font-inc", "")
                             .icon(Icon::new(IconName::Plus).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Small)
@@ -788,8 +784,7 @@ impl EditorView {
                             .on_click(cx.listener(|this, _, _, cx| this.increase_font(cx))),
                     )
                     .child(
-                        Button::new("save")
-                            .label("Save")
+                        Button::new("save", "Save")
                             .primary()
                             .with_size(Size::Small)
                             .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
@@ -815,10 +810,10 @@ impl EditorView {
             .child(
                 div()
                     .w(px(220.0))
-                    .child(Input::new(&self.find_input).appearance(true)),
+                    .child(SearchField::new(&self.find_input).appearance(true)),
             )
             .child(
-                Button::new("find-prev")
+                Button::new("find-prev", "")
                     .icon(Icon::new(IconName::ChevronUp).text_color(mac::text()))
                     .ghost()
                     .with_size(Size::Small)
@@ -826,7 +821,7 @@ impl EditorView {
                     .on_click(cx.listener(|this, _, window, cx| this.find_prev(window, cx))),
             )
             .child(
-                Button::new("find-next")
+                Button::new("find-next", "")
                     .icon(Icon::new(IconName::ChevronDown).text_color(mac::text()))
                     .ghost()
                     .with_size(Size::Small)
@@ -842,7 +837,7 @@ impl EditorView {
             )
             .child(div().flex_1())
             .child(
-                Button::new("find-close")
+                Button::new("find-close", "")
                     .icon(Icon::new(IconName::Close).text_color(mac::text()))
                     .ghost()
                     .with_size(Size::Small)
@@ -870,11 +865,10 @@ impl EditorView {
                     .child(
                         div()
                             .w(px(220.0))
-                            .child(Input::new(&self.replace_input).appearance(true)),
+                            .child(TextField::new(&self.replace_input).appearance(true)),
                     )
                     .child(
-                        Button::new("replace-one")
-                            .label("Replace")
+                        Button::new("replace-one", "Replace")
                             .ghost()
                             .with_size(Size::Small)
                             .on_click(
@@ -882,8 +876,7 @@ impl EditorView {
                             ),
                     )
                     .child(
-                        Button::new("replace-all")
-                            .label("Replace All")
+                        Button::new("replace-all", "Replace All")
                             .ghost()
                             .with_size(Size::Small)
                             .on_click(
@@ -961,8 +954,7 @@ impl EditorView {
                     .child("Read-only RTF preview — formatting shown as in the document."),
             )
             .child(
-                Button::new("edit-plain")
-                    .label("Edit as Plain Text")
+                Button::new("edit-plain", "Edit as Plain Text")
                     .small()
                     .on_click(
                         cx.listener(|this, _, window, cx| this.edit_as_plain_text(window, cx)),
@@ -1151,7 +1143,7 @@ impl Render for EditorView {
                     .font_family(font_family)
                     .text_size(px(size))
                     .line_height(px(size * 1.5))
-                    .child(Input::new(&self.input).h_full().appearance(false))
+                    .child(TextField::new(&self.input).h_full().appearance(false))
                     .into_any_element()
             })
             .when(self.rtf_runs.is_none(), |d| {

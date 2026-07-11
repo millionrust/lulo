@@ -23,9 +23,9 @@ use gpui::{
     KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
     Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::{input::InputEvent, Icon, IconName, Sizable as _, Size, StyledExt as _};
+use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
-use rmac_ui::{mac, Button, SearchField, TextField};
+use rmac_ui::{mac, Button, InputEvent, SearchField, TextField};
 
 const FOLDERS_W: f32 = 200.0;
 const LIST_W: f32 = 292.0;

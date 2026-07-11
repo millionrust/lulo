@@ -55,6 +55,11 @@ Terminal, Finder, and App Drawer have migrated their remaining Button/Input
 variants to the shared boundary.
 Notes has also migrated every toolbar button, dropdown trigger, search, rename,
 tag, title, and multiline body field to the shared controls.
+Text Editor is fully migrated as well. All seven product apps now consume the
+named B7 controls through `rmac-ui`; CI and the Linux reference gate enforce the
+boundary. Shared alert actions are tab-grouped, and context-menu rows support
+keyboard focus/activation plus Escape dismissal. Programmatic accessibility
+semantics remain gated by A4 because pinned GPUI exposes no accessibility tree.
 
 ## Visual-reference protocol
 

@@ -25,9 +25,9 @@ use gpui::{
     ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
-use gpui_component::{input::InputEvent, StyledExt as _};
+use gpui_component::StyledExt as _;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use rmac_ui::{InputState, SearchField, TextField};
+use rmac_ui::{InputEvent, InputState, SearchField, TextField};
 
 actions!(
     finder,

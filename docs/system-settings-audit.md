@@ -9,7 +9,7 @@ equivalents rather than simulated.
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|
 | Wi-Fi | Real state, radio mutation, access-point scan | NetworkManager D-Bus | Known/open connection activation, secret agent, live signals |
-| Bluetooth | macOS read-only list; toggles local | BlueZ D-Bus | Adapter power/discovery, pairing, connect/disconnect, live devices |
+| Bluetooth | Real adapter, discovery, and known-device connections | BlueZ D-Bus | Confirmation agent for new-device pairing and live signals |
 | Network | macOS read-only snapshot | NetworkManager D-Bus | Ethernet/IP/DNS state and safe connection editing |
 | VPN | Placeholder | NetworkManager VPN plugins | List, activate/deactivate, import supported profiles |
 | Battery | macOS read-only snapshot | UPower and power-profiles-daemon | Live battery/AC state and supported power profiles |

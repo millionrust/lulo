@@ -152,14 +152,6 @@ struct SysInfo {
     serial: String,
 }
 
-/// A real Bluetooth device parsed from `system_profiler SPBluetoothDataType`.
-#[derive(Clone)]
-struct BtDevice {
-    name: String,
-    connected: bool,
-    kind: String,
-}
-
 /// Live battery readings (read once after launch via `pmset` + `ioreg`).
 struct BatteryInfo {
     present: bool,
@@ -232,7 +224,8 @@ struct Settings {
     focused_once: bool,
     dragging: bool,
     persistence_error: Option<SharedString>,
-    service_error: Option<SharedString>,
+    wifi_error: Option<SharedString>,
+    bluetooth_error: Option<SharedString>,
 
     // Wi-Fi
     wifi_available: bool,
@@ -245,10 +238,14 @@ struct Settings {
     wifi_networks: Vec<rmac_network::WifiNetwork>,
 
     // Bluetooth
+    bluetooth_available: bool,
+    bluetooth_loading: bool,
+    bluetooth_busy: bool,
+    bluetooth_discovering: bool,
+    bluetooth_adapter_name: Option<String>,
     bluetooth_on: bool,
     bt_discoverable: bool,
-    /// Real paired/known Bluetooth devices (from `system_profiler`).
-    bt_devices: Vec<BtDevice>,
+    bt_devices: Vec<rmac_bluetooth::Device>,
 
     // Appearance
     appearance: Appearance,
@@ -281,7 +278,6 @@ struct SystemSnapshot {
     network: NetworkInfo,
     storage: StorageInfo,
     audio: AudioInfo,
-    bt_devices: Vec<BtDevice>,
 }
 
 const ACCENTS: &[(&str, u32)] = &[
@@ -599,6 +595,18 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
+                .spawn(async { rmac_bluetooth::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_bluetooth_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
                 .spawn(async { rmac_network::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -628,7 +636,8 @@ impl Settings {
             focused_once: false,
             dragging: false,
             persistence_error,
-            service_error: None,
+            wifi_error: None,
+            bluetooth_error: None,
 
             wifi_available: false,
             wifi_loading: true,
@@ -639,6 +648,11 @@ impl Settings {
             wifi_interface: None,
             wifi_networks: Vec::new(),
 
+            bluetooth_available: false,
+            bluetooth_loading: true,
+            bluetooth_busy: false,
+            bluetooth_discovering: false,
+            bluetooth_adapter_name: None,
             bluetooth_on: saved.bluetooth_on,
             bt_discoverable: saved.bt_discoverable,
             bt_devices: Vec::new(),
@@ -671,7 +685,6 @@ impl Settings {
         self.network = snapshot.network;
         self.storage = snapshot.storage;
         self.audio = snapshot.audio;
-        self.bt_devices = snapshot.bt_devices;
         self.system_data_loading = false;
     }
 
@@ -687,10 +700,10 @@ impl Settings {
                 self.wifi_on = snapshot.enabled;
                 self.wifi_interface = snapshot.interface;
                 self.wifi_networks = snapshot.networks;
-                self.service_error = None;
+                self.wifi_error = None;
             }
             Err(error) => {
-                self.service_error = Some(format!("Could not update Wi-Fi: {error}").into());
+                self.wifi_error = Some(format!("Could not update Wi-Fi: {error}").into());
             }
         }
     }
@@ -734,6 +747,129 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_bluetooth_update(
+        &mut self,
+        result: std::result::Result<rmac_bluetooth::Snapshot, rmac_bluetooth::Error>,
+    ) {
+        self.bluetooth_loading = false;
+        self.bluetooth_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.bluetooth_available = snapshot.available;
+                self.bluetooth_on = snapshot.powered;
+                self.bt_discoverable = snapshot.discoverable;
+                self.bluetooth_discovering = snapshot.discovering;
+                self.bluetooth_adapter_name = snapshot.adapter_name;
+                self.bt_devices = snapshot.devices;
+                self.bluetooth_error = None;
+            }
+            Err(error) => {
+                self.bluetooth_error = Some(format!("Could not update Bluetooth: {error}").into());
+            }
+        }
+    }
+
+    fn set_bluetooth_powered(&mut self, powered: bool, cx: &mut Context<Self>) {
+        if self.bluetooth_busy || self.bluetooth_loading || !self.bluetooth_available {
+            return;
+        }
+        self.bluetooth_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_bluetooth::set_powered(powered)?;
+                    rmac_bluetooth::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_bluetooth_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_bluetooth_discoverable(&mut self, discoverable: bool, cx: &mut Context<Self>) {
+        if self.bluetooth_busy || !self.bluetooth_available || !self.bluetooth_on {
+            return;
+        }
+        self.bluetooth_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_bluetooth::set_discoverable(discoverable)?;
+                    rmac_bluetooth::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_bluetooth_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_bluetooth(&mut self, cx: &mut Context<Self>) {
+        if self.bluetooth_busy || !self.bluetooth_available || !self.bluetooth_on {
+            return;
+        }
+        self.bluetooth_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async {
+                    let initial = rmac_bluetooth::snapshot()?;
+                    let started = !initial.discovering;
+                    if started {
+                        rmac_bluetooth::start_discovery()?;
+                    }
+                    std::thread::sleep(Duration::from_millis(1500));
+                    if started {
+                        rmac_bluetooth::stop_discovery()?;
+                    }
+                    rmac_bluetooth::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_bluetooth_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_bluetooth_device_connected(
+        &mut self,
+        device_id: String,
+        connected: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.bluetooth_busy {
+            return;
+        }
+        self.bluetooth_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_bluetooth::set_connected(&device_id, connected)?;
+                    rmac_bluetooth::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_bluetooth_update(result);
                 cx.notify();
             });
         })
@@ -1194,81 +1330,136 @@ impl Settings {
     // ---- Bluetooth ----------------------------------------------------
 
     fn render_bluetooth(&self, cx: &Context<Self>) -> Div {
-        let on = self.bluetooth_on;
-        let toggle = card(vec![switch_row(
-            "icons/bluetooth.svg",
-            accent(),
-            "Bluetooth".into(),
-            None,
-            self.bluetooth_on,
-            cx,
-            |s, v| s.bluetooth_on = v,
-        )]);
-        let mut cards = vec![
-            note_card(
-                "The Bluetooth on/off and discoverable toggles are local to this app \
-                 (they don't change your Mac's real Bluetooth state). The device list \
-                 below is read live from the system.",
-            ),
-            toggle,
-        ];
-        if on {
-            cards.push(card(vec![switch_row(
-                "icons/bluetooth.svg",
-                secondary(),
-                "Discoverable".into(),
-                Some("This Mac can be discovered by nearby devices.".into()),
-                self.bt_discoverable,
-                cx,
-                |s, v| s.bt_discoverable = v,
-            )]));
+        let view = cx.entity();
+        let power_subtitle = if self.bluetooth_loading {
+            Some("Reading system state…".into())
+        } else if self.bluetooth_busy {
+            Some("Applying change…".into())
+        } else {
+            self.bluetooth_adapter_name.clone().map(Into::into)
+        };
+        let power_view = view.clone();
+        let power = Switch::new("bluetooth-power")
+            .checked(self.bluetooth_on)
+            .on_click(move |powered, _, cx| {
+                power_view.update(cx, |settings, cx| {
+                    settings.set_bluetooth_powered(*powered, cx)
+                });
+            });
+        let mut cards = vec![card(vec![row_base()
+            .child(tile("icons/bluetooth.svg", accent(), 22.0))
+            .child(text_block("Bluetooth".into(), power_subtitle))
+            .child(power)
+            .into_any_element()])];
+
+        if self.bluetooth_loading {
+            cards.push(note_card("Loading Bluetooth state from the system…"));
+            return self.pane(cards);
+        }
+        if !self.bluetooth_available {
+            cards.push(note_card(
+                "No Bluetooth adapter is available through the system Bluetooth service.",
+            ));
+            return self.pane(cards);
+        }
+
+        if self.bluetooth_on {
+            let discoverable_view = view.clone();
+            let discoverable = Switch::new("bluetooth-discoverable")
+                .checked(self.bt_discoverable)
+                .on_click(move |enabled, _, cx| {
+                    discoverable_view.update(cx, |settings, cx| {
+                        settings.set_bluetooth_discoverable(*enabled, cx)
+                    });
+                });
+            cards.push(card(vec![row_base()
+                .child(tile("icons/bluetooth.svg", secondary(), 22.0))
+                .child(text_block(
+                    "Discoverable".into(),
+                    Some("Allow nearby devices to find this computer.".into()),
+                ))
+                .child(discoverable)
+                .into_any_element()]));
+
+            let refresh_view = view.clone();
+            let refresh_label = if self.bluetooth_busy || self.bluetooth_discovering {
+                "Scanning…"
+            } else {
+                "Refresh"
+            };
+            cards.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_1()
+                    .pt_2()
+                    .pb_1()
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(secondary())
+                            .child("Devices"),
+                    )
+                    .child(
+                        div()
+                            .id("bluetooth-refresh")
+                            .px_2()
+                            .py_1()
+                            .rounded(px(6.0))
+                            .text_size(px(12.0))
+                            .text_color(accent())
+                            .cursor_pointer()
+                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .child(refresh_label)
+                            .on_click(move |_, _, cx| {
+                                refresh_view
+                                    .update(cx, |settings, cx| settings.refresh_bluetooth(cx));
+                            }),
+                    ),
+            );
 
             let connected: Vec<AnyElement> = self
                 .bt_devices
                 .iter()
-                .filter(|d| d.connected)
-                .map(|d| {
-                    value_row(
-                        "icons/bluetooth.svg",
-                        accent(),
-                        d.name.clone().into(),
-                        if d.kind.is_empty() {
-                            "Connected".into()
-                        } else {
-                            d.kind.clone().into()
-                        },
-                    )
-                })
+                .filter(|device| device.connected)
+                .map(|device| bluetooth_device_row(&view, device))
                 .collect();
             if !connected.is_empty() {
                 cards.push(section_header("Connected"));
                 cards.push(card(connected));
             }
 
-            let others: Vec<AnyElement> = self
+            let known: Vec<AnyElement> = self
                 .bt_devices
                 .iter()
-                .filter(|d| !d.connected)
-                .map(|d| {
-                    value_row(
-                        "icons/bluetooth.svg",
-                        secondary(),
-                        d.name.clone().into(),
-                        if d.kind.is_empty() {
-                            "Not Connected".into()
-                        } else {
-                            d.kind.clone().into()
-                        },
-                    )
-                })
+                .filter(|device| device.paired && !device.connected)
+                .map(|device| bluetooth_device_row(&view, device))
                 .collect();
-            if !others.is_empty() {
-                cards.push(section_header("Devices"));
-                cards.push(card(others));
+            if !known.is_empty() {
+                cards.push(section_header("Known Devices"));
+                cards.push(card(known));
+            }
+
+            let nearby: Vec<AnyElement> = self
+                .bt_devices
+                .iter()
+                .filter(|device| !device.paired && !device.connected)
+                .map(|device| bluetooth_device_row(&view, device))
+                .collect();
+            if !nearby.is_empty() {
+                cards.push(section_header("Nearby Devices"));
+                cards.push(card(nearby));
             }
             if self.bt_devices.is_empty() {
-                cards.push(note_card("No paired Bluetooth devices found."));
+                cards.push(note_card(
+                    "No Bluetooth devices found. Refresh to scan again.",
+                ));
             }
+            cards.push(note_card(
+                "Power, discovery, and known-device connections are live. Pairing a new device requires the confirmation-agent flow and is not enabled yet.",
+            ));
         }
         self.pane(cards)
     }
@@ -2009,7 +2200,8 @@ impl Render for Settings {
         let settings_error = self
             .persistence_error
             .clone()
-            .or_else(|| self.service_error.clone());
+            .or_else(|| self.wifi_error.clone())
+            .or_else(|| self.bluetooth_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -2042,7 +2234,8 @@ impl Render for Settings {
                         .child("Dismiss")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.persistence_error = None;
-                            this.service_error = None;
+                            this.wifi_error = None;
+                            this.bluetooth_error = None;
                             cx.notify();
                         })),
                 )
@@ -2177,6 +2370,61 @@ fn switch_row(
         .child(tile(icon, color, 22.0))
         .child(text_block(title, sub))
         .child(sw)
+        .into_any_element()
+}
+
+fn bluetooth_device_row(view: &Entity<Settings>, device: &rmac_bluetooth::Device) -> AnyElement {
+    let subtitle = match (device.kind.is_empty(), device.address.is_empty()) {
+        (false, false) => Some(format!("{} · {}", device.kind, device.address).into()),
+        (false, true) => Some(device.kind.clone().into()),
+        (true, false) => Some(device.address.clone().into()),
+        (true, true) => None,
+    };
+    let action = if device.connected {
+        "Disconnect"
+    } else if device.paired {
+        "Connect"
+    } else {
+        "Not Paired"
+    };
+    let device_id = device.id.clone();
+    let connect = !device.connected;
+    let action_view = view.clone();
+    row_base()
+        .child(tile(
+            "icons/bluetooth.svg",
+            if device.connected {
+                accent()
+            } else {
+                secondary()
+            },
+            22.0,
+        ))
+        .child(text_block(device.name.clone().into(), subtitle))
+        .child(
+            div()
+                .id(SharedString::from(format!("bluetooth-device-{device_id}")))
+                .px_2()
+                .py_1()
+                .rounded(px(6.0))
+                .text_size(px(12.0))
+                .text_color(if device.paired { accent() } else { secondary() })
+                .when(device.paired, |element| {
+                    element
+                        .cursor_pointer()
+                        .hover(|hover| hover.bg(hsl(0x00000008)))
+                        .on_click(move |_, _, cx| {
+                            action_view.update(cx, |settings, cx| {
+                                settings.set_bluetooth_device_connected(
+                                    device_id.clone(),
+                                    connect,
+                                    cx,
+                                );
+                            });
+                        })
+                })
+                .child(action),
+        )
         .into_any_element()
 }
 
@@ -2357,7 +2605,6 @@ fn gather_system_snapshot() -> SystemSnapshot {
         network: gather_network(),
         storage: gather_storage(),
         audio: gather_audio(),
-        bt_devices: gather_bluetooth(),
     }
 }
 
@@ -2365,61 +2612,6 @@ fn appearance_is_dark() -> bool {
     cmd("defaults", &["read", "-g", "AppleInterfaceStyle"])
         .map(|s| s.eq_ignore_ascii_case("Dark"))
         .unwrap_or(false)
-}
-
-/// Real paired/known Bluetooth devices from `system_profiler SPBluetoothDataType`.
-/// Connected devices first, capped to a reasonable number for the list.
-fn gather_bluetooth() -> Vec<BtDevice> {
-    let Some(out) = cmd("system_profiler", &["SPBluetoothDataType"]) else {
-        return Vec::new();
-    };
-    let mut devices: Vec<BtDevice> = Vec::new();
-    let mut connected = false;
-    let mut cur: Option<BtDevice> = None;
-    let flush = |cur: &mut Option<BtDevice>, out: &mut Vec<BtDevice>| {
-        if let Some(d) = cur.take() {
-            out.push(d);
-        }
-    };
-    for line in out.lines() {
-        let t = line.trim();
-        if t == "Connected:" {
-            flush(&mut cur, &mut devices);
-            connected = true;
-            continue;
-        }
-        if t == "Not Connected:" {
-            flush(&mut cur, &mut devices);
-            connected = false;
-            continue;
-        }
-        // A device-name line ends with ':' and has no "key: value" body. Skip
-        // the controller's own header rows ("Bluetooth", "Bluetooth Controller").
-        if t.ends_with(':') && !t.contains(": ") {
-            flush(&mut cur, &mut devices);
-            let name = t.trim_end_matches(':').trim().to_string();
-            let is_header = name.is_empty()
-                || name == "Bluetooth"
-                || name == "Bluetooth Controller"
-                || name == "Controller";
-            if !is_header {
-                cur = Some(BtDevice {
-                    name,
-                    connected,
-                    kind: String::new(),
-                });
-            }
-        } else if let Some(d) = cur.as_mut() {
-            if let Some(rest) = t.strip_prefix("Minor Type:") {
-                d.kind = rest.trim().to_string();
-            }
-        }
-    }
-    flush(&mut cur, &mut devices);
-    // Connected first, then by name; trim the list so the pane stays compact.
-    devices.sort_by(|a, b| b.connected.cmp(&a.connected).then(a.name.cmp(&b.name)));
-    devices.truncate(12);
-    devices
 }
 
 fn account_name() -> String {

@@ -25,6 +25,7 @@ objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 rmac-apps = { version = "=0.1.0", path = "crates/rmac-apps" }
+rmac-bluetooth = { version = "=0.1.0", path = "crates/rmac-bluetooth" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }

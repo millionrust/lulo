@@ -4799,6 +4799,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-bluetooth"
+version = "0.1.0"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "rmac-editor"
 version = "0.1.0"
 dependencies = [
@@ -4889,6 +4896,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-bluetooth",
  "rmac-network",
  "rmac-storage",
  "rmac-ui",

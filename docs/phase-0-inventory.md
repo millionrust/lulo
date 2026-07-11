@@ -108,6 +108,12 @@ real `WirelessEnabled` property; macOS retains `networksetup`. System Settings
 keeps all calls off the UI thread and surfaces service failures. The complete
 pane-to-service contract is tracked in `docs/system-settings-audit.md`.
 
+`rmac-bluetooth` backs the Bluetooth pane through BlueZ's D-Bus ObjectManager
+on Linux. Adapter power/discoverability, bounded discovery, and known-device
+connect/disconnect are real asynchronous operations with independent errors;
+macOS keeps its read-only `system_profiler` development adapter. New-device
+pairing remains gated on a confirmation-capable BlueZ agent.
+
 ### Text Editor
 
 - RTF parsing is implemented through AppKit and intentionally unavailable on

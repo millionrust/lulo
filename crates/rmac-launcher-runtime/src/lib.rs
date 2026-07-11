@@ -166,6 +166,13 @@ pub enum KeyEffect {
     Dismissed,
 }
 
+#[derive(Clone, Debug)]
+pub enum ShortcutEffect {
+    None,
+    Open(OpenEffect),
+    Dismissed,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Phase {
     Closed,
@@ -211,6 +218,7 @@ pub struct Coordinator {
     next_activation: u64,
     activation: Option<rmac_launcher_system::ActivationId>,
     activation_error: Option<String>,
+    last_shortcut_timestamp_ms: Option<u64>,
 }
 
 impl Coordinator {
@@ -225,6 +233,7 @@ impl Coordinator {
             next_activation: 0,
             activation: None,
             activation_error: None,
+            last_shortcut_timestamp_ms: None,
         }
     }
 
@@ -273,6 +282,30 @@ impl Coordinator {
                 .launcher
                 .session_mut()
                 .apply(batch.generation, batch.provider, batch.results)
+    }
+
+    /// Handle only the stable launcher shortcut. Duplicate or older portal
+    /// timestamps are ignored, and a fresh activation toggles the overlay.
+    pub fn handle_shortcut(&mut self, event: &rmac_shortcuts::Event) -> ShortcutEffect {
+        let rmac_shortcuts::Event::Activated { id, timestamp_ms } = event else {
+            return ShortcutEffect::None;
+        };
+        if id.0 != "launcher"
+            || self
+                .last_shortcut_timestamp_ms
+                .is_some_and(|last| *timestamp_ms <= last)
+        {
+            return ShortcutEffect::None;
+        }
+        self.last_shortcut_timestamp_ms = Some(*timestamp_ms);
+        if self.launcher.is_open() {
+            self.activation = None;
+            self.activation_error = None;
+            self.launcher.escape();
+            ShortcutEffect::Dismissed
+        } else {
+            ShortcutEffect::Open(self.open())
+        }
     }
 
     pub fn handle_key(&mut self, command: KeyCommand) -> KeyEffect {
@@ -638,6 +671,54 @@ mod tests {
             Ok(vec![result("apps", Category::Applications, "Terminal")]),
         )));
         assert_eq!(coordinator.snapshot().rows[0].title, "Terminal");
+    }
+
+    #[test]
+    fn launcher_shortcut_toggles_once_and_ignores_replays_and_other_ids() {
+        let mut coordinator = Coordinator::new(
+            vec![descriptor("apps", Category::Applications, false)],
+            BTreeMap::new(),
+        );
+        let other = rmac_shortcuts::Event::Activated {
+            id: rmac_shortcuts::ShortcutId("notification-center".into()),
+            timestamp_ms: 9,
+        };
+        assert!(matches!(
+            coordinator.handle_shortcut(&other),
+            ShortcutEffect::None
+        ));
+
+        let open = rmac_shortcuts::Event::Activated {
+            id: rmac_shortcuts::ShortcutId("launcher".into()),
+            timestamp_ms: 10,
+        };
+        let ShortcutEffect::Open(effect) = coordinator.handle_shortcut(&open) else {
+            panic!("fresh launcher shortcut opens");
+        };
+        assert_eq!(effect.focus, FocusTarget::Query);
+        assert!(coordinator.snapshot().open);
+        assert!(matches!(
+            coordinator.handle_shortcut(&open),
+            ShortcutEffect::None
+        ));
+        assert!(coordinator.snapshot().open);
+
+        let close = rmac_shortcuts::Event::Activated {
+            id: rmac_shortcuts::ShortcutId("launcher".into()),
+            timestamp_ms: 11,
+        };
+        assert!(matches!(
+            coordinator.handle_shortcut(&close),
+            ShortcutEffect::Dismissed
+        ));
+        assert_eq!(coordinator.snapshot().phase, Phase::Closed);
+        assert!(matches!(
+            coordinator.handle_shortcut(&rmac_shortcuts::Event::Deactivated {
+                id: rmac_shortcuts::ShortcutId("launcher".into()),
+                timestamp_ms: 12,
+            }),
+            ShortcutEffect::None
+        ));
     }
 
     #[test]

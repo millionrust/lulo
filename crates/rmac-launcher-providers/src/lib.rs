@@ -134,6 +134,172 @@ impl SettingsProvider {
     pub fn new(entries: Vec<SettingEntry>) -> Self {
         Self { entries }
     }
+
+    pub fn system_settings() -> Self {
+        Self::new(system_settings_entries())
+    }
+}
+
+pub fn system_settings_entries() -> Vec<SettingEntry> {
+    [
+        (
+            "wifi",
+            "Wi-Fi",
+            "Wireless network connections",
+            &["wireless", "wlan", "internet"][..],
+        ),
+        (
+            "bluetooth",
+            "Bluetooth",
+            "Nearby devices and accessories",
+            &["headphones", "keyboard", "pair device"],
+        ),
+        (
+            "network",
+            "Network",
+            "Ethernet, DNS, and proxy settings",
+            &["ethernet", "dns", "proxy", "connection"],
+        ),
+        (
+            "vpn",
+            "VPN",
+            "Private network connections",
+            &["tunnel", "work network"],
+        ),
+        (
+            "battery",
+            "Battery",
+            "Energy use and power behavior",
+            &["power", "energy", "charging"],
+        ),
+        (
+            "general",
+            "General",
+            "System information and common preferences",
+            &[
+                "about", "update", "storage", "date", "time", "language", "sharing", "startup",
+                "login", "backup",
+            ],
+        ),
+        (
+            "accessibility",
+            "Accessibility",
+            "Vision, hearing, motor, and speech support",
+            &[
+                "screen reader",
+                "zoom",
+                "contrast",
+                "reduce motion",
+                "assistive",
+            ],
+        ),
+        (
+            "appearance",
+            "Appearance",
+            "Light, dark, accent, and interface style",
+            &["theme", "dark mode", "light mode", "accent", "color"],
+        ),
+        (
+            "assistant",
+            "Assistant & Intelligence",
+            "Local and connected assistant services",
+            &["assistant", "ai", "voice"],
+        ),
+        (
+            "desktop-dock",
+            "Desktop & Dock",
+            "Dock, windows, workspaces, and desktop behavior",
+            &["dock", "windows", "workspace", "autohide", "magnification"],
+        ),
+        (
+            "displays",
+            "Displays",
+            "Resolution, scale, arrangement, and brightness",
+            &["monitor", "screen", "resolution", "scaling", "brightness"],
+        ),
+        (
+            "spotlight",
+            "Spotlight",
+            "Search providers, privacy, exclusions, and shortcut",
+            &[
+                "search", "launcher", "indexing", "privacy", "exclude", "shortcut",
+            ],
+        ),
+        (
+            "wallpaper",
+            "Wallpaper",
+            "Desktop background for each display",
+            &["background", "desktop picture", "image"],
+        ),
+        (
+            "notifications",
+            "Notifications",
+            "Alerts, banners, and application policy",
+            &["alerts", "banners", "notification center"],
+        ),
+        (
+            "sound",
+            "Sound",
+            "Output, input, effects, and volume",
+            &["volume", "speaker", "microphone", "audio", "mute"],
+        ),
+        (
+            "keyboard",
+            "Keyboard",
+            "Key repeat, input, and shortcuts",
+            &["keys", "repeat", "input source", "shortcut"],
+        ),
+        (
+            "mouse",
+            "Mouse",
+            "Pointer, scrolling, acceleration, and buttons",
+            &["pointer", "scroll", "click", "acceleration"],
+        ),
+        (
+            "trackpad",
+            "Trackpad",
+            "Tracking, tapping, scrolling, and gestures",
+            &["touchpad", "gesture", "tap", "scroll"],
+        ),
+        (
+            "focus",
+            "Focus",
+            "Silence interruptions with Focus modes",
+            &["do not disturb", "quiet", "notifications"],
+        ),
+        (
+            "screen-time",
+            "Screen Time",
+            "Usage reports and application limits",
+            &["usage", "limits", "downtime"],
+        ),
+        (
+            "lock-screen",
+            "Lock Screen",
+            "Lock, login, and idle timeout behavior",
+            &["lock", "login", "password", "timeout", "idle"],
+        ),
+        (
+            "privacy-security",
+            "Privacy & Security",
+            "Permissions, firewall, and system security",
+            &[
+                "permissions",
+                "firewall",
+                "encryption",
+                "security",
+                "privacy",
+            ],
+        ),
+    ]
+    .into_iter()
+    .map(|(pane_id, title, subtitle, keywords)| SettingEntry {
+        pane_id: pane_id.into(),
+        title: title.into(),
+        subtitle: Some(subtitle.into()),
+        keywords: keywords.iter().map(|keyword| (*keyword).into()).collect(),
+    })
+    .collect()
 }
 
 impl Provider for SettingsProvider {
@@ -588,7 +754,7 @@ fn cancelled() -> ProviderError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -645,6 +811,24 @@ mod tests {
             .expect("search succeeds");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id.local, "sound");
+    }
+
+    #[test]
+    fn system_settings_catalog_has_stable_unique_panes_and_linux_synonyms() {
+        let entries = system_settings_entries();
+        assert_eq!(entries.len(), 22);
+        let unique: BTreeSet<_> = entries.iter().map(|entry| &entry.pane_id).collect();
+        assert_eq!(unique.len(), entries.len());
+        let provider = SettingsProvider::system_settings();
+        let touchpad = provider
+            .search("touchpad", &Cancellation::default())
+            .expect("settings search succeeds");
+        assert_eq!(touchpad[0].id.local, "trackpad");
+        let firewall = provider
+            .search("firewall", &Cancellation::default())
+            .expect("settings search succeeds");
+        assert_eq!(firewall[0].id.local, "privacy-security");
+        assert!(entries.iter().all(|entry| !entry.pane_id.contains(' ')));
     }
 
     #[derive(Default)]

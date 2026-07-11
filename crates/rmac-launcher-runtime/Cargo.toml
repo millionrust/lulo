@@ -14,6 +14,7 @@ rmac-launcher.workspace = true
 rmac-launcher-providers.workspace = true
 rmac-launcher-system.workspace = true
 rmac-shell-settings.workspace = true
+rmac-shortcuts.workspace = true
 
 [dev-dependencies]
 futures-lite.workspace = true

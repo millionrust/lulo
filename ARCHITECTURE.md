@@ -275,7 +275,10 @@ the overlay receiver closes. Its coordinator exposes immediate query-focus
 intent before scheduling search, progressive loading/results/degraded/empty
 states, private-safe live announcements, single-flight activation, and stale
 completion rejection. Policy changes restart the current generation so a
-newly denied private provider cannot keep publishing into an open overlay.
+newly denied private provider cannot keep publishing into an open overlay. It
+consumes only the stable `launcher` activation from `rmac-shortcuts`; fresh
+timestamps toggle the overlay, while repeats, replays, deactivation, and other
+shortcut IDs are ignored.
 
 ## Persistence
 

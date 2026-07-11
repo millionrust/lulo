@@ -55,6 +55,11 @@ invalidates late activation completion. Only one activation may be in flight.
 Live announcements identify the selected title, category, and result position;
 provider details and private action payloads never enter the snapshot.
 
+The runtime consumes the typed `launcher` activation already owned by
+`rmac-shortcuts`. A fresh timestamp toggles the overlay. Duplicate or older
+activations, deactivation signals, and other shortcut IDs do nothing, avoiding
+double-open behavior after portal replay or key repeat.
+
 ## Ranking and keyboard behavior
 
 Ranking normalizes whitespace/case and scores exact, prefix, word-prefix,
@@ -81,7 +86,10 @@ print private action payloads.
 - Applications retain the exact parsed desktop-entry launch specification; no
   result reconstructs a command from display text.
 - Settings match titles, subtitles, and synonyms but return stable pane IDs,
-  with duplicate and empty IDs excluded.
+  with duplicate and empty IDs excluded. The built-in catalog covers all 22
+  top-level Settings destinations and includes Linux-relevant terms such as
+  WLAN, DNS, touchpad, firewall, dark mode, and screen reader without changing
+  the stable pane identity.
 - Files use recent documents for an empty query and filename search otherwise.
   They accept only an absolute root, return only absolute deduplicated paths,
   pass the query cancellation flag into `rmac-search`, and declare private

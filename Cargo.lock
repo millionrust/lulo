@@ -5025,6 +5025,7 @@ dependencies = [
  "rmac-launcher-providers",
  "rmac-launcher-system",
  "rmac-shell-settings",
+ "rmac-shortcuts",
 ]
 
 [[package]]

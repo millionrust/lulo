@@ -26,7 +26,7 @@ pub use components::{
 };
 pub use controls::{
     Button, ButtonRole, InputState, SearchField, Slider, SliderAxis, SliderEvent, SliderState,
-    TextField, Toggle, ToggleState,
+    Tabs, TextField, Toggle, ToggleState,
 };
 
 // Re-exports so apps depend on one crate for theming; these also bring the

@@ -39,7 +39,8 @@ SearchField are exported by `rmac-ui`. Dialog buttons and Activity Monitor
 actions consume the shared Button; all System Settings switches and sliders use
 the shared Toggle and Slider boundary; Activity Monitor and System Settings use
 the shared SearchField. The remaining inventory stays a contract until its
-focused B7 migration lands.
+focused B7 migration lands. Tabs now also has a shared single-selection control
+with arrow and Home/End keyboard routing, adopted by Activity Monitor.
 
 ## Visual-reference protocol
 

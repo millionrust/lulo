@@ -56,6 +56,8 @@ crates do not import upstream Switch or Slider types; dialog actions and the
 Activity Monitor action buttons also use the shared Button implementation.
 TextField and SearchField preserve the entity-backed editor model behind the
 same boundary; SearchField enables a clear action by default.
+Tabs owns single-selection routing and bounded arrow/Home/End keyboard
+navigation; Activity Monitor is its first product consumer.
 
 - GPUI entities own view state and subscriptions.
 - Render methods must not perform filesystem access, subprocess work, or D-Bus

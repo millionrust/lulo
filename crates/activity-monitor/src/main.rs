@@ -17,12 +17,11 @@ use gpui::{
     Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{
-    button::{Button as ComponentButton, ButtonGroup},
     menu::PopupMenu,
     table::{Column, ColumnSort, Table, TableDelegate, TableEvent, TableState},
-    Selectable as _, StyledExt as _,
+    StyledExt as _,
 };
-use rmac_ui::{mac, Button, InputState, SearchField};
+use rmac_ui::{mac, Button, InputState, SearchField, Tabs};
 use sysinfo::{
     Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };
@@ -1528,17 +1527,11 @@ impl MonitorView {
 
     fn render_toolbar(&self, cx: &Context<Self>) -> impl IntoElement {
         let active = self.tab;
-        let group = ButtonGroup::new("tabs")
-            .outline()
-            .children(Tab::ALL.iter().map(|t| {
-                ComponentButton::new(SharedString::from(t.label()))
-                    .label(t.label())
-                    .selected(*t == active)
-            }))
-            .on_click(cx.listener(|this, clicks: &Vec<usize>, _, cx| {
-                if let Some(&ix) = clicks.first() {
-                    this.select_tab(Tab::ALL[ix], cx);
-                }
+        let selected = Tab::ALL.iter().position(|tab| *tab == active).unwrap_or(0);
+        let group = Tabs::new("activity-tabs", Tab::ALL.map(Tab::label))
+            .selected(selected)
+            .on_change(cx.listener(|this, index: &usize, _, cx| {
+                this.select_tab(Tab::ALL[*index], cx);
             }));
 
         let has_sel = self.selected_proc(cx).is_some();

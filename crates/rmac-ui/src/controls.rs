@@ -3,11 +3,12 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, rgba, App, ClickEvent, ElementId, Entity, IntoElement,
-    ParentElement as _, RenderOnce, SharedString, StyleRefinement, Styled, Window,
+    div, prelude::FluentBuilder as _, px, rgba, App, ClickEvent, ElementId, Entity,
+    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, RenderOnce,
+    SharedString, StyleRefinement, Styled, Window,
 };
 use gpui_component::{
-    button::{Button as ComponentButton, ButtonCustomVariant, ButtonVariants as _},
+    button::{Button as ComponentButton, ButtonCustomVariant, ButtonGroup, ButtonVariants as _},
     input::Input as ComponentInput,
     slider::Slider as ComponentSlider,
     Disableable as _, Selectable as _, Sizable as _, Size, StyledExt as _,
@@ -475,6 +476,119 @@ impl RenderOnce for SearchField {
     }
 }
 
+type TabHandler = Rc<dyn Fn(&usize, &mut Window, &mut App)>;
+
+fn next_tab_index(selected: usize, len: usize, key: &str) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    match key {
+        "left" | "up" => Some(selected.saturating_sub(1)),
+        "right" | "down" => Some((selected + 1).min(len - 1)),
+        "home" => Some(0),
+        "end" => Some(len - 1),
+        _ => None,
+    }
+}
+
+/// Single-selection tab strip with a stable index-based event contract.
+#[derive(IntoElement)]
+pub struct Tabs {
+    id: SharedString,
+    labels: Vec<SharedString>,
+    selected: usize,
+    disabled: bool,
+    on_change: Option<TabHandler>,
+    style: StyleRefinement,
+}
+
+impl Tabs {
+    pub fn new(
+        id: impl Into<SharedString>,
+        labels: impl IntoIterator<Item = impl Into<SharedString>>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            labels: labels.into_iter().map(Into::into).collect(),
+            selected: 0,
+            disabled: false,
+            on_change: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn selected(mut self, selected: usize) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn on_change(mut self, handler: impl Fn(&usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl Styled for Tabs {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for Tabs {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let len = self.labels.len();
+        let selected = self.selected.min(len.saturating_sub(1));
+        let id_prefix = self.id.clone();
+        let click_handler = self.on_change.clone();
+        let mut group = ButtonGroup::new(self.id)
+            .outline()
+            .with_size(Size::Small)
+            .disabled(self.disabled)
+            .children(
+                self.labels
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(index, label)| {
+                        ComponentButton::new(SharedString::from(format!("{id_prefix}-{index}")))
+                            .label(label)
+                            .selected(index == selected)
+                    }),
+            )
+            .refine_style(&self.style);
+        if let Some(handler) = click_handler {
+            group = group.on_click(move |indices, window, cx| {
+                if let Some(index) = indices.first() {
+                    handler(index, window, cx);
+                }
+            });
+        }
+        let keyboard_handler = self.on_change;
+        let disabled = self.disabled;
+        div()
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let Some(handler) = keyboard_handler.as_ref() else {
+                    return;
+                };
+                if disabled {
+                    return;
+                }
+                let Some(index) = next_tab_index(selected, len, event.keystroke.key.as_str())
+                else {
+                    return;
+                };
+                window.prevent_default();
+                cx.stop_propagation();
+                handler(&index, window, cx);
+            })
+            .child(group)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -504,5 +618,22 @@ mod tests {
         let text_defaults = (true, false, false, 0_isize);
         let search_defaults = (true, true, false, 0_isize);
         assert_ne!(text_defaults, search_defaults);
+    }
+
+    #[test]
+    fn tab_selection_is_clamped_for_rendering() {
+        let clamp = |selected: usize, len: usize| selected.min(len.saturating_sub(1));
+        assert_eq!(clamp(8, 5), 4);
+        assert_eq!(clamp(8, 0), 0);
+    }
+
+    #[test]
+    fn tab_keyboard_navigation_is_bounded() {
+        assert_eq!(next_tab_index(0, 5, "left"), Some(0));
+        assert_eq!(next_tab_index(4, 5, "right"), Some(4));
+        assert_eq!(next_tab_index(2, 5, "home"), Some(0));
+        assert_eq!(next_tab_index(2, 5, "end"), Some(4));
+        assert_eq!(next_tab_index(2, 5, "space"), None);
+        assert_eq!(next_tab_index(0, 0, "right"), None);
     }
 }

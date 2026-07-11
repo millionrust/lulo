@@ -4819,11 +4819,19 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "rmac-mounts",
  "rmac-search",
  "rmac-thumbnails",
  "rmac-ui",
  "rust-embed",
  "trash",
+]
+
+[[package]]
+name = "rmac-mounts"
+version = "0.1.0"
+dependencies = [
+ "url",
 ]
 
 [[package]]

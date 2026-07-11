@@ -26,6 +26,7 @@ objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
 rmac-apps = { version = "=0.1.0", path = "crates/rmac-apps" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
+rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }
 rmac-storage = { version = "=0.1.0", path = "crates/rmac-storage" }

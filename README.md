@@ -33,6 +33,7 @@ Shared crates:
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
 - `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.
+- `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
 
 Phase 1 diagnostic:

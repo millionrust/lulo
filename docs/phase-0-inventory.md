@@ -69,9 +69,8 @@ macOS retains Finder reveal.
 - macOS pasteboard FFI for file copy/paste;
 - macOS-shaped `stat` and `df` parsing.
 
-Replacement: asynchronous `FileOperations`, a search-provider interface,
-freedesktop MIME/default-app integration, portal support, mount service, and
-a Linux preview provider.
+Replacement: freedesktop MIME/default-app integration and a Linux preview
+provider.
 
 `rmac-search` now owns the search-provider boundary. Finder keeps Spotlight for
 macOS, while Linux recursive filename search walks without following symlinked
@@ -83,6 +82,12 @@ results after navigation or a newer request and hides macOS tags on Linux.
 images in-process and writes PNG thumbnails atomically under the XDG cache;
 macOS retains `sips` for HEIC support. Cache keys include source size and
 modification time, and Finder drops stale or off-directory mappings on reload.
+
+`rmac-mounts` now owns Finder's Locations volumes and eject operations. Linux
+parses `/proc/self/mountinfo`, decodes kernel path escapes, exposes only
+user-facing media/GVFS mount points, and unmounts through `gio`; macOS retains
+`/Volumes` and `diskutil`. Helper failures are reported in Finder instead of
+being discarded, and root labels are platform-appropriate.
 
 ### System Settings
 

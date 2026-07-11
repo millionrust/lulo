@@ -14,6 +14,7 @@ async-channel.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
+rmac-mounts.workspace = true
 rmac-ui.workspace = true
 rmac-search.workspace = true
 rmac-thumbnails.workspace = true

@@ -180,6 +180,14 @@ const DATE_W: f32 = 184.0;
 const SIZE_W: f32 = 80.0;
 const KIND_W: f32 = 150.0;
 
+fn root_volume_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "Macintosh HD"
+    } else {
+        "Computer"
+    }
+}
+
 #[derive(Clone)]
 struct Entry {
     name: SharedString,
@@ -285,7 +293,7 @@ impl FinderView {
         let host = home
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Macintosh HD".to_string());
+            .unwrap_or_else(|| root_volume_name().to_string());
         let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
 
         let p =
@@ -307,71 +315,77 @@ impl FinderView {
                 PlaceKind::Item,
             ),
             p(
-                "Macintosh HD",
+                root_volume_name(),
                 "/".into(),
                 "icons/hard-drive.svg",
                 drive_gray(),
                 PlaceKind::Item,
             ),
         ];
-        if let Ok(rd) = std::fs::read_dir("/Volumes") {
-            for e in rd.flatten() {
-                let vp = e.path();
-                let name = e.file_name().to_string_lossy().into_owned();
-                if name == "Macintosh HD" || name.starts_with('.') {
-                    continue;
-                }
-                locations.push(p(
-                    &name,
-                    vp,
-                    "icons/hard-drive.svg",
-                    drive_gray(),
-                    PlaceKind::Volume,
-                ));
-            }
-        }
+        let (mounts, mount_error) = match rmac_mounts::discover() {
+            Ok(mounts) => (mounts, None),
+            Err(error) => (
+                Vec::new(),
+                Some(format!("Could not load mounted volumes: {error}").into()),
+            ),
+        };
+        locations.extend(mounts.into_iter().map(|mount| {
+            p(
+                &mount.name,
+                mount.path,
+                "icons/hard-drive.svg",
+                drive_gray(),
+                if mount.ejectable {
+                    PlaceKind::Volume
+                } else {
+                    PlaceKind::Item
+                },
+            )
+        }));
 
         #[cfg(target_os = "macos")]
         let tag = |name: &str, color: u32| p(name, PathBuf::new(), "", hsl(color), PlaceKind::Tag);
+        let mut favorites = vec![p(
+            "Recents",
+            PathBuf::new(),
+            "icons/clock.svg",
+            accent(),
+            PlaceKind::Recents,
+        )];
+        #[cfg(target_os = "macos")]
+        favorites.push(p(
+            "Applications",
+            "/Applications".into(),
+            "icons/layout-grid.svg",
+            accent(),
+            PlaceKind::Item,
+        ));
+        favorites.extend([
+            p(
+                "Desktop",
+                home.join("Desktop"),
+                "icons/folder-fill.svg",
+                accent(),
+                PlaceKind::Item,
+            ),
+            p(
+                "Documents",
+                home.join("Documents"),
+                "icons/folder-fill.svg",
+                accent(),
+                PlaceKind::Item,
+            ),
+            p(
+                "Downloads",
+                home.join("Downloads"),
+                "icons/download.svg",
+                accent(),
+                PlaceKind::Item,
+            ),
+        ]);
         let mut sections = vec![Section {
             title: "Favorites".into(),
-            places: vec![
-                p(
-                    "Recents",
-                    PathBuf::new(),
-                    "icons/clock.svg",
-                    accent(),
-                    PlaceKind::Recents,
-                ),
-                p(
-                    "Applications",
-                    "/Applications".into(),
-                    "icons/layout-grid.svg",
-                    accent(),
-                    PlaceKind::Item,
-                ),
-                p(
-                    "Desktop",
-                    home.join("Desktop"),
-                    "icons/folder-fill.svg",
-                    accent(),
-                    PlaceKind::Item,
-                ),
-                p(
-                    "Documents",
-                    home.join("Documents"),
-                    "icons/folder-fill.svg",
-                    accent(),
-                    PlaceKind::Item,
-                ),
-                p(
-                    "Downloads",
-                    home.join("Downloads"),
-                    "icons/download.svg",
-                    accent(),
-                    PlaceKind::Item,
-                ),
-            ],
+            places: favorites,
         }];
         // Only show iCloud Drive when the real CloudDocs folder exists.
         if icloud.is_dir() {
@@ -386,11 +400,11 @@ impl FinderView {
                 )],
             });
         }
-        #[cfg(target_os = "macos")]
         sections.push(Section {
             title: "Locations".into(),
             places: locations,
         });
+        #[cfg(target_os = "macos")]
         sections.push(Section {
             title: "Tags".into(),
             places: vec![
@@ -474,7 +488,7 @@ impl FinderView {
             sections,
             info: None,
             result_title: None,
-            operation_error: None,
+            operation_error: mount_error,
             transfer: None,
             free_bytes: None,
             dragging: false,
@@ -844,6 +858,36 @@ impl FinderView {
             cancel.store(true, Ordering::Release);
         }
         self.search_generation = self.search_generation.wrapping_add(1);
+    }
+
+    fn eject_volume(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let unmount_path = path.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_mounts::unmount(&unmount_path) })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                match result {
+                    Ok(()) => {
+                        this.operation_error = None;
+                        for section in &mut this.sections {
+                            section.places.retain(|place| place.path != path);
+                        }
+                        if this.cwd.starts_with(&path) {
+                            this.navigate(this.home.clone(), cx);
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        this.operation_error =
+                            Some(format!("Could not eject volume: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn block_mutation_during_transfer(&mut self, cx: &mut Context<Self>) -> bool {
@@ -1341,7 +1385,7 @@ impl FinderView {
         self.cwd
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Macintosh HD".to_string())
+            .unwrap_or_else(|| root_volume_name().to_string())
             .into()
     }
 
@@ -1416,8 +1460,8 @@ impl FinderView {
                     .rounded(px(4.0))
                     .hover(|h| h.bg(hsl(0x00000012)))
                     .child(icon("icons/eject.svg", 11.0, secondary()))
-                    .on_click(cx.listener(move |_this, _, _, _| {
-                        let _ = Command::new("diskutil").arg("eject").arg(&ep).spawn();
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.eject_volume(ep.clone(), cx);
                     })),
             );
         }
@@ -2032,7 +2076,7 @@ impl FinderView {
         for c in self.cwd.components() {
             acc.push(c.as_os_str());
             let name = match c {
-                Component::RootDir => "Macintosh HD".to_string(),
+                Component::RootDir => root_volume_name().to_string(),
                 Component::Normal(s) => s.to_string_lossy().into_owned(),
                 _ => continue,
             };

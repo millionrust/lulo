@@ -5037,6 +5037,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-theme"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "notify",
+ "rmac-appearance",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-thumbnails"
 version = "0.1.0"
 dependencies = [

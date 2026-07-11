@@ -66,9 +66,11 @@ and FFI cannot leak into application state or render modules.
 Appearance is split deliberately: `rmac-appearance` owns the platform-neutral
 snapshot, capabilities, event reducer, source trait, and deterministic fake;
 `rmac-appearance-portal` reads standardized host preferences and follows the
-XDG Settings portal signal stream. The portal is read-only. Writable rmac
-session preferences require their own authority and cannot be simulated by
-writing local state in System Settings.
+XDG Settings portal signal stream. The portal is read-only. `rmac-theme` is the
+separate writable authority: it resolves explicit or automatic preferences
+against the host snapshot, persists a versioned primary and last-known-good
+copy atomically, and emits bounded filesystem change events for other
+processes. System Settings must use this authority instead of local view state.
 
 ## Persistence
 

@@ -21,6 +21,13 @@ pub enum ColorScheme {
     PreferLight,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ResolvedColorScheme {
+    #[default]
+    Light,
+    Dark,
+}
+
 impl ColorScheme {
     pub fn label(self) -> &'static str {
         match self {
@@ -101,6 +108,14 @@ pub struct Snapshot {
     pub motion: MotionPreference,
     pub capabilities: Capabilities,
     pub detail: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ResolvedAppearance {
+    pub color_scheme: ResolvedColorScheme,
+    pub accent_color: AccentColor,
+    pub contrast: Contrast,
+    pub motion: MotionPreference,
 }
 
 impl Snapshot {

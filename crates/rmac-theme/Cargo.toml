@@ -1,0 +1,14 @@
+[package]
+name = "rmac-theme"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+async-channel.workspace = true
+notify.workspace = true
+rmac-appearance.workspace = true
+rmac-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true

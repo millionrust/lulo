@@ -1,6 +1,6 @@
 //! rmac Text Editor — a fast, native TextEdit-style editor.
 //!
-//! Rope-backed `InputState` body on a clean white page, with a unified macOS
+//! Rope-backed `InputState` body on a clean themed page, with a unified desktop
 //! toolbar (New / Open / Save), a find/replace bar (⌘F / ⇧⌘F), dirty-state
 //! tracking with a modified indicator and unsaved-changes prompts, basic
 //! autosave to a recovery file, and a Format affordance (monospace + font
@@ -1125,11 +1125,11 @@ impl Render for EditorView {
                         .items_center()
                         .gap_2()
                         .px_3()
-                        .bg(gpui::rgba(0xff3b301f))
+                        .bg(mac::error_background())
                         .border_b_1()
-                        .border_color(gpui::rgba(0xff3b3059))
+                        .border_color(mac::error_border())
                         .text_size(px(12.0))
-                        .text_color(gpui::rgb(0xc62828))
+                        .text_color(mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))
                         .child("Dismiss")

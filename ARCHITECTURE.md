@@ -88,6 +88,9 @@ live tokens while terminal color profiles remain explicit user content.
 Finder and App Drawer also consume semantic backgrounds, controls, selection,
 drag targets, and notice colors; file tags and application icons remain
 content-owned colors rather than being recolored as chrome.
+Notes and Text Editor consume the same live document surfaces and notice
+tokens; note-yellow semantics and colors embedded in RTF content remain
+content-owned.
 
 ## Persistence
 

@@ -30,6 +30,25 @@ completion adopts only its control's authoritative field, so simultaneous
 Wi-Fi and sound work cannot roll one another back through an older aggregate
 snapshot.
 
+## Popover interaction contract
+
+The domain permits one open popover for the session. Invoking the same output's
+status cluster toggles it closed; invoking another output transfers ownership
+there. The UI receives the owning output with every dismissal so focus can
+return to the correct status-cluster invoker.
+
+Keyboard focus follows Wi-Fi, Bluetooth, Sound, Power Mode, then Focus. It
+skips controls whose authorities are unavailable, wraps in both directions,
+and reconciles immediately if a live service loss disables the focused tile.
+Escape, outside press, invoker toggle, and owner-window loss have distinct
+dismissal reasons. Busy controls ignore repeated activation.
+
+Activation toggles Wi-Fi, Bluetooth, output mute, and Focus from their current
+authoritative values. Sound increment/decrement uses bounded five-percent
+steps, while Power Mode traverses only the profiles advertised by the host.
+The layer-shell view will translate Tab/Shift-Tab, arrows, Space/Return, and
+Escape into these framework-neutral intents.
+
 ## Availability and capabilities
 
 - Wi-Fi and Bluetooth mutations require their adapters to report available.
@@ -55,8 +74,8 @@ authority. The returned aggregate contains only that owned field, matching the
 model's per-control merge rule and preventing an older Wi-Fi task from rolling
 back newer sound state.
 
-The live runtime bridge, layer-shell popover, outside-click/Escape dismissal,
-keyboard focus order, and real Orca/niri evidence remain pending. The existing
+The layer-shell rendering, real focus restoration, semantic GPUI controls, and
+Orca/niri evidence remain pending. The existing
 `rmac-shell-runtime` now supplies full inputs, disables mutation when a source
 is unreachable, and emits a popover-specific redraw flag without waking the
 compact bar for device-list-only changes. A future

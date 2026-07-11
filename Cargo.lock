@@ -5012,6 +5012,7 @@ version = "0.1.0"
 dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
+ "rmac-compositor",
  "rmac-network",
  "rmac-power",
  "rmac-shell-settings",

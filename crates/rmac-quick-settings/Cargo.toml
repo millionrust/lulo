@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 rmac-audio.workspace = true
 rmac-bluetooth.workspace = true
+rmac-compositor.workspace = true
 rmac-network.workspace = true
 rmac-power.workspace = true
 rmac-shell-settings.workspace = true

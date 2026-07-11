@@ -197,6 +197,9 @@ capabilities, permits only one in-flight mutation per control, retains the
 authoritative value while work is pending, and accepts success only alongside
 a refreshed authority snapshot. Stale task completions cannot overwrite newer
 state, and failures preserve last-known-good values with user-visible detail.
+The same domain owns the one-popover/multi-output lifecycle, available-control
+focus order, dismissal reasons, and commands derived from authoritative values;
+it does not import GPUI or Wayland input types.
 `rmac-quick-settings-system` is the blocking adapter above that boundary. It
 maps validated commands to NetworkManager, BlueZ, PipeWire/WirePlumber,
 power-profiles, and shell-settings operations, then rereads only the affected

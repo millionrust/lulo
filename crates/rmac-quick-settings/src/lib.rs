@@ -142,6 +142,231 @@ pub struct State {
     next_id: u64,
 }
 
+const FOCUS_ORDER: [Control; 5] = [
+    Control::Wifi,
+    Control::Bluetooth,
+    Control::Sound,
+    Control::Power,
+    Control::Focus,
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DismissReason {
+    Escape,
+    OutsidePress,
+    Invoker,
+    OwnerLost,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Interaction {
+    Escape,
+    FocusNext,
+    FocusPrevious,
+    Activate,
+    Increment,
+    Decrement,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Outcome {
+    Unchanged,
+    Focused(Option<Control>),
+    Command(Command),
+    Dismissed {
+        output: rmac_compositor::OutputId,
+        reason: DismissReason,
+    },
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Popover {
+    output: Option<rmac_compositor::OutputId>,
+    focused: Option<Control>,
+}
+
+impl Popover {
+    pub fn output(&self) -> Option<&rmac_compositor::OutputId> {
+        self.output.as_ref()
+    }
+
+    pub fn focused(&self) -> Option<Control> {
+        self.focused
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.output.is_some()
+    }
+
+    /// Toggle the one allowed popover. Reinvoking it on the owning output
+    /// closes it; invoking from another output transfers ownership there.
+    pub fn toggle(&mut self, output: rmac_compositor::OutputId, view: &View) -> Outcome {
+        if self.output.as_ref() == Some(&output) {
+            return self.dismiss(DismissReason::Invoker);
+        }
+        self.output = Some(output);
+        self.focused = first_available(view);
+        Outcome::Focused(self.focused)
+    }
+
+    /// Reconcile keyboard focus after live capability changes.
+    pub fn refresh(&mut self, view: &View) -> Outcome {
+        if !self.is_open() {
+            return Outcome::Unchanged;
+        }
+        if self
+            .focused
+            .is_some_and(|control| is_available(view, control))
+        {
+            return Outcome::Unchanged;
+        }
+        self.focused = first_available(view);
+        Outcome::Focused(self.focused)
+    }
+
+    pub fn outside_press(&mut self) -> Outcome {
+        self.dismiss(DismissReason::OutsidePress)
+    }
+
+    pub fn owner_lost(&mut self) -> Outcome {
+        self.dismiss(DismissReason::OwnerLost)
+    }
+
+    pub fn interact(&mut self, interaction: Interaction, view: &View) -> Outcome {
+        if !self.is_open() {
+            return Outcome::Unchanged;
+        }
+        match interaction {
+            Interaction::Escape => self.dismiss(DismissReason::Escape),
+            Interaction::FocusNext => self.move_focus(view, 1),
+            Interaction::FocusPrevious => self.move_focus(view, -1),
+            Interaction::Activate => self
+                .focused
+                .and_then(|control| activation(view, control))
+                .map(Outcome::Command)
+                .unwrap_or(Outcome::Unchanged),
+            Interaction::Increment => self
+                .focused
+                .and_then(|control| adjustment(view, control, true))
+                .map(Outcome::Command)
+                .unwrap_or(Outcome::Unchanged),
+            Interaction::Decrement => self
+                .focused
+                .and_then(|control| adjustment(view, control, false))
+                .map(Outcome::Command)
+                .unwrap_or(Outcome::Unchanged),
+        }
+    }
+
+    fn dismiss(&mut self, reason: DismissReason) -> Outcome {
+        let Some(output) = self.output.take() else {
+            return Outcome::Unchanged;
+        };
+        self.focused = None;
+        Outcome::Dismissed { output, reason }
+    }
+
+    fn move_focus(&mut self, view: &View, direction: isize) -> Outcome {
+        let available: Vec<_> = FOCUS_ORDER
+            .into_iter()
+            .filter(|control| is_available(view, *control))
+            .collect();
+        if available.is_empty() {
+            self.focused = None;
+            return Outcome::Focused(None);
+        }
+        let current = self
+            .focused
+            .and_then(|focused| available.iter().position(|control| *control == focused));
+        let index = match (current, direction.is_positive()) {
+            (Some(index), true) => (index + 1) % available.len(),
+            (Some(0), false) | (None, false) => available.len() - 1,
+            (Some(index), false) => index - 1,
+            (None, true) => 0,
+        };
+        self.focused = Some(available[index]);
+        Outcome::Focused(self.focused)
+    }
+}
+
+fn first_available(view: &View) -> Option<Control> {
+    FOCUS_ORDER
+        .into_iter()
+        .find(|control| is_available(view, *control))
+}
+
+fn is_available(view: &View, control: Control) -> bool {
+    match control {
+        Control::Wifi => view.wifi.available,
+        Control::Bluetooth => view.bluetooth.available,
+        Control::Sound => view.sound.available,
+        Control::Power => view.power.available,
+        Control::Focus => view.focus.available,
+    }
+}
+
+fn is_busy(view: &View, control: Control) -> bool {
+    match control {
+        Control::Wifi => view.wifi.busy,
+        Control::Bluetooth => view.bluetooth.busy,
+        Control::Sound => view.sound.busy,
+        Control::Power => view.power.busy,
+        Control::Focus => view.focus.busy,
+    }
+}
+
+fn activation(view: &View, control: Control) -> Option<Command> {
+    if !is_available(view, control) || is_busy(view, control) {
+        return None;
+    }
+    match control {
+        Control::Wifi => Some(Command::SetWifiEnabled(!view.wifi.value)),
+        Control::Bluetooth => Some(Command::SetBluetoothPowered(!view.bluetooth.value)),
+        Control::Sound => Some(Command::SetOutputMuted(!view.sound.value.muted)),
+        Control::Power => adjacent_profile(&view.power.value, true).map(Command::SetPowerProfile),
+        Control::Focus => Some(Command::SetFocusEnabled(!view.focus.value.enabled)),
+    }
+}
+
+fn adjustment(view: &View, control: Control, increment: bool) -> Option<Command> {
+    if !is_available(view, control) || is_busy(view, control) {
+        return None;
+    }
+    match control {
+        Control::Sound => {
+            let volume = if increment {
+                view.sound.value.volume.saturating_add(5).min(100)
+            } else {
+                view.sound.value.volume.saturating_sub(5)
+            };
+            (volume != view.sound.value.volume).then_some(Command::SetOutputVolume(volume))
+        }
+        Control::Power => {
+            adjacent_profile(&view.power.value, increment).map(Command::SetPowerProfile)
+        }
+        _ => None,
+    }
+}
+
+fn adjacent_profile(value: &PowerValue, forward: bool) -> Option<rmac_power::PowerProfile> {
+    if value.supported.is_empty() {
+        return None;
+    }
+    let current = value.active.and_then(|active| {
+        value
+            .supported
+            .iter()
+            .position(|profile| *profile == active)
+    });
+    let index = match (current, forward) {
+        (Some(index), true) => (index + 1) % value.supported.len(),
+        (Some(0), false) | (None, false) => value.supported.len() - 1,
+        (Some(index), false) => index - 1,
+        (None, true) => 0,
+    };
+    Some(value.supported[index])
+}
+
 impl State {
     pub fn new(inputs: Inputs) -> Self {
         Self {
@@ -538,5 +763,157 @@ mod tests {
         assert!(!state.complete(&first, stale));
         assert!(state.view().focus.busy);
         assert!(state.fail(&second, "still unavailable"));
+    }
+
+    #[test]
+    fn one_popover_transfers_between_outputs_and_invoker_toggles_it_closed() {
+        let view = State::new(available_inputs()).view();
+        let mut popover = Popover::default();
+        assert_eq!(
+            popover.toggle("eDP-1".into(), &view),
+            Outcome::Focused(Some(Control::Wifi))
+        );
+        assert_eq!(
+            popover.output(),
+            Some(&rmac_compositor::OutputId::from("eDP-1"))
+        );
+        assert_eq!(
+            popover.toggle("HDMI-A-1".into(), &view),
+            Outcome::Focused(Some(Control::Wifi))
+        );
+        assert_eq!(
+            popover.toggle("HDMI-A-1".into(), &view),
+            Outcome::Dismissed {
+                output: "HDMI-A-1".into(),
+                reason: DismissReason::Invoker,
+            }
+        );
+        assert!(!popover.is_open());
+    }
+
+    #[test]
+    fn keyboard_focus_skips_unavailable_controls_and_wraps() {
+        let mut inputs = available_inputs();
+        inputs.wifi.available = false;
+        inputs.audio.available = false;
+        let view = State::new(inputs).view();
+        let mut popover = Popover::default();
+        popover.toggle("eDP-1".into(), &view);
+        assert_eq!(popover.focused(), Some(Control::Bluetooth));
+        assert_eq!(
+            popover.interact(Interaction::FocusPrevious, &view),
+            Outcome::Focused(Some(Control::Focus))
+        );
+        assert_eq!(
+            popover.interact(Interaction::FocusNext, &view),
+            Outcome::Focused(Some(Control::Bluetooth))
+        );
+    }
+
+    #[test]
+    fn escape_and_outside_press_report_where_focus_must_return() {
+        let view = State::new(available_inputs()).view();
+        let mut popover = Popover::default();
+        popover.toggle("eDP-1".into(), &view);
+        assert_eq!(
+            popover.interact(Interaction::Escape, &view),
+            Outcome::Dismissed {
+                output: "eDP-1".into(),
+                reason: DismissReason::Escape,
+            }
+        );
+        assert_eq!(popover.outside_press(), Outcome::Unchanged);
+
+        popover.toggle("HDMI-A-1".into(), &view);
+        assert_eq!(
+            popover.outside_press(),
+            Outcome::Dismissed {
+                output: "HDMI-A-1".into(),
+                reason: DismissReason::OutsidePress,
+            }
+        );
+
+        popover.toggle("DP-2".into(), &view);
+        assert_eq!(
+            popover.owner_lost(),
+            Outcome::Dismissed {
+                output: "DP-2".into(),
+                reason: DismissReason::OwnerLost,
+            }
+        );
+    }
+
+    #[test]
+    fn activation_uses_authoritative_values_and_busy_controls_ignore_repeats() {
+        let mut state = State::new(available_inputs());
+        let view = state.view();
+        let mut popover = Popover::default();
+        popover.toggle("eDP-1".into(), &view);
+        assert_eq!(
+            popover.interact(Interaction::Activate, &view),
+            Outcome::Command(Command::SetWifiEnabled(false))
+        );
+
+        state
+            .begin(Command::SetWifiEnabled(false))
+            .expect("Wi-Fi request begins");
+        assert_eq!(
+            popover.interact(Interaction::Activate, &state.view()),
+            Outcome::Unchanged
+        );
+    }
+
+    #[test]
+    fn sound_and_power_support_keyboard_adjustment() {
+        let mut inputs = available_inputs();
+        inputs
+            .power
+            .profiles
+            .supported
+            .push(rmac_power::PowerProfile::Performance);
+        let view = State::new(inputs).view();
+        let mut popover = Popover::default();
+        popover.toggle("eDP-1".into(), &view);
+        popover.interact(Interaction::FocusNext, &view);
+        popover.interact(Interaction::FocusNext, &view);
+        assert_eq!(popover.focused(), Some(Control::Sound));
+        assert_eq!(
+            popover.interact(Interaction::Increment, &view),
+            Outcome::Command(Command::SetOutputVolume(47))
+        );
+        assert_eq!(
+            popover.interact(Interaction::Activate, &view),
+            Outcome::Command(Command::SetOutputMuted(true))
+        );
+
+        popover.interact(Interaction::FocusNext, &view);
+        assert_eq!(popover.focused(), Some(Control::Power));
+        assert_eq!(
+            popover.interact(Interaction::Increment, &view),
+            Outcome::Command(Command::SetPowerProfile(
+                rmac_power::PowerProfile::Performance
+            ))
+        );
+        assert_eq!(
+            popover.interact(Interaction::Decrement, &view),
+            Outcome::Command(Command::SetPowerProfile(
+                rmac_power::PowerProfile::PowerSaver
+            ))
+        );
+    }
+
+    #[test]
+    fn live_capability_loss_moves_focus_to_the_next_available_control() {
+        let view = State::new(available_inputs()).view();
+        let mut popover = Popover::default();
+        popover.toggle("eDP-1".into(), &view);
+
+        let mut inputs = available_inputs();
+        inputs.wifi.available = false;
+        let refreshed = State::new(inputs).view();
+        assert_eq!(
+            popover.refresh(&refreshed),
+            Outcome::Focused(Some(Control::Bluetooth))
+        );
     }
 }

@@ -101,9 +101,10 @@ where
         .with_assets(assets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
+            start_theme_runtime(cx);
             cx.open_window(window_options_unified(width, height), move |window, cx| {
                 gpui_component::theme::Theme::change(
-                    gpui_component::theme::ThemeMode::Light,
+                    current_component_theme_mode(),
                     Some(window),
                     cx,
                 );
@@ -240,11 +241,11 @@ pub fn boot_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             gpui_component::init(cx);
+            start_theme_runtime(cx);
 
             cx.open_window(window_options(width, height), move |window, cx| {
-                // Force light mode so every built-in widget matches the `mac` palette.
                 gpui_component::theme::Theme::change(
-                    gpui_component::theme::ThemeMode::Light,
+                    current_component_theme_mode(),
                     Some(window),
                     cx,
                 );
@@ -271,88 +272,194 @@ pub fn body_bg(cx: &App) -> gpui::Hsla {
     cx.theme().background
 }
 
+fn start_theme_runtime(cx: &mut App) {
+    // Initial resolution stays off the first-frame path.
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        let result = cx
+            .background_executor()
+            .spawn(async { load_resolved_tokens().await })
+            .await;
+        if let Ok(tokens) = result {
+            apply_resolved_tokens(tokens, cx);
+        }
+    })
+    .detach();
+
+    // Host appearance changes are already reconnecting and report complete
+    // snapshots, so consumers never need to merge partial portal state.
+    let (portal_tx, portal_rx) = async_channel::bounded(8);
+    cx.background_executor()
+        .spawn(async move { rmac_appearance_portal::watch(portal_tx).await })
+        .detach();
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        while let Ok(event) = portal_rx.recv().await {
+            let rmac_appearance::Event::Snapshot(host) = event else {
+                continue;
+            };
+            let result = cx
+                .background_executor()
+                .spawn(async move { load_tokens_with_host(host) })
+                .await;
+            if let Ok(tokens) = result {
+                apply_resolved_tokens(tokens, cx);
+            }
+        }
+    })
+    .detach();
+
+    // Preference writes from System Settings arrive through the bounded file
+    // watcher. Re-read the host as well so automatic values cannot go stale.
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        let watcher = cx
+            .background_executor()
+            .spawn(async {
+                rmac_theme::ThemeStore::from_environment()
+                    .and_then(|store| store.watch())
+                    .map_err(|error| error.to_string())
+            })
+            .await;
+        let Ok(watcher) = watcher else {
+            return;
+        };
+        while let Ok(event) = watcher.recv().await {
+            if !matches!(event, rmac_theme::StoreEvent::Changed) {
+                continue;
+            }
+            let result = cx
+                .background_executor()
+                .spawn(async { load_resolved_tokens().await })
+                .await;
+            if let Ok(tokens) = result {
+                apply_resolved_tokens(tokens, cx);
+            }
+        }
+    })
+    .detach();
+}
+
+async fn load_resolved_tokens() -> Result<theme::ThemeTokens, String> {
+    let host = match rmac_appearance_portal::snapshot().await {
+        Ok(host) => host,
+        Err(error) => rmac_appearance::Snapshot::unavailable(error.to_string()),
+    };
+    load_tokens_with_host(host)
+}
+
+fn load_tokens_with_host(host: rmac_appearance::Snapshot) -> Result<theme::ThemeTokens, String> {
+    let store = rmac_theme::ThemeStore::from_environment().map_err(|error| error.to_string())?;
+    let resolved = store.load(&host).map_err(|error| error.to_string())?;
+    Ok(theme::ThemeTokens::from_appearance(resolved.effective))
+}
+
+fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
+    if !theme::set_current(tokens) {
+        return;
+    }
+    let mode = component_theme_mode(tokens.color_scheme);
+    let _ = cx.update(|app| {
+        gpui_component::theme::Theme::change(mode, None, app);
+        app.refresh_windows();
+    });
+}
+
+fn current_component_theme_mode() -> gpui_component::theme::ThemeMode {
+    component_theme_mode(theme::current().color_scheme)
+}
+
+fn component_theme_mode(
+    scheme: rmac_appearance::ResolvedColorScheme,
+) -> gpui_component::theme::ThemeMode {
+    match scheme {
+        rmac_appearance::ResolvedColorScheme::Light => gpui_component::theme::ThemeMode::Light,
+        rmac_appearance::ResolvedColorScheme::Dark => gpui_component::theme::ThemeMode::Dark,
+    }
+}
+
 /// Compatibility accessors for the original light palette. New and migrated
 /// views consume [`theme::ThemeTokens`] from their live appearance snapshot;
 /// these functions keep existing apps source-compatible during that rollout.
 pub mod mac {
     use gpui::{FontWeight, Hsla};
 
-    use crate::theme::ThemeTokens;
-
     // Surfaces
     /// Window / editor content background.
     pub fn window() -> Hsla {
-        ThemeTokens::light_default().colors.window.hsla()
+        crate::theme::current().colors.window.hsla()
+    }
+    /// Raised card, popover, and compact overlay background.
+    pub fn raised() -> Hsla {
+        crate::theme::current().colors.raised.hsla()
     }
     /// Unified toolbar / window chrome.
     pub fn chrome() -> Hsla {
-        ThemeTokens::light_default().colors.chrome.hsla()
+        crate::theme::current().colors.chrome.hsla()
     }
     /// Source list (sidebar) background.
     pub fn sidebar() -> Hsla {
-        ThemeTokens::light_default().colors.sidebar.hsla()
+        crate::theme::current().colors.sidebar.hsla()
     }
     /// Middle list column background.
     pub fn list() -> Hsla {
-        ThemeTokens::light_default().colors.list.hsla()
+        crate::theme::current().colors.list.hsla()
     }
 
     // Text
     /// Primary label color (near-black).
     pub fn text() -> Hsla {
-        ThemeTokens::light_default().colors.text.hsla()
+        crate::theme::current().colors.text.hsla()
     }
     /// Secondary label (systemGray).
     pub fn text_secondary() -> Hsla {
-        ThemeTokens::light_default().colors.text_secondary.hsla()
+        crate::theme::current().colors.text_secondary.hsla()
     }
     /// Tertiary label (section headers, counts).
     pub fn text_tertiary() -> Hsla {
-        ThemeTokens::light_default().colors.text_tertiary.hsla()
+        crate::theme::current().colors.text_tertiary.hsla()
     }
 
     // Lines & fills
     /// Hairline separator (~8% black).
     pub fn separator() -> Hsla {
-        ThemeTokens::light_default().colors.separator.hsla()
+        crate::theme::current().colors.separator.hsla()
     }
     /// Hover fill on rows/controls.
     pub fn hover() -> Hsla {
-        ThemeTokens::light_default().colors.hover.hsla()
+        crate::theme::current().colors.hover.hsla()
     }
     /// Neutral (unfocused) selection fill in source lists.
     pub fn sidebar_selection() -> Hsla {
-        ThemeTokens::light_default()
-            .colors
-            .selection_unfocused
-            .hsla()
+        crate::theme::current().colors.selection_unfocused.hsla()
     }
 
     // Accents (shared by buttons, menus, selections)
     /// System blue — primary actions, selection, focus.
     pub fn accent() -> Hsla {
-        ThemeTokens::light_default().colors.accent.hsla()
+        crate::theme::current().colors.accent.hsla()
     }
     /// System red — destructive actions.
     pub fn danger() -> Hsla {
-        ThemeTokens::light_default().colors.danger.hsla()
+        crate::theme::current().colors.danger.hsla()
+    }
+    /// Legible text over the destructive fill.
+    pub fn on_danger() -> Hsla {
+        crate::theme::current().colors.on_danger.hsla()
     }
     /// On-accent text (white).
     pub fn on_accent() -> Hsla {
-        ThemeTokens::light_default().colors.on_accent.hsla()
+        crate::theme::current().colors.on_accent.hsla()
     }
     /// Scrim behind a modal dialog (~22% black).
     pub fn scrim() -> Hsla {
-        ThemeTokens::light_default().colors.scrim.hsla()
+        crate::theme::current().colors.scrim.hsla()
     }
 
     // Notes accent family (yellow)
     pub fn notes_accent() -> Hsla {
-        ThemeTokens::light_default().colors.notes_accent.hsla()
+        crate::theme::current().colors.notes_accent.hsla()
     }
     /// Soft yellow row highlight for the selected note (focused).
     pub fn notes_selection() -> Hsla {
-        ThemeTokens::light_default().colors.notes_selection.hsla()
+        crate::theme::current().colors.notes_selection.hsla()
     }
 
     // Type weights (SF on macOS via the system font)

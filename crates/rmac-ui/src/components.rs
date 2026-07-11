@@ -47,7 +47,7 @@ pub fn dialog_button(
     let label: SharedString = label.into();
     let (bg, fg, border) = match kind {
         DialogButtonKind::Primary => (mac::accent(), mac::on_accent(), mac::accent()),
-        DialogButtonKind::Destructive => (mac::danger(), mac::on_accent(), mac::danger()),
+        DialogButtonKind::Destructive => (mac::danger(), mac::on_danger(), mac::danger()),
         DialogButtonKind::Normal => (mac::window(), mac::text(), mac::separator()),
     };
     div()

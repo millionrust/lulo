@@ -563,9 +563,9 @@ impl TerminalView {
             .items_center()
             .px_2()
             .gap_1()
-            .bg(hsla(0x2a2a2a))
+            .bg(rmac_ui::mac::chrome())
             .border_b_1()
-            .border_color(hsla(0x3a3a3a));
+            .border_color(rmac_ui::mac::separator());
         for i in 0..n {
             let is_active = i == active_tab;
             bar = bar.child(
@@ -581,7 +581,11 @@ impl TerminalView {
                         div()
                             .id(("tabname", i))
                             .text_size(px(12.0))
-                            .text_color(hsla(if is_active { 0xffffff } else { 0x9a9a9a }))
+                            .text_color(if is_active {
+                                hsla(active().fg)
+                            } else {
+                                rmac_ui::mac::text_secondary()
+                            })
                             .child(format!("Terminal {}", i + 1))
                             .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
                     )
@@ -589,7 +593,7 @@ impl TerminalView {
                         div()
                             .id(("tabclose", i))
                             .text_size(px(13.0))
-                            .text_color(hsla(0x888888))
+                            .text_color(rmac_ui::mac::text_secondary())
                             .child("×")
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.active = i.min(this.tabs.len().saturating_sub(1));
@@ -608,7 +612,7 @@ impl TerminalView {
                 .justify_center()
                 .rounded(px(5.0))
                 .text_size(px(15.0))
-                .text_color(hsla(0xaaaaaa))
+                .text_color(rmac_ui::mac::text_secondary())
                 .child("+")
                 .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
         )
@@ -639,10 +643,10 @@ impl TerminalView {
             .top(px(34.0))
             .right_2()
             .w(px(190.0))
-            .bg(hsla(0xffffff))
+            .bg(rmac_ui::mac::window())
             .rounded(px(8.0))
             .border_1()
-            .border_color(hsla(0xd2d2d2))
+            .border_color(rmac_ui::mac::separator())
             .shadow_lg()
             .py_1()
             .children(PROFILES.iter().enumerate().map(|(i, p)| {
@@ -655,20 +659,23 @@ impl TerminalView {
                     .h(px(26.0))
                     .px_2()
                     .text_size(px(12.0))
-                    .text_color(hsla(0x1d1d1d))
-                    .hover(|h| h.bg(hsla(0x4a90e2)).text_color(hsla(0xffffff)))
+                    .text_color(rmac_ui::mac::text())
+                    .hover(|h| {
+                        h.bg(rmac_ui::mac::accent())
+                            .text_color(rmac_ui::mac::on_accent())
+                    })
                     .child(
                         div()
                             .w(px(14.0))
                             .h(px(14.0))
                             .rounded(px(3.0))
                             .border_1()
-                            .border_color(hsla(0xbbbbbb))
+                            .border_color(rmac_ui::mac::separator())
                             .bg(hsla(p.bg)),
                     )
                     .child(div().flex_1().child(p.name))
                     .when(is_active, |el: Stateful<Div>| {
-                        el.child(div().text_color(hsla(0x4a90e2)).child("✓"))
+                        el.child(div().text_color(rmac_ui::mac::accent()).child("✓"))
                     })
                     .on_click(cx.listener(move |this, _, _, cx| this.set_profile(i, cx)))
             }))
@@ -1183,7 +1190,7 @@ impl Render for TerminalView {
                         .gap_2()
                         .px_2()
                         .rounded(px(7.0))
-                        .bg(hsla(0xf0f0f0))
+                        .bg(rmac_ui::mac::raised())
                         .child(
                             div()
                                 .flex_1()
@@ -1192,7 +1199,7 @@ impl Render for TerminalView {
                         .child(
                             div()
                                 .id("find-close")
-                                .text_color(hsla(0x666666))
+                                .text_color(rmac_ui::mac::text_secondary())
                                 .child("×")
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.searching = false;
@@ -1233,9 +1240,9 @@ impl Render for TerminalView {
                         .px_3()
                         .py_2()
                         .rounded(px(7.0))
-                        .bg(gpui::rgba(0x7f1d1ddd))
+                        .bg(rmac_ui::mac::danger())
                         .text_size(px(12.0))
-                        .text_color(gpui::white())
+                        .text_color(rmac_ui::mac::on_danger())
                         .shadow_lg()
                         .cursor_pointer()
                         .child(div().flex_1().child(message))

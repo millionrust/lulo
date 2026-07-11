@@ -79,6 +79,13 @@ reduced-motion variants. The legacy `rmac_ui::mac` accessors resolve through
 the default light token set only as a source-compatibility bridge while apps
 move to live tokens.
 
+The shared boot path now starts a non-blocking appearance runtime. It resolves
+portal state plus `rmac-theme` preferences after the first frame, consumes
+reconnecting portal events and bounded preference-file events, changes the
+gpui-component mode, and refreshes windows only when resolved tokens change.
+Terminal is the first representative consumer: its application chrome follows
+live tokens while terminal color profiles remain explicit user content.
+
 ## Persistence
 
 The target persistence contract is:

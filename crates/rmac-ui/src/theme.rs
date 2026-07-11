@@ -4,6 +4,9 @@ use gpui::{rgb, rgba, FontWeight, Hsla};
 use rmac_appearance::{
     AccentColor, Contrast, MotionPreference, ResolvedAppearance, ResolvedColorScheme,
 };
+use std::sync::{OnceLock, RwLock};
+
+static CURRENT_TOKENS: OnceLock<RwLock<ThemeTokens>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RgbaColor {
@@ -87,6 +90,7 @@ pub struct ColorTokens {
     pub accent: RgbaColor,
     pub on_accent: RgbaColor,
     pub danger: RgbaColor,
+    pub on_danger: RgbaColor,
     pub scrim: RgbaColor,
     pub notes_accent: RgbaColor,
     pub notes_selection: RgbaColor,
@@ -155,6 +159,7 @@ pub struct MotionTokens {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ThemeTokens {
+    pub color_scheme: ResolvedColorScheme,
     pub colors: ColorTokens,
     pub typography: TypographyTokens,
     pub spacing: SpacingTokens,
@@ -194,6 +199,7 @@ impl ThemeTokens {
                 accent,
                 on_accent,
                 danger: RgbaColor::opaque(0xd70015),
+                on_danger: RgbaColor::opaque(0xffffff),
                 scrim: RgbaColor::with_alpha(0x000000, 0x38),
                 notes_accent: RgbaColor::opaque(0xffc40c),
                 notes_selection: RgbaColor::opaque(0xfdeaa3),
@@ -216,12 +222,14 @@ impl ThemeTokens {
                 accent,
                 on_accent,
                 danger: RgbaColor::opaque(0xff6961),
+                on_danger: RgbaColor::opaque(0x000000),
                 scrim: RgbaColor::with_alpha(0x000000, 0x70),
                 notes_accent: RgbaColor::opaque(0xffd60a),
                 notes_selection: RgbaColor::opaque(0x5c4b08),
             },
         };
         Self {
+            color_scheme: appearance.color_scheme,
             colors,
             typography: TypographyTokens {
                 body: 13.0,
@@ -304,6 +312,26 @@ impl ThemeTokens {
     }
 }
 
+pub fn current() -> ThemeTokens {
+    *CURRENT_TOKENS
+        .get_or_init(|| RwLock::new(ThemeTokens::light_default()))
+        .read()
+        .expect("theme token lock poisoned")
+}
+
+pub(crate) fn set_current(tokens: ThemeTokens) -> bool {
+    let mut current = CURRENT_TOKENS
+        .get_or_init(|| RwLock::new(ThemeTokens::light_default()))
+        .write()
+        .expect("theme token lock poisoned");
+    if *current == tokens {
+        false
+    } else {
+        *current = tokens;
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,6 +363,7 @@ mod tests {
             assert!(colors.text.contrast_ratio(colors.window) >= 4.5);
             assert!(colors.text_secondary.contrast_ratio(colors.window) >= 4.5);
             assert!(colors.text_tertiary.contrast_ratio(colors.window) >= 4.5);
+            assert!(colors.on_danger.contrast_ratio(colors.danger) >= 4.5);
         }
     }
 

@@ -9,4 +9,7 @@ authors.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
+async-channel.workspace = true
 rmac-appearance.workspace = true
+rmac-appearance-portal.workspace = true
+rmac-theme.workspace = true

@@ -5063,6 +5063,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-appearance",
 ]
 
 [[package]]

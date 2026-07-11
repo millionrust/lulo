@@ -72,6 +72,13 @@ against the host snapshot, persists a versioned primary and last-known-good
 copy atomically, and emits bounded filesystem change events for other
 processes. System Settings must use this authority instead of local view state.
 
+`rmac-ui::theme` derives semantic colors, typography, spacing, radii, focus,
+elevation, and motion from the resolved appearance. It guarantees accent-safe
+foreground selection and supplies light, dark, increased-contrast, and
+reduced-motion variants. The legacy `rmac_ui::mac` accessors resolve through
+the default light token set only as a source-compatibility bridge while apps
+move to live tokens.
+
 ## Persistence
 
 The target persistence contract is:

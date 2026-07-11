@@ -27,7 +27,7 @@ in [`PLAN_V2.md`](PLAN_V2.md).
 
 Shared crates:
 
-- `rmac-ui` — visual tokens, window setup, dialogs, and context menus.
+- `rmac-ui` — semantic light/dark/accessibility tokens, window setup, dialogs, and menus.
 - `rmac-appearance` — platform-neutral appearance snapshots, events, reducer, and test fake.
 - `rmac-appearance-portal` — read-only Linux Settings portal adapter with live reconnect.
 - `rmac-theme` — writable rmac theme preferences, resolution, live file events, and recovery.

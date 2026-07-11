@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::{Root, TitleBar};
 
 mod components;
+pub mod theme;
 pub use components::{
     alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu, RequestClose,
 };
@@ -270,83 +271,88 @@ pub fn body_bg(cx: &App) -> gpui::Hsla {
     cx.theme().background
 }
 
-/// Precise macOS (light-mode) design tokens — system colors, weights, metrics.
-/// Apps use these instead of generic theme colors so the suite matches macOS
-/// pixel-for-pixel. (Dark mode + dynamic switching is a later pass.)
+/// Compatibility accessors for the original light palette. New and migrated
+/// views consume [`theme::ThemeTokens`] from their live appearance snapshot;
+/// these functions keep existing apps source-compatible during that rollout.
 pub mod mac {
-    use gpui::{rgb, rgba, FontWeight, Hsla};
+    use gpui::{FontWeight, Hsla};
+
+    use crate::theme::ThemeTokens;
 
     // Surfaces
     /// Window / editor content background.
     pub fn window() -> Hsla {
-        rgb(0xffffff).into()
+        ThemeTokens::light_default().colors.window.hsla()
     }
     /// Unified toolbar / window chrome.
     pub fn chrome() -> Hsla {
-        rgb(0xf6f6f6).into()
+        ThemeTokens::light_default().colors.chrome.hsla()
     }
     /// Source list (sidebar) background.
     pub fn sidebar() -> Hsla {
-        rgb(0xf2f2f2).into()
+        ThemeTokens::light_default().colors.sidebar.hsla()
     }
     /// Middle list column background.
     pub fn list() -> Hsla {
-        rgb(0xffffff).into()
+        ThemeTokens::light_default().colors.list.hsla()
     }
 
     // Text
     /// Primary label color (near-black).
     pub fn text() -> Hsla {
-        rgb(0x1d1d1f).into()
+        ThemeTokens::light_default().colors.text.hsla()
     }
     /// Secondary label (systemGray).
     pub fn text_secondary() -> Hsla {
-        rgb(0x86868b).into()
+        ThemeTokens::light_default().colors.text_secondary.hsla()
     }
     /// Tertiary label (section headers, counts).
     pub fn text_tertiary() -> Hsla {
-        rgb(0xaeaeb2).into()
+        ThemeTokens::light_default().colors.text_tertiary.hsla()
     }
 
     // Lines & fills
     /// Hairline separator (~8% black).
     pub fn separator() -> Hsla {
-        rgba(0x00000014).into()
+        ThemeTokens::light_default().colors.separator.hsla()
     }
     /// Hover fill on rows/controls.
     pub fn hover() -> Hsla {
-        rgba(0x0000000a).into()
+        ThemeTokens::light_default().colors.hover.hsla()
     }
     /// Neutral (unfocused) selection fill in source lists.
     pub fn sidebar_selection() -> Hsla {
-        rgba(0x00000014).into()
+        ThemeTokens::light_default()
+            .colors
+            .selection_unfocused
+            .hsla()
     }
 
     // Accents (shared by buttons, menus, selections)
     /// System blue — primary actions, selection, focus.
     pub fn accent() -> Hsla {
-        rgb(0x007aff).into()
+        ThemeTokens::light_default().colors.accent.hsla()
     }
     /// System red — destructive actions.
     pub fn danger() -> Hsla {
-        rgb(0xff3b30).into()
+        ThemeTokens::light_default().colors.danger.hsla()
     }
     /// On-accent text (white).
     pub fn on_accent() -> Hsla {
-        rgb(0xffffff).into()
+        ThemeTokens::light_default().colors.on_accent.hsla()
     }
     /// Scrim behind a modal dialog (~22% black).
     pub fn scrim() -> Hsla {
-        rgba(0x00000038).into()
+        ThemeTokens::light_default().colors.scrim.hsla()
     }
 
     // Notes accent family (yellow)
     pub fn notes_accent() -> Hsla {
-        rgb(0xffc40c).into()
+        ThemeTokens::light_default().colors.notes_accent.hsla()
     }
     /// Soft yellow row highlight for the selected note (focused).
     pub fn notes_selection() -> Hsla {
-        rgb(0xfdeaa3).into()
+        ThemeTokens::light_default().colors.notes_selection.hsla()
     }
 
     // Type weights (SF on macOS via the system font)

@@ -20,9 +20,8 @@ use gpui::{
     IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
-use gpui_component::slider::{Slider, SliderEvent, SliderState};
-use gpui_component::switch::Switch;
 use gpui_component::StyledExt as _;
+use rmac_ui::{Slider, SliderEvent, SliderState, Toggle};
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -1920,7 +1919,7 @@ impl Settings {
         };
         let power_view = view.clone();
         let power =
-            Switch::new("wifi-power")
+            Toggle::new("wifi-power")
                 .checked(self.wifi_on)
                 .on_click(move |enabled, _, cx| {
                     power_view.update(cx, |settings, cx| settings.set_wifi_enabled(*enabled, cx));
@@ -2033,7 +2032,7 @@ impl Settings {
             self.bluetooth_adapter_name.clone().map(Into::into)
         };
         let power_view = view.clone();
-        let power = Switch::new("bluetooth-power")
+        let power = Toggle::new("bluetooth-power")
             .checked(self.bluetooth_on)
             .on_click(move |powered, _, cx| {
                 power_view.update(cx, |settings, cx| {
@@ -2059,7 +2058,7 @@ impl Settings {
 
         if self.bluetooth_on {
             let discoverable_view = view.clone();
-            let discoverable = Switch::new("bluetooth-discoverable")
+            let discoverable = Toggle::new("bluetooth-discoverable")
                 .checked(self.bt_discoverable)
                 .on_click(move |enabled, _, cx| {
                     discoverable_view.update(cx, |settings, cx| {
@@ -2564,7 +2563,7 @@ impl Settings {
             ));
         } else {
             let output_view = view.clone();
-            let output_mute = Switch::new("audio-output-mute")
+            let output_mute = Toggle::new("audio-output-mute")
                 .checked(self.audio.output.muted)
                 .on_click(move |muted, _, cx| {
                     output_view.update(cx, |settings, cx| {
@@ -2607,7 +2606,7 @@ impl Settings {
                 ));
             if self.audio.can_mute_input {
                 let input_view = view.clone();
-                let input_mute = Switch::new("audio-input-mute")
+                let input_mute = Toggle::new("audio-input-mute")
                     .checked(self.audio.input.muted)
                     .on_click(move |muted, _, cx| {
                         input_view.update(cx, |settings, cx| {
@@ -3728,7 +3727,7 @@ impl Settings {
                 } else {
                     format!("{} · {}", profile.service, profile.state.label())
                 };
-                let control = Switch::new(ElementId::from(SharedString::from(format!(
+                let control = Toggle::new(ElementId::from(SharedString::from(format!(
                     "vpn-{identifier}"
                 ))))
                 .checked(profile.state.is_enabled())
@@ -4127,7 +4126,7 @@ fn switch_row(
 ) -> AnyElement {
     let view = cx.entity();
     let id = ElementId::from(SharedString::from(format!("sw-{title}")));
-    let sw = Switch::new(id).checked(checked).on_click(move |v, _, cx| {
+    let sw = Toggle::new(id).checked(checked).on_change(move |v, _, cx| {
         let nv = *v;
         view.update(cx, |s, cx| {
             set(s, nv);
@@ -4433,7 +4432,7 @@ fn input_switch_row(
     enabled: bool,
     change: fn(bool) -> InputChange,
 ) -> AnyElement {
-    let mut switch = Switch::new(id).checked(checked);
+    let mut switch = Toggle::new(id).checked(checked);
     if enabled {
         switch = switch.on_click(move |value, _, cx| {
             view.update(cx, |settings, cx| {

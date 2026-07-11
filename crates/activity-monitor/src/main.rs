@@ -17,13 +17,13 @@ use gpui::{
     Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{
-    button::{Button, ButtonGroup, ButtonVariants as _},
+    button::{Button as ComponentButton, ButtonGroup},
     input::{Input, InputState},
     menu::PopupMenu,
     table::{Column, ColumnSort, Table, TableDelegate, TableEvent, TableState},
-    Disableable as _, Selectable as _, Sizable as _, StyledExt as _,
+    Selectable as _, Sizable as _, StyledExt as _,
 };
-use rmac_ui::mac;
+use rmac_ui::{mac, Button};
 use sysinfo::{
     Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };
@@ -1532,7 +1532,7 @@ impl MonitorView {
         let group = ButtonGroup::new("tabs")
             .outline()
             .children(Tab::ALL.iter().map(|t| {
-                Button::new(SharedString::from(t.label()))
+                ComponentButton::new(SharedString::from(t.label()))
                     .label(t.label())
                     .selected(*t == active)
             }))
@@ -1560,22 +1560,19 @@ impl MonitorView {
                     .items_center()
                     .gap_2()
                     .child(
-                        Button::new("quit")
-                            .label("Quit")
+                        Button::new("quit", "Quit")
                             .disabled(!has_sel)
                             .on_click(cx.listener(|this, _, _, cx| this.request_kill(false, cx))),
                     )
                     .child(
-                        Button::new("force-quit")
-                            .label("Force Quit")
-                            .danger()
+                        Button::new("force-quit", "Force Quit")
+                            .destructive()
                             .disabled(!has_sel)
                             .on_click(cx.listener(|this, _, _, cx| this.request_kill(true, cx))),
                     )
                     .when(self.tab.has_process_table(), |el| {
                         el.child(
-                            Button::new("columns")
-                                .label("Columns")
+                            Button::new("columns", "Columns")
                                 .selected(self.cols_menu_open)
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.cols_menu_open = !this.cols_menu_open;
@@ -1675,14 +1672,12 @@ impl MonitorView {
                             .text_color(mac::text())
                             .child(row.name.clone()),
                     )
-                    .child(
-                        Button::new("inspect-close")
-                            .label("Done")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.inspect_pid = None;
-                                cx.notify();
-                            })),
-                    ),
+                    .child(Button::new("inspect-close", "Done").on_click(cx.listener(
+                        |this, _, _, cx| {
+                            this.inspect_pid = None;
+                            cx.notify();
+                        },
+                    ))),
             )
             .child(info_row("Process ID (PID)", row.pid.to_string()))
             .child(info_row(

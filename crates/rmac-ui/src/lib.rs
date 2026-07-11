@@ -18,10 +18,14 @@ use gpui::{
 use gpui_component::{Root, TitleBar};
 
 mod components;
+mod controls;
 pub mod gallery;
 pub mod theme;
 pub use components::{
     alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu, RequestClose,
+};
+pub use controls::{
+    Button, ButtonRole, Slider, SliderAxis, SliderEvent, SliderState, Toggle, ToggleState,
 };
 
 // Re-exports so apps depend on one crate for theming; these also bring the

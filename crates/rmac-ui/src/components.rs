@@ -16,7 +16,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 
-use crate::mac;
+use crate::{mac, Button, ButtonRole};
 
 gpui::actions!(rmac_ui, [DismissMenu, RequestClose]);
 
@@ -43,31 +43,13 @@ pub fn dialog_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
     kind: DialogButtonKind,
-) -> gpui::Stateful<gpui::Div> {
-    let label: SharedString = label.into();
-    let (bg, fg, border) = match kind {
-        DialogButtonKind::Primary => (mac::accent(), mac::on_accent(), mac::accent()),
-        DialogButtonKind::Destructive => (mac::danger(), mac::on_danger(), mac::danger()),
-        DialogButtonKind::Normal => (mac::window(), mac::text(), mac::separator()),
+) -> Button {
+    let role = match kind {
+        DialogButtonKind::Primary => ButtonRole::Primary,
+        DialogButtonKind::Destructive => ButtonRole::Destructive,
+        DialogButtonKind::Normal => ButtonRole::Secondary,
     };
-    div()
-        .id(id)
-        .flex()
-        .items_center()
-        .justify_center()
-        .h(px(28.0))
-        .px_4()
-        .min_w(px(74.0))
-        .rounded(px(7.0))
-        .bg(bg)
-        .text_color(fg)
-        .border_1()
-        .border_color(border)
-        .text_size(px(13.0))
-        .font_weight(mac::MEDIUM)
-        .cursor_pointer()
-        .hover(|s| s.opacity(0.85))
-        .child(label)
+    Button::new(id, label).role(role)
 }
 
 /// Wrap arbitrary content in a centered modal: a dimmed full-window scrim with

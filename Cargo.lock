@@ -4819,6 +4819,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "rmac-search",
  "rmac-ui",
  "rust-embed",
  "trash",
@@ -4850,6 +4851,15 @@ name = "rmac-portal"
 version = "0.1.0"
 dependencies = [
  "ashpd 0.12.3",
+]
+
+[[package]]
+name = "rmac-search"
+version = "0.1.0"
+dependencies = [
+ "quick-xml 0.39.4",
+ "url",
+ "walkdir",
 ]
 
 [[package]]

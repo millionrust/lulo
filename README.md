@@ -32,6 +32,7 @@ Shared crates:
 - `rmac-storage` — atomic filesystem writes, durable cleanup, and typed failures.
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
+- `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.
 
 Phase 1 diagnostic:
 

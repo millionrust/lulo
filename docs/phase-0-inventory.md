@@ -73,6 +73,12 @@ Replacement: asynchronous `FileOperations`, a search-provider interface,
 freedesktop MIME/default-app integration, portal support, mount service, and
 Linux thumbnail/preview providers.
 
+`rmac-search` now owns the search-provider boundary. Finder keeps Spotlight for
+macOS, while Linux recursive filename search walks without following symlinked
+directories, supports cancellation and result limits, and reads Recents from
+the XDG `recently-used.xbel` bookmark store. Finder rejects stale background
+results after navigation or a newer request and hides macOS tags on Linux.
+
 ### System Settings
 
 - `system_profiler` for Bluetooth, displays, and audio;

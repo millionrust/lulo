@@ -199,7 +199,7 @@ enum PlaceKind {
     Item,
     Volume,
     Tag,
-    /// Recently-used files (a live Spotlight query, not a folder).
+    /// Recently-used files from the platform search provider, not a folder.
     Recents,
 }
 
@@ -266,12 +266,17 @@ struct FinderView {
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
     watched: Option<PathBuf>,
+    search_generation: u64,
+    search_cancel: Option<Arc<AtomicBool>>,
 }
 
 impl Drop for FinderView {
     fn drop(&mut self) {
         if let Some(transfer) = &self.transfer {
             transfer.cancel.store(true, Ordering::Release);
+        }
+        if let Some(cancel) = &self.search_cancel {
+            cancel.store(true, Ordering::Release);
         }
     }
 }
@@ -328,6 +333,7 @@ impl FinderView {
             }
         }
 
+        #[cfg(target_os = "macos")]
         let tag = |name: &str, color: u32| p(name, PathBuf::new(), "", hsl(color), PlaceKind::Tag);
         let mut sections = vec![Section {
             title: "Favorites".into(),
@@ -382,6 +388,7 @@ impl FinderView {
                 )],
             });
         }
+        #[cfg(target_os = "macos")]
         sections.push(Section {
             title: "Locations".into(),
             places: locations,
@@ -476,6 +483,8 @@ impl FinderView {
             focus,
             watcher,
             watched: None,
+            search_generation: 0,
+            search_cancel: None,
         };
         view.reload(cx);
 
@@ -518,6 +527,7 @@ impl FinderView {
     }
 
     fn reload_inner(&mut self, cx: &mut Context<Self>, refresh_free_space: bool) {
+        self.cancel_search();
         self.result_title = None;
         self.col_stack = vec![self.cwd.clone()];
         if let Some(t) = self.tabs.get_mut(self.active) {
@@ -780,6 +790,22 @@ impl FinderView {
     fn finish_file_operations(&mut self, failures: Vec<file_ops::Failure>, cx: &mut Context<Self>) {
         self.record_operation_failures(failures, cx);
         self.reload(cx);
+    }
+
+    fn begin_search(&mut self) -> (u64, Arc<AtomicBool>) {
+        self.cancel_search();
+        self.search_generation = self.search_generation.wrapping_add(1);
+        self.operation_error = None;
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.search_cancel = Some(cancel.clone());
+        (self.search_generation, cancel)
+    }
+
+    fn cancel_search(&mut self) {
+        if let Some(cancel) = self.search_cancel.take() {
+            cancel.store(true, Ordering::Release);
+        }
+        self.search_generation = self.search_generation.wrapping_add(1);
     }
 
     fn block_mutation_during_transfer(&mut self, cx: &mut Context<Self>) -> bool {
@@ -2055,8 +2081,7 @@ impl FinderView {
         cx.notify();
     }
 
-    /// Clicking a sidebar tag runs a Spotlight query for files with that tag.
-    /// Recursive Spotlight search of the current folder tree (Return in the search box).
+    /// Recursive platform search of the current folder tree (Return in the search box).
     fn recursive_search(&mut self, cx: &mut Context<Self>) {
         let q = self.query.read(cx).value().to_string();
         if q.trim().is_empty() {
@@ -2066,32 +2091,37 @@ impl FinderView {
         let title: SharedString = format!("Search: {q}").into();
         let key = self.sort_key;
         let asc = self.sort_asc;
+        let include_hidden = self.show_hidden;
+        let (generation, cancel) = self.begin_search();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let entries = cx
+            let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let mut v = Command::new("mdfind")
-                        .arg("-onlyin")
-                        .arg(&cwd)
-                        .arg(&q)
-                        .output()
-                        .ok()
-                        .map(|o| {
-                            String::from_utf8_lossy(&o.stdout)
-                                .lines()
-                                .filter_map(|l| entry_for(Path::new(l)))
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
+                    let mut options = rmac_search::Options::new(&cancel);
+                    options.include_hidden = include_hidden;
+                    let mut v = rmac_search::filenames(&cwd, &q, options)?
+                        .into_iter()
+                        .filter_map(|path| entry_for(&path))
+                        .collect::<Vec<_>>();
                     sort_entries(&mut v, key, asc);
-                    v
+                    Ok::<_, rmac_search::Error>(v)
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
-                this.entries = entries;
-                this.result_title = Some(title);
-                this.selected.clear();
-                this.anchor = None;
+                if this.search_generation != generation {
+                    return;
+                }
+                this.search_cancel = None;
+                match result {
+                    Ok(entries) => {
+                        this.entries = entries;
+                        this.result_title = Some(title);
+                        this.selected.clear();
+                        this.anchor = None;
+                    }
+                    Err(rmac_search::Error::Cancelled) => {}
+                    Err(error) => this.operation_error = Some(error.to_string().into()),
+                }
                 cx.notify();
             });
         })
@@ -2099,79 +2129,83 @@ impl FinderView {
     }
 
     fn tag_click(&mut self, name: SharedString, cx: &mut Context<Self>) {
-        let query = format!("kMDItemUserTags == '{name}'c");
         let title: SharedString = format!("Tag: {name}").into();
         let key = self.sort_key;
         let asc = self.sort_asc;
+        let (generation, cancel) = self.begin_search();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let entries = cx
+            let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let mut v = Command::new("mdfind")
-                        .arg(query)
-                        .output()
-                        .ok()
-                        .map(|o| {
-                            String::from_utf8_lossy(&o.stdout)
-                                .lines()
-                                .filter_map(|l| entry_for(Path::new(l)))
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
+                    let mut v = rmac_search::tagged(&name, rmac_search::Options::new(&cancel))?
+                        .into_iter()
+                        .filter_map(|path| entry_for(&path))
+                        .collect::<Vec<_>>();
                     sort_entries(&mut v, key, asc);
-                    v
+                    Ok::<_, rmac_search::Error>(v)
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
-                this.entries = entries;
-                this.result_title = Some(title);
-                this.selected.clear();
-                this.anchor = None;
+                if this.search_generation != generation {
+                    return;
+                }
+                this.search_cancel = None;
+                match result {
+                    Ok(entries) => {
+                        this.entries = entries;
+                        this.result_title = Some(title);
+                        this.selected.clear();
+                        this.anchor = None;
+                    }
+                    Err(rmac_search::Error::Cancelled) => {}
+                    Err(error) => this.operation_error = Some(error.to_string().into()),
+                }
                 cx.notify();
             });
         })
         .detach();
     }
 
-    /// Show real recently-used files (Spotlight `kMDItemLastUsedDate`), newest
-    /// first — the honest backing for the "Recents" sidebar entry.
+    /// Show real recently-used files from Spotlight or the XDG bookmark store.
     fn recents_click(&mut self, cx: &mut Context<Self>) {
+        let (generation, cancel) = self.begin_search();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let entries = cx
+            let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let out = Command::new("mdfind")
-                        .arg("kMDItemLastUsedDate >= $time.today(-30)")
-                        .output()
-                        .ok();
-                    let mut v: Vec<(Entry, std::time::SystemTime)> = out
-                        .map(|o| {
-                            String::from_utf8_lossy(&o.stdout)
-                                .lines()
-                                .filter_map(|l| {
-                                    let p = Path::new(l);
-                                    // Order by modified time — reliable and matches
-                                    // the visible "Date Modified" column (filesystem
-                                    // atime is noisy/disabled under relatime).
-                                    let when = std::fs::metadata(p)
-                                        .and_then(|m| m.modified())
-                                        .unwrap_or(std::time::UNIX_EPOCH);
-                                    entry_for(p).map(|e| (e, when))
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
+                    let mut v: Vec<(Entry, std::time::SystemTime)> =
+                        rmac_search::recents(rmac_search::Options::new(&cancel))?
+                            .into_iter()
+                            .filter_map(|path| {
+                                let when = std::fs::metadata(&path)
+                                    .and_then(|metadata| metadata.modified())
+                                    .unwrap_or(std::time::UNIX_EPOCH);
+                                entry_for(&path).map(|entry| (entry, when))
+                            })
+                            .collect();
                     // Most recently modified first, capped so the list stays manageable.
                     v.sort_by(|a, b| b.1.cmp(&a.1));
                     v.truncate(200);
-                    v.into_iter().map(|(e, _)| e).collect::<Vec<_>>()
+                    Ok::<_, rmac_search::Error>(
+                        v.into_iter().map(|(entry, _)| entry).collect::<Vec<_>>(),
+                    )
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
-                this.entries = entries;
-                this.result_title = Some("Recents".into());
-                this.selected.clear();
-                this.anchor = None;
+                if this.search_generation != generation {
+                    return;
+                }
+                this.search_cancel = None;
+                match result {
+                    Ok(entries) => {
+                        this.entries = entries;
+                        this.result_title = Some("Recents".into());
+                        this.selected.clear();
+                        this.anchor = None;
+                    }
+                    Err(rmac_search::Error::Cancelled) => {}
+                    Err(error) => this.operation_error = Some(error.to_string().into()),
+                }
                 cx.notify();
             });
         })

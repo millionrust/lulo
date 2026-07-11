@@ -212,6 +212,10 @@ focus, cycle, no-op, or unavailable outcomes without mutating view-local state.
 Output-scope resolution requires an explicit primary-output authority and never
 invents a surface on a disabled or missing display. Layer-shell rendering,
 pointer dynamics, and process execution remain adapters above this model.
+`rmac-dock-system` executes those typed outcomes: desktop-entry `LaunchSpec`
+values go through the argument-separated application launcher off the render
+thread, and window focus goes directly to the niri socket with a request ID.
+Receipts never update the Dock model; only later catalog/compositor events do.
 
 ## Persistence
 

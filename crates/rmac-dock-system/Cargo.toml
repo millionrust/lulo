@@ -1,0 +1,17 @@
+[package]
+name = "rmac-dock-system"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+blocking.workspace = true
+rmac-apps.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-niri.workspace = true
+rmac-dock.workspace = true
+
+[dev-dependencies]
+futures-lite.workspace = true

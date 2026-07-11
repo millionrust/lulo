@@ -42,6 +42,7 @@ rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-audio = { version = "=0.1.0", path = "crates/rmac-audio" }
 rmac-display = { version = "=0.1.0", path = "crates/rmac-display" }
 rmac-dock = { version = "=0.1.0", path = "crates/rmac-dock" }
+rmac-dock-system = { version = "=0.1.0", path = "crates/rmac-dock-system" }
 rmac-input = { version = "=0.1.0", path = "crates/rmac-input" }
 rmac-power = { version = "=0.1.0", path = "crates/rmac-power" }
 rmac-quick-settings = { version = "=0.1.0", path = "crates/rmac-quick-settings" }

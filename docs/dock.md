@@ -41,6 +41,17 @@ The launcher/compositor adapter must execute the result and wait for catalog or
 niri events to change the item state. It must never optimistically mark an app
 running or focused.
 
+`rmac-dock-system` now provides that adapter. Application launches use the
+exact parsed `LaunchSpec` on a blocking executor, preserving program and
+argument boundaries without a shell. Window activation sends the exact stable
+window ID and caller-owned activation ID directly through
+`rmac-compositor-niri`. A successful result is only a launch/focus receipt;
+visible running and active state still waits for authoritative events.
+
+Launch I/O and niri unavailable/transport/protocol/rejected/unsupported errors
+remain typed with the operation and application/window identity. Unavailable
+and explicit no-op model outcomes never touch either platform service.
+
 ## Outputs
 
 The model creates candidates only for enabled compositor outputs. `all` returns
@@ -48,7 +59,7 @@ every enabled stable output ID, `named` requires that exact enabled output, and
 `primary` requires a separate authoritative primary ID. Missing authority
 produces no primary surface instead of guessing from connector order.
 
-The current slice is not D4 completion. The application watcher/runtime,
-activation adapter, layer-shell view, icons/assets, pointer/keyboard semantics,
-hotplug execution, persistence UI, niri/reference-PC evidence, and performance
-gates remain pending.
+The current slice is not D4 completion. The application/compositor runtime,
+layer-shell view, icons/assets, pointer/keyboard semantics, hotplug execution,
+persistence UI, niri/reference-PC evidence, and performance gates remain
+pending.

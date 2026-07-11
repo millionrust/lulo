@@ -4930,6 +4930,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-dock-system"
+version = "0.1.0"
+dependencies = [
+ "blocking",
+ "futures-lite 2.6.1",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-dock",
+]
+
+[[package]]
 name = "rmac-editor"
 version = "0.1.0"
 dependencies = [

@@ -52,6 +52,22 @@ Launch I/O and niri unavailable/transport/protocol/rejected/unsupported errors
 remain typed with the operation and application/window identity. Unavailable
 and explicit no-op model outcomes never touch either platform service.
 
+## Live runtime
+
+`rmac-dock-runtime` watches the installed-application catalog, the versioned
+shell settings, and the direct niri event stream. The catalog watcher is
+established before initial discovery, and its bounded signal channel coalesces
+filesystem bursts. Failed setup/discovery and settings watchers retry without
+discarding their last-known-good values; niri reconnect remains owned by the
+compositor adapter.
+
+The first Dock snapshot is withheld until all three sources are either healthy
+or explicitly unavailable. This prevents a flash of default pins or an empty
+running-app shelf during ordinary startup. Later health-only changes remain
+available to diagnostics but do not request a Dock frame. Catalog, settings,
+focus/urgency/window, and output-hotplug changes rebuild the authoritative
+model and enabled-output candidates without polling.
+
 ## Outputs
 
 The model creates candidates only for enabled compositor outputs. `all` returns
@@ -59,7 +75,7 @@ every enabled stable output ID, `named` requires that exact enabled output, and
 `primary` requires a separate authoritative primary ID. Missing authority
 produces no primary surface instead of guessing from connector order.
 
-The current slice is not D4 completion. The application/compositor runtime,
-layer-shell view, icons/assets, pointer/keyboard semantics, hotplug execution,
-persistence UI, niri/reference-PC evidence, and performance gates remain
-pending.
+The current slice is not D4 completion. The primary-output authority,
+layer-shell view, icons/assets, pointer/keyboard semantics, surface hotplug
+execution, persistence UI, niri/reference-PC evidence, and performance gates
+remain pending.

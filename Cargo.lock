@@ -4930,6 +4930,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-dock-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "blocking",
+ "futures-util",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-dock",
+ "rmac-shell-settings",
+]
+
+[[package]]
 name = "rmac-dock-system"
 version = "0.1.0"
 dependencies = [

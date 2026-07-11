@@ -29,6 +29,7 @@ equivalents rather than simulated.
 | Wallpaper | Placeholder | rmac shell | Per-output wallpaper selection and persistence |
 | Notifications | Placeholder | Notification portal/daemon | Per-app policy, previews, badges, do-not-disturb |
 | Sound | Real devices, defaults, volume, and mute | PipeWire/WirePlumber | Live signals, routes, and per-channel balance |
+| Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
 | Focus | Placeholder | rmac notification service | Modes, schedules, shell indicator |
 | Screen Time | Placeholder | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Placeholder | session shell and logind | Idle timeout, lock, suspend, login presentation |

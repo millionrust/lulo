@@ -170,6 +170,7 @@ struct Settings {
     network: rmac_network::NetworkSnapshot,
     storage: StorageInfo,
     audio: rmac_audio::Snapshot,
+    input: rmac_input::Snapshot,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -185,6 +186,7 @@ struct Settings {
     audio_error: Option<SharedString>,
     power_error: Option<SharedString>,
     display_error: Option<SharedString>,
+    input_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
@@ -243,6 +245,10 @@ struct Settings {
     display_busy: bool,
     display_revert: Option<DisplayChange>,
 
+    // Keyboard, mouse, and trackpad
+    input_loading: bool,
+    input_busy: bool,
+
     // General
     handoff: bool,
     airdrop_idx: usize,
@@ -253,6 +259,24 @@ enum AudioChange {
     Volume(rmac_audio::DeviceKind, u8),
     Muted(rmac_audio::DeviceKind, bool),
     DefaultDevice(rmac_audio::DeviceKind, String),
+}
+
+#[derive(Clone, Copy)]
+enum InputChange {
+    KeyboardRepeatDelay(u32),
+    KeyboardRepeatRate(u32),
+    KeyboardNumlock(bool),
+    MouseNaturalScroll(bool),
+    MouseLeftHanded(bool),
+    MouseAccelSpeed(f64),
+    MouseAccelProfile(rmac_input::AccelProfile),
+    TouchpadNaturalScroll(bool),
+    TouchpadLeftHanded(bool),
+    TouchpadAccelSpeed(f64),
+    TouchpadAccelProfile(rmac_input::AccelProfile),
+    TouchpadTap(bool),
+    TouchpadDwt(bool),
+    TouchpadDragLock(bool),
 }
 
 #[derive(Clone)]
@@ -708,6 +732,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_input::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_input_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -719,6 +755,7 @@ impl Settings {
             network: rmac_network::NetworkSnapshot::default(),
             storage: StorageInfo::default(),
             audio: rmac_audio::Snapshot::default(),
+            input: rmac_input::Snapshot::default(),
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -734,6 +771,7 @@ impl Settings {
             audio_error: None,
             power_error: None,
             display_error: None,
+            input_error: None,
 
             network_loading: true,
             network_busy: false,
@@ -783,6 +821,9 @@ impl Settings {
             display_loading: true,
             display_busy: false,
             display_revert: None,
+
+            input_loading: true,
+            input_busy: false,
 
             handoff: saved.handoff,
             airdrop_idx: saved.airdrop_idx,
@@ -1213,6 +1254,82 @@ impl Settings {
         .detach();
     }
 
+    fn finish_input_update(
+        &mut self,
+        result: std::result::Result<rmac_input::Snapshot, rmac_input::Error>,
+    ) {
+        self.input_loading = false;
+        self.input_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.input = snapshot;
+                self.input_error = None;
+            }
+            Err(error) => {
+                self.input_error = Some(format!("Could not update Input settings: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_input(&mut self, cx: &mut Context<Self>) {
+        if self.input_loading || self.input_busy {
+            return;
+        }
+        self.input_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_input::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_input_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn apply_input_change(&mut self, change: InputChange, cx: &mut Context<Self>) {
+        if self.input_loading || self.input_busy || !self.input.can_configure {
+            return;
+        }
+        let mut settings = self.input.settings.clone();
+        match change {
+            InputChange::KeyboardRepeatDelay(value) => settings.keyboard.repeat_delay_ms = value,
+            InputChange::KeyboardRepeatRate(value) => settings.keyboard.repeat_rate = value,
+            InputChange::KeyboardNumlock(value) => settings.keyboard.numlock = value,
+            InputChange::MouseNaturalScroll(value) => settings.mouse.natural_scroll = value,
+            InputChange::MouseLeftHanded(value) => settings.mouse.left_handed = value,
+            InputChange::MouseAccelSpeed(value) => settings.mouse.accel_speed = value,
+            InputChange::MouseAccelProfile(value) => settings.mouse.accel_profile = value,
+            InputChange::TouchpadNaturalScroll(value) => {
+                settings.touchpad.pointer.natural_scroll = value
+            }
+            InputChange::TouchpadLeftHanded(value) => settings.touchpad.pointer.left_handed = value,
+            InputChange::TouchpadAccelSpeed(value) => settings.touchpad.pointer.accel_speed = value,
+            InputChange::TouchpadAccelProfile(value) => {
+                settings.touchpad.pointer.accel_profile = value
+            }
+            InputChange::TouchpadTap(value) => settings.touchpad.tap_to_click = value,
+            InputChange::TouchpadDwt(value) => settings.touchpad.disable_while_typing = value,
+            InputChange::TouchpadDragLock(value) => settings.touchpad.drag_lock = value,
+        }
+        self.input_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_input::save(&settings) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_input_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn set_wifi_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
         if self.wifi_busy || self.wifi_loading || !self.wifi_available {
             return;
@@ -1628,6 +1745,9 @@ impl Settings {
                 "General" => self.render_general(cx),
                 "Appearance" => self.render_appearance(cx),
                 "Sound" => self.render_sound(cx),
+                "Keyboard" => self.render_keyboard(cx),
+                "Mouse" => self.render_mouse(cx),
+                "Trackpad" => self.render_trackpad(cx),
                 "Battery" => self.render_battery(cx),
                 "Displays" => self.render_displays(cx),
                 "Network" => self.render_network(cx),
@@ -2414,6 +2534,227 @@ impl Settings {
             .v_flex()
             .child(section_header(title))
             .child(card(rows))
+    }
+
+    // ---- Keyboard, mouse, and trackpad -------------------------------
+
+    fn input_header(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child("niri · libinput"),
+            )
+            .child(
+                div()
+                    .id("input-refresh")
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.0))
+                    .text_size(px(12.0))
+                    .text_color(accent())
+                    .cursor_pointer()
+                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .child(if self.input_busy {
+                        "Applying…"
+                    } else {
+                        "Refresh"
+                    })
+                    .on_click(move |_, _, cx| {
+                        view.update(cx, |settings, cx| settings.refresh_input(cx));
+                    }),
+            )
+    }
+
+    fn input_unavailable_card(&self) -> Option<Div> {
+        if self.input_loading {
+            return Some(note_card("Loading input settings from niri…"));
+        }
+        if !self.input.available || !self.input.can_configure {
+            return Some(note_card(self.input.detail.clone().unwrap_or_else(|| {
+                "Input configuration is unavailable in this desktop session.".into()
+            })));
+        }
+        None
+    }
+
+    fn render_keyboard(&self, cx: &Context<Self>) -> Div {
+        let mut cards = vec![self.input_header(cx)];
+        if let Some(note) = self.input_unavailable_card() {
+            cards.push(note);
+        }
+        let settings = &self.input.settings.keyboard;
+        cards.push(section_header("Key Repeat"));
+        cards.push(card(vec![
+            input_segment_row(
+                cx.entity(),
+                "keyboard-repeat-delay",
+                "Delay until repeat",
+                &KEYBOARD_DELAYS,
+                KEYBOARD_DELAYS
+                    .iter()
+                    .position(|(_, change)| matches!(change, InputChange::KeyboardRepeatDelay(value) if *value == settings.repeat_delay_ms))
+                    .unwrap_or(2),
+                self.input.can_configure && !self.input_busy,
+            ),
+            input_segment_row(
+                cx.entity(),
+                "keyboard-repeat-rate",
+                "Key repeat rate",
+                &KEYBOARD_RATES,
+                KEYBOARD_RATES
+                    .iter()
+                    .position(|(_, change)| matches!(change, InputChange::KeyboardRepeatRate(value) if *value == settings.repeat_rate))
+                    .unwrap_or(2),
+                self.input.can_configure && !self.input_busy,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "keyboard-numlock",
+                "icons/keyboard.svg",
+                "Use Num Lock on startup",
+                None,
+                settings.numlock,
+                self.input.can_configure && !self.input_busy,
+                InputChange::KeyboardNumlock,
+            ),
+        ]));
+        cards.push(note_card(
+            "Changes are validated, saved to the niri configuration, and applied by niri's live reload.",
+        ));
+        self.pane(cards)
+    }
+
+    fn render_mouse(&self, cx: &Context<Self>) -> Div {
+        let mut cards = vec![self.input_header(cx)];
+        if let Some(note) = self.input_unavailable_card() {
+            cards.push(note);
+        }
+        let settings = &self.input.settings.mouse;
+        cards.push(card(vec![
+            input_segment_row(
+                cx.entity(),
+                "mouse-tracking",
+                "Tracking speed",
+                &MOUSE_SPEEDS,
+                speed_index(settings.accel_speed),
+                self.input.can_configure && !self.input_busy,
+            ),
+            input_segment_row(
+                cx.entity(),
+                "mouse-acceleration",
+                "Acceleration",
+                &MOUSE_PROFILES,
+                usize::from(settings.accel_profile == rmac_input::AccelProfile::Flat),
+                self.input.can_configure && !self.input_busy,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "mouse-natural-scroll",
+                "icons/mouse.svg",
+                "Natural scrolling",
+                Some("Move content in the direction your finger travels"),
+                settings.natural_scroll,
+                self.input.can_configure && !self.input_busy,
+                InputChange::MouseNaturalScroll,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "mouse-left-handed",
+                "icons/mouse.svg",
+                "Primary button on right",
+                Some("Swap the left and right mouse buttons"),
+                settings.left_handed,
+                self.input.can_configure && !self.input_busy,
+                InputChange::MouseLeftHanded,
+            ),
+        ]));
+        self.pane(cards)
+    }
+
+    fn render_trackpad(&self, cx: &Context<Self>) -> Div {
+        let mut cards = vec![self.input_header(cx)];
+        if let Some(note) = self.input_unavailable_card() {
+            cards.push(note);
+        }
+        let settings = &self.input.settings.touchpad;
+        cards.push(card(vec![
+            input_segment_row(
+                cx.entity(),
+                "touchpad-tracking",
+                "Tracking speed",
+                &TOUCHPAD_SPEEDS,
+                speed_index(settings.pointer.accel_speed),
+                self.input.can_configure && !self.input_busy,
+            ),
+            input_segment_row(
+                cx.entity(),
+                "touchpad-acceleration",
+                "Acceleration",
+                &TOUCHPAD_PROFILES,
+                usize::from(settings.pointer.accel_profile == rmac_input::AccelProfile::Flat),
+                self.input.can_configure && !self.input_busy,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "touchpad-tap",
+                "icons/touchpad.svg",
+                "Tap to click",
+                None,
+                settings.tap_to_click,
+                self.input.can_configure && !self.input_busy,
+                InputChange::TouchpadTap,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "touchpad-natural-scroll",
+                "icons/touchpad.svg",
+                "Natural scrolling",
+                Some("Move content in the direction your fingers travel"),
+                settings.pointer.natural_scroll,
+                self.input.can_configure && !self.input_busy,
+                InputChange::TouchpadNaturalScroll,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "touchpad-dwt",
+                "icons/keyboard.svg",
+                "Ignore while typing",
+                Some("Prevent accidental pointer movement while typing"),
+                settings.disable_while_typing,
+                self.input.can_configure && !self.input_busy,
+                InputChange::TouchpadDwt,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "touchpad-drag-lock",
+                "icons/touchpad.svg",
+                "Drag lock",
+                Some("Keep dragging briefly after lifting your finger"),
+                settings.drag_lock,
+                self.input.can_configure && !self.input_busy,
+                InputChange::TouchpadDragLock,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "touchpad-left-handed",
+                "icons/touchpad.svg",
+                "Primary click on right",
+                None,
+                settings.pointer.left_handed,
+                self.input.can_configure && !self.input_busy,
+                InputChange::TouchpadLeftHanded,
+            ),
+        ]));
+        self.pane(cards)
     }
 
     // ---- Battery and power profiles ----------------------------------
@@ -3412,7 +3753,8 @@ impl Render for Settings {
             .or_else(|| self.vpn_error.clone())
             .or_else(|| self.audio_error.clone())
             .or_else(|| self.power_error.clone())
-            .or_else(|| self.display_error.clone());
+            .or_else(|| self.display_error.clone())
+            .or_else(|| self.input_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -3452,6 +3794,7 @@ impl Render for Settings {
                             this.audio_error = None;
                             this.power_error = None;
                             this.display_error = None;
+                            this.input_error = None;
                             cx.notify();
                         })),
                 )
@@ -3527,7 +3870,7 @@ fn value_row(
 
 /// An informational note card, e.g. to flag a pane as simulated/demo state
 /// rather than a reflection of (or control over) real system hardware.
-fn note_card(text: &'static str) -> Div {
+fn note_card(text: impl Into<SharedString>) -> Div {
     div()
         .flex()
         .items_center()
@@ -3545,7 +3888,7 @@ fn note_card(text: &'static str) -> Div {
                 .flex_1()
                 .text_size(px(11.5))
                 .text_color(hsl(0x7a5c00))
-                .child(text),
+                .child(text.into()),
         )
 }
 
@@ -3665,6 +4008,148 @@ fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedStr
                 .text_color(secondary())
                 .child(value),
         )
+}
+
+type InputOption = (&'static str, InputChange);
+
+const KEYBOARD_DELAYS: [InputOption; 5] = [
+    ("Short", InputChange::KeyboardRepeatDelay(200)),
+    ("300", InputChange::KeyboardRepeatDelay(300)),
+    ("500", InputChange::KeyboardRepeatDelay(500)),
+    ("750", InputChange::KeyboardRepeatDelay(750)),
+    ("Long", InputChange::KeyboardRepeatDelay(1_000)),
+];
+const KEYBOARD_RATES: [InputOption; 5] = [
+    ("Slow", InputChange::KeyboardRepeatRate(10)),
+    ("20", InputChange::KeyboardRepeatRate(20)),
+    ("30", InputChange::KeyboardRepeatRate(30)),
+    ("40", InputChange::KeyboardRepeatRate(40)),
+    ("Fast", InputChange::KeyboardRepeatRate(60)),
+];
+const MOUSE_SPEEDS: [InputOption; 5] = [
+    ("Slow", InputChange::MouseAccelSpeed(-1.0)),
+    ("−0.5", InputChange::MouseAccelSpeed(-0.5)),
+    ("Default", InputChange::MouseAccelSpeed(0.0)),
+    ("0.5", InputChange::MouseAccelSpeed(0.5)),
+    ("Fast", InputChange::MouseAccelSpeed(1.0)),
+];
+const TOUCHPAD_SPEEDS: [InputOption; 5] = [
+    ("Slow", InputChange::TouchpadAccelSpeed(-1.0)),
+    ("−0.5", InputChange::TouchpadAccelSpeed(-0.5)),
+    ("Default", InputChange::TouchpadAccelSpeed(0.0)),
+    ("0.5", InputChange::TouchpadAccelSpeed(0.5)),
+    ("Fast", InputChange::TouchpadAccelSpeed(1.0)),
+];
+const MOUSE_PROFILES: [InputOption; 2] = [
+    (
+        "Adaptive",
+        InputChange::MouseAccelProfile(rmac_input::AccelProfile::Adaptive),
+    ),
+    (
+        "Flat",
+        InputChange::MouseAccelProfile(rmac_input::AccelProfile::Flat),
+    ),
+];
+const TOUCHPAD_PROFILES: [InputOption; 2] = [
+    (
+        "Adaptive",
+        InputChange::TouchpadAccelProfile(rmac_input::AccelProfile::Adaptive),
+    ),
+    (
+        "Flat",
+        InputChange::TouchpadAccelProfile(rmac_input::AccelProfile::Flat),
+    ),
+];
+
+fn speed_index(speed: f64) -> usize {
+    [-1.0, -0.5, 0.0, 0.5, 1.0]
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| (speed - **a).abs().total_cmp(&(speed - **b).abs()))
+        .map(|(index, _)| index)
+        .unwrap_or(2)
+}
+
+fn input_segment_row(
+    view: Entity<Settings>,
+    id: &'static str,
+    title: &'static str,
+    options: &'static [InputOption],
+    selected: usize,
+    enabled: bool,
+) -> AnyElement {
+    let mut control = div().flex().gap_1().w(px(290.0));
+    for (index, (option_label, change)) in options.iter().copied().enumerate() {
+        let option_view = view.clone();
+        control = control.child(
+            div()
+                .id(ElementId::from(SharedString::from(format!("{id}-{index}"))))
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h(px(26.0))
+                .rounded(px(6.0))
+                .text_size(px(11.0))
+                .when(index == selected, |element| {
+                    element.bg(accent()).text_color(white())
+                })
+                .when(index != selected, |element| {
+                    element.bg(hsl(0xe9e9ec)).text_color(label())
+                })
+                .when(enabled, |element| {
+                    element
+                        .cursor_pointer()
+                        .hover(|hover| hover.bg(hsl(0xdedee2)))
+                        .on_click(move |_, _, cx| {
+                            option_view
+                                .update(cx, |settings, cx| settings.apply_input_change(change, cx));
+                        })
+                })
+                .when(!enabled, |element| element.opacity(0.55))
+                .child(option_label),
+        );
+    }
+    row_base()
+        .child(
+            div()
+                .flex_1()
+                .text_size(px(13.0))
+                .text_color(label())
+                .child(title),
+        )
+        .child(control)
+        .into_any_element()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn input_switch_row(
+    view: Entity<Settings>,
+    id: &'static str,
+    icon: &'static str,
+    title: &'static str,
+    subtitle: Option<&'static str>,
+    checked: bool,
+    enabled: bool,
+    change: fn(bool) -> InputChange,
+) -> AnyElement {
+    let mut switch = Switch::new(id).checked(checked);
+    if enabled {
+        switch = switch.on_click(move |value, _, cx| {
+            view.update(cx, |settings, cx| {
+                settings.apply_input_change(change(*value), cx)
+            });
+        });
+    }
+    row_base()
+        .child(tile(icon, secondary(), 22.0))
+        .child(text_block(title.into(), subtitle.map(Into::into)))
+        .child(
+            div()
+                .when(!enabled, |element| element.opacity(0.55))
+                .child(switch),
+        )
+        .into_any_element()
 }
 
 /// A clickable navigation row that pushes a subpage onto the back stack.
@@ -4144,6 +4629,27 @@ fn categories() -> Vec<Vec<Category>> {
                 "icons/volume-2.svg",
                 pink,
                 "Adjust sound effects and output.",
+                vec![],
+            ),
+            cat(
+                "Keyboard",
+                "icons/keyboard.svg",
+                gray,
+                "Adjust key repeat behavior and keyboard startup options.",
+                vec![],
+            ),
+            cat(
+                "Mouse",
+                "icons/mouse.svg",
+                gray,
+                "Adjust tracking, scrolling, acceleration, and buttons.",
+                vec![],
+            ),
+            cat(
+                "Trackpad",
+                "icons/touchpad.svg",
+                gray,
+                "Adjust tracking, tapping, scrolling, and gestures.",
                 vec![],
             ),
             cat(

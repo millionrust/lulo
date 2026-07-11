@@ -15,10 +15,10 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
 - **Terminal** ✅ — real PTY, true-color, resize, scrollback, mouse selection,
   copy/paste, find, font-zoom, clear, tabs, **9 color profiles** (picker via
   chip / ⌘⇧P / right-click), and a **right-click menu**.
-- **System Settings** ✅ — navigation + search, interactive persisted controls,
-  subpage history, live **Battery / Displays / Network** panes, a **Storage**
-  subpage (real `df`), and a real **audio device list** in Sound (output/input
-  device names via `system_profiler`, system default marked).
+- **System Settings** ✅ — navigation + search, subpage history, real Linux
+  **Network / VPN / Sound / Battery / Displays** services, and validated,
+  atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The
+  Storage subpage reports real filesystem usage.
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).

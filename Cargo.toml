@@ -20,6 +20,7 @@ gpui = "=0.2.2"
 gpui-component = "=0.5.1"
 gpui-component-assets = "=0.5.1"
 image = "0.25.10"
+kdl = { version = "=6.5.0", features = ["v1-fallback"] }
 notify = "7"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
@@ -31,6 +32,7 @@ rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-audio = { version = "=0.1.0", path = "crates/rmac-audio" }
 rmac-display = { version = "=0.1.0", path = "crates/rmac-display" }
+rmac-input = { version = "=0.1.0", path = "crates/rmac-input" }
 rmac-power = { version = "=0.1.0", path = "crates/rmac-power" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }

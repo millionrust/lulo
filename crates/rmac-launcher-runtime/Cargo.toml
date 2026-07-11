@@ -1,0 +1,20 @@
+[package]
+name = "rmac-launcher-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-channel.workspace = true
+blocking.workspace = true
+futures-util.workspace = true
+rmac-launcher.workspace = true
+rmac-launcher-providers.workspace = true
+rmac-launcher-system.workspace = true
+rmac-shell-settings.workspace = true
+
+[dev-dependencies]
+futures-lite.workspace = true
+rmac-apps.workspace = true

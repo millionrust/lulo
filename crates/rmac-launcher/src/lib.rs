@@ -182,6 +182,7 @@ pub struct Session {
     query: String,
     requested: BTreeSet<rmac_shell_settings::ProviderId>,
     categories: BTreeMap<rmac_shell_settings::ProviderId, Category>,
+    privacy: BTreeMap<rmac_shell_settings::ProviderId, Privacy>,
     pending: BTreeSet<rmac_shell_settings::ProviderId>,
     batches: BTreeMap<rmac_shell_settings::ProviderId, Vec<SearchResult>>,
     errors: BTreeMap<rmac_shell_settings::ProviderId, ProviderError>,
@@ -199,6 +200,7 @@ impl Default for Session {
             query: String::new(),
             requested: BTreeSet::new(),
             categories: BTreeMap::new(),
+            privacy: BTreeMap::new(),
             pending: BTreeSet::new(),
             batches: BTreeMap::new(),
             errors: BTreeMap::new(),
@@ -245,6 +247,10 @@ impl Session {
             .iter()
             .map(|provider| (provider.id.clone(), provider.category))
             .collect();
+        self.privacy = providers
+            .iter()
+            .map(|provider| (provider.id.clone(), provider.privacy))
+            .collect();
         self.pending = self.requested.clone();
         self.batches.clear();
         self.errors.clear();
@@ -286,11 +292,18 @@ impl Session {
         match batch {
             Ok(results) => {
                 let expected = self.categories.get(&provider).copied();
+                let privacy = self.privacy.get(&provider).copied();
                 let valid = expected.is_some_and(|expected| {
                     results.iter().all(|result| {
                         result.id.provider == provider
                             && !result.id.local.trim().is_empty()
                             && result.category == expected
+                            && privacy.is_some_and(|privacy| {
+                                action_allowed(expected, privacy, &result.primary)
+                                    && result.alternate.as_ref().is_none_or(|alternate| {
+                                        action_allowed(expected, privacy, alternate)
+                                    })
+                            })
                     })
                 });
                 if valid {
@@ -301,7 +314,8 @@ impl Session {
                     self.errors.insert(
                         provider,
                         ProviderError {
-                            detail: "provider returned an invalid identity or category".into(),
+                            detail: "provider returned an invalid identity, category, or action"
+                                .into(),
                         },
                     );
                 }
@@ -410,6 +424,20 @@ impl Session {
                     .any(|ranked| &ranked.result.id == selected)
             })
             .or_else(|| self.ranked.first().map(|ranked| ranked.result.id.clone()));
+    }
+}
+
+fn action_allowed(category: Category, privacy: Privacy, action: &Action) -> bool {
+    match (category, action) {
+        (Category::Applications, Action::LaunchApplication { .. })
+        | (Category::Settings, Action::OpenSetting { .. })
+        | (Category::Calculator, Action::CopyText { .. }) => true,
+        (Category::Files, Action::OpenFile { .. } | Action::RevealFile { .. })
+        | (Category::Other, Action::OpenFile { .. } | Action::RevealFile { .. }) => {
+            privacy.private_content
+        }
+        (Category::Other, _) => true,
+        _ => false,
     }
 }
 
@@ -545,6 +573,19 @@ mod tests {
     }
 
     fn result(provider: &str, local: &str, category: Category, title: &str) -> SearchResult {
+        let primary = match category {
+            Category::Applications => Action::LaunchApplication {
+                app_id: local.into(),
+                spec: rmac_apps::LaunchSpec::OpenPath("/Applications/Test.app".into()),
+            },
+            Category::Settings => Action::OpenSetting {
+                pane_id: local.into(),
+            },
+            Category::Calculator | Category::Other => Action::CopyText { text: title.into() },
+            Category::Files => Action::OpenFile {
+                path: format!("/home/alex/{local}").into(),
+            },
+        };
         SearchResult {
             id: ResultId {
                 provider: rmac_shell_settings::ProviderId(provider.into()),
@@ -553,11 +594,16 @@ mod tests {
             category,
             title: title.into(),
             subtitle: None,
-            primary: Action::OpenSetting {
-                pane_id: local.into(),
-            },
+            primary,
             alternate: None,
             recency_rank: 0,
+        }
+    }
+
+    fn private_files() -> Privacy {
+        Privacy {
+            private_content: true,
+            network: false,
         }
     }
 
@@ -625,12 +671,26 @@ mod tests {
         ));
         assert!(session.results().is_empty());
         assert_eq!(session.errors().len(), 1);
+
+        let apps = provider("apps", Category::Applications, Privacy::default());
+        let request = session.begin("report", vec![apps]);
+        let mut smuggled = result("apps", "report", Category::Applications, "Report");
+        smuggled.primary = Action::OpenFile {
+            path: "/home/alex/private-report.txt".into(),
+        };
+        assert!(session.apply(
+            request.generation,
+            rmac_shell_settings::ProviderId("apps".into()),
+            Ok(vec![smuggled]),
+        ));
+        assert!(session.results().is_empty());
+        assert_eq!(session.errors().len(), 1);
     }
 
     #[test]
     fn exact_and_prefix_matches_rank_deterministically_across_categories() {
         let apps = provider("apps", Category::Applications, Privacy::default());
-        let files = provider("files", Category::Files, Privacy::default());
+        let files = provider("files", Category::Files, private_files());
         let mut session = Session::default();
         let request = session.begin("term", vec![apps, files]);
         session.apply(
@@ -698,7 +758,7 @@ mod tests {
             "term",
             vec![
                 provider("apps", Category::Applications, Privacy::default()),
-                provider("files", Category::Files, Privacy::default()),
+                provider("files", Category::Files, private_files()),
             ],
         );
         session.apply(
@@ -814,7 +874,7 @@ mod tests {
         file.alternate = Some(Action::RevealFile {
             path: PathBuf::from("/home/alex/Report.txt"),
         });
-        let descriptor = provider("files", Category::Files, Privacy::default());
+        let descriptor = provider("files", Category::Files, private_files());
         let mut session = Session::default();
         let request = session.begin("report", vec![descriptor]);
         session.apply(

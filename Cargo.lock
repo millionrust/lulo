@@ -5013,6 +5013,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-launcher-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "blocking",
+ "futures-lite 2.6.1",
+ "futures-util",
+ "rmac-apps",
+ "rmac-launcher",
+ "rmac-launcher-providers",
+ "rmac-launcher-system",
+ "rmac-shell-settings",
+]
+
+[[package]]
 name = "rmac-launcher-system"
 version = "0.1.0"
 dependencies = [

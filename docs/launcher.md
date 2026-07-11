@@ -15,9 +15,11 @@ network providers require explicit permission. Disabled providers never enter
 the request.
 
 Duplicate provider IDs are admitted once. A returned result must use its
-requested provider ID, declared category, and a nonempty local ID. A batch that
-spoofs another provider/category is rejected and exposed as a provider error,
-so it cannot bypass privacy policy or distort ranking.
+requested provider ID, declared category, a nonempty local ID, and actions
+allowed for that category. File-path actions additionally require a provider
+that declared private content before admission. A batch that spoofs identity,
+category, or action is rejected and exposed as a provider error, so a public
+provider cannot bypass privacy policy or distort ranking.
 
 ## Query lifecycle and cancellation
 
@@ -31,6 +33,27 @@ Providers return one bounded batch or a typed error. One failure does not erase
 other categories. Pending/error state remains visible for loading and honest
 partial-result UI. Escape closes the overlay and cancels every outstanding
 provider; there is no background indexing loop in this domain.
+
+## Live overlay runtime
+
+`rmac-launcher-runtime` captures each provider descriptor once and rejects
+duplicate or empty identities. For every query it schedules only the exact
+admitted provider instances, concurrently, on the blocking pool. Each worker
+rechecks admission and cancellation; closing the result receiver cancels the
+shared request. New query or privacy-policy generations reject late batches.
+
+Opening returns query-focus intent alongside the empty-query request. The UI
+must apply focus synchronously before dispatching that request, so recent-file
+work can never delay the first typed character. The coordinator publishes one
+overlay snapshot with closed, loading, progressive results, empty,
+unavailable, activating, and activation-failed phases. Useful rows remain
+visible when another provider fails or is still searching.
+
+Arrow keys wrap stable selection, Return emits the exact primary action,
+alternate Return emits only a declared alternate, and Escape closes and
+invalidates late activation completion. Only one activation may be in flight.
+Live announcements identify the selected title, category, and result position;
+provider details and private action payloads never enter the snapshot.
 
 ## Ranking and keyboard behavior
 
@@ -88,6 +111,6 @@ outcome kind. Default error formatting does not contain a file path, copied
 text, pane ID, or backend detail; UI code may deliberately inspect typed kind
 and detail to produce a suitable private on-screen error.
 
-The immediate-focus GPUI overlay, global shortcut journey, Orca semantics,
-privacy Settings pane, and performance evidence remain pending. This slice does
-not mark D7/D8 complete.
+The GPUI rendering/focus integration, global shortcut journey, Orca runtime
+evidence, privacy Settings pane, and performance evidence remain pending. This
+slice does not mark D7/D8 complete.

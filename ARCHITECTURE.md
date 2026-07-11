@@ -245,7 +245,9 @@ confirmation value and rereads the item count after the purge.
 Launcher and Spotlight policy begins in `rmac-launcher`. Provider descriptors
 declare private-content and network requirements before work is scheduled.
 Each query cancels the previous generation; stale or identity/category-spoofed
-batches are rejected. The domain owns deterministic scoring, category caps,
+batches are rejected. Action type must also match the declared category, and
+any file-path action requires a private-content descriptor. The domain owns
+deterministic scoring, category caps,
 stable keyboard selection, and exact primary/alternate actions without
 importing GPUI, filesystem search, portals, or process execution.
 `rmac-launcher-providers` supplies the first local adapters. It preserves exact
@@ -260,6 +262,13 @@ the UI executor, and opens/reveals files through `rmac-portal`. Settings
 navigation and clipboard writes are delegated to the live overlay surface,
 where the GPUI context exists. Receipts contain only an activation ID and
 outcome kind; default errors redact paths, copied text, and backend detail.
+`rmac-launcher-runtime` captures provider descriptors once, dispatches admitted
+providers concurrently on the blocking pool, and cancels the shared request if
+the overlay receiver closes. Its coordinator exposes immediate query-focus
+intent before scheduling search, progressive loading/results/degraded/empty
+states, private-safe live announcements, single-flight activation, and stale
+completion rejection. Policy changes restart the current generation so a
+newly denied private provider cannot keep publishing into an open overlay.
 
 ## Persistence
 

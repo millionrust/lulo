@@ -33,7 +33,7 @@ pub struct Batch {
 
 /// Run one provider only if its exact descriptor was admitted into this
 /// privacy-filtered request. Call this function on a background executor.
-pub fn execute(request: &Request, provider: &impl Provider) -> Option<Batch> {
+pub fn execute(request: &Request, provider: &(impl Provider + ?Sized)) -> Option<Batch> {
     let descriptor = provider.descriptor();
     if request.cancellation.is_cancelled()
         || !request

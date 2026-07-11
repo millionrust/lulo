@@ -3,12 +3,156 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::stream::{self, StreamExt as _};
 use rmac_launcher::{
     ActivationMode, MoveSelection, ProviderDescriptor, ProviderError, Request, ResultId,
 };
 use rmac_launcher_providers::{Batch, Provider};
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum CatalogHealth {
+    #[default]
+    Unmanaged,
+    Starting,
+    Healthy,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogUpdate {
+    pub health: CatalogHealth,
+    pub revision: u64,
+    pub changed: bool,
+    /// Diagnostics only. Overlay snapshots deliberately omit this value.
+    pub detail: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CatalogEffect {
+    pub visible: bool,
+    pub request: Option<Request>,
+}
+
+/// Watch installed applications without a discovery/watch race. Failures keep
+/// the provider's last-known-good catalog and retry with a bounded delay.
+pub async fn watch_application_catalog(
+    provider: rmac_launcher_providers::ApplicationProvider,
+    sender: async_channel::Sender<CatalogUpdate>,
+) {
+    if sender
+        .send(CatalogUpdate {
+            health: CatalogHealth::Starting,
+            revision: provider.revision(),
+            changed: false,
+            detail: None,
+        })
+        .await
+        .is_err()
+    {
+        return;
+    }
+    loop {
+        let (changed_tx, changed_rx) = async_channel::bounded(1);
+        let setup = blocking::unblock(move || {
+            let callback = changed_tx.clone();
+            rmac_apps::watch_catalog(move || {
+                let _ = callback.try_send(());
+            })
+            .map(|watcher| (watcher, changed_rx))
+        })
+        .await;
+        let (watcher, changed) = match setup {
+            Ok(setup) => setup,
+            Err(error) => {
+                if send_catalog_failure(&provider, &sender, error.to_string())
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                wait_or_closed(&sender, Duration::from_secs(1)).await;
+                if sender.is_closed() {
+                    return;
+                }
+                continue;
+            }
+        };
+        let _watcher = watcher;
+        let mut refresh = true;
+        loop {
+            if refresh {
+                let discovery = blocking::unblock(rmac_apps::discover).await;
+                refresh = discovery.is_err();
+                let update = match discovery {
+                    Ok(catalog) => CatalogUpdate {
+                        changed: provider.replace_catalog(catalog),
+                        health: CatalogHealth::Healthy,
+                        revision: provider.revision(),
+                        detail: None,
+                    },
+                    Err(error) => CatalogUpdate {
+                        health: CatalogHealth::Unavailable,
+                        revision: provider.revision(),
+                        changed: false,
+                        detail: Some(error.to_string()),
+                    },
+                };
+                if sender.send(update).await.is_err() {
+                    return;
+                }
+            }
+
+            let changed_event = futures_util::FutureExt::fuse(changed.recv());
+            let should_retry = refresh;
+            let retry = futures_util::FutureExt::fuse(async move {
+                if should_retry {
+                    async_io::Timer::after(Duration::from_secs(1)).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            });
+            let closed = futures_util::FutureExt::fuse(sender.closed());
+            futures_util::pin_mut!(changed_event, retry, closed);
+            futures_util::select! {
+                event = changed_event => {
+                    if event.is_err() {
+                        break;
+                    }
+                    refresh = true;
+                },
+                _ = retry => refresh = true,
+                _ = closed => return,
+            }
+        }
+    }
+}
+
+async fn send_catalog_failure(
+    provider: &rmac_launcher_providers::ApplicationProvider,
+    sender: &async_channel::Sender<CatalogUpdate>,
+    detail: String,
+) -> Result<(), async_channel::SendError<CatalogUpdate>> {
+    sender
+        .send(CatalogUpdate {
+            health: CatalogHealth::Unavailable,
+            revision: provider.revision(),
+            changed: false,
+            detail: Some(detail),
+        })
+        .await
+}
+
+async fn wait_or_closed<T>(sender: &async_channel::Sender<T>, duration: Duration) {
+    let timer = futures_util::FutureExt::fuse(async_io::Timer::after(duration));
+    let closed = futures_util::FutureExt::fuse(sender.closed());
+    futures_util::pin_mut!(timer, closed);
+    futures_util::select! {
+        _ = timer => {},
+        _ = closed => {},
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegistryError {
@@ -206,6 +350,7 @@ pub struct Snapshot {
     pub rows: Vec<Row>,
     pub pending_providers: usize,
     pub failed_providers: usize,
+    pub application_catalog: CatalogHealth,
     /// A concise live-region message. It intentionally contains no provider
     /// error detail, file path, or action payload.
     pub announcement: Option<String>,
@@ -219,6 +364,8 @@ pub struct Coordinator {
     activation: Option<rmac_launcher_system::ActivationId>,
     activation_error: Option<String>,
     last_shortcut_timestamp_ms: Option<u64>,
+    application_catalog: CatalogHealth,
+    application_catalog_revision: u64,
 }
 
 impl Coordinator {
@@ -234,6 +381,8 @@ impl Coordinator {
             activation: None,
             activation_error: None,
             last_shortcut_timestamp_ms: None,
+            application_catalog: CatalogHealth::Unmanaged,
+            application_catalog_revision: 0,
         }
     }
 
@@ -282,6 +431,31 @@ impl Coordinator {
                 .launcher
                 .session_mut()
                 .apply(batch.generation, batch.provider, batch.results)
+    }
+
+    pub fn apply_catalog(&mut self, update: CatalogUpdate) -> CatalogEffect {
+        if update.revision < self.application_catalog_revision {
+            return CatalogEffect {
+                visible: false,
+                request: None,
+            };
+        }
+        let visible = self.application_catalog != update.health;
+        let revision_changed =
+            update.changed && update.revision > self.application_catalog_revision;
+        self.application_catalog = update.health;
+        self.application_catalog_revision = self.application_catalog_revision.max(update.revision);
+        let request = if revision_changed && self.launcher.is_open() && self.activation.is_none() {
+            let query = self.launcher.session().query().to_owned();
+            self.launcher
+                .set_query(query, &self.descriptors, &self.policies)
+        } else {
+            None
+        };
+        CatalogEffect {
+            visible: visible || request.is_some(),
+            request,
+        }
     }
 
     /// Handle only the stable launcher shortcut. Duplicate or older portal
@@ -377,6 +551,7 @@ impl Coordinator {
                 rows: Vec::new(),
                 pending_providers: 0,
                 failed_providers: 0,
+                application_catalog: self.application_catalog.clone(),
                 announcement: None,
             };
         }
@@ -397,18 +572,20 @@ impl Coordinator {
                 has_alternate: ranked.result.alternate.is_some(),
             })
             .collect();
+        let catalog_starting = self.application_catalog == CatalogHealth::Starting;
+        let catalog_unavailable = self.application_catalog == CatalogHealth::Unavailable;
         let phase = if self.activation.is_some() {
             Phase::Activating
         } else if self.activation_error.is_some() {
             Phase::ActivationFailed
-        } else if rows.is_empty() && pending > 0 {
+        } else if rows.is_empty() && (pending > 0 || catalog_starting) {
             Phase::Loading
         } else if !rows.is_empty() {
             Phase::Results {
                 still_searching: pending > 0,
-                degraded: failed > 0,
+                degraded: failed > 0 || catalog_unavailable,
             }
-        } else if failed > 0 {
+        } else if failed > 0 || catalog_unavailable {
             Phase::Unavailable
         } else {
             Phase::Empty
@@ -421,6 +598,7 @@ impl Coordinator {
             rows,
             pending_providers: pending,
             failed_providers: failed,
+            application_catalog: self.application_catalog.clone(),
             announcement,
         }
     }
@@ -806,6 +984,80 @@ mod tests {
         );
         assert_eq!(snapshot.rows[0].title, "Terminal");
         assert_eq!(snapshot.failed_providers, 1);
+    }
+
+    #[test]
+    fn catalog_revisions_restart_open_search_once_and_health_retains_results() {
+        let descriptors = vec![descriptor("apps", Category::Applications, false)];
+        let mut coordinator = Coordinator::new(descriptors, BTreeMap::new());
+        let original = coordinator.open().request;
+        let starting = coordinator.apply_catalog(CatalogUpdate {
+            health: CatalogHealth::Starting,
+            revision: 0,
+            changed: false,
+            detail: None,
+        });
+        assert!(starting.visible);
+        assert!(starting.request.is_none());
+
+        let refreshed = coordinator.apply_catalog(CatalogUpdate {
+            health: CatalogHealth::Healthy,
+            revision: 1,
+            changed: true,
+            detail: None,
+        });
+        let refreshed = refreshed.request.expect("new revision reissues query");
+        assert!(original.cancellation.is_cancelled());
+        assert!(
+            !coordinator
+                .apply_catalog(CatalogUpdate {
+                    health: CatalogHealth::Healthy,
+                    revision: 1,
+                    changed: true,
+                    detail: None,
+                })
+                .visible
+        );
+        assert!(coordinator.apply(batch(
+            &refreshed,
+            "apps",
+            Ok(vec![result("apps", Category::Applications, "Terminal",)]),
+        )));
+
+        let unavailable = coordinator.apply_catalog(CatalogUpdate {
+            health: CatalogHealth::Unavailable,
+            revision: 1,
+            changed: false,
+            detail: Some("private catalog path detail".into()),
+        });
+        assert!(unavailable.visible);
+        assert!(unavailable.request.is_none());
+        let snapshot = coordinator.snapshot();
+        assert_eq!(snapshot.application_catalog, CatalogHealth::Unavailable);
+        assert_eq!(snapshot.rows[0].title, "Terminal");
+        assert_eq!(
+            snapshot.phase,
+            Phase::Results {
+                still_searching: false,
+                degraded: true,
+            }
+        );
+        assert!(!snapshot
+            .announcement
+            .expect("selection is announced")
+            .contains("private catalog"));
+
+        let stale = coordinator.apply_catalog(CatalogUpdate {
+            health: CatalogHealth::Starting,
+            revision: 0,
+            changed: true,
+            detail: None,
+        });
+        assert!(!stale.visible);
+        assert_eq!(
+            coordinator.snapshot().application_catalog,
+            CatalogHealth::Unavailable
+        );
     }
 
     #[test]

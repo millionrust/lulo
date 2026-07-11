@@ -8,8 +8,10 @@ publish = false
 
 [dependencies]
 async-channel.workspace = true
+async-io.workspace = true
 blocking.workspace = true
 futures-util.workspace = true
+rmac-apps.workspace = true
 rmac-launcher.workspace = true
 rmac-launcher-providers.workspace = true
 rmac-launcher-system.workspace = true
@@ -18,4 +20,3 @@ rmac-shortcuts.workspace = true
 
 [dev-dependencies]
 futures-lite.workspace = true
-rmac-apps.workspace = true

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 use rmac_launcher::{
     Action, Cancellation, Category, Privacy, ProviderDescriptor, ProviderError, Request, ResultId,
@@ -53,12 +54,20 @@ pub fn execute(request: &Request, provider: &(impl Provider + ?Sized)) -> Option
 
 #[derive(Clone, Debug, Default)]
 pub struct ApplicationProvider {
+    state: Arc<RwLock<ApplicationState>>,
+}
+
+#[derive(Debug, Default)]
+struct ApplicationState {
     catalog: Vec<rmac_apps::Application>,
+    revision: u64,
 }
 
 impl ApplicationProvider {
     pub fn new(catalog: Vec<rmac_apps::Application>) -> Self {
-        Self { catalog }
+        let provider = Self::default();
+        provider.replace_catalog(catalog);
+        provider
     }
 
     pub fn discover() -> Result<Self, ProviderError> {
@@ -68,6 +77,49 @@ impl ApplicationProvider {
                 detail: error.to_string(),
             })
     }
+
+    /// Atomically replace the installed-application snapshot. Existing clones
+    /// observe the same revision, and identical discoveries do not churn an
+    /// open launcher query.
+    pub fn replace_catalog(&self, catalog: Vec<rmac_apps::Application>) -> bool {
+        let catalog = normalized_catalog(catalog);
+        let mut state = self
+            .state
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.catalog == catalog {
+            return false;
+        }
+        state.catalog = catalog;
+        state.revision = state.revision.wrapping_add(1).max(1);
+        true
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .revision
+    }
+
+    pub fn refresh(&self) -> Result<bool, ProviderError> {
+        let catalog = rmac_apps::discover().map_err(|error| ProviderError {
+            detail: error.to_string(),
+        })?;
+        Ok(self.replace_catalog(catalog))
+    }
+}
+
+fn normalized_catalog(catalog: Vec<rmac_apps::Application>) -> Vec<rmac_apps::Application> {
+    let mut seen = BTreeSet::new();
+    catalog
+        .into_iter()
+        .filter(|application| {
+            !application.id.trim().is_empty()
+                && !application.name.trim().is_empty()
+                && seen.insert(application.id.clone())
+        })
+        .collect()
 }
 
 impl Provider for ApplicationProvider {
@@ -84,8 +136,14 @@ impl Provider for ApplicationProvider {
         query: &str,
         cancellation: &Cancellation,
     ) -> Result<Vec<SearchResult>, ProviderError> {
+        let catalog = self
+            .state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .catalog
+            .clone();
         let mut results = Vec::new();
-        for application in &self.catalog {
+        for application in &catalog {
             if cancellation.is_cancelled() {
                 return Err(cancelled());
             }
@@ -795,6 +853,29 @@ mod tests {
             Some(Action::RevealApplication { source })
                 if source == Path::new("/apps/terminal.desktop")
         ));
+    }
+
+    #[test]
+    fn application_catalog_replacement_is_atomic_shared_and_revision_stable() {
+        let provider = ApplicationProvider::new(vec![application("terminal.desktop", "Terminal")]);
+        let clone = provider.clone();
+        let revision = provider.revision();
+        assert!(revision > 0);
+        assert!(!provider.replace_catalog(vec![application("terminal.desktop", "Terminal")]));
+        assert_eq!(provider.revision(), revision);
+
+        assert!(provider.replace_catalog(vec![
+            application("notes.desktop", "Notes"),
+            application("notes.desktop", "Duplicate Notes"),
+            application("", "Invalid"),
+        ]));
+        assert!(provider.revision() > revision);
+        let results = clone
+            .search("", &Cancellation::default())
+            .expect("shared catalog search succeeds");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id.local, "notes.desktop");
+        assert_eq!(results[0].title, "Notes");
     }
 
     #[test]

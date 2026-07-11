@@ -256,7 +256,10 @@ importing GPUI, filesystem search, portals, or process execution.
 `rmac-launcher-providers` supplies the first local adapters. It preserves exact
 desktop-entry launch specifications, maps Settings keywords to stable pane IDs,
 passes cancellation into bounded filename/recent-document searches, and
-evaluates a deliberately small arithmetic grammar. File results are declared
+evaluates a deliberately small arithmetic grammar. Its application catalog is
+an atomically shared revision: installed-app rescans replace every provider
+clone together, while identical discoveries cause no query churn. File results
+are declared
 private before admission and retain an explicit Reveal alternate; providers
 run behind an exact-descriptor check so an unadmitted adapter receives no
 query. Filename traversal prunes excluded roots before descent and stays on the
@@ -284,6 +287,12 @@ newly denied private provider cannot keep publishing into an open overlay. It
 consumes only the stable `launcher` activation from `rmac-shortcuts`; fresh
 timestamps toggle the overlay, while repeats, replays, deactivation, and other
 shortcut IDs are ignored.
+The runtime establishes the installed-app watcher before its first discovery,
+so an install during startup is observed by the bounded change channel. A real
+new revision cancels and reissues only the current open query. Discovery or
+watch failure retains last-known-good app results, exposes degraded catalog
+health without diagnostic paths in the overlay snapshot, and retries with a
+bounded delay; stale/replayed revisions do nothing.
 
 ## Persistence
 

@@ -60,6 +60,14 @@ The runtime consumes the typed `launcher` activation already owned by
 activations, deactivation signals, and other shortcut IDs do nothing, avoiding
 double-open behavior after portal replay or key repeat.
 
+Installed applications remain live without polling. The runtime establishes
+the `rmac-apps` directory watcher before discovery, coalesces changes, and
+atomically replaces the shared provider catalog. Only a changed, newer catalog
+revision restarts an open query; identical scans and stale events do nothing.
+Watcher/discovery failure retains the last-known-good application results,
+publishes a generic degraded state, and retries after a bounded delay. Detailed
+filesystem errors remain diagnostics-only and never enter overlay snapshots.
+
 ## Ranking and keyboard behavior
 
 Ranking normalizes whitespace/case and scores exact, prefix, word-prefix,

@@ -5017,6 +5017,7 @@ name = "rmac-launcher-runtime"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
+ "async-io",
  "blocking",
  "futures-lite 2.6.1",
  "futures-util",

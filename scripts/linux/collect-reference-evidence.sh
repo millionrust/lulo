@@ -91,6 +91,26 @@ fi
   fi
 } >"$output_dir/portals.txt"
 
+{
+  if command -v systemctl >/dev/null 2>&1; then
+    for unit in rmac-session.target rmac-safe-mode.target \
+      rmac-session-supervisor.service rmac-top-bar.service rmac-dock.service \
+      rmac-launcher.service rmac-notification-center.service rmac-wallpaper.service; do
+      systemctl --user show "$unit" --no-pager \
+        --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,MainPID,ExecMainStatus \
+        2>&1 || true
+    done
+  else
+    echo "systemctl: not installed"
+  fi
+  supervisor="$HOME/.local/libexec/rmac/rmac-session-supervisor"
+  if [ -x "$supervisor" ]; then
+    "$supervisor" status 2>&1 || true
+  else
+    echo "rmac-session-supervisor: not installed"
+  fi
+} >"$output_dir/rmac-session.txt"
+
 if command -v dpkg-query >/dev/null 2>&1; then
   dpkg-query -W -f='${Package}\t${Version}\n' \
     at-spi2-core clang dbus git libvulkan-dev libwayland-dev \

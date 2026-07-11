@@ -1,0 +1,11 @@
+[Unit]
+Description=rmac desktop session
+Documentation=https://github.com/rmac/rmac
+BindsTo=graphical-session.target
+After=graphical-session-pre.target
+Conflicts=rmac-safe-mode.target
+Requires=rmac-session-supervisor.service
+Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-notification-center.service rmac-wallpaper.service
+
+[Install]
+WantedBy=graphical-session.target

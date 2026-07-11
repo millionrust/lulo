@@ -1,0 +1,16 @@
+[Unit]
+Description=rmac launcher
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+OnFailure=rmac-component-failure@%N.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionPathIsExecutable=%h/.local/libexec/rmac/rmac-launcher
+
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-launcher
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

@@ -58,6 +58,15 @@ The same adapter exposes neutral typed actions and capabilities. Every action
 uses an explicit stable target and an independent socket; `Handled` is command
 acceptance, while the event stream remains the authority for visible state.
 
+`rmac-session` defines typed health snapshots and the persistent safe-mode
+marker for systemd user-supervised shell processes. Top bar, Dock, launcher,
+notification center, and wallpaper are independent service units with bounded
+restart rates. A small supervisor publishes runtime health, records restart
+budget exhaustion, and moves the session to a supervisor-only diagnostic target
+until the user explicitly clears safe mode. Session startup imports only a
+fixed allowlist of Wayland/D-Bus routing variables before starting the target;
+the complete login environment is never copied into the user manager.
+
 The intended crate map and migration phases are specified in `PLAN_V2.md`.
 
 ## UI and update model

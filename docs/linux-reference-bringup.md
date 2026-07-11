@@ -114,6 +114,23 @@ niri msg --json outputs | jq
 systemctl --user --no-pager status xdg-desktop-portal.service
 ```
 
+Install the development supervisor and user units, then add the installed
+start command to niri's session startup configuration:
+
+```sh
+bash scripts/linux/install-session-units.sh
+~/.local/bin/rmac-session-start
+systemctl --user --no-pager status rmac-session.target
+~/.local/libexec/rmac/rmac-session-supervisor status
+```
+
+The D-phase component units are condition-gated until their binaries are
+installed, so they remain skipped rather than entering false crash loops. The
+supervisor must be active and its JSON health output must identify every unit.
+To inspect one component locally, use
+`journalctl --user -u rmac-dock.service -b`; review logs for private paths or
+content before adding them to an evidence bundle.
+
 Run the evidence collector again, then launch the current-upstream probes:
 
 ```sh

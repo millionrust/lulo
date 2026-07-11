@@ -5016,6 +5016,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-session"
+version = "0.1.0"
+dependencies = [
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-shell-settings"
 version = "0.1.0"
 dependencies = [

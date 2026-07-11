@@ -76,15 +76,17 @@ result only when needed, and wraps in both directions.
 Primary activation is exact. Alternate activation (for example Reveal for a
 file) returns only a declared alternate and never silently falls back to the
 primary action. Actions carry parsed shell-free application launch specs,
-setting pane IDs, private file paths, or calculator text; default logs must not
-print private action payloads.
+application-source reveal paths, setting pane IDs, private file paths, or
+calculator text; default logs must not print action payloads.
 
 ## Local providers
 
 `rmac-launcher-providers` implements four bounded, background-safe adapters:
 
 - Applications retain the exact parsed desktop-entry launch specification; no
-  result reconstructs a command from display text.
+  result reconstructs a command from display text. Launch is primary; Show
+  Application is a distinct alternate that reveals the desktop-entry or bundle
+  source through the file-manager portal.
 - Settings match titles, subtitles, and synonyms but return stable pane IDs,
   with duplicate and empty IDs excluded. The built-in catalog covers all 22
   top-level Settings destinations and includes Linux-relevant terms such as
@@ -116,6 +118,8 @@ nonempty application and pane IDs, absolute file paths, and nonempty copied
 text before calling a backend. Application launch remains off the UI executor
 and consumes the exact parsed launch specification. Open and Reveal use
 different portal-backed operations, preserving the alternate-action contract.
+Application reveal uses the same portal authority but has its own validated
+action, operation label, and payload-free success outcome.
 
 Clipboard writes and Settings navigation are surface operations: the future
 GPUI overlay supplies them from its live application context instead of a

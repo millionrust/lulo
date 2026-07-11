@@ -557,9 +557,15 @@ mod tests {
             title: title.into(),
             subtitle: None,
             primary,
-            alternate: (category == Category::Files).then(|| Action::RevealFile {
-                path: "/home/alex/report.txt".into(),
-            }),
+            alternate: (category == Category::Files)
+                .then(|| Action::RevealFile {
+                    path: "/home/alex/report.txt".into(),
+                })
+                .or_else(|| {
+                    (category == Category::Applications).then(|| Action::RevealApplication {
+                        source: "/Applications/Test.app".into(),
+                    })
+                }),
             recency_rank: 0,
         }
     }

@@ -13,6 +13,7 @@ pub struct ActivationId(pub u64);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operation {
     LaunchApplication,
+    RevealApplication,
     OpenSetting,
     OpenFile,
     RevealFile,
@@ -65,6 +66,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self.operation {
             Operation::LaunchApplication => "Could not launch the application",
+            Operation::RevealApplication => "Could not show the application",
             Operation::OpenSetting => "Could not open Settings",
             Operation::OpenFile => "Could not open the file",
             Operation::RevealFile => "Could not reveal the file",
@@ -78,6 +80,7 @@ impl std::error::Error for Error {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Outcome {
     ApplicationLaunched { process_id: u32 },
+    ApplicationRevealed,
     SettingOpened,
     FileOpened,
     FileRevealed,
@@ -176,6 +179,13 @@ pub async fn execute(
                 .await
                 .map(|process_id| Outcome::ApplicationLaunched { process_id })
         }
+        rmac_launcher::Action::RevealApplication { source } => {
+            require_absolute(source).map_err(|error| failure(activation, operation, error))?;
+            backend
+                .reveal_file(source)
+                .await
+                .map(|()| Outcome::ApplicationRevealed)
+        }
         rmac_launcher::Action::OpenSetting { pane_id } => {
             require_nonempty(pane_id, "Settings pane ID")
                 .map_err(|error| failure(activation, operation, error))?;
@@ -212,6 +222,7 @@ pub async fn execute(
 fn operation(action: &rmac_launcher::Action) -> Operation {
     match action {
         rmac_launcher::Action::LaunchApplication { .. } => Operation::LaunchApplication,
+        rmac_launcher::Action::RevealApplication { .. } => Operation::RevealApplication,
         rmac_launcher::Action::OpenSetting { .. } => Operation::OpenSetting,
         rmac_launcher::Action::OpenFile { .. } => Operation::OpenFile,
         rmac_launcher::Action::RevealFile { .. } => Operation::RevealFile,
@@ -314,6 +325,9 @@ mod tests {
                     terminal: false,
                 },
             },
+            rmac_launcher::Action::RevealApplication {
+                source: "/usr/share/applications/notes.desktop".into(),
+            },
             rmac_launcher::Action::OpenSetting {
                 pane_id: "sound".into(),
             },
@@ -327,6 +341,7 @@ mod tests {
         ];
         let expected = [
             Outcome::ApplicationLaunched { process_id: 42 },
+            Outcome::ApplicationRevealed,
             Outcome::SettingOpened,
             Outcome::FileOpened,
             Outcome::FileRevealed,
@@ -337,7 +352,7 @@ mod tests {
             assert_eq!(receipt.activation, ActivationId(7));
             assert_eq!(receipt.outcome, expected);
         }
-        assert_eq!(backend.calls.lock().expect("calls lock").len(), 5);
+        assert_eq!(backend.calls.lock().expect("calls lock").len(), 6);
     }
 
     #[test]
@@ -346,6 +361,9 @@ mod tests {
         for action in [
             rmac_launcher::Action::OpenSetting {
                 pane_id: " ".into(),
+            },
+            rmac_launcher::Action::RevealApplication {
+                source: "relative.desktop".into(),
             },
             rmac_launcher::Action::OpenFile {
                 path: "relative.txt".into(),

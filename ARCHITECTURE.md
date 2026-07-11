@@ -269,6 +269,11 @@ specification off the UI executor, and opens/reveals files through
 navigation and clipboard writes are delegated to the live overlay surface,
 where the GPUI context exists. Receipts contain only an activation ID and
 outcome kind; default errors redact paths, copied text, and backend detail.
+Application results likewise preserve launch as primary and declare Show
+Application as a distinct alternate. That action reveals the desktop-entry or
+bundle source through the portal and returns only an `ApplicationRevealed`
+outcome, never repurposing a private document action or exposing its path in a
+receipt.
 `rmac-launcher-runtime` captures provider descriptors once, dispatches admitted
 providers concurrently on the blocking pool, and cancels the shared request if
 the overlay receiver closes. Its coordinator exposes immediate query-focus

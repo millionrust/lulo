@@ -84,6 +84,9 @@ pub enum Action {
         app_id: String,
         spec: rmac_apps::LaunchSpec,
     },
+    RevealApplication {
+        source: PathBuf,
+    },
     OpenSetting {
         pane_id: String,
     },
@@ -429,7 +432,10 @@ impl Session {
 
 fn action_allowed(category: Category, privacy: Privacy, action: &Action) -> bool {
     match (category, action) {
-        (Category::Applications, Action::LaunchApplication { .. })
+        (
+            Category::Applications,
+            Action::LaunchApplication { .. } | Action::RevealApplication { .. },
+        )
         | (Category::Settings, Action::OpenSetting { .. })
         | (Category::Calculator, Action::CopyText { .. }) => true,
         (Category::Files, Action::OpenFile { .. } | Action::RevealFile { .. })

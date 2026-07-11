@@ -106,7 +106,9 @@ impl Provider for ApplicationProvider {
                     app_id: application.id.clone(),
                     spec: application.launch.clone(),
                 },
-                alternate: None,
+                alternate: Some(Action::RevealApplication {
+                    source: application.source.clone(),
+                }),
                 recency_rank: 0,
             });
             if results.len() == PROVIDER_LIMIT {
@@ -787,6 +789,11 @@ mod tests {
             &results[0].primary,
             Action::LaunchApplication { app_id, spec: rmac_apps::LaunchSpec::Command { args, .. } }
                 if app_id == "terminal.desktop" && args == &["--new"]
+        ));
+        assert!(matches!(
+            &results[0].alternate,
+            Some(Action::RevealApplication { source })
+                if source == Path::new("/apps/terminal.desktop")
         ));
     }
 

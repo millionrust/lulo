@@ -23,6 +23,96 @@ pub struct WifiSnapshot {
     pub networks: Vec<WifiNetwork>,
 }
 
+/// NetworkManager's view of the host's overall reachability.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Connectivity {
+    None,
+    Portal,
+    Limited,
+    Full,
+    #[default]
+    Unknown,
+}
+
+impl Connectivity {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::None => "Not Connected",
+            Self::Portal => "Sign-in Required",
+            Self::Limited => "Limited Connectivity",
+            Self::Full => "Connected",
+            Self::Unknown => "Unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeviceKind {
+    Ethernet,
+    WiFi,
+    Other,
+}
+
+impl DeviceKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ethernet => "Ethernet",
+            Self::WiFi => "Wi-Fi",
+            Self::Other => "Network Interface",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeviceState {
+    Unavailable,
+    Disconnected,
+    Connecting,
+    Connected,
+    Deactivating,
+    Failed,
+    Unknown,
+}
+
+impl DeviceState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Unavailable => "Unavailable",
+            Self::Disconnected => "Not Connected",
+            Self::Connecting => "Connecting…",
+            Self::Connected => "Connected",
+            Self::Deactivating => "Disconnecting…",
+            Self::Failed => "Connection Failed",
+            Self::Unknown => "Unknown",
+        }
+    }
+
+    pub fn is_connected(self) -> bool {
+        self == Self::Connected
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetworkDevice {
+    pub interface: String,
+    pub kind: DeviceKind,
+    pub state: DeviceState,
+    pub connection: Option<String>,
+    pub primary: bool,
+    pub addresses: Vec<String>,
+    pub gateway: Option<String>,
+    pub dns: Vec<String>,
+    pub hardware_address: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NetworkSnapshot {
+    pub available: bool,
+    pub connectivity: Connectivity,
+    pub primary_connection: Option<String>,
+    pub devices: Vec<NetworkDevice>,
+}
+
 #[derive(Debug)]
 pub struct Error {
     operation: &'static str,
@@ -64,6 +154,20 @@ pub fn set_enabled(enabled: bool) -> Result<(), Error> {
 
 pub fn request_scan() -> Result<(), Error> {
     SystemWifiService.request_scan()
+}
+
+pub fn network_snapshot() -> Result<NetworkSnapshot, Error> {
+    system_network_snapshot()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
+    linux_network_snapshot()
+}
+
+#[cfg(target_os = "macos")]
+fn system_network_snapshot() -> Result<NetworkSnapshot, Error> {
+    macos_network_snapshot()
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -187,6 +291,176 @@ fn linux_snapshot() -> Result<WifiSnapshot, Error> {
 }
 
 #[cfg(not(target_os = "macos"))]
+fn linux_network_snapshot() -> Result<NetworkSnapshot, Error> {
+    use zbus::zvariant::OwnedObjectPath;
+
+    let connection = system_connection("connect to NetworkManager")?;
+    let manager = manager_proxy(&connection)?;
+    let connectivity = manager
+        .get_property::<u32>("Connectivity")
+        .map(connectivity_from_network_manager)
+        .unwrap_or_default();
+    let primary_path = manager
+        .get_property::<OwnedObjectPath>("PrimaryConnection")
+        .ok();
+    let device_paths = manager
+        .call::<_, _, Vec<OwnedObjectPath>>("GetDevices", &())
+        .map_err(|error| Error::new("list network devices", error.to_string()))?;
+
+    let mut devices = Vec::new();
+    for path in device_paths {
+        let proxy = zbus::blocking::Proxy::new(
+            &connection,
+            "org.freedesktop.NetworkManager",
+            path.as_str(),
+            "org.freedesktop.NetworkManager.Device",
+        )
+        .map_err(|error| Error::new("open network device", error.to_string()))?;
+        let interface = proxy
+            .get_property::<String>("Interface")
+            .map_err(|error| Error::new("read network interface", error.to_string()))?;
+        let kind = match proxy
+            .get_property::<u32>("DeviceType")
+            .map_err(|error| Error::new("read network device type", error.to_string()))?
+        {
+            1 => DeviceKind::Ethernet,
+            2 => DeviceKind::WiFi,
+            _ => DeviceKind::Other,
+        };
+        let state = proxy
+            .get_property::<u32>("State")
+            .map(device_state_from_network_manager)
+            .unwrap_or(DeviceState::Unknown);
+        let active_path = proxy
+            .get_property::<OwnedObjectPath>("ActiveConnection")
+            .ok();
+        let primary = primary_path
+            .as_ref()
+            .zip(active_path.as_ref())
+            .is_some_and(|(primary, active)| primary == active && active.as_str() != "/");
+        let connection_name = active_path
+            .as_ref()
+            .filter(|active| active.as_str() != "/")
+            .and_then(|active| active_connection_name(&connection, active));
+        let hardware_address = proxy
+            .get_property::<String>("HwAddress")
+            .ok()
+            .filter(|address| !address.is_empty());
+
+        let mut addresses = Vec::new();
+        let mut gateway = None;
+        let mut dns = Vec::new();
+        for (path_property, interface_name) in [
+            ("Ip4Config", "org.freedesktop.NetworkManager.IP4Config"),
+            ("Ip6Config", "org.freedesktop.NetworkManager.IP6Config"),
+        ] {
+            let Some(config_path) = proxy
+                .get_property::<OwnedObjectPath>(path_property)
+                .ok()
+                .filter(|path| path.as_str() != "/")
+            else {
+                continue;
+            };
+            read_ip_configuration(
+                &connection,
+                &config_path,
+                interface_name,
+                &mut addresses,
+                &mut gateway,
+                &mut dns,
+            );
+        }
+        addresses.sort();
+        addresses.dedup();
+        dns.sort();
+        dns.dedup();
+        devices.push(NetworkDevice {
+            interface,
+            kind,
+            state,
+            connection: connection_name,
+            primary,
+            addresses,
+            gateway,
+            dns,
+            hardware_address,
+        });
+    }
+    sort_devices(&mut devices);
+    let primary_connection = devices
+        .iter()
+        .find(|device| device.primary)
+        .and_then(|device| device.connection.clone());
+    Ok(NetworkSnapshot {
+        available: true,
+        connectivity,
+        primary_connection,
+        devices,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn active_connection_name(
+    connection: &zbus::blocking::Connection,
+    path: &zbus::zvariant::OwnedObjectPath,
+) -> Option<String> {
+    zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        path.as_str(),
+        "org.freedesktop.NetworkManager.Connection.Active",
+    )
+    .ok()?
+    .get_property::<String>("Id")
+    .ok()
+    .filter(|name| !name.is_empty())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_ip_configuration(
+    connection: &zbus::blocking::Connection,
+    path: &zbus::zvariant::OwnedObjectPath,
+    interface: &str,
+    addresses: &mut Vec<String>,
+    gateway: &mut Option<String>,
+    dns: &mut Vec<String>,
+) {
+    let Ok(proxy) = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        path.as_str(),
+        interface,
+    ) else {
+        return;
+    };
+    if let Ok(data) =
+        proxy.get_property::<Vec<HashMap<String, zbus::zvariant::OwnedValue>>>("AddressData")
+    {
+        for address in data {
+            let value = property_string(&address, "address");
+            let prefix = property::<u32>(&address, "prefix");
+            if let Some(value) = value {
+                addresses.push(format_address(&value, prefix));
+            }
+        }
+    }
+    if gateway.is_none() {
+        *gateway = proxy
+            .get_property::<String>("Gateway")
+            .ok()
+            .filter(|value| !value.is_empty());
+    }
+    if let Ok(data) =
+        proxy.get_property::<Vec<HashMap<String, zbus::zvariant::OwnedValue>>>("NameserverData")
+    {
+        dns.extend(
+            data.iter()
+                .filter_map(|server| property_string(server, "address")),
+        );
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 fn system_connection(operation: &'static str) -> Result<zbus::blocking::Connection, Error> {
     zbus::blocking::Connection::system().map_err(|error| Error::new(operation, error.to_string()))
 }
@@ -228,6 +502,28 @@ fn wifi_device_path(
         }
     }
     Ok(None)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn property<T>(properties: &HashMap<String, zbus::zvariant::OwnedValue>, key: &str) -> Option<T>
+where
+    for<'a> T: TryFrom<&'a zbus::zvariant::OwnedValue>,
+{
+    properties
+        .get(key)
+        .and_then(|value| T::try_from(value).ok())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn property_string(
+    properties: &HashMap<String, zbus::zvariant::OwnedValue>,
+    key: &str,
+) -> Option<String> {
+    properties
+        .get(key)
+        .and_then(|value| <&str>::try_from(value).ok())
+        .map(str::to_string)
+        .filter(|value| !value.is_empty())
 }
 
 #[cfg(target_os = "macos")]
@@ -285,6 +581,109 @@ impl WifiService for SystemWifiService {
     fn request_scan(&self) -> Result<(), Error> {
         Ok(())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_network_snapshot() -> Result<NetworkSnapshot, Error> {
+    let default_route = network_command("route", &["-n", "get", "default"])?;
+    let route_field = |key: &str| {
+        default_route.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix(key)
+                .map(|value| value.trim().to_string())
+        })
+    };
+    let interface = route_field("interface:").unwrap_or_default();
+    if interface.is_empty() {
+        return Ok(NetworkSnapshot {
+            available: true,
+            connectivity: Connectivity::None,
+            ..NetworkSnapshot::default()
+        });
+    }
+
+    let ports = network_command("networksetup", &["-listallhardwareports"])?;
+    let mut service = "Network".to_string();
+    let mut hardware_address = None;
+    for block in ports.split("Hardware Port:") {
+        if block
+            .lines()
+            .any(|line| line.trim() == format!("Device: {interface}"))
+        {
+            if let Some(name) = block.lines().next() {
+                service = name.trim().to_string();
+            }
+            hardware_address = block.lines().find_map(|line| {
+                line.trim()
+                    .strip_prefix("Ethernet Address:")
+                    .map(|value| value.trim().to_string())
+            });
+            break;
+        }
+    }
+    let address = network_command("ipconfig", &["getifaddr", &interface]).ok();
+    let dns = network_command("scutil", &["--dns"])
+        .ok()
+        .into_iter()
+        .flat_map(|output| {
+            output
+                .lines()
+                .filter_map(|line| {
+                    line.trim()
+                        .strip_prefix("nameserver[")
+                        .and_then(|line| line.split_once(':'))
+                        .map(|(_, address)| address.trim().to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let state = if address.is_some() {
+        DeviceState::Connected
+    } else {
+        DeviceState::Disconnected
+    };
+    let kind = if service == "Wi-Fi" {
+        DeviceKind::WiFi
+    } else if service.to_ascii_lowercase().contains("ethernet") {
+        DeviceKind::Ethernet
+    } else {
+        DeviceKind::Other
+    };
+    Ok(NetworkSnapshot {
+        available: true,
+        connectivity: if state.is_connected() {
+            Connectivity::Full
+        } else {
+            Connectivity::None
+        },
+        primary_connection: Some(service.clone()),
+        devices: vec![NetworkDevice {
+            interface,
+            kind,
+            state,
+            connection: Some(service),
+            primary: true,
+            addresses: address.into_iter().collect(),
+            gateway: route_field("gateway:"),
+            dns,
+            hardware_address,
+        }],
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn network_command(program: &'static str, arguments: &[&str]) -> Result<String, Error> {
+    let output = Command::new(program)
+        .args(arguments)
+        .output()
+        .map_err(|error| Error::new("start network helper", error.to_string()))?;
+    if !output.status.success() {
+        return Err(Error::new(
+            "run network helper",
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 #[cfg(target_os = "macos")]
@@ -364,6 +763,59 @@ fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwork> {
     networks
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
+fn connectivity_from_network_manager(value: u32) -> Connectivity {
+    match value {
+        1 => Connectivity::None,
+        2 => Connectivity::Portal,
+        3 => Connectivity::Limited,
+        4 => Connectivity::Full,
+        _ => Connectivity::Unknown,
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn device_state_from_network_manager(value: u32) -> DeviceState {
+    match value {
+        20 | 30 => DeviceState::Unavailable,
+        40 => DeviceState::Disconnected,
+        50..=90 => DeviceState::Connecting,
+        100 => DeviceState::Connected,
+        110 => DeviceState::Deactivating,
+        120 => DeviceState::Failed,
+        _ => DeviceState::Unknown,
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn format_address(address: &str, prefix: Option<u32>) -> String {
+    prefix.map_or_else(
+        || address.to_string(),
+        |prefix| format!("{address}/{prefix}"),
+    )
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn sort_devices(devices: &mut [NetworkDevice]) {
+    devices.sort_by(|left, right| {
+        right
+            .primary
+            .cmp(&left.primary)
+            .then_with(|| right.state.is_connected().cmp(&left.state.is_connected()))
+            .then_with(|| device_kind_order(left.kind).cmp(&device_kind_order(right.kind)))
+            .then_with(|| left.interface.cmp(&right.interface))
+    });
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn device_kind_order(kind: DeviceKind) -> u8 {
+    match kind {
+        DeviceKind::Ethernet => 0,
+        DeviceKind::WiFi => 1,
+        DeviceKind::Other => 2,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -418,5 +870,55 @@ mod tests {
             error.to_string(),
             "could not read Wi-Fi state: service unavailable"
         );
+    }
+
+    #[test]
+    fn network_manager_values_map_to_stable_ui_states() {
+        assert_eq!(connectivity_from_network_manager(4), Connectivity::Full);
+        assert_eq!(connectivity_from_network_manager(99), Connectivity::Unknown);
+        assert_eq!(
+            device_state_from_network_manager(70),
+            DeviceState::Connecting
+        );
+        assert_eq!(
+            device_state_from_network_manager(100),
+            DeviceState::Connected
+        );
+        assert_eq!(device_state_from_network_manager(120), DeviceState::Failed);
+    }
+
+    #[test]
+    fn address_prefix_is_preserved_when_available() {
+        assert_eq!(format_address("192.0.2.4", Some(24)), "192.0.2.4/24");
+        assert_eq!(format_address("2001:db8::1", None), "2001:db8::1");
+    }
+
+    #[test]
+    fn devices_are_sorted_by_primary_connection_and_state() {
+        let make = |interface: &str, kind, state, primary| NetworkDevice {
+            interface: interface.to_string(),
+            kind,
+            state,
+            connection: None,
+            primary,
+            addresses: Vec::new(),
+            gateway: None,
+            dns: Vec::new(),
+            hardware_address: None,
+        };
+        let mut devices = vec![
+            make("wlan0", DeviceKind::WiFi, DeviceState::Connected, false),
+            make(
+                "eth1",
+                DeviceKind::Ethernet,
+                DeviceState::Disconnected,
+                false,
+            ),
+            make("eth0", DeviceKind::Ethernet, DeviceState::Connected, true),
+        ];
+        sort_devices(&mut devices);
+        assert_eq!(devices[0].interface, "eth0");
+        assert_eq!(devices[1].interface, "wlan0");
+        assert_eq!(devices[2].interface, "eth1");
     }
 }

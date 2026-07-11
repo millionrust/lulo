@@ -194,18 +194,6 @@ struct StorageInfo {
     avail: u64,
 }
 
-/// Primary network connection (read once after launch).
-#[derive(Default)]
-struct NetworkInfo {
-    service: String,
-    interface: String,
-    connected: bool,
-    ip: Option<String>,
-    router: Option<String>,
-    dns: Option<String>,
-    mac: Option<String>,
-}
-
 struct Settings {
     system_data_loading: bool,
     account: SharedString,
@@ -213,7 +201,7 @@ struct Settings {
     battery: Option<BatteryInfo>,
     displays: Vec<DisplayInfo>,
     gpu: String,
-    network: NetworkInfo,
+    network: rmac_network::NetworkSnapshot,
     storage: StorageInfo,
     audio: AudioInfo,
     sections: Vec<Vec<Category>>,
@@ -226,6 +214,11 @@ struct Settings {
     persistence_error: Option<SharedString>,
     wifi_error: Option<SharedString>,
     bluetooth_error: Option<SharedString>,
+    network_error: Option<SharedString>,
+
+    // Network
+    network_loading: bool,
+    network_busy: bool,
 
     // Wi-Fi
     wifi_available: bool,
@@ -275,7 +268,6 @@ struct SystemSnapshot {
     battery: Option<BatteryInfo>,
     displays: Vec<DisplayInfo>,
     gpu: String,
-    network: NetworkInfo,
     storage: StorageInfo,
     audio: AudioInfo,
 }
@@ -616,6 +608,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_network::network_snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_network_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -625,7 +629,7 @@ impl Settings {
             battery: None,
             displays: Vec::new(),
             gpu: String::new(),
-            network: NetworkInfo::default(),
+            network: rmac_network::NetworkSnapshot::default(),
             storage: StorageInfo::default(),
             audio: AudioInfo::default(),
             sections: categories(),
@@ -638,6 +642,10 @@ impl Settings {
             persistence_error,
             wifi_error: None,
             bluetooth_error: None,
+            network_error: None,
+
+            network_loading: true,
+            network_busy: false,
 
             wifi_available: false,
             wifi_loading: true,
@@ -682,7 +690,6 @@ impl Settings {
         self.battery = snapshot.battery;
         self.displays = snapshot.displays;
         self.gpu = snapshot.gpu;
-        self.network = snapshot.network;
         self.storage = snapshot.storage;
         self.audio = snapshot.audio;
         self.system_data_loading = false;
@@ -706,6 +713,42 @@ impl Settings {
                 self.wifi_error = Some(format!("Could not update Wi-Fi: {error}").into());
             }
         }
+    }
+
+    fn finish_network_update(
+        &mut self,
+        result: std::result::Result<rmac_network::NetworkSnapshot, rmac_network::Error>,
+    ) {
+        self.network_loading = false;
+        self.network_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.network = snapshot;
+                self.network_error = None;
+            }
+            Err(error) => {
+                self.network_error = Some(format!("Could not update Network: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_network(&mut self, cx: &mut Context<Self>) {
+        if self.network_busy || self.network_loading {
+            return;
+        }
+        self.network_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_network::network_snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_network_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn set_wifi_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
@@ -1125,7 +1168,7 @@ impl Settings {
                 "Sound" => self.render_sound(cx),
                 "Battery" => self.render_battery(),
                 "Displays" => self.render_displays(),
-                "Network" => self.render_network(),
+                "Network" => self.render_network(cx),
                 _ => self.render_generic(cx),
             }
         };
@@ -1942,68 +1985,157 @@ impl Settings {
 
     // ---- Network (real read-only) -------------------------------------
 
-    fn render_network(&self) -> Div {
-        let blue = hsl(0x0a84ff);
-        let gray = hsl(0x8e8e93);
-        let green = hsl(0x34c759);
-        let n = &self.network;
-
-        let status_color = if n.connected { green } else { gray };
-        let mut conn_rows = vec![value_row(
-            "icons/globe.svg",
-            status_color,
-            "Status".into(),
-            if n.connected {
-                "Connected".into()
-            } else {
-                "Not Connected".into()
-            },
-        )];
-        conn_rows.push(value_row(
-            "icons/wifi.svg",
-            blue,
-            "Service".into(),
-            format!("{} ({})", n.service, n.interface).into(),
-        ));
-
-        let mut detail_rows: Vec<AnyElement> = Vec::new();
-        if let Some(ip) = &n.ip {
-            detail_rows.push(value_row(
+    fn render_network(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let connected = matches!(
+            self.network.connectivity,
+            rmac_network::Connectivity::Full
+                | rmac_network::Connectivity::Limited
+                | rmac_network::Connectivity::Portal
+        );
+        let summary = self
+            .network
+            .primary_connection
+            .clone()
+            .unwrap_or_else(|| "No primary connection".into());
+        let refresh_view = view.clone();
+        let refresh_label = if self.network_busy {
+            "Refreshing…"
+        } else {
+            "Refresh"
+        };
+        let mut cards = vec![card(vec![
+            value_row(
                 "icons/globe.svg",
-                gray,
-                "IP Address".into(),
-                ip.clone().into(),
-            ));
-        }
-        if let Some(r) = &n.router {
-            detail_rows.push(value_row(
+                if connected {
+                    hsl(0x34c759)
+                } else {
+                    secondary()
+                },
+                "Status".into(),
+                self.network.connectivity.label().into(),
+            ),
+            value_row(
                 "icons/folder-symlink.svg",
-                gray,
-                "Router".into(),
-                r.clone().into(),
-            ));
+                accent(),
+                "Primary Connection".into(),
+                summary.into(),
+            ),
+        ])];
+        cards.push(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_1()
+                .pt_2()
+                .pb_1()
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(secondary())
+                        .child("Interfaces"),
+                )
+                .child(
+                    div()
+                        .id("network-refresh")
+                        .px_2()
+                        .py_1()
+                        .rounded(px(6.0))
+                        .text_size(px(12.0))
+                        .text_color(accent())
+                        .cursor_pointer()
+                        .hover(|hover| hover.bg(hsl(0x00000008)))
+                        .child(refresh_label)
+                        .on_click(move |_, _, cx| {
+                            refresh_view.update(cx, |settings, cx| settings.refresh_network(cx));
+                        }),
+                ),
+        );
+
+        if self.network_loading {
+            cards.push(note_card("Loading network state from the system…"));
+            return self.pane(cards);
         }
-        if let Some(d) = &n.dns {
-            detail_rows.push(value_row(
-                "icons/info.svg",
-                gray,
-                "DNS Server".into(),
-                d.clone().into(),
+        if !self.network.available {
+            cards.push(note_card(
+                "The system network service is not available on this computer.",
             ));
+            return self.pane(cards);
         }
-        if let Some(m) = &n.mac {
-            detail_rows.push(value_row(
-                "icons/key.svg",
-                gray,
-                "Hardware Address".into(),
-                m.clone().into(),
-            ));
+        if self.network.devices.is_empty() {
+            cards.push(note_card("No managed network interfaces were found."));
+            return self.pane(cards);
         }
 
-        let mut cards = vec![card(conn_rows)];
-        if !detail_rows.is_empty() {
-            cards.push(section_header("TCP/IP"));
-            cards.push(card(detail_rows));
+        for device in &self.network.devices {
+            let title = device
+                .connection
+                .as_deref()
+                .unwrap_or_else(|| device.kind.label());
+            let heading = if device.primary {
+                format!("{title} · Primary")
+            } else {
+                title.to_string()
+            };
+            cards.push(
+                div()
+                    .px_1()
+                    .pt_2()
+                    .pb_1()
+                    .text_size(px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child(heading),
+            );
+            let mut rows = vec![value_row(
+                if device.kind == rmac_network::DeviceKind::WiFi {
+                    "icons/wifi.svg"
+                } else {
+                    "icons/globe.svg"
+                },
+                if device.state.is_connected() {
+                    hsl(0x34c759)
+                } else {
+                    secondary()
+                },
+                format!("{} ({})", device.kind.label(), device.interface).into(),
+                device.state.label().into(),
+            )];
+            if !device.addresses.is_empty() {
+                rows.push(value_row(
+                    "icons/globe.svg",
+                    secondary(),
+                    "IP Addresses".into(),
+                    device.addresses.join(", ").into(),
+                ));
+            }
+            if let Some(gateway) = &device.gateway {
+                rows.push(value_row(
+                    "icons/folder-symlink.svg",
+                    secondary(),
+                    "Router".into(),
+                    gateway.clone().into(),
+                ));
+            }
+            if !device.dns.is_empty() {
+                rows.push(value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "DNS Servers".into(),
+                    device.dns.join(", ").into(),
+                ));
+            }
+            if let Some(address) = &device.hardware_address {
+                rows.push(value_row(
+                    "icons/key.svg",
+                    secondary(),
+                    "Hardware Address".into(),
+                    address.clone().into(),
+                ));
+            }
+            cards.push(card(rows));
         }
         self.pane(cards)
     }
@@ -2201,7 +2333,8 @@ impl Render for Settings {
             .persistence_error
             .clone()
             .or_else(|| self.wifi_error.clone())
-            .or_else(|| self.bluetooth_error.clone());
+            .or_else(|| self.bluetooth_error.clone())
+            .or_else(|| self.network_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -2236,6 +2369,7 @@ impl Render for Settings {
                             this.persistence_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
+                            this.network_error = None;
                             cx.notify();
                         })),
                 )
@@ -2602,7 +2736,6 @@ fn gather_system_snapshot() -> SystemSnapshot {
         battery: gather_battery(),
         displays,
         gpu,
-        network: gather_network(),
         storage: gather_storage(),
         audio: gather_audio(),
     }
@@ -2887,68 +3020,6 @@ fn gather_storage() -> StorageInfo {
         total,
         used,
         avail,
-    }
-}
-
-/// Read the primary network connection (interface, IP, router, DNS, MAC).
-fn gather_network() -> NetworkInfo {
-    let default_route = cmd("route", &["-n", "get", "default"]).unwrap_or_default();
-    let field = |key: &str| -> Option<String> {
-        default_route.lines().find_map(|l| {
-            let l = l.trim();
-            l.strip_prefix(key).map(|s| s.trim().to_string())
-        })
-    };
-    let interface = field("interface:").unwrap_or_default();
-    let router = field("gateway:");
-
-    // Map the interface to its hardware-port name (e.g. "Wi-Fi", "Ethernet").
-    let ports = cmd("networksetup", &["-listallhardwareports"]).unwrap_or_default();
-    let mut service = "Network".to_string();
-    let mut mac = None;
-    if !interface.is_empty() {
-        for block in ports.split("Hardware Port:") {
-            if block
-                .lines()
-                .any(|l| l.trim() == format!("Device: {interface}"))
-            {
-                if let Some(name) = block.lines().next() {
-                    service = name.trim().to_string();
-                }
-                mac = block.lines().find_map(|l| {
-                    l.trim()
-                        .strip_prefix("Ethernet Address:")
-                        .map(|s| s.trim().to_string())
-                });
-            }
-        }
-    }
-
-    let ip = if interface.is_empty() {
-        None
-    } else {
-        cmd("ipconfig", &["getifaddr", &interface])
-    };
-
-    let dns = cmd("scutil", &["--dns"]).and_then(|o| {
-        o.lines().find_map(|l| {
-            let l = l.trim();
-            if l.starts_with("nameserver[0]") {
-                l.split(':').nth(1).map(|s| s.trim().to_string())
-            } else {
-                None
-            }
-        })
-    });
-
-    NetworkInfo {
-        connected: ip.is_some(),
-        service,
-        interface,
-        ip,
-        router,
-        dns,
-        mac,
     }
 }
 

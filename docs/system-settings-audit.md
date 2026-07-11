@@ -10,7 +10,7 @@ equivalents rather than simulated.
 |---|---|---|---|
 | Wi-Fi | Real state, radio mutation, access-point scan | NetworkManager D-Bus | Known/open connection activation, secret agent, live signals |
 | Bluetooth | Real adapter, discovery, and known-device connections | BlueZ D-Bus | Confirmation agent for new-device pairing and live signals |
-| Network | macOS read-only snapshot | NetworkManager D-Bus | Ethernet/IP/DNS state and safe connection editing |
+| Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Placeholder | NetworkManager VPN plugins | List, activate/deactivate, import supported profiles |
 | Battery | macOS read-only snapshot | UPower and power-profiles-daemon | Live battery/AC state and supported power profiles |
 | General/About | Platform identity snapshot | os-release, sysinfo, DMI | Kernel detail and live hostname mutation |

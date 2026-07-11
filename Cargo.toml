@@ -30,6 +30,7 @@ rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-audio = { version = "=0.1.0", path = "crates/rmac-audio" }
+rmac-display = { version = "=0.1.0", path = "crates/rmac-display" }
 rmac-power = { version = "=0.1.0", path = "crates/rmac-power" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }
@@ -38,6 +39,8 @@ rmac-thumbnails = { version = "=0.1.0", path = "crates/rmac-thumbnails" }
 rmac-ui = { version = "=0.1.0", path = "crates/rmac-ui" }
 quick-xml = "0.39.4"
 rust-embed = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 sysinfo = "0.33"
 url = "2"
 walkdir = "2"

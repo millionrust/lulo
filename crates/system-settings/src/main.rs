@@ -152,14 +152,6 @@ struct SysInfo {
     serial: String,
 }
 
-/// A connected display (read once at launch via `system_profiler`).
-struct DisplayInfo {
-    name: String,
-    resolution: String,
-    detail: Option<String>,
-    is_main: bool,
-}
-
 /// Boot-volume storage usage (read once after launch via `df`).
 #[derive(Default)]
 struct StorageInfo {
@@ -174,8 +166,7 @@ struct Settings {
     account: SharedString,
     sysinfo: SysInfo,
     power: rmac_power::Snapshot,
-    displays: Vec<DisplayInfo>,
-    gpu: String,
+    display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
     storage: StorageInfo,
     audio: rmac_audio::Snapshot,
@@ -193,6 +184,7 @@ struct Settings {
     vpn_error: Option<SharedString>,
     audio_error: Option<SharedString>,
     power_error: Option<SharedString>,
+    display_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
@@ -246,6 +238,11 @@ struct Settings {
     power_loading: bool,
     power_busy: bool,
 
+    // Displays
+    display_loading: bool,
+    display_busy: bool,
+    display_revert: Option<DisplayChange>,
+
     // General
     handoff: bool,
     airdrop_idx: usize,
@@ -258,12 +255,36 @@ enum AudioChange {
     DefaultDevice(rmac_audio::DeviceKind, String),
 }
 
+#[derive(Clone)]
+enum DisplayChange {
+    Mode {
+        output: String,
+        mode: rmac_display::Mode,
+    },
+    Scale {
+        output: String,
+        scale: f64,
+    },
+    Transform {
+        output: String,
+        transform: rmac_display::Transform,
+    },
+}
+
+impl DisplayChange {
+    fn apply(&self) -> std::result::Result<(), rmac_display::Error> {
+        match self {
+            Self::Mode { output, mode } => rmac_display::set_mode(output, *mode),
+            Self::Scale { output, scale } => rmac_display::set_scale(output, *scale),
+            Self::Transform { output, transform } => rmac_display::set_transform(output, transform),
+        }
+    }
+}
+
 /// Read-only system data that is slow enough to keep off the first-frame path.
 struct SystemSnapshot {
     account: String,
     sysinfo: SysInfo,
-    displays: Vec<DisplayInfo>,
-    gpu: String,
     storage: StorageInfo,
 }
 
@@ -675,6 +696,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_display::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_display_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -682,8 +715,7 @@ impl Settings {
                 .into(),
             sysinfo: SysInfo::default(),
             power: rmac_power::Snapshot::default(),
-            displays: Vec::new(),
-            gpu: String::new(),
+            display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
             storage: StorageInfo::default(),
             audio: rmac_audio::Snapshot::default(),
@@ -701,6 +733,7 @@ impl Settings {
             vpn_error: None,
             audio_error: None,
             power_error: None,
+            display_error: None,
 
             network_loading: true,
             network_busy: false,
@@ -747,6 +780,10 @@ impl Settings {
             power_loading: true,
             power_busy: false,
 
+            display_loading: true,
+            display_busy: false,
+            display_revert: None,
+
             handoff: saved.handoff,
             airdrop_idx: saved.airdrop_idx,
             airplay_receiver: saved.airplay_receiver,
@@ -756,8 +793,6 @@ impl Settings {
     fn apply_system_snapshot(&mut self, snapshot: SystemSnapshot) {
         self.account = snapshot.account.into();
         self.sysinfo = snapshot.sysinfo;
-        self.displays = snapshot.displays;
-        self.gpu = snapshot.gpu;
         self.storage = snapshot.storage;
         self.system_data_loading = false;
     }
@@ -1072,6 +1107,106 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_power_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_display_update(
+        &mut self,
+        result: std::result::Result<rmac_display::Snapshot, rmac_display::Error>,
+    ) {
+        self.display_loading = false;
+        self.display_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.display = snapshot;
+                self.display_error = None;
+            }
+            Err(error) => {
+                self.display_error = Some(format!("Could not update Displays: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_displays(&mut self, cx: &mut Context<Self>) {
+        if self.display_loading || self.display_busy {
+            return;
+        }
+        self.display_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_display::snapshot() })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_display_update(result);
+                if succeeded {
+                    this.display_revert = None;
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn apply_display_change(
+        &mut self,
+        change: DisplayChange,
+        revert: DisplayChange,
+        cx: &mut Context<Self>,
+    ) {
+        if self.display_loading || self.display_busy || !self.display.can_configure {
+            return;
+        }
+        self.display_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    change.apply()?;
+                    rmac_display::snapshot()
+                })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_display_update(result);
+                if succeeded {
+                    this.display_revert = Some(revert);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn revert_display_change(&mut self, cx: &mut Context<Self>) {
+        if self.display_loading || self.display_busy || !self.display.can_configure {
+            return;
+        }
+        let Some(revert) = self.display_revert.clone() else {
+            return;
+        };
+        self.display_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    revert.apply()?;
+                    rmac_display::snapshot()
+                })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_display_update(result);
+                if succeeded {
+                    this.display_revert = None;
+                }
                 cx.notify();
             });
         })
@@ -1494,7 +1629,7 @@ impl Settings {
                 "Appearance" => self.render_appearance(cx),
                 "Sound" => self.render_sound(cx),
                 "Battery" => self.render_battery(cx),
-                "Displays" => self.render_displays(),
+                "Displays" => self.render_displays(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(cx),
@@ -2472,23 +2607,94 @@ impl Settings {
         self.pane(cards)
     }
 
-    // ---- Displays (real read-only) ------------------------------------
+    // ---- Displays -----------------------------------------------------
 
-    fn render_displays(&self) -> Div {
-        let blue = hsl(0x0a84ff);
-        let gray = hsl(0x8e8e93);
-        let mut cards: Vec<Div> = Vec::new();
-
-        if self.displays.is_empty() {
+    fn render_displays(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let revert_view = view.clone();
+        let mut cards = vec![div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child(if self.display.compositor.is_empty() {
+                        "Displays".to_string()
+                    } else {
+                        format!("Displays · {}", self.display.compositor)
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .when(self.display_revert.is_some(), |actions| {
+                        actions.child(
+                            div()
+                                .id("display-revert")
+                                .px_2()
+                                .py_1()
+                                .rounded(px(6.0))
+                                .text_size(px(12.0))
+                                .text_color(hsl(0xff3b30))
+                                .cursor_pointer()
+                                .hover(|hover| hover.bg(hsl(0x00000008)))
+                                .child("Revert")
+                                .on_click(move |_, _, cx| {
+                                    revert_view.update(cx, |settings, cx| {
+                                        settings.revert_display_change(cx)
+                                    });
+                                }),
+                        )
+                    })
+                    .child(
+                        div()
+                            .id("display-refresh")
+                            .px_2()
+                            .py_1()
+                            .rounded(px(6.0))
+                            .text_size(px(12.0))
+                            .text_color(accent())
+                            .cursor_pointer()
+                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .child(if self.display_busy {
+                                "Applying…"
+                            } else {
+                                "Refresh"
+                            })
+                            .on_click(move |_, _, cx| {
+                                refresh_view
+                                    .update(cx, |settings, cx| settings.refresh_displays(cx));
+                            }),
+                    ),
+            )];
+        if self.display_loading {
+            cards.push(note_card("Loading displays from the compositor…"));
+            return self.pane(cards);
+        }
+        if !self.display.available {
+            cards.push(note_card(
+                "The display service is not available in this desktop session.",
+            ));
+            return self.pane(cards);
+        }
+        if self.display.outputs.is_empty() {
             cards.push(note_card("No displays were detected."));
         }
-        for d in &self.displays {
-            // A dynamic section header (display name) — the static helper only
-            // takes &'static str, so build it inline.
-            let mut title: SharedString = d.name.clone().into();
-            if d.is_main {
-                title = format!("{} (Main)", d.name).into();
-            }
+
+        for output in &self.display.outputs {
+            let title = if output.primary {
+                format!("{} · Main", output.name)
+            } else {
+                output.name.clone()
+            };
             cards.push(
                 div()
                     .px_1()
@@ -2499,31 +2705,227 @@ impl Settings {
                     .text_color(secondary())
                     .child(title),
             );
-            let mut rows = vec![value_row(
+            let mut rows = Vec::new();
+            if let Some(detail) = &output.detail {
+                rows.push(value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "Type".into(),
+                    detail.clone().into(),
+                ));
+            }
+            rows.push(value_row(
                 "icons/monitor.svg",
-                blue,
-                "Resolution".into(),
-                d.resolution.clone().into(),
-            )];
-            if let Some(det) = &d.detail {
-                rows.insert(
-                    0,
-                    value_row("icons/info.svg", gray, "Type".into(), det.clone().into()),
-                );
+                accent(),
+                "Connector".into(),
+                output.connector.clone().into(),
+            ));
+            if let Some(mode) = output.current_mode() {
+                rows.push(value_row(
+                    "icons/monitor.svg",
+                    secondary(),
+                    "Resolution".into(),
+                    mode.label().into(),
+                ));
+            } else {
+                rows.push(value_row(
+                    "icons/monitor.svg",
+                    secondary(),
+                    "Status".into(),
+                    "Disabled".into(),
+                ));
+            }
+            if let Some(logical) = &output.logical {
+                rows.push(value_row(
+                    "icons/settings.svg",
+                    secondary(),
+                    "Scale".into(),
+                    format!("{}%", (logical.scale * 100.0).round() as u32).into(),
+                ));
+                rows.push(value_row(
+                    "icons/refresh-cw.svg",
+                    secondary(),
+                    "Rotation".into(),
+                    logical.transform.label().into(),
+                ));
+                rows.push(value_row(
+                    "icons/folder-symlink.svg",
+                    secondary(),
+                    "Position".into(),
+                    format!("{}, {}", logical.x, logical.y).into(),
+                ));
+                rows.push(value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "Logical Size".into(),
+                    format!("{} × {}", logical.width, logical.height).into(),
+                ));
+            }
+            if let Some((width, height)) = output.physical_size_mm {
+                rows.push(value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "Physical Size".into(),
+                    format!("{width} × {height} mm").into(),
+                ));
             }
             cards.push(card(rows));
+
+            let Some(logical) = output.logical.as_ref() else {
+                continue;
+            };
+            if !self.display.can_configure {
+                continue;
+            }
+
+            if (0.5..=4.0).contains(&logical.scale) {
+                cards.push(section_header("Scale"));
+                let scale_rows = [1.0, 1.25, 1.5, 1.75, 2.0]
+                    .into_iter()
+                    .map(|scale| {
+                        let selected = (logical.scale - scale).abs() < 0.001;
+                        let output_id = output.id.clone();
+                        let current = logical.scale;
+                        let scale_view = view.clone();
+                        row_base()
+                            .id(SharedString::from(format!(
+                                "display-scale-{output_id}-{scale}"
+                            )))
+                            .child(text_block(
+                                format!("{}%", (scale * 100.0) as u32).into(),
+                                None,
+                            ))
+                            .when(selected, |row| {
+                                row.child(glyph("icons/check.svg", 14.0, accent()))
+                            })
+                            .when(!selected, |row| {
+                                row.cursor_pointer()
+                                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                                    .on_click(move |_, _, cx| {
+                                        let change = DisplayChange::Scale {
+                                            output: output_id.clone(),
+                                            scale,
+                                        };
+                                        let revert = DisplayChange::Scale {
+                                            output: output_id.clone(),
+                                            scale: current,
+                                        };
+                                        scale_view.update(cx, |settings, cx| {
+                                            settings.apply_display_change(change, revert, cx)
+                                        });
+                                    })
+                            })
+                            .into_any_element()
+                    })
+                    .collect();
+                cards.push(card(scale_rows));
+            }
+
+            if logical.transform.is_configurable() {
+                cards.push(section_header("Rotation"));
+                let rotations = [
+                    rmac_display::Transform::Normal,
+                    rmac_display::Transform::Rotate90,
+                    rmac_display::Transform::Rotate180,
+                    rmac_display::Transform::Rotate270,
+                ];
+                let rotation_rows = rotations
+                    .into_iter()
+                    .map(|transform| {
+                        let selected = logical.transform == transform;
+                        let label = transform.label();
+                        let output_id = output.id.clone();
+                        let current = logical.transform.clone();
+                        let rotation_view = view.clone();
+                        row_base()
+                            .id(SharedString::from(format!(
+                                "display-rotation-{output_id}-{label}"
+                            )))
+                            .child(text_block(label.into(), None))
+                            .when(selected, |row| {
+                                row.child(glyph("icons/check.svg", 14.0, accent()))
+                            })
+                            .when(!selected, |row| {
+                                row.cursor_pointer()
+                                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                                    .on_click(move |_, _, cx| {
+                                        let change = DisplayChange::Transform {
+                                            output: output_id.clone(),
+                                            transform: transform.clone(),
+                                        };
+                                        let revert = DisplayChange::Transform {
+                                            output: output_id.clone(),
+                                            transform: current.clone(),
+                                        };
+                                        rotation_view.update(cx, |settings, cx| {
+                                            settings.apply_display_change(change, revert, cx)
+                                        });
+                                    })
+                            })
+                            .into_any_element()
+                    })
+                    .collect();
+                cards.push(card(rotation_rows));
+            }
+
+            if let Some(current_mode) = output.current_mode() {
+                cards.push(section_header("Resolution"));
+                let mode_rows = output
+                    .modes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, mode)| {
+                        let mode = *mode;
+                        let selected = output.current_mode == Some(index);
+                        let output_id = output.id.clone();
+                        let mode_view = view.clone();
+                        let subtitle = mode.preferred.then(|| "Preferred".into());
+                        row_base()
+                            .id(SharedString::from(format!(
+                                "display-mode-{output_id}-{index}"
+                            )))
+                            .child(text_block(mode.label().into(), subtitle))
+                            .when(selected, |row| {
+                                row.child(glyph("icons/check.svg", 14.0, accent()))
+                            })
+                            .when(!selected, |row| {
+                                row.cursor_pointer()
+                                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                                    .on_click(move |_, _, cx| {
+                                        let change = DisplayChange::Mode {
+                                            output: output_id.clone(),
+                                            mode,
+                                        };
+                                        let revert = DisplayChange::Mode {
+                                            output: output_id.clone(),
+                                            mode: current_mode,
+                                        };
+                                        mode_view.update(cx, |settings, cx| {
+                                            settings.apply_display_change(change, revert, cx)
+                                        });
+                                    })
+                            })
+                            .into_any_element()
+                    })
+                    .collect();
+                cards.push(card(mode_rows));
+            }
         }
 
-        if !self.gpu.is_empty() {
+        if let Some(graphics) = &self.display.graphics {
             cards.push(section_header("Graphics"));
             cards.push(card(vec![value_row(
                 "icons/settings.svg",
-                gray,
+                secondary(),
                 "Chipset".into(),
-                self.gpu.clone().into(),
+                graphics.clone().into(),
             )]));
         }
-
+        if self.display.can_configure {
+            cards.push(note_card(
+                "Display changes are temporary in niri. Revert restores the previous value; persistent layout editing will write a validated niri configuration later.",
+            ));
+        }
         self.pane(cards)
     }
 
@@ -3009,7 +3411,8 @@ impl Render for Settings {
             .or_else(|| self.network_error.clone())
             .or_else(|| self.vpn_error.clone())
             .or_else(|| self.audio_error.clone())
-            .or_else(|| self.power_error.clone());
+            .or_else(|| self.power_error.clone())
+            .or_else(|| self.display_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -3048,6 +3451,7 @@ impl Render for Settings {
                             this.vpn_error = None;
                             this.audio_error = None;
                             this.power_error = None;
+                            this.display_error = None;
                             cx.notify();
                         })),
                 )
@@ -3407,12 +3811,9 @@ fn cmd(program: &str, args: &[&str]) -> Option<String> {
 }
 
 fn gather_system_snapshot() -> SystemSnapshot {
-    let (gpu, displays) = gather_displays();
     SystemSnapshot {
         account: account_name(),
         sysinfo: gather_sysinfo(),
-        displays,
-        gpu,
         storage: gather_storage(),
     }
 }
@@ -3583,41 +3984,6 @@ fn gather_storage() -> StorageInfo {
         used,
         avail,
     }
-}
-
-/// Read attached displays + GPU from `system_profiler SPDisplaysDataType`.
-fn gather_displays() -> (String, Vec<DisplayInfo>) {
-    let out = match cmd("system_profiler", &["SPDisplaysDataType"]) {
-        Some(o) => o,
-        None => return (String::new(), Vec::new()),
-    };
-    let mut gpu = String::new();
-    let mut displays: Vec<DisplayInfo> = Vec::new();
-    for raw in out.lines() {
-        let indent = raw.len() - raw.trim_start().len();
-        let line = raw.trim();
-        if let Some(rest) = line.strip_prefix("Chipset Model:") {
-            if gpu.is_empty() {
-                gpu = rest.trim().to_string();
-            }
-        } else if indent == 8 && line.ends_with(':') && line != "Displays:" {
-            displays.push(DisplayInfo {
-                name: line.trim_end_matches(':').to_string(),
-                resolution: "—".into(),
-                detail: None,
-                is_main: false,
-            });
-        } else if let Some(d) = displays.last_mut() {
-            if let Some(r) = line.strip_prefix("Resolution:") {
-                d.resolution = r.trim().to_string();
-            } else if let Some(t) = line.strip_prefix("Display Type:") {
-                d.detail = Some(t.trim().to_string());
-            } else if line.starts_with("Main Display:") && line.ends_with("Yes") {
-                d.is_main = true;
-            }
-        }
-    }
-    (gpu, displays)
 }
 
 fn categories() -> Vec<Vec<Category>> {

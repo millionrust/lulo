@@ -4810,6 +4810,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-display"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-editor"
 version = "0.1.0"
 dependencies = [
@@ -4909,6 +4917,7 @@ dependencies = [
  "gpui-component-assets",
  "rmac-audio",
  "rmac-bluetooth",
+ "rmac-display",
  "rmac-network",
  "rmac-power",
  "rmac-storage",

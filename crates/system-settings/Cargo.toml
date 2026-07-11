@@ -15,6 +15,7 @@ gpui-component.workspace = true
 gpui-component-assets.workspace = true
 rmac-audio.workspace = true
 rmac-bluetooth.workspace = true
+rmac-display.workspace = true
 rmac-network.workspace = true
 rmac-power.workspace = true
 rmac-storage.workspace = true

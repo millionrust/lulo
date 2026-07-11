@@ -24,7 +24,7 @@ equivalents rather than simulated.
 | Appearance | Local persisted choices | Settings portal plus rmac theme service | Apply color scheme/accent to every rmac surface |
 | Assistant & Intelligence | Renamed placeholder | Optional local/provider integrations | Leave absent until a privacy design exists |
 | Desktop & Dock | Placeholder | rmac shell and niri IPC | Dock, desktop, workspaces, window behavior |
-| Displays | macOS read-only snapshot | niri output IPC/Wayland | Live layout, scale, mode, orientation, apply/revert |
+| Displays | Real layout plus transient mode, scale, and rotation controls | niri output IPC/Wayland | Persistent validated layouts, visual positioning, and live signals |
 | Spotlight | Placeholder | rmac-search | Sources, exclusions, indexing state, global shortcut |
 | Wallpaper | Placeholder | rmac shell | Per-output wallpaper selection and persistence |
 | Notifications | Placeholder | Notification portal/daemon | Per-app policy, previews, badges, do-not-disturb |

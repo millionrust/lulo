@@ -36,6 +36,7 @@ Shared crates:
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 - `rmac-launcher` — private, cancellable cross-provider launcher ranking and actions.
 - `rmac-launcher-providers` — local app, Settings, file/recents, and calculator results.
+- `rmac-launcher-system` — private-safe launcher activation and desktop portal handoff.
 - `rmac-dock` — pinned/running app grouping, output scope, and activation policy.
 - `rmac-dock-runtime` — coherent live catalog, settings, niri, and hotplug state.
 - `rmac-dock-system` — safe launch, niri window actions, and durable Dock pins.

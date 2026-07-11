@@ -5013,6 +5013,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-launcher-system"
+version = "0.1.0"
+dependencies = [
+ "blocking",
+ "futures-lite 2.6.1",
+ "rmac-apps",
+ "rmac-launcher",
+ "rmac-portal",
+]
+
+[[package]]
 name = "rmac-mounts"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,16 @@
+[package]
+name = "rmac-launcher-system"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+blocking.workspace = true
+rmac-apps.workspace = true
+rmac-launcher.workspace = true
+rmac-portal.workspace = true
+
+[dev-dependencies]
+futures-lite.workspace = true

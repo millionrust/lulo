@@ -254,7 +254,12 @@ passes cancellation into bounded filename/recent-document searches, and
 evaluates a deliberately small arithmetic grammar. File results are declared
 private before admission and retain an explicit Reveal alternate; providers
 run behind an exact-descriptor check so an unadmitted adapter receives no
-query. Actual action execution remains a separate system boundary.
+query. `rmac-launcher-system` is the separate execution boundary. It validates
+the typed action again, launches the preserved application specification off
+the UI executor, and opens/reveals files through `rmac-portal`. Settings
+navigation and clipboard writes are delegated to the live overlay surface,
+where the GPUI context exists. Receipts contain only an activation ID and
+outcome kind; default errors redact paths, copied text, and backend detail.
 
 ## Persistence
 

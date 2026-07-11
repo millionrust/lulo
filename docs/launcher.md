@@ -73,6 +73,21 @@ to the privacy-filtered request. Cancellation before or after provider work
 suppresses the batch; cancellation observed during work becomes an explicit
 provider error. Providers never execute their returned action.
 
-The action-execution runtime, immediate-focus GPUI overlay, global shortcut
-journey, Orca semantics, privacy Settings pane, and performance evidence remain
-pending. This slice does not mark D7/D8 complete.
+## Activation
+
+`rmac-launcher-system` executes the selected typed action once. It validates
+nonempty application and pane IDs, absolute file paths, and nonempty copied
+text before calling a backend. Application launch remains off the UI executor
+and consumes the exact parsed launch specification. Open and Reveal use
+different portal-backed operations, preserving the alternate-action contract.
+
+Clipboard writes and Settings navigation are surface operations: the future
+GPUI overlay supplies them from its live application context instead of a
+detached subprocess. Successful receipts expose only the activation ID and
+outcome kind. Default error formatting does not contain a file path, copied
+text, pane ID, or backend detail; UI code may deliberately inspect typed kind
+and detail to produce a suitable private on-screen error.
+
+The immediate-focus GPUI overlay, global shortcut journey, Orca semantics,
+privacy Settings pane, and performance evidence remain pending. This slice does
+not mark D7/D8 complete.

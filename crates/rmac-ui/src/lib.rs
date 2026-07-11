@@ -26,8 +26,10 @@ pub use components::{
 };
 pub use controls::{
     Button, ButtonRole, CollectionState, InputState, List, ListRow, SearchField, Slider,
-    SliderAxis, SliderEvent, SliderState, Tabs, TextField, Toggle, ToggleState, Tree, TreeRow,
+    SliderAxis, SliderEvent, SliderState, Table, Tabs, TextField, Toggle, ToggleState, Tree,
+    TreeRow,
 };
+pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 
 // Re-exports so apps depend on one crate for theming; these also bring the
 // traits into scope here for `.v_flex()`, `cx.theme()`, etc.

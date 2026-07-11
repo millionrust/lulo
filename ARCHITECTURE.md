@@ -61,6 +61,9 @@ navigation; Activity Monitor is its first product consumer.
 List and Tree share explicit ready/empty/loading/stale/unavailable/error
 surfaces. Their rows own focus and selection; TreeRow adds indentation and
 Left/Right expansion. System Settings categories use the shared ListRow.
+Table preserves the pinned virtualized delegate/state implementation behind an
+rmac-owned API, including sorting, selection, keyboard movement, scrolling,
+loading, empty content, and row events. Activity Monitor is the active consumer.
 
 - GPUI entities own view state and subscriptions.
 - Render methods must not perform filesystem access, subprocess work, or D-Bus

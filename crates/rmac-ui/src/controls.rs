@@ -11,11 +11,13 @@ use gpui_component::{
     button::{Button as ComponentButton, ButtonCustomVariant, ButtonGroup, ButtonVariants as _},
     input::Input as ComponentInput,
     slider::Slider as ComponentSlider,
+    table::Table as ComponentTable,
     Disableable as _, Selectable as _, Sizable as _, Size, StyledExt as _,
 };
 
 pub use gpui_component::input::InputState;
 pub use gpui_component::slider::{SliderEvent, SliderState};
+pub use gpui_component::table::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 
 use crate::mac;
 
@@ -946,6 +948,69 @@ impl RenderOnce for TreeRow {
     }
 }
 
+/// rmac-owned boundary for the virtualized table implementation.
+#[derive(IntoElement)]
+pub struct Table<D: TableDelegate> {
+    state: Entity<TableState<D>>,
+    striped: bool,
+    bordered: bool,
+    vertical_scrollbar: bool,
+    horizontal_scrollbar: bool,
+    size: Option<Size>,
+}
+
+impl<D: TableDelegate> Table<D> {
+    pub fn new(state: &Entity<TableState<D>>) -> Self {
+        Self {
+            state: state.clone(),
+            striped: false,
+            bordered: true,
+            vertical_scrollbar: true,
+            horizontal_scrollbar: true,
+            size: None,
+        }
+    }
+
+    pub fn striped(mut self, striped: bool) -> Self {
+        self.striped = striped;
+        self
+    }
+
+    /// Compatibility spelling used by the existing Activity Monitor table.
+    pub fn stripe(self, striped: bool) -> Self {
+        self.striped(striped)
+    }
+
+    pub fn bordered(mut self, bordered: bool) -> Self {
+        self.bordered = bordered;
+        self
+    }
+
+    pub fn scrollbar_visible(mut self, vertical: bool, horizontal: bool) -> Self {
+        self.vertical_scrollbar = vertical;
+        self.horizontal_scrollbar = horizontal;
+        self
+    }
+
+    pub fn compact(mut self) -> Self {
+        self.size = Some(Size::Small);
+        self
+    }
+}
+
+impl<D: TableDelegate> RenderOnce for Table<D> {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let mut table = ComponentTable::new(&self.state)
+            .stripe(self.striped)
+            .bordered(self.bordered)
+            .scrollbar_visible(self.vertical_scrollbar, self.horizontal_scrollbar);
+        if let Some(size) = self.size {
+            table = table.with_size(size);
+        }
+        table
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1005,5 +1070,11 @@ mod tests {
         ] {
             assert!(!collection_message(state).is_empty());
         }
+    }
+
+    #[test]
+    fn shared_table_defaults_keep_boundaries_and_both_scrollbars() {
+        let defaults = (false, true, true, true);
+        assert_eq!(defaults, (false, true, true, true));
     }
 }

@@ -44,6 +44,9 @@ with arrow and Home/End keyboard routing, adopted by Activity Monitor.
 List and Tree now share collection failure/loading states, focusable selectable
 rows, and keyboard expansion for tree branches; System Settings sidebar
 categories provide the first ListRow adoption.
+Table now exposes its delegate, state, column, sorting, and event contracts only
+through `rmac-ui`; Activity Monitor validates the boundary with its live process
+table.
 
 ## Visual-reference protocol
 

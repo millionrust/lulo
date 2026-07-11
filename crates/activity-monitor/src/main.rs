@@ -16,12 +16,11 @@ use gpui::{
     InteractiveElement as _, IntoElement, MouseButton, ParentElement, Render, SharedString,
     Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::{
-    menu::PopupMenu,
-    table::{Column, ColumnSort, Table, TableDelegate, TableEvent, TableState},
-    StyledExt as _,
+use gpui_component::{menu::PopupMenu, StyledExt as _};
+use rmac_ui::{
+    mac, Button, Column, ColumnSort, InputState, SearchField, Table, TableDelegate, TableEvent,
+    TableState, Tabs,
 };
-use rmac_ui::{mac, Button, InputState, SearchField, Tabs};
 use sysinfo::{
     Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };

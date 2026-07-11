@@ -148,6 +148,15 @@ charts, pressure/status signals, category tiles, and device-state colors remain
 semantic data. All seven apps now enter through the shared event-driven theme
 runtime.
 
+Shell preferences have their own GPUI- and compositor-free authority in
+`rmac-shell-settings`. Its versioned snapshot covers pinned applications, Dock
+placement/output/autohide/magnification behavior, clock and meaningful
+indicators, default and per-output wallpaper selection, current Focus choice,
+and per-provider privacy/network policy. Separate shell processes watch one XDG
+configuration file and refresh from authority after coalesced change events.
+Writes atomically replace both the primary and last-known-good documents;
+schema migration and corrupt-primary recovery happen below every UI surface.
+
 ## Persistence
 
 The target persistence contract is:

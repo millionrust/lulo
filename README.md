@@ -39,6 +39,7 @@ Shared crates:
 - `rmac-dock-system` — safe launch, niri window actions, and durable Dock pins.
 - `rmac-bluetooth` — BlueZ/macOS Bluetooth state, discovery, and device control.
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
+- `rmac-places` — safe XDG Downloads resolution and typed Trash state.
 - `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.
 - `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.

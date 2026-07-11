@@ -49,6 +49,7 @@ rmac-power = { version = "=0.1.0", path = "crates/rmac-power" }
 rmac-quick-settings = { version = "=0.1.0", path = "crates/rmac-quick-settings" }
 rmac-quick-settings-system = { version = "=0.1.0", path = "crates/rmac-quick-settings-system" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
+rmac-places = { version = "=0.1.0", path = "crates/rmac-places" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }
 rmac-session = { version = "=0.1.0", path = "crates/rmac-session" }
 rmac-shell-settings = { version = "=0.1.0", path = "crates/rmac-shell-settings" }

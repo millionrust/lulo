@@ -225,6 +225,13 @@ shell-settings events. It waits until every source is healthy or explicitly
 unavailable before the first publication, retains last-known-good catalog and
 settings state, and separates diagnostic-only changes from Dock redraws.
 
+Dock places begin in the platform-neutral `rmac-places` boundary. It resolves
+the XDG Downloads value with a deliberately restricted grammar—HOME or an
+absolute literal only—and models filesystem presence plus Trash availability,
+emptiness, and item count. It never evaluates shell text, enumerates mounts, or
+permanently deletes content; those responsibilities belong to its system
+adapter and an explicit destructive confirmation path.
+
 ## Persistence
 
 The target persistence contract is:

@@ -9,12 +9,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rmac_storage::{atomic_write, Failure};
 use serde::{Deserialize, Serialize};
 
-pub const COMPONENT_UNITS: [&str; 5] = [
+pub const COMPONENT_UNITS: [&str; 6] = [
     "rmac-top-bar.service",
     "rmac-dock.service",
     "rmac-launcher.service",
     "rmac-notification-center.service",
     "rmac-wallpaper.service",
+    "rmac-shortcut-broker.service",
 ];
 pub const RESTARTS_BEFORE_SAFE_MODE: u32 = 3;
 const SAFE_MODE_VERSION: u32 = 1;
@@ -471,6 +472,7 @@ mod tests {
             include_str!("../units/rmac-launcher.service"),
             include_str!("../units/rmac-notification-center.service"),
             include_str!("../units/rmac-wallpaper.service"),
+            include_str!("../units/rmac-shortcut-broker.service"),
         ];
         for unit in units {
             assert!(unit.contains("Restart=on-failure"));

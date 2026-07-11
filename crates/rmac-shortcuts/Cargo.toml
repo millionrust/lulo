@@ -1,0 +1,26 @@
+[package]
+name = "rmac-shortcuts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-channel.workspace = true
+async-io.workspace = true
+futures-util.workspace = true
+rmac-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd.workspace = true
+
+[[bin]]
+name = "rmac-shortcut-broker"
+path = "src/bin/broker.rs"
+
+[[bin]]
+name = "rmac-shortcut-dispatch"
+path = "src/bin/dispatch.rs"

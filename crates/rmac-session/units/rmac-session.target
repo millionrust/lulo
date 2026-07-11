@@ -5,7 +5,7 @@ BindsTo=graphical-session.target
 After=graphical-session-pre.target
 Conflicts=rmac-safe-mode.target
 Requires=rmac-session-supervisor.service
-Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-notification-center.service rmac-wallpaper.service
+Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-notification-center.service rmac-wallpaper.service rmac-shortcut-broker.service
 
 [Install]
 WantedBy=graphical-session.target

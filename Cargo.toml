@@ -44,6 +44,7 @@ rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }
 rmac-session = { version = "=0.1.0", path = "crates/rmac-session" }
 rmac-shell-settings = { version = "=0.1.0", path = "crates/rmac-shell-settings" }
+rmac-shortcuts = { version = "=0.1.0", path = "crates/rmac-shortcuts" }
 rmac-storage = { version = "=0.1.0", path = "crates/rmac-storage" }
 rmac-thumbnails = { version = "=0.1.0", path = "crates/rmac-thumbnails" }
 rmac-theme = { version = "=0.1.0", path = "crates/rmac-theme" }

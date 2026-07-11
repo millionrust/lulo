@@ -122,6 +122,7 @@ bash scripts/linux/install-session-units.sh
 ~/.local/bin/rmac-session-start
 systemctl --user --no-pager status rmac-session.target
 ~/.local/libexec/rmac/rmac-session-supervisor status
+cat "$XDG_RUNTIME_DIR/rmac/shortcuts-status.json"
 ```
 
 The D-phase component units are condition-gated until their binaries are
@@ -130,6 +131,15 @@ supervisor must be active and its JSON health output must identify every unit.
 To inspect one component locally, use
 `journalctl --user -u rmac-dock.service -b`; review logs for private paths or
 content before adding them to an evidence bundle.
+
+If shortcut status reports `fallback-required`, add the exact include line
+printed by the installer to the niri configuration. Do not enable that include
+while status reports the portal backend, or each shortcut would have two
+owners. Reload niri and validate the generated file before interaction testing:
+
+```sh
+niri validate
+```
 
 Run the evidence collector again, then launch the current-upstream probes:
 

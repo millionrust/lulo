@@ -5036,6 +5036,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shortcuts"
+version = "0.1.0"
+dependencies = [
+ "ashpd 0.12.3",
+ "async-channel 2.5.0",
+ "async-io",
+ "futures-util",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-storage"
 version = "0.1.0"
 

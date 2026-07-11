@@ -27,11 +27,12 @@ need to be imported before these services start.
 
 ## Crash and restart policy
 
-Top bar, Dock, launcher, notification center, and wallpaper each have their own
-service. They use `Restart=on-failure`, a one-second restart delay, and at most
-four starts in a 60-second interval. They are `PartOf` the normal rmac target;
-one component is not `RequiredBy` another. The unit conditions keep future
-D-phase services inactive—not failed—until their executables are installed.
+Top bar, Dock, launcher, notification center, wallpaper, and the global
+shortcut broker each have their own service. They use `Restart=on-failure`, a
+one-second restart delay, and at most four starts in a 60-second interval. They
+are `PartOf` the normal rmac target; one component is not `RequiredBy` another.
+The unit conditions keep future D-phase services inactive—not failed—until
+their executables are installed.
 
 Every terminal component failure invokes the failure observer with a fixed,
 allowlisted unit identity. Three observed restarts or systemd's

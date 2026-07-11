@@ -67,6 +67,15 @@ until the user explicitly clears safe mode. Session startup imports only a
 fixed allowlist of Wayland/D-Bus routing variables before starting the target;
 the complete login environment is never copied into the user manager.
 
+`rmac-shortcuts` owns stable shell shortcut IDs and keeps backend syntax out of
+consumers. On Linux its broker checks the GlobalShortcuts portal version,
+creates one consent-bound session, publishes the bound trigger descriptions,
+and reconnects if the portal disappears. Activations pass through an
+allowlisted Unix-datagram dispatcher. When the portal is unavailable, the
+installer generates an explicit niri 26.04 include using direct `spawn`
+arguments—never a shell—and the user opts into that fallback instead of running
+both backends simultaneously.
+
 The intended crate map and migration phases are specified in `PLAN_V2.md`.
 
 ## UI and update model

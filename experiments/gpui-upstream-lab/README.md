@@ -30,6 +30,7 @@ Install the native build dependencies listed by current upstream GPUI, then:
 cargo check --features wayland --bins
 cargo run --features wayland --bin a11y
 cargo run --features wayland --bin layer-shell
+cargo run --features wayland --bin top-bar
 ```
 
 With Orca running, verify the application/heading/spin-button/switch roles,
@@ -38,6 +39,11 @@ increment/decrement actions. Under niri, verify that the layer-shell surface is
 40 logical pixels high, reserves that space, spans the active monitor's top
 edge, does not steal keyboard focus, survives monitor changes, and behaves as
 specified when another window is fullscreen.
+
+The `top-bar` candidate creates one 32-logical-pixel surface per output with a
+centered minute clock. Verify one bar and one exclusive zone per output,
+mixed/fractional scaling, no keyboard focus theft, output hotplug, fullscreen
+behavior, a named toolbar and clock in Orca, and no continuous idle redraw.
 
 Record the compositor, display protocol, scale factors, GPU/driver, Orca
 version, and pass/fail evidence in `docs/gpui-current-upstream-spike.md` before
@@ -52,8 +58,10 @@ GSettings, AT-SPI, and Python pyatspi installed, run:
 dbus-run-session -- bash scripts/nested-wayland-smoke.sh
 ```
 
-The script builds both Wayland probes, starts a headless nested Sway session,
-requires both windows to finish a GPUI frame, verifies the layer-shell protocol
-and 40-pixel exclusive zone, and checks semantic roles, names, numeric value,
-click actions, and toggled state over AT-SPI. It is a deterministic smoke gate,
-not a replacement for the Ubuntu/niri/GNOME/Orca hardware protocol.
+The script builds all Wayland probes, starts a two-output headless nested Sway
+session, verifies the layer-shell protocol and 40-pixel probe zone, then checks
+one 32-pixel top bar per 1x/2x output, configured scale, idle-render deltas, and
+non-focusable toolbar/clock semantics. It also checks the interactive probe's
+roles, names, numeric value, click actions, and toggled state over AT-SPI. It is
+a deterministic smoke gate, not a replacement for the Ubuntu/niri/GNOME/Orca
+hardware protocol.

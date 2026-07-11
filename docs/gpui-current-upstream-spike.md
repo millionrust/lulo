@@ -39,6 +39,23 @@ right edges. It requests a 40-logical-pixel exclusive zone and no keyboard
 focus. On non-Linux platforms or without the `wayland` feature, it exits with a
 clear unsupported-platform message.
 
+### Static top-bar candidate
+
+`top-bar` turns the isolated layer-shell capability into a bounded D1
+candidate without migrating the product workspace. After the Wayland output
+registry is populated, it creates one 32-logical-pixel top-layer surface per
+output, binds each surface to its display, reserves the top edge, and requests
+no keyboard focus. The visual is deliberately minimal: an rmac label, a
+centered local clock, and balanced trailing space.
+
+The root is exposed as a named toolbar and the clock uses AccessKit's semantic
+`Time` role. On Linux, AccessKit maps that role to AT-SPI `static` because
+AT-SPI has no dedicated time role; the full date/time remains its accessible
+name. The clock schedules its next update at the next minute boundary instead
+of running a frame timer. Opt-in environment variables publish configured
+scale and render-count evidence for the smoke harness; normal launches perform
+no evidence-file I/O.
+
 ## Evidence collected on macOS
 
 Environment: Apple arm64, macOS development host.
@@ -74,7 +91,7 @@ the AccessKit/AT-SPI, Wayland, and Vulkan dependency paths.
 
 ## Automated Linux runtime evidence
 
-On 2026-07-10, `scripts/nested-wayland-smoke.sh` also passed in an ARM64 Debian
+On 2026-07-11, `scripts/nested-wayland-smoke.sh` passed in an ARM64 Debian
 Bookworm container with Sway 1.7. It used wlroots' headless backend and Pixman
 renderer for the compositor, Mesa lavapipe for GPUI's Vulkan renderer, and an
 isolated D-Bus/AT-SPI session.
@@ -82,18 +99,24 @@ isolated D-Bus/AT-SPI session.
 | Check | Result | Evidence |
 |---|---|---|
 | Wayland layer-shell availability | Pass | `wayland-info` advertised `zwlr_layer_shell_v1` version 4 |
-| GPUI rendering | Pass | Both probes wrote their opt-in marker after the first completed frame |
+| GPUI rendering | Pass | The original probes completed frames and the top bars published configured-surface evidence |
 | Layer-shell placement | Pass | Sway mapped the 640x40 top-layer surface across the top edge |
 | Exclusive zone | Pass | Sway IPC reported the normal workspace at logical `y = 40` |
 | Semantic tree | Pass | AT-SPI exposed the heading, spin button, and toggle button with their expected names |
 | Assistive actions and state | Pass | AT-SPI click incremented the numeric value from 0 to 1 and changed the switch to `pressed` |
+| Per-output top bars | Pass | GPUI created exactly two output-bound layer surfaces for two headless outputs |
+| Mixed-scale configuration | Pass | Configured windows reported scale factors 1 and 2 on the corresponding outputs |
+| Top-bar exclusive zones | Pass | Both workspaces began at logical `y = 32` on the 1x and 2x outputs |
+| Static top-bar semantics | Pass | AT-SPI exposed two named toolbars, each with one named static clock node and no focusable descendants |
+| Idle rendering | Pass | Each render counter advanced by no more than one during a two-second interval, allowing a minute-boundary update |
 | Process health | Pass | Both probes remained alive after all assertions |
 
 The same script now runs in the dedicated Ubuntu CI job after strict Wayland
 Clippy. This is a deterministic protocol and accessibility smoke gate. It does
 not exercise Orca speech output, physical GPU drivers, GNOME or niri behavior,
-mixed-scale or multi-display layouts, fullscreen interactions, keyboard focus,
-or the required soak duration; those remain part of the manual protocol below.
+fractional scaling, output hotplug, fullscreen interactions, real keyboard
+focus, or the required soak duration; those remain part of the manual protocol
+below.
 
 ## Ubuntu 26.04 runtime protocol
 
@@ -117,9 +140,14 @@ scale factors, and Orca version with every result.
 8. Under niri, launch `cargo run --features wayland --bin layer-shell` and verify
    that it spans the active output's top edge and reserves exactly 40 logical
    pixels without taking keyboard focus.
-9. Change outputs and scales, then enter and leave fullscreen on another window.
+9. Launch `cargo run --features wayland --bin top-bar`. Confirm exactly one bar
+   per output, a 32-logical-pixel reservation at 100%, 125%, 150%, and 200%, a
+   crisp centered clock, and no keyboard focus theft. With Orca, confirm each
+   bar is announced as a toolbar and its named clock is discoverable without
+   adding a Tab stop.
+10. Change outputs and scales, then enter and leave fullscreen on another window.
    Compare behavior with the niri layer-shell rules referenced by `PLAN_V2.md`.
-10. Repeat interaction for 30 minutes, then run the complete four-hour soak
+11. Repeat interaction for 30 minutes, then run the complete four-hour soak
     required by ADR 0001 before approving a migration.
 
 ## Decision status

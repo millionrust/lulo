@@ -11,6 +11,7 @@ wayland = ["gpui_platform/wayland"]
 x11 = ["gpui_platform/x11"]
 
 [dependencies]
+chrono = "0.4"
 gpui = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui" }
 gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
 
@@ -21,3 +22,7 @@ path = "src/bin/a11y.rs"
 [[bin]]
 name = "layer-shell"
 path = "src/bin/layer_shell.rs"
+
+[[bin]]
+name = "top-bar"
+path = "src/bin/top_bar.rs"

@@ -148,6 +148,7 @@ bash scripts/linux/collect-reference-evidence.sh
 cd experiments/gpui-upstream-lab
 cargo run --features wayland --bin a11y
 cargo run --features wayland --bin layer-shell
+cargo run --features wayland --bin top-bar
 ```
 
 With Orca active, verify the heading, counter, switch, focus order, actions, and
@@ -155,6 +156,15 @@ state. For the layer surface, verify the 40-logical-pixel exclusive zone,
 keyboard non-interference, overview behavior, maximize/fullscreen interaction,
 output hotplug, and mixed scaling. Then complete the four-hour interaction soak
 from ADR 0001.
+
+For the top-bar candidate, require exactly one 32-logical-pixel bar on every
+output at 100%, 125%, 150%, and 200%. Verify crisp rendering across a mixed-DPI
+pair, a centered clock that changes at the minute without continuous idle
+rendering, no keyboard-focus theft, and correct behavior through output
+disconnect/reconnect, scale changes, overview, maximize, and fullscreen. With
+Orca, each surface must be discoverable as “rmac top bar,” its clock must have
+a useful date/time name, and neither static node may become a Tab stop. Record
+failures rather than treating the passing nested-Sway gate as niri approval.
 
 ## 6. Performance capture
 

@@ -11,6 +11,7 @@ runtime_dir="$runtime_root/runtime"
 wayland_socket=""
 ipc_socket=""
 layer_pid=""
+top_bar_pid=""
 a11y_pid=""
 sway_pid=""
 
@@ -18,7 +19,7 @@ cleanup() {
   local status=$?
   trap - EXIT INT TERM
 
-  for pid in "$a11y_pid" "$layer_pid" "$sway_pid"; do
+  for pid in "$a11y_pid" "$top_bar_pid" "$layer_pid" "$sway_pid"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
@@ -86,7 +87,7 @@ export XDG_CACHE_HOME="$runtime_root/cache"
 export XDG_CONFIG_HOME="$runtime_root/config"
 export XDG_SESSION_TYPE=wayland
 export WLR_BACKENDS=headless
-export WLR_HEADLESS_OUTPUTS=1
+export WLR_HEADLESS_OUTPUTS=2
 export WLR_LIBINPUT_NO_DEVICES=1
 export WLR_RENDERER=pixman
 export LIBGL_ALWAYS_SOFTWARE=1
@@ -100,6 +101,7 @@ cat >"$runtime_root/sway.conf" <<'EOF'
 xwayland disable
 default_border none
 output HEADLESS-1 mode 1280x720
+output HEADLESS-2 mode 1280x720 scale 2 position 1280 0
 seat seat0 fallback true
 EOF
 
@@ -112,6 +114,11 @@ sway_pid=$!
 wait_for_sway_sockets
 export WAYLAND_DISPLAY="$(basename "$wayland_socket")"
 export SWAYSOCK="$ipc_socket"
+swaymsg workspace 1 >/dev/null
+swaymsg move workspace to output HEADLESS-1 >/dev/null
+swaymsg workspace 2 >/dev/null
+swaymsg move workspace to output HEADLESS-2 >/dev/null
+swaymsg workspace 1 >/dev/null
 
 if ! wayland-info >"$runtime_root/wayland-info.log" 2>&1; then
   echo "wayland-info could not inspect the nested compositor" >&2
@@ -142,6 +149,57 @@ if [[ "$workspace_y" != "40" ]]; then
   exit 1
 fi
 
+kill "$layer_pid"
+wait "$layer_pid" 2>/dev/null || true
+layer_pid=""
+
+mkdir -p "$runtime_root/top-bar-renders"
+RMAC_TOP_BAR_READY_FILE="$runtime_root/top-bar.ready" \
+RMAC_TOP_BAR_RENDER_COUNT_DIR="$runtime_root/top-bar-renders" \
+  "$target_dir/debug/top-bar" >"$runtime_root/top-bar.log" 2>&1 &
+top_bar_pid=$!
+wait_for_path "$runtime_root/top-bar.ready" "$top_bar_pid" "top-bar probe"
+for _ in {1..100}; do
+  [[ "$(wc -l <"$runtime_root/top-bar.ready")" == "2" ]] && break
+  sleep 0.1
+done
+if [[ "$(wc -l <"$runtime_root/top-bar.ready")" != "2" ]]; then
+  echo "top bar did not configure exactly one surface per output" >&2
+  exit 1
+fi
+if ! grep -q 'scale=1' "$runtime_root/top-bar.ready" ||
+  ! grep -q 'scale=2' "$runtime_root/top-bar.ready"; then
+  echo "top bars did not report the expected 1x and 2x scales:" >&2
+  cat "$runtime_root/top-bar.ready" >&2
+  exit 1
+fi
+
+tree_json="$(swaymsg -t get_tree -r)"
+workspace_offsets="$(jq -r '[.. | objects | select(.type? == "workspace" and .name? != "__i3_scratch") | .rect.y] | unique | join(",")' <<<"$tree_json")"
+if [[ "$workspace_offsets" != "32" ]]; then
+  echo "top bars did not reserve 32 logical pixels on every output; y=$workspace_offsets" >&2
+  exit 1
+fi
+/usr/bin/python3 scripts/assert_top_bar_accessibility.py
+
+if [[ "$(find "$runtime_root/top-bar-renders" -type f | wc -l)" != "2" ]]; then
+  echo "top bar did not publish one render counter per output" >&2
+  exit 1
+fi
+declare -A render_counts_before
+while IFS= read -r counter; do
+  render_counts_before["$counter"]="$(cat "$counter")"
+done < <(find "$runtime_root/top-bar-renders" -type f)
+sleep 2
+while IFS= read -r counter; do
+  render_count_after="$(cat "$counter")"
+  render_delta=$((render_count_after - render_counts_before["$counter"]))
+  if [[ "$render_delta" -gt 1 ]]; then
+    echo "top bar entered an idle redraw loop: $counter advanced by $render_delta" >&2
+    exit 1
+  fi
+done < <(find "$runtime_root/top-bar-renders" -type f)
+
 RMAC_SMOKE_READY_FILE="$runtime_root/a11y.ready" \
   "$target_dir/debug/a11y" >"$runtime_root/a11y.log" 2>&1 &
 a11y_pid=$!
@@ -150,6 +208,6 @@ grep -qx 'a11y' "$runtime_root/a11y.ready"
 
 /usr/bin/python3 scripts/assert_accessibility.py
 
-kill -0 "$layer_pid"
+kill -0 "$top_bar_pid"
 kill -0 "$a11y_pid"
-echo "nested Wayland frame, layer-shell exclusive-zone, and AT-SPI smoke checks passed"
+echo "nested Wayland layer-shell, two-output top-bar, idle, and AT-SPI smoke checks passed"

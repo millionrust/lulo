@@ -2,6 +2,7 @@
 
 #![cfg_attr(target_os = "macos", allow(dead_code))]
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -203,9 +204,11 @@ struct Environment {
     home: Option<PathBuf>,
     data_home: Option<PathBuf>,
     data_dirs: Vec<PathBuf>,
+    icon_theme: Option<String>,
     desktops: Vec<String>,
     locale: String,
     path: Vec<PathBuf>,
+    theme_cache: RefCell<HashMap<String, Option<IconTheme>>>,
 }
 
 impl Environment {
@@ -229,7 +232,20 @@ impl Environment {
             .split(':')
             .filter(|value| !value.is_empty())
             .map(str::to_string)
-            .collect();
+            .collect::<Vec<_>>();
+        let config_home = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| home.as_ref().map(|home| home.join(".config")));
+        let prefer_kde = desktops
+            .iter()
+            .any(|desktop| desktop.eq_ignore_ascii_case("KDE"));
+        let prefer_gnome = desktops.iter().any(|desktop| {
+            ["GNOME", "Unity", "ubuntu"]
+                .iter()
+                .any(|name| desktop.eq_ignore_ascii_case(name))
+        });
+        let icon_theme = active_icon_theme(config_home.as_deref(), prefer_kde, prefer_gnome);
         let locale = std::env::var("LC_MESSAGES")
             .or_else(|_| std::env::var("LANG"))
             .unwrap_or_default();
@@ -240,9 +256,11 @@ impl Environment {
             home,
             data_home,
             data_dirs,
+            icon_theme,
             desktops,
             locale,
             path,
+            theme_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -488,24 +506,26 @@ fn resolve_icon(icon: &str, environment: &Environment) -> Option<PathBuf> {
     if icon_path.is_absolute() && icon_path.is_file() {
         return Some(icon_path.to_path_buf());
     }
-    let mut bases = Vec::new();
-    if let Some(home) = &environment.home {
-        bases.push(home.join(".icons"));
-    }
-    bases.extend(environment.data_home.iter().map(|path| path.join("icons")));
-    bases.extend(environment.data_dirs.iter().map(|path| path.join("icons")));
-    let filenames = [format!("{icon}.png"), format!("{icon}.svg")];
-    for base in &bases {
-        for theme in ["hicolor", "Adwaita"] {
-            for directory in ["128x128/apps", "64x64/apps", "48x48/apps", "scalable/apps"] {
-                for filename in &filenames {
-                    let candidate = base.join(theme).join(directory).join(filename);
-                    if candidate.is_file() {
-                        return Some(candidate);
-                    }
-                }
-            }
+    let bases = icon_base_directories(environment);
+    let icon = normalized_icon_name(icon)?;
+    let theme = environment.icon_theme.as_deref().unwrap_or("Adwaita");
+    for theme in icon_theme_order(theme, &bases, &environment.theme_cache) {
+        let Some(metadata) = load_icon_theme_cached(&theme, &bases, &environment.theme_cache)
+        else {
+            continue;
+        };
+        if let Some(path) = lookup_icon_in_theme(icon, 64, 1, &theme, &bases, &metadata) {
+            return Some(path);
         }
+    }
+
+    let filenames = icon_filenames(icon);
+    if let Some(path) = bases
+        .iter()
+        .flat_map(|base| filenames.iter().map(move |name| base.join(name)))
+        .find(|path| path.is_file())
+    {
+        return Some(path);
     }
     environment
         .data_dirs
@@ -517,6 +537,356 @@ fn resolve_icon(icon: &str, environment: &Environment) -> Option<PathBuf> {
                 .map(move |name| directory.join("pixmaps").join(name))
         })
         .find(|path| path.is_file())
+}
+
+fn active_icon_theme(
+    config_home: Option<&Path>,
+    prefer_kde: bool,
+    prefer_gnome: bool,
+) -> Option<String> {
+    if let Some(theme) = std::env::var("XDG_ICON_THEME")
+        .ok()
+        .and_then(|theme| valid_theme_name(&theme))
+    {
+        return Some(theme);
+    }
+
+    if prefer_gnome {
+        if let Some(theme) = gsettings_icon_theme() {
+            return Some(theme);
+        }
+    }
+
+    if let Some(theme) = config_home.and_then(|home| configured_icon_theme(home, prefer_kde)) {
+        return Some(theme);
+    }
+
+    gsettings_icon_theme()
+}
+
+fn gsettings_icon_theme() -> Option<String> {
+    let output = Command::new("gsettings")
+        .args(["get", "org.gnome.desktop.interface", "icon-theme"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?;
+    valid_theme_name(value.trim().trim_matches(['\'', '"']))
+}
+
+fn configured_icon_theme(config_home: &Path, prefer_kde: bool) -> Option<String> {
+    let gtk = [
+        (
+            config_home.join("gtk-4.0/settings.ini"),
+            "Settings",
+            "gtk-icon-theme-name",
+        ),
+        (
+            config_home.join("gtk-3.0/settings.ini"),
+            "Settings",
+            "gtk-icon-theme-name",
+        ),
+    ]
+    .into_iter()
+    .find_map(|(path, group, key)| configured_value(&path, group, key));
+    let kde = configured_value(&config_home.join("kdeglobals"), "Icons", "Theme");
+    if prefer_kde {
+        kde.or(gtk)
+    } else {
+        gtk.or(kde)
+    }
+}
+
+fn configured_value(path: &Path, group: &str, key: &str) -> Option<String> {
+    let contents = std::fs::read_to_string(path).ok()?;
+    ini_value(&contents, group, key).and_then(valid_theme_name)
+}
+
+fn valid_theme_name(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()
+        && value.is_ascii()
+        && !value.contains([',', '/', '\\'])
+        && !value.chars().any(char::is_whitespace))
+    .then(|| value.to_string())
+}
+
+fn ini_value<'a>(contents: &'a str, group: &str, key: &str) -> Option<&'a str> {
+    let mut active = false;
+    for raw in contents.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            active = &line[1..line.len() - 1] == group;
+        } else if active && !line.starts_with('#') {
+            if let Some((candidate, value)) = line.split_once('=') {
+                if candidate.trim() == key {
+                    return Some(value.trim());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn icon_base_directories(environment: &Environment) -> Vec<PathBuf> {
+    let mut bases = Vec::new();
+    if let Some(home) = &environment.home {
+        bases.push(home.join(".icons"));
+    }
+    bases.extend(environment.data_home.iter().map(|path| path.join("icons")));
+    bases.extend(environment.data_dirs.iter().map(|path| path.join("icons")));
+    bases
+}
+
+fn normalized_icon_name(icon: &str) -> Option<&str> {
+    let icon = Path::new(icon)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .filter(|extension| matches!(*extension, "png" | "svg" | "xpm"))
+        .and_then(|_| Path::new(icon).file_stem())
+        .and_then(|name| name.to_str())
+        .unwrap_or(icon);
+    (!icon.is_empty() && !icon.contains(['/', '\\'])).then_some(icon)
+}
+
+fn icon_filenames(icon: &str) -> [String; 3] {
+    [
+        format!("{icon}.png"),
+        format!("{icon}.svg"),
+        format!("{icon}.xpm"),
+    ]
+}
+
+#[derive(Clone, Copy)]
+enum IconDirectoryType {
+    Fixed,
+    Scalable,
+    Threshold,
+}
+
+#[derive(Clone)]
+struct IconDirectory {
+    path: String,
+    size: u32,
+    scale: u32,
+    kind: IconDirectoryType,
+    min_size: u32,
+    max_size: u32,
+    threshold: u32,
+}
+
+#[derive(Clone)]
+struct IconTheme {
+    inherits: Vec<String>,
+    directories: Vec<IconDirectory>,
+}
+
+fn icon_theme_order(
+    theme: &str,
+    bases: &[PathBuf],
+    cache: &RefCell<HashMap<String, Option<IconTheme>>>,
+) -> Vec<String> {
+    fn visit(
+        theme: &str,
+        bases: &[PathBuf],
+        cache: &RefCell<HashMap<String, Option<IconTheme>>>,
+        seen: &mut HashSet<String>,
+        order: &mut Vec<String>,
+    ) {
+        if !seen.insert(theme.to_string()) {
+            return;
+        }
+        order.push(theme.to_string());
+        if let Some(metadata) = load_icon_theme_cached(theme, bases, cache) {
+            for parent in metadata.inherits {
+                visit(&parent, bases, cache, seen, order);
+            }
+        }
+    }
+
+    let mut seen = HashSet::new();
+    let mut order = Vec::new();
+    visit(theme, bases, cache, &mut seen, &mut order);
+    visit("hicolor", bases, cache, &mut seen, &mut order);
+    order
+}
+
+fn load_icon_theme_cached(
+    theme: &str,
+    bases: &[PathBuf],
+    cache: &RefCell<HashMap<String, Option<IconTheme>>>,
+) -> Option<IconTheme> {
+    if let Some(metadata) = cache.borrow().get(theme) {
+        return metadata.clone();
+    }
+    let metadata = load_icon_theme(theme, bases);
+    cache
+        .borrow_mut()
+        .insert(theme.to_string(), metadata.clone());
+    metadata
+}
+
+fn load_icon_theme(theme: &str, bases: &[PathBuf]) -> Option<IconTheme> {
+    let contents = bases
+        .iter()
+        .find_map(|base| std::fs::read_to_string(base.join(theme).join("index.theme")).ok())?;
+    let root = ini_group(&contents, "Icon Theme");
+    let inherits = comma_list(root.get("Inherits").copied())
+        .into_iter()
+        .filter_map(valid_theme_name)
+        .collect();
+    let directories = comma_list(root.get("Directories").copied())
+        .into_iter()
+        .chain(comma_list(root.get("ScaledDirectories").copied()))
+        .filter_map(|path| parse_icon_directory(&contents, path))
+        .collect();
+    Some(IconTheme {
+        inherits,
+        directories,
+    })
+}
+
+fn ini_group<'a>(contents: &'a str, group: &str) -> HashMap<&'a str, &'a str> {
+    let mut values = HashMap::new();
+    let mut active = false;
+    for raw in contents.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            active = &line[1..line.len() - 1] == group;
+        } else if active && !line.is_empty() && !line.starts_with('#') {
+            if let Some((key, value)) = line.split_once('=') {
+                values.entry(key.trim()).or_insert(value.trim());
+            }
+        }
+    }
+    values
+}
+
+fn comma_list(value: Option<&str>) -> Vec<&str> {
+    value
+        .into_iter()
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+fn parse_icon_directory(contents: &str, path: &str) -> Option<IconDirectory> {
+    if Path::new(path).is_absolute()
+        || Path::new(path)
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let values = ini_group(contents, path);
+    let size = values.get("Size")?.parse().ok()?;
+    let scale = values
+        .get("Scale")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1);
+    let kind = match values.get("Type").copied().unwrap_or("Threshold") {
+        "Fixed" => IconDirectoryType::Fixed,
+        "Scalable" => IconDirectoryType::Scalable,
+        "Threshold" => IconDirectoryType::Threshold,
+        _ => return None,
+    };
+    Some(IconDirectory {
+        path: path.to_string(),
+        size,
+        scale,
+        kind,
+        min_size: values
+            .get("MinSize")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(size),
+        max_size: values
+            .get("MaxSize")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(size),
+        threshold: values
+            .get("Threshold")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(2),
+    })
+}
+
+fn lookup_icon_in_theme(
+    icon: &str,
+    size: u32,
+    scale: u32,
+    theme: &str,
+    bases: &[PathBuf],
+    metadata: &IconTheme,
+) -> Option<PathBuf> {
+    let filenames = icon_filenames(icon);
+    for directory in metadata
+        .directories
+        .iter()
+        .filter(|directory| directory_matches(directory, size, scale))
+    {
+        if let Some(path) = find_themed_icon(theme, directory, &filenames, bases) {
+            return Some(path);
+        }
+    }
+
+    metadata
+        .directories
+        .iter()
+        .filter_map(|directory| {
+            find_themed_icon(theme, directory, &filenames, bases)
+                .map(|path| (directory_distance(directory, size, scale), path))
+        })
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, path)| path)
+}
+
+fn find_themed_icon(
+    theme: &str,
+    directory: &IconDirectory,
+    filenames: &[String],
+    bases: &[PathBuf],
+) -> Option<PathBuf> {
+    bases
+        .iter()
+        .flat_map(|base| {
+            filenames
+                .iter()
+                .map(move |filename| base.join(theme).join(&directory.path).join(filename))
+        })
+        .find(|path| path.is_file())
+}
+
+fn directory_matches(directory: &IconDirectory, size: u32, scale: u32) -> bool {
+    if directory.scale != scale {
+        return false;
+    }
+    match directory.kind {
+        IconDirectoryType::Fixed => directory.size == size,
+        IconDirectoryType::Scalable => (directory.min_size..=directory.max_size).contains(&size),
+        IconDirectoryType::Threshold => size.abs_diff(directory.size) <= directory.threshold,
+    }
+}
+
+fn directory_distance(directory: &IconDirectory, size: u32, scale: u32) -> u32 {
+    let desired = size.saturating_mul(scale);
+    let (minimum, maximum) = match directory.kind {
+        IconDirectoryType::Fixed => (directory.size, directory.size),
+        IconDirectoryType::Scalable => (directory.min_size, directory.max_size),
+        IconDirectoryType::Threshold => (
+            directory.size.saturating_sub(directory.threshold),
+            directory.size.saturating_add(directory.threshold),
+        ),
+    };
+    let minimum = minimum.saturating_mul(directory.scale);
+    let maximum = maximum.saturating_mul(directory.scale);
+    if desired < minimum {
+        minimum - desired
+    } else {
+        desired.saturating_sub(maximum)
+    }
 }
 
 fn sort_applications(applications: &mut [Application]) {
@@ -533,9 +903,11 @@ mod tests {
             home: Some(PathBuf::from("/home/user")),
             data_home: Some(PathBuf::from("/home/user/.local/share")),
             data_dirs: vec![PathBuf::from("/usr/share")],
+            icon_theme: None,
             desktops: vec!["niri".into()],
             locale: "en_GB.UTF-8".into(),
             path: vec![PathBuf::from("/usr/bin")],
+            theme_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -609,6 +981,124 @@ mod tests {
     }
 
     #[test]
+    fn configured_theme_prefers_gtk4_then_gtk3_and_kde() {
+        let root = temporary_directory("theme-config");
+        std::fs::create_dir_all(root.join("gtk-3.0")).unwrap();
+        std::fs::create_dir_all(root.join("gtk-4.0")).unwrap();
+        std::fs::write(root.join("kdeglobals"), "[Icons]\nTheme=Breeze\n").unwrap();
+        std::fs::write(
+            root.join("gtk-3.0/settings.ini"),
+            "[Settings]\ngtk-icon-theme-name=Adwaita\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("gtk-4.0/settings.ini"),
+            "[Settings]\ngtk-icon-theme-name=Yaru\n",
+        )
+        .unwrap();
+
+        assert_eq!(configured_icon_theme(&root, false).as_deref(), Some("Yaru"));
+        assert_eq!(
+            configured_icon_theme(&root, true).as_deref(),
+            Some("Breeze")
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn icon_metadata_rejects_parent_paths_and_invalid_names() {
+        let metadata = "[../apps]\nSize=64\nType=Fixed\n";
+
+        assert!(parse_icon_directory(metadata, "../apps").is_none());
+        assert_eq!(normalized_icon_name("demo.svg"), Some("demo"));
+        assert_eq!(normalized_icon_name("../demo"), None);
+        assert_eq!(valid_theme_name("../../theme"), None);
+    }
+
+    #[test]
+    fn icon_lookup_honors_theme_inheritance_and_base_precedence() {
+        let root = temporary_directory("icon-theme");
+        let user = root.join("user");
+        let system = root.join("system");
+        write_theme(
+            &user,
+            "Child",
+            "Parent",
+            "16x16/apps",
+            "Size=16\nType=Fixed",
+        );
+        write_theme(&system, "Parent", "", "64x64/apps", "Size=64\nType=Fixed");
+        let child_icon = user.join("icons/Child/16x16/apps/demo.png");
+        let system_parent_icon = system.join("icons/Parent/64x64/apps/demo.png");
+        std::fs::write(&child_icon, b"child").unwrap();
+        std::fs::write(&system_parent_icon, b"system parent").unwrap();
+        let mut environment = environment();
+        environment.home = None;
+        environment.data_home = Some(user.clone());
+        environment.data_dirs = vec![system.clone()];
+        environment.icon_theme = Some("Child".into());
+
+        // A current-theme icon wins before a closer inherited icon.
+        assert_eq!(resolve_icon("demo", &environment), Some(child_icon.clone()));
+
+        std::fs::remove_file(child_icon).unwrap();
+        assert_eq!(
+            resolve_icon("demo", &environment),
+            Some(system_parent_icon.clone())
+        );
+
+        // A user extension of the inherited theme overrides its system icon.
+        let user_parent_icon = user.join("icons/Parent/64x64/apps/demo.png");
+        std::fs::create_dir_all(user_parent_icon.parent().unwrap()).unwrap();
+        std::fs::write(&user_parent_icon, b"user parent").unwrap();
+        assert_eq!(resolve_icon("demo", &environment), Some(user_parent_icon));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn icon_lookup_uses_hicolor_then_unthemed_fallbacks() {
+        let root = temporary_directory("icon-fallback");
+        write_theme(&root, "hicolor", "", "48x48/apps", "Size=48\nType=Fixed");
+        let themed = root.join("icons/hicolor/48x48/apps/demo.png");
+        std::fs::write(&themed, b"themed").unwrap();
+        let mut environment = environment();
+        environment.home = None;
+        environment.data_home = Some(root.clone());
+        environment.data_dirs.clear();
+        environment.icon_theme = Some("MissingTheme".into());
+
+        assert_eq!(resolve_icon("demo", &environment), Some(themed.clone()));
+
+        std::fs::remove_file(themed).unwrap();
+        let unthemed = root.join("icons/demo.svg");
+        std::fs::write(&unthemed, b"unthemed").unwrap();
+        assert_eq!(resolve_icon("demo", &environment), Some(unthemed));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn icon_directory_types_apply_size_and_scale_metadata() {
+        let fixed =
+            parse_icon_directory("[fixed]\nSize=64\nScale=2\nType=Fixed\n", "fixed").unwrap();
+        let scalable = parse_icon_directory(
+            "[scalable]\nSize=64\nType=Scalable\nMinSize=32\nMaxSize=128\n",
+            "scalable",
+        )
+        .unwrap();
+        let threshold = parse_icon_directory(
+            "[threshold]\nSize=64\nType=Threshold\nThreshold=4\n",
+            "threshold",
+        )
+        .unwrap();
+
+        assert!(directory_matches(&fixed, 64, 2));
+        assert!(!directory_matches(&fixed, 64, 1));
+        assert!(directory_matches(&scalable, 96, 1));
+        assert!(directory_matches(&threshold, 68, 1));
+        assert_eq!(directory_distance(&threshold, 72, 1), 4);
+    }
+
+    #[test]
     fn user_hidden_entry_suppresses_lower_priority_system_entry() {
         let root = std::env::temp_dir().join(format!(
             "rmac-apps-{}-{}",
@@ -641,9 +1131,11 @@ mod tests {
             home: None,
             data_home: Some(user),
             data_dirs: vec![system],
+            icon_theme: None,
             desktops: vec!["niri".into()],
             locale: "C".into(),
             path: vec![PathBuf::from("/bin")],
+            theme_cache: RefCell::new(HashMap::new()),
         };
 
         let applications = discover_linux(&environment).unwrap();
@@ -651,5 +1143,34 @@ mod tests {
         assert_eq!(applications.len(), 1);
         assert_eq!(applications[0].name, "Other");
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn temporary_directory(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "rmac-apps-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    fn write_theme(
+        data_directory: &Path,
+        theme: &str,
+        inherits: &str,
+        directory: &str,
+        directory_metadata: &str,
+    ) {
+        let root = data_directory.join("icons").join(theme);
+        std::fs::create_dir_all(root.join(directory)).unwrap();
+        std::fs::write(
+            root.join("index.theme"),
+            format!(
+                "[Icon Theme]\nName={theme}\nComment=Test\nInherits={inherits}\nDirectories={directory}\n\n[{directory}]\n{directory_metadata}\n"
+            ),
+        )
+        .unwrap();
     }
 }

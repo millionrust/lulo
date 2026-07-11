@@ -52,10 +52,11 @@ the corresponding service interface and tests.
 `rmac-apps` now provides the cross-platform catalog boundary. On Linux it scans
 XDG application directories with user override/Hidden semantics, filters
 desktop visibility and `TryExec`, expands `Exec` field codes without a shell,
-and resolves absolute, hicolor/Adwaita, or pixmaps icons. Native catalog watches
-now refresh App Drawer after debounced install, removal, and desktop-entry
-changes while preserving its active search, category, and selection. Full
-active-theme inheritance remains follow-up work. App reveal
+and resolves icons through the active GTK, KDE, or GNOME theme. Theme lookup
+honors XDG base-directory precedence, recursive inheritance, `hicolor` and
+unthemed fallbacks, and fixed/scalable/threshold size metadata. Native catalog
+watches refresh App Drawer after debounced install, removal, and desktop-entry
+changes while preserving its active search, category, and selection. App reveal
 uses `rmac-portal` OpenDirectory on Linux, with an `xdg-open` fallback, while
 macOS retains Finder reveal.
 

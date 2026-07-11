@@ -54,6 +54,9 @@ states and bounded reconnect backoff; a replacement stream always rebuilds
 state from scratch. The adapter inspects each JSON envelope before typed
 deserialization so a future event variant remains an `Event::Unknown` instead
 of taking down the shell.
+The same adapter exposes neutral typed actions and capabilities. Every action
+uses an explicit stable target and an independent socket; `Handled` is command
+acceptance, while the event stream remains the authority for visible state.
 
 The intended crate map and migration phases are specified in `PLAN_V2.md`.
 

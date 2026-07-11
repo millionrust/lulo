@@ -1,8 +1,7 @@
 # Direct niri adapter
 
 `rmac-compositor-niri` translates niri IPC into the compositor-neutral model
-owned by `rmac-compositor`. It does not render UI or execute compositor
-actions. Typed actions belong to C3.
+owned by `rmac-compositor`. It does not render UI.
 
 ## Connection lifecycle
 
@@ -25,6 +24,22 @@ Every reconnect starts from a new empty reducer and a new complete event
 stream. Consumers never need to merge a replacement compositor instance into
 stale state. An event stream and request/command traffic must not share one
 socket because event-stream mode changes the socket into a continuous feed.
+
+## Typed actions
+
+`action_capabilities` advertises the operations implemented by this adapter:
+focus a window/workspace/output, close a window, move a window to a
+workspace/output, and explicitly open or close overview. `execute` uses
+`$NIRI_SOCKET`; `execute_at` accepts an explicit socket path for services and
+deterministic tests.
+
+Every action opens its own request socket and includes stable window,
+workspace, or output identity. This avoids the documented race where separate
+“focus window” and “act on focused window” requests can affect a different
+window. A `Handled` reply reports acceptance; the live event stream confirms
+the resulting desktop state. Niri error replies remain typed `Rejected`
+results, while missing socket environment, connection I/O, and malformed
+protocol responses stay distinguishable.
 
 ## Compatibility and failures
 
@@ -52,7 +67,8 @@ function call. The fixture verifies the event-stream, outputs, and layers
 requests use separate connections; the initial snapshot precedes connection
 readiness; a future event survives initialization; and a subsequent urgency
 event is delivered incrementally. Additional tests cover malformed known JSON
-and bounded reconnect delay.
+and bounded reconnect delay. Action contract tests assert exact wire JSON and
+distinguish handled, compositor-rejected, and transport-failure results.
 
 This is deterministic protocol evidence on the development host, not Linux
 hardware evidence. The Linux reference-PC gate must still verify a real niri

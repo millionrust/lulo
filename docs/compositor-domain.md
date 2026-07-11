@@ -28,6 +28,20 @@ urgency. Repeated urgency/focus values are idempotent. Replacement events are
 authoritative for their own collection but do not guess about another
 collection that may be updated by the next event.
 
+## Actions
+
+`ActionRequest` gives every operation an `ActivationId` for correlation. The
+neutral action set covers window/workspace/output focus, window close, moving a
+window to a workspace or output, and explicit overview visibility. Stable
+object IDs are always sent with destructive or movement operations; clients do
+not issue a focus request followed by an implicit “current window” action.
+
+Adapters expose `ActionCapabilities` before a control is offered. An
+`ActionResult` retains the request ID and action, and classifies failures as
+unavailable, transport, protocol, compositor rejection, or unsupported. A
+successful IPC reply means the compositor accepted the command. The event
+stream remains authoritative for the resulting visible focus/topology state.
+
 ## Source contract
 
 The model was checked against the official niri IPC 26.4 documentation:

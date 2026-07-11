@@ -220,6 +220,101 @@ pub struct Activation {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ActionKind {
+    FocusWindow,
+    FocusWorkspace,
+    FocusOutput,
+    CloseWindow,
+    MoveWindowToWorkspace,
+    MoveWindowToOutput,
+    SetOverview,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum Action {
+    FocusWindow {
+        window: WindowId,
+    },
+    FocusWorkspace {
+        workspace: WorkspaceId,
+    },
+    FocusOutput {
+        output: OutputId,
+    },
+    CloseWindow {
+        window: WindowId,
+    },
+    MoveWindowToWorkspace {
+        window: WindowId,
+        workspace: WorkspaceId,
+        follow: bool,
+    },
+    MoveWindowToOutput {
+        window: WindowId,
+        output: OutputId,
+    },
+    SetOverview {
+        visible: bool,
+    },
+}
+
+impl Action {
+    pub fn kind(&self) -> ActionKind {
+        match self {
+            Self::FocusWindow { .. } => ActionKind::FocusWindow,
+            Self::FocusWorkspace { .. } => ActionKind::FocusWorkspace,
+            Self::FocusOutput { .. } => ActionKind::FocusOutput,
+            Self::CloseWindow { .. } => ActionKind::CloseWindow,
+            Self::MoveWindowToWorkspace { .. } => ActionKind::MoveWindowToWorkspace,
+            Self::MoveWindowToOutput { .. } => ActionKind::MoveWindowToOutput,
+            Self::SetOverview { .. } => ActionKind::SetOverview,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ActionCapabilities {
+    pub supported: Vec<ActionKind>,
+}
+
+impl ActionCapabilities {
+    pub fn supports(&self, kind: ActionKind) -> bool {
+        self.supported.contains(&kind)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ActionRequest {
+    pub id: ActivationId,
+    pub action: Action,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ActionErrorKind {
+    Unavailable,
+    Transport,
+    Protocol,
+    Rejected,
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ActionError {
+    pub kind: ActionErrorKind,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ActionResult {
+    pub id: ActivationId,
+    pub action: Action,
+    pub result: Result<(), ActionError>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum UrgencyTarget {
@@ -686,6 +781,22 @@ mod tests {
 
         assert!(first.urgency);
         assert_eq!(second, Change::default());
+    }
+
+    #[test]
+    fn actions_report_stable_kinds_and_capabilities() {
+        let action = Action::MoveWindowToWorkspace {
+            window: WindowId(7),
+            workspace: WorkspaceId(3),
+            follow: false,
+        };
+        let capabilities = ActionCapabilities {
+            supported: vec![ActionKind::MoveWindowToWorkspace],
+        };
+
+        assert_eq!(action.kind(), ActionKind::MoveWindowToWorkspace);
+        assert!(capabilities.supports(action.kind()));
+        assert!(!capabilities.supports(ActionKind::SetOverview));
     }
 
     #[test]

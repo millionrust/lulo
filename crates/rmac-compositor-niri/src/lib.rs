@@ -133,6 +133,103 @@ pub async fn watch_with_policy(
     }
 }
 
+pub fn action_capabilities() -> domain::ActionCapabilities {
+    domain::ActionCapabilities {
+        supported: vec![
+            domain::ActionKind::FocusWindow,
+            domain::ActionKind::FocusWorkspace,
+            domain::ActionKind::FocusOutput,
+            domain::ActionKind::CloseWindow,
+            domain::ActionKind::MoveWindowToWorkspace,
+            domain::ActionKind::MoveWindowToOutput,
+            domain::ActionKind::SetOverview,
+        ],
+    }
+}
+
+pub async fn execute(request: domain::ActionRequest) -> domain::ActionResult {
+    let result = match env::var_os(SOCKET_PATH_ENV)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+    {
+        Some(path) => execute_at(&path, &request.action).await,
+        None => Err(domain::ActionError {
+            kind: domain::ActionErrorKind::Unavailable,
+            message: format!("{SOCKET_PATH_ENV} is not set"),
+        }),
+    };
+    domain::ActionResult {
+        id: request.id,
+        action: request.action,
+        result,
+    }
+}
+
+/// Sends one action on its own socket so targets cannot race between requests.
+pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), domain::ActionError> {
+    let request = Request::Action(convert_action(action));
+    let reply = request_reply_once(path, &request)
+        .await
+        .map_err(action_error)?;
+    match reply {
+        Ok(Response::Handled) => Ok(()),
+        Ok(_) => Err(domain::ActionError {
+            kind: domain::ActionErrorKind::Protocol,
+            message: "niri returned an unexpected action response".into(),
+        }),
+        Err(message) => Err(domain::ActionError {
+            kind: domain::ActionErrorKind::Rejected,
+            message,
+        }),
+    }
+}
+
+fn convert_action(action: &domain::Action) -> wire::Action {
+    match action {
+        domain::Action::FocusWindow { window } => wire::Action::FocusWindow { id: window.0 },
+        domain::Action::FocusWorkspace { workspace } => wire::Action::FocusWorkspace {
+            reference: wire::WorkspaceReference::Id(workspace.0),
+        },
+        domain::Action::FocusOutput { output } => wire::Action::FocusMonitor {
+            output: output.0.clone(),
+        },
+        domain::Action::CloseWindow { window } => wire::Action::CloseWindow { id: Some(window.0) },
+        domain::Action::MoveWindowToWorkspace {
+            window,
+            workspace,
+            follow,
+        } => wire::Action::MoveWindowToWorkspace {
+            window_id: Some(window.0),
+            reference: wire::WorkspaceReference::Id(workspace.0),
+            focus: *follow,
+        },
+        domain::Action::MoveWindowToOutput { window, output } => {
+            wire::Action::MoveWindowToMonitor {
+                id: Some(window.0),
+                output: output.0.clone(),
+            }
+        }
+        domain::Action::SetOverview { visible: true } => wire::Action::OpenOverview {},
+        domain::Action::SetOverview { visible: false } => wire::Action::CloseOverview {},
+    }
+}
+
+fn action_error(error: Error) -> domain::ActionError {
+    let kind = match &error {
+        Error::MissingSocketPath => domain::ActionErrorKind::Unavailable,
+        Error::Io(_) => domain::ActionErrorKind::Transport,
+        Error::Json(_)
+        | Error::Protocol(_)
+        | Error::UnexpectedResponse(_)
+        | Error::InitialStateIncomplete => domain::ActionErrorKind::Protocol,
+        Error::ConsumerClosed => domain::ActionErrorKind::Unavailable,
+    };
+    domain::ActionError {
+        kind,
+        message: error.to_string(),
+    }
+}
+
 /// One complete connection lifetime, exposed for deterministic socket tests.
 pub async fn stream_once(path: &Path, sender: &Sender<domain::Event>) -> Result<(), Error> {
     let mut stream = connect(path)?;
@@ -227,9 +324,16 @@ fn connect(path: &Path) -> Result<IpcStream, Error> {
 }
 
 async fn request_once(path: &Path, request: &Request) -> Result<Response, Error> {
+    request_reply_once(path, request)
+        .await?
+        .map_err(Error::Protocol)
+}
+
+async fn request_reply_once(path: &Path, request: &Request) -> Result<Reply, Error> {
     let mut stream = connect(path)?;
     write_request(&mut stream, request).await?;
-    read_reply(&mut stream).await
+    let line = read_line(&mut stream).await?;
+    Ok(serde_json::from_str(&line)?)
 }
 
 async fn write_request(stream: &mut IpcStream, request: &Request) -> Result<(), Error> {
@@ -672,7 +776,40 @@ mod wire {
     pub enum Request {
         Outputs,
         Layers,
+        Action(Action),
         EventStream,
+    }
+
+    #[derive(Debug, Serialize)]
+    pub enum Action {
+        CloseWindow {
+            id: Option<u64>,
+        },
+        FocusWindow {
+            id: u64,
+        },
+        FocusWorkspace {
+            reference: WorkspaceReference,
+        },
+        FocusMonitor {
+            output: String,
+        },
+        MoveWindowToWorkspace {
+            window_id: Option<u64>,
+            reference: WorkspaceReference,
+            focus: bool,
+        },
+        MoveWindowToMonitor {
+            id: Option<u64>,
+            output: String,
+        },
+        OpenOverview {},
+        CloseOverview {},
+    }
+
+    #[derive(Debug, Serialize)]
+    pub enum WorkspaceReference {
+        Id(u64),
     }
 
     #[derive(Debug, Deserialize)]
@@ -856,6 +993,93 @@ mod tests {
             policy.next_delay(Duration::from_millis(350)),
             Duration::from_millis(350)
         );
+    }
+
+    #[test]
+    fn action_wire_format_uses_stable_ids_and_explicit_targets() {
+        let cases = [
+            (
+                domain::Action::FocusWindow {
+                    window: domain::WindowId(7),
+                },
+                r#"{"Action":{"FocusWindow":{"id":7}}}"#,
+            ),
+            (
+                domain::Action::FocusWorkspace {
+                    workspace: domain::WorkspaceId(3),
+                },
+                r#"{"Action":{"FocusWorkspace":{"reference":{"Id":3}}}}"#,
+            ),
+            (
+                domain::Action::MoveWindowToOutput {
+                    window: domain::WindowId(7),
+                    output: domain::OutputId::from("DP-1"),
+                },
+                r#"{"Action":{"MoveWindowToMonitor":{"id":7,"output":"DP-1"}}}"#,
+            ),
+            (
+                domain::Action::SetOverview { visible: true },
+                r#"{"Action":{"OpenOverview":{}}}"#,
+            ),
+        ];
+
+        for (action, expected) in cases {
+            let request = Request::Action(convert_action(&action));
+            assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn action_results_distinguish_handled_rejected_and_transport_failures() {
+        let socket = PathBuf::from(format!("/tmp/rmac-action-{}.sock", std::process::id()));
+        let _ = fs::remove_file(&socket);
+        let listener = UnixListener::bind(&socket).unwrap();
+        let server = thread::spawn(move || {
+            let (mut accepted, _) = listener.accept().unwrap();
+            assert!(read_sync_line(&mut accepted).contains("CloseWindow"));
+            accepted.write_all(b"{\"Ok\":\"Handled\"}\n").unwrap();
+
+            let (mut rejected, _) = listener.accept().unwrap();
+            assert!(read_sync_line(&mut rejected).contains("OpenOverview"));
+            rejected
+                .write_all(b"{\"Err\":\"disabled by policy\"}\n")
+                .unwrap();
+        });
+
+        let accepted = async_io::block_on(execute_at(
+            &socket,
+            &domain::Action::CloseWindow {
+                window: domain::WindowId(7),
+            },
+        ));
+        assert_eq!(accepted, Ok(()));
+        let rejected = async_io::block_on(execute_at(
+            &socket,
+            &domain::Action::SetOverview { visible: true },
+        ));
+        assert!(matches!(
+            rejected,
+            Err(domain::ActionError {
+                kind: domain::ActionErrorKind::Rejected,
+                message,
+            }) if message == "disabled by policy"
+        ));
+        server.join().unwrap();
+        let _ = fs::remove_file(&socket);
+
+        let unavailable = async_io::block_on(execute_at(
+            &socket,
+            &domain::Action::FocusWindow {
+                window: domain::WindowId(7),
+            },
+        ));
+        assert!(matches!(
+            unavailable,
+            Err(domain::ActionError {
+                kind: domain::ActionErrorKind::Transport,
+                ..
+            })
+        ));
     }
 
     #[test]

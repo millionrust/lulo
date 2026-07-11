@@ -53,6 +53,8 @@ the dismissible error Toast in production UI.
 Button now covers icon-only and dropdown triggers as well as text actions.
 Terminal, Finder, and App Drawer have migrated their remaining Button/Input
 variants to the shared boundary.
+Notes has also migrated every toolbar button, dropdown trigger, search, rename,
+tag, title, and multiline body field to the shared controls.
 
 ## Visual-reference protocol
 

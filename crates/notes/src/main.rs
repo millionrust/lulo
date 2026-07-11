@@ -23,14 +23,9 @@ use gpui::{
     KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
     Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::{
-    button::{Button, ButtonVariants as _},
-    input::InputEvent,
-    menu::DropdownMenu as _,
-    Disableable as _, Icon, IconName, Sizable as _, Size, StyledExt as _,
-};
-use rmac_editor::{Input, InputState};
-use rmac_ui::mac;
+use gpui_component::{input::InputEvent, Icon, IconName, Sizable as _, Size, StyledExt as _};
+use rmac_editor::InputState;
+use rmac_ui::{mac, Button, SearchField, TextField};
 
 const FOLDERS_W: f32 = 200.0;
 const LIST_W: f32 = 292.0;
@@ -732,7 +727,7 @@ impl NotesView {
                     .gap_1()
                     .pr_3()
                     .child(
-                        Button::new("sort")
+                        Button::new("sort", "")
                             .icon(IconName::SortDescending)
                             .ghost()
                             .with_size(Size::Medium)
@@ -759,7 +754,7 @@ impl NotesView {
                             }),
                     )
                     .child(
-                        Button::new("compose")
+                        Button::new("compose", "")
                             .icon(IconName::Plus)
                             .ghost()
                             .with_size(Size::Medium)
@@ -775,7 +770,7 @@ impl NotesView {
                     .justify_end()
                     .pr_4()
                     .child(
-                        Button::new("delete")
+                        Button::new("delete", "")
                             .icon(IconName::Delete)
                             .ghost()
                             .with_size(Size::Medium)
@@ -854,7 +849,7 @@ impl NotesView {
                             .child("ON MY MAC"),
                     )
                     .child(
-                        Button::new("new-folder")
+                        Button::new("new-folder", "")
                             .icon(IconName::Plus)
                             .ghost()
                             .with_size(Size::XSmall)
@@ -892,7 +887,7 @@ impl NotesView {
                                     .text_color(mac::notes_accent())
                                     .with_size(Size::Small),
                             )
-                            .child(div().flex_1().child(Input::new(input).small())),
+                            .child(div().flex_1().child(TextField::new(input).small())),
                     );
                     continue;
                 }
@@ -1110,7 +1105,7 @@ impl NotesView {
                         .child(
                             div()
                                 .flex_1()
-                                .child(Input::new(&self.search).appearance(false)),
+                                .child(SearchField::new(&self.search).appearance(false)),
                         ),
                 ),
             )
@@ -1156,8 +1151,7 @@ impl NotesView {
                    tip: &'static str,
                    tok: &'static str,
                    cx: &mut Context<Self>| {
-            Button::new(id)
-                .label(label)
+            Button::new(id, label)
                 .ghost()
                 .with_size(Size::Small)
                 .disabled(preview)
@@ -1179,8 +1173,7 @@ impl NotesView {
             .child(btn("fmt-bullet", "• List", "Bulleted List", "- ", cx))
             .child(btn("fmt-check", "☑ Checklist", "Checklist", "- [ ] ", cx))
             .child(
-                Button::new("fmt-attach")
-                    .label("📎 Attach")
+                Button::new("fmt-attach", "📎 Attach")
                     .ghost()
                     .with_size(Size::Small)
                     .disabled(preview)
@@ -1189,13 +1182,12 @@ impl NotesView {
             )
             .child(div().flex_1())
             .child(
-                Button::new("preview")
+                Button::new("preview", if preview { "Edit" } else { "Preview" })
                     .icon(if preview {
                         IconName::EyeOff
                     } else {
                         IconName::Eye
                     })
-                    .label(if preview { "Edit" } else { "Preview" })
                     .ghost()
                     .with_size(Size::Small)
                     .when(preview, |b| b.primary())
@@ -1305,7 +1297,7 @@ impl NotesView {
                 div()
                     .flex_1()
                     .min_w(px(120.0))
-                    .child(Input::new(&self.tags_input).appearance(false).small()),
+                    .child(TextField::new(&self.tags_input).appearance(false).small()),
             )
     }
 
@@ -1340,7 +1332,7 @@ impl NotesView {
                         .line_height(px(34.0))
                         .font_weight(mac::BOLD)
                         .text_color(mac::text())
-                        .child(Input::new(&self.title).appearance(false)),
+                        .child(TextField::new(&self.title).appearance(false)),
                 )
                 .child(self.render_tags_bar(cx))
                 // Body — editor or rendered preview.
@@ -1356,7 +1348,7 @@ impl NotesView {
                         .text_size(px(16.0))
                         .line_height(px(24.0))
                         .text_color(mac::text())
-                        .child(Input::new(&self.body).h_full().appearance(false))
+                        .child(TextField::new(&self.body).h_full().appearance(false))
                         .into_any_element()
                 })
                 .child(self.render_count_footer(cx))

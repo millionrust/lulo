@@ -426,6 +426,15 @@ pub mod mac {
     pub fn hover() -> Hsla {
         crate::theme::current().colors.hover.hsla()
     }
+    pub fn row_alternate() -> Hsla {
+        crate::theme::current().colors.row_alternate.hsla()
+    }
+    pub fn control_fill() -> Hsla {
+        crate::theme::current().colors.control_fill.hsla()
+    }
+    pub fn control_fill_hover() -> Hsla {
+        crate::theme::current().colors.control_fill_hover.hsla()
+    }
     /// Neutral (unfocused) selection fill in source lists.
     pub fn sidebar_selection() -> Hsla {
         crate::theme::current().colors.selection_unfocused.hsla()
@@ -436,6 +445,12 @@ pub mod mac {
     pub fn accent() -> Hsla {
         crate::theme::current().colors.accent.hsla()
     }
+    pub fn accent_subtle() -> Hsla {
+        crate::theme::current().colors.accent_subtle.hsla()
+    }
+    pub fn accent_border() -> Hsla {
+        crate::theme::current().colors.accent_border.hsla()
+    }
     /// System red — destructive actions.
     pub fn danger() -> Hsla {
         crate::theme::current().colors.danger.hsla()
@@ -443,6 +458,12 @@ pub mod mac {
     /// Legible text over the destructive fill.
     pub fn on_danger() -> Hsla {
         crate::theme::current().colors.on_danger.hsla()
+    }
+    pub fn error_background() -> Hsla {
+        crate::theme::current().colors.error_background.hsla()
+    }
+    pub fn error_border() -> Hsla {
+        crate::theme::current().colors.error_border.hsla()
     }
     /// On-accent text (white).
     pub fn on_accent() -> Hsla {

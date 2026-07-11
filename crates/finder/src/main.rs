@@ -90,8 +90,8 @@ impl Render for DragPreview {
             .px_2()
             .py_0p5()
             .rounded(px(6.0))
-            .bg(hsl(0x0a84ff))
-            .text_color(gpui::white())
+            .bg(rmac_ui::mac::accent())
+            .text_color(rmac_ui::mac::on_accent())
             .text_size(px(12.0))
             .child(if n == 1 {
                 "1 item".to_string()
@@ -130,40 +130,40 @@ fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }
 fn list_bg() -> Hsla {
-    hsl(0xffffff)
+    rmac_ui::mac::list()
 }
 fn toolbar_bg() -> Hsla {
-    hsl(0xf6f6f6)
+    rmac_ui::mac::chrome()
 }
 fn sidebar_bg() -> Hsla {
-    hsl(0xe9e9ed)
+    rmac_ui::mac::sidebar()
 }
 fn alt_row() -> Hsla {
-    hsl(0xf4f5f5)
+    rmac_ui::mac::row_alternate()
 }
 fn sel() -> Hsla {
-    hsl(0x0063e1)
+    rmac_ui::mac::accent()
 }
 fn accent() -> Hsla {
-    hsl(0x007aff)
+    rmac_ui::mac::accent()
 }
 fn sep() -> Hsla {
-    hsl(0xe5e5e5)
+    rmac_ui::mac::separator()
 }
 fn label() -> Hsla {
-    hsl(0x272727)
+    rmac_ui::mac::text()
 }
 fn secondary() -> Hsla {
-    hsl(0x808080)
+    rmac_ui::mac::text_secondary()
 }
 fn tertiary() -> Hsla {
-    hsl(0xbfbfbf)
+    rmac_ui::mac::text_tertiary()
 }
 fn drive_gray() -> Hsla {
-    hsl(0x808080)
+    rmac_ui::mac::text_secondary()
 }
 fn white() -> Hsla {
-    gpui::white()
+    rmac_ui::mac::on_accent()
 }
 
 fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
@@ -1233,12 +1233,12 @@ impl FinderView {
                 .justify_center()
                 .rounded(px(5.0))
                 .when(enabled, |el: Stateful<Div>| {
-                    el.hover(|h| h.bg(hsl(0xe2e2e4)))
+                    el.hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
                 })
                 .child(icon(
                     glyph,
                     17.0,
-                    if enabled { hsl(0x3a3a3c) } else { tertiary() },
+                    if enabled { label() } else { tertiary() },
                 ))
         };
         let cur = self.view;
@@ -1252,7 +1252,7 @@ impl FinderView {
                 .items_center()
                 .justify_center()
                 .rounded(px(5.0))
-                .when(active, |el: Stateful<Div>| el.bg(white()))
+                .when(active, |el: Stateful<Div>| el.bg(rmac_ui::mac::raised()))
                 .child(icon(
                     glyph,
                     15.0,
@@ -1269,7 +1269,7 @@ impl FinderView {
             .gap_0p5()
             .p_0p5()
             .rounded(px(7.0))
-            .bg(hsl(0xe2e2e4))
+            .bg(rmac_ui::mac::control_fill())
             .child(seg("v-icon", "icons/layout-grid.svg", ViewMode::Icon))
             .child(seg("v-list", "icons/list.svg", ViewMode::List))
             .child(seg("v-col", "icons/columns-3.svg", ViewMode::Column))
@@ -1293,7 +1293,7 @@ impl FinderView {
             .gap_1p5()
             .px_2()
             .rounded(px(7.0))
-            .bg(hsl(0xededef))
+            .bg(rmac_ui::mac::control_fill())
             .child(icon("icons/search.svg", 14.0, tertiary()))
             .child(
                 div()
@@ -1365,7 +1365,7 @@ impl FinderView {
                     .items_center()
                     .justify_center()
                     .rounded(px(5.0))
-                    .hover(|h| h.bg(hsl(0xe2e2e4)))
+                    .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
                     .child(icon("icons/ellipsis.svg", 16.0, secondary()))
                     .on_mouse_down(
                         MouseButton::Left,
@@ -1440,9 +1440,11 @@ impl FinderView {
             .h(px(28.0))
             .px_2()
             .rounded(px(6.0))
-            .when(selected, |el: Stateful<Div>| el.bg(hsl(0xd5d5da)))
+            .when(selected, |el: Stateful<Div>| {
+                el.bg(rmac_ui::mac::sidebar_selection())
+            })
             .when(!selected && !is_tag, |el: Stateful<Div>| {
-                el.hover(|h| h.bg(hsl(0x00000008)))
+                el.hover(|h| h.bg(rmac_ui::mac::hover()))
             })
             .child(main);
 
@@ -1458,7 +1460,7 @@ impl FinderView {
                     .items_center()
                     .justify_center()
                     .rounded(px(4.0))
-                    .hover(|h| h.bg(hsl(0x00000012)))
+                    .hover(|h| h.bg(rmac_ui::mac::hover()))
                     .child(icon("icons/eject.svg", 11.0, secondary()))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.eject_volume(ep.clone(), cx);
@@ -1634,7 +1636,7 @@ impl FinderView {
                         el.bg(alt_row())
                     })
                     .when(!selected, |el: Stateful<Div>| {
-                        el.hover(|h| h.bg(hsl(0x0000000a)))
+                        el.hover(|h| h.bg(rmac_ui::mac::hover()))
                     })
                     .child(
                         div()
@@ -1703,10 +1705,14 @@ impl FinderView {
                     })
                     .when(row_is_dir, |el: Stateful<Div>| {
                         let dd = drop_dir.clone();
-                        el.drag_over::<DraggedPaths>(|s, _, _, _| s.bg(hsl(0xcfe5ff)))
-                            .on_drop(cx.listener(move |this, p: &DraggedPaths, _, cx| {
+                        el.drag_over::<DraggedPaths>(|s, _, _, _| {
+                            s.bg(rmac_ui::mac::accent_subtle())
+                        })
+                        .on_drop(cx.listener(
+                            move |this, p: &DraggedPaths, _, cx| {
                                 this.drop_into(dd.clone(), &p.0, cx)
-                            }))
+                            },
+                        ))
                     })
                     .into_any_element(),
             );
@@ -1868,7 +1874,7 @@ impl FinderView {
                     _ => {}
                 }
             }))
-            .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(hsl(0xeaf3ff)))
+            .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(rmac_ui::mac::accent_subtle()))
             .on_drop(cx.listener(|this, ep: &ExternalPaths, _, cx| {
                 this.drop_external(ep.paths().to_vec(), cx)
             }))
@@ -1890,7 +1896,7 @@ impl FinderView {
             .items_center()
             .px_2()
             .gap_1()
-            .bg(hsl(0xeeeeef))
+            .bg(rmac_ui::mac::chrome())
             .border_b_1()
             .border_color(sep());
         for (i, tab) in self.tabs.iter().enumerate() {
@@ -1909,9 +1915,9 @@ impl FinderView {
                     .h(px(22.0))
                     .px_2()
                     .rounded(px(5.0))
-                    .when(active, |el: Stateful<Div>| el.bg(white()))
+                    .when(active, |el: Stateful<Div>| el.bg(rmac_ui::mac::raised()))
                     .when(!active, |el: Stateful<Div>| {
-                        el.hover(|h| h.bg(hsl(0x00000008)))
+                        el.hover(|h| h.bg(rmac_ui::mac::hover()))
                     })
                     .child(
                         div()
@@ -1932,7 +1938,7 @@ impl FinderView {
                             .rounded(px(3.0))
                             .text_size(px(12.0))
                             .text_color(secondary())
-                            .hover(|h| h.bg(hsl(0x00000014)))
+                            .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
                             .child("×")
                             .on_click(cx.listener(move |this, _, _, cx| this.close_tab(i, cx))),
                     ),
@@ -1949,7 +1955,7 @@ impl FinderView {
                 .rounded(px(5.0))
                 .text_size(px(16.0))
                 .text_color(secondary())
-                .hover(|h| h.bg(hsl(0x00000008)))
+                .hover(|h| h.bg(rmac_ui::mac::hover()))
                 .child("+")
                 .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
         )
@@ -2004,7 +2010,7 @@ impl FinderView {
                         .rounded(px(5.0))
                         .when(is_sel, |el: Stateful<Div>| el.bg(sel()))
                         .when(!is_sel, |el: Stateful<Div>| {
-                            el.hover(|h| h.bg(hsl(0x0000000a)))
+                            el.hover(|h| h.bg(rmac_ui::mac::hover()))
                         })
                         .child(icon(glyph, 15.0, icol))
                         .child(
@@ -2101,7 +2107,7 @@ impl FinderView {
                     .id(SharedString::from(format!("crumb-{i}")))
                     .px_1()
                     .rounded(px(3.0))
-                    .hover(|h| h.bg(hsl(0x00000010)))
+                    .hover(|h| h.bg(rmac_ui::mac::hover()))
                     .child(name)
                     .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))),
             );
@@ -2308,7 +2314,7 @@ impl FinderView {
         let mut card = div()
             .w(px(300.0))
             .rounded(px(12.0))
-            .bg(hsl(0xfbfbfd))
+            .bg(rmac_ui::mac::raised())
             .border_1()
             .border_color(sep())
             .shadow_lg()
@@ -2375,7 +2381,7 @@ impl FinderView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x00000026))
+            .bg(rmac_ui::mac::scrim())
             .child(card.pb_3())
     }
 }
@@ -2413,11 +2419,11 @@ impl Render for FinderView {
                         .items_center()
                         .gap_2()
                         .px_3()
-                        .bg(hsl(0xffe9e7))
+                        .bg(rmac_ui::mac::error_background())
                         .border_b_1()
-                        .border_color(hsl(0xf2b8b5))
+                        .border_color(rmac_ui::mac::error_border())
                         .text_size(px(12.0))
-                        .text_color(hsl(0x9f1c17))
+                        .text_color(rmac_ui::mac::danger())
                         .cursor_pointer()
                         .child(
                             div()
@@ -2427,8 +2433,8 @@ impl Render for FinderView {
                                 .items_center()
                                 .justify_center()
                                 .rounded_full()
-                                .bg(hsl(0xc9342d))
-                                .text_color(white())
+                                .bg(rmac_ui::mac::danger())
+                                .text_color(rmac_ui::mac::on_danger())
                                 .child("!"),
                         )
                         .child(div().flex_1().child(message))
@@ -2453,11 +2459,11 @@ impl Render for FinderView {
                         .items_center()
                         .gap_2()
                         .px_3()
-                        .bg(hsl(0xe8f3ff))
+                        .bg(rmac_ui::mac::accent_subtle())
                         .border_b_1()
-                        .border_color(hsl(0xb8d8f5))
+                        .border_color(rmac_ui::mac::accent_border())
                         .text_size(px(12.0))
-                        .text_color(hsl(0x175b91))
+                        .text_color(label())
                         .child(div().flex_1().child(format!(
                             "{} — {} of {} items",
                             transfer.label, transfer.processed, transfer.total
@@ -2468,9 +2474,9 @@ impl Render for FinderView {
                                 .px_2()
                                 .py_0p5()
                                 .rounded(px(5.0))
-                                .bg(white())
+                                .bg(rmac_ui::mac::raised())
                                 .border_1()
-                                .border_color(hsl(0x9fc7eb))
+                                .border_color(rmac_ui::mac::accent_border())
                                 .cursor_pointer()
                                 .child(action)
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel_transfer(cx))),

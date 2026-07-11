@@ -85,6 +85,9 @@ reconnecting portal events and bounded preference-file events, changes the
 gpui-component mode, and refreshes windows only when resolved tokens change.
 Terminal is the first representative consumer: its application chrome follows
 live tokens while terminal color profiles remain explicit user content.
+Finder and App Drawer also consume semantic backgrounds, controls, selection,
+drag targets, and notice colors; file tags and application icons remain
+content-owned colors rather than being recolored as chrome.
 
 ## Persistence
 

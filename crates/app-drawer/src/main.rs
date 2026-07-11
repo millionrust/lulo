@@ -32,7 +32,6 @@ use rmac_ui::mac;
 const TILE_W: f32 = 116.0;
 const ICON: f32 = 60.0;
 const ROW_ICON: f32 = 32.0;
-const ACCENT: u32 = 0x0a84ff;
 
 actions!(
     app_drawer,
@@ -413,8 +412,8 @@ impl AppDrawer {
                     .items_center()
                     .justify_center()
                     .rounded(px(size * 0.23))
-                    .bg(gpui::rgb(0xc9c9d0))
-                    .text_color(gpui::white())
+                    .bg(mac::control_fill())
+                    .text_color(mac::text_secondary())
                     .text_size(px(size * 0.43))
                     .child(initial)
                     .into_any_element()
@@ -437,14 +436,14 @@ impl AppDrawer {
             .py_2()
             .rounded(px(10.0))
             .when(selected, |d: Stateful<Div>| {
-                d.bg(gpui::rgba((ACCENT << 8) | 0x22))
+                d.bg(mac::accent_subtle())
                     .border_1()
-                    .border_color(gpui::rgba((ACCENT << 8) | 0x66))
+                    .border_color(mac::accent_border())
             })
             .when(!selected, |d: Stateful<Div>| {
                 d.border_1().border_color(gpui::transparent_black())
             })
-            .hover(|h| h.bg(gpui::rgba(0x00000010)))
+            .hover(|h| h.bg(mac::hover()))
             .child(self.icon_element(app, ICON))
             .child(
                 div()
@@ -483,11 +482,9 @@ impl AppDrawer {
             .px_3()
             .py_1p5()
             .rounded(px(8.0))
-            .when(selected, |d: Stateful<Div>| {
-                d.bg(gpui::rgba((ACCENT << 8) | 0x22))
-            })
+            .when(selected, |d: Stateful<Div>| d.bg(mac::accent_subtle()))
             .when(!selected, |d: Stateful<Div>| {
-                d.hover(|h| h.bg(gpui::rgba(0x00000008)))
+                d.hover(|h| h.bg(mac::hover()))
             })
             .child(self.icon_element(app, ROW_ICON))
             .child(
@@ -528,7 +525,7 @@ impl AppDrawer {
                 .items_center()
                 .justify_center()
                 .rounded(px(5.0))
-                .when(active, |d: Stateful<Div>| d.bg(gpui::white()))
+                .when(active, |d: Stateful<Div>| d.bg(mac::raised()))
                 .child(
                     svg()
                         .path(glyph)
@@ -551,7 +548,7 @@ impl AppDrawer {
             .gap_0p5()
             .p_0p5()
             .rounded(px(7.0))
-            .bg(gpui::rgb(0xe2e2e4))
+            .bg(mac::control_fill())
             .child(seg(
                 "v-grid",
                 "icons/layout-dashboard.svg",
@@ -577,12 +574,12 @@ impl AppDrawer {
                     .rounded(px(13.0))
                     .text_size(px(12.0))
                     .when(active, |d: Stateful<Div>| {
-                        d.bg(gpui::rgb(ACCENT)).text_color(gpui::white())
+                        d.bg(mac::accent()).text_color(mac::on_accent())
                     })
                     .when(!active, |d: Stateful<Div>| {
-                        d.bg(gpui::rgb(0xe9e9eb))
+                        d.bg(mac::control_fill())
                             .text_color(mac::text())
-                            .hover(|h| h.bg(gpui::rgb(0xdedee1)))
+                            .hover(|h| h.bg(mac::control_fill_hover()))
                     })
                     .child(label)
                     .on_click(cx.listener(move |this, _, _, cx| this.set_filter(target, cx)))
@@ -676,7 +673,7 @@ impl Render for AppDrawer {
             )
             .size_full()
             .v_flex()
-            .bg(gpui::rgb(0xf5f5f7))
+            .bg(mac::window())
             .text_color(mac::text())
             .child(rmac_ui::title_bar("Applications"))
             .when_some(catalog_error, |drawer, message| {
@@ -689,11 +686,11 @@ impl Render for AppDrawer {
                         .items_center()
                         .gap_2()
                         .px_3()
-                        .bg(gpui::rgba(0xff3b301f))
+                        .bg(mac::error_background())
                         .border_b_1()
-                        .border_color(gpui::rgba(0xff3b3059))
+                        .border_color(mac::error_border())
                         .text_size(px(12.0))
-                        .text_color(gpui::rgb(0xc62828))
+                        .text_color(mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))
                         .child("Dismiss")

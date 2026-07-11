@@ -12,7 +12,7 @@ equivalents rather than simulated.
 | Bluetooth | Real adapter, discovery, and known-device connections | BlueZ D-Bus | Confirmation agent for new-device pairing and live signals |
 | Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
-| Battery | macOS read-only snapshot | UPower and power-profiles-daemon | Live battery/AC state and supported power profiles |
+| Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
 | General/About | Platform identity snapshot | os-release, sysinfo, DMI | Kernel detail and live hostname mutation |
 | Software Update | Placeholder | Ubuntu update services | Check, progress, restart requirements; privileged actions via polkit |
 | Storage | macOS-shaped `df` snapshot | Filesystem/mount service | Per-volume usage and safe cleanup guidance |

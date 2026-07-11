@@ -4881,6 +4881,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-power"
+version = "0.1.0"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "rmac-search"
 version = "0.1.0"
 dependencies = [
@@ -4903,6 +4910,7 @@ dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-network",
+ "rmac-power",
  "rmac-storage",
  "rmac-ui",
  "rust-embed",

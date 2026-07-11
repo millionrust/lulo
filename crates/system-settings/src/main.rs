@@ -152,18 +152,6 @@ struct SysInfo {
     serial: String,
 }
 
-/// Live battery readings (read once after launch via `pmset` + `ioreg`).
-struct BatteryInfo {
-    present: bool,
-    percent: String,
-    status: String,
-    source: String,
-    time_remaining: Option<String>,
-    cycle_count: Option<String>,
-    health_percent: Option<String>,
-    condition: String,
-}
-
 /// A connected display (read once at launch via `system_profiler`).
 struct DisplayInfo {
     name: String,
@@ -185,7 +173,7 @@ struct Settings {
     system_data_loading: bool,
     account: SharedString,
     sysinfo: SysInfo,
-    battery: Option<BatteryInfo>,
+    power: rmac_power::Snapshot,
     displays: Vec<DisplayInfo>,
     gpu: String,
     network: rmac_network::NetworkSnapshot,
@@ -204,6 +192,7 @@ struct Settings {
     network_error: Option<SharedString>,
     vpn_error: Option<SharedString>,
     audio_error: Option<SharedString>,
+    power_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
@@ -253,6 +242,10 @@ struct Settings {
     play_ui_sounds: bool,
     alert_idx: usize,
 
+    // Battery and power profiles
+    power_loading: bool,
+    power_busy: bool,
+
     // General
     handoff: bool,
     airdrop_idx: usize,
@@ -269,7 +262,6 @@ enum AudioChange {
 struct SystemSnapshot {
     account: String,
     sysinfo: SysInfo,
-    battery: Option<BatteryInfo>,
     displays: Vec<DisplayInfo>,
     gpu: String,
     storage: StorageInfo,
@@ -671,13 +663,25 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_power::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_power_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
                 .unwrap_or_else(|_| "User".into())
                 .into(),
             sysinfo: SysInfo::default(),
-            battery: None,
+            power: rmac_power::Snapshot::default(),
             displays: Vec::new(),
             gpu: String::new(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -696,6 +700,7 @@ impl Settings {
             network_error: None,
             vpn_error: None,
             audio_error: None,
+            power_error: None,
 
             network_loading: true,
             network_busy: false,
@@ -739,6 +744,9 @@ impl Settings {
             play_ui_sounds: saved.play_ui_sounds,
             alert_idx: saved.alert_idx,
 
+            power_loading: true,
+            power_busy: false,
+
             handoff: saved.handoff,
             airdrop_idx: saved.airdrop_idx,
             airplay_receiver: saved.airplay_receiver,
@@ -748,7 +756,6 @@ impl Settings {
     fn apply_system_snapshot(&mut self, snapshot: SystemSnapshot) {
         self.account = snapshot.account.into();
         self.sysinfo = snapshot.sysinfo;
-        self.battery = snapshot.battery;
         self.displays = snapshot.displays;
         self.gpu = snapshot.gpu;
         self.storage = snapshot.storage;
@@ -1003,6 +1010,68 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_power_update(
+        &mut self,
+        result: std::result::Result<rmac_power::Snapshot, rmac_power::Error>,
+    ) {
+        self.power_loading = false;
+        self.power_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.power = snapshot;
+                self.power_error = None;
+            }
+            Err(error) => {
+                self.power_error = Some(format!("Could not update Battery: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_power(&mut self, cx: &mut Context<Self>) {
+        if self.power_loading || self.power_busy {
+            return;
+        }
+        self.power_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_power::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_power_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_power_profile(&mut self, profile: rmac_power::PowerProfile, cx: &mut Context<Self>) {
+        if self.power_loading
+            || self.power_busy
+            || !self.power.profiles.available
+            || !self.power.profiles.supported.contains(&profile)
+        {
+            return;
+        }
+        self.power_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_power::set_profile(profile)?;
+                    rmac_power::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_power_update(result);
                 cx.notify();
             });
         })
@@ -1424,7 +1493,7 @@ impl Settings {
                 "General" => self.render_general(cx),
                 "Appearance" => self.render_appearance(cx),
                 "Sound" => self.render_sound(cx),
-                "Battery" => self.render_battery(),
+                "Battery" => self.render_battery(cx),
                 "Displays" => self.render_displays(),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
@@ -2212,78 +2281,195 @@ impl Settings {
             .child(card(rows))
     }
 
-    // ---- Battery (real read-only) -------------------------------------
+    // ---- Battery and power profiles ----------------------------------
 
-    fn render_battery(&self) -> Div {
-        let green = hsl(0x34c759);
-        let gray = hsl(0x8e8e93);
-        match &self.battery {
-            Some(b) if b.present => {
-                let mut status_rows = vec![
+    fn render_battery(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let mut cards = vec![div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child("Battery & Energy"),
+            )
+            .child(
+                div()
+                    .id("power-refresh")
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.0))
+                    .text_size(px(12.0))
+                    .text_color(accent())
+                    .cursor_pointer()
+                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .child(if self.power_busy {
+                        "Refreshing…"
+                    } else {
+                        "Refresh"
+                    })
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_power(cx));
+                    }),
+            )];
+        if self.power_loading {
+            cards.push(note_card("Loading battery state from the system…"));
+            return self.pane(cards);
+        }
+
+        if let Some(battery) = &self.power.battery {
+            let mut status_rows = vec![
+                value_row(
+                    "icons/battery-charging.svg",
+                    hsl(0x34c759),
+                    "Charge".into(),
+                    format!("{}%", battery.percentage).into(),
+                ),
+                value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "Status".into(),
+                    battery.state.label().into(),
+                ),
+                value_row(
+                    "icons/power.svg",
+                    secondary(),
+                    "Power Source".into(),
+                    if battery.on_battery {
+                        "Battery".into()
+                    } else {
+                        "Power Adapter".into()
+                    },
+                ),
+            ];
+            if let Some(seconds) = battery.seconds_remaining {
+                status_rows.push(value_row(
+                    "icons/clock.svg",
+                    secondary(),
+                    if matches!(
+                        battery.state,
+                        rmac_power::BatteryState::Charging
+                            | rmac_power::BatteryState::PendingCharge
+                    ) {
+                        "Time to Full".into()
+                    } else {
+                        "Time Remaining".into()
+                    },
+                    format_power_duration(seconds).into(),
+                ));
+            }
+            if let Some(rate) = battery.energy_rate_watts {
+                status_rows.push(value_row(
+                    "icons/power.svg",
+                    secondary(),
+                    "Energy Rate".into(),
+                    format!("{rate:.1} W").into(),
+                ));
+            }
+            if let Some(model) = &battery.model {
+                status_rows.push(value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "Battery".into(),
+                    model.clone().into(),
+                ));
+            }
+            cards.push(card(status_rows));
+
+            let condition = battery.capacity.map_or("Unknown", |capacity| {
+                if capacity < 75 {
+                    "Service Recommended"
+                } else {
+                    "Normal"
+                }
+            });
+            let mut health_rows = vec![value_row(
+                "icons/heart-handshake.svg",
+                hsl(0x34c759),
+                "Condition".into(),
+                condition.into(),
+            )];
+            if let Some(capacity) = battery.capacity {
+                health_rows.insert(
+                    0,
                     value_row(
                         "icons/battery-charging.svg",
-                        green,
-                        "Charge".into(),
-                        b.percent.clone().into(),
+                        hsl(0x34c759),
+                        "Maximum Capacity".into(),
+                        format!("{capacity}%").into(),
                     ),
-                    value_row(
-                        "icons/info.svg",
-                        gray,
-                        "Status".into(),
-                        b.status.clone().into(),
-                    ),
-                    value_row(
-                        "icons/power.svg",
-                        gray,
-                        "Power Source".into(),
-                        b.source.clone().into(),
-                    ),
-                ];
-                if let Some(t) = &b.time_remaining {
-                    status_rows.push(value_row(
-                        "icons/clock.svg",
-                        gray,
-                        "Time Remaining".into(),
-                        t.clone().into(),
-                    ));
-                }
-
-                let mut health_rows = vec![value_row(
-                    "icons/heart-handshake.svg",
-                    green,
-                    "Condition".into(),
-                    b.condition.clone().into(),
-                )];
-                if let Some(h) = &b.health_percent {
-                    health_rows.insert(
-                        0,
-                        value_row(
-                            "icons/battery-charging.svg",
-                            green,
-                            "Maximum Capacity".into(),
-                            h.clone().into(),
-                        ),
-                    );
-                }
-                if let Some(c) = &b.cycle_count {
-                    health_rows.push(value_row(
-                        "icons/history.svg",
-                        gray,
-                        "Cycle Count".into(),
-                        c.clone().into(),
-                    ));
-                }
-
-                self.pane(vec![
-                    card(status_rows),
-                    section_header("Battery Health"),
-                    card(health_rows),
-                ])
+                );
             }
-            _ => self.pane(vec![note_card(
-                "No battery detected — this Mac runs on continuous power.",
-            )]),
+            if let Some(cycles) = battery.charge_cycles {
+                health_rows.push(value_row(
+                    "icons/history.svg",
+                    secondary(),
+                    "Cycle Count".into(),
+                    cycles.to_string().into(),
+                ));
+            }
+            cards.push(section_header("Battery Health"));
+            cards.push(card(health_rows));
+        } else {
+            cards.push(note_card(
+                "No system battery was detected. This computer is using external power.",
+            ));
         }
+
+        if self.power.profiles.available && !self.power.profiles.supported.is_empty() {
+            cards.push(section_header("Energy Mode"));
+            let rows = self
+                .power
+                .profiles
+                .supported
+                .iter()
+                .map(|profile| {
+                    let profile = *profile;
+                    let selected = self.power.profiles.active == Some(profile);
+                    let profile_view = view.clone();
+                    row_base()
+                        .id(ElementId::from(SharedString::from(format!(
+                            "power-profile-{}",
+                            profile.id()
+                        ))))
+                        .child(tile("icons/power.svg", accent(), 22.0))
+                        .child(text_block(profile.label().into(), None))
+                        .when(selected, |row| {
+                            row.child(glyph("icons/check.svg", 14.0, accent()))
+                        })
+                        .when(!selected, |row| {
+                            row.cursor_pointer()
+                                .hover(|hover| hover.bg(hsl(0x00000008)))
+                                .on_click(move |_, _, cx| {
+                                    profile_view.update(cx, |settings, cx| {
+                                        settings.set_power_profile(profile, cx)
+                                    });
+                                })
+                        })
+                        .into_any_element()
+                })
+                .collect();
+            cards.push(card(rows));
+            if let Some(reason) = &self.power.profiles.performance_degraded {
+                cards.push(card(vec![value_row(
+                    "icons/info.svg",
+                    hsl(0xff9500),
+                    "High Power Limited".into(),
+                    power_degradation_label(reason).into(),
+                )]));
+            }
+        } else {
+            cards.push(note_card(
+                "Power profile selection is unavailable on this computer.",
+            ));
+        }
+        self.pane(cards)
     }
 
     // ---- Displays (real read-only) ------------------------------------
@@ -2822,7 +3008,8 @@ impl Render for Settings {
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
             .or_else(|| self.vpn_error.clone())
-            .or_else(|| self.audio_error.clone());
+            .or_else(|| self.audio_error.clone())
+            .or_else(|| self.power_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -2860,6 +3047,7 @@ impl Render for Settings {
                             this.network_error = None;
                             this.vpn_error = None;
                             this.audio_error = None;
+                            this.power_error = None;
                             cx.notify();
                         })),
                 )
@@ -3223,7 +3411,6 @@ fn gather_system_snapshot() -> SystemSnapshot {
     SystemSnapshot {
         account: account_name(),
         sysinfo: gather_sysinfo(),
-        battery: gather_battery(),
         displays,
         gpu,
         storage: gather_storage(),
@@ -3341,78 +3528,22 @@ fn read_trimmed(path: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Capitalize the first letter of a word ("charged" → "Charged").
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
+fn format_power_duration(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    if hours > 0 {
+        format!("{hours} hr {minutes} min")
+    } else {
+        format!("{minutes} min")
     }
 }
 
-/// Pull a top-level `"Key" = value` field out of `ioreg -r` output. The match
-/// requires the spaced ` = ` form so it skips the same key inside packed blobs.
-fn ioreg_field(io: &str, key: &str) -> Option<String> {
-    let needle = format!("{key} = ");
-    io.lines()
-        .map(|l| l.trim())
-        .find(|l| l.starts_with(&needle))
-        .map(|l| l[needle.len()..].trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-/// Read battery state from `pmset -g batt` (live) + `ioreg` (health metrics).
-fn gather_battery() -> Option<BatteryInfo> {
-    let pm = cmd("pmset", &["-g", "batt"])?;
-    let source = pm
-        .lines()
-        .next()
-        .and_then(|l| l.split('\'').nth(1))
-        .unwrap_or("—")
-        .to_string();
-    let bline = pm.lines().find(|l| l.contains('%'))?;
-    let present = !bline.contains("present: false");
-    let parts: Vec<&str> = bline.split(';').collect();
-    let percent = parts
-        .first()
-        .and_then(|p| p.split_whitespace().find(|t| t.ends_with('%')))
-        .unwrap_or("—")
-        .to_string();
-    let status = capitalize(parts.get(1).map(|s| s.trim()).unwrap_or("—"));
-    let time_remaining = parts
-        .get(2)
-        .map(|s| s.replace("remaining", "").trim().to_string())
-        .filter(|s| {
-            !s.is_empty()
-                && !s.starts_with("0:00")
-                && !s.starts_with("(no estimate)")
-                && !s.starts_with("not")
-        });
-
-    let io = cmd("ioreg", &["-rn", "AppleSmartBattery"]).unwrap_or_default();
-    let cycle_count = ioreg_field(&io, "\"CycleCount\"");
-    let raw_max = ioreg_field(&io, "\"AppleRawMaxCapacity\"").and_then(|s| s.parse::<f64>().ok());
-    let design = ioreg_field(&io, "\"DesignCapacity\"").and_then(|s| s.parse::<f64>().ok());
-    let health_percent = match (raw_max, design) {
-        (Some(m), Some(d)) if d > 0.0 => Some(format!("{}%", (m / d * 100.0).round() as i64)),
-        _ => None,
-    };
-    let condition = match ioreg_field(&io, "\"PermanentFailureStatus\"").as_deref() {
-        Some("0") | None => "Normal",
-        _ => "Service Recommended",
+fn power_degradation_label(reason: &str) -> String {
+    match reason {
+        "lap-detected" => "Limited while the computer is on a lap".to_string(),
+        "high-operating-temperature" => "Limited because of high temperature".to_string(),
+        _ => "Limited by the system".to_string(),
     }
-    .to_string();
-
-    Some(BatteryInfo {
-        present,
-        percent,
-        status,
-        source,
-        time_remaining,
-        cycle_count,
-        health_percent,
-        condition,
-    })
 }
 
 /// Format bytes as decimal GB (matching macOS storage display).

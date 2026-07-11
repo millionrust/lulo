@@ -42,6 +42,7 @@ Shared crates:
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
 - `rmac-shell-status-linux` — coalesced D-Bus and PipeWire status refresh events.
 - `rmac-shell-runtime` — live shell orchestration, source health, and last-known-good state.
+- `rmac-quick-settings` — authoritative, non-optimistic quick-settings transactions.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
 
 Phase 1 diagnostic:

@@ -189,6 +189,14 @@ source failures, and publishes source health separately. A health-only update
 is available to diagnostics but is explicitly marked as not requiring a shell
 frame.
 
+Quick Settings consumes the same typed service snapshots through
+`rmac-quick-settings`. Its framework-neutral transaction model validates
+capabilities, permits only one in-flight mutation per control, retains the
+authoritative value while work is pending, and accepts success only alongside
+a refreshed authority snapshot. Stale task completions cannot overwrite newer
+state, and failures preserve last-known-good values with user-visible detail.
+The GPUI popover and platform command executor remain above this boundary.
+
 ## Persistence
 
 The target persistence contract is:

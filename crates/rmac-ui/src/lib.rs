@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::{Root, TitleBar};
 
 mod components;
+pub mod gallery;
 pub mod theme;
 pub use components::{
     alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu, RequestClose,

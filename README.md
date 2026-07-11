@@ -39,6 +39,7 @@ Shared crates:
 - `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.
 - `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
+- `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
 
 Phase 1 diagnostic:
@@ -59,6 +60,7 @@ cd experiments/gpui-upstream-lab
 cargo run --bin a11y
 # Linux/Wayland only:
 cargo run --features wayland --bin layer-shell
+cargo run --features wayland --bin top-bar
 ```
 
 See [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md)

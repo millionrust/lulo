@@ -195,7 +195,10 @@ capabilities, permits only one in-flight mutation per control, retains the
 authoritative value while work is pending, and accepts success only alongside
 a refreshed authority snapshot. Stale task completions cannot overwrite newer
 state, and failures preserve last-known-good values with user-visible detail.
-The GPUI popover and platform command executor remain above this boundary.
+`rmac-quick-settings-system` is the blocking adapter above that boundary. It
+maps validated commands to NetworkManager, BlueZ, PipeWire/WirePlumber,
+power-profiles, and shell-settings operations, then rereads only the affected
+authority. The GPUI popover must run this adapter off its render executor.
 
 ## Persistence
 

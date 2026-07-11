@@ -5018,6 +5018,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-quick-settings-system"
+version = "0.1.0"
+dependencies = [
+ "rmac-audio",
+ "rmac-bluetooth",
+ "rmac-network",
+ "rmac-power",
+ "rmac-quick-settings",
+ "rmac-shell-settings",
+]
+
+[[package]]
 name = "rmac-search"
 version = "0.1.0"
 dependencies = [

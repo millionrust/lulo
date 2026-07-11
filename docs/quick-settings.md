@@ -38,6 +38,25 @@ snapshot.
 - Power modes are limited to the exact profiles advertised by the host.
 - Focus is writable only while the shell-settings authority is reachable.
 
-The current slice is a model, not the D3 completion claim. The platform command
-executor, live runtime bridge, layer-shell popover, outside-click/Escape
-dismissal, keyboard focus order, and real Orca/niri evidence remain pending.
+The transaction model alone is not the D3 completion claim.
+
+## System executor
+
+`rmac-quick-settings-system` maps a validated operation to the existing typed
+platform authorities. It changes Wi-Fi through NetworkManager, Bluetooth
+through BlueZ, output sound through PipeWire/WirePlumber, power mode through
+the power-profile service, and current Focus state through the versioned shell
+settings store. The executor is deliberately blocking and must run on a
+background executor.
+
+Mutation and refresh failures remain distinct. A rejected mutation does not
+issue a misleading read; a successful mutation always rereads its affected
+authority. The returned aggregate contains only that owned field, matching the
+model's per-control merge rule and preventing an older Wi-Fi task from rolling
+back newer sound state.
+
+The live runtime bridge, layer-shell popover, outside-click/Escape dismissal,
+keyboard focus order, and real Orca/niri evidence remain pending. A future
+Focus policy service must also serialize schedule/mode changes across shell
+processes; this executor only updates the current C4 settings authority and
+does not claim E4 complete.

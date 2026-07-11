@@ -39,6 +39,12 @@ Dependencies point downward. Domain crates do not import GPUI, D-Bus, Wayland,
 or platform FFI. UI code renders domain snapshots and sends typed commands.
 Adapters translate external events into domain events.
 
+`rmac-compositor` owns compositor-independent outputs, workspaces, windows,
+layer surfaces, focus, activation, urgency, snapshots, and incremental events.
+It depends only on serialization crates. The direct niri adapter is a lower
+layer and must tolerate the source event stream's non-atomic cross-collection
+ordering and future JSON additions.
+
 The intended crate map and migration phases are specified in `PLAN_V2.md`.
 
 ## UI and update model

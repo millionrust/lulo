@@ -4893,6 +4893,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-compositor"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-display"
 version = "0.1.0"
 dependencies = [

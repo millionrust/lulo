@@ -31,6 +31,7 @@ rmac-apps = { version = "=0.1.0", path = "crates/rmac-apps" }
 rmac-appearance = { version = "=0.1.0", path = "crates/rmac-appearance" }
 rmac-appearance-portal = { version = "=0.1.0", path = "crates/rmac-appearance-portal" }
 rmac-bluetooth = { version = "=0.1.0", path = "crates/rmac-bluetooth" }
+rmac-compositor = { version = "=0.1.0", path = "crates/rmac-compositor" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }

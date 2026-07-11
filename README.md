@@ -36,7 +36,7 @@ Shared crates:
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 - `rmac-dock` — pinned/running app grouping, output scope, and activation policy.
 - `rmac-dock-runtime` — coherent live catalog, settings, niri, and hotplug state.
-- `rmac-dock-system` — safe desktop-entry launch and direct niri Dock activation.
+- `rmac-dock-system` — safe launch, niri window actions, and durable Dock pins.
 - `rmac-bluetooth` — BlueZ/macOS Bluetooth state, discovery, and device control.
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
 - `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.

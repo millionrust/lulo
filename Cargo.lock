@@ -4954,6 +4954,7 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-dock",
+ "rmac-shell-settings",
 ]
 
 [[package]]

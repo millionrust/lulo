@@ -10,6 +10,8 @@ pub type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub enum Operation {
     Launch,
     Focus,
+    Close,
+    UpdatePins,
     Resolve,
 }
 
@@ -44,6 +46,8 @@ impl fmt::Display for Operation {
         formatter.write_str(match self {
             Self::Launch => "launch application",
             Self::Focus => "focus application window",
+            Self::Close => "close application window",
+            Self::UpdatePins => "update pinned applications",
             Self::Resolve => "resolve Dock activation",
         })
     }
@@ -91,8 +95,19 @@ impl std::error::Error for Error {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Outcome {
-    Launched { app_id: String, process_id: u32 },
-    FocusRequested { window: rmac_compositor::WindowId },
+    Launched {
+        app_id: String,
+        process_id: u32,
+    },
+    FocusRequested {
+        window: rmac_compositor::WindowId,
+    },
+    CloseRequested {
+        window: rmac_compositor::WindowId,
+    },
+    PinsUpdated {
+        pinned: Vec<rmac_shell_settings::AppId>,
+    },
     NoAction,
 }
 
@@ -107,6 +122,17 @@ pub trait Backend: Send + Sync + 'static {
         request_id: rmac_compositor::ActivationId,
         window: rmac_compositor::WindowId,
     ) -> BackendFuture<'_, Result<(), BackendError>>;
+
+    fn close_window(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        window: rmac_compositor::WindowId,
+    ) -> BackendFuture<'_, Result<(), BackendError>>;
+
+    fn update_pins(
+        &self,
+        command: &rmac_dock::PinCommand,
+    ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>>;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -145,6 +171,58 @@ impl Backend for SystemBackend {
             .map_err(|error| BackendError::new(action_error_kind(error.kind), error.message))
         })
     }
+
+    fn close_window(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        window: rmac_compositor::WindowId,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        Box::pin(async move {
+            rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+                id: request_id,
+                action: rmac_compositor::Action::CloseWindow { window },
+            })
+            .await
+            .result
+            .map_err(|error| BackendError::new(action_error_kind(error.kind), error.message))
+        })
+    }
+
+    fn update_pins(
+        &self,
+        command: &rmac_dock::PinCommand,
+    ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>> {
+        let command = command.clone();
+        Box::pin(async move {
+            blocking::unblock(move || {
+                let store = rmac_shell_settings::ShellSettingsStore::from_environment()
+                    .map_err(settings_error)?;
+                update_pins_in_store(&store, &command)
+            })
+            .await
+        })
+    }
+}
+
+fn update_pins_in_store(
+    store: &rmac_shell_settings::ShellSettingsStore,
+    command: &rmac_dock::PinCommand,
+) -> Result<Vec<rmac_shell_settings::AppId>, BackendError> {
+    let mut settings = store.load().map_err(settings_error)?.settings;
+    let next = rmac_dock::apply_pin_command(&settings.pinned_apps, command)
+        .map_err(|error| BackendError::new(FailureKind::Unsupported, error.to_string()))?;
+    if next != settings.pinned_apps {
+        settings.pinned_apps = next;
+        store.save(&settings).map_err(settings_error)?;
+    }
+    store
+        .load()
+        .map(|snapshot| snapshot.settings.pinned_apps)
+        .map_err(settings_error)
+}
+
+fn settings_error(error: rmac_shell_settings::Error) -> BackendError {
+    BackendError::new(FailureKind::Io(error.error_kind), error.to_string())
 }
 
 fn action_error_kind(kind: rmac_compositor::ActionErrorKind) -> FailureKind {
@@ -195,9 +273,51 @@ pub async fn execute(
     }
 }
 
+/// Execute one context-menu action. Window and pin state still changes only
+/// when the niri/settings watchers publish their authoritative result.
+pub async fn execute_context(
+    action: &rmac_dock::ContextAction,
+    request_id: rmac_compositor::ActivationId,
+    backend: &impl Backend,
+) -> Result<Outcome, Error> {
+    match action {
+        rmac_dock::ContextAction::LaunchNew { app_id, spec } => backend
+            .launch(spec)
+            .await
+            .map(|process_id| Outcome::Launched {
+                app_id: app_id.clone(),
+                process_id,
+            })
+            .map_err(|error| Error::new(Operation::Launch, error.kind, app_id, error.detail)),
+        rmac_dock::ContextAction::FocusWindow { app_id, window } => backend
+            .focus_window(request_id, *window)
+            .await
+            .map(|()| Outcome::FocusRequested { window: *window })
+            .map_err(|error| Error::new(Operation::Focus, error.kind, app_id, error.detail)),
+        rmac_dock::ContextAction::CloseWindow { app_id, window } => backend
+            .close_window(request_id, *window)
+            .await
+            .map(|()| Outcome::CloseRequested { window: *window })
+            .map_err(|error| Error::new(Operation::Close, error.kind, app_id, error.detail)),
+        rmac_dock::ContextAction::UpdatePins(command) => backend
+            .update_pins(command)
+            .await
+            .map(|pinned| Outcome::PinsUpdated { pinned })
+            .map_err(|error| {
+                Error::new(
+                    Operation::UpdatePins,
+                    error.kind,
+                    command.app_id(),
+                    error.detail,
+                )
+            }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
@@ -241,6 +361,36 @@ mod tests {
                     .expect("calls lock")
                     .push(format!("focus {} request {}", window.0, request_id.0));
                 self.result(())
+            })
+        }
+
+        fn close_window(
+            &self,
+            request_id: rmac_compositor::ActivationId,
+            window: rmac_compositor::WindowId,
+        ) -> BackendFuture<'_, Result<(), BackendError>> {
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .expect("calls lock")
+                    .push(format!("close {} request {}", window.0, request_id.0));
+                self.result(())
+            })
+        }
+
+        fn update_pins(
+            &self,
+            command: &rmac_dock::PinCommand,
+        ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>> {
+            let command = command.clone();
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .expect("calls lock")
+                    .push(format!("pins {command:?}"));
+                self.result(vec![rmac_shell_settings::AppId(
+                    command.app_id().to_owned(),
+                )])
             })
         }
     }
@@ -344,5 +494,99 @@ mod tests {
         .expect_err("unavailable remains unavailable");
         assert_eq!(error.operation, Operation::Resolve);
         assert!(backend.calls.into_inner().expect("calls").is_empty());
+    }
+
+    #[test]
+    fn context_close_uses_the_exact_window_request() {
+        let backend = FakeBackend::default();
+        let outcome = futures_lite::future::block_on(execute_context(
+            &rmac_dock::ContextAction::CloseWindow {
+                app_id: "terminal.desktop".into(),
+                window: rmac_compositor::WindowId(88),
+            },
+            rmac_compositor::ActivationId(14),
+            &backend,
+        ))
+        .expect("close succeeds");
+        assert_eq!(
+            outcome,
+            Outcome::CloseRequested {
+                window: rmac_compositor::WindowId(88)
+            }
+        );
+        assert_eq!(
+            backend.calls.into_inner().expect("calls"),
+            ["close 88 request 14"]
+        );
+    }
+
+    #[test]
+    fn pin_receipt_does_not_mutate_the_dock_model() {
+        let backend = FakeBackend::default();
+        let command = rmac_dock::PinCommand::Pin {
+            app_id: "music.desktop".into(),
+        };
+        let outcome = futures_lite::future::block_on(execute_context(
+            &rmac_dock::ContextAction::UpdatePins(command.clone()),
+            rmac_compositor::ActivationId(1),
+            &backend,
+        ))
+        .expect("pin persists");
+        assert_eq!(
+            outcome,
+            Outcome::PinsUpdated {
+                pinned: vec![rmac_shell_settings::AppId("music.desktop".into())]
+            }
+        );
+        assert_eq!(
+            backend.calls.into_inner().expect("calls"),
+            [format!("pins {command:?}")]
+        );
+    }
+
+    #[test]
+    fn pin_store_transaction_preserves_unrelated_shell_settings() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("rmac-dock-system-{}-{unique}", std::process::id()));
+        let store = rmac_shell_settings::ShellSettingsStore::new(directory.join("shell.json"));
+        let settings = rmac_shell_settings::ShellSettings {
+            dock: rmac_shell_settings::DockSettings {
+                autohide: true,
+                ..Default::default()
+            },
+            providers: [(
+                rmac_shell_settings::ProviderId("files".into()),
+                rmac_shell_settings::ProviderPolicy::default(),
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        store.save(&settings).expect("seed settings");
+
+        let pinned = update_pins_in_store(
+            &store,
+            &rmac_dock::PinCommand::Pin {
+                app_id: "terminal.desktop".into(),
+            },
+        )
+        .expect("pin persists");
+        assert_eq!(
+            pinned,
+            [rmac_shell_settings::AppId("terminal.desktop".into())]
+        );
+        let loaded = store.load().expect("reload settings").settings;
+        assert!(loaded.dock.autohide);
+        assert!(loaded
+            .providers
+            .contains_key(&rmac_shell_settings::ProviderId("files".into())));
+
+        std::fs::remove_dir_all(&directory).unwrap_or_else(|error| {
+            panic!("remove Dock settings test directory {directory:?}: {error}")
+        });
     }
 }

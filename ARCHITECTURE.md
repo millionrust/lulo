@@ -216,6 +216,9 @@ pointer dynamics, and process execution remain adapters above this model.
 values go through the argument-separated application launcher off the render
 thread, and window focus goes directly to the niri socket with a request ID.
 Receipts never update the Dock model; only later catalog/compositor events do.
+Its context boundary exposes per-window focus/close and current-settings-based
+pin mutations. Pin writes preserve unrelated shell settings and reread the
+atomic authority before returning; there is no fabricated process-wide Quit.
 `rmac-dock-runtime` establishes the app-directory watcher before discovery and
 combines its coalesced changes with reconnecting niri events and versioned
 shell-settings events. It waits until every source is healthy or explicitly

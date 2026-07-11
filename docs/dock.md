@@ -52,6 +52,31 @@ Launch I/O and niri unavailable/transport/protocol/rejected/unsupported errors
 remain typed with the operation and application/window identity. Unavailable
 and explicit no-op model outcomes never touch either platform service.
 
+## Context actions and pins
+
+The context model exposes a launch-new action when the catalog provides an
+exact launch specification, plus show and close actions for every real niri
+window. Window title, focused state, and urgency remain attached to their
+stable IDs. It intentionally exposes no process-wide **Quit**: closing known
+windows is truthful, while sending signals or guessing process ownership is
+not equivalent to an application quit contract.
+
+Pinned items expose unpin and only the reorder directions that can change their
+position. Unpinned running apps expose pin. The pure pin reducer matches IDs
+using the same desktop normalization, preserves exact stored IDs, treats a
+duplicate pin or edge move as a no-op, and rejects moving or unpinning an app
+that is not currently pinned. Drag reorder uses an explicit destination index,
+bounded to the current pin list, and moves one exact stored ID without
+reconstructing the rest of the order.
+
+`rmac-dock-system` rereads the latest shell settings, applies one pin command,
+atomically saves only when the list changed, then rereads before returning a
+receipt. Tests prove unrelated Dock and provider settings survive. The visible
+Dock still waits for the settings watcher instead of applying that receipt
+optimistically. A future single-writer shell-settings service should serialize
+simultaneous writes across processes; this slice does not claim that E-phase
+authority is complete.
+
 ## Live runtime
 
 `rmac-dock-runtime` watches the installed-application catalog, the versioned

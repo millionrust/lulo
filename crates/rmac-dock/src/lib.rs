@@ -2,6 +2,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,6 +42,96 @@ pub enum Activation {
         detail: String,
     },
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MoveDirection {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PinCommand {
+    Pin {
+        app_id: String,
+    },
+    Unpin {
+        app_id: String,
+    },
+    Move {
+        app_id: String,
+        direction: MoveDirection,
+    },
+    MoveTo {
+        app_id: String,
+        index: usize,
+    },
+}
+
+impl PinCommand {
+    pub fn app_id(&self) -> &str {
+        match self {
+            Self::Pin { app_id }
+            | Self::Unpin { app_id }
+            | Self::Move { app_id, .. }
+            | Self::MoveTo { app_id, .. } => app_id,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContextAction {
+    LaunchNew {
+        app_id: String,
+        spec: rmac_apps::LaunchSpec,
+    },
+    FocusWindow {
+        app_id: String,
+        window: rmac_compositor::WindowId,
+    },
+    CloseWindow {
+        app_id: String,
+        window: rmac_compositor::WindowId,
+    },
+    UpdatePins(PinCommand),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WindowMenu {
+    pub id: rmac_compositor::WindowId,
+    pub title: String,
+    pub focused: bool,
+    pub urgent: bool,
+    pub focus: ContextAction,
+    pub close: ContextAction,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContextMenu {
+    pub app_id: String,
+    pub application_name: String,
+    pub launch_new: Option<ContextAction>,
+    pub windows: Vec<WindowMenu>,
+    pub pin: PinCommand,
+    pub move_left: Option<PinCommand>,
+    pub move_right: Option<PinCommand>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PinError {
+    InvalidIdentity,
+    NotPinned { app_id: String },
+}
+
+impl fmt::Display for PinError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidIdentity => formatter.write_str("application identity is empty"),
+            Self::NotPinned { app_id } => write!(formatter, "{app_id} is not pinned"),
+        }
+    }
+}
+
+impl std::error::Error for PinError {}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Model {
@@ -149,6 +240,132 @@ impl Model {
             .map(Activation::FocusWindow)
             .unwrap_or(Activation::NoAction)
     }
+
+    pub fn context_menu(&self, app_id: &str) -> Option<ContextMenu> {
+        let canonical = canonical_app_id(app_id);
+        let index = self
+            .items
+            .iter()
+            .position(|item| canonical_app_id(&item.id) == canonical)?;
+        let item = &self.items[index];
+        let windows = item
+            .windows
+            .iter()
+            .map(|window| {
+                let title = window
+                    .title
+                    .clone()
+                    .filter(|title| !title.trim().is_empty())
+                    .unwrap_or_else(|| item.name.clone());
+                WindowMenu {
+                    id: window.id,
+                    title,
+                    focused: window.focused,
+                    urgent: window.urgent,
+                    focus: ContextAction::FocusWindow {
+                        app_id: item.id.clone(),
+                        window: window.id,
+                    },
+                    close: ContextAction::CloseWindow {
+                        app_id: item.id.clone(),
+                        window: window.id,
+                    },
+                }
+            })
+            .collect();
+        let pinned_index = self.items[..index]
+            .iter()
+            .filter(|item| item.pinned)
+            .count();
+        let pinned_count = self.items.iter().filter(|item| item.pinned).count();
+        Some(ContextMenu {
+            app_id: item.id.clone(),
+            application_name: item.name.clone(),
+            launch_new: item.launch.clone().map(|spec| ContextAction::LaunchNew {
+                app_id: item.id.clone(),
+                spec,
+            }),
+            windows,
+            pin: if item.pinned {
+                PinCommand::Unpin {
+                    app_id: item.id.clone(),
+                }
+            } else {
+                PinCommand::Pin {
+                    app_id: item.id.clone(),
+                }
+            },
+            move_left: (item.pinned && pinned_index > 0).then(|| PinCommand::Move {
+                app_id: item.id.clone(),
+                direction: MoveDirection::Left,
+            }),
+            move_right: (item.pinned && pinned_index + 1 < pinned_count).then(|| {
+                PinCommand::Move {
+                    app_id: item.id.clone(),
+                    direction: MoveDirection::Right,
+                }
+            }),
+        })
+    }
+}
+
+pub fn apply_pin_command(
+    pinned: &[rmac_shell_settings::AppId],
+    command: &PinCommand,
+) -> Result<Vec<rmac_shell_settings::AppId>, PinError> {
+    let canonical = canonical_app_id(command.app_id());
+    if canonical.is_empty() {
+        return Err(PinError::InvalidIdentity);
+    }
+    let mut result = pinned.to_vec();
+    let existing = result
+        .iter()
+        .position(|app_id| canonical_app_id(&app_id.0) == canonical);
+    match command {
+        PinCommand::Pin { app_id } => {
+            if existing.is_none() {
+                result.push(rmac_shell_settings::AppId(app_id.clone()));
+            }
+        }
+        PinCommand::Unpin { app_id } => {
+            let Some(index) = existing else {
+                return Err(PinError::NotPinned {
+                    app_id: app_id.clone(),
+                });
+            };
+            result.remove(index);
+        }
+        PinCommand::Move { app_id, direction } => {
+            let Some(index) = existing else {
+                return Err(PinError::NotPinned {
+                    app_id: app_id.clone(),
+                });
+            };
+            let destination = match direction {
+                MoveDirection::Left => index.saturating_sub(1),
+                MoveDirection::Right => (index + 1).min(result.len() - 1),
+            };
+            if destination != index {
+                result.swap(index, destination);
+            }
+        }
+        PinCommand::MoveTo {
+            app_id,
+            index: destination,
+        } => {
+            let Some(index) = existing else {
+                return Err(PinError::NotPinned {
+                    app_id: app_id.clone(),
+                });
+            };
+            let destination = (*destination).min(result.len() - 1);
+            if destination != index {
+                let moved = result.remove(index);
+                result.insert(destination, moved);
+            }
+        }
+    }
+    Ok(result)
 }
 
 #[derive(Clone, Debug)]
@@ -514,6 +731,152 @@ mod tests {
                 Some(&rmac_compositor::OutputId::from("eDP-1")),
             ),
             [rmac_compositor::OutputId::from("eDP-1")]
+        );
+    }
+
+    #[test]
+    fn context_menu_exposes_real_windows_without_inventing_quit() {
+        let catalog = [application("terminal.desktop", "Terminal")];
+        let pinned = [rmac_shell_settings::AppId("terminal.desktop".into())];
+        let compositor = rmac_compositor::Snapshot {
+            windows: vec![
+                window(1, "terminal", true, false, 20),
+                window(2, "terminal", false, true, 10),
+            ],
+            ..Default::default()
+        };
+        let model = Model::build(&pinned, &Default::default(), &catalog, &compositor);
+        let menu = model.context_menu("terminal").expect("Dock item exists");
+        assert_eq!(menu.application_name, "Terminal");
+        assert!(matches!(
+            menu.launch_new,
+            Some(ContextAction::LaunchNew { .. })
+        ));
+        assert_eq!(menu.windows.len(), 2);
+        assert!(menu.windows[0].focused);
+        assert!(matches!(
+            menu.windows[0].close,
+            ContextAction::CloseWindow {
+                window: rmac_compositor::WindowId(1),
+                ..
+            }
+        ));
+        assert_eq!(
+            menu.pin,
+            PinCommand::Unpin {
+                app_id: "terminal.desktop".into()
+            }
+        );
+        assert!(menu.move_left.is_none());
+        assert!(menu.move_right.is_none());
+    }
+
+    #[test]
+    fn context_menu_offers_pin_for_an_unpinned_running_app() {
+        let catalog = [application("music.desktop", "Music")];
+        let compositor = rmac_compositor::Snapshot {
+            windows: vec![window(4, "music", false, false, 1)],
+            ..Default::default()
+        };
+        let model = Model::build(&[], &Default::default(), &catalog, &compositor);
+        let menu = model
+            .context_menu("music.desktop")
+            .expect("running item exists");
+        assert_eq!(
+            menu.pin,
+            PinCommand::Pin {
+                app_id: "music.desktop".into()
+            }
+        );
+    }
+
+    #[test]
+    fn pin_mutations_are_idempotent_bounded_and_preserve_exact_ids() {
+        let pinned = vec![
+            rmac_shell_settings::AppId("finder.desktop".into()),
+            rmac_shell_settings::AppId("terminal.desktop".into()),
+        ];
+        assert_eq!(
+            apply_pin_command(
+                &pinned,
+                &PinCommand::Pin {
+                    app_id: "Finder".into()
+                }
+            )
+            .expect("duplicate pin is a no-op"),
+            pinned
+        );
+        let moved = apply_pin_command(
+            &pinned,
+            &PinCommand::Move {
+                app_id: "terminal".into(),
+                direction: MoveDirection::Left,
+            },
+        )
+        .expect("pinned app moves");
+        assert_eq!(moved[0].0, "terminal.desktop");
+        assert_eq!(moved[1].0, "finder.desktop");
+        let bounded = apply_pin_command(
+            &moved,
+            &PinCommand::Move {
+                app_id: "terminal.desktop".into(),
+                direction: MoveDirection::Left,
+            },
+        )
+        .expect("edge move is a no-op");
+        assert_eq!(bounded, moved);
+        let unpinned = apply_pin_command(
+            &bounded,
+            &PinCommand::Unpin {
+                app_id: "finder".into(),
+            },
+        )
+        .expect("pin is removed");
+        assert_eq!(
+            unpinned,
+            [rmac_shell_settings::AppId("terminal.desktop".into())]
+        );
+    }
+
+    #[test]
+    fn reorder_rejects_an_app_that_is_not_pinned() {
+        let error = apply_pin_command(
+            &[],
+            &PinCommand::Move {
+                app_id: "terminal.desktop".into(),
+                direction: MoveDirection::Right,
+            },
+        )
+        .expect_err("missing pin cannot move");
+        assert_eq!(
+            error,
+            PinError::NotPinned {
+                app_id: "terminal.desktop".into()
+            }
+        );
+    }
+
+    #[test]
+    fn drag_reorder_moves_to_a_bounded_persisted_index() {
+        let pinned = vec![
+            rmac_shell_settings::AppId("finder.desktop".into()),
+            rmac_shell_settings::AppId("terminal.desktop".into()),
+            rmac_shell_settings::AppId("notes.desktop".into()),
+        ];
+        let moved = apply_pin_command(
+            &pinned,
+            &PinCommand::MoveTo {
+                app_id: "finder".into(),
+                index: usize::MAX,
+            },
+        )
+        .expect("drag target is bounded");
+        assert_eq!(
+            moved
+                .iter()
+                .map(|app_id| app_id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["terminal.desktop", "notes.desktop", "finder.desktop"]
         );
     }
 }

@@ -9,9 +9,7 @@ mod file_ops;
 mod pasteboard;
 
 use std::borrow::Cow;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
-use std::hash::{Hash, Hasher};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -569,6 +567,14 @@ impl FinderView {
                     return;
                 }
                 this.entries = entries;
+                let entry_paths = this
+                    .entries
+                    .iter()
+                    .map(|entry| entry.path.clone())
+                    .collect::<BTreeSet<_>>();
+                this.thumbs.retain(|source, thumbnail| {
+                    entry_paths.contains(source) && rmac_thumbnails::is_current(source, thumbnail)
+                });
                 if let Some(free) = free {
                     this.free_bytes = free;
                 }
@@ -582,12 +588,19 @@ impl FinderView {
         .detach();
     }
 
-    /// Generate image thumbnails (sips → cached PNG) off the main thread.
+    /// Generate platform thumbnails into the persistent cache off the main thread.
     fn gen_thumbs(&mut self, cx: &mut Context<Self>) {
+        let directory = self.cwd.clone();
         let targets: Vec<PathBuf> = self
             .entries
             .iter()
-            .filter(|e| !e.is_dir && is_image(&e.path) && !self.thumbs.contains_key(&e.path))
+            .filter(|entry| {
+                !entry.is_dir
+                    && rmac_thumbnails::is_supported(&entry.path)
+                    && !self.thumbs.get(&entry.path).is_some_and(|thumbnail| {
+                        rmac_thumbnails::is_current(&entry.path, thumbnail)
+                    })
+            })
             .map(|e| e.path.clone())
             .collect();
         if targets.is_empty() {
@@ -597,16 +610,41 @@ impl FinderView {
             let results = cx
                 .background_executor()
                 .spawn(async move {
-                    let cache = thumb_cache_dir();
-                    targets
-                        .into_iter()
-                        .filter_map(|p| make_thumb(&p, &cache).map(|t| (p, t)))
-                        .collect::<Vec<_>>()
+                    let mut generated = Vec::new();
+                    let mut first_error = None;
+                    let mut failure_count = 0;
+                    for path in targets {
+                        match rmac_thumbnails::generate(&path) {
+                            Ok(thumbnail) => generated.push((path, thumbnail)),
+                            Err(error) => {
+                                failure_count += 1;
+                                first_error.get_or_insert(error);
+                            }
+                        }
+                    }
+                    (generated, first_error, failure_count)
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
-                for (p, t) in results {
-                    this.thumbs.insert(p, t);
+                for (p, t) in results.0 {
+                    if this.entries.iter().any(|entry| entry.path == p)
+                        && rmac_thumbnails::is_current(&p, &t)
+                    {
+                        this.thumbs.insert(p, t);
+                    }
+                }
+                if this.cwd == directory && this.operation_error.is_none() {
+                    this.operation_error = results.1.map(|error| {
+                        if results.2 == 1 {
+                            format!("Could not generate thumbnail: {error}").into()
+                        } else {
+                            format!(
+                                "Could not generate thumbnail: {error} (and {} more failures)",
+                                results.2 - 1
+                            )
+                            .into()
+                        }
+                    });
                 }
                 cx.notify();
             });
@@ -2584,53 +2622,6 @@ fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
             o.reverse()
         }
     });
-}
-
-fn is_image(path: &Path) -> bool {
-    matches!(
-        path.extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_lowercase()
-            .as_str(),
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "bmp" | "tiff" | "tif"
-    )
-}
-
-fn thumb_cache_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let dir = PathBuf::from(home).join("Library/Caches/rmac-finder-thumbs");
-    std::fs::create_dir_all(&dir).ok();
-    dir
-}
-
-fn make_thumb(src: &Path, cache: &Path) -> Option<PathBuf> {
-    let mut h = DefaultHasher::new();
-    src.hash(&mut h);
-    let out = cache.join(format!("{:x}.png", h.finish()));
-    if out.exists() {
-        return Some(out);
-    }
-    let ok = Command::new("sips")
-        .args([
-            "-s",
-            "format",
-            "png",
-            "-Z",
-            "96",
-            src.to_str()?,
-            "--out",
-            out.to_str()?,
-        ])
-        .output()
-        .ok()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if ok && out.exists() {
-        Some(out)
-    } else {
-        None
-    }
 }
 
 fn file_info(e: &Entry) -> Vec<(&'static str, String)> {

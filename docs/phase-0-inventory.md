@@ -71,13 +71,18 @@ macOS retains Finder reveal.
 
 Replacement: asynchronous `FileOperations`, a search-provider interface,
 freedesktop MIME/default-app integration, portal support, mount service, and
-Linux thumbnail/preview providers.
+a Linux preview provider.
 
 `rmac-search` now owns the search-provider boundary. Finder keeps Spotlight for
 macOS, while Linux recursive filename search walks without following symlinked
 directories, supports cancellation and result limits, and reads Recents from
 the XDG `recently-used.xbel` bookmark store. Finder rejects stale background
 results after navigation or a newer request and hides macOS tags on Linux.
+
+`rmac-thumbnails` now owns image thumbnail generation. Linux decodes supported
+images in-process and writes PNG thumbnails atomically under the XDG cache;
+macOS retains `sips` for HEIC support. Cache keys include source size and
+modification time, and Finder drops stale or off-directory mappings on reload.
 
 ### System Settings
 

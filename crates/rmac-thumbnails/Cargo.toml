@@ -1,0 +1,10 @@
+[package]
+name = "rmac-thumbnails"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+image.workspace = true
+rmac-storage.workspace = true

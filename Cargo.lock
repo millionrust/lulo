@@ -4820,6 +4820,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "rmac-search",
+ "rmac-thumbnails",
  "rmac-ui",
  "rust-embed",
  "trash",
@@ -4904,6 +4905,14 @@ dependencies = [
  "rmac-editor",
  "rmac-storage",
  "rmac-ui",
+]
+
+[[package]]
+name = "rmac-thumbnails"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "rmac-storage",
 ]
 
 [[package]]

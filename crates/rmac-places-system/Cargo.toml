@@ -1,0 +1,12 @@
+[package]
+name = "rmac-places-system"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+rmac-places.workspace = true
+rmac-portal.workspace = true
+trash.workspace = true

@@ -232,6 +232,12 @@ emptiness, and item count. It never evaluates shell text, enumerates mounts, or
 permanently deletes content; those responsibilities belong to its system
 adapter and an explicit destructive confirmation path.
 
+`rmac-places-system` supplies that adapter with partial-failure reports. It
+reads XDG configuration, checks place availability, opens Downloads through
+the desktop portal boundary, and delegates home/mounted-volume Trash behavior
+to the freedesktop implementation. Empty Trash requires a module-private
+confirmation value and rereads the item count after the purge.
+
 ## Persistence
 
 The target persistence contract is:

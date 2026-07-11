@@ -20,7 +20,7 @@ rmac-search.workspace = true
 rmac-thumbnails.workspace = true
 chrono.workspace = true
 rust-embed.workspace = true
-trash = "5"
+trash.workspace = true
 notify.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -5025,6 +5025,15 @@ name = "rmac-places"
 version = "0.1.0"
 
 [[package]]
+name = "rmac-places-system"
+version = "0.1.0"
+dependencies = [
+ "rmac-places",
+ "rmac-portal",
+ "trash",
+]
+
+[[package]]
 name = "rmac-platform-lab"
 version = "0.1.0"
 dependencies = [

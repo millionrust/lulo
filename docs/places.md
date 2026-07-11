@@ -32,6 +32,24 @@ is empty, and the authoritative item count. It does not infer state by reading
 only `$XDG_DATA_HOME/Trash`: the freedesktop contract permits trash bins on
 other mounted filesystems as well.
 
-The Linux adapter and destructive confirmation flow remain the next slice.
-Until they land, the Dock must not show a functioning Empty Trash action or
-claim D5 special-item completion.
+## System adapter
+
+`rmac-places-system` reads HOME and the absolute XDG configuration root, then
+loads `user-dirs.dirs`, checks the resolved place paths, and returns a snapshot
+plus typed warnings. An unreadable or malformed user-dir file falls back to
+`HOME/Downloads` without hiding Home or Trash. A failed Trash enumeration marks
+only Trash unavailable.
+
+On Linux, Trash enumeration and purge use the repository's existing `trash`
+dependency, which implements the freedesktop home and mounted-filesystem trash
+contract. The adapter does not scan only one directory. Downloads opens through
+the shared desktop-portal boundary and fails clearly if its directory is absent.
+
+Permanent purge requires an `EmptyTrashConfirmation` that can only be created
+from an affirmative confirmation result. After purge, the adapter enumerates
+again and returns the authoritative empty/count state; errors remain typed as
+empty-versus-inspect failures. macOS remains a build host and reports Trash
+enumeration unavailable rather than fabricating Linux-equivalent state.
+
+The live places watcher and Dock projection remain the next slice. Until they
+land, this adapter does not claim D5 special-item completion.

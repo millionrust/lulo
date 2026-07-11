@@ -1,0 +1,414 @@
+//! Filesystem, portal, and freedesktop Trash adapter for user places.
+
+use std::fmt;
+use std::io;
+use std::path::{Path, PathBuf};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Operation {
+    ResolveHome,
+    ReadUserDirs,
+    InspectPlace,
+    InspectTrash,
+    OpenDownloads,
+    EmptyTrash,
+}
+
+impl fmt::Display for Operation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::ResolveHome => "resolve the home directory",
+            Self::ReadUserDirs => "read XDG user directories",
+            Self::InspectPlace => "inspect a user place",
+            Self::InspectTrash => "inspect Trash",
+            Self::OpenDownloads => "open Downloads",
+            Self::EmptyTrash => "empty Trash",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Error {
+    pub operation: Operation,
+    pub path: Option<PathBuf>,
+    pub error_kind: Option<io::ErrorKind>,
+    detail: String,
+}
+
+impl Error {
+    fn message(operation: Operation, path: Option<&Path>, detail: impl Into<String>) -> Self {
+        Self {
+            operation,
+            path: path.map(Path::to_path_buf),
+            error_kind: None,
+            detail: detail.into(),
+        }
+    }
+
+    fn from_io(operation: Operation, path: &Path, error: io::Error) -> Self {
+        Self {
+            operation,
+            path: Some(path.to_path_buf()),
+            error_kind: Some(error.kind()),
+            detail: error.to_string(),
+        }
+    }
+
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "could not {}", self.operation)?;
+        if let Some(path) = &self.path {
+            write!(formatter, " at {}", path.display())?;
+        }
+        write!(formatter, ": {}", self.detail)
+    }
+}
+
+impl std::error::Error for Error {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Report {
+    pub snapshot: rmac_places::Snapshot,
+    pub warnings: Vec<Error>,
+}
+
+pub trait Backend {
+    fn home(&self) -> Option<PathBuf>;
+    fn config_home(&self) -> Option<PathBuf>;
+    fn read_optional(&self, path: &Path) -> io::Result<Option<String>>;
+    fn exists(&self, path: &Path) -> io::Result<bool>;
+    fn trash_count(&self) -> Result<usize, String>;
+    fn purge_trash(&self) -> Result<(), String>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SystemBackend;
+
+impl Backend for SystemBackend {
+    fn home(&self) -> Option<PathBuf> {
+        std::env::var_os("HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    }
+
+    fn config_home(&self) -> Option<PathBuf> {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+    }
+
+    fn read_optional(&self, path: &Path) -> io::Result<Option<String>> {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => Ok(Some(contents)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn exists(&self, path: &Path) -> io::Result<bool> {
+        match std::fs::metadata(path) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn trash_count(&self) -> Result<usize, String> {
+        #[cfg(all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        ))]
+        {
+            trash::os_limited::list()
+                .map(|items| items.len())
+                .map_err(|error| error.to_string())
+        }
+        #[cfg(not(all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        )))]
+        {
+            Err("Trash enumeration is not available on this development platform".into())
+        }
+    }
+
+    fn purge_trash(&self) -> Result<(), String> {
+        #[cfg(all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        ))]
+        {
+            let items = trash::os_limited::list().map_err(|error| error.to_string())?;
+            trash::os_limited::purge_all(items).map_err(|error| error.to_string())
+        }
+        #[cfg(not(all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        )))]
+        {
+            Err("Empty Trash is not available on this development platform".into())
+        }
+    }
+}
+
+pub fn snapshot(backend: &impl Backend) -> Result<Report, Error> {
+    let home = backend
+        .home()
+        .ok_or_else(|| Error::message(Operation::ResolveHome, None, "HOME is not configured"))?;
+    if !home.is_absolute() {
+        return Err(Error::message(
+            Operation::ResolveHome,
+            Some(&home),
+            "HOME must be absolute",
+        ));
+    }
+    let mut warnings = Vec::new();
+    let config_home = backend
+        .config_home()
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home.join(".config"));
+    let user_dirs_path = config_home.join("user-dirs.dirs");
+    let user_dirs = match backend.read_optional(&user_dirs_path) {
+        Ok(contents) => contents,
+        Err(error) => {
+            warnings.push(Error::from_io(
+                Operation::ReadUserDirs,
+                &user_dirs_path,
+                error,
+            ));
+            None
+        }
+    };
+    let downloads = match rmac_places::resolve_downloads(&home, user_dirs.as_deref()) {
+        Ok(downloads) => downloads,
+        Err(error) => {
+            warnings.push(Error::message(
+                Operation::ReadUserDirs,
+                Some(&user_dirs_path),
+                error.to_string(),
+            ));
+            rmac_places::resolve_downloads(&home, None)
+                .expect("an absolute HOME always produces a fallback")
+        }
+    };
+    let home_exists = inspect_place(backend, &home, &mut warnings);
+    let downloads_exists = inspect_place(backend, &downloads.path, &mut warnings);
+    let trash = match backend.trash_count() {
+        Ok(item_count) => rmac_places::TrashSnapshot {
+            available: true,
+            empty: item_count == 0,
+            item_count,
+        },
+        Err(detail) => {
+            warnings.push(Error::message(Operation::InspectTrash, None, detail));
+            rmac_places::TrashSnapshot::default()
+        }
+    };
+    Ok(Report {
+        snapshot: rmac_places::Snapshot {
+            home: rmac_places::Place {
+                path: home,
+                exists: home_exists,
+            },
+            downloads: rmac_places::Place {
+                path: downloads.path,
+                exists: downloads_exists,
+            },
+            downloads_configured: downloads.configured,
+            trash,
+        },
+        warnings,
+    })
+}
+
+fn inspect_place(backend: &impl Backend, path: &Path, warnings: &mut Vec<Error>) -> bool {
+    match backend.exists(path) {
+        Ok(exists) => exists,
+        Err(error) => {
+            warnings.push(Error::from_io(Operation::InspectPlace, path, error));
+            false
+        }
+    }
+}
+
+pub async fn open_downloads(snapshot: &rmac_places::Snapshot) -> Result<(), Error> {
+    if !snapshot.downloads.exists {
+        return Err(Error::message(
+            Operation::OpenDownloads,
+            Some(&snapshot.downloads.path),
+            "directory is unavailable",
+        ));
+    }
+    rmac_portal::show_item(&snapshot.downloads.path)
+        .await
+        .map_err(|error| {
+            Error::message(
+                Operation::OpenDownloads,
+                Some(&snapshot.downloads.path),
+                error.to_string(),
+            )
+        })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EmptyTrashConfirmation(());
+
+pub fn confirm_empty_trash(confirmed: bool) -> Option<EmptyTrashConfirmation> {
+    confirmed.then_some(EmptyTrashConfirmation(()))
+}
+
+pub fn empty_trash(
+    _: EmptyTrashConfirmation,
+    backend: &impl Backend,
+) -> Result<rmac_places::TrashSnapshot, Error> {
+    backend
+        .purge_trash()
+        .map_err(|detail| Error::message(Operation::EmptyTrash, None, detail))?;
+    let item_count = backend
+        .trash_count()
+        .map_err(|detail| Error::message(Operation::InspectTrash, None, detail))?;
+    Ok(rmac_places::TrashSnapshot {
+        available: true,
+        empty: item_count == 0,
+        item_count,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::{Cell, RefCell};
+
+    use super::*;
+
+    struct FakeBackend {
+        home: Option<PathBuf>,
+        config_home: Option<PathBuf>,
+        user_dirs: RefCell<io::Result<Option<String>>>,
+        existing: Vec<PathBuf>,
+        trash_count: Cell<Result<usize, &'static str>>,
+        purged: Cell<bool>,
+    }
+
+    impl Default for FakeBackend {
+        fn default() -> Self {
+            Self {
+                home: Some(PathBuf::from("/home/alex")),
+                config_home: None,
+                user_dirs: RefCell::new(Ok(None)),
+                existing: vec![
+                    PathBuf::from("/home/alex"),
+                    PathBuf::from("/home/alex/Downloads"),
+                ],
+                trash_count: Cell::new(Ok(0)),
+                purged: Cell::new(false),
+            }
+        }
+    }
+
+    impl Backend for FakeBackend {
+        fn home(&self) -> Option<PathBuf> {
+            self.home.clone()
+        }
+
+        fn config_home(&self) -> Option<PathBuf> {
+            self.config_home.clone()
+        }
+
+        fn read_optional(&self, _: &Path) -> io::Result<Option<String>> {
+            self.user_dirs.replace(Ok(None))
+        }
+
+        fn exists(&self, path: &Path) -> io::Result<bool> {
+            Ok(self.existing.iter().any(|existing| existing == path))
+        }
+
+        fn trash_count(&self) -> Result<usize, String> {
+            self.trash_count.get().map_err(str::to_owned)
+        }
+
+        fn purge_trash(&self) -> Result<(), String> {
+            self.purged.set(true);
+            self.trash_count.set(Ok(0));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn snapshot_uses_configured_downloads_and_complete_trash_count() {
+        let backend = FakeBackend {
+            user_dirs: RefCell::new(Ok(Some("XDG_DOWNLOAD_DIR=\"$HOME/Transfers\"\n".into()))),
+            existing: vec![
+                PathBuf::from("/home/alex"),
+                PathBuf::from("/home/alex/Transfers"),
+            ],
+            trash_count: Cell::new(Ok(3)),
+            ..Default::default()
+        };
+        let report = snapshot(&backend).expect("snapshot succeeds");
+        assert_eq!(
+            report.snapshot.downloads.path,
+            Path::new("/home/alex/Transfers")
+        );
+        assert!(report.snapshot.downloads.exists);
+        assert!(report.snapshot.downloads_configured);
+        assert_eq!(report.snapshot.trash.item_count, 3);
+        assert!(!report.snapshot.trash.empty);
+        assert!(report.warnings.is_empty());
+    }
+
+    #[test]
+    fn malformed_user_dirs_falls_back_with_a_visible_warning() {
+        let backend = FakeBackend {
+            user_dirs: RefCell::new(Ok(Some("XDG_DOWNLOAD_DIR=\"relative\"\n".into()))),
+            ..Default::default()
+        };
+        let report = snapshot(&backend).expect("fallback succeeds");
+        assert_eq!(
+            report.snapshot.downloads.path,
+            Path::new("/home/alex/Downloads")
+        );
+        assert_eq!(report.warnings[0].operation, Operation::ReadUserDirs);
+    }
+
+    #[test]
+    fn trash_failure_does_not_hide_other_places() {
+        let backend = FakeBackend {
+            trash_count: Cell::new(Err("mount disappeared")),
+            ..Default::default()
+        };
+        let report = snapshot(&backend).expect("places remain available");
+        assert!(report.snapshot.downloads.exists);
+        assert!(!report.snapshot.trash.available);
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.operation == Operation::InspectTrash));
+    }
+
+    #[test]
+    fn empty_trash_requires_confirmation_and_refreshes_authority() {
+        assert!(confirm_empty_trash(false).is_none());
+        let backend = FakeBackend {
+            trash_count: Cell::new(Ok(2)),
+            ..Default::default()
+        };
+        let confirmation = confirm_empty_trash(true).expect("user confirmed");
+        let refreshed = empty_trash(confirmation, &backend).expect("purge succeeds");
+        assert!(backend.purged.get());
+        assert!(refreshed.empty);
+        assert_eq!(refreshed.item_count, 0);
+    }
+}

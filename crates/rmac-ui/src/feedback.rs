@@ -1,0 +1,362 @@
+//! Shared transient, status, and empty-content feedback surfaces.
+
+use std::rc::Rc;
+
+use gpui::{
+    div, prelude::FluentBuilder as _, px, relative, App, ClickEvent, ElementId,
+    InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce, SharedString,
+    StyleRefinement, Styled, Window,
+};
+use gpui_component::StyledExt as _;
+
+use crate::{mac, Button};
+
+/// Compact explanatory surface used by hover/focus tooltip hosts.
+#[derive(IntoElement)]
+pub struct Tooltip {
+    text: SharedString,
+}
+
+impl Tooltip {
+    pub fn new(text: impl Into<SharedString>) -> Self {
+        Self { text: text.into() }
+    }
+}
+
+impl RenderOnce for Tooltip {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        div()
+            .max_w(px(280.0))
+            .px_2()
+            .py_1()
+            .rounded(px(6.0))
+            .bg(mac::text())
+            .text_color(mac::window())
+            .text_size(px(11.0))
+            .shadow_lg()
+            .child(self.text)
+    }
+}
+
+/// Visual outcome of a progress operation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProgressStatus {
+    #[default]
+    Running,
+    Complete,
+    Error,
+}
+
+/// Determinate or indeterminate progress with an optional visible label.
+#[derive(IntoElement)]
+pub struct Progress {
+    value: Option<f32>,
+    status: ProgressStatus,
+    label: Option<SharedString>,
+    style: StyleRefinement,
+}
+
+impl Progress {
+    pub fn new(value: f32) -> Self {
+        Self {
+            value: Some(value.clamp(0.0, 1.0)),
+            status: ProgressStatus::Running,
+            label: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn indeterminate() -> Self {
+        Self {
+            value: None,
+            status: ProgressStatus::Running,
+            label: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn status(mut self, status: ProgressStatus) -> Self {
+        self.status = status;
+        if status == ProgressStatus::Complete {
+            self.value = Some(1.0);
+        }
+        self
+    }
+
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+}
+
+impl Styled for Progress {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for Progress {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let width = self.value.unwrap_or(0.35);
+        let fill = if self.status == ProgressStatus::Error {
+            mac::danger()
+        } else {
+            mac::accent()
+        };
+        div()
+            .v_flex()
+            .gap_1()
+            .refine_style(&self.style)
+            .when_some(self.label, |progress, label| {
+                progress.child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(if self.status == ProgressStatus::Error {
+                            mac::danger()
+                        } else {
+                            mac::text_secondary()
+                        })
+                        .child(label),
+                )
+            })
+            .child(
+                div()
+                    .h(px(6.0))
+                    .w_full()
+                    .rounded_full()
+                    .bg(mac::separator())
+                    .child(div().h_full().w(relative(width)).rounded_full().bg(fill)),
+            )
+    }
+}
+
+/// Centered empty/unavailable/error content with an optional recovery action.
+#[derive(IntoElement)]
+pub struct EmptyState {
+    title: SharedString,
+    message: Option<SharedString>,
+    action: Option<gpui::AnyElement>,
+    error: bool,
+    style: StyleRefinement,
+}
+
+impl EmptyState {
+    pub fn new(title: impl Into<SharedString>) -> Self {
+        Self {
+            title: title.into(),
+            message: None,
+            action: None,
+            error: false,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn message(mut self, message: impl Into<SharedString>) -> Self {
+        self.message = Some(message.into());
+        self
+    }
+
+    pub fn action(mut self, action: impl IntoElement) -> Self {
+        self.action = Some(action.into_any_element());
+        self
+    }
+
+    pub fn error(mut self, error: bool) -> Self {
+        self.error = error;
+        self
+    }
+}
+
+impl Styled for EmptyState {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for EmptyState {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        div()
+            .min_h(px(96.0))
+            .w_full()
+            .v_flex()
+            .items_center()
+            .justify_center()
+            .gap_1()
+            .px_4()
+            .text_center()
+            .refine_style(&self.style)
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(if self.error {
+                        mac::danger()
+                    } else {
+                        mac::text()
+                    })
+                    .child(self.title),
+            )
+            .when_some(self.message, |empty, message| {
+                empty.child(
+                    div()
+                        .max_w(px(360.0))
+                        .text_size(px(11.0))
+                        .text_color(mac::text_secondary())
+                        .child(message),
+                )
+            })
+            .when_some(self.action, |empty, action| {
+                empty.child(div().pt_2().child(action))
+            })
+    }
+}
+
+/// Semantic role of a transient toast.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToastKind {
+    #[default]
+    Informational,
+    Success,
+    Warning,
+    Error,
+}
+
+type DismissHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+
+/// Compact transient message. Lifetime and stacking remain owned by the app.
+#[derive(IntoElement)]
+pub struct Toast {
+    id: SharedString,
+    kind: ToastKind,
+    title: SharedString,
+    message: Option<SharedString>,
+    on_dismiss: Option<DismissHandler>,
+    style: StyleRefinement,
+}
+
+impl Toast {
+    pub fn new(
+        id: impl Into<SharedString>,
+        kind: ToastKind,
+        title: impl Into<SharedString>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            kind,
+            title: title.into(),
+            message: None,
+            on_dismiss: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn message(mut self, message: impl Into<SharedString>) -> Self {
+        self.message = Some(message.into());
+        self
+    }
+
+    pub fn on_dismiss(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_dismiss = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl Styled for Toast {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for Toast {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let (background, border, text, symbol) = match self.kind {
+            ToastKind::Informational => {
+                (mac::accent_subtle(), mac::accent_border(), mac::text(), "i")
+            }
+            ToastKind::Success => (mac::accent_subtle(), mac::accent_border(), mac::text(), "✓"),
+            ToastKind::Warning => (
+                mac::warning_background(),
+                mac::warning_border(),
+                mac::warning_text(),
+                "!",
+            ),
+            ToastKind::Error => (
+                mac::error_background(),
+                mac::error_border(),
+                mac::danger(),
+                "×",
+            ),
+        };
+        let dismiss_id: ElementId = SharedString::from(format!("{}-dismiss", self.id)).into();
+        div()
+            .id(self.id)
+            .min_h(px(44.0))
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .rounded(px(9.0))
+            .bg(background)
+            .border_1()
+            .border_color(border)
+            .text_color(text)
+            .refine_style(&self.style)
+            .child(
+                div()
+                    .size(px(18.0))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .border_1()
+                    .border_color(border)
+                    .text_size(px(11.0))
+                    .font_weight(mac::BOLD)
+                    .child(symbol),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .v_flex()
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .child(self.title),
+                    )
+                    .when_some(self.message, |body, message| {
+                        body.child(div().text_size(px(11.0)).child(message))
+                    }),
+            )
+            .when_some(self.on_dismiss, |toast, handler| {
+                toast.child(
+                    Button::new(dismiss_id, "Dismiss")
+                        .ghost()
+                        .on_click(move |event, window, cx| handler(event, window, cx)),
+                )
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progress_values_are_clamped() {
+        let clamp = |value: f32| value.clamp(0.0, 1.0);
+        assert_eq!(clamp(-1.0), 0.0);
+        assert_eq!(clamp(2.0), 1.0);
+    }
+
+    #[test]
+    fn toast_roles_are_distinct() {
+        assert_ne!(ToastKind::Informational, ToastKind::Error);
+        assert_ne!(ToastKind::Success, ToastKind::Warning);
+    }
+}

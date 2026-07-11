@@ -19,6 +19,7 @@ use gpui_component::{Root, TitleBar};
 
 mod components;
 mod controls;
+mod feedback;
 pub mod gallery;
 pub mod theme;
 pub use components::{
@@ -30,6 +31,7 @@ pub use controls::{
     TreeRow,
 };
 pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
+pub use feedback::{EmptyState, Progress, ProgressStatus, Toast, ToastKind, Tooltip};
 
 // Re-exports so apps depend on one crate for theming; these also bring the
 // traits into scope here for `.v_flex()`, `cx.theme()`, etc.

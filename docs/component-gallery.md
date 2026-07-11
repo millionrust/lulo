@@ -47,6 +47,9 @@ categories provide the first ListRow adoption.
 Table now exposes its delegate, state, column, sorting, and event contracts only
 through `rmac-ui`; Activity Monitor validates the boundary with its live process
 table.
+Tooltip, determinate/indeterminate Progress, actionable EmptyState, and semantic
+Toast roles are now shared. System Settings exercises Progress, EmptyState, and
+the dismissible error Toast in production UI.
 
 ## Visual-reference protocol
 

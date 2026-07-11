@@ -64,6 +64,9 @@ Left/Right expansion. System Settings categories use the shared ListRow.
 Table preserves the pinned virtualized delegate/state implementation behind an
 rmac-owned API, including sorting, selection, keyboard movement, scrolling,
 loading, empty content, and row events. Activity Monitor is the active consumer.
+Tooltip, Progress, EmptyState, and Toast own shared feedback styling and state
+roles. System Settings uses the latter three for loading, empty Wi-Fi results,
+and dismissible service/persistence failures.
 
 - GPUI entities own view state and subscriptions.
 - Render methods must not perform filesystem access, subprocess work, or D-Bus

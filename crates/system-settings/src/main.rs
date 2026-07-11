@@ -21,7 +21,10 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::StyledExt as _;
-use rmac_ui::{ListRow, SearchField, Slider, SliderEvent, SliderState, Toggle};
+use rmac_ui::{
+    EmptyState, ListRow, Progress, SearchField, Slider, SliderEvent, SliderState, Toast, ToastKind,
+    Toggle,
+};
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -1833,7 +1836,11 @@ impl Settings {
                     .px_5()
                     .pb_8()
                     .when(self.system_data_loading, |el| {
-                        el.child(note_card("Loading system information…"))
+                        el.child(
+                            Progress::indeterminate()
+                                .label("Loading system information…")
+                                .mb_3(),
+                        )
                     })
                     .child(content),
             )
@@ -1978,12 +1985,9 @@ impl Settings {
             );
 
             let rows = if self.wifi_networks.is_empty() {
-                vec![value_row(
-                    "icons/wifi.svg",
-                    secondary(),
-                    "No networks found".into(),
-                    "Refresh to scan again".into(),
-                )]
+                vec![EmptyState::new("No networks found")
+                    .message("Refresh to scan again")
+                    .into_any_element()]
             } else {
                 self.wifi_networks
                     .iter()
@@ -3974,23 +3978,12 @@ impl Render for Settings {
             .child(self.render_topbar(cx))
             .when_some(settings_error, |settings, message| {
                 settings.child(
-                    div()
-                        .id("settings-error")
-                        .h(px(34.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .bg(rmac_ui::mac::error_background())
-                        .border_b_1()
-                        .border_color(rmac_ui::mac::error_border())
-                        .text_size(px(12.0))
-                        .text_color(rmac_ui::mac::danger())
-                        .cursor_pointer()
-                        .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
+                    Toast::new("settings-error", ToastKind::Error, "Settings error")
+                        .message(message)
+                        .rounded(px(0.0))
+                        .border_l_0()
+                        .border_r_0()
+                        .on_dismiss(cx.listener(|this, _, _, cx| {
                             this.persistence_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;

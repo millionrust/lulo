@@ -5173,6 +5173,7 @@ dependencies = [
  "rmac-storage",
  "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -5296,6 +5297,24 @@ dependencies = [
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-theme",
+]
+
+[[package]]
+name = "rmac-wallpaper"
+version = "0.1.0"
+dependencies = [
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "url",
+]
+
+[[package]]
+name = "rmac-wallpaper-system"
+version = "0.1.0"
+dependencies = [
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "rmac-wallpaper",
 ]
 
 [[package]]

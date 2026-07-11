@@ -7,7 +7,7 @@ platform command code.
 
 ## Schema ownership
 
-The current v2 document stores:
+The current v3 document stores:
 
 - ordered, unique desktop application IDs pinned to the Dock;
 - Dock edge, all/primary/named-output scope, autohide, magnification and scale,
@@ -15,9 +15,12 @@ The current v2 document stores:
 - locale/12-hour/24-hour clock format plus date, seconds, and workspace labels;
 - independent visibility for meaningful network, VPN, Bluetooth, sound, power,
   battery-percentage, notification, and Focus indicators;
-- default and per-output wallpaper source plus fit policy;
+- default and per-output wallpaper source plus fit policy; sources are the
+  original `builtin:rmac-aurora`, a hostless local `file:///` URI, or a
+  normalized absolute path;
 - the selected Focus mode, enabled state, and optional expiration instant;
-- per-provider enablement and explicit private-content/network permissions.
+- per-provider enablement and explicit private-content/network permissions;
+- bounded normalized Spotlight exclusions and removable-media search opt-in.
 
 The store persists policy and user choices, not service results. For example,
 it does not claim a wallpaper was decoded, a provider is currently available,
@@ -46,16 +49,17 @@ failure details.
 ## Migration and validation
 
 The v1 migration preserves pinned apps, Dock edge/autohide/magnification,
-wallpaper source, and selected Focus mode, fills new fields from safe defaults,
-validates the result, and immediately rewrites both documents as v2. Unknown
-fields in the current version are tolerated; unknown document versions are
-rejected rather than guessed.
+wallpaper source, and selected Focus mode. The v2 migration adds Spotlight
+scope defaults. Both validate the result and immediately rewrite primary and
+last-known-good documents as v3. Unknown fields in the current version are
+tolerated; unknown document versions are rejected rather than guessed.
 
 Validation rejects duplicate/empty/control-character IDs, more than 128 pinned
-apps, invalid named outputs or wallpaper sources, non-finite or out-of-range
-Dock magnification, and an expiration attached to disabled Focus. Provider
-policies default to local, non-private, non-network access until the user or a
-trusted migration grants more.
+apps, invalid named outputs or remote/relative wallpaper sources, non-finite or
+out-of-range Dock magnification, invalid Spotlight exclusions, and an
+expiration attached to disabled Focus. Provider policies default to local,
+non-private, non-network access until the user or a trusted migration grants
+more.
 
 ## Multi-process updates
 
@@ -64,6 +68,6 @@ last-known-good sibling, and uses a bounded one-item channel so filesystem
 bursts coalesce. On notification, consumers reload the complete authoritative
 snapshot; they do not merge partial filesystem events into local UI state.
 
-Tests cover v2 round trips, v1 migration/rewrite, unknown fields and versions,
+Tests cover v3 round trips, v1/v2 migration/rewrite, unknown fields and versions,
 corrupt-primary recovery, validation, watcher filtering, and injected primary
 write failure with last-known-good rollback.

@@ -690,6 +690,36 @@ fn validate(settings: &ShellSettings, path: &Path) -> Result<(), Error> {
 fn validate_wallpaper(selection: &WallpaperSelection, path: &Path) -> Result<(), Error> {
     if let Some(source) = &selection.source {
         validate_identifier(source, "wallpaper source", path)?;
+        if source == "builtin:rmac-aurora" {
+            return Ok(());
+        }
+        let source_path = if source.starts_with("file:") {
+            let url = url::Url::parse(source)
+                .map_err(|_| invalid(path, "wallpaper file URI is invalid"))?;
+            if url.scheme() != "file" || url.host_str().is_some() {
+                return Err(invalid(path, "wallpaper file URI must be local"));
+            }
+            url.to_file_path()
+                .map_err(|_| invalid(path, "wallpaper file URI is invalid"))?
+        } else {
+            if source.contains("://") {
+                return Err(invalid(path, "wallpaper source scheme is unsupported"));
+            }
+            PathBuf::from(source)
+        };
+        if !source_path.is_absolute()
+            || source_path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::CurDir | std::path::Component::ParentDir
+                )
+            })
+        {
+            return Err(invalid(
+                path,
+                "wallpaper file path must be normalized and absolute",
+            ));
+        }
     }
     Ok(())
 }
@@ -918,6 +948,13 @@ mod tests {
         invalid_exclusion.spotlight.excluded_paths =
             vec!["/home/test/Private".into(), "/home/test/Private".into()];
         assert!(validate(&invalid_exclusion, path).is_err());
+
+        let mut invalid_wallpaper = ShellSettings::default();
+        invalid_wallpaper.wallpaper.default.source =
+            Some("https://example.com/wallpaper.jpg".into());
+        assert!(validate(&invalid_wallpaper, path).is_err());
+        invalid_wallpaper.wallpaper.default.source = Some("relative/wallpaper.png".into());
+        assert!(validate(&invalid_wallpaper, path).is_err());
     }
 
     #[test]

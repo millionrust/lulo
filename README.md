@@ -54,6 +54,8 @@ Shared crates:
 - `rmac-quick-settings` — truthful transactions and keyboard-safe popover lifecycle.
 - `rmac-quick-settings-system` — typed quick-settings mutations and authority rereads.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
+- `rmac-wallpaper` — per-output source planning and exact wallpaper fit geometry.
+- `rmac-wallpaper-system` — bounded, magic-checked local wallpaper file authority.
 
 Phase 1 diagnostic:
 

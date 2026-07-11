@@ -287,12 +287,26 @@ newly denied private provider cannot keep publishing into an open overlay. It
 consumes only the stable `launcher` activation from `rmac-shortcuts`; fresh
 timestamps toggle the overlay, while repeats, replays, deactivation, and other
 shortcut IDs are ignored.
+
 The runtime establishes the installed-app watcher before its first discovery,
 so an install during startup is observed by the bounded change channel. A real
 new revision cancels and reissues only the current open query. Discovery or
 watch failure retains last-known-good app results, exposes degraded catalog
 health without diagnostic paths in the overlay snapshot, and retries with a
 bounded delay; stale/replayed revisions do nothing.
+
+Wallpaper begins in the GPUI- and Wayland-free `rmac-wallpaper` domain. It
+parses only the original `builtin:rmac-aurora` source, hostless local file URIs,
+or normalized absolute paths; invalid output-specific sources fall back on that
+output without blanking peers. Enabled compositor outputs deterministically
+produce one background-surface plan each, so unplug removes only that surface
+and replug restores the persisted output choice. Fill, Fit, Stretch, Center,
+and Tile geometry is explicit in logical coordinates at the output scale.
+`rmac-wallpaper-system` opens local files once, requires a bounded nonempty
+regular file, recognizes PNG/JPEG/WebP magic, rewinds and retains the validated
+handle for decoding, and redacts paths from default errors and `Debug`. The
+built-in default is renderer-owned procedural metadata and an original rmac
+palette; no Apple or third-party wallpaper bitmap is bundled.
 
 ## Persistence
 

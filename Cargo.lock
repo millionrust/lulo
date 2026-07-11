@@ -4997,6 +4997,8 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-appearance",
+ "rmac-appearance-portal",
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-display",
@@ -5004,6 +5006,7 @@ dependencies = [
  "rmac-network",
  "rmac-power",
  "rmac-storage",
+ "rmac-theme",
  "rmac-ui",
  "rust-embed",
 ]

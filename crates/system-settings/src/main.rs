@@ -120,13 +120,6 @@ struct Category {
 
 // ---- interactive state enums --------------------------------------------
 
-#[derive(Clone, Copy, PartialEq)]
-enum Appearance {
-    Light,
-    Dark,
-    Auto,
-}
-
 /// A navigation subpage pushed onto the back stack from a row chevron.
 #[derive(Clone)]
 enum SubPage {
@@ -187,6 +180,7 @@ struct Settings {
     power_error: Option<SharedString>,
     display_error: Option<SharedString>,
     input_error: Option<SharedString>,
+    theme_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
@@ -218,10 +212,10 @@ struct Settings {
     bt_devices: Vec<rmac_bluetooth::Device>,
 
     // Appearance
-    appearance: Appearance,
-    accent_idx: usize,
-    show_color_in_menu: bool,
-    large_sidebar: bool,
+    host_appearance: rmac_appearance::Snapshot,
+    theme: Option<rmac_theme::Snapshot>,
+    theme_loading: bool,
+    theme_busy: bool,
 
     // Sound
     audio_loading: bool,
@@ -279,6 +273,14 @@ enum InputChange {
     TouchpadDragLock(bool),
 }
 
+#[derive(Clone, Copy)]
+enum ThemeChange {
+    Scheme(rmac_theme::SchemePreference),
+    Accent(rmac_theme::AccentPreference),
+    Contrast(rmac_theme::ContrastPreference),
+    Motion(rmac_theme::MotionPreferenceSetting),
+}
+
 #[derive(Clone)]
 enum DisplayChange {
     Mode {
@@ -310,6 +312,11 @@ struct SystemSnapshot {
     account: String,
     sysinfo: SysInfo,
     storage: StorageInfo,
+}
+
+struct ThemeLoad {
+    host: rmac_appearance::Snapshot,
+    theme: rmac_theme::Snapshot,
 }
 
 const ACCENTS: &[(&str, u32)] = &[
@@ -348,10 +355,6 @@ struct Persisted {
     joined: Option<usize>,
     bluetooth_on: bool,
     bt_discoverable: bool,
-    appearance: u8, // 0 = Light, 1 = Dark, 2 = Auto
-    accent_idx: usize,
-    show_color_in_menu: bool,
-    large_sidebar: bool,
     output_volume: f32,
     alert_volume: f32,
     balance: f32,
@@ -372,11 +375,6 @@ impl Default for Persisted {
             joined: Some(0),
             bluetooth_on: true,
             bt_discoverable: true,
-            // Default appearance follows the live system setting at first launch.
-            appearance: if appearance_is_dark() { 1 } else { 0 },
-            accent_idx: 0,
-            show_color_in_menu: true,
-            large_sidebar: false,
             output_volume: 72.0,
             alert_volume: 55.0,
             balance: 50.0,
@@ -437,10 +435,6 @@ impl Persisted {
                 "  \"joined\": {},\n",
                 "  \"bluetooth_on\": {},\n",
                 "  \"bt_discoverable\": {},\n",
-                "  \"appearance\": {},\n",
-                "  \"accent_idx\": {},\n",
-                "  \"show_color_in_menu\": {},\n",
-                "  \"large_sidebar\": {},\n",
                 "  \"output_volume\": {},\n",
                 "  \"alert_volume\": {},\n",
                 "  \"balance\": {},\n",
@@ -458,10 +452,6 @@ impl Persisted {
             self.joined.map(|j| j as i64).unwrap_or(-1),
             b(self.bluetooth_on),
             b(self.bt_discoverable),
-            self.appearance,
-            self.accent_idx,
-            b(self.show_color_in_menu),
-            b(self.large_sidebar),
             self.output_volume,
             self.alert_volume,
             self.balance,
@@ -502,10 +492,6 @@ impl Persisted {
                     | "joined"
                     | "bluetooth_on"
                     | "bt_discoverable"
-                    | "appearance"
-                    | "accent_idx"
-                    | "show_color_in_menu"
-                    | "large_sidebar"
                     | "output_volume"
                     | "alert_volume"
                     | "balance"
@@ -534,10 +520,6 @@ impl Persisted {
                 "joined" => p.joined = if num < 0.0 { None } else { Some(num as usize) },
                 "bluetooth_on" => p.bluetooth_on = truthy,
                 "bt_discoverable" => p.bt_discoverable = truthy,
-                "appearance" => p.appearance = (num as u8).min(2),
-                "accent_idx" => p.accent_idx = num as usize,
-                "show_color_in_menu" => p.show_color_in_menu = truthy,
-                "large_sidebar" => p.large_sidebar = truthy,
                 "output_volume" => p.output_volume = num as f32,
                 "alert_volume" => p.alert_volume = num as f32,
                 "balance" => p.balance = num as f32,
@@ -552,9 +534,6 @@ impl Persisted {
             }
         }
         // Clamp index-like fields so a corrupt file can't panic on lookup.
-        if p.accent_idx >= ACCENTS.len() {
-            p.accent_idx = 0;
-        }
         if p.alert_idx >= ALERT_SOUNDS.len() {
             p.alert_idx = 0;
         }
@@ -565,14 +544,6 @@ impl Persisted {
         p.alert_volume = p.alert_volume.clamp(0.0, 100.0);
         p.balance = p.balance.clamp(0.0, 100.0);
         Ok(p)
-    }
-
-    fn appearance_enum(&self) -> Appearance {
-        match self.appearance {
-            1 => Appearance::Dark,
-            2 => Appearance::Auto,
-            _ => Appearance::Light,
-        }
     }
 }
 
@@ -744,6 +715,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { load_theme_state().await })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_theme_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -772,6 +755,7 @@ impl Settings {
             power_error: None,
             display_error: None,
             input_error: None,
+            theme_error: None,
 
             network_loading: true,
             network_busy: false,
@@ -798,10 +782,10 @@ impl Settings {
             bt_discoverable: saved.bt_discoverable,
             bt_devices: Vec::new(),
 
-            appearance: saved.appearance_enum(),
-            accent_idx: saved.accent_idx,
-            show_color_in_menu: saved.show_color_in_menu,
-            large_sidebar: saved.large_sidebar,
+            host_appearance: rmac_appearance::Snapshot::default(),
+            theme: None,
+            theme_loading: true,
+            theme_busy: false,
 
             audio_loading: true,
             audio_busy: false,
@@ -1271,6 +1255,77 @@ impl Settings {
         }
     }
 
+    fn finish_theme_update(&mut self, result: std::result::Result<ThemeLoad, String>) {
+        self.theme_loading = false;
+        self.theme_busy = false;
+        match result {
+            Ok(load) => {
+                self.host_appearance = load.host;
+                self.theme = Some(load.theme);
+                self.theme_error = None;
+            }
+            Err(error) => {
+                self.theme_error = Some(format!("Could not update Appearance: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_theme(&mut self, cx: &mut Context<Self>) {
+        if self.theme_loading || self.theme_busy {
+            return;
+        }
+        self.theme_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { load_theme_state().await })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_theme_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn apply_theme_change(&mut self, change: ThemeChange, cx: &mut Context<Self>) {
+        if self.theme_loading || self.theme_busy {
+            return;
+        }
+        let Some(theme) = &self.theme else {
+            return;
+        };
+        let mut preferences = theme.preferences.clone();
+        match change {
+            ThemeChange::Scheme(value) => preferences.color_scheme = value,
+            ThemeChange::Accent(value) => preferences.accent_color = value,
+            ThemeChange::Contrast(value) => preferences.contrast = value,
+            ThemeChange::Motion(value) => preferences.motion = value,
+        }
+        let host = self.host_appearance.clone();
+        self.theme_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let store = rmac_theme::ThemeStore::from_environment()
+                        .map_err(|error| error.to_string())?;
+                    let theme = store
+                        .save(&preferences, &host)
+                        .map_err(|error| error.to_string())?;
+                    Ok::<_, String>(ThemeLoad { host, theme })
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_theme_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn refresh_input(&mut self, cx: &mut Context<Self>) {
         if self.input_loading || self.input_busy {
             return;
@@ -1506,14 +1561,6 @@ impl Settings {
             joined: self.joined,
             bluetooth_on: self.bluetooth_on,
             bt_discoverable: self.bt_discoverable,
-            appearance: match self.appearance {
-                Appearance::Light => 0,
-                Appearance::Dark => 1,
-                Appearance::Auto => 2,
-            },
-            accent_idx: self.accent_idx,
-            show_color_in_menu: self.show_color_in_menu,
-            large_sidebar: self.large_sidebar,
             output_volume: self.output_volume.read(cx).value().start(),
             alert_volume: self.alert_volume.read(cx).value().start(),
             balance: self.balance.read(cx).value().start(),
@@ -2169,17 +2216,71 @@ impl Settings {
 
     fn render_appearance(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-
-        let appearance_card = {
-            let opt = |id: &'static str, name: &'static str, ap: Appearance, swatch: Hsla| {
-                let selected = self.appearance == ap;
-                let v = view.clone();
+        let refresh_view = view.clone();
+        let mut cards = vec![div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child("rmac Appearance"),
+            )
+            .child(
+                div()
+                    .id("theme-refresh")
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.0))
+                    .text_size(px(12.0))
+                    .text_color(accent())
+                    .cursor_pointer()
+                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .child(if self.theme_busy {
+                        "Applying…"
+                    } else {
+                        "Refresh"
+                    })
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
+                    }),
+            )];
+        if self.theme_loading {
+            cards.push(note_card("Loading appearance preferences…"));
+            return self.pane(cards);
+        }
+        let Some(theme) = &self.theme else {
+            cards.push(note_card(
+                "The rmac theme preference service is unavailable.",
+            ));
+            return self.pane(cards);
+        };
+        let enabled = !self.theme_busy;
+        let preferences = &theme.preferences;
+        let scheme_card = {
+            let option = |id: &'static str,
+                          name: &'static str,
+                          preference: rmac_theme::SchemePreference,
+                          swatch: Hsla| {
+                let selected = preferences.color_scheme == preference;
+                let option_view = view.clone();
                 div()
                     .id(ElementId::from(id))
                     .v_flex()
                     .items_center()
                     .gap_1p5()
-                    .cursor_pointer()
+                    .when(enabled, |element| {
+                        element.cursor_pointer().on_click(move |_, _, cx| {
+                            option_view.update(cx, |settings, cx| {
+                                settings.apply_theme_change(ThemeChange::Scheme(preference), cx)
+                            });
+                        })
+                    })
+                    .when(!enabled, |element| element.opacity(0.55))
                     .child(
                         div()
                             .w(px(64.0))
@@ -2195,13 +2296,6 @@ impl Settings {
                             .text_color(if selected { accent() } else { label() })
                             .child(name),
                     )
-                    .on_click(move |_, _, cx| {
-                        v.update(cx, |s, cx| {
-                            s.appearance = ap;
-                            s.persist(cx);
-                            cx.notify();
-                        });
-                    })
             };
             div()
                 .flex()
@@ -2213,45 +2307,108 @@ impl Settings {
                 .bg(card_bg())
                 .border_1()
                 .border_color(sep())
-                .child(opt("ap-light", "Light", Appearance::Light, hsl(0xf5f5f7)))
-                .child(opt("ap-dark", "Dark", Appearance::Dark, hsl(0x2c2c2e)))
-                .child(opt("ap-auto", "Auto", Appearance::Auto, hsl(0x8e8e93)))
+                .child(option(
+                    "theme-light",
+                    "Light",
+                    rmac_theme::SchemePreference::Light,
+                    hsl(0xf5f5f7),
+                ))
+                .child(option(
+                    "theme-dark",
+                    "Dark",
+                    rmac_theme::SchemePreference::Dark,
+                    hsl(0x2c2c2e),
+                ))
+                .child(option(
+                    "theme-auto",
+                    "Automatic",
+                    rmac_theme::SchemePreference::Automatic,
+                    hsl(0x8e8e93),
+                ))
         };
+        cards.push(scheme_card);
 
-        // Accent color swatches
-        let accent_card = {
-            let swatches: Vec<AnyElement> = ACCENTS
-                .iter()
-                .enumerate()
-                .map(|(i, (_name, hex))| {
-                    let selected = self.accent_idx == i;
-                    let v = view.clone();
-                    div()
-                        .id(ElementId::from(SharedString::from(format!("accent-{i}"))))
-                        .w(px(22.0))
-                        .h(px(22.0))
-                        .rounded_full()
-                        .bg(hsl(*hex))
-                        .cursor_pointer()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(selected, |el| {
-                            el.border_2().border_color(white()).shadow_sm()
-                        })
-                        .when(selected, |el| {
-                            el.child(glyph("icons/check.svg", 12.0, white()))
-                        })
-                        .on_click(move |_, _, cx| {
-                            v.update(cx, |s, cx| {
-                                s.accent_idx = i;
-                                s.persist(cx);
-                                cx.notify();
+        let mut swatches = Vec::new();
+        let automatic_selected =
+            preferences.accent_color == rmac_theme::AccentPreference::Automatic;
+        let auto_view = view.clone();
+        swatches.push(
+            div()
+                .id("theme-accent-auto")
+                .h(px(24.0))
+                .px_2()
+                .rounded(px(6.0))
+                .flex()
+                .items_center()
+                .text_size(px(11.0))
+                .text_color(if automatic_selected { white() } else { label() })
+                .bg(if automatic_selected {
+                    accent()
+                } else {
+                    hsl(0xe9e9ec)
+                })
+                .when(enabled, |element| {
+                    element.cursor_pointer().on_click(move |_, _, cx| {
+                        auto_view.update(cx, |settings, cx| {
+                            settings.apply_theme_change(
+                                ThemeChange::Accent(rmac_theme::AccentPreference::Automatic),
+                                cx,
+                            )
+                        });
+                    })
+                })
+                .when(!enabled, |element| element.opacity(0.55))
+                .child("Automatic")
+                .into_any_element(),
+        );
+        for (index, (name, hex)) in ACCENTS.iter().copied().enumerate() {
+            let preference = accent_preference(hex);
+            let selected = preferences.accent_color == preference;
+            let swatch_view = view.clone();
+            swatches.push(
+                div()
+                    .id(ElementId::from(SharedString::from(format!(
+                        "theme-accent-{index}"
+                    ))))
+                    .w(px(48.0))
+                    .v_flex()
+                    .items_center()
+                    .gap_1()
+                    .when(enabled, |element| {
+                        element.cursor_pointer().on_click(move |_, _, cx| {
+                            swatch_view.update(cx, |settings, cx| {
+                                settings.apply_theme_change(ThemeChange::Accent(preference), cx)
                             });
                         })
-                        .into_any_element()
-                })
-                .collect();
+                    })
+                    .when(!enabled, |element| element.opacity(0.55))
+                    .child(
+                        div()
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .rounded_full()
+                            .bg(hsl(hex))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(selected, |element| {
+                                element
+                                    .border_2()
+                                    .border_color(white())
+                                    .shadow_sm()
+                                    .child(glyph("icons/check.svg", 12.0, white()))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(secondary())
+                            .child(name),
+                    )
+                    .into_any_element(),
+            );
+        }
+        cards.push(
             div()
                 .v_flex()
                 .mb_3()
@@ -2269,42 +2426,67 @@ impl Settings {
                         .flex_wrap()
                         .p_3()
                         .children(swatches),
-                )
-        };
+                ),
+        );
+        cards.push(card(vec![
+            theme_segment_row(
+                view.clone(),
+                "theme-contrast",
+                "Contrast",
+                &THEME_CONTRAST_OPTIONS,
+                match preferences.contrast {
+                    rmac_theme::ContrastPreference::Automatic => 0,
+                    rmac_theme::ContrastPreference::Normal => 1,
+                    rmac_theme::ContrastPreference::Higher => 2,
+                },
+                enabled,
+            ),
+            theme_segment_row(
+                view,
+                "theme-motion",
+                "Motion",
+                &THEME_MOTION_OPTIONS,
+                match preferences.motion {
+                    rmac_theme::MotionPreferenceSetting::Automatic => 0,
+                    rmac_theme::MotionPreferenceSetting::Full => 1,
+                    rmac_theme::MotionPreferenceSetting::Reduced => 2,
+                },
+                enabled,
+            ),
+        ]));
 
-        let toggles = card(vec![
-            switch_row(
+        let host_scheme = if self.host_appearance.capabilities.color_scheme {
+            self.host_appearance.color_scheme.label()
+        } else {
+            "Not exposed"
+        };
+        cards.push(section_header("Authority"));
+        cards.push(card(vec![
+            value_row(
+                "icons/info.svg",
+                secondary(),
+                "Host preference".into(),
+                host_scheme.into(),
+            ),
+            value_row(
                 "icons/palette.svg",
                 accent(),
-                "Show color in menu bar".into(),
-                None,
-                self.show_color_in_menu,
-                cx,
-                |s, v| s.show_color_in_menu = v,
+                "Effective appearance".into(),
+                match theme.effective.color_scheme {
+                    rmac_appearance::ResolvedColorScheme::Light => "Light".into(),
+                    rmac_appearance::ResolvedColorScheme::Dark => "Dark".into(),
+                },
             ),
-            switch_row(
-                "icons/panel-top.svg",
-                accent(),
-                "Larger sidebar icons".into(),
-                None,
-                self.large_sidebar,
-                cx,
-                |s, v| s.large_sidebar = v,
-            ),
-        ]);
-
-        let system_note = card(vec![value_row(
-            "icons/info.svg",
-            secondary(),
-            "Current system appearance".into(),
-            if appearance_is_dark() {
-                "Dark".into()
-            } else {
-                "Light".into()
-            },
-        )]);
-
-        self.pane(vec![appearance_card, accent_card, toggles, system_note])
+        ]));
+        if let Some(detail) = theme.detail.clone() {
+            cards.push(note_card(detail));
+        }
+        if !self.host_appearance.available {
+            cards.push(note_card(
+                "The Linux Settings portal is unavailable here. Automatic values use safe rmac defaults; explicit choices remain writable.",
+            ));
+        }
+        self.pane(cards)
     }
 
     // ---- Sound --------------------------------------------------------
@@ -3754,7 +3936,8 @@ impl Render for Settings {
             .or_else(|| self.audio_error.clone())
             .or_else(|| self.power_error.clone())
             .or_else(|| self.display_error.clone())
-            .or_else(|| self.input_error.clone());
+            .or_else(|| self.input_error.clone())
+            .or_else(|| self.theme_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -3795,6 +3978,7 @@ impl Render for Settings {
                             this.power_error = None;
                             this.display_error = None;
                             this.input_error = None;
+                            this.theme_error = None;
                             cx.notify();
                         })),
                 )
@@ -4011,6 +4195,36 @@ fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedStr
 }
 
 type InputOption = (&'static str, InputChange);
+type ThemeOption = (&'static str, ThemeChange);
+
+const THEME_CONTRAST_OPTIONS: [ThemeOption; 3] = [
+    (
+        "Automatic",
+        ThemeChange::Contrast(rmac_theme::ContrastPreference::Automatic),
+    ),
+    (
+        "Normal",
+        ThemeChange::Contrast(rmac_theme::ContrastPreference::Normal),
+    ),
+    (
+        "Higher",
+        ThemeChange::Contrast(rmac_theme::ContrastPreference::Higher),
+    ),
+];
+const THEME_MOTION_OPTIONS: [ThemeOption; 3] = [
+    (
+        "Automatic",
+        ThemeChange::Motion(rmac_theme::MotionPreferenceSetting::Automatic),
+    ),
+    (
+        "Full",
+        ThemeChange::Motion(rmac_theme::MotionPreferenceSetting::Full),
+    ),
+    (
+        "Reduced",
+        ThemeChange::Motion(rmac_theme::MotionPreferenceSetting::Reduced),
+    ),
+];
 
 const KEYBOARD_DELAYS: [InputOption; 5] = [
     ("Short", InputChange::KeyboardRepeatDelay(200)),
@@ -4068,6 +4282,66 @@ fn speed_index(speed: f64) -> usize {
         .min_by(|(_, a), (_, b)| (speed - **a).abs().total_cmp(&(speed - **b).abs()))
         .map(|(index, _)| index)
         .unwrap_or(2)
+}
+
+fn accent_preference(hex: u32) -> rmac_theme::AccentPreference {
+    rmac_theme::AccentPreference::Custom([
+        f64::from((hex >> 16) & 0xff) / 255.0,
+        f64::from((hex >> 8) & 0xff) / 255.0,
+        f64::from(hex & 0xff) / 255.0,
+    ])
+}
+
+fn theme_segment_row(
+    view: Entity<Settings>,
+    id: &'static str,
+    title: &'static str,
+    options: &'static [ThemeOption],
+    selected: usize,
+    enabled: bool,
+) -> AnyElement {
+    let mut control = div().flex().gap_1().w(px(290.0));
+    for (index, (option_label, change)) in options.iter().copied().enumerate() {
+        let option_view = view.clone();
+        control = control.child(
+            div()
+                .id(ElementId::from(SharedString::from(format!("{id}-{index}"))))
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h(px(26.0))
+                .rounded(px(6.0))
+                .text_size(px(11.0))
+                .when(index == selected, |element| {
+                    element.bg(accent()).text_color(white())
+                })
+                .when(index != selected, |element| {
+                    element.bg(hsl(0xe9e9ec)).text_color(label())
+                })
+                .when(enabled, |element| {
+                    element
+                        .cursor_pointer()
+                        .hover(|hover| hover.bg(hsl(0xdedee2)))
+                        .on_click(move |_, _, cx| {
+                            option_view
+                                .update(cx, |settings, cx| settings.apply_theme_change(change, cx));
+                        })
+                })
+                .when(!enabled, |element| element.opacity(0.55))
+                .child(option_label),
+        );
+    }
+    row_base()
+        .child(
+            div()
+                .flex_1()
+                .text_size(px(13.0))
+                .text_color(label())
+                .child(title),
+        )
+        .child(control)
+        .into_any_element()
 }
 
 fn input_segment_row(
@@ -4303,10 +4577,14 @@ fn gather_system_snapshot() -> SystemSnapshot {
     }
 }
 
-fn appearance_is_dark() -> bool {
-    cmd("defaults", &["read", "-g", "AppleInterfaceStyle"])
-        .map(|s| s.eq_ignore_ascii_case("Dark"))
-        .unwrap_or(false)
+async fn load_theme_state() -> std::result::Result<ThemeLoad, String> {
+    let host = match rmac_appearance_portal::snapshot().await {
+        Ok(host) => host,
+        Err(error) => rmac_appearance::Snapshot::unavailable(error.to_string()),
+    };
+    let store = rmac_theme::ThemeStore::from_environment().map_err(|error| error.to_string())?;
+    let theme = store.load(&host).map_err(|error| error.to_string())?;
+    Ok(ThemeLoad { host, theme })
 }
 
 fn account_name() -> String {
@@ -4705,10 +4983,6 @@ mod tests {
             joined: Some(3),
             bluetooth_on: false,
             bt_discoverable: false,
-            appearance: 2,
-            accent_idx: 4,
-            show_color_in_menu: false,
-            large_sidebar: true,
             output_volume: 31.0,
             alert_volume: 42.0,
             balance: 63.0,
@@ -4739,7 +5013,6 @@ mod tests {
                 "output_volume": 999,
                 "alert_volume": -10,
                 "balance": 101,
-                "accent_idx": 999,
                 "alert_idx": 999,
                 "airdrop_idx": 999
             }"#,
@@ -4749,9 +5022,21 @@ mod tests {
         assert_eq!(parsed.output_volume, 100.0);
         assert_eq!(parsed.alert_volume, 0.0);
         assert_eq!(parsed.balance, 100.0);
-        assert_eq!(parsed.accent_idx, 0);
         assert_eq!(parsed.alert_idx, 0);
         assert_eq!(parsed.airdrop_idx, 1);
+    }
+
+    #[test]
+    fn legacy_local_appearance_keys_are_ignored_and_not_rewritten() {
+        let parsed = Persisted::parse(
+            r#"{"appearance":2,"accent_idx":4,"show_color_in_menu":0,"large_sidebar":1}"#,
+        )
+        .unwrap();
+        let serialized = parsed.to_json();
+        assert!(!serialized.contains("appearance"));
+        assert!(!serialized.contains("accent_idx"));
+        assert!(!serialized.contains("show_color_in_menu"));
+        assert!(!serialized.contains("large_sidebar"));
     }
 
     #[test]

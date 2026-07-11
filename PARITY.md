@@ -18,7 +18,8 @@ Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
 - **System Settings** ✅ — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The
-  Storage subpage reports real filesystem usage.
+  **Appearance** pane writes the recoverable rmac theme authority instead of
+  local demo state. The Storage subpage reports real filesystem usage.
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).

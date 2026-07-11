@@ -43,6 +43,13 @@ The intended crate map and migration phases are specified in `PLAN_V2.md`.
 
 ## UI and update model
 
+`rmac-component-gallery` is the executable design-system contract. Its typed
+inventory lives in `rmac-ui`, renders every planned shared control state at
+logical 100%, 150%, and 200% previews, and records the keyboard journey B7 must
+implement. Native Linux scaling and accessibility evidence remains gated by the
+reference-PC framework reports; deterministic preview scale is never presented
+as compositor evidence.
+
 - GPUI entities own view state and subscriptions.
 - Render methods must not perform filesystem access, subprocess work, or D-Bus
   calls.

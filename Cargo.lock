@@ -4884,6 +4884,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-component-gallery"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "rmac-ui",
+]
+
+[[package]]
 name = "rmac-display"
 version = "0.1.0"
 dependencies = [

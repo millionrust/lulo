@@ -6,6 +6,11 @@ the way Finder was done. Process per app: **Codex audit → write `crates/<app>/
 
 Status legend: ✅ parity-ish · 🟡 partial · ⬜ mockup
 
+The executable component gallery is now the Phase B visual contract: 16 planned
+shared controls, 80 state specimens, deterministic 100/150/200% logical
+previews, and documented keyboard journeys. Native Linux scaling and Orca
+evidence remains gated by the reference-PC framework work.
+
 ## App status
 - **Finder** ✅ — multi-select, file ops, shortcuts, context menus, tabs, columns,
   Quick Look, DnD, **tag-search sidebar** (live `mdfind`), **real Recents**

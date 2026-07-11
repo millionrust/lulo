@@ -8,25 +8,61 @@ mod linux_wayland {
 
     use chrono::Local;
     use gpui::{
-        div, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId,
+        div, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId, Entity,
         FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
         WindowOptions,
     };
     use gpui_platform::application;
-    use rmac_gpui_upstream_lab::delay_until_next_minute;
+    use rmac_gpui_upstream_lab::{
+        delay_until_next_minute, top_bar_active_app_name, top_bar_indicator_labels,
+    };
 
     const BAR_HEIGHT: f32 = 32.0;
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
 
+    struct ShellStatus {
+        update: rmac_shell_runtime::Update,
+    }
+
+    impl ShellStatus {
+        fn new(
+            receiver: async_channel::Receiver<rmac_shell_runtime::Update>,
+            cx: &mut Context<Self>,
+        ) -> Self {
+            cx.spawn(async move |this, cx| {
+                while let Ok(update) = receiver.recv().await {
+                    let visible = update.visible;
+                    if this
+                        .update(cx, |this, cx| {
+                            this.update = update;
+                            if visible {
+                                cx.notify();
+                            }
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+            Self {
+                update: rmac_shell_runtime::Update::default(),
+            }
+        }
+    }
+
     struct TopBar {
         display_id: u64,
         render_count: u64,
+        status: Entity<ShellStatus>,
     }
 
     impl TopBar {
-        fn new(display_id: DisplayId, cx: &mut Context<Self>) -> Self {
+        fn new(display_id: DisplayId, status: Entity<ShellStatus>, cx: &mut Context<Self>) -> Self {
             let display_id = u64::from(display_id);
+            cx.observe(&status, |_, _, cx| cx.notify()).detach();
             cx.spawn(async move |this, cx| loop {
                 let epoch_millis = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -43,17 +79,21 @@ mod linux_wayland {
             Self {
                 display_id,
                 render_count: 0,
+                status,
             }
         }
     }
 
     impl Render for TopBar {
-        fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
             let now = Local::now();
             let clock = now.format("%a %b %-d  %-I:%M %p").to_string();
             let clock_label = now.format("%A, %B %-d, %-I:%M %p").to_string();
+            let snapshot = &self.status.read(cx).update.snapshot.status;
+            let active_app = top_bar_active_app_name(snapshot);
+            let indicators = top_bar_indicator_labels(snapshot);
 
             div()
                 .id(format!("top-bar-{}", self.display_id))
@@ -70,22 +110,48 @@ mod linux_wayland {
                 .border_color(rgba(0x00000024))
                 .child(
                     div()
+                        .flex()
+                        .items_center()
+                        .gap_4()
                         .flex_1()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child("rmac"),
+                        .child(
+                            div()
+                                .id(format!("desktop-mark-{}", self.display_id))
+                                .font_weight(FontWeight::BOLD)
+                                .aria_label("rmac desktop")
+                                .child("◆"),
+                        )
+                        .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app)),
                 )
                 .child(
                     div()
                         .id(format!("clock-{}", self.display_id))
                         .role(Role::Time)
                         .aria_label(clock_label)
-                        .flex_1()
-                        .flex()
-                        .justify_center()
                         .font_weight(FontWeight::MEDIUM)
                         .child(clock),
                 )
-                .child(div().flex_1())
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_3()
+                        .flex_1()
+                        .justify_end()
+                        .children(
+                            indicators
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, indicator)| {
+                                    div()
+                                        .id(format!("status-{}-{index}", self.display_id))
+                                        .role(Role::Status)
+                                        .aria_label(indicator.accessible)
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(indicator.visible)
+                                }),
+                        ),
+                )
         }
     }
 
@@ -118,6 +184,15 @@ mod linux_wayland {
     }
 
     fn open_top_bars(cx: &mut App) {
+        let (status_tx, status_rx) = async_channel::bounded(16);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_shell_runtime::watch(status_tx).await {
+                    eprintln!("shell status runtime stopped: {error}");
+                }
+            })
+            .detach();
+        let status = cx.new(|cx| ShellStatus::new(status_rx, cx));
         for display in cx.displays() {
             let display_id = display.id();
             let width = display.bounds().size.width;
@@ -143,7 +218,10 @@ mod linux_wayland {
                         }),
                         ..Default::default()
                     },
-                    move |_, cx| cx.new(|cx| TopBar::new(display_id, cx)),
+                    {
+                        let status = status.clone();
+                        move |_, cx| cx.new(|cx| TopBar::new(display_id, status, cx))
+                    },
                 )
                 .expect("open top-bar layer surface");
             cx.spawn(async move |cx| {

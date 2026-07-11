@@ -118,6 +118,23 @@ fractional scaling, output hotplug, fullscreen interactions, real keyboard
 focus, or the required soak duration; those remain part of the manual protocol
 below.
 
+## Live top-bar integration candidate
+
+The candidate now consumes one shared `rmac-shell-runtime` stream across all
+output surfaces. It renders the reliable focused-application identity at the
+leading edge, keeps the clock centered, and exposes the currently available
+Focus, VPN, Wi-Fi, Bluetooth, sound, battery, and notification projection at
+the trailing edge. Notification and scheduled-Focus authorities are not part
+of this candidate and remain roadmap work.
+Diagnostic source-health changes remain stored without notifying GPUI, so a
+service restart cannot create visual churn or an idle frame loop.
+
+Platform-neutral projection tests pass on the macOS development host. The
+post-integration Linux Wayland Clippy, nested Sway/AT-SPI smoke test, and real
+niri hardware protocol remain pending; the earlier evidence table proves the
+static surface revision only and must not be treated as proof of this live
+extension.
+
 ## Ubuntu 26.04 runtime protocol
 
 Run on both GNOME Wayland and niri where specified. Capture the GPUI lab commit,

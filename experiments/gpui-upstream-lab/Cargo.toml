@@ -11,9 +11,12 @@ wayland = ["gpui_platform/wayland"]
 x11 = ["gpui_platform/x11"]
 
 [dependencies]
+async-channel = "2"
 chrono = "0.4"
 gpui = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui" }
 gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
+rmac-shell-runtime = { path = "../../crates/rmac-shell-runtime" }
+rmac-shell-status = { path = "../../crates/rmac-shell-status" }
 
 [[bin]]
 name = "a11y"

@@ -40,10 +40,15 @@ increment/decrement actions. Under niri, verify that the layer-shell surface is
 edge, does not steal keyboard focus, survives monitor changes, and behaves as
 specified when another window is fullscreen.
 
-The `top-bar` candidate creates one 32-logical-pixel surface per output with a
-centered minute clock. Verify one bar and one exclusive zone per output,
-mixed/fractional scaling, no keyboard focus theft, output hotplug, fullscreen
-behavior, a named toolbar and clock in Orca, and no continuous idle redraw.
+The `top-bar` candidate creates one 32-logical-pixel surface per output. One
+shared `rmac-shell-runtime` instance projects the focused application and the
+available Focus, VPN, Wi-Fi, Bluetooth, sound, battery, and notification
+snapshots into every surface; source-health-only publications do not request a
+frame. The clock remains centered and the original rmac mark plus focused app
+lead the bar.
+Verify one bar and one exclusive zone per output, mixed/fractional scaling, no
+keyboard focus theft, output hotplug, fullscreen behavior, named toolbar,
+clock, and status semantics in Orca, and no continuous idle redraw.
 
 Record the compositor, display protocol, scale factors, GPU/driver, Orca
 version, and pass/fail evidence in `docs/gpui-current-upstream-spike.md` before
@@ -65,3 +70,9 @@ non-focusable toolbar/clock semantics. It also checks the interactive probe's
 roles, names, numeric value, click actions, and toggled state over AT-SPI. It is
 a deterministic smoke gate, not a replacement for the Ubuntu/niri/GNOME/Orca
 hardware protocol.
+
+The live-status extension must be rerun through this Linux smoke gate before
+its results replace the static-candidate evidence. Platform-neutral projection
+tests can run on the macOS development host with `cargo test --locked --lib`.
+Notification and scheduled-Focus authorities remain later roadmap work; their
+projection here does not claim those providers are complete.

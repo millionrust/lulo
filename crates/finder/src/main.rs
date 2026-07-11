@@ -25,11 +25,9 @@ use gpui::{
     ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
-use gpui_component::{
-    input::{Input, InputEvent, InputState},
-    StyledExt as _,
-};
+use gpui_component::{input::InputEvent, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use rmac_ui::{InputState, SearchField, TextField};
 
 actions!(
     finder,
@@ -1298,7 +1296,7 @@ impl FinderView {
             .child(
                 div()
                     .flex_1()
-                    .child(Input::new(&self.query).appearance(false)),
+                    .child(SearchField::new(&self.query).appearance(false)),
             );
 
         div()
@@ -1613,7 +1611,7 @@ impl FinderView {
                 Some((ri, input)) if *ri == ix => div()
                     .pl(px(6.0))
                     .flex_1()
-                    .child(Input::new(input).appearance(true))
+                    .child(TextField::new(input).appearance(true))
                     .into_any_element(),
                 _ => div()
                     .pl(px(6.0))

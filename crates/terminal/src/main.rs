@@ -23,10 +23,9 @@ use gpui::{
     ParentElement, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::button::{Button, ButtonVariants as _};
-use gpui_component::input::{Input, InputState};
-use gpui_component::{Selectable as _, Sizable as _, StyledExt as _};
+use gpui_component::StyledExt as _;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use rmac_ui::{Button, InputState, SearchField};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
 
 type RedrawSender = async_channel::Sender<()>;
@@ -624,8 +623,7 @@ impl TerminalView {
         let name = PROFILES[self.profile].name;
         // A gpui-component Button — unlike a raw div, it receives clicks inside
         // the draggable TitleBar (same pattern as other apps' toolbar buttons).
-        Button::new("profile-chip")
-            .label(format!("{name}  ▼"))
+        Button::new("profile-chip", format!("{name}  ▼"))
             .ghost()
             .small()
             .selected(self.picker_open)
@@ -1194,7 +1192,7 @@ impl Render for TerminalView {
                         .child(
                             div()
                                 .flex_1()
-                                .child(Input::new(&self.search).appearance(false)),
+                                .child(SearchField::new(&self.search).appearance(false)),
                         )
                         .child(
                             div()

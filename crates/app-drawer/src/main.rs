@@ -23,11 +23,8 @@ use gpui::{
     ParentElement, Pixels, Point, Render, SharedString, Stateful, StatefulInteractiveElement as _,
     Styled, Window,
 };
-use gpui_component::{
-    input::{Input, InputState},
-    StyledExt as _,
-};
-use rmac_ui::mac;
+use gpui_component::StyledExt as _;
+use rmac_ui::{mac, InputState, SearchField};
 
 const TILE_W: f32 = 116.0;
 const ICON: f32 = 60.0;
@@ -709,11 +706,11 @@ impl Render for AppDrawer {
                     .py_4()
                     .child(div().w(px(34.0)))
                     .child(
-                        div().flex_1().flex().justify_center().child(
-                            div()
-                                .w(px(280.0))
-                                .child(Input::new(&self.query).cleanable(true)),
-                        ),
+                        div()
+                            .flex_1()
+                            .flex()
+                            .justify_center()
+                            .child(div().w(px(280.0)).child(SearchField::new(&self.query))),
                     )
                     .child(self.view_toggle(cx)),
             )

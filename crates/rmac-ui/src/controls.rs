@@ -3,16 +3,17 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, ElementId, Entity,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, RenderOnce,
+    div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, Context, ElementId,
+    Entity, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, RenderOnce,
     SharedString, StyleRefinement, Styled, Window,
 };
 use gpui_component::{
     button::{Button as ComponentButton, ButtonCustomVariant, ButtonGroup, ButtonVariants as _},
     input::Input as ComponentInput,
+    menu::{DropdownMenu as _, PopupMenu},
     slider::Slider as ComponentSlider,
     table::Table as ComponentTable,
-    Disableable as _, Selectable as _, Sizable as _, Size, StyledExt as _,
+    Disableable as _, Icon, Selectable as _, Sizable as _, Size, StyledExt as _,
 };
 
 pub use gpui_component::input::InputState;
@@ -45,32 +46,65 @@ pub enum ToggleState {
 }
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
 
 /// Keyboard-focusable rmac button with semantic roles and live theme tokens.
 #[derive(IntoElement)]
 pub struct Button {
     id: ElementId,
-    label: SharedString,
+    label: Option<SharedString>,
+    icon: Option<Icon>,
     role: ButtonRole,
+    size: Size,
     disabled: bool,
     busy: bool,
     selected: bool,
     tooltip: Option<SharedString>,
     on_click: Option<ClickHandler>,
+    dropdown_menu: Option<MenuBuilder>,
+    style: StyleRefinement,
 }
 
 impl Button {
     pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+        let label = label.into();
         Self {
             id: id.into(),
-            label: label.into(),
+            label: (!label.is_empty()).then_some(label),
+            icon: None,
             role: ButtonRole::Secondary,
+            size: Size::Small,
             disabled: false,
             busy: false,
             selected: false,
             tooltip: None,
             on_click: None,
+            dropdown_menu: None,
+            style: StyleRefinement::default(),
         }
+    }
+
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn icon(mut self, icon: impl Into<Icon>) -> Self {
+        self.icon = Some(icon.into());
+        self
+    }
+
+    pub fn with_size(mut self, size: impl Into<Size>) -> Self {
+        self.size = size.into();
+        self
+    }
+
+    pub fn small(self) -> Self {
+        self.with_size(Size::Small)
+    }
+
+    pub fn xsmall(self) -> Self {
+        self.with_size(Size::XSmall)
     }
 
     pub fn role(mut self, role: ButtonRole) -> Self {
@@ -116,6 +150,20 @@ impl Button {
     ) -> Self {
         self.on_click = Some(Rc::new(handler));
         self
+    }
+
+    pub fn dropdown_menu(
+        mut self,
+        builder: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+    ) -> Self {
+        self.dropdown_menu = Some(Rc::new(builder));
+        self
+    }
+}
+
+impl Styled for Button {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
     }
 }
 
@@ -163,19 +211,31 @@ impl RenderOnce for Button {
                 ButtonRole::Primary | ButtonRole::Destructive
             ));
         let mut button = ComponentButton::new(self.id)
-            .label(self.label)
             .custom(variant)
-            .with_size(Size::Small)
+            .with_size(self.size)
             .disabled(self.disabled)
             .loading(self.busy)
-            .selected(self.selected);
+            .selected(self.selected)
+            .refine_style(&self.style);
+        if let Some(label) = self.label {
+            button = button.label(label);
+        }
+        if let Some(icon) = self.icon {
+            button = button.icon(icon);
+        }
         if let Some(tooltip) = self.tooltip {
             button = button.tooltip(tooltip);
         }
         if let Some(handler) = self.on_click {
             button = button.on_click(move |event, window, cx| handler(event, window, cx));
         }
-        button
+        if let Some(builder) = self.dropdown_menu {
+            button
+                .dropdown_menu(move |menu, window, cx| builder(menu, window, cx))
+                .into_any_element()
+        } else {
+            button.into_any_element()
+        }
     }
 }
 

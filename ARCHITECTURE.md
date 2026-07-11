@@ -67,6 +67,9 @@ loading, empty content, and row events. Activity Monitor is the active consumer.
 Tooltip, Progress, EmptyState, and Toast own shared feedback styling and state
 roles. System Settings uses the latter three for loading, empty Wi-Fi results,
 and dismissible service/persistence failures.
+The shared Button supports text, icons, compact sizes, selected state, and
+dropdown triggers. Terminal uses it for the profile control; Terminal, Finder,
+and App Drawer use shared text/search fields exclusively.
 
 - GPUI entities own view state and subscriptions.
 - Render methods must not perform filesystem access, subprocess work, or D-Bus

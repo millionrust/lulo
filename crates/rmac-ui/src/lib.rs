@@ -25,8 +25,8 @@ pub use components::{
     alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu, RequestClose,
 };
 pub use controls::{
-    Button, ButtonRole, InputState, SearchField, Slider, SliderAxis, SliderEvent, SliderState,
-    Tabs, TextField, Toggle, ToggleState,
+    Button, ButtonRole, CollectionState, InputState, List, ListRow, SearchField, Slider,
+    SliderAxis, SliderEvent, SliderState, Tabs, TextField, Toggle, ToggleState, Tree, TreeRow,
 };
 
 // Re-exports so apps depend on one crate for theming; these also bring the

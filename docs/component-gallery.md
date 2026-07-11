@@ -41,6 +41,9 @@ the shared Toggle and Slider boundary; Activity Monitor and System Settings use
 the shared SearchField. The remaining inventory stays a contract until its
 focused B7 migration lands. Tabs now also has a shared single-selection control
 with arrow and Home/End keyboard routing, adopted by Activity Monitor.
+List and Tree now share collection failure/loading states, focusable selectable
+rows, and keyboard expansion for tree branches; System Settings sidebar
+categories provide the first ListRow adoption.
 
 ## Visual-reference protocol
 

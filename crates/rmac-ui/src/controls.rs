@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, rgba, App, ClickEvent, ElementId, Entity,
+    div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, ElementId, Entity,
     InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, RenderOnce,
     SharedString, StyleRefinement, Styled, Window,
 };
@@ -589,6 +589,363 @@ impl RenderOnce for Tabs {
     }
 }
 
+/// Data/loading state shared by collection controls.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CollectionState {
+    #[default]
+    Ready,
+    Empty,
+    Loading,
+    Stale,
+    Unavailable,
+    Error,
+}
+
+fn collection_message(state: CollectionState) -> &'static str {
+    match state {
+        CollectionState::Ready => "",
+        CollectionState::Empty => "No items",
+        CollectionState::Loading => "Loading…",
+        CollectionState::Stale => "Showing cached information",
+        CollectionState::Unavailable => "Information is unavailable",
+        CollectionState::Error => "Could not load information",
+    }
+}
+
+/// Stateful vertical list surface.
+#[derive(IntoElement)]
+pub struct List {
+    children: Vec<AnyElement>,
+    state: CollectionState,
+    message: Option<SharedString>,
+    style: StyleRefinement,
+}
+
+impl List {
+    pub fn new(children: impl IntoIterator<Item = impl IntoElement>) -> Self {
+        Self {
+            children: children
+                .into_iter()
+                .map(IntoElement::into_any_element)
+                .collect(),
+            state: CollectionState::Ready,
+            message: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn state(mut self, state: CollectionState) -> Self {
+        self.state = state;
+        self
+    }
+
+    pub fn message(mut self, message: impl Into<SharedString>) -> Self {
+        self.message = Some(message.into());
+        self
+    }
+}
+
+impl Styled for List {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for List {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let state = self.state;
+        let message = self
+            .message
+            .unwrap_or_else(|| collection_message(state).into());
+        div()
+            .v_flex()
+            .refine_style(&self.style)
+            .when(state == CollectionState::Stale, |list| {
+                list.child(
+                    div()
+                        .mx_2()
+                        .my_1()
+                        .px_2()
+                        .py_1()
+                        .rounded(px(6.0))
+                        .bg(mac::warning_background())
+                        .border_1()
+                        .border_color(mac::warning_border())
+                        .text_size(px(11.0))
+                        .text_color(mac::warning_text())
+                        .child(message.clone()),
+                )
+            })
+            .when(
+                matches!(state, CollectionState::Ready | CollectionState::Stale),
+                |list| list.children(self.children),
+            )
+            .when(
+                matches!(
+                    state,
+                    CollectionState::Empty
+                        | CollectionState::Loading
+                        | CollectionState::Unavailable
+                        | CollectionState::Error
+                ),
+                |list| {
+                    list.child(
+                        div()
+                            .min_h(px(96.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .px_4()
+                            .text_size(px(12.0))
+                            .text_color(if state == CollectionState::Error {
+                                mac::danger()
+                            } else {
+                                mac::text_secondary()
+                            })
+                            .child(message),
+                    )
+                },
+            )
+    }
+}
+
+/// Focusable, selectable row for lists and source sidebars.
+#[derive(IntoElement)]
+pub struct ListRow {
+    id: ElementId,
+    content: AnyElement,
+    selected: bool,
+    disabled: bool,
+    on_activate: Option<ClickHandler>,
+    style: StyleRefinement,
+}
+
+impl ListRow {
+    pub fn new(id: impl Into<ElementId>, content: impl IntoElement) -> Self {
+        Self {
+            id: id.into(),
+            content: content.into_any_element(),
+            selected: false,
+            disabled: false,
+            on_activate: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn on_activate(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_activate = Some(Rc::new(handler));
+        self
+    }
+
+    pub fn on_click(self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
+        self.on_activate(handler)
+    }
+}
+
+impl Styled for ListRow {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for ListRow {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let transparent = rgba(0x00000000).into();
+        let variant = ButtonCustomVariant::new(cx)
+            .color(transparent)
+            .foreground(mac::text())
+            .border(transparent)
+            .hover(mac::hover())
+            .active(mac::accent());
+        let mut row = ComponentButton::new(self.id)
+            .custom(variant)
+            .with_size(Size::Small)
+            .selected(self.selected)
+            .disabled(self.disabled)
+            .w_full()
+            .h(px(30.0))
+            .justify_start()
+            .refine_style(&self.style)
+            .child(self.content);
+        if let Some(handler) = self.on_activate {
+            row = row.on_click(move |event, window, cx| handler(event, window, cx));
+        }
+        row
+    }
+}
+
+/// Tree surface with the same loading/error contract as [`List`].
+#[derive(IntoElement)]
+pub struct Tree {
+    list: List,
+}
+
+impl Tree {
+    pub fn new(children: impl IntoIterator<Item = impl IntoElement>) -> Self {
+        Self {
+            list: List::new(children),
+        }
+    }
+
+    pub fn state(mut self, state: CollectionState) -> Self {
+        self.list = self.list.state(state);
+        self
+    }
+
+    pub fn message(mut self, message: impl Into<SharedString>) -> Self {
+        self.list = self.list.message(message);
+        self
+    }
+}
+
+impl Styled for Tree {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.list.style()
+    }
+}
+
+impl RenderOnce for Tree {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        self.list
+    }
+}
+
+type ExpansionHandler = Rc<dyn Fn(&bool, &mut Window, &mut App)>;
+
+/// Indented tree row with pointer and Left/Right expansion behavior.
+#[derive(IntoElement)]
+pub struct TreeRow {
+    id: ElementId,
+    label: SharedString,
+    depth: u16,
+    selected: bool,
+    has_children: bool,
+    expanded: bool,
+    on_activate: Option<ClickHandler>,
+    on_expansion_change: Option<ExpansionHandler>,
+}
+
+impl TreeRow {
+    pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            depth: 0,
+            selected: false,
+            has_children: false,
+            expanded: false,
+            on_activate: None,
+            on_expansion_change: None,
+        }
+    }
+
+    pub fn depth(mut self, depth: u16) -> Self {
+        self.depth = depth;
+        self
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn branch(mut self, expanded: bool) -> Self {
+        self.has_children = true;
+        self.expanded = expanded;
+        self
+    }
+
+    pub fn on_activate(
+        mut self,
+        handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_activate = Some(Rc::new(handler));
+        self
+    }
+
+    pub fn on_expansion_change(
+        mut self,
+        handler: impl Fn(&bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_expansion_change = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for TreeRow {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let disclosure = if self.has_children {
+            if self.expanded {
+                "⌄"
+            } else {
+                "›"
+            }
+        } else {
+            ""
+        };
+        let content = div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap_1()
+            .pl(px(f32::from(self.depth) * 16.0))
+            .text_color(if self.selected {
+                mac::on_accent()
+            } else {
+                mac::text()
+            })
+            .child(div().w(px(14.0)).child(disclosure))
+            .child(self.label);
+        let expansion_click = self.on_expansion_change.clone();
+        let keyboard_expansion = self.on_expansion_change;
+        let activate = self.on_activate;
+        let has_children = self.has_children;
+        let expanded = self.expanded;
+        let row = ListRow::new(self.id, content)
+            .selected(self.selected)
+            .on_activate(move |event, window, cx| {
+                if has_children {
+                    if let Some(handler) = expansion_click.as_ref() {
+                        handler(&!expanded, window, cx);
+                        return;
+                    }
+                }
+                if let Some(handler) = activate.as_ref() {
+                    handler(event, window, cx);
+                }
+            });
+        div()
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let requested = match event.keystroke.key.as_str() {
+                    "left" if has_children && expanded => Some(false),
+                    "right" if has_children && !expanded => Some(true),
+                    _ => None,
+                };
+                let (Some(requested), Some(handler)) = (requested, keyboard_expansion.as_ref())
+                else {
+                    return;
+                };
+                window.prevent_default();
+                cx.stop_propagation();
+                handler(&requested, window, cx);
+            })
+            .child(row)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -635,5 +992,18 @@ mod tests {
         assert_eq!(next_tab_index(2, 5, "end"), Some(4));
         assert_eq!(next_tab_index(2, 5, "space"), None);
         assert_eq!(next_tab_index(0, 0, "right"), None);
+    }
+
+    #[test]
+    fn collection_states_have_nonempty_fallback_messages() {
+        for state in [
+            CollectionState::Empty,
+            CollectionState::Loading,
+            CollectionState::Stale,
+            CollectionState::Unavailable,
+            CollectionState::Error,
+        ] {
+            assert!(!collection_message(state).is_empty());
+        }
     }
 }

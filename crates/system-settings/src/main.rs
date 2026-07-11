@@ -21,7 +21,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::StyledExt as _;
-use rmac_ui::{SearchField, Slider, SliderEvent, SliderState, Toggle};
+use rmac_ui::{ListRow, SearchField, Slider, SliderEvent, SliderState, Toggle};
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -1769,31 +1769,28 @@ impl Settings {
             for (ci, cat) in matching {
                 let selected = self.selected == (si, ci);
                 col = col.child(
-                    div()
-                        .id(SharedString::from(format!("cat-{si}-{ci}")))
-                        .flex()
-                        .items_center()
-                        .gap_2p5()
-                        .h(px(30.0))
-                        .mx_2()
-                        .px_2()
-                        .rounded(px(6.0))
-                        .when(selected, |el: Stateful<Div>| el.bg(accent()))
-                        .when(!selected, |el: Stateful<Div>| {
-                            el.hover(|h| h.bg(rmac_ui::mac::hover()))
-                        })
-                        .child(tile(cat.icon, cat.color, 20.0))
-                        .child(
-                            div()
-                                .text_size(px(13.0))
-                                .text_color(if selected { on_accent() } else { label() })
-                                .child(cat.name.clone()),
-                        )
-                        .on_click(cx.listener(move |t, _, _, cx| {
-                            t.selected = (si, ci);
-                            t.nav.clear();
-                            cx.notify();
-                        })),
+                    ListRow::new(
+                        SharedString::from(format!("cat-{si}-{ci}")),
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2p5()
+                            .child(tile(cat.icon, cat.color, 20.0))
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .text_color(if selected { on_accent() } else { label() })
+                                    .child(cat.name.clone()),
+                            ),
+                    )
+                    .selected(selected)
+                    .mx_2()
+                    .px_2()
+                    .on_activate(cx.listener(move |t, _, _, cx| {
+                        t.selected = (si, ci);
+                        t.nav.clear();
+                        cx.notify();
+                    })),
                 );
             }
         }

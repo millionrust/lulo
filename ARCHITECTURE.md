@@ -248,6 +248,13 @@ Each query cancels the previous generation; stale or identity/category-spoofed
 batches are rejected. The domain owns deterministic scoring, category caps,
 stable keyboard selection, and exact primary/alternate actions without
 importing GPUI, filesystem search, portals, or process execution.
+`rmac-launcher-providers` supplies the first local adapters. It preserves exact
+desktop-entry launch specifications, maps Settings keywords to stable pane IDs,
+passes cancellation into bounded filename/recent-document searches, and
+evaluates a deliberately small arithmetic grammar. File results are declared
+private before admission and retain an explicit Reveal alternate; providers
+run behind an exact-descriptor check so an unadmitted adapter receives no
+query. Actual action execution remains a separate system boundary.
 
 ## Persistence
 

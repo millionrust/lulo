@@ -51,7 +51,28 @@ primary action. Actions carry parsed shell-free application launch specs,
 setting pane IDs, private file paths, or calculator text; default logs must not
 print private action payloads.
 
-The app/settings/file/calculator adapters, execution runtime, immediate-focus
-GPUI overlay, global shortcut journey, Orca semantics, privacy Settings pane,
-and performance evidence remain pending. This slice does not mark D7/D8
-complete.
+## Local providers
+
+`rmac-launcher-providers` implements four bounded, background-safe adapters:
+
+- Applications retain the exact parsed desktop-entry launch specification; no
+  result reconstructs a command from display text.
+- Settings match titles, subtitles, and synonyms but return stable pane IDs,
+  with duplicate and empty IDs excluded.
+- Files use recent documents for an empty query and filename search otherwise.
+  They accept only an absolute root, return only absolute deduplicated paths,
+  pass the query cancellation flag into `rmac-search`, and declare private
+  content before the request is admitted. Open is primary and Reveal is the
+  explicit alternate action.
+- Calculator evaluates finite arithmetic with precedence, parentheses, unary
+  signs, a 256-byte input bound, and no scripting or function surface. Its
+  result is a typed copy-text action.
+
+Before an adapter runs, its complete descriptor must exactly match one admitted
+to the privacy-filtered request. Cancellation before or after provider work
+suppresses the batch; cancellation observed during work becomes an explicit
+provider error. Providers never execute their returned action.
+
+The action-execution runtime, immediate-focus GPUI overlay, global shortcut
+journey, Orca semantics, privacy Settings pane, and performance evidence remain
+pending. This slice does not mark D7/D8 complete.

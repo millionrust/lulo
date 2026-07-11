@@ -5003,6 +5003,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-launcher-providers"
+version = "0.1.0"
+dependencies = [
+ "rmac-apps",
+ "rmac-launcher",
+ "rmac-search",
+ "rmac-shell-settings",
+]
+
+[[package]]
 name = "rmac-mounts"
 version = "0.1.0"
 dependencies = [

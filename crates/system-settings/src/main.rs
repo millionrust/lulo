@@ -55,28 +55,41 @@ fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }
 fn sidebar_bg() -> Hsla {
-    hsl(0xe7e7ea)
+    rmac_ui::mac::sidebar()
 }
 fn pane_bg() -> Hsla {
-    hsl(0xf2f2f4)
+    rmac_ui::mac::window()
 }
 fn card_bg() -> Hsla {
-    hsl(0xffffff)
+    rmac_ui::mac::raised()
 }
 fn accent() -> Hsla {
-    hsl(0x0a84ff)
+    rmac_ui::mac::accent()
 }
 fn label() -> Hsla {
-    hsl(0x1d1d1f)
+    rmac_ui::mac::text()
 }
 fn secondary() -> Hsla {
-    hsl(0x86868b)
+    rmac_ui::mac::text_secondary()
 }
 fn sep() -> Hsla {
-    hsl(0xe5e5e5)
+    rmac_ui::mac::separator()
 }
 fn white() -> Hsla {
     gpui::white()
+}
+fn on_accent() -> Hsla {
+    rmac_ui::mac::on_accent()
+}
+fn swatch_foreground(hex: u32) -> Hsla {
+    let swatch = rmac_ui::theme::RgbaColor::opaque(hex);
+    let white = rmac_ui::theme::RgbaColor::opaque(0xffffff);
+    let black = rmac_ui::theme::RgbaColor::opaque(0x000000);
+    if swatch.contrast_ratio(white) >= swatch.contrast_ratio(black) {
+        white.hsla()
+    } else {
+        black.hsla()
+    }
 }
 
 fn glyph(path: &'static str, size: f32, color: Hsla) -> Svg {
@@ -1605,14 +1618,18 @@ impl Settings {
             .h(px(26.0))
             .rounded(px(6.0))
             .when(can_back, |el: Stateful<Div>| {
-                el.hover(|h| h.bg(hsl(0x00000010)))
+                el.hover(|h| h.bg(rmac_ui::mac::hover()))
                     .cursor_pointer()
                     .on_click(cx.listener(|t, _, _, cx| t.go_back(cx)))
             })
             .child(glyph(
                 "icons/chevron-left.svg",
                 17.0,
-                if can_back { accent() } else { hsl(0xc4c4c8) },
+                if can_back {
+                    accent()
+                } else {
+                    rmac_ui::mac::text_tertiary()
+                },
             ));
 
         div()
@@ -1655,7 +1672,11 @@ impl Settings {
                     .pl_3()
                     .gap_1()
                     .child(back)
-                    .child(glyph("icons/chevron-right.svg", 17.0, hsl(0xc4c4c8))),
+                    .child(glyph(
+                        "icons/chevron-right.svg",
+                        17.0,
+                        rmac_ui::mac::text_tertiary(),
+                    )),
             )
     }
 
@@ -1670,7 +1691,7 @@ impl Settings {
             .gap_1p5()
             .px_2()
             .rounded(px(7.0))
-            .bg(hsl(0xdcdce0))
+            .bg(rmac_ui::mac::control_fill())
             .child(glyph("icons/search.svg", 13.0, secondary()))
             .child(
                 div()
@@ -1697,8 +1718,8 @@ impl Settings {
                     .items_center()
                     .justify_center()
                     .rounded_full()
-                    .bg(hsl(0xc7c7cc))
-                    .child(glyph("icons/user.svg", 22.0, white())),
+                    .bg(rmac_ui::mac::control_fill())
+                    .child(glyph("icons/user.svg", 22.0, secondary())),
             )
             .child(
                 div()
@@ -1760,13 +1781,13 @@ impl Settings {
                         .rounded(px(6.0))
                         .when(selected, |el: Stateful<Div>| el.bg(accent()))
                         .when(!selected, |el: Stateful<Div>| {
-                            el.hover(|h| h.bg(hsl(0x00000008)))
+                            el.hover(|h| h.bg(rmac_ui::mac::hover()))
                         })
                         .child(tile(cat.icon, cat.color, 20.0))
                         .child(
                             div()
                                 .text_size(px(13.0))
-                                .text_color(if selected { white() } else { label() })
+                                .text_color(if selected { on_accent() } else { label() })
                                 .child(cat.name.clone()),
                         )
                         .on_click(cx.listener(move |t, _, _, cx| {
@@ -1952,7 +1973,7 @@ impl Settings {
                             .text_size(px(12.0))
                             .text_color(accent())
                             .cursor_pointer()
-                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                             .child(refresh_label)
                             .on_click(move |_, _, cx| {
                                 refresh_view.update(cx, |settings, cx| settings.refresh_wifi(cx));
@@ -2084,7 +2105,7 @@ impl Settings {
                             .text_size(px(12.0))
                             .text_color(accent())
                             .cursor_pointer()
-                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                             .child(refresh_label)
                             .on_click(move |_, _, cx| {
                                 refresh_view
@@ -2239,7 +2260,7 @@ impl Settings {
                     .text_size(px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
-                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                     .child(if self.theme_busy {
                         "Applying…"
                     } else {
@@ -2341,11 +2362,15 @@ impl Settings {
                 .flex()
                 .items_center()
                 .text_size(px(11.0))
-                .text_color(if automatic_selected { white() } else { label() })
+                .text_color(if automatic_selected {
+                    on_accent()
+                } else {
+                    label()
+                })
                 .bg(if automatic_selected {
                     accent()
                 } else {
-                    hsl(0xe9e9ec)
+                    rmac_ui::mac::control_fill()
                 })
                 .when(enabled, |element| {
                     element.cursor_pointer().on_click(move |_, _, cx| {
@@ -2364,6 +2389,7 @@ impl Settings {
         for (index, (name, hex)) in ACCENTS.iter().copied().enumerate() {
             let preference = accent_preference(hex);
             let selected = preferences.accent_color == preference;
+            let swatch_foreground = swatch_foreground(hex);
             let swatch_view = view.clone();
             swatches.push(
                 div()
@@ -2394,9 +2420,9 @@ impl Settings {
                             .when(selected, |element| {
                                 element
                                     .border_2()
-                                    .border_color(white())
+                                    .border_color(swatch_foreground)
                                     .shadow_sm()
-                                    .child(glyph("icons/check.svg", 12.0, white()))
+                                    .child(glyph("icons/check.svg", 12.0, swatch_foreground))
                             }),
                     )
                     .child(
@@ -2519,7 +2545,7 @@ impl Settings {
                     .text_size(px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
-                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                     .child(if self.audio_busy {
                         "Refreshing…"
                     } else {
@@ -2701,7 +2727,7 @@ impl Settings {
                     })
                     .when(self.audio.can_set_default && !d.is_default, |el| {
                         el.cursor_pointer()
-                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                             .on_click(move |_, _, cx| {
                                 let id = id.clone();
                                 device_view.update(cx, |settings, cx| {
@@ -2744,7 +2770,7 @@ impl Settings {
                     .text_size(px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
-                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                     .child(if self.input_busy {
                         "Applying…"
                     } else {
@@ -2966,7 +2992,7 @@ impl Settings {
                     .text_size(px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
-                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                     .child(if self.power_busy {
                         "Refreshing…"
                     } else {
@@ -3103,7 +3129,7 @@ impl Settings {
                         })
                         .when(!selected, |row| {
                             row.cursor_pointer()
-                                .hover(|hover| hover.bg(hsl(0x00000008)))
+                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                 .on_click(move |_, _, cx| {
                                     profile_view.update(cx, |settings, cx| {
                                         settings.set_power_profile(profile, cx)
@@ -3168,7 +3194,7 @@ impl Settings {
                                 .text_size(px(12.0))
                                 .text_color(hsl(0xff3b30))
                                 .cursor_pointer()
-                                .hover(|hover| hover.bg(hsl(0x00000008)))
+                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                 .child("Revert")
                                 .on_click(move |_, _, cx| {
                                     revert_view.update(cx, |settings, cx| {
@@ -3186,7 +3212,7 @@ impl Settings {
                             .text_size(px(12.0))
                             .text_color(accent())
                             .cursor_pointer()
-                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                             .child(if self.display_busy {
                                 "Applying…"
                             } else {
@@ -3323,7 +3349,7 @@ impl Settings {
                             })
                             .when(!selected, |row| {
                                 row.cursor_pointer()
-                                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                     .on_click(move |_, _, cx| {
                                         let change = DisplayChange::Scale {
                                             output: output_id.clone(),
@@ -3370,7 +3396,7 @@ impl Settings {
                             })
                             .when(!selected, |row| {
                                 row.cursor_pointer()
-                                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                     .on_click(move |_, _, cx| {
                                         let change = DisplayChange::Transform {
                                             output: output_id.clone(),
@@ -3413,7 +3439,7 @@ impl Settings {
                             })
                             .when(!selected, |row| {
                                 row.cursor_pointer()
-                                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                     .on_click(move |_, _, cx| {
                                         let change = DisplayChange::Mode {
                                             output: output_id.clone(),
@@ -3515,7 +3541,7 @@ impl Settings {
                         .text_size(px(12.0))
                         .text_color(accent())
                         .cursor_pointer()
-                        .hover(|hover| hover.bg(hsl(0x00000008)))
+                        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                         .child(refresh_label)
                         .on_click(move |_, _, cx| {
                             refresh_view.update(cx, |settings, cx| settings.refresh_network(cx));
@@ -3664,7 +3690,7 @@ impl Settings {
                         .text_size(px(12.0))
                         .text_color(accent())
                         .cursor_pointer()
-                        .hover(|hover| hover.bg(hsl(0x00000008)))
+                        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                         .child(refresh_label)
                         .on_click(move |_, _, cx| {
                             refresh_view.update(cx, |settings, cx| settings.refresh_vpn(cx));
@@ -3783,7 +3809,7 @@ impl Settings {
                     .w_full()
                     .h(px(10.0))
                     .rounded(px(5.0))
-                    .bg(hsl(0xe5e5ea))
+                    .bg(rmac_ui::mac::control_fill())
                     .child(
                         div()
                             .h_full()
@@ -3960,11 +3986,11 @@ impl Render for Settings {
                         .items_center()
                         .gap_2()
                         .px_3()
-                        .bg(gpui::rgba(0xff3b301f))
+                        .bg(rmac_ui::mac::error_background())
                         .border_b_1()
-                        .border_color(gpui::rgba(0xff3b3059))
+                        .border_color(rmac_ui::mac::error_border())
                         .text_size(px(12.0))
-                        .text_color(gpui::rgb(0xc62828))
+                        .text_color(rmac_ui::mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))
                         .child("Dismiss")
@@ -4063,15 +4089,15 @@ fn note_card(text: impl Into<SharedString>) -> Div {
         .px_3()
         .py_2p5()
         .rounded(px(10.0))
-        .bg(hsl(0xfff6da))
+        .bg(rmac_ui::mac::warning_background())
         .border_1()
-        .border_color(hsl(0xeedca0))
-        .child(glyph("icons/info.svg", 15.0, hsl(0xb8860b)))
+        .border_color(rmac_ui::mac::warning_border())
+        .child(glyph("icons/info.svg", 15.0, rmac_ui::mac::warning_text()))
         .child(
             div()
                 .flex_1()
                 .text_size(px(11.5))
-                .text_color(hsl(0x7a5c00))
+                .text_color(rmac_ui::mac::warning_text())
                 .child(text.into()),
         )
 }
@@ -4155,7 +4181,7 @@ fn bluetooth_device_row(view: &Entity<Settings>, device: &rmac_bluetooth::Device
                 .when(device.paired, |element| {
                     element
                         .cursor_pointer()
-                        .hover(|hover| hover.bg(hsl(0x00000008)))
+                        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                         .on_click(move |_, _, cx| {
                             action_view.update(cx, |settings, cx| {
                                 settings.set_bluetooth_device_connected(
@@ -4314,15 +4340,15 @@ fn theme_segment_row(
                 .rounded(px(6.0))
                 .text_size(px(11.0))
                 .when(index == selected, |element| {
-                    element.bg(accent()).text_color(white())
+                    element.bg(accent()).text_color(on_accent())
                 })
                 .when(index != selected, |element| {
-                    element.bg(hsl(0xe9e9ec)).text_color(label())
+                    element.bg(rmac_ui::mac::control_fill()).text_color(label())
                 })
                 .when(enabled, |element| {
                     element
                         .cursor_pointer()
-                        .hover(|hover| hover.bg(hsl(0xdedee2)))
+                        .hover(|hover| hover.bg(rmac_ui::mac::control_fill_hover()))
                         .on_click(move |_, _, cx| {
                             option_view
                                 .update(cx, |settings, cx| settings.apply_theme_change(change, cx));
@@ -4366,15 +4392,15 @@ fn input_segment_row(
                 .rounded(px(6.0))
                 .text_size(px(11.0))
                 .when(index == selected, |element| {
-                    element.bg(accent()).text_color(white())
+                    element.bg(accent()).text_color(on_accent())
                 })
                 .when(index != selected, |element| {
-                    element.bg(hsl(0xe9e9ec)).text_color(label())
+                    element.bg(rmac_ui::mac::control_fill()).text_color(label())
                 })
                 .when(enabled, |element| {
                     element
                         .cursor_pointer()
-                        .hover(|hover| hover.bg(hsl(0xdedee2)))
+                        .hover(|hover| hover.bg(rmac_ui::mac::control_fill_hover()))
                         .on_click(move |_, _, cx| {
                             option_view
                                 .update(cx, |settings, cx| settings.apply_input_change(change, cx));
@@ -4439,18 +4465,22 @@ fn nav_row(
     let mut r = row_base()
         .id(id)
         .cursor_pointer()
-        .hover(|h| h.bg(hsl(0x00000006)))
+        .hover(|h| h.bg(rmac_ui::mac::hover()))
         .child(tile(icon, color, 22.0))
         .child(text_block(title, None));
     if let Some(v) = value {
         r = r.child(div().text_size(px(13.0)).text_color(secondary()).child(v));
     }
-    r.child(glyph("icons/chevron-right.svg", 14.0, hsl(0xc4c4c8)))
-        .on_click(move |_, _, cx| {
-            let target = target.clone();
-            view.update(cx, |s, cx| s.push(target, cx));
-        })
-        .into_any_element()
+    r.child(glyph(
+        "icons/chevron-right.svg",
+        14.0,
+        rmac_ui::mac::text_tertiary(),
+    ))
+    .on_click(move |_, _, cx| {
+        let target = target.clone();
+        view.update(cx, |s, cx| s.push(target, cx));
+    })
+    .into_any_element()
 }
 
 /// A segmented control over a fixed set of options; `set` writes the index.
@@ -4476,11 +4506,11 @@ fn segmented(
                 .rounded(px(6.0))
                 .cursor_pointer()
                 .text_size(px(12.0))
-                .when(is_sel, |el| el.bg(accent()).text_color(white()))
+                .when(is_sel, |el| el.bg(accent()).text_color(on_accent()))
                 .when(!is_sel, |el| {
-                    el.bg(hsl(0xe9e9ec))
+                    el.bg(rmac_ui::mac::control_fill())
                         .text_color(label())
-                        .hover(|h| h.bg(hsl(0xdedee2)))
+                        .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
                 })
                 .child(*opt)
                 .on_click(move |_, _, cx| {
@@ -4518,11 +4548,11 @@ fn segmented_dynamic(
                 .rounded(px(6.0))
                 .cursor_pointer()
                 .text_size(px(12.0))
-                .when(is_sel, |el| el.bg(accent()).text_color(white()))
+                .when(is_sel, |el| el.bg(accent()).text_color(on_accent()))
                 .when(!is_sel, |el| {
-                    el.bg(hsl(0xe9e9ec))
+                    el.bg(rmac_ui::mac::control_fill())
                         .text_color(label())
-                        .hover(|h| h.bg(hsl(0xdedee2)))
+                        .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
                 })
                 .child(*opt)
                 .on_click(move |_, _, cx| {

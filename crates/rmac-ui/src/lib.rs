@@ -465,6 +465,15 @@ pub mod mac {
     pub fn error_border() -> Hsla {
         crate::theme::current().colors.error_border.hsla()
     }
+    pub fn warning_background() -> Hsla {
+        crate::theme::current().colors.warning_background.hsla()
+    }
+    pub fn warning_border() -> Hsla {
+        crate::theme::current().colors.warning_border.hsla()
+    }
+    pub fn warning_text() -> Hsla {
+        crate::theme::current().colors.warning_text.hsla()
+    }
     /// On-accent text (white).
     pub fn on_accent() -> Hsla {
         crate::theme::current().colors.on_accent.hsla()

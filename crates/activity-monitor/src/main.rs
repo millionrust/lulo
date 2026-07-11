@@ -1124,12 +1124,11 @@ impl MonitorView {
                             },
                         ))
                     })
-                    .child(
-                        div()
-                            .w(px(14.0))
-                            .text_color(gpui::rgb(0x007aff))
-                            .child(if on { "✓" } else { "" }),
-                    )
+                    .child(div().w(px(14.0)).text_color(mac::accent()).child(if on {
+                        "✓"
+                    } else {
+                        ""
+                    }))
                     .child(div().flex_1().child(key.title()))
             }))
     }
@@ -1727,7 +1726,7 @@ impl MonitorView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(gpui::rgba(0x00000040))
+                .bg(mac::scrim())
                 .child(dialog),
         )
     }
@@ -1765,11 +1764,11 @@ impl Render for MonitorView {
                         .items_center()
                         .gap_2()
                         .px_3()
-                        .bg(gpui::rgba(0xff3b301f))
+                        .bg(mac::error_background())
                         .border_b_1()
-                        .border_color(gpui::rgba(0xff3b3059))
+                        .border_color(mac::error_border())
                         .text_size(px(12.0))
-                        .text_color(gpui::rgb(0xc62828))
+                        .text_color(mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))
                         .child("Dismiss")

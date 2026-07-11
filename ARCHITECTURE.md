@@ -91,6 +91,11 @@ content-owned colors rather than being recolored as chrome.
 Notes and Text Editor consume the same live document surfaces and notice
 tokens; note-yellow semantics and colors embedded in RTF content remain
 content-owned.
+Activity Monitor and System Settings complete the current application rollout:
+their structural surfaces and interaction feedback follow live tokens, while
+charts, pressure/status signals, category tiles, and device-state colors remain
+semantic data. All seven apps now enter through the shared event-driven theme
+runtime.
 
 ## Persistence
 

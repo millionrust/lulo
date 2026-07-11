@@ -21,7 +21,7 @@ equivalents rather than simulated.
 | Login Items | Placeholder | systemd user/XDG autostart | Enable/disable user startup entries |
 | Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
-| Appearance | Local persisted choices | Settings portal plus rmac theme service | Apply color scheme/accent to every rmac surface |
+| Appearance | Local persisted choices; shared portal-backed host snapshot is available | Settings portal plus rmac theme service | Add writable session authority, replace local controls, and apply scheme/accent/contrast/motion to every rmac surface |
 | Assistant & Intelligence | Renamed placeholder | Optional local/provider integrations | Leave absent until a privacy design exists |
 | Desktop & Dock | Placeholder | rmac shell and niri IPC | Dock, desktop, workspaces, window behavior |
 | Displays | Real layout plus transient mode, scale, and rotation controls | niri output IPC/Wayland | Persistent validated layouts, visual positioning, and live signals |

@@ -28,6 +28,8 @@ in [`PLAN_V2.md`](PLAN_V2.md).
 Shared crates:
 
 - `rmac-ui` — visual tokens, window setup, dialogs, and context menus.
+- `rmac-appearance` — platform-neutral appearance snapshots, events, reducer, and test fake.
+- `rmac-appearance-portal` — read-only Linux Settings portal adapter with live reconnect.
 - `rmac-editor` — shared multiline editor construction and text helpers.
 - `rmac-storage` — atomic filesystem writes, durable cleanup, and typed failures.
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.

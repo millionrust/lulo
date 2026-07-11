@@ -2,9 +2,11 @@
 
 ## Current system
 
-rmac is a Cargo workspace with seven binary crates and two shared libraries.
-Each application owns a GPUI root view and currently combines domain state,
-platform access, persistence, and rendering in its `main.rs`.
+rmac is a Cargo workspace with seven application binaries, a platform lab, and
+shared domain, service, storage, portal, and UI crates. Several application
+roots still combine domain state, platform access, persistence, and rendering
+in their `main.rs`; completed vertical slices are moving platform behavior
+behind typed crates without a workspace-wide rewrite.
 
 ```text
 application binary
@@ -61,6 +63,13 @@ NetworkManager, BlueZ, UPower, PipeWire/WirePlumber, and niri IPC.
 macOS implementations remain optional development adapters. Platform commands
 and FFI cannot leak into application state or render modules.
 
+Appearance is split deliberately: `rmac-appearance` owns the platform-neutral
+snapshot, capabilities, event reducer, source trait, and deterministic fake;
+`rmac-appearance-portal` reads standardized host preferences and follows the
+XDG Settings portal signal stream. The portal is read-only. Writable rmac
+session preferences require their own authority and cannot be simulated by
+writing local state in System Settings.
+
 ## Persistence
 
 The target persistence contract is:
@@ -91,4 +100,3 @@ The current prototype does not yet meet this contract everywhere; see the Phase
 Migrate one vertical slice at a time. Introduce a service and its fake, port one
 consumer, verify behavior, then remove the old direct platform path. Avoid a
 workspace-wide rewrite.
-

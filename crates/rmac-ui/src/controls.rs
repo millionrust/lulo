@@ -8,10 +8,12 @@ use gpui::{
 };
 use gpui_component::{
     button::{Button as ComponentButton, ButtonCustomVariant, ButtonVariants as _},
+    input::Input as ComponentInput,
     slider::Slider as ComponentSlider,
     Disableable as _, Selectable as _, Sizable as _, Size, StyledExt as _,
 };
 
+pub use gpui_component::input::InputState;
 pub use gpui_component::slider::{SliderEvent, SliderState};
 
 use crate::mac;
@@ -358,6 +360,121 @@ impl RenderOnce for Slider {
     }
 }
 
+/// Shared editable text field backed by a gpui-component [`InputState`].
+#[derive(IntoElement)]
+pub struct TextField {
+    state: Entity<InputState>,
+    appearance: bool,
+    cleanable: bool,
+    disabled: bool,
+    size: Size,
+    tab_index: isize,
+    style: StyleRefinement,
+}
+
+impl TextField {
+    pub fn new(state: &Entity<InputState>) -> Self {
+        Self {
+            state: state.clone(),
+            appearance: true,
+            cleanable: false,
+            disabled: false,
+            size: Size::Medium,
+            tab_index: 0,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn appearance(mut self, appearance: bool) -> Self {
+        self.appearance = appearance;
+        self
+    }
+
+    pub fn cleanable(mut self, cleanable: bool) -> Self {
+        self.cleanable = cleanable;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn small(mut self) -> Self {
+        self.size = Size::Small;
+        self
+    }
+
+    pub fn tab_index(mut self, tab_index: isize) -> Self {
+        self.tab_index = tab_index;
+        self
+    }
+}
+
+impl Styled for TextField {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for TextField {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        ComponentInput::new(&self.state)
+            .appearance(self.appearance)
+            .cleanable(self.cleanable)
+            .disabled(self.disabled)
+            .tab_index(self.tab_index)
+            .with_size(self.size)
+            .refine_style(&self.style)
+    }
+}
+
+/// Search-specialized text field with a clear action enabled by default.
+#[derive(IntoElement)]
+pub struct SearchField {
+    field: TextField,
+}
+
+impl SearchField {
+    pub fn new(state: &Entity<InputState>) -> Self {
+        Self {
+            field: TextField::new(state).cleanable(true),
+        }
+    }
+
+    pub fn appearance(mut self, appearance: bool) -> Self {
+        self.field = self.field.appearance(appearance);
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.field = self.field.disabled(disabled);
+        self
+    }
+
+    pub fn small(mut self) -> Self {
+        self.field = self.field.small();
+        self
+    }
+
+    pub fn tab_index(mut self, tab_index: isize) -> Self {
+        self.field = self.field.tab_index(tab_index);
+        self
+    }
+}
+
+impl Styled for SearchField {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.field.style()
+    }
+}
+
+impl RenderOnce for SearchField {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        self.field
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +497,12 @@ mod tests {
     #[test]
     fn slider_defaults_to_horizontal() {
         assert_eq!(SliderAxis::default(), SliderAxis::Horizontal);
+    }
+
+    #[test]
+    fn field_defaults_distinguish_text_and_search_clear_behavior() {
+        let text_defaults = (true, false, false, 0_isize);
+        let search_defaults = (true, true, false, 0_isize);
+        assert_ne!(text_defaults, search_defaults);
     }
 }

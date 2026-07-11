@@ -34,11 +34,12 @@ require keyboard/focus plus disabled or unavailable coverage for interactive
 controls. Adding or removing a state requires updating the contract and the
 renderer together.
 
-Current B7 implementation status: Button, Toggle, and Slider are exported by
-`rmac-ui`. Dialog buttons and Activity Monitor action buttons consume the shared
-Button; all System Settings switches and sliders consume the shared Toggle and
-Slider boundary. The remaining inventory stays a contract until its focused B7
-migration lands.
+Current B7 implementation status: Button, Toggle, Slider, TextField, and
+SearchField are exported by `rmac-ui`. Dialog buttons and Activity Monitor
+actions consume the shared Button; all System Settings switches and sliders use
+the shared Toggle and Slider boundary; Activity Monitor and System Settings use
+the shared SearchField. The remaining inventory stays a contract until its
+focused B7 migration lands.
 
 ## Visual-reference protocol
 

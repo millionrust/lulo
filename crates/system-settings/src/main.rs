@@ -21,7 +21,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::StyledExt as _;
-use rmac_ui::{Slider, SliderEvent, SliderState, Toggle};
+use rmac_ui::{SearchField, Slider, SliderEvent, SliderState, Toggle};
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -1695,7 +1695,7 @@ impl Settings {
             .child(
                 div()
                     .flex_1()
-                    .child(gpui_component::input::Input::new(&self.search).appearance(false)),
+                    .child(SearchField::new(&self.search).appearance(false)),
             );
         let q = self.search.read(cx).value().to_lowercase();
 

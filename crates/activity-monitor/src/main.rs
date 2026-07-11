@@ -18,12 +18,11 @@ use gpui::{
 };
 use gpui_component::{
     button::{Button as ComponentButton, ButtonGroup},
-    input::{Input, InputState},
     menu::PopupMenu,
     table::{Column, ColumnSort, Table, TableDelegate, TableEvent, TableState},
-    Selectable as _, Sizable as _, StyledExt as _,
+    Selectable as _, StyledExt as _,
 };
-use rmac_ui::{mac, Button};
+use rmac_ui::{mac, Button, InputState, SearchField};
 use sysinfo::{
     Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };
@@ -1580,7 +1579,11 @@ impl MonitorView {
                                 })),
                         )
                     })
-                    .child(div().w(px(220.0)).child(Input::new(&self.search).small())),
+                    .child(
+                        div()
+                            .w(px(220.0))
+                            .child(SearchField::new(&self.search).small()),
+                    ),
             )
     }
 

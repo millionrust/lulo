@@ -54,6 +54,8 @@ The first B7 control boundary owns semantic Button roles, keyboard-focusable
 binary/mixed Toggle behavior, and Slider orientation/state exports. Product
 crates do not import upstream Switch or Slider types; dialog actions and the
 Activity Monitor action buttons also use the shared Button implementation.
+TextField and SearchField preserve the entity-backed editor model behind the
+same boundary; SearchField enables a clear action by default.
 
 - GPUI entities own view state and subscriptions.
 - Render methods must not perform filesystem access, subprocess work, or D-Bus

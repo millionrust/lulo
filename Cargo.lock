@@ -5061,6 +5061,7 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-network",
  "rmac-power",
+ "rmac-quick-settings",
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-shell-status-linux",

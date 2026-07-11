@@ -25,17 +25,20 @@ pub struct HealthSnapshot {
     pub power: SourceHealth,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub status: rmac_shell_status::Snapshot,
+    pub quick_settings: rmac_quick_settings::Inputs,
     pub health: HealthSnapshot,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Update {
     pub snapshot: Snapshot,
-    /// Whether a shell surface should request a frame for this publication.
+    /// Whether the compact top bar should request a frame.
     pub visible: bool,
+    /// Whether an open Quick Settings surface should request a frame.
+    pub quick_settings_visible: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -64,6 +67,7 @@ impl std::error::Error for Error {}
 #[derive(Default)]
 pub struct Coordinator {
     status: rmac_shell_status::State,
+    quick_settings: rmac_quick_settings::Inputs,
     health: HealthSnapshot,
 }
 
@@ -71,6 +75,7 @@ impl Coordinator {
     pub fn snapshot(&self) -> Snapshot {
         Snapshot {
             status: self.status.snapshot(),
+            quick_settings: self.quick_settings.clone(),
             health: self.health.clone(),
         }
     }
@@ -109,10 +114,15 @@ impl Coordinator {
         match settings {
             Ok(settings) => {
                 self.status
-                    .apply(rmac_shell_status::Event::Settings(settings));
+                    .apply(rmac_shell_status::Event::Settings(settings.clone()));
+                self.quick_settings.focus = settings.focus;
+                self.quick_settings.focus_available = true;
                 self.health.settings = SourceHealth::Healthy;
             }
-            Err(detail) => self.health.settings = SourceHealth::Unavailable { detail },
+            Err(detail) => {
+                self.quick_settings.focus_available = false;
+                self.health.settings = SourceHealth::Unavailable { detail };
+            }
         }
         before != self.snapshot()
     }
@@ -124,6 +134,7 @@ impl Coordinator {
             sources,
             SourceHealth::Unavailable { detail },
         );
+        set_quick_settings_unavailable(&mut self.quick_settings, sources);
         before != self.snapshot()
     }
 
@@ -136,6 +147,7 @@ impl Coordinator {
         if let Some(result) = batch.network {
             match result {
                 Ok((network, wifi, vpn)) => {
+                    self.quick_settings.wifi = wifi.clone();
                     self.status
                         .apply(rmac_shell_status::Event::Network(network));
                     self.status.apply(rmac_shell_status::Event::Wifi(wifi));
@@ -143,6 +155,7 @@ impl Coordinator {
                     self.health.network = SourceHealth::Healthy;
                 }
                 Err(detail) => {
+                    self.quick_settings.wifi.available = false;
                     self.health.network = SourceHealth::Unavailable { detail };
                 }
             }
@@ -150,11 +163,13 @@ impl Coordinator {
         if let Some(result) = batch.bluetooth {
             match result {
                 Ok(snapshot) => {
+                    self.quick_settings.bluetooth = snapshot.clone();
                     self.status
                         .apply(rmac_shell_status::Event::Bluetooth(snapshot));
                     self.health.bluetooth = SourceHealth::Healthy;
                 }
                 Err(detail) => {
+                    self.quick_settings.bluetooth.available = false;
                     self.health.bluetooth = SourceHealth::Unavailable { detail };
                 }
             }
@@ -162,19 +177,27 @@ impl Coordinator {
         if let Some(result) = batch.audio {
             match result {
                 Ok(snapshot) => {
+                    self.quick_settings.audio = snapshot.clone();
                     self.status.apply(rmac_shell_status::Event::Audio(snapshot));
                     self.health.audio = SourceHealth::Healthy;
                 }
-                Err(detail) => self.health.audio = SourceHealth::Unavailable { detail },
+                Err(detail) => {
+                    self.quick_settings.audio.available = false;
+                    self.health.audio = SourceHealth::Unavailable { detail };
+                }
             }
         }
         if let Some(result) = batch.power {
             match result {
                 Ok(snapshot) => {
+                    self.quick_settings.power = snapshot.clone();
                     self.status.apply(rmac_shell_status::Event::Power(snapshot));
                     self.health.power = SourceHealth::Healthy;
                 }
-                Err(detail) => self.health.power = SourceHealth::Unavailable { detail },
+                Err(detail) => {
+                    self.quick_settings.power.profiles.available = false;
+                    self.health.power = SourceHealth::Unavailable { detail };
+                }
             }
         }
         before != self.snapshot()
@@ -215,6 +238,21 @@ fn set_health(health: &mut HealthSnapshot, sources: Sources, state: SourceHealth
     }
     if sources.power {
         health.power = state;
+    }
+}
+
+fn set_quick_settings_unavailable(inputs: &mut rmac_quick_settings::Inputs, sources: Sources) {
+    if sources.network {
+        inputs.wifi.available = false;
+    }
+    if sources.bluetooth {
+        inputs.bluetooth.available = false;
+    }
+    if sources.audio {
+        inputs.audio.available = false;
+    }
+    if sources.power {
+        inputs.power.profiles.available = false;
     }
 }
 
@@ -397,6 +435,7 @@ async fn consume(
         .send(Update {
             snapshot: published.clone(),
             visible: true,
+            quick_settings_visible: true,
         })
         .await
         .is_err()
@@ -448,6 +487,7 @@ async fn consume(
 fn publication(previous: &Snapshot, next: Snapshot) -> Option<Update> {
     (next != *previous).then(|| Update {
         visible: next.status != previous.status,
+        quick_settings_visible: next.quick_settings != previous.quick_settings,
         snapshot: next,
     })
 }
@@ -520,6 +560,11 @@ mod tests {
         assert!(coordinator.refresh_services(Sources::audio(), &failed));
         assert_eq!(coordinator.snapshot().status.sound, visible);
         assert_eq!(
+            coordinator.snapshot().quick_settings.audio.output.volume,
+            67
+        );
+        assert!(!coordinator.snapshot().quick_settings.audio.available);
+        assert_eq!(
             coordinator.snapshot().health.audio,
             SourceHealth::Unavailable {
                 detail: "PipeWire restarted".into()
@@ -560,6 +605,7 @@ mod tests {
 
         let update = publication(&previous, next).expect("health changed");
         assert!(!update.visible);
+        assert!(!update.quick_settings_visible);
     }
 
     #[test]
@@ -574,5 +620,24 @@ mod tests {
 
         let update = publication(&previous, next).expect("status changed");
         assert!(update.visible);
+        assert!(!update.quick_settings_visible);
+    }
+
+    #[test]
+    fn quick_settings_change_does_not_redraw_the_compact_bar() {
+        let previous = Snapshot::default();
+        let mut next = previous.clone();
+        next.quick_settings.audio = rmac_audio::Snapshot {
+            available: true,
+            output: rmac_audio::Level {
+                volume: 55,
+                muted: false,
+            },
+            ..Default::default()
+        };
+
+        let update = publication(&previous, next).expect("Quick Settings changed");
+        assert!(!update.visible);
+        assert!(update.quick_settings_visible);
     }
 }

@@ -25,12 +25,15 @@ D-Bus call, command, or settings read runs on a GPUI render path.
 ## Publication contract
 
 Each publication contains a complete status snapshot, per-source health, and a
-`visible` flag:
+pair of consumer-specific visibility flags:
 
 - `visible = true` means projected shell content changed and a surface may
   request a frame;
-- `visible = false` means only diagnostic health changed and the top bar must
-  not redraw;
+- `quick_settings_visible = true` means a full device/profile input or its
+  writability changed and an open Quick Settings surface may request a frame;
+- `visible = false` means the compact projection did not change and the top bar
+  must not redraw; when both visibility flags are false, only diagnostics
+  changed;
 - duplicate snapshots are not published;
 - a failed refresh marks only the affected source unavailable and retains its
   last known good visible value.
@@ -38,6 +41,13 @@ Each publication contains a complete status snapshot, per-source health, and a
 The first publication requests a frame so a newly created surface can render a
 deterministic initial state. Channel closure ends the watchers, including the
 PipeWire monitor child, rather than leaving background work behind.
+
+Quick Settings receives complete Wi-Fi, Bluetooth, audio, power-profile, and
+Focus inputs rather than the top bar's compact projection. On source loss the
+runtime retains the last useful values but marks that authority unavailable,
+preventing a stale control from remaining writable. The compact indicator and
+popover redraw flags remain independent, so a device-list-only change does not
+wake every top-bar surface.
 
 ## Failure behavior
 

@@ -17,6 +17,7 @@ rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-network.workspace = true
 rmac-power.workspace = true
+rmac-quick-settings.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shell-status.workspace = true
 rmac-shell-status-linux.workspace = true

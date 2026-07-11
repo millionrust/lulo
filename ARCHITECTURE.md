@@ -187,7 +187,9 @@ menu-bar indicators stale. `rmac-shell-runtime` combines those hints with niri
 and shell-settings streams, keeps the last known good status through transient
 source failures, and publishes source health separately. A health-only update
 is available to diagnostics but is explicitly marked as not requiring a shell
-frame.
+frame. The same publication carries full Quick Settings snapshots and a
+separate redraw flag. A dead source disables its mutation surface while the
+compact top bar retains its last-known-good indicator.
 
 Quick Settings consumes the same typed service snapshots through
 `rmac-quick-settings`. Its framework-neutral transaction model validates

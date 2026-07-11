@@ -41,7 +41,7 @@ Shared crates:
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
 - `rmac-shell-status-linux` — coalesced D-Bus and PipeWire status refresh events.
-- `rmac-shell-runtime` — live shell orchestration, source health, and last-known-good state.
+- `rmac-shell-runtime` — live top-bar/Quick Settings state, health, and last-known-good values.
 - `rmac-quick-settings` — authoritative, non-optimistic quick-settings transactions.
 - `rmac-quick-settings-system` — typed quick-settings mutations and authority rereads.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.

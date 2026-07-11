@@ -56,7 +56,10 @@ model's per-control merge rule and preventing an older Wi-Fi task from rolling
 back newer sound state.
 
 The live runtime bridge, layer-shell popover, outside-click/Escape dismissal,
-keyboard focus order, and real Orca/niri evidence remain pending. A future
+keyboard focus order, and real Orca/niri evidence remain pending. The existing
+`rmac-shell-runtime` now supplies full inputs, disables mutation when a source
+is unreachable, and emits a popover-specific redraw flag without waking the
+compact bar for device-list-only changes. A future
 Focus policy service must also serialize schedule/mode changes across shell
 processes; this executor only updates the current C4 settings authority and
 does not claim E4 complete.

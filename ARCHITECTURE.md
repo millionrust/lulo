@@ -205,6 +205,14 @@ maps validated commands to NetworkManager, BlueZ, PipeWire/WirePlumber,
 power-profiles, and shell-settings operations, then rereads only the affected
 authority. The GPUI popover must run this adapter off its render executor.
 
+The Dock begins with a compositor- and catalog-backed domain in `rmac-dock`.
+It preserves configured pinned order, groups niri windows by normalized desktop
+identity, orders unpinned running apps by recent focus, and derives launch,
+focus, cycle, no-op, or unavailable outcomes without mutating view-local state.
+Output-scope resolution requires an explicit primary-output authority and never
+invents a surface on a disabled or missing display. Layer-shell rendering,
+pointer dynamics, and process execution remain adapters above this model.
+
 ## Persistence
 
 The target persistence contract is:

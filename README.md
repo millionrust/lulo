@@ -34,6 +34,7 @@ Shared crates:
 - `rmac-editor` — shared multiline editor construction and text helpers.
 - `rmac-storage` — atomic filesystem writes, durable cleanup, and typed failures.
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
+- `rmac-dock` — pinned/running app grouping, output scope, and activation policy.
 - `rmac-bluetooth` — BlueZ/macOS Bluetooth state, discovery, and device control.
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
 - `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.

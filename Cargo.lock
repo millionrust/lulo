@@ -4921,6 +4921,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-dock"
+version = "0.1.0"
+dependencies = [
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-shell-settings",
+]
+
+[[package]]
 name = "rmac-editor"
 version = "0.1.0"
 dependencies = [

@@ -19,10 +19,10 @@ socket, D-Bus connection, command process, timer, or persistence file.
   the typed boundary. The current notification input is deliberately only an
   unread count and urgent flag; it is not a substitute for the E1 server.
 
-Platform adapters are responsible for publishing service changes. A UI must
-not turn this reducer into a polling loop. Initial snapshots establish coherent
-state; subsequent compositor, D-Bus, PipeWire, settings-watcher, notification,
-and Focus events update only their owned input.
+`rmac-shell-status-linux` publishes coalesced service refreshes from D-Bus and
+PipeWire. A UI must not turn this reducer into a polling loop. Initial snapshots
+establish coherent state; subsequent compositor, service, settings-watcher,
+notification, and Focus events update only their owned input.
 
 ## Redraw contract
 
@@ -45,5 +45,6 @@ The normalized snapshot contains:
 
 Tests cover focused-context resolution, duplicate/unknown-event suppression,
 visibility changes, connected Wi-Fi/VPN normalization, and the provisional
-notification/Focus boundary. Live platform subscriptions and the product UI
-remain separate D2 work; this crate does not mark D2 complete.
+notification/Focus boundary. The Linux subscription contract is documented in
+`shell-status-linux.md`; orchestration, notification/Focus authorities, and the
+product UI remain separate D2 work. This crate does not mark D2 complete.

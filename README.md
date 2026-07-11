@@ -40,6 +40,7 @@ Shared crates:
 - `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
+- `rmac-shell-status-linux` — coalesced D-Bus and PipeWire status refresh events.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
 
 Phase 1 diagnostic:

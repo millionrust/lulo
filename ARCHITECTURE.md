@@ -175,6 +175,16 @@ configuration file and refresh from authority after coalesced change events.
 Writes atomically replace both the primary and last-known-good documents;
 schema migration and corrupt-primary recovery happen below every UI surface.
 
+Live shell chrome has a separate read boundary. `rmac-shell-status` reduces
+focused compositor identity and complete network, VPN, Bluetooth, audio, power,
+Focus, and notification inputs into one visibility-aware projection; duplicate
+or hidden changes do not request a frame. `rmac-shell-status-linux` sits below
+it and subscribes to NetworkManager, BlueZ, UPower/power-profile D-Bus paths and
+the PipeWire object monitor. It publishes coalesced refresh hints rather than
+claiming signal payloads are authoritative state. Service snapshot reads remain
+off the render path, and transport loss is explicit instead of silently leaving
+menu-bar indicators stale.
+
 ## Persistence
 
 The target persistence contract is:

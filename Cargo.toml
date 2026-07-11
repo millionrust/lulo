@@ -27,6 +27,7 @@ objc2-foundation = "0.3"
 rmac-apps = { version = "=0.1.0", path = "crates/rmac-apps" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
+rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }
 rmac-storage = { version = "=0.1.0", path = "crates/rmac-storage" }
@@ -37,6 +38,7 @@ rust-embed = "8"
 sysinfo = "0.33"
 url = "2"
 walkdir = "2"
+zbus = { version = "5.16.0", features = ["blocking-api"] }
 
 [profile.release]
 lto = true

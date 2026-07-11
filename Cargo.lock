@@ -4835,6 +4835,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-network"
+version = "0.1.0"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "rmac-notes"
 version = "0.1.0"
 dependencies = [
@@ -4882,6 +4889,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-network",
  "rmac-storage",
  "rmac-ui",
  "rust-embed",

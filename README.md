@@ -34,6 +34,7 @@ Shared crates:
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
 - `rmac-search` — Spotlight and Linux filesystem/XDG recent-document providers.
 - `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
+- `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
 
 Phase 1 diagnostic:
@@ -120,6 +121,7 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`docs/performance-baseline.md`](docs/performance-baseline.md) — reproducible startup, idle CPU, and RSS evidence.
 - [`docs/dependency-policy.md`](docs/dependency-policy.md) — advisory, license, dependency, and source rules.
 - [`docs/linux-reference-bringup.md`](docs/linux-reference-bringup.md) — reference-PC setup, automated evidence, and Phase 1 manual gates.
+- [`docs/system-settings-audit.md`](docs/system-settings-audit.md) — real-service status and completion contract for every Settings pane.
 - [`docs/decisions/0001-gpui-linux-gate.md`](docs/decisions/0001-gpui-linux-gate.md) — framework migration gate.
 - [`docs/decisions/0002-gpui-version-policy.md`](docs/decisions/0002-gpui-version-policy.md) — exact pins, upgrade cadence, promotion, and rollback policy.
 - [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md) — pinned upstream comparison and pending Linux gates.

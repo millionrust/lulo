@@ -102,6 +102,12 @@ prototype gathers these read-only facts in a background snapshot after the
 first frame; the Linux adapters must preserve that non-blocking boundary and
 replace the all-at-once snapshot with service-specific updates where useful.
 
+`rmac-network` now starts that migration for Wi-Fi. Linux reads radio/device and
+access-point state from NetworkManager D-Bus, requests scans, and changes the
+real `WirelessEnabled` property; macOS retains `networksetup`. System Settings
+keeps all calls off the UI thread and surfaces service failures. The complete
+pane-to-service contract is tracked in `docs/system-settings-audit.md`.
+
 ### Text Editor
 
 - RTF parsing is implemented through AppKit and intentionally unavailable on

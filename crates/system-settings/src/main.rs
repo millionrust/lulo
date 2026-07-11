@@ -1,18 +1,18 @@
 //! rmac System Settings — matched to macOS System Settings (Ventura+).
 //!
-//! Sidebar (search · Apple Account card · colored category tiles) + detail pane
+//! Sidebar (search · local account card · colored category tiles) + detail pane
 //! (hero icon/title/description + grouped rounded cards of rows). Several panes
-//! are interactive: General/Appearance/Sound/Wi-Fi/Bluetooth carry real controls
-//! (Switch toggles, Sliders, segmented pickers) whose state is held in the view.
+//! are interactive: Wi-Fi is service-backed; remaining local controls are being
+//! migrated pane-by-pane to typed Linux/macOS services.
 //! Row chevrons push detail subpages with a back stack (toolbar back button +
-//! ⌘[). Where it is safe and read-only, panes reflect real macOS state
-//! (appearance, computer name, macOS version, chip, memory).
+//! ⌘[). Read-only panes use real platform state rather than fabricated values.
 
 mod storage;
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use gpui::{
     actions, div, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
@@ -232,14 +232,17 @@ struct Settings {
     focused_once: bool,
     dragging: bool,
     persistence_error: Option<SharedString>,
+    service_error: Option<SharedString>,
 
     // Wi-Fi
+    wifi_available: bool,
+    wifi_loading: bool,
+    wifi_busy: bool,
     wifi_on: bool,
     ask_to_join: bool,
     joined: Option<usize>,
-    /// Real current Wi-Fi network name (from `networksetup`), or `None` if not
-    /// associated (e.g. on Ethernet).
-    wifi_current: Option<String>,
+    wifi_interface: Option<String>,
+    wifi_networks: Vec<rmac_network::WifiNetwork>,
 
     // Bluetooth
     bluetooth_on: bool,
@@ -278,7 +281,6 @@ struct SystemSnapshot {
     network: NetworkInfo,
     storage: StorageInfo,
     audio: AudioInfo,
-    wifi_current: Option<String>,
     bt_devices: Vec<BtDevice>,
 }
 
@@ -594,6 +596,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_network::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -614,11 +628,16 @@ impl Settings {
             focused_once: false,
             dragging: false,
             persistence_error,
+            service_error: None,
 
+            wifi_available: false,
+            wifi_loading: true,
+            wifi_busy: false,
             wifi_on: saved.wifi_on,
             ask_to_join: saved.ask_to_join,
             joined: saved.joined,
-            wifi_current: None,
+            wifi_interface: None,
+            wifi_networks: Vec::new(),
 
             bluetooth_on: saved.bluetooth_on,
             bt_discoverable: saved.bt_discoverable,
@@ -652,9 +671,73 @@ impl Settings {
         self.network = snapshot.network;
         self.storage = snapshot.storage;
         self.audio = snapshot.audio;
-        self.wifi_current = snapshot.wifi_current;
         self.bt_devices = snapshot.bt_devices;
         self.system_data_loading = false;
+    }
+
+    fn finish_wifi_update(
+        &mut self,
+        result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
+    ) {
+        self.wifi_loading = false;
+        self.wifi_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.wifi_available = snapshot.available;
+                self.wifi_on = snapshot.enabled;
+                self.wifi_interface = snapshot.interface;
+                self.wifi_networks = snapshot.networks;
+                self.service_error = None;
+            }
+            Err(error) => {
+                self.service_error = Some(format!("Could not update Wi-Fi: {error}").into());
+            }
+        }
+    }
+
+    fn set_wifi_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.wifi_busy || self.wifi_loading || !self.wifi_available {
+            return;
+        }
+        self.wifi_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_network::set_enabled(enabled)?;
+                    rmac_network::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_wifi(&mut self, cx: &mut Context<Self>) {
+        if self.wifi_busy || !self.wifi_available || !self.wifi_on {
+            return;
+        }
+        self.wifi_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async {
+                    rmac_network::request_scan()?;
+                    std::thread::sleep(Duration::from_millis(750));
+                    rmac_network::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Capture the current interactive state and write it to disk.
@@ -826,7 +909,7 @@ impl Settings {
                         div()
                             .text_size(px(11.0))
                             .text_color(secondary())
-                            .child("Apple Account"),
+                            .child("Local Account"),
                     ),
             );
 
@@ -996,55 +1079,113 @@ impl Settings {
 
     fn render_wifi(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-        let on = self.wifi_on;
+        let power_subtitle = if self.wifi_loading {
+            Some("Reading system state…".into())
+        } else if self.wifi_busy {
+            Some("Applying change…".into())
+        } else {
+            self.wifi_interface
+                .as_ref()
+                .map(|interface| format!("NetworkManager · {interface}").into())
+        };
+        let power_view = view.clone();
+        let power =
+            Switch::new("wifi-power")
+                .checked(self.wifi_on)
+                .on_click(move |enabled, _, cx| {
+                    power_view.update(cx, |settings, cx| settings.set_wifi_enabled(*enabled, cx));
+                });
+        let mut cards = vec![card(vec![row_base()
+            .child(tile("icons/wifi.svg", accent(), 22.0))
+            .child(text_block("Wi-Fi".into(), power_subtitle))
+            .child(power)
+            .into_any_element()])];
 
-        let toggle = card(vec![switch_row(
-            "icons/wifi.svg",
-            accent(),
-            "Wi-Fi".into(),
-            None,
-            self.wifi_on,
-            cx,
-            |s, v| s.wifi_on = v,
-        )]);
+        if self.wifi_loading {
+            cards.push(note_card("Loading Wi-Fi state from the system…"));
+            return self.pane(cards);
+        }
+        if !self.wifi_available {
+            cards.push(note_card(
+                "No Wi-Fi adapter is available through the system network service.",
+            ));
+            return self.pane(cards);
+        }
 
-        let _ = view;
-        let mut cards = vec![
-            note_card(
-                "The Wi-Fi toggle is local to this app and joining isn't supported. \
-                 The current network below is read live from the system.",
-            ),
-            toggle,
-        ];
+        if self.wifi_on {
+            let refresh_view = view.clone();
+            let refresh_label = if self.wifi_busy {
+                "Scanning…"
+            } else {
+                "Refresh"
+            };
+            cards.push(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_1()
+                    .pt_2()
+                    .pb_1()
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(secondary())
+                            .child("Networks"),
+                    )
+                    .child(
+                        div()
+                            .id("wifi-refresh")
+                            .px_2()
+                            .py_1()
+                            .rounded(px(6.0))
+                            .text_size(px(12.0))
+                            .text_color(accent())
+                            .cursor_pointer()
+                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .child(refresh_label)
+                            .on_click(move |_, _, cx| {
+                                refresh_view.update(cx, |settings, cx| settings.refresh_wifi(cx));
+                            }),
+                    ),
+            );
 
-        if on {
-            // Real current network, read from `networksetup`.
-            let status_row = match &self.wifi_current {
-                Some(ssid) => value_row(
-                    "icons/wifi.svg",
-                    accent(),
-                    ssid.clone().into(),
-                    "Connected".into(),
-                ),
-                None => value_row(
+            let rows = if self.wifi_networks.is_empty() {
+                vec![value_row(
                     "icons/wifi.svg",
                     secondary(),
-                    "Not connected".into(),
-                    "No Wi-Fi network".into(),
-                ),
+                    "No networks found".into(),
+                    "Refresh to scan again".into(),
+                )]
+            } else {
+                self.wifi_networks
+                    .iter()
+                    .map(|network| {
+                        let status = if network.connected {
+                            format!("Connected · {}%", network.strength)
+                        } else if network.secure {
+                            format!("Secured · {}%", network.strength)
+                        } else {
+                            format!("Open · {}%", network.strength)
+                        };
+                        value_row(
+                            "icons/wifi.svg",
+                            if network.connected {
+                                accent()
+                            } else {
+                                secondary()
+                            },
+                            network.ssid.clone().into(),
+                            status.into(),
+                        )
+                    })
+                    .collect()
             };
-            cards.push(section_header("Network"));
-            cards.push(card(vec![status_row]));
-
-            cards.push(card(vec![switch_row(
-                "icons/wifi.svg",
-                secondary(),
-                "Ask to join networks".into(),
-                Some("Known networks are joined automatically.".into()),
-                self.ask_to_join,
-                cx,
-                |s, v| s.ask_to_join = v,
-            )]));
+            cards.push(card(rows));
+            cards.push(note_card(
+                "Network discovery and Wi-Fi power are live. Joining a new protected network will be added with the NetworkManager secret-agent flow.",
+            ));
         }
 
         self.pane(cards)
@@ -1772,8 +1913,7 @@ impl Settings {
                         self.sysinfo.os.clone().into(),
                     )]))
                     .child(note_card(
-                        "rmac reads the installed macOS version but does not check Apple's \
-                         update servers, so it can't report available updates.",
+                        "rmac reads the installed operating-system version. The Ubuntu update service is not connected yet, so available updates are not reported.",
                     )),
             ),
             SubPage::Storage => ("Storage".into(), self.storage_body()),
@@ -1847,7 +1987,7 @@ impl Settings {
             value_row(
                 "icons/refresh-cw.svg",
                 secondary(),
-                "macOS".into(),
+                "Operating System".into(),
                 si.os.clone().into(),
             ),
             value_row(
@@ -1866,7 +2006,10 @@ impl Render for Settings {
             self.focused_once = true;
             window.focus(&self.focus);
         }
-        let persistence_error = self.persistence_error.clone();
+        let settings_error = self
+            .persistence_error
+            .clone()
+            .or_else(|| self.service_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -1879,10 +2022,10 @@ impl Render for Settings {
             .bg(pane_bg())
             .text_color(label())
             .child(self.render_topbar(cx))
-            .when_some(persistence_error, |settings, message| {
+            .when_some(settings_error, |settings, message| {
                 settings.child(
                     div()
-                        .id("persistence-error")
+                        .id("settings-error")
                         .h(px(34.0))
                         .flex_none()
                         .flex()
@@ -1899,6 +2042,7 @@ impl Render for Settings {
                         .child("Dismiss")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.persistence_error = None;
+                            this.service_error = None;
                             cx.notify();
                         })),
                 )
@@ -2213,7 +2357,6 @@ fn gather_system_snapshot() -> SystemSnapshot {
         network: gather_network(),
         storage: gather_storage(),
         audio: gather_audio(),
-        wifi_current: gather_wifi_current(),
         bt_devices: gather_bluetooth(),
     }
 }
@@ -2222,39 +2365,6 @@ fn appearance_is_dark() -> bool {
     cmd("defaults", &["read", "-g", "AppleInterfaceStyle"])
         .map(|s| s.eq_ignore_ascii_case("Dark"))
         .unwrap_or(false)
-}
-
-/// Discover the Wi-Fi hardware port's device (e.g. `en0`, `en1`) instead of
-/// assuming `en0`.
-fn wifi_device() -> Option<String> {
-    let out = cmd("networksetup", &["-listallhardwareports"])?;
-    // Blocks look like: "Hardware Port: Wi-Fi\nDevice: en0\n...". Find the
-    // Device line that follows the Wi-Fi port.
-    let mut lines = out.lines();
-    while let Some(line) = lines.next() {
-        if line.trim_start().starts_with("Hardware Port:") && line.contains("Wi-Fi") {
-            for next in lines.by_ref() {
-                if let Some(dev) = next.trim_start().strip_prefix("Device:") {
-                    return Some(dev.trim().to_string());
-                }
-                if next.trim().is_empty() {
-                    break;
-                }
-            }
-        }
-    }
-    None
-}
-
-/// The real current Wi-Fi network name, or `None` if not associated.
-fn gather_wifi_current() -> Option<String> {
-    let dev = wifi_device().unwrap_or_else(|| "en0".to_string());
-    let out = cmd("networksetup", &["-getairportnetwork", &dev])?;
-    // "Current Wi-Fi Network: <SSID>" when connected, otherwise a "not
-    // associated" message we treat as None.
-    out.split_once(':')
-        .map(|(_, v)| v.trim().to_string())
-        .filter(|s| !s.is_empty() && !out.contains("not associated"))
 }
 
 /// Real paired/known Bluetooth devices from `system_profiler SPBluetoothDataType`.
@@ -2318,6 +2428,7 @@ fn account_name() -> String {
         .unwrap_or_else(|| "User".into())
 }
 
+#[cfg(target_os = "macos")]
 fn gather_sysinfo() -> SysInfo {
     let computer_name = cmd("scutil", &["--get", "ComputerName"])
         .or_else(|| cmd("hostname", &[]))
@@ -2357,6 +2468,63 @@ fn gather_sysinfo() -> SysInfo {
         model,
         serial,
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn gather_sysinfo() -> SysInfo {
+    let computer_name = cmd("hostname", &[]).unwrap_or_else(|| "Linux computer".into());
+    let os = std::fs::read_to_string("/etc/os-release")
+        .ok()
+        .and_then(|contents| os_release_value(&contents, "PRETTY_NAME"))
+        .unwrap_or_else(|| "Linux".into());
+    let chip = std::fs::read_to_string("/proc/cpuinfo")
+        .ok()
+        .and_then(|contents| {
+            ["model name", "Hardware", "Processor"]
+                .into_iter()
+                .find_map(|key| colon_value(&contents, key))
+        })
+        .unwrap_or_else(|| "—".into());
+    let memory = std::fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|contents| colon_value(&contents, "MemTotal"))
+        .and_then(|value| value.split_whitespace().next()?.parse::<u64>().ok())
+        .map(|kibibytes| format!("{:.1} GB", kibibytes as f64 / 1024.0 / 1024.0))
+        .unwrap_or_else(|| "—".into());
+    let model = read_trimmed("/sys/class/dmi/id/product_name").unwrap_or_else(|| "Computer".into());
+    let serial = read_trimmed("/sys/class/dmi/id/product_serial").unwrap_or_else(|| "—".into());
+    SysInfo {
+        computer_name,
+        os,
+        chip,
+        memory,
+        model,
+        serial,
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn os_release_value(contents: &str, key: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let (candidate, value) = line.split_once('=')?;
+        (candidate == key).then(|| value.trim().trim_matches(['\'', '"']).to_string())
+    })
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn colon_value(contents: &str, key: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let (candidate, value) = line.split_once(':')?;
+        (candidate.trim() == key).then(|| value.trim().to_string())
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_trimmed(path: &str) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// Capitalize the first letter of a word ("charged" → "Charged").
@@ -2653,26 +2821,64 @@ fn categories() -> Vec<Vec<Category>> {
 
     vec![
         vec![
-            cat("Wi-Fi", "icons/wifi.svg", blue, "Connect to Wi-Fi networks and manage known networks.", vec![]),
-            cat("Bluetooth", "icons/bluetooth.svg", blue, "Pair and manage Bluetooth devices.", vec![]),
-            cat("Network", "icons/globe.svg", blue, "Configure network services and connections.", vec![]),
-            cat("VPN", "icons/key.svg", blue, "Set up and manage VPN configurations.", vec![]),
-            cat("Battery", "icons/battery-charging.svg", green, "Monitor battery usage and energy settings.", vec![]),
+            cat(
+                "Wi-Fi",
+                "icons/wifi.svg",
+                blue,
+                "Connect to Wi-Fi networks and manage known networks.",
+                vec![],
+            ),
+            cat(
+                "Bluetooth",
+                "icons/bluetooth.svg",
+                blue,
+                "Pair and manage Bluetooth devices.",
+                vec![],
+            ),
+            cat(
+                "Network",
+                "icons/globe.svg",
+                blue,
+                "Configure network services and connections.",
+                vec![],
+            ),
+            cat(
+                "VPN",
+                "icons/key.svg",
+                blue,
+                "Set up and manage VPN configurations.",
+                vec![],
+            ),
+            cat(
+                "Battery",
+                "icons/battery-charging.svg",
+                green,
+                "Monitor battery usage and energy settings.",
+                vec![],
+            ),
         ],
         vec![
             cat(
                 "General",
                 "icons/settings.svg",
                 gray,
-                "Manage your overall setup and preferences for Mac, such as software updates, device language, AirDrop, and more.",
+                "Manage system information, updates, storage, language, startup, and sharing.",
                 vec![
                     vec![
                         row("icons/info.svg", gray, "About"),
                         row("icons/refresh-cw.svg", gray, "Software Update"),
                         row("icons/database.svg", gray, "Storage"),
                     ],
-                    vec![row("icons/heart-handshake.svg", red, "AppleCare & Warranty")],
-                    vec![row("icons/folder-symlink.svg", blue, "AirDrop & Continuity")],
+                    vec![row(
+                        "icons/heart-handshake.svg",
+                        red,
+                        "AppleCare & Warranty",
+                    )],
+                    vec![row(
+                        "icons/folder-symlink.svg",
+                        blue,
+                        "AirDrop & Continuity",
+                    )],
                     vec![
                         row("icons/key.svg", gray, "AutoFill & Passwords"),
                         row("icons/clock.svg", gray, "Date & Time"),
@@ -2684,23 +2890,101 @@ fn categories() -> Vec<Vec<Category>> {
                     ],
                 ],
             ),
-            cat("Accessibility", "icons/accessibility.svg", blue, "Customize your Mac for the way you work.", vec![]),
-            cat("Appearance", "icons/palette.svg", hsl(0x1d1d1f), "Change how windows, buttons, and menus look.", vec![]),
-            cat("Apple Intelligence & Siri", "icons/sparkles.svg", purple, "Set up Apple Intelligence and Siri.", vec![]),
-            cat("Desktop & Dock", "icons/app-window.svg", gray, "Adjust the Dock, Stage Manager, and windows.", vec![]),
-            cat("Displays", "icons/monitor.svg", blue, "Arrange displays and adjust resolution.", vec![]),
-            cat("Spotlight", "icons/search.svg", gray, "Choose which categories Spotlight searches.", vec![]),
-            cat("Wallpaper", "icons/image.svg", teal, "Choose a wallpaper for your desktop.", vec![]),
+            cat(
+                "Accessibility",
+                "icons/accessibility.svg",
+                blue,
+                "Customize the computer for the way you work.",
+                vec![],
+            ),
+            cat(
+                "Appearance",
+                "icons/palette.svg",
+                hsl(0x1d1d1f),
+                "Change how windows, buttons, and menus look.",
+                vec![],
+            ),
+            cat(
+                "Assistant & Intelligence",
+                "icons/sparkles.svg",
+                purple,
+                "Configure supported local or connected assistant services.",
+                vec![],
+            ),
+            cat(
+                "Desktop & Dock",
+                "icons/app-window.svg",
+                gray,
+                "Adjust the Dock, Stage Manager, and windows.",
+                vec![],
+            ),
+            cat(
+                "Displays",
+                "icons/monitor.svg",
+                blue,
+                "Arrange displays and adjust resolution.",
+                vec![],
+            ),
+            cat(
+                "Spotlight",
+                "icons/search.svg",
+                gray,
+                "Choose which categories Spotlight searches.",
+                vec![],
+            ),
+            cat(
+                "Wallpaper",
+                "icons/image.svg",
+                teal,
+                "Choose a wallpaper for your desktop.",
+                vec![],
+            ),
         ],
         vec![
-            cat("Notifications", "icons/bell.svg", red, "Choose how you receive notifications.", vec![]),
-            cat("Sound", "icons/volume-2.svg", pink, "Adjust sound effects and output.", vec![]),
-            cat("Focus", "icons/moon.svg", indigo, "Stay focused by silencing notifications.", vec![]),
-            cat("Screen Time", "icons/timer.svg", indigo, "Monitor usage and set limits.", vec![]),
+            cat(
+                "Notifications",
+                "icons/bell.svg",
+                red,
+                "Choose how you receive notifications.",
+                vec![],
+            ),
+            cat(
+                "Sound",
+                "icons/volume-2.svg",
+                pink,
+                "Adjust sound effects and output.",
+                vec![],
+            ),
+            cat(
+                "Focus",
+                "icons/moon.svg",
+                indigo,
+                "Stay focused by silencing notifications.",
+                vec![],
+            ),
+            cat(
+                "Screen Time",
+                "icons/timer.svg",
+                indigo,
+                "Monitor usage and set limits.",
+                vec![],
+            ),
         ],
         vec![
-            cat("Lock Screen", "icons/lock.svg", gray, "Adjust your lock screen and login.", vec![]),
-            cat("Privacy & Security", "icons/shield.svg", blue, "Control what your Mac and apps can access.", vec![]),
+            cat(
+                "Lock Screen",
+                "icons/lock.svg",
+                gray,
+                "Adjust your lock screen and login.",
+                vec![],
+            ),
+            cat(
+                "Privacy & Security",
+                "icons/shield.svg",
+                blue,
+                "Control what the system and applications can access.",
+                vec![],
+            ),
         ],
     ]
 }
@@ -2714,7 +2998,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::Persisted;
+    use super::{colon_value, os_release_value, Persisted};
 
     #[test]
     fn persisted_settings_round_trip() {
@@ -2771,5 +3055,20 @@ mod tests {
         assert_eq!(parsed.accent_idx, 0);
         assert_eq!(parsed.alert_idx, 0);
         assert_eq!(parsed.airdrop_idx, 1);
+    }
+
+    #[test]
+    fn linux_system_information_parsers_handle_standard_files() {
+        let release = "NAME=Ubuntu\nPRETTY_NAME=\"Ubuntu 26.04 LTS\"\n";
+        let cpu = "processor : 0\nmodel name : Example CPU\n";
+
+        assert_eq!(
+            os_release_value(release, "PRETTY_NAME").as_deref(),
+            Some("Ubuntu 26.04 LTS")
+        );
+        assert_eq!(
+            colon_value(cpu, "model name").as_deref(),
+            Some("Example CPU")
+        );
     }
 }

@@ -224,6 +224,10 @@ combines its coalesced changes with reconnecting niri events and versioned
 shell-settings events. It waits until every source is healthy or explicitly
 unavailable before the first publication, retains last-known-good catalog and
 settings state, and separates diagnostic-only changes from Dock redraws.
+Dock direct manipulation stays in `rmac-dock::motion`: stable-slot
+magnification produces non-overlapping one-dimensional geometry, while a
+deadline/pressure state machine owns autohide, overview, fullscreen, and
+reduced-motion policy without a timer or frame loop of its own.
 
 Dock places begin in the platform-neutral `rmac-places` boundary. It resolves
 the XDG Downloads value with a deliberately restricted grammar—HOME or an

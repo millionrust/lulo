@@ -20,7 +20,7 @@ use gpui::{
     IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
-use gpui_component::slider::{Slider, SliderState};
+use gpui_component::slider::{Slider, SliderEvent, SliderState};
 use gpui_component::switch::Switch;
 use gpui_component::StyledExt as _;
 
@@ -172,19 +172,6 @@ struct DisplayInfo {
     is_main: bool,
 }
 
-/// An audio device and whether it's the system default.
-struct AudioDevice {
-    name: String,
-    is_default: bool,
-}
-
-/// Audio output/input devices (read once after launch via `system_profiler`).
-#[derive(Default)]
-struct AudioInfo {
-    outputs: Vec<AudioDevice>,
-    inputs: Vec<AudioDevice>,
-}
-
 /// Boot-volume storage usage (read once after launch via `df`).
 #[derive(Default)]
 struct StorageInfo {
@@ -203,7 +190,7 @@ struct Settings {
     gpu: String,
     network: rmac_network::NetworkSnapshot,
     storage: StorageInfo,
-    audio: AudioInfo,
+    audio: rmac_audio::Snapshot,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -216,6 +203,7 @@ struct Settings {
     bluetooth_error: Option<SharedString>,
     network_error: Option<SharedString>,
     vpn_error: Option<SharedString>,
+    audio_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
@@ -253,10 +241,14 @@ struct Settings {
     large_sidebar: bool,
 
     // Sound
+    audio_loading: bool,
+    audio_busy: bool,
+    output_volume_generation: u64,
+    input_volume_generation: u64,
     output_volume: Entity<SliderState>,
+    input_volume: Entity<SliderState>,
     alert_volume: Entity<SliderState>,
     balance: Entity<SliderState>,
-    mute: bool,
     play_on_startup: bool,
     play_ui_sounds: bool,
     alert_idx: usize,
@@ -267,6 +259,12 @@ struct Settings {
     airplay_receiver: bool,
 }
 
+enum AudioChange {
+    Volume(rmac_audio::DeviceKind, u8),
+    Muted(rmac_audio::DeviceKind, bool),
+    DefaultDevice(rmac_audio::DeviceKind, String),
+}
+
 /// Read-only system data that is slow enough to keep off the first-frame path.
 struct SystemSnapshot {
     account: String,
@@ -275,7 +273,6 @@ struct SystemSnapshot {
     displays: Vec<DisplayInfo>,
     gpu: String,
     storage: StorageInfo,
-    audio: AudioInfo,
 }
 
 const ACCENTS: &[(&str, u32)] = &[
@@ -543,6 +540,27 @@ impl Persisted {
 }
 
 impl Settings {
+    fn audio_slider(
+        cx: &mut Context<Self>,
+        value: f32,
+        kind: rmac_audio::DeviceKind,
+    ) -> Entity<SliderState> {
+        let slider = cx.new(|_| {
+            SliderState::new()
+                .min(0.0)
+                .max(100.0)
+                .step(1.0)
+                .default_value(value)
+        });
+        cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
+            let SliderEvent::Change(value) = event;
+            this.schedule_audio_volume(kind, value.start(), cx);
+            cx.notify();
+        })
+        .detach();
+        slider
+    }
+
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search =
             cx.new(|cx| gpui_component::input::InputState::new(window, cx).placeholder("Search"));
@@ -555,7 +573,8 @@ impl Settings {
             Err(failure) => (Persisted::default(), Some(failure.to_string().into())),
         };
 
-        // Sliders persist their value; observing them writes the config on change.
+        // Shell-owned sliders persist locally. System audio sliders are created
+        // separately below and write through the platform audio service.
         let mk_slider = |cx: &mut Context<Self>, val: f32| {
             let s = cx.new(|_| {
                 SliderState::new()
@@ -571,7 +590,9 @@ impl Settings {
             .detach();
             s
         };
-        let output_volume = mk_slider(cx, saved.output_volume);
+        let output_volume =
+            Self::audio_slider(cx, saved.output_volume, rmac_audio::DeviceKind::Output);
+        let input_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Input);
         let alert_volume = mk_slider(cx, saved.alert_volume);
         let balance = mk_slider(cx, saved.balance);
 
@@ -638,6 +659,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_audio::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_audio_update(result, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -649,7 +682,7 @@ impl Settings {
             gpu: String::new(),
             network: rmac_network::NetworkSnapshot::default(),
             storage: StorageInfo::default(),
-            audio: AudioInfo::default(),
+            audio: rmac_audio::Snapshot::default(),
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -662,6 +695,7 @@ impl Settings {
             bluetooth_error: None,
             network_error: None,
             vpn_error: None,
+            audio_error: None,
 
             network_loading: true,
             network_busy: false,
@@ -693,10 +727,14 @@ impl Settings {
             show_color_in_menu: saved.show_color_in_menu,
             large_sidebar: saved.large_sidebar,
 
+            audio_loading: true,
+            audio_busy: false,
+            output_volume_generation: 0,
+            input_volume_generation: 0,
             output_volume,
+            input_volume,
             alert_volume,
             balance,
-            mute: saved.mute,
             play_on_startup: saved.play_on_startup,
             play_ui_sounds: saved.play_ui_sounds,
             alert_idx: saved.alert_idx,
@@ -714,7 +752,6 @@ impl Settings {
         self.displays = snapshot.displays;
         self.gpu = snapshot.gpu;
         self.storage = snapshot.storage;
-        self.audio = snapshot.audio;
         self.system_data_loading = false;
     }
 
@@ -827,6 +864,145 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_vpn_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_audio_update(
+        &mut self,
+        result: std::result::Result<rmac_audio::Snapshot, rmac_audio::Error>,
+        cx: &mut Context<Self>,
+    ) {
+        self.audio_loading = false;
+        self.audio_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.output_volume_generation = self.output_volume_generation.wrapping_add(1);
+                self.input_volume_generation = self.input_volume_generation.wrapping_add(1);
+                self.output_volume = Self::audio_slider(
+                    cx,
+                    f32::from(snapshot.output.volume),
+                    rmac_audio::DeviceKind::Output,
+                );
+                self.input_volume = Self::audio_slider(
+                    cx,
+                    f32::from(snapshot.input.volume),
+                    rmac_audio::DeviceKind::Input,
+                );
+                self.audio = snapshot;
+                self.audio_error = None;
+            }
+            Err(error) => {
+                self.audio_error = Some(format!("Could not update Sound: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_audio(&mut self, cx: &mut Context<Self>) {
+        if self.audio_loading || self.audio_busy {
+            return;
+        }
+        self.audio_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_audio::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_audio_update(result, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn schedule_audio_volume(
+        &mut self,
+        kind: rmac_audio::DeviceKind,
+        volume: f32,
+        cx: &mut Context<Self>,
+    ) {
+        if self.audio_loading || !self.audio.available {
+            return;
+        }
+        let generation = match kind {
+            rmac_audio::DeviceKind::Output => {
+                self.output_volume_generation = self.output_volume_generation.wrapping_add(1);
+                self.output_volume_generation
+            }
+            rmac_audio::DeviceKind::Input => {
+                self.input_volume_generation = self.input_volume_generation.wrapping_add(1);
+                self.input_volume_generation
+            }
+        };
+        let volume = volume.round().clamp(0.0, 100.0) as u8;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            cx.background_executor()
+                .timer(Duration::from_millis(120))
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                let current = match kind {
+                    rmac_audio::DeviceKind::Output => this.output_volume_generation,
+                    rmac_audio::DeviceKind::Input => this.input_volume_generation,
+                };
+                if current == generation && !this.audio_busy {
+                    this.apply_audio_change(AudioChange::Volume(kind, volume), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn set_audio_muted(
+        &mut self,
+        kind: rmac_audio::DeviceKind,
+        muted: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.audio_loading || self.audio_busy || !self.audio.available {
+            return;
+        }
+        self.apply_audio_change(AudioChange::Muted(kind, muted), cx);
+    }
+
+    fn set_default_audio_device(
+        &mut self,
+        kind: rmac_audio::DeviceKind,
+        id: String,
+        cx: &mut Context<Self>,
+    ) {
+        if self.audio_loading
+            || self.audio_busy
+            || !self.audio.available
+            || !self.audio.can_set_default
+        {
+            return;
+        }
+        self.apply_audio_change(AudioChange::DefaultDevice(kind, id), cx);
+    }
+
+    fn apply_audio_change(&mut self, change: AudioChange, cx: &mut Context<Self>) {
+        self.audio_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    match change {
+                        AudioChange::Volume(kind, volume) => rmac_audio::set_volume(kind, volume)?,
+                        AudioChange::Muted(kind, muted) => rmac_audio::set_muted(kind, muted)?,
+                        AudioChange::DefaultDevice(kind, id) => {
+                            rmac_audio::set_default_device(kind, &id)?
+                        }
+                    }
+                    rmac_audio::snapshot()
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_audio_update(result, cx);
                 cx.notify();
             });
         })
@@ -1020,7 +1196,7 @@ impl Settings {
             output_volume: self.output_volume.read(cx).value().start(),
             alert_volume: self.alert_volume.read(cx).value().start(),
             balance: self.balance.read(cx).value().start(),
-            mute: self.mute,
+            mute: self.audio.output.muted,
             play_on_startup: self.play_on_startup,
             play_ui_sounds: self.play_ui_sounds,
             alert_idx: self.alert_idx,
@@ -1811,39 +1987,122 @@ impl Settings {
 
     fn render_sound(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-
         let out = self.output_volume.read(cx).value().start().round() as i32;
+        let input = self.input_volume.read(cx).value().start().round() as i32;
         let alert = self.alert_volume.read(cx).value().start().round() as i32;
-        let bal = self.balance.read(cx).value().start().round() as i32;
+        let refresh_view = view.clone();
+        let mut cards = vec![div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child("System Audio"),
+            )
+            .child(
+                div()
+                    .id("audio-refresh")
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.0))
+                    .text_size(px(12.0))
+                    .text_color(accent())
+                    .cursor_pointer()
+                    .hover(|hover| hover.bg(hsl(0x00000008)))
+                    .child(if self.audio_busy {
+                        "Refreshing…"
+                    } else {
+                        "Refresh"
+                    })
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
+                    }),
+            )];
 
-        let output_card = div()
-            .v_flex()
-            .mb_3()
-            .rounded(px(10.0))
-            .bg(card_bg())
-            .border_1()
-            .border_color(sep())
-            .child(slider_row(
-                "Output volume",
-                &self.output_volume,
-                format!("{out}%").into(),
-            ))
-            .child(div().h(px(1.0)).bg(sep()).mx_3())
-            .child(slider_row(
-                "Balance",
-                &self.balance,
-                format!("{bal}").into(),
-            ))
-            .child(div().h(px(1.0)).bg(sep()).mx_3())
-            .child(switch_row(
-                "icons/volume-2.svg",
-                secondary(),
-                "Mute".into(),
-                None,
-                self.mute,
-                cx,
-                |s, v| s.mute = v,
+        if self.audio_loading {
+            cards.push(note_card("Loading audio state from the system…"));
+        } else if !self.audio.available {
+            cards.push(note_card(
+                "The system audio service is not available on this computer.",
             ));
+        } else {
+            let output_view = view.clone();
+            let output_mute = Switch::new("audio-output-mute")
+                .checked(self.audio.output.muted)
+                .on_click(move |muted, _, cx| {
+                    output_view.update(cx, |settings, cx| {
+                        settings.set_audio_muted(rmac_audio::DeviceKind::Output, *muted, cx)
+                    });
+                });
+            cards.push(
+                div()
+                    .v_flex()
+                    .mb_3()
+                    .rounded(px(10.0))
+                    .bg(card_bg())
+                    .border_1()
+                    .border_color(sep())
+                    .child(slider_row(
+                        "Output volume",
+                        &self.output_volume,
+                        format!("{out}%").into(),
+                    ))
+                    .child(div().h(px(1.0)).bg(sep()).mx_3())
+                    .child(
+                        row_base()
+                            .child(tile("icons/volume-2.svg", secondary(), 22.0))
+                            .child(text_block("Mute output".into(), None))
+                            .child(output_mute),
+                    ),
+            );
+
+            let mut input_card = div()
+                .v_flex()
+                .mb_3()
+                .rounded(px(10.0))
+                .bg(card_bg())
+                .border_1()
+                .border_color(sep())
+                .child(slider_row(
+                    "Input volume",
+                    &self.input_volume,
+                    format!("{input}%").into(),
+                ));
+            if self.audio.can_mute_input {
+                let input_view = view.clone();
+                let input_mute = Switch::new("audio-input-mute")
+                    .checked(self.audio.input.muted)
+                    .on_click(move |muted, _, cx| {
+                        input_view.update(cx, |settings, cx| {
+                            settings.set_audio_muted(rmac_audio::DeviceKind::Input, *muted, cx)
+                        });
+                    });
+                input_card = input_card.child(div().h(px(1.0)).bg(sep()).mx_3()).child(
+                    row_base()
+                        .child(tile("icons/volume-2.svg", secondary(), 22.0))
+                        .child(text_block("Mute microphone".into(), None))
+                        .child(input_mute),
+                );
+            }
+            cards.push(input_card);
+            cards.push(self.audio_device_card(
+                "Output Device",
+                &self.audio.outputs,
+                rmac_audio::DeviceKind::Output,
+                cx,
+            ));
+            cards.push(self.audio_device_card(
+                "Input Device",
+                &self.audio.inputs,
+                rmac_audio::DeviceKind::Input,
+                cx,
+            ));
+        }
 
         let alert_card = div()
             .v_flex()
@@ -1894,30 +2153,36 @@ impl Settings {
                 |s, v| s.play_ui_sounds = v,
             ),
         ]);
-
-        let output_devices = self.audio_device_card("Output Device", &self.audio.outputs);
-        let input_devices = self.audio_device_card("Input Device", &self.audio.inputs);
-
-        self.pane(vec![
-            output_card,
-            alert_card,
-            toggles,
-            output_devices,
-            input_devices,
-        ])
+        cards.push(section_header("rmac Sounds"));
+        cards.push(alert_card);
+        cards.push(toggles);
+        cards.push(note_card(
+            "Output, microphone, and default devices use the system audio service. Alert sounds and interface effects belong to the rmac desktop session.",
+        ));
+        self.pane(cards)
     }
 
-    /// A card listing real audio devices, with the system default checked.
-    fn audio_device_card(&self, title: &'static str, devices: &[AudioDevice]) -> Div {
+    fn audio_device_card(
+        &self,
+        title: &'static str,
+        devices: &[rmac_audio::Device],
+        kind: rmac_audio::DeviceKind,
+        cx: &Context<Self>,
+    ) -> Div {
         if devices.is_empty() {
             return div();
         }
-        let blue = hsl(0x0a84ff);
+        let view = cx.entity();
         let rows: Vec<AnyElement> = devices
             .iter()
             .map(|d| {
+                let id = d.id.clone();
+                let device_view = view.clone();
                 row_base()
-                    .child(tile("icons/volume-2.svg", blue, 22.0))
+                    .id(ElementId::from(SharedString::from(format!(
+                        "audio-device-{title}-{id}"
+                    ))))
+                    .child(tile("icons/volume-2.svg", accent(), 22.0))
                     .child(text_block(d.name.clone().into(), None))
                     .when(d.is_default, |el| {
                         el.child(
@@ -1926,7 +2191,17 @@ impl Settings {
                                 .text_color(secondary())
                                 .child("Default"),
                         )
-                        .child(glyph("icons/check.svg", 13.0, blue))
+                        .child(glyph("icons/check.svg", 13.0, accent()))
+                    })
+                    .when(self.audio.can_set_default && !d.is_default, |el| {
+                        el.cursor_pointer()
+                            .hover(|hover| hover.bg(hsl(0x00000008)))
+                            .on_click(move |_, _, cx| {
+                                let id = id.clone();
+                                device_view.update(cx, |settings, cx| {
+                                    settings.set_default_audio_device(kind, id, cx)
+                                });
+                            })
                     })
                     .into_any_element()
             })
@@ -2546,7 +2821,8 @@ impl Render for Settings {
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
-            .or_else(|| self.vpn_error.clone());
+            .or_else(|| self.vpn_error.clone())
+            .or_else(|| self.audio_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -2583,6 +2859,7 @@ impl Render for Settings {
                             this.bluetooth_error = None;
                             this.network_error = None;
                             this.vpn_error = None;
+                            this.audio_error = None;
                             cx.notify();
                         })),
                 )
@@ -2950,7 +3227,6 @@ fn gather_system_snapshot() -> SystemSnapshot {
         displays,
         gpu,
         storage: gather_storage(),
-        audio: gather_audio(),
     }
 }
 
@@ -3137,64 +3413,6 @@ fn gather_battery() -> Option<BatteryInfo> {
         health_percent,
         condition,
     })
-}
-
-/// Read audio output/input devices via `system_profiler SPAudioDataType`.
-fn gather_audio() -> AudioInfo {
-    let out = cmd("system_profiler", &["SPAudioDataType"]).unwrap_or_default();
-    let mut outputs: Vec<AudioDevice> = Vec::new();
-    let mut inputs: Vec<AudioDevice> = Vec::new();
-
-    let mut cur: Option<String> = None;
-    let (mut has_out, mut has_in, mut def_out, mut def_in) = (false, false, false, false);
-
-    let mut flush = |cur: &mut Option<String>, ho: bool, hi: bool, dofl: bool, difl: bool| {
-        if let Some(name) = cur.take() {
-            if ho {
-                outputs.push(AudioDevice {
-                    name: name.clone(),
-                    is_default: dofl,
-                });
-            }
-            if hi {
-                inputs.push(AudioDevice {
-                    name,
-                    is_default: difl,
-                });
-            }
-        }
-    };
-
-    for raw in out.lines() {
-        let indent = raw.len() - raw.trim_start().len();
-        let line = raw.trim();
-        if indent == 8 && line.ends_with(':') {
-            flush(&mut cur, has_out, has_in, def_out, def_in);
-            cur = Some(line.trim_end_matches(':').to_string());
-            has_out = false;
-            has_in = false;
-            def_out = false;
-            def_in = false;
-        } else if cur.is_some() {
-            if line.starts_with("Output Source:") {
-                has_out = true;
-            }
-            if line.starts_with("Input Source:") {
-                has_in = true;
-            }
-            if line.starts_with("Default Output Device:") && line.ends_with("Yes") {
-                def_out = true;
-                has_out = true;
-            }
-            if line.starts_with("Default Input Device:") && line.ends_with("Yes") {
-                def_in = true;
-                has_in = true;
-            }
-        }
-    }
-    flush(&mut cur, has_out, has_in, def_out, def_in);
-
-    AudioInfo { outputs, inputs }
 }
 
 /// Format bytes as decimal GB (matching macOS storage display).

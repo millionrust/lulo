@@ -28,7 +28,7 @@ equivalents rather than simulated.
 | Spotlight | Placeholder | rmac-search | Sources, exclusions, indexing state, global shortcut |
 | Wallpaper | Placeholder | rmac shell | Per-output wallpaper selection and persistence |
 | Notifications | Placeholder | Notification portal/daemon | Per-app policy, previews, badges, do-not-disturb |
-| Sound | macOS device snapshot; controls local | PipeWire/WirePlumber | Live devices, routes, volume, mute, balance, defaults |
+| Sound | Real devices, defaults, volume, and mute | PipeWire/WirePlumber | Live signals, routes, and per-channel balance |
 | Focus | Placeholder | rmac notification service | Modes, schedules, shell indicator |
 | Screen Time | Placeholder | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Placeholder | session shell and logind | Idle timeout, lock, suspend, login presentation |

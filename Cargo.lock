@@ -4799,6 +4799,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-audio"
+version = "0.1.0"
+
+[[package]]
 name = "rmac-bluetooth"
 version = "0.1.0"
 dependencies = [
@@ -4896,6 +4900,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-audio",
  "rmac-bluetooth",
  "rmac-network",
  "rmac-storage",

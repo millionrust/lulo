@@ -1,0 +1,11 @@
+[package]
+name = "rmac-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+rmac-apps.workspace = true
+rmac-shell-settings.workspace = true

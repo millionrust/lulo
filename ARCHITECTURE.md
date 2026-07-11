@@ -242,6 +242,13 @@ the desktop portal boundary, and delegates home/mounted-volume Trash behavior
 to the freedesktop implementation. Empty Trash requires a module-private
 confirmation value and rereads the item count after the purge.
 
+Launcher and Spotlight policy begins in `rmac-launcher`. Provider descriptors
+declare private-content and network requirements before work is scheduled.
+Each query cancels the previous generation; stale or identity/category-spoofed
+batches are rejected. The domain owns deterministic scoring, category caps,
+stable keyboard selection, and exact primary/alternate actions without
+importing GPUI, filesystem search, portals, or process execution.
+
 ## Persistence
 
 The target persistence contract is:

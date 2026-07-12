@@ -59,6 +59,7 @@ rmac-launcher-providers = { version = "=0.1.0", path = "crates/rmac-launcher-pro
 rmac-launcher-runtime = { version = "=0.1.0", path = "crates/rmac-launcher-runtime" }
 rmac-launcher-system = { version = "=0.1.0", path = "crates/rmac-launcher-system" }
 rmac-lock-provider = { version = "=0.1.0", path = "crates/rmac-lock-provider" }
+rmac-lock-provider-linux = { version = "=0.1.0", path = "crates/rmac-lock-provider-linux" }
 rmac-power = { version = "=0.1.0", path = "crates/rmac-power" }
 rmac-quick-settings = { version = "=0.1.0", path = "crates/rmac-quick-settings" }
 rmac-quick-settings-system = { version = "=0.1.0", path = "crates/rmac-quick-settings-system" }
@@ -89,6 +90,7 @@ trash = "5"
 url = "2"
 walkdir = "2"
 zbus = { version = "5.16.0", features = ["blocking-api"] }
+zeroize = "=1.9.0"
 
 [profile.release]
 lto = true

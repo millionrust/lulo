@@ -99,11 +99,19 @@ Compositor denial before readiness and compositor failure after readiness are
 different terminal states, but neither unlocks. Diagnostics redact output and
 attempt identity. See ADR 0005.
 
-This is not yet an authentication provider. The Linux adapter still requires a
-reviewed PAM binding, bounded multi-message conversation handling, secret
-erasure, `pam_start`/`pam_end` lifetime correctness, renderer integration, and
-real niri/PAM evidence. Until then, the installed unit continues to run
-swaylock and the preview projection remains unrendered.
+`rmac-lock-provider-linux` begins the platform boundary with fixed-capacity,
+UTF-8 credential input. It rejects responses beyond Linux-PAM's 512-byte
+maximum, never clones or logs the value, erases removed bytes immediately, and
+zeroizes the complete allocation on clear and drop. This is a memory-lifetime
+primitive, not authentication. The accepted Wayland and secret-erasure
+dependency lines—and the reasons no PAM crate is accepted yet—are recorded in
+`docs/rmac-lock-provider-dependency-review.md`.
+
+The Linux adapter still requires the actual Wayland client, a reviewed PAM
+binding, bounded multi-message conversation handling, `pam_start`/`pam_end`
+lifetime correctness, renderer integration, and real niri/PAM evidence. Until
+then, the installed unit continues to run swaylock and the preview projection
+remains unrendered.
 
 ## Not complete yet
 

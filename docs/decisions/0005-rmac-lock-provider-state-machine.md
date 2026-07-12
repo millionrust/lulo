@@ -58,6 +58,13 @@ authentication and account policy, support arbitrary bounded conversation
 messages, keep PAM work off the render/event loop, and erase response buffers.
 The adapter—not the state machine—owns secrets.
 
+`rmac-lock-provider-linux` is the start of that adapter boundary. Its first
+accepted primitive is fixed-capacity credential input, bounded to Linux-PAM's
+512-byte response limit and zeroized on editing, clear, transfer, and drop.
+This does not select a PAM binding or make the crate an authentication provider.
+The dependency decisions and remaining PAM acceptance gate are recorded in
+`docs/rmac-lock-provider-dependency-review.md`.
+
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,
 suspend/resume, renderer failure, provider crash, accessibility, and emergency

@@ -83,6 +83,9 @@ pub enum Operation {
     ValidateIdlePolicy,
     SpawnIdleManager,
     WaitForIdleManager,
+    ServeSettings,
+    SaveIdlePolicy,
+    RestartIdleManager,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -173,14 +176,17 @@ pub fn supervise_idle(_policy_path: &Path) -> Result<(), Error> {
 }
 
 #[cfg(target_os = "linux")]
-fn read_idle_policy(policy_path: &Path) -> Result<IdlePolicy, Error> {
+pub(crate) fn read_idle_policy(policy_path: &Path) -> Result<IdlePolicy, Error> {
     if !policy_path.is_absolute() {
         return Err(Error {
             operation: Operation::ValidateIdlePolicy,
             kind: io::ErrorKind::InvalidInput,
         });
     }
-    let metadata = std::fs::metadata(policy_path)
+    let file = std::fs::File::open(policy_path)
+        .map_err(|error| Error::io(Operation::ReadIdlePolicy, error))?;
+    let metadata = file
+        .metadata()
         .map_err(|error| Error::io(Operation::ReadIdlePolicy, error))?;
     if !metadata.is_file() || metadata.len() > MAX_IDLE_POLICY_BYTES {
         return Err(Error {
@@ -188,15 +194,52 @@ fn read_idle_policy(policy_path: &Path) -> Result<IdlePolicy, Error> {
             kind: io::ErrorKind::InvalidData,
         });
     }
-    let bytes =
-        std::fs::read(policy_path).map_err(|error| Error::io(Operation::ReadIdlePolicy, error))?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(MAX_IDLE_POLICY_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| Error::io(Operation::ReadIdlePolicy, error))?;
+    if bytes.len() as u64 > MAX_IDLE_POLICY_BYTES {
+        return Err(Error {
+            operation: Operation::ValidateIdlePolicy,
+            kind: io::ErrorKind::InvalidData,
+        });
+    }
     serde_json::from_slice::<IdlePolicy>(&bytes)
         .map_err(|_| Error::failed(Operation::ValidateIdlePolicy))?
         .validate()
 }
 
 #[cfg(target_os = "linux")]
-pub async fn coordinate() -> Result<(), Error> {
+pub(crate) fn write_idle_policy(policy_path: &Path, policy: IdlePolicy) -> Result<(), Error> {
+    let policy = policy.validate()?;
+    if !policy_path.is_absolute() {
+        return Err(Error {
+            operation: Operation::ValidateIdlePolicy,
+            kind: io::ErrorKind::InvalidInput,
+        });
+    }
+    let mut bytes =
+        serde_json::to_vec_pretty(&policy).map_err(|_| Error::failed(Operation::SaveIdlePolicy))?;
+    bytes.push(b'\n');
+    rmac_storage::atomic_write_private(policy_path, &bytes)
+        .map_err(|error| Error::io(Operation::SaveIdlePolicy, error))
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn restart_idle_manager() -> Result<(), Error> {
+    let status = Command::new(SYSTEMCTL)
+        .args(["--user", "restart", "rmac-idle-lock.service"])
+        .status()
+        .map_err(|error| Error::io(Operation::RestartIdleManager, error))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::failed(Operation::RestartIdleManager))
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
     use futures_util::StreamExt as _;
 
     let connection = zbus::Connection::system()
@@ -228,6 +271,9 @@ pub async fn coordinate() -> Result<(), Error> {
         .receive_prepare_for_sleep()
         .await
         .map_err(|_| Error::failed(Operation::SubscribeLogind))?;
+    let _settings = crate::lock_settings::serve(policy_path)
+        .await
+        .map_err(|_| Error::failed(Operation::ServeSettings))?;
     notify_systemd("rmac lock coordinator is ready")?;
     futures_util::pin_mut!(lock_requests, sleep_changes);
 
@@ -268,7 +314,7 @@ pub async fn coordinate() -> Result<(), Error> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub async fn coordinate() -> Result<(), Error> {
+pub async fn coordinate(_policy_path: &Path) -> Result<(), Error> {
     Err(Error {
         operation: Operation::ConnectLogind,
         kind: io::ErrorKind::Unsupported,

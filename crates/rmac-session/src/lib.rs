@@ -511,6 +511,9 @@ mod tests {
         assert!(coordinator.contains("Restart=on-failure"));
         assert!(coordinator.contains("StartLimitIntervalSec=0"));
         assert!(coordinator.contains("NoNewPrivileges=yes"));
+        assert!(coordinator.contains(
+            "ExecStart=%h/.local/libexec/rmac/rmac-lock-coordinator --policy %h/.config/rmac/lock-policy.json"
+        ));
         assert!(!coordinator.contains("OnFailure=rmac-component-failure"));
         assert!(!coordinator.contains("/bin/sh"));
 

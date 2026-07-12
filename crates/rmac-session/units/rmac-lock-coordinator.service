@@ -8,7 +8,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=notify
 NotifyAccess=all
-ExecStart=%h/.local/libexec/rmac/rmac-lock-coordinator
+ExecStart=%h/.local/libexec/rmac/rmac-lock-coordinator --policy %h/.config/rmac/lock-policy.json
 TimeoutStartSec=10s
 Restart=on-failure
 RestartSec=1s

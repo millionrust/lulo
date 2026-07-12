@@ -60,6 +60,14 @@ swayidle's logind hooks; exact-session logind work remains in the coordinator.
 The installer creates a five-minute default only when no user policy exists.
 Both normal and diagnostic sessions start this authority.
 
+The required coordinator also owns `org.rmac.LockScreen1` on the user session
+bus. Settings subscribes before its initial read and receives complete policy
+snapshots. A timeout mutation validates the same versioned domain value,
+atomically replaces the private policy, and restarts the idle authority. If the
+new runtime cannot start, the service restores the previous file and runtime
+before returning an error. The UI exposes only five supported timeout choices,
+including Never, and reports loading, mutation, rollback, and reconnect states.
+
 Lid-close and explicit suspend remain logind operations rather than duplicate
 swayidle commands. The existing delay-inhibitor coordinator locks before those
 operations. A future Settings control may request a supported logind action,
@@ -68,7 +76,7 @@ active inhibitors.
 
 ## Not complete yet
 
-- a live settings API for idle timeout and supported suspend choices;
+- supported suspend choices and capability/authorization reporting;
 - notification preview filtering and lock wallpaper authority;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;

@@ -223,6 +223,13 @@ struct Settings {
     focus_policy_config: Option<rmac_focus::Config>,
     focus_policy_state: Option<rmac_focus_linux::client::Snapshot>,
 
+    // Lock Screen
+    lock_policy_loading: bool,
+    lock_policy_busy: bool,
+    lock_policy_error: Option<SharedString>,
+    lock_policy_stream_error: Option<SharedString>,
+    lock_policy: Option<rmac_shortcuts::lock_settings::Snapshot>,
+
     // Network
     network_loading: bool,
     network_busy: bool,
@@ -884,6 +891,27 @@ impl Settings {
         })
         .detach();
 
+        let (lock_updates, lock_update_rx) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_shortcuts::lock_settings::watch(lock_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(update) = lock_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        this.apply_lock_policy_stream_update(update);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -928,6 +956,12 @@ impl Settings {
             focus_policy_stream_error: None,
             focus_policy_config: None,
             focus_policy_state: None,
+
+            lock_policy_loading: true,
+            lock_policy_busy: false,
+            lock_policy_error: None,
+            lock_policy_stream_error: None,
+            lock_policy: None,
 
             network_loading: true,
             network_busy: false,
@@ -2177,6 +2211,84 @@ impl Settings {
         .detach();
     }
 
+    fn finish_lock_policy_update(
+        &mut self,
+        result: std::result::Result<
+            rmac_shortcuts::lock_settings::Snapshot,
+            rmac_shortcuts::lock_settings::Error,
+        >,
+    ) {
+        self.lock_policy_loading = false;
+        self.lock_policy_busy = false;
+        match result {
+            Ok(policy) => {
+                self.lock_policy = Some(policy);
+                self.lock_policy_error = None;
+            }
+            Err(error) => {
+                self.lock_policy_error =
+                    Some(format!("Could not update Lock Screen: {error}").into());
+            }
+        }
+    }
+
+    fn apply_lock_policy_stream_update(
+        &mut self,
+        update: std::result::Result<rmac_shortcuts::lock_settings::Snapshot, String>,
+    ) {
+        self.lock_policy_loading = false;
+        match update {
+            Ok(policy) => {
+                self.lock_policy = Some(policy);
+                self.lock_policy_stream_error = None;
+            }
+            Err(error) => {
+                self.lock_policy_stream_error =
+                    Some(format!("Live Lock Screen updates unavailable: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_lock_policy(&mut self, cx: &mut Context<Self>) {
+        if self.lock_policy_loading || self.lock_policy_busy {
+            return;
+        }
+        self.lock_policy_loading = true;
+        self.lock_policy_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_shortcuts::lock_settings::settings() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_lock_policy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_lock_after(&mut self, seconds: Option<u32>, cx: &mut Context<Self>) {
+        if self.lock_policy_loading || self.lock_policy_busy {
+            return;
+        }
+        self.lock_policy_busy = true;
+        self.lock_policy_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_shortcuts::lock_settings::set_lock_after(seconds) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_lock_policy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Capture the current interactive state and write it to disk.
     fn persist(&mut self, cx: &App) {
         let snapshot = Persisted {
@@ -2426,6 +2538,7 @@ impl Settings {
                 "Appearance" => self.render_appearance(cx),
                 "Notifications" => self.render_notifications(cx),
                 "Focus" => self.render_focus(cx),
+                "Lock Screen" => self.render_lock_screen(cx),
                 "Sound" => self.render_sound(cx),
                 "Keyboard" => self.render_keyboard(cx),
                 "Mouse" => self.render_mouse(cx),
@@ -3623,6 +3736,148 @@ impl Settings {
             });
         })
         .into_any_element()]))
+    }
+
+    // ---- Lock Screen --------------------------------------------------
+
+    fn render_lock_screen(&self, cx: &Context<Self>) -> Div {
+        const TIMEOUTS: [(Option<u32>, &str, &str); 5] = [
+            (
+                None,
+                "Never",
+                "Keep the session unlocked until a manual or system lock",
+            ),
+            (
+                Some(60),
+                "After 1 Minute",
+                "Lock after one minute without input",
+            ),
+            (Some(300), "After 5 Minutes", "Recommended default"),
+            (
+                Some(900),
+                "After 15 Minutes",
+                "Lock after fifteen minutes without input",
+            ),
+            (
+                Some(3_600),
+                "After 1 Hour",
+                "Lock after one hour without input",
+            ),
+        ];
+
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let mut cards = vec![div().flex().justify_end().mb_2().child(
+            div()
+                .id("lock-policy-refresh")
+                .px_2()
+                .py_1()
+                .rounded(px(6.0))
+                .text_size(px(12.0))
+                .text_color(accent())
+                .when(
+                    !self.lock_policy_loading && !self.lock_policy_busy,
+                    |button| {
+                        button
+                            .cursor_pointer()
+                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                            .on_click(move |_, _, cx| {
+                                refresh_view
+                                    .update(cx, |settings, cx| settings.refresh_lock_policy(cx));
+                            })
+                    },
+                )
+                .child(if self.lock_policy_loading {
+                    "Loading…"
+                } else {
+                    "Refresh"
+                }),
+        )];
+        if self.lock_policy_loading || self.lock_policy_busy {
+            cards.push(div().mb_3().child(Progress::indeterminate().label(
+                if self.lock_policy_busy {
+                    "Applying Lock Screen timeout…"
+                } else {
+                    "Loading Lock Screen…"
+                },
+            )));
+        }
+        if let Some(error) = &self.lock_policy_error {
+            cards.push(note_card(error.clone()));
+        }
+        if let Some(error) = &self.lock_policy_stream_error {
+            cards.push(note_card(error.clone()));
+        }
+        if let Some(policy) = self.lock_policy {
+            cards.push(section_header("Lock After Inactivity"));
+            let mut timeout_rows = TIMEOUTS
+                .into_iter()
+                .map(|(timeout, title, detail)| {
+                    let selected = policy.lock_after_seconds == timeout;
+                    let option_view = view.clone();
+                    row_base()
+                        .id(ElementId::from(SharedString::from(format!(
+                            "lock-timeout-{}",
+                            timeout.unwrap_or(0)
+                        ))))
+                        .child(tile("icons/lock.svg", secondary(), 22.0))
+                        .child(text_block(title.into(), Some(detail.into())))
+                        .when(selected, |row| {
+                            row.child(glyph("icons/check.svg", 14.0, accent()))
+                        })
+                        .when(!selected && !self.lock_policy_busy, |row| {
+                            row.cursor_pointer()
+                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                                .on_click(move |_, _, cx| {
+                                    option_view.update(cx, |settings, cx| {
+                                        settings.set_lock_after(timeout, cx)
+                                    });
+                                })
+                        })
+                        .when(self.lock_policy_busy, |row| row.opacity(0.55))
+                        .into_any_element()
+                })
+                .collect::<Vec<_>>();
+            if !TIMEOUTS
+                .iter()
+                .any(|(timeout, _, _)| *timeout == policy.lock_after_seconds)
+            {
+                let value = policy
+                    .lock_after_seconds
+                    .map(u64::from)
+                    .map(format_power_duration)
+                    .unwrap_or_else(|| "Never".into());
+                timeout_rows.insert(
+                    0,
+                    value_row(
+                        "icons/history.svg",
+                        secondary(),
+                        "Current Custom Timeout".into(),
+                        value.into(),
+                    ),
+                );
+            }
+            cards.push(card(timeout_rows));
+            cards.push(section_header("Security"));
+            cards.push(card(vec![
+                value_row(
+                    "icons/shield.svg",
+                    hsl(0x34c759),
+                    "Before Sleep".into(),
+                    "Always Lock".into(),
+                ),
+                value_row(
+                    "icons/key.svg",
+                    secondary(),
+                    "Authentication".into(),
+                    "Password Required".into(),
+                ),
+            ]));
+            cards.push(note_card(
+                "Notification previews and login presentation controls remain hidden until their secure adapters are available. Lid close and suspend follow the system’s supported logind policy and always pass through the pre-sleep lock boundary.",
+            ));
+        }
+        self.pane(cards)
     }
 
     // ---- Sound --------------------------------------------------------

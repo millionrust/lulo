@@ -8,6 +8,7 @@ use rmac_storage::atomic_write;
 use serde::{Deserialize, Serialize};
 
 pub mod lock;
+pub mod lock_settings;
 
 pub const PORTAL_MINIMUM_VERSION: u32 = 1;
 pub const PORTAL_CONFIGURE_VERSION: u32 = 2;

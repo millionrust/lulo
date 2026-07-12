@@ -136,6 +136,10 @@ systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=rmac:'
 systemctl --user show-environment | grep "^XDG_SESSION_ID=${XDG_SESSION_ID}$"
 systemctl --user --no-pager status rmac-lock-coordinator.service
 systemctl --user --no-pager status rmac-idle-lock.service
+busctl --user introspect org.rmac.LockScreen1 \
+  /org/rmac/LockScreen1 org.rmac.LockScreen1
+busctl --user call org.rmac.LockScreen1 \
+  /org/rmac/LockScreen1 org.rmac.LockScreen1 Settings
 busctl --user introspect org.freedesktop.Notifications \
   /org/freedesktop/Notifications org.freedesktop.Notifications
 busctl --user introspect org.freedesktop.impl.portal.desktop.rmac \

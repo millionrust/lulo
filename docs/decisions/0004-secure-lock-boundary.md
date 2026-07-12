@@ -62,6 +62,10 @@ or an unlocked secondary TTY/session.
     versioned policy selects a timeout or Never, while rmac constructs the fixed
     readiness-gated lock command. logind remains authoritative for lid and
     suspend operations so two policy engines cannot race to suspend the host.
+11. The coordinator owns the `org.rmac.LockScreen1` single-writer API. Timeout
+    changes atomically replace the private policy and restart swayidle; a failed
+    apply restores the prior policy and runtime. The API accepts no executable,
+    path, PAM, or compositor input.
 
 ## Consequences
 

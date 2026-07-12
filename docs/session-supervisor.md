@@ -100,6 +100,12 @@ timeout policy and supervises swayidle with a fixed lock command and unbounded
 crash restart. Disabling the timeout keeps the policy service alive without
 claiming an idle lock; it does not weaken manual or pre-sleep locking.
 
+The coordinator owns the session-bus `org.rmac.LockScreen1` settings authority
+before reporting ready. It is intentionally not D-Bus activated: the normal or
+safe session target must establish the logind subscriptions and inhibitor at
+the same time as the policy API. Timeout writes atomically restart only the idle
+service, never the coordinator or active locker.
+
 ## Verification boundary
 
 Cross-platform tests parse healthy, inactive, malformed, and mismatched

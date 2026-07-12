@@ -5090,6 +5090,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-notifications-store"
+version = "0.1.0"
+dependencies = [
+ "rmac-notifications",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-places"
 version = "0.1.0"
 

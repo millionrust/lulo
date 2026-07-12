@@ -51,6 +51,7 @@ Shared crates:
 - `rmac-notifications` — bounded notification validation, replacement, policy, actions, and history.
 - `rmac-notifications-linux` — shared freedesktop/XDG portal notification service and wire decoder.
 - `rmac-notifications-runtime` — live banner placement, motion, focus, and service-command orchestration.
+- `rmac-notifications-store` — private crash-safe Center history, grouping, unread state, and app policy.
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
 - `rmac-shell-status-linux` — coalesced D-Bus and PipeWire status refresh events.
 - `rmac-shell-runtime` — live top-bar/Quick Settings state, health, and last-known-good values.

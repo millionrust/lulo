@@ -151,6 +151,31 @@ action dispatch closes only the visual banner because the service already owns
 the notification transaction. This keeps D-Bus signals, Center history, and UI
 animation in one order without polling or content duplication.
 
+## Notification Center storage
+
+`rmac-notifications-store` owns the E3 history and per-app policy file under
+`$XDG_STATE_HOME/rmac/notifications/`. The directory is forced to mode `0700`;
+the primary and last-good JSON files are created as `0600` before any content
+is written and replaced with same-directory atomic renames. Files are limited
+to 8 MiB, 500 total records, 100 records per app, eight actions per record, and
+512 app policies. Every restored record is reconstructed through the domain's
+bounded content, identity, action, target, and category validators.
+
+Malformed/unsupported primary data recovers the last-good file; if both are
+invalid, the Center starts empty with an explicit recovery state. Missing files
+mean a clean first run. Permission and other real I/O failures surface as
+errors rather than pretending the Center is empty. Errors and `Debug` output
+contain operation classifications and counts only—never paths, app IDs,
+content, labels, replacement IDs, or targets.
+
+The in-memory Center performs atomic replacement, newest-group-first
+projection, per-app/all clear and mark-read controls, badge-aware unread/urgent
+projection, and bounded eviction. Transient notifications and apps whose
+history policy is disabled never enter storage; turning history or the app off
+immediately removes its existing records. Per-app policy separately controls
+enablement, banners, sounds, badges, urgent Focus bypass, history, and the
+trusted lock-screen preview level.
+
 ## Next adapters and surfaces
 
 1. E1 media/evidence completion: validate icon and custom-sound descriptors and

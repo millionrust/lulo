@@ -1,0 +1,19 @@
+[Unit]
+Description=rmac nested-compositor swaylock recovery provider
+Documentation=https://github.com/rmac/rmac
+BindsTo=graphical-session.target
+After=graphical-session.target
+StartLimitIntervalSec=0
+ConditionPathIsExecutable=%h/.local/libexec/rmac/rmac-locker
+ConditionPathExists=%h/.config/rmac/swaylock.conf
+ConditionPathExists=%t/rmac-lock-evidence/environment
+
+[Service]
+Type=notify
+NotifyAccess=all
+EnvironmentFile=%t/rmac-lock-evidence/environment
+ExecStart=%h/.local/libexec/rmac/rmac-locker --config %h/.config/rmac/swaylock.conf
+TimeoutStartSec=15s
+Restart=on-failure
+RestartSec=1s
+KillMode=control-group

@@ -132,7 +132,16 @@ UID against the process, derives its PAM user name, sets the advisory locked
 hint before systemd readiness, and clears the hint only after authenticated
 unlock plus the display-sync barrier. Pure lifecycle tests reject impossible
 ordering and preserve the hint on post-lock failure. The process has no shipped
-unit and does not yet own localized prompt text or recovery.
+unit and does not yet own localized prompt text or validated recovery.
+
+Recovery development uses two non-enabled evidence-only units, never the
+shipping unit name. The custom unit has a bounded restart burst; a distinct
+fallback unit runs the accepted swaylock supervisor against the same private
+nested-compositor environment. The interactive harness must observe a ready
+custom instance, kill it, observe a new ready PID and restart count, stop it
+without unlocking, then complete authentication through swaylock. This proves
+the intended recovery sequence only when run on Linux; committed unit/script
+tests prove configuration separation but are not runtime evidence.
 
 The initial renderer is an opaque, dependency-free CPU composition written in
 bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after

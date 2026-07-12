@@ -1,0 +1,19 @@
+[Unit]
+Description=rmac custom lock provider nested-compositor evidence
+Documentation=https://github.com/rmac/rmac
+BindsTo=graphical-session.target
+After=graphical-session.target
+StartLimitIntervalSec=30s
+StartLimitBurst=5
+ConditionPathIsExecutable=%h/.local/libexec/rmac-evidence/rmac-lock-provider
+ConditionPathExists=%t/rmac-lock-evidence/environment
+
+[Service]
+Type=notify
+NotifyAccess=all
+EnvironmentFile=%t/rmac-lock-evidence/environment
+ExecStart=%h/.local/libexec/rmac-evidence/rmac-lock-provider
+TimeoutStartSec=15s
+Restart=on-failure
+RestartSec=1s
+KillMode=control-group

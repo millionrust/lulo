@@ -108,6 +108,14 @@ service, never the coordinator or active locker. Automatic suspend is routed
 back through the coordinator so its logind capability check and pre-sleep lock
 ordering remain authoritative.
 
+Custom-provider recovery experiments do not alter this installed topology.
+Their units live under `crates/rmac-lock-provider-linux/evidence`, have no
+`[Install]` section, use an `rmac-lock-*-evidence` namespace, and are copied only
+by the explicit evidence installer. The normal installer neither builds the
+feature-gated provider nor references those units. The recovery gate runs them
+against a nested compositor and retains the installed `rmac-lock.service` as
+the production swaylock path.
+
 ## Verification boundary
 
 Cross-platform tests parse healthy, inactive, malformed, and mismatched

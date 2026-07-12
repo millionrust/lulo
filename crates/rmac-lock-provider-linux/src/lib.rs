@@ -462,3 +462,68 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod evidence_assets {
+    const CUSTOM_UNIT: &str = include_str!("../evidence/units/rmac-lock-provider-evidence.service");
+    const FALLBACK_UNIT: &str =
+        include_str!("../evidence/units/rmac-lock-fallback-evidence.service");
+    const NESTED_SWAY: &str = include_str!("../evidence/nested-sway.conf");
+    const INSTALLER: &str =
+        include_str!("../../../scripts/linux/install-lock-provider-evidence.sh");
+    const LAUNCHER: &str = include_str!("../../../scripts/linux/launch-lock-provider-evidence.sh");
+    const NORMAL_INSTALLER: &str = include_str!("../../../scripts/linux/install-session-units.sh");
+    const RECOVERY_GATE: &str =
+        include_str!("../../../scripts/linux/run-lock-provider-recovery-gate.sh");
+
+    #[test]
+    fn evidence_units_are_separate_readiness_gated_crash_domains() {
+        assert!(CUSTOM_UNIT.contains("Type=notify"));
+        assert!(CUSTOM_UNIT.contains("NotifyAccess=all"));
+        assert!(CUSTOM_UNIT.contains("Restart=on-failure"));
+        assert!(CUSTOM_UNIT.contains("StartLimitIntervalSec=30s"));
+        assert!(CUSTOM_UNIT.contains("StartLimitBurst=5"));
+        assert!(CUSTOM_UNIT.contains("KillMode=control-group"));
+        assert!(CUSTOM_UNIT.contains("EnvironmentFile=%t/rmac-lock-evidence/environment"));
+        assert!(CUSTOM_UNIT.contains("/rmac-evidence/rmac-lock-provider"));
+
+        assert!(FALLBACK_UNIT.contains("Type=notify"));
+        assert!(FALLBACK_UNIT.contains("NotifyAccess=all"));
+        assert!(FALLBACK_UNIT.contains("Restart=on-failure"));
+        assert!(FALLBACK_UNIT.contains("StartLimitIntervalSec=0"));
+        assert!(FALLBACK_UNIT.contains("/rmac/rmac-locker --config"));
+        assert!(FALLBACK_UNIT.contains("EnvironmentFile=%t/rmac-lock-evidence/environment"));
+
+        for unit in [CUSTOM_UNIT, FALLBACK_UNIT] {
+            assert!(!unit.contains("[Install]"));
+            assert!(!unit.contains("/bin/sh"));
+            assert!(!unit.contains("rmac-lock.service"));
+        }
+    }
+
+    #[test]
+    fn evidence_scripts_require_opt_in_nested_recovery_without_installing_it_normally() {
+        assert!(INSTALLER.contains("--features development-provider"));
+        assert!(INSTALLER.contains("at least 25 GiB free"));
+        assert!(INSTALLER.contains("no provider was started or enabled"));
+        assert!(!INSTALLER.contains("systemctl --user enable"));
+        assert!(!INSTALLER.contains("rmac-lock.service"));
+        assert!(!NORMAL_INSTALLER.contains("development-provider"));
+        assert!(!NORMAL_INSTALLER.contains("rmac-lock-provider-evidence"));
+
+        assert!(LAUNCHER.contains("/run/user/$(id -u)"));
+        assert!(LAUNCHER.contains("XDG_SESSION_ID"));
+        assert!(LAUNCHER.contains("rmac-lock-provider-evidence.service"));
+        assert!(NESTED_SWAY.contains("exec rmac-lock-provider-evidence-launch"));
+
+        assert!(RECOVERY_GATE.contains("NESTED-LOCK-RECOVERY"));
+        assert!(RECOVERY_GATE.contains("WLR_BACKENDS=wayland"));
+        assert!(RECOVERY_GATE.contains("--signal=KILL"));
+        assert!(RECOVERY_GATE.contains("rmac-lock-fallback-evidence.service"));
+        assert!(RECOVERY_GATE.contains("SetLockedHint b false"));
+        assert!(RECOVERY_GATE.contains("target/linux-evidence"));
+        assert!(RECOVERY_GATE.contains("custom_restart_count"));
+        assert!(!RECOVERY_GATE.contains("journalctl"));
+        assert!(!RECOVERY_GATE.contains("rmac-lock.service"));
+    }
+}

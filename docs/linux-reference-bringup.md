@@ -230,15 +230,70 @@ On a macOS cross-check, add `--target x86_64-unknown-linux-gnu` and prefix the
 command with `PAM_SYS_IMPL=linuxpam`. This proves the exact-session logind proxy,
 systemd notification wrapper, and binary compile; it is not live lock evidence.
 
+### Nested lock-provider recovery gate
+
+Do not run this gate until the normal swaylock session units work, a local outer
+terminal remains open, and you have separately proved that `Ctrl+Alt+F3` reaches
+a login TTY. Use a disposable test user. Review
+`crates/rmac-lock-provider-linux/pam/rmac-lock`, then install that exact policy
+as `/etc/pam.d/rmac-lock` through the reference machine's authorized packaging
+or administrator procedure; the repository scripts never write `/etc`.
+
+The evidence installer requires at least 25 GiB free before its scoped release
+build. It installs non-enabled evidence assets and does not change the normal
+lock unit:
+
+```sh
+bash scripts/linux/install-lock-provider-evidence.sh
+```
+
+From the local graphical test session, run the interactive nested test:
+
+```sh
+bash scripts/linux/run-lock-provider-recovery-gate.sh --execute
+```
+
+The script asks for the exact `NESTED-LOCK-RECOVERY` acknowledgement. It opens a
+nested Sway window, proves a ready custom provider restarts after `SIGKILL`, and
+then transfers the still-locked nested compositor to the swaylock evidence
+fallback. Enter the test user's password in that nested window. Success requires
+the fallback to exit normally after authentication. The trap stops evidence
+units, terminates nested Sway, clears the advisory test hint, and removes its
+private runtime files even on failure.
+
+The gate writes only timestamps, pass/fail state, and the numeric restart count
+to `target/linux-evidence/<timestamp>/lock-provider-recovery.txt`. It does not
+capture the user name, session ID, display name, PID, journal, PAM messages, or
+credential content. The nested-Sway log is kept only in the private runtime
+directory and removed by cleanup; inspect it locally before changing that
+policy during diagnosis.
+
+This gate does not prove niri behavior, physical output hotplug, suspend, PAM
+failure variants, or real red-screen key recovery. Before the later real-niri
+test, verify the generated `Mod+Ctrl+Q` binding has
+`allow-when-locked=true`. If the provider dies on the real locked session, use
+that binding to start the installed swaylock unit. From a TTY, the equivalent
+recovery is:
+
+```sh
+systemctl --user stop rmac-lock-provider-evidence.service
+systemctl --user start rmac-lock.service
+```
+
+Do not clear `LockedHint` or terminate niri as a substitute for authentication.
+Record unit `ActiveState`, `Result`, `MainPID`, and `NRestarts`, but review any
+journal or nested-Sway log before sharing it.
+
 Do not expose or invoke the crate-internal acquisition typestate ad hoc. Its
 first live run belongs in the dedicated nested-compositor/recovery procedure
 after the provider runtime, emergency TTY recovery, and kill/restart harness are
 in place. The feature-gated binary does not waive this requirement.
 
-Record the exact output. Do not install `pam/rmac-lock` into `/etc/pam.d` or run
-real authentication until the separate recovery-console procedure and test
-account are ready. When cross-checking Linux from macOS, prefix Cargo with
-`PAM_SYS_IMPL=linuxpam`; native Linux builds select Linux-PAM automatically.
+Record the exact output. Outside the reviewed nested procedure above, do not
+install `pam/rmac-lock` into `/etc/pam.d` or run real authentication until its
+recovery-console and disposable-test-account prerequisites are satisfied. When
+cross-checking Linux from macOS, prefix Cargo with `PAM_SYS_IMPL=linuxpam`;
+native Linux builds select Linux-PAM automatically.
 
 For the top-bar candidate, require exactly one 32-logical-pixel bar on every
 output at 100%, 125%, 150%, and 200%. Verify crisp rendering across a mixed-DPI

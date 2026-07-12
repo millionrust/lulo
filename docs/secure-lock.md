@@ -230,19 +230,41 @@ attempts `LockedHint=false`. Hint failure remains an advisory warning, while a
 readiness notification failure terminates the provider so systemd can restart
 it fail-closed. Status and errors contain no session ID or username.
 
-The Linux adapter still requires a separate reviewed unit and recovery harness,
-reviewed localized prompt/error text, and emergency recovery. Module-specific
-binary MFA UI, IME/accessibility support, and real niri/PAM evidence including
-the compiled fault tests also remain. The development feature is not built by
-the session installer and must not be launched ad hoc. Until the full matrix
-passes, the installed unit continues to run swaylock.
+The Linux adapter still requires Linux validation of its separate unit and
+recovery harness, reviewed localized prompt/error text, and emergency recovery.
+Module-specific binary MFA UI, IME/accessibility support, and real niri/PAM
+evidence including the compiled fault tests also remain. The development
+feature is not built by the session installer and must not be launched ad hoc.
+Until the full matrix passes, the installed unit continues to run swaylock.
+
+The first recovery harness is now repository-owned but remains opt-in. A
+separate installer builds only the feature-gated provider after checking for 25
+GiB of build headroom, requires the reviewed PAM policy and normal swaylock
+supervisor to exist, and installs two non-enabled evidence units under a
+distinct namespace. The custom unit has a five-start/30-second recovery budget;
+the fallback unit runs the accepted `rmac-locker` against the same nested
+display without a start limit. Neither unit replaces or aliases
+`rmac-lock.service`.
+
+The interactive gate creates a nested Sway compositor, passes its generated
+Wayland display through a private bounded environment file, waits for
+compositor-confirmed custom-provider readiness, sends `SIGKILL` to the provider,
+and proves systemd starts a new ready instance. It then stops the custom unit
+while the nested session remains locked and starts the swaylock fallback. The
+test succeeds only after the user authenticates in that fallback. Execution is
+refused for root, SSH sessions, nonstandard runtime directories, missing local
+session identity, missing assets, or absent interactive acknowledgement. Its
+exit trap stops both evidence units and the nested compositor, clears the
+advisory test hint, and removes its private runtime state. Static tests enforce
+these separation and recovery contracts; real Linux execution remains pending.
 
 ## Not complete yet
 
 - a reviewed Linux Wayland/PAM adapter, rmac lock presentation, and wallpaper;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;
-- killed-locker automatic recovery and the documented TTY/manual recovery path;
+- real killed-locker recovery evidence and the documented TTY/manual recovery
+  path;
 - delay-inhibitor timing and forced-suspend failure evidence;
 - accessibility and keyboard-layout evidence on the Linux reference PC.
 

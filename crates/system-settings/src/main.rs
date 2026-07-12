@@ -141,21 +141,9 @@ enum SubPage {
     About,
     SoftwareUpdate,
     Storage,
-    NotificationApp {
-        app_id: String,
-    },
-    FocusMode {
-        mode_id: String,
-    },
-    FocusSchedule {
-        schedule_id: String,
-    },
-    /// A generic placeholder detail page identified by its row label.
-    Placeholder {
-        icon: &'static str,
-        color: Hsla,
-        title: SharedString,
-    },
+    NotificationApp { app_id: String },
+    FocusMode { mode_id: String },
+    FocusSchedule { schedule_id: String },
 }
 
 /// Real, read-only macOS facts gathered after the first frame.
@@ -2534,7 +2522,7 @@ impl Settings {
                 "Displays" => self.render_displays(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
-                _ => self.render_generic(cx),
+                _ => self.render_generic(),
             }
         };
 
@@ -2591,36 +2579,12 @@ impl Settings {
         div().v_flex().child(self.render_hero()).children(cards)
     }
 
-    // ---- generic (read-only mockup) panes ----------------------------
+    // ---- generic unavailable panes -----------------------------------
 
-    fn render_generic(&self, cx: &Context<Self>) -> Div {
-        let view = cx.entity();
-        let cat = self.current();
-        let cards: Vec<Div> = cat
-            .cards
-            .iter()
-            .map(|rows| {
-                let rows: Vec<AnyElement> = rows
-                    .iter()
-                    .map(|r| {
-                        nav_row(
-                            view.clone(),
-                            r.icon,
-                            r.color,
-                            r.label.clone(),
-                            None,
-                            SubPage::Placeholder {
-                                icon: r.icon,
-                                color: r.color,
-                                title: r.label.clone(),
-                            },
-                        )
-                    })
-                    .collect();
-                card(rows)
-            })
-            .collect();
-        self.pane(cards)
+    fn render_generic(&self) -> Div {
+        self.pane(vec![note_card(
+            "This pane is unavailable in the current rmac build. It does not read or change system settings.",
+        )])
     }
 
     // ---- Wi-Fi --------------------------------------------------------
@@ -5302,21 +5266,6 @@ impl Settings {
                 "Schedule".into(),
                 self.focus_schedule_body(schedule_id, cx),
             ),
-            SubPage::Placeholder { icon, color, title } => (
-                title.clone(),
-                div()
-                    .v_flex()
-                    .child(card(vec![value_row(
-                        icon,
-                        *color,
-                        title.clone(),
-                        "Not implemented".into(),
-                    )]))
-                    .child(note_card(
-                        "This pane isn't built in rmac yet — it doesn't read or change \
-                         any real system setting.",
-                    )),
-            ),
         };
 
         let header = div()
@@ -6585,7 +6534,6 @@ fn categories() -> Vec<Vec<Category>> {
     let red = hsl(0xff3b30);
     let pink = hsl(0xff2d55);
     let indigo = hsl(0x5e5ce6);
-    let purple = hsl(0xaf52de);
     let teal = hsl(0x30b0c7);
 
     let row = |icon: &'static str, color: Hsla, label: &str| Row {
@@ -6667,13 +6615,6 @@ fn categories() -> Vec<Vec<Category>> {
                 vec![],
             ),
             cat(
-                "Assistant & Intelligence",
-                "icons/sparkles.svg",
-                purple,
-                "Configure supported local or connected assistant services.",
-                vec![],
-            ),
-            cat(
                 "Desktop & Dock",
                 "icons/app-window.svg",
                 gray,
@@ -6743,13 +6684,6 @@ fn categories() -> Vec<Vec<Category>> {
                 "icons/moon.svg",
                 indigo,
                 "Stay focused by silencing notifications.",
-                vec![],
-            ),
-            cat(
-                "Screen Time",
-                "icons/timer.svg",
-                indigo,
-                "Monitor usage and set limits.",
                 vec![],
             ),
         ],
@@ -6868,6 +6802,24 @@ mod tests {
             .map(|row| row.label.to_string())
             .collect::<Vec<_>>();
         assert_eq!(labels, ["About", "Software Update", "Storage"]);
+    }
+
+    #[test]
+    fn optional_unowned_panes_and_generic_clickable_rows_are_absent() {
+        let categories = categories().into_iter().flatten().collect::<Vec<_>>();
+        let names = categories
+            .iter()
+            .map(|category| category.name.to_string())
+            .collect::<Vec<_>>();
+        assert!(!names.iter().any(|name| name == "Assistant & Intelligence"));
+        assert!(!names.iter().any(|name| name == "Screen Time"));
+
+        let categories_with_rows = categories
+            .iter()
+            .filter(|category| !category.cards.is_empty())
+            .map(|category| category.name.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(categories_with_rows, ["General"]);
     }
 
     #[test]

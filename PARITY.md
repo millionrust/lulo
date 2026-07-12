@@ -27,8 +27,9 @@ evidence remains gated by the reference-PC framework work.
   local demo state, and all seven apps consume its live light/dark/accent/
   contrast/motion tokens. The Storage subpage reports real filesystem usage.
   General hides unimplemented Apple-only continuity, warranty, password,
-  startup-disk, and backup controls instead of persisting demo state; remaining
-  placeholder panes keep overall parity partial.
+  startup-disk, and backup controls instead of persisting demo state. Assistant
+  and Screen Time stay out of navigation, while required unfinished panes show
+  an explicit unavailable state; overall parity remains partial.
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).

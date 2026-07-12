@@ -22,7 +22,7 @@ equivalents rather than simulated.
 | Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
-| Assistant & Intelligence | Renamed placeholder | Optional local/provider integrations | Leave absent until a privacy design exists |
+| Assistant & Intelligence | Hidden from production navigation | Optional local/provider integrations | Leave absent until a privacy design exists |
 | Desktop & Dock | Placeholder | rmac shell and niri IPC | Dock, desktop, workspaces, window behavior |
 | Displays | Real layout plus transient mode, scale, and rotation controls | niri output IPC/Wayland | Persistent validated layouts, visual positioning, and live signals |
 | Spotlight | Placeholder | rmac-search | Sources, exclusions, indexing state, global shortcut |
@@ -31,7 +31,7 @@ equivalents rather than simulated.
 | Sound | Real devices, defaults, volume, and mute | PipeWire/WirePlumber | Live signals, routes, and per-channel balance |
 | Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
-| Screen Time | Placeholder | No service selected | Usage model only after a local-first privacy design |
+| Screen Time | Hidden from production navigation | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Real live lock and capability-gated automatic-suspend choices; truthful Hidden preview state; secure manual/logind/pre-sleep and idle paths | `org.rmac.LockScreen1`, provider security state machine, bounded action-free notification projection, logind `CanSuspend`/`Suspend(false)`, niri `ext-session-lock-v1`, PAM-enabled swaylock, and delay inhibitor | Reviewed Wayland/PAM adapter and rmac presentation, preview controls, scoped build, and Linux security/accessibility evidence |
 | Privacy & Security | Placeholder | Portals, polkit, package security sources | Permission visibility and supported security controls |
 
@@ -55,3 +55,9 @@ and `airplay_receiver` keys remain harmless unknown input for migration, are not
 loaded into UI state, and disappear on the next legitimate save. AppleCare,
 AutoFill, Startup Disk, and Time Machine rows are absent rather than mapped to
 generic clickable placeholders.
+
+Assistant & Intelligence and Screen Time are absent from sidebar and search
+navigation because neither has an accepted local-first privacy/service design.
+Required roadmap destinations that do not yet have a dedicated renderer show
+one explicit unavailable explanation; the old generic rows and clickable
+placeholder subpages have been removed.

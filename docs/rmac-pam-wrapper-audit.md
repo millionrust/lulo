@@ -133,7 +133,11 @@ presentation label—not response bytes. Tests cover invalid UTF-8 fallback,
 Unicode preservation, whitespace normalization, bidi-control removal,
 scalar-safe truncation, alpha-mask bounds, and diagnostic redaction. A
 Linux-only test requires installed fonts to shape, rasterize, cache, and redact
-a mixed-script prompt. Pointer tests cover exact submit/radio hit regions,
+a mixed-script prompt. The verified logind account label rejects unsafe or
+oversized identity instead of rewriting it, and is independently bounded,
+zeroized, redacted, and cached across prompt replacement. It supplies identity
+context but never enters the PAM conversation. Pointer tests cover exact
+submit/radio hit regions,
 non-finite/out-of-bounds rejection, drag-away cancellation, focus-loss
 cancellation, and redacted gesture diagnostics; emitted actions reuse the same
 single-use prompt editor as keyboard input. Caps Lock tests cover xkb locked

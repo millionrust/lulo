@@ -185,6 +185,16 @@ impl TextRaster {
             .checked_add(usize::try_from(local_x).ok()?)?;
         self.alpha.get(index).copied()
     }
+
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn origin_y(&self) -> i64 {
+        self.origin_y
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    pub(crate) fn bottom(&self) -> i64 {
+        self.origin_y.saturating_add(i64::from(self.height))
+    }
 }
 
 impl fmt::Debug for TextRaster {
@@ -249,7 +259,8 @@ pub fn paint_lock_frame(
     layout: BufferLayout,
     palette: LockPalette,
     visual: LockVisualState,
-    text: Option<&TextRaster>,
+    account_text: Option<&TextRaster>,
+    prompt_text: Option<&TextRaster>,
 ) -> io::Result<()> {
     let width = layout.width();
     let height = layout.height();
@@ -268,7 +279,8 @@ pub fn paint_lock_frame(
                     layout.scale(),
                     palette,
                     visual,
-                    text,
+                    account_text,
+                    prompt_text,
                 );
                 let offset = index * 4;
                 chunk[offset..offset + 4].copy_from_slice(&pixel.argb8888());
@@ -289,7 +301,8 @@ fn paint_pixel(
     scale: u32,
     palette: LockPalette,
     visual: LockVisualState,
-    text: Option<&TextRaster>,
+    account_text: Option<&TextRaster>,
+    prompt_text: Option<&TextRaster>,
 ) -> Rgb {
     let denominator = height.saturating_sub(1).max(1);
     let mut color = palette
@@ -380,8 +393,10 @@ fn paint_pixel(
         visual.prompt,
     );
 
-    if let Some(alpha) = text.and_then(|raster| raster.alpha_at(i64::from(x), i64::from(y))) {
-        color = color.blend(palette.panel, alpha);
+    for text in [account_text, prompt_text].into_iter().flatten() {
+        if let Some(alpha) = text.alpha_at(i64::from(x), i64::from(y)) {
+            color = color.blend(palette.panel, alpha);
+        }
     }
 
     color
@@ -501,6 +516,7 @@ mod tests {
             LockPalette::MIDNIGHT,
             LockVisualState::default(),
             None,
+            None,
         )
         .unwrap();
         paint_lock_frame(
@@ -508,6 +524,7 @@ mod tests {
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::default(),
+            None,
             None,
         )
         .unwrap();
@@ -532,6 +549,7 @@ mod tests {
             LockPalette::MIDNIGHT,
             LockVisualState::new(PromptVisual::secret(9), false),
             None,
+            None,
         )
         .unwrap();
         paint_lock_frame(
@@ -539,6 +557,7 @@ mod tests {
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::new(PromptVisual::Hidden, true),
+            None,
             None,
         )
         .unwrap();
@@ -548,6 +567,7 @@ mod tests {
             LockPalette::MIDNIGHT,
             LockVisualState::new(PromptVisual::secret(9), false).with_caps_lock(true),
             None,
+            None,
         )
         .unwrap();
         paint_lock_frame(
@@ -556,6 +576,7 @@ mod tests {
             LockPalette::MIDNIGHT,
             LockVisualState::default(),
             None,
+            None,
         )
         .unwrap();
         paint_lock_frame(
@@ -563,6 +584,7 @@ mod tests {
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::default().with_caps_lock(true),
+            None,
             None,
         )
         .unwrap();
@@ -589,6 +611,7 @@ mod tests {
                 LockPalette::MIDNIGHT,
                 LockVisualState::default(),
                 None,
+                None,
             )
             .unwrap_err()
             .kind(),
@@ -600,26 +623,41 @@ mod tests {
     fn bounded_text_raster_blends_without_exposing_pixels_to_debug() {
         let layout = layout(64, 64, 1);
         let mut plain = Vec::new();
-        let mut labelled = Vec::new();
-        let raster = TextRaster::new(30, 30, 2, 2, vec![255; 4]).unwrap();
+        let mut account_only = Vec::new();
+        let mut both = Vec::new();
+        let account = TextRaster::new(30, 30, 2, 2, vec![255; 4]).unwrap();
+        let prompt = TextRaster::new(40, 40, 2, 2, vec![255; 4]).unwrap();
         paint_lock_frame(
             &mut plain,
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::default(),
             None,
+            None,
         )
         .unwrap();
         paint_lock_frame(
-            &mut labelled,
+            &mut account_only,
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::default(),
-            Some(&raster),
+            Some(&account),
+            None,
         )
         .unwrap();
-        assert_ne!(plain, labelled);
-        assert_eq!(format!("{raster:?}"), "TextRaster(<redacted>)");
+        paint_lock_frame(
+            &mut both,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::default(),
+            Some(&account),
+            Some(&prompt),
+        )
+        .unwrap();
+        assert_ne!(plain, account_only);
+        assert_ne!(account_only, both);
+        assert_eq!(format!("{account:?}"), "TextRaster(<redacted>)");
+        assert_eq!(format!("{prompt:?}"), "TextRaster(<redacted>)");
         assert_eq!(
             TextRaster::new(0, 0, 2, 2, vec![0; 3]),
             Err(TextRasterError::InvalidDimensions)

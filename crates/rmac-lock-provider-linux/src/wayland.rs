@@ -33,7 +33,7 @@ use crate::key_repeat::RepeatScheduler;
 use crate::keyboard::DecodedKey;
 use crate::paint::{LockPalette, LockVisualState};
 use crate::pointer::{hit_test, PointerGesture, PointerTarget};
-use crate::prompt_label::PromptText;
+use crate::prompt_label::{AccountLabel, PromptText};
 use crate::registry_probe;
 use crate::shm::{Error as ShmError, ShmFrame};
 use crate::surface::{BufferId, Error as SurfaceError, SurfaceSet};
@@ -166,7 +166,11 @@ impl PreparedConnection {
     /// Internal typestate transition. It is intentionally unavailable outside
     /// this crate until the provider runtime owns recovery and authentication.
     #[allow(dead_code)]
-    pub(crate) fn acquire_for_runtime(mut self) -> Result<LockConnection, WireError> {
+    pub(crate) fn acquire_for_runtime(
+        mut self,
+        account: AccountLabel,
+    ) -> Result<LockConnection, WireError> {
+        self.state.text_renderer.set_account(account);
         let queue_handle = self.event_queue.handle();
         self.state.begin_lock(&queue_handle)?;
         self.event_queue.flush().map_err(WireError::Flush)?;
@@ -1003,7 +1007,7 @@ impl PreparedState {
             .as_ref()
             .map(|locking| locking.visual)
             .unwrap_or_default();
-        let text = match self.text_renderer.raster(plan.layout()) {
+        let text = match self.text_renderer.rasters(plan.layout()) {
             Ok(text) => text,
             Err(error) => {
                 self.surfaces
@@ -1012,7 +1016,13 @@ impl PreparedState {
                 return Err(WireError::Text(error));
             }
         };
-        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT, visual, text.as_ref()) {
+        let frame = match ShmFrame::paint(
+            &plan,
+            LockPalette::MIDNIGHT,
+            visual,
+            text.account(),
+            text.prompt(),
+        ) {
             Ok(frame) => frame,
             Err(error) => {
                 self.surfaces

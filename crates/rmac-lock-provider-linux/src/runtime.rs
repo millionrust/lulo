@@ -17,7 +17,7 @@ use crate::paint::{LockVisualState, PromptVisual};
 use crate::pam_broker::PendingPrompt;
 use crate::pam_conversation::RequestKind;
 #[cfg(any(target_os = "linux", test))]
-use crate::prompt_label::PromptText;
+use crate::prompt_label::{AccountLabel, PromptText};
 
 const MAX_QUEUED_INPUTS: usize = 32;
 #[cfg(any(target_os = "linux", test))]
@@ -28,6 +28,7 @@ pub(crate) fn valid_username(username: &str) -> bool {
     !username.is_empty()
         && username.len() <= MAX_USERNAME_BYTES
         && !username.as_bytes().contains(&0)
+        && AccountLabel::new(username).is_ok()
 }
 
 pub struct Coordinator {
@@ -484,8 +485,11 @@ pub(crate) mod linux {
             if !valid_username(&username) {
                 return Err(LinuxError::InvalidUsername);
             }
+            let account = AccountLabel::new(&username).map_err(|_| LinuxError::InvalidUsername)?;
             let prepared = PreparedConnection::connect().map_err(LinuxError::Prepare)?;
-            let wire = prepared.acquire_for_runtime().map_err(LinuxError::Wire)?;
+            let wire = prepared
+                .acquire_for_runtime(account)
+                .map_err(LinuxError::Wire)?;
             Ok(Self {
                 coordinator: Coordinator::new(),
                 wire,
@@ -741,6 +745,10 @@ mod tests {
         assert!(valid_username("user"));
         assert!(!valid_username(""));
         assert!(!valid_username("bad\0name"));
+        assert!(!valid_username(" \n\u{202e} "));
+        assert!(!valid_username(
+            &"x".repeat(crate::prompt_label::MAX_ACCOUNT_LABEL_BYTES + 1)
+        ));
         assert!(!valid_username(&"x".repeat(MAX_USERNAME_BYTES + 1)));
     }
 

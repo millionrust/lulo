@@ -243,14 +243,25 @@ nor raster pixels. Credential response bytes never enter this path.
 
 Linux shapes the label with exact `cosmic-text` 0.14.2 against installed Inter
 and Unicode fallback fonts before blending only its alpha mask into the sealed
-frame. Font discovery begins while the Wayland connection is prepared, before
-the session-lock request. A prompt-identity cache avoids reshaping on every
-password dot; at most eight layout variants of at most 2 MiB each survive, and
-the glyph cache resets for every new prompt. Failure to rasterize any glyph is
-a wire failure, not a silently unreadable authentication UI. The existing
+frame. The exact logind account name is also presented so the person knows
+which session PAM will authenticate. It must already be nonempty, free of
+whitespace normalization, controls, and bidi directives, and at most 128 bytes;
+unsafe or oversized names are rejected before Wayland can lock rather than
+being transformed into a misleading identity. The admitted value is zeroized
+on drop and redacted from diagnostics. This is an intentional physical-screen
+disclosure of the exact login name, not the full name, session ID, UID, or other
+account metadata.
+
+Font discovery begins while the Wayland connection is prepared, before the
+session-lock request. The account raster is cached independently while prompt
+identity avoids reshaping on every password dot; one shared eight-entry cache
+keeps every layout raster at or below 2 MiB. The account sits between the avatar
+and input field while changing PAM guidance appears below the field. The glyph
+cache resets for every new prompt. Failure to rasterize either required label
+is a wire failure, not a silently unreadable authentication UI. The existing
 capped indicators and generic shapes remain as secondary state cues. Every
-configured output repaints when state or label identity changes, while a
-rendered label still has no authority to unlock or declare secure readiness.
+configured output repaints when state or label identity changes, while rendered
+text still has no authority to unlock or declare secure readiness.
 
 An opt-in `development-provider` feature now supplies the uninstalled
 `rmac-lock-provider` process used by the future recovery/evidence harness. It

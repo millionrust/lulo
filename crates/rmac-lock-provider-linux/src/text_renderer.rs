@@ -9,7 +9,7 @@ use cosmic_text::{
 };
 
 use crate::paint::{TextRaster, TextRasterError};
-use crate::prompt_label::{PromptKey, PromptLabel, PromptText};
+use crate::prompt_label::{AccountLabel, PromptKey, PromptLabel, PromptText};
 use crate::surface::BufferLayout;
 
 const MAX_CACHED_RASTERS: usize = 8;
@@ -17,8 +17,9 @@ const MAX_CACHED_RASTERS: usize = 8;
 pub(crate) struct LockTextRenderer {
     font_system: FontSystem,
     swash_cache: SwashCache,
-    label: Option<PromptLabel>,
-    rasters: VecDeque<(RasterKey, TextRaster)>,
+    account: Option<AccountLabel>,
+    prompt: Option<PromptLabel>,
+    rasters: VecDeque<(TextRole, RasterKey, TextRaster)>,
 }
 
 impl Default for LockTextRenderer {
@@ -28,13 +29,20 @@ impl Default for LockTextRenderer {
             // prepared, before the compositor receives a lock request.
             font_system: FontSystem::new(),
             swash_cache: SwashCache::new(),
-            label: None,
+            account: None,
+            prompt: None,
             rasters: VecDeque::new(),
         }
     }
 }
 
 impl LockTextRenderer {
+    pub(crate) fn set_account(&mut self, account: AccountLabel) {
+        self.account = Some(account);
+        self.rasters
+            .retain(|(role, _, _)| *role != TextRole::Account);
+    }
+
     pub(crate) fn update(
         &mut self,
         prompt: Option<PromptText<'_>>,
@@ -43,23 +51,35 @@ impl LockTextRenderer {
         let desired_key = prompt
             .map(PromptText::key)
             .or_else(|| authentication_failed.then_some(PromptKey::AuthenticationFailure));
-        if self.label.as_ref().map(PromptLabel::key) == desired_key {
+        if self.prompt.as_ref().map(PromptLabel::key) == desired_key {
             return false;
         }
-        self.label = prompt
+        self.prompt = prompt
             .map(PromptLabel::from_prompt)
             .or_else(|| authentication_failed.then(PromptLabel::authentication_failure));
         self.swash_cache = SwashCache::new();
-        self.rasters.clear();
+        self.rasters
+            .retain(|(role, _, _)| *role != TextRole::Prompt);
         true
     }
 
-    pub(crate) fn raster(&mut self, layout: BufferLayout) -> Result<Option<TextRaster>, Error> {
-        let Some(label) = self.label.as_ref() else {
+    pub(crate) fn rasters(&mut self, layout: BufferLayout) -> Result<LockTextRasters, Error> {
+        Ok(LockTextRasters {
+            account: self.account_raster(layout)?,
+            prompt: self.prompt_raster(layout)?,
+        })
+    }
+
+    fn account_raster(&mut self, layout: BufferLayout) -> Result<Option<TextRaster>, Error> {
+        let Some(label) = self.account.as_ref() else {
             return Ok(None);
         };
         let key = RasterKey::new(layout);
-        if let Some((_, raster)) = self.rasters.iter().find(|(candidate, _)| *candidate == key) {
+        if let Some((_, _, raster)) = self
+            .rasters
+            .iter()
+            .find(|(role, candidate, _)| *role == TextRole::Account && *candidate == key)
+        {
             return Ok(Some(raster.clone()));
         }
 
@@ -68,16 +88,68 @@ impl LockTextRenderer {
             let swash_cache = &mut self.swash_cache;
             label.expose(|text| {
                 catch_unwind(AssertUnwindSafe(|| {
-                    rasterize(font_system, swash_cache, layout, text)
+                    rasterize(font_system, swash_cache, layout, text, TextRole::Account)
                 }))
                 .map_err(|_| Error::Panicked)?
             })
         }?;
+        self.cache(TextRole::Account, key, result.clone());
+        Ok(Some(result))
+    }
+
+    fn prompt_raster(&mut self, layout: BufferLayout) -> Result<Option<TextRaster>, Error> {
+        let Some(label) = self.prompt.as_ref() else {
+            return Ok(None);
+        };
+        let key = RasterKey::new(layout);
+        if let Some((_, _, raster)) = self
+            .rasters
+            .iter()
+            .find(|(role, candidate, _)| *role == TextRole::Prompt && *candidate == key)
+        {
+            return Ok(Some(raster.clone()));
+        }
+
+        let result = {
+            let font_system = &mut self.font_system;
+            let swash_cache = &mut self.swash_cache;
+            label.expose(|text| {
+                catch_unwind(AssertUnwindSafe(|| {
+                    rasterize(font_system, swash_cache, layout, text, TextRole::Prompt)
+                }))
+                .map_err(|_| Error::Panicked)?
+            })
+        }?;
+        self.cache(TextRole::Prompt, key, result.clone());
+        Ok(Some(result))
+    }
+
+    fn cache(&mut self, role: TextRole, key: RasterKey, raster: TextRaster) {
         if self.rasters.len() >= MAX_CACHED_RASTERS {
             self.rasters.pop_front();
         }
-        self.rasters.push_back((key, result.clone()));
-        Ok(Some(result))
+        self.rasters.push_back((role, key, raster));
+    }
+}
+
+pub(crate) struct LockTextRasters {
+    account: Option<TextRaster>,
+    prompt: Option<TextRaster>,
+}
+
+impl LockTextRasters {
+    pub(crate) fn account(&self) -> Option<&TextRaster> {
+        self.account.as_ref()
+    }
+
+    pub(crate) fn prompt(&self) -> Option<&TextRaster> {
+        self.prompt.as_ref()
+    }
+}
+
+impl fmt::Debug for LockTextRasters {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("LockTextRasters(<redacted>)")
     }
 }
 
@@ -92,6 +164,12 @@ struct RasterKey {
     width: u32,
     height: u32,
     scale: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TextRole {
+    Account,
+    Prompt,
 }
 
 impl RasterKey {
@@ -109,6 +187,7 @@ fn rasterize(
     swash_cache: &mut SwashCache,
     layout: BufferLayout,
     text: &str,
+    role: TextRole,
 ) -> Result<TextRaster, Error> {
     let scale = layout.scale();
     let width = layout
@@ -116,7 +195,11 @@ fn rasterize(
         .saturating_sub(48_u32.saturating_mul(scale))
         .max(1)
         .min(560_u32.saturating_mul(scale));
-    let height = layout.height().max(1).min(56_u32.saturating_mul(scale));
+    let logical_height = match role {
+        TextRole::Account => 40,
+        TextRole::Prompt => 56,
+    };
+    let height = layout.height().max(1).min(logical_height * scale);
     let length = usize::try_from(width)
         .ok()
         .and_then(|width| {
@@ -128,7 +211,11 @@ fn rasterize(
     let mut alpha = vec![0_u8; length];
 
     let scale = scale as f32;
-    let metrics = Metrics::new(18.0 * scale, 26.0 * scale);
+    let (font_size, line_height) = match role {
+        TextRole::Account => (20.0, 28.0),
+        TextRole::Prompt => (18.0, 26.0),
+    };
+    let metrics = Metrics::new(font_size * scale, line_height * scale);
     let mut buffer = Buffer::new(font_system, metrics);
     buffer.set_size(font_system, Some(width as f32), Some(height as f32));
     buffer.set_wrap(font_system, Wrap::WordOrGlyph);
@@ -183,11 +270,16 @@ fn rasterize(
     }
 
     let origin_x = i64::from(layout.width().saturating_sub(width) / 2);
-    let panel_center_y = u64::from(layout.height()) * 58 / 100;
-    let label_bottom_gap = u64::from(34_u32.saturating_mul(layout.scale()));
-    let origin_y = panel_center_y
-        .saturating_sub(label_bottom_gap)
-        .saturating_sub(u64::from(height)) as i64;
+    let origin_y = match role {
+        TextRole::Account => {
+            let center = u64::from(layout.height()) * 51 / 100;
+            center.saturating_sub(u64::from(height) / 2) as i64
+        }
+        TextRole::Prompt => {
+            let panel_center = u64::from(layout.height()) * 58 / 100;
+            panel_center.saturating_add(u64::from(32 * layout.scale())) as i64
+        }
+    };
     TextRaster::new(origin_x, origin_y, width, height, alpha).map_err(Error::Raster)
 }
 
@@ -233,16 +325,32 @@ mod tests {
         let prompt = pending.prompt();
         prompt.text(|text| {
             let mut renderer = LockTextRenderer::default();
+            renderer.set_account(AccountLabel::new("jacob").unwrap());
             assert!(renderer.update(
                 Some(PromptText::new(prompt.id(), prompt.kind(), text)),
                 false,
             ));
-            let first = renderer.raster(layout()).unwrap().unwrap();
-            let second = renderer.raster(layout()).unwrap().unwrap();
-            assert_eq!(first, second);
-            assert_eq!(renderer.rasters.len(), 1);
+            let first = renderer.rasters(layout()).unwrap();
+            let second = renderer.rasters(layout()).unwrap();
+            assert_eq!(first.account(), second.account());
+            assert_eq!(first.prompt(), second.prompt());
+            assert_ne!(first.account(), first.prompt());
+            let panel_center = i64::from(layout().height()) * 58 / 100;
+            assert!(first.account().unwrap().origin_y() > 0);
+            assert!(first.account().unwrap().bottom() < panel_center);
+            assert!(first.prompt().unwrap().origin_y() > panel_center);
+            assert_eq!(renderer.rasters.len(), 2);
+            assert!(renderer.update(None, true));
+            let failure = renderer.rasters(layout()).unwrap();
+            assert_eq!(first.account(), failure.account());
+            assert_ne!(first.prompt(), failure.prompt());
+            assert_eq!(renderer.rasters.len(), 2);
             assert_eq!(format!("{renderer:?}"), "LockTextRenderer(<redacted>)");
-            assert_eq!(format!("{first:?}"), "TextRaster(<redacted>)");
+            assert_eq!(format!("{first:?}"), "LockTextRasters(<redacted>)");
+            assert_eq!(
+                format!("{:?}", first.account().unwrap()),
+                "TextRaster(<redacted>)"
+            );
         });
     }
 }

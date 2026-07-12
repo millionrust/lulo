@@ -159,10 +159,13 @@ Only the checked presentation label reaches shaping: valid UTF-8, normalized
 whitespace, no bidi controls, a 256-byte scalar-boundary cap, style fallback for
 invalid/empty text, drop zeroization, and redacted diagnostics. Response and
 credential bytes never enter the shaper. The prompt glyph cache is replaced for
-every prompt identity, layout masks are capped at eight entries and 2 MiB each,
-and an empty raster fails the provider wire. System font parsing, actual Inter
-selection, Unicode fallback, integer-scale quality, memory, and latency remain
-Linux evidence gates.
+every prompt identity. The verified logind account name uses the same safety
+classifier but must already be normalized and no longer than 128 bytes; it is
+never truncated or rewritten into a potentially ambiguous identity. It has a
+separate stable layout role. Both roles share eight cache entries, every mask
+remains capped at 2 MiB, and an empty raster fails the provider wire. System
+font parsing, actual Inter selection, Unicode fallback, integer-scale quality,
+memory, and latency remain Linux evidence gates.
 
 ## Development process boundary
 

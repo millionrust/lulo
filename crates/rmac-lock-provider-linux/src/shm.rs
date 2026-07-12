@@ -21,7 +21,8 @@ impl ShmFrame {
         plan: &RenderPlan,
         palette: LockPalette,
         visual: LockVisualState,
-        text: Option<&TextRaster>,
+        account_text: Option<&TextRaster>,
+        prompt_text: Option<&TextRaster>,
     ) -> Result<Self, Error> {
         let layout = plan.layout();
         let fd = memfd_create(
@@ -33,7 +34,15 @@ impl ShmFrame {
         let file = File::from(fd);
         {
             let mut writer = BufWriter::with_capacity(64 * 1024, &file);
-            paint_lock_frame(&mut writer, layout, palette, visual, text).map_err(Error::Paint)?;
+            paint_lock_frame(
+                &mut writer,
+                layout,
+                palette,
+                visual,
+                account_text,
+                prompt_text,
+            )
+            .map_err(Error::Paint)?;
             writer.flush().map_err(Error::Paint)?;
         }
         fcntl_add_seals(

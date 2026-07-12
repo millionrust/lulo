@@ -170,6 +170,17 @@ the sealed frame. Prompt identity avoids work on password edits; glyph state
 resets per prompt and at most eight 2 MiB layout masks are retained. Diagnostics
 redact label, identity, state values, and pixels. Raster failure is fail-closed.
 
+The lock presentation identifies the exact logind login name whose PAM account
+is being authenticated. That value is admitted only after session UID
+verification and only when the exact name is nonempty, already normalized,
+free of controls and bidi directives, and no more than 128 bytes. Unsafe or
+oversized input fails before lock acquisition rather than being transformed.
+The value is zeroized on drop and never included in diagnostics. The account
+label and changing PAM label occupy
+separate layout roles but share the same eight-raster cap; prompt replacement
+retains the stable account raster. No full name, UID, or session identifier is
+rendered.
+
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,
 suspend/resume, renderer failure, provider crash, accessibility, and emergency

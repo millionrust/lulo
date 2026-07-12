@@ -214,7 +214,11 @@ does not issue a lock request. It also runs the portable runtime coordinator
 and redacted visual-state/painting tests; Linux-only tests compile the pump,
 reject invalid usernames before a Wayland connection is attempted, and—with
 `fonts-inter` installed—shape, rasterize, cache, and redact a mixed-script PAM
-prompt. Portable tests also cover pointer hit regions and gesture cancellation;
+prompt plus the verified account identity. On every configured output, confirm
+the login name appears between the avatar and input field, PAM guidance appears
+below the field, neither overlaps at integer scales 1–4, and neither value
+appears in provider diagnostics. Portable tests also cover pointer hit regions
+and gesture cancellation;
 the live matrix must click submit, select both radio choices, drag out of a
 pressed target, remove pointer capability, and hot-unplug the focused output.
 It must also toggle Caps Lock on focused US and non-US layouts, move focus

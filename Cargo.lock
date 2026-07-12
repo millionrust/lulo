@@ -5315,6 +5315,8 @@ dependencies = [
  "rmac-display",
  "rmac-input",
  "rmac-network",
+ "rmac-notifications-linux",
+ "rmac-notifications-store",
  "rmac-power",
  "rmac-storage",
  "rmac-theme",

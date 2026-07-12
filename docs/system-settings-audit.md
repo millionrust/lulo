@@ -27,7 +27,7 @@ equivalents rather than simulated.
 | Displays | Real layout plus transient mode, scale, and rotation controls | niri output IPC/Wayland | Persistent validated layouts, visual positioning, and live signals |
 | Spotlight | Placeholder | rmac-search | Sources, exclusions, indexing state, global shortcut |
 | Wallpaper | Placeholder | rmac shell | Per-output wallpaper selection and persistence |
-| Notifications | Placeholder | Notification portal/daemon | Per-app policy, previews, badges, do-not-disturb |
+| Notifications | Real service-backed app list plus allow/block, top-bar badge, and history controls with busy/error/authoritative refresh | `org.rmac.NotificationCenter1` | Live policy-change subscription, app-name/icon resolution, banner/sound UI after presentation exists, lock previews after secure lock, and Linux evidence |
 | Sound | Real devices, defaults, volume, and mute | PipeWire/WirePlumber | Live signals, routes, and per-channel balance |
 | Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
 | Focus | Placeholder | rmac notification service | Modes, schedules, shell indicator |

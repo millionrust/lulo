@@ -141,6 +141,9 @@ enum SubPage {
     About,
     SoftwareUpdate,
     Storage,
+    NotificationApp {
+        app_id: String,
+    },
     /// A generic placeholder detail page identified by its row label.
     Placeholder {
         icon: &'static str,
@@ -196,6 +199,12 @@ struct Settings {
     display_error: Option<SharedString>,
     input_error: Option<SharedString>,
     theme_error: Option<SharedString>,
+    notification_error: Option<SharedString>,
+
+    // Notifications
+    notifications_loading: bool,
+    notification_busy: Option<String>,
+    notification_apps: Vec<rmac_notifications_linux::center::ApplicationPolicy>,
 
     // Network
     network_loading: bool,
@@ -294,6 +303,25 @@ enum ThemeChange {
     Accent(rmac_theme::AccentPreference),
     Contrast(rmac_theme::ContrastPreference),
     Motion(rmac_theme::MotionPreferenceSetting),
+}
+
+#[derive(Clone, Copy)]
+enum NotificationPolicyChange {
+    Enabled(bool),
+    Badges(bool),
+    History(bool),
+}
+
+fn notification_policy_with(
+    mut policy: rmac_notifications_store::AppPolicy,
+    change: NotificationPolicyChange,
+) -> rmac_notifications_store::AppPolicy {
+    match change {
+        NotificationPolicyChange::Enabled(value) => policy.enabled = value,
+        NotificationPolicyChange::Badges(value) => policy.badges = value,
+        NotificationPolicyChange::History(value) => policy.history = value,
+    }
+    policy
 }
 
 #[derive(Clone)]
@@ -741,6 +769,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_notifications_linux::center::applications() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_notifications_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             account: std::env::var("USER")
@@ -770,6 +810,11 @@ impl Settings {
             display_error: None,
             input_error: None,
             theme_error: None,
+            notification_error: None,
+
+            notifications_loading: true,
+            notification_busy: None,
+            notification_apps: Vec::new(),
 
             network_loading: true,
             network_busy: false,
@@ -1282,6 +1327,97 @@ impl Settings {
                 self.theme_error = Some(format!("Could not update Appearance: {error}").into());
             }
         }
+    }
+
+    fn finish_notifications_update(
+        &mut self,
+        result: std::result::Result<
+            Vec<rmac_notifications_linux::center::ApplicationPolicy>,
+            rmac_notifications_linux::center::Error,
+        >,
+    ) {
+        self.notifications_loading = false;
+        self.notification_busy = None;
+        match result {
+            Ok(applications) => {
+                self.notification_apps = applications;
+                self.notification_error = None;
+            }
+            Err(error) => {
+                self.notification_error =
+                    Some(format!("Could not update Notifications: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_notifications(&mut self, cx: &mut Context<Self>) {
+        if self.notifications_loading || self.notification_busy.is_some() {
+            return;
+        }
+        self.notifications_loading = true;
+        self.notification_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_notifications_linux::center::applications() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_notifications_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn apply_notification_policy(
+        &mut self,
+        app_id: String,
+        change: NotificationPolicyChange,
+        cx: &mut Context<Self>,
+    ) {
+        if self.notifications_loading || self.notification_busy.is_some() {
+            return;
+        }
+        let Some(application) = self
+            .notification_apps
+            .iter()
+            .find(|application| application.app_id == app_id)
+        else {
+            self.notification_error = Some("That application is no longer available.".into());
+            cx.notify();
+            return;
+        };
+        let policy = notification_policy_with(application.policy, change);
+        self.notification_busy = Some(app_id.clone());
+        self.notification_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (mutation, applications) = cx
+                .background_executor()
+                .spawn(async move {
+                    let mutation = rmac_notifications_linux::center::set_policy(&app_id, policy);
+                    let applications = rmac_notifications_linux::center::applications();
+                    (mutation, applications)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.notification_busy = None;
+                let refresh_error = match applications {
+                    Ok(applications) => {
+                        this.notification_apps = applications;
+                        None
+                    }
+                    Err(error) => Some(format!("Could not refresh Notifications: {error}").into()),
+                };
+                this.notification_error = mutation
+                    .err()
+                    .map(|error| format!("Could not change Notifications: {error}").into())
+                    .or(refresh_error);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn refresh_theme(&mut self, cx: &mut Context<Self>) {
@@ -1810,6 +1946,7 @@ impl Settings {
                 "Bluetooth" => self.render_bluetooth(cx),
                 "General" => self.render_general(cx),
                 "Appearance" => self.render_appearance(cx),
+                "Notifications" => self.render_notifications(cx),
                 "Sound" => self.render_sound(cx),
                 "Keyboard" => self.render_keyboard(cx),
                 "Mouse" => self.render_mouse(cx),
@@ -2512,6 +2649,142 @@ impl Settings {
             ));
         }
         self.pane(cards)
+    }
+
+    // ---- Notifications ------------------------------------------------
+
+    fn render_notifications(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let mut cards = Vec::new();
+        let refresh_view = view.clone();
+        cards.push(
+            div().flex().justify_end().mb_2().child(
+                div()
+                    .id("notifications-refresh")
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.0))
+                    .text_size(px(12.0))
+                    .text_color(accent())
+                    .when(!self.notifications_loading, |button| {
+                        button
+                            .cursor_pointer()
+                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                            .on_click(move |_, _, cx| {
+                                refresh_view
+                                    .update(cx, |settings, cx| settings.refresh_notifications(cx));
+                            })
+                    })
+                    .child(if self.notifications_loading {
+                        "Loading…"
+                    } else {
+                        "Refresh"
+                    }),
+            ),
+        );
+        if self.notifications_loading {
+            cards.push(
+                div()
+                    .mb_3()
+                    .child(Progress::indeterminate().label("Loading notification settings…")),
+            );
+        }
+        if let Some(error) = &self.notification_error {
+            cards.push(note_card(error.clone()));
+        }
+        if !self.notifications_loading {
+            let rows = if self.notification_apps.is_empty() {
+                vec![EmptyState::new("No applications yet")
+                    .message("Applications appear after they send a notification")
+                    .into_any_element()]
+            } else {
+                self.notification_apps
+                    .iter()
+                    .map(|application| {
+                        let value = if application.policy.enabled {
+                            "On"
+                        } else {
+                            "Off"
+                        };
+                        nav_row(
+                            view.clone(),
+                            "icons/bell.svg",
+                            if application.policy.enabled {
+                                accent()
+                            } else {
+                                secondary()
+                            },
+                            application.app_id.clone().into(),
+                            Some(value.into()),
+                            SubPage::NotificationApp {
+                                app_id: application.app_id.clone(),
+                            },
+                        )
+                    })
+                    .collect()
+            };
+            cards.push(card(rows));
+        }
+        self.pane(cards)
+    }
+
+    fn notification_app_body(&self, app_id: &str, cx: &Context<Self>) -> Div {
+        let Some(application) = self
+            .notification_apps
+            .iter()
+            .find(|application| application.app_id == app_id)
+        else {
+            return note_card("This application is no longer in Notification Center.");
+        };
+        let view = cx.entity();
+        let policy = application.policy;
+        let busy = self.notification_busy.as_deref() == Some(app_id);
+        let mut body = div().v_flex();
+        if busy {
+            body = body.child(
+                Progress::indeterminate()
+                    .label("Applying notification policy…")
+                    .mb_3(),
+            );
+        }
+        if let Some(error) = &self.notification_error {
+            body = body.child(note_card(error.clone()));
+        }
+        body.child(card(vec![
+            notification_toggle_row(
+                &view,
+                app_id,
+                "enabled",
+                "Allow notifications",
+                Some("Blocks banners, sounds, badges, and history when off"),
+                policy.enabled,
+                busy,
+                NotificationPolicyChange::Enabled,
+            ),
+            notification_toggle_row(
+                &view,
+                app_id,
+                "badges",
+                "Badge indicator",
+                Some("Count unread notifications in the top bar"),
+                policy.badges,
+                busy || !policy.enabled,
+                NotificationPolicyChange::Badges,
+            ),
+            notification_toggle_row(
+                &view,
+                app_id,
+                "history",
+                "Notification Center history",
+                Some("Turning this off immediately removes saved history"),
+                policy.history,
+                busy || !policy.enabled,
+                NotificationPolicyChange::History,
+            ),
+        ]))
+        .child(note_card(
+            "Banner, sound, Focus-bypass, and lock-screen controls stay hidden until their presentation and secure-lock adapters are active.",
+        ))
     }
 
     // ---- Sound --------------------------------------------------------
@@ -3844,7 +4117,7 @@ impl Settings {
 
     // ---- subpages -----------------------------------------------------
 
-    fn render_subpage(&self, sub: &SubPage, _cx: &Context<Self>) -> Div {
+    fn render_subpage(&self, sub: &SubPage, cx: &Context<Self>) -> Div {
         let (title, body): (SharedString, Div) = match sub {
             SubPage::About => ("About".into(), self.about_body()),
             SubPage::SoftwareUpdate => (
@@ -3862,6 +4135,10 @@ impl Settings {
                     )),
             ),
             SubPage::Storage => ("Storage".into(), self.storage_body()),
+            SubPage::NotificationApp { app_id } => (
+                app_id.clone().into(),
+                self.notification_app_body(app_id, cx),
+            ),
             SubPage::Placeholder { icon, color, title } => (
                 title.clone(),
                 div()
@@ -4127,6 +4404,35 @@ fn switch_row(
         .child(tile(icon, color, 22.0))
         .child(text_block(title, sub))
         .child(sw)
+        .into_any_element()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn notification_toggle_row(
+    view: &Entity<Settings>,
+    app_id: &str,
+    id: &'static str,
+    title: &'static str,
+    subtitle: Option<&'static str>,
+    checked: bool,
+    disabled: bool,
+    change: fn(bool) -> NotificationPolicyChange,
+) -> AnyElement {
+    let app = app_id.to_owned();
+    let control_view = view.clone();
+    let toggle = Toggle::new(ElementId::from(SharedString::from(format!(
+        "notification-{id}-{app_id}"
+    ))))
+    .checked(checked)
+    .disabled(disabled)
+    .on_click(move |value, _, cx| {
+        control_view.update(cx, |settings, cx| {
+            settings.apply_notification_policy(app.clone(), change(*value), cx);
+        });
+    });
+    row_base()
+        .child(text_block(title.into(), subtitle.map(Into::into)))
+        .child(toggle)
         .into_any_element()
 }
 
@@ -4991,7 +5297,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{colon_value, os_release_value, Persisted};
+    use super::{
+        colon_value, notification_policy_with, os_release_value, NotificationPolicyChange,
+        Persisted,
+    };
 
     #[test]
     fn persisted_settings_round_trip() {
@@ -5070,5 +5379,18 @@ mod tests {
             colon_value(cpu, "model name").as_deref(),
             Some("Example CPU")
         );
+    }
+
+    #[test]
+    fn notification_policy_changes_touch_only_the_selected_field() {
+        let original = rmac_notifications_store::AppPolicy::default();
+        let changed = notification_policy_with(original, NotificationPolicyChange::History(false));
+        assert!(!changed.history);
+        assert_eq!(changed.enabled, original.enabled);
+        assert_eq!(changed.banners, original.banners);
+        assert_eq!(changed.sounds, original.sounds);
+        assert_eq!(changed.badges, original.badges);
+        assert_eq!(changed.urgent_through_focus, original.urgent_through_focus);
+        assert_eq!(changed.lock_preview, original.lock_preview);
     }
 }

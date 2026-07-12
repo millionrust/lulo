@@ -222,6 +222,9 @@ truthful while the caller receives an actionable persistence error.
 2. E2 layer-surface renderer: render the runtime snapshot with real hover,
    keyboard, action, activation-token, and multi-output evidence on Linux.
 3. E3 Notification Center UI: render persisted groups and connect its existing
-   clear/read/policy authority with keyboard, focus, and Linux evidence.
+   clear/read authority with keyboard, focus, and Linux evidence. System
+   Settings now exposes only already-observable allow/block, badge, and history
+   controls; banner, sound, Focus-bypass, and lock-preview rows remain hidden
+   until their presentation/security adapters are active.
 4. E4 Focus UI: expose mode, schedule, duration, and allow-list editing through
    the single-writer authority and prove real delivery behavior on Linux.

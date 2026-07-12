@@ -53,5 +53,26 @@ original defaults (Do Not Disturb, Personal, Work, Sleep) with no active manual
 override. Missing files are a clean first run. Permission/I/O failures remain
 errors, and paths plus all user/app identifiers are redacted from diagnostics.
 
-The next slice adds a timezone/timedate adapter, shell-status publication, and
-the System Settings/Quick Settings controls.
+`rmac-focus-runtime` loads that store, immediately evaluates the restored
+manual/schedule state against a timezone-aware `chrono::Local` sample, and
+persists removal of an expired manual override. All mutations save first-class
+mode state and return the new evaluation, projection, persistence health, and
+exact wake. A save failure does not falsify the in-memory active policy; it is
+reported as degraded persistence. Replacing configuration retains a manual
+override only while its mode still exists.
+
+`rmac-focus-linux` listens to systemd-timedated property signals,
+systemd-logind's post-resume `PrepareForSleep(false)`, and timedate/logind
+service-owner restarts. These are wake hints only: every event causes the
+runtime to resample local and monotonic clocks. The watcher reconnects with a
+bounded delay and uses backpressure rather than polling. This follows the
+official logind contract that `PrepareForSleep` is emitted immediately before
+and after sleep.
+
+The shell status reducer now accepts live Focus projection separately from
+shell preferences. Visibility remains a preference, but active mode and expiry
+come only from the Focus runtime. On service loss, the top bar preserves its
+last-known-good indicator, Quick Settings becomes non-writable, and health
+becomes unavailable. A stale saved toggle can no longer impersonate live Focus.
+The next slice connects this runtime to the notification service and implements
+the System Settings/Quick Settings mutations.

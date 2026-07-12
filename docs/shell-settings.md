@@ -18,14 +18,16 @@ The current v3 document stores:
 - default and per-output wallpaper source plus fit policy; sources are the
   original `builtin:rmac-aurora`, a hostless local `file:///` URI, or a
   normalized absolute path;
-- the selected Focus mode, enabled state, and optional expiration instant;
+- legacy Focus selection fields retained only for migration while
+  `rmac-focus-store` owns live modes, schedules, and manual expiration;
 - per-provider enablement and explicit private-content/network permissions;
 - bounded normalized Spotlight exclusions and removable-media search opt-in.
 
 The store persists policy and user choices, not service results. For example,
 it does not claim a wallpaper was decoded, a provider is currently available,
-or a Focus mode was successfully applied. Those runtime authorities publish
-their own state and errors.
+or a legacy Focus preference was successfully applied. Live Focus mutations go
+through the Focus authority; runtime authorities publish their own state and
+errors.
 
 ## Durability contract
 

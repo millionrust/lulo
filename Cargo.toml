@@ -39,6 +39,8 @@ rmac-compositor-niri = { version = "=0.1.0", path = "crates/rmac-compositor-niri
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-focus = { version = "=0.1.0", path = "crates/rmac-focus" }
 rmac-focus-store = { version = "=0.1.0", path = "crates/rmac-focus-store" }
+rmac-focus-runtime = { version = "=0.1.0", path = "crates/rmac-focus-runtime" }
+rmac-focus-linux = { version = "=0.1.0", path = "crates/rmac-focus-linux" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-notifications = { version = "=0.1.0", path = "crates/rmac-notifications" }

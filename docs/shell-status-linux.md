@@ -61,6 +61,7 @@ failure events. For each `Event::Refresh`:
    diagnostics instead of flashing every icon to an empty state.
 
 Compositor events and the shell-settings watcher already have their own live
-streams. Notification and Focus runtime services still need their E-phase
-authorities. The D2 top-bar UI and real niri/hardware behavior remain unproven
-until those streams are orchestrated and exercised on the Linux reference PC.
+streams. Focus now has its own timedate/logind hints and runtime authority;
+notification unread state still needs its E3 connection. The D2 top-bar UI and
+real niri/hardware behavior remain unproven until those streams are orchestrated
+and exercised on the Linux reference PC.

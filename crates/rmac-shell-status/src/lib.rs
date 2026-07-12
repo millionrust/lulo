@@ -99,6 +99,7 @@ pub enum Event {
     Power(rmac_power::Snapshot),
     Settings(rmac_shell_settings::ShellSettings),
     Notifications(NotificationIndicator),
+    Focus(Option<FocusIndicator>),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -118,6 +119,7 @@ pub struct State {
     power: rmac_power::Snapshot,
     settings: rmac_shell_settings::ShellSettings,
     notifications: NotificationIndicator,
+    focus: Option<FocusIndicator>,
 }
 
 impl State {
@@ -152,11 +154,7 @@ impl State {
                 None
             },
             show_battery_percentage: indicators.power && indicators.battery_percentage,
-            focus: indicators.focus.then(|| FocusIndicator {
-                enabled: self.settings.focus.enabled,
-                mode: self.settings.focus.selected_mode.clone(),
-                ends_at_unix_ms: self.settings.focus.ends_at_unix_ms,
-            }),
+            focus: indicators.focus.then(|| self.focus.clone()).flatten(),
             notifications: indicators.notifications.then_some(self.notifications),
         }
     }
@@ -175,6 +173,7 @@ impl State {
             Event::Power(snapshot) => self.power = snapshot,
             Event::Settings(settings) => self.settings = settings,
             Event::Notifications(notifications) => self.notifications = notifications,
+            Event::Focus(focus) => self.focus = focus,
         }
         Change {
             visible: before != self.snapshot(),
@@ -424,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn notification_and_focus_state_are_gated_by_settings() {
+    fn notification_and_live_focus_state_are_gated_by_visibility_settings() {
         let mut state = State::default();
         assert!(
             state
@@ -434,15 +433,26 @@ mod tests {
                 }))
                 .visible
         );
-        let mut settings = rmac_shell_settings::ShellSettings::default();
-        settings.focus.enabled = true;
-        settings.focus.selected_mode = Some("Work".into());
-        settings.focus.ends_at_unix_ms = Some(5000);
-        state.apply(Event::Settings(settings));
+        state.apply(Event::Focus(Some(FocusIndicator {
+            enabled: true,
+            mode: Some("Work".into()),
+            ends_at_unix_ms: Some(5000),
+        })));
         assert_eq!(state.snapshot().notifications.unwrap().unread_count, 3);
         assert_eq!(
             state.snapshot().focus.unwrap().mode.as_deref(),
             Some("Work")
         );
+
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.indicators.focus = false;
+        state.apply(Event::Settings(settings));
+        assert_eq!(state.snapshot().focus, None);
+        state.apply(Event::Focus(Some(FocusIndicator {
+            enabled: false,
+            mode: None,
+            ends_at_unix_ms: None,
+        })));
+        assert_eq!(state.snapshot().focus, None);
     }
 }

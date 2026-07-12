@@ -19,6 +19,7 @@ pub enum SourceHealth {
 pub struct HealthSnapshot {
     pub compositor: SourceHealth,
     pub settings: SourceHealth,
+    pub focus: SourceHealth,
     pub network: SourceHealth,
     pub bluetooth: SourceHealth,
     pub audio: SourceHealth,
@@ -115,13 +116,42 @@ impl Coordinator {
             Ok(settings) => {
                 self.status
                     .apply(rmac_shell_status::Event::Settings(settings.clone()));
-                self.quick_settings.focus = settings.focus;
-                self.quick_settings.focus_available = true;
                 self.health.settings = SourceHealth::Healthy;
             }
             Err(detail) => {
-                self.quick_settings.focus_available = false;
                 self.health.settings = SourceHealth::Unavailable { detail };
+            }
+        }
+        before != self.snapshot()
+    }
+
+    pub fn apply_focus(
+        &mut self,
+        focus: Result<rmac_focus_runtime::Projection, String>,
+        writable: bool,
+    ) -> bool {
+        let before = self.snapshot();
+        match focus {
+            Ok(focus) => {
+                self.status.apply(rmac_shell_status::Event::Focus(Some(
+                    rmac_shell_status::FocusIndicator {
+                        enabled: focus.enabled,
+                        mode: focus.mode_name.clone(),
+                        ends_at_unix_ms: focus.ends_at_unix_ms,
+                    },
+                )));
+                self.quick_settings.focus = rmac_shell_settings::FocusSettings {
+                    enabled: focus.enabled,
+                    selected_mode: focus.mode_name,
+                    ends_at_unix_ms: focus.ends_at_unix_ms,
+                };
+                self.quick_settings.focus_available = writable;
+                self.health.focus = SourceHealth::Healthy;
+            }
+            Err(detail) => {
+                // Preserve last-known-good status while disabling mutations.
+                self.quick_settings.focus_available = false;
+                self.health.focus = SourceHealth::Unavailable { detail };
             }
         }
         before != self.snapshot()
@@ -310,12 +340,14 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     let (service_tx, service_rx) = async_channel::bounded(8);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
+    let (focus_tx, focus_rx) = async_channel::bounded(4);
 
     let compositor = watch_compositor(compositor_tx);
     let services = rmac_shell_status_linux::watch(service_tx);
     let settings = watch_settings(settings_tx);
-    let consumer = consume(sender, compositor_rx, service_rx, settings_rx);
-    let (_, _, _, _) = futures_util::try_join!(
+    let focus = watch_focus(focus_tx);
+    let consumer = consume(sender, compositor_rx, service_rx, settings_rx, focus_rx);
+    let (_, _, _, _, _) = futures_util::try_join!(
         compositor,
         async {
             services
@@ -323,7 +355,98 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
                 .map_err(|error| Error::new("watch Linux services", error.to_string()))
         },
         settings,
+        focus,
         consumer,
+    )?;
+    Ok(())
+}
+
+async fn watch_focus(
+    sender: Sender<Result<rmac_focus_runtime::Projection, String>>,
+) -> Result<(), Error> {
+    loop {
+        match watch_focus_once(&sender).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => {
+                if sender
+                    .send(Err("Focus runtime stopped; reconnecting".into()))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+            }
+            Err(error) => {
+                if sender.send(Err(error.to_string())).await.is_err() {
+                    return Ok(());
+                }
+            }
+        }
+        wait_or_closed(&sender, std::time::Duration::from_secs(1)).await;
+        if sender.is_closed() {
+            return Ok(());
+        }
+    }
+}
+
+async fn watch_focus_once(
+    sender: &Sender<Result<rmac_focus_runtime::Projection, String>>,
+) -> Result<(), Error> {
+    let store = rmac_focus_store::Store::from_environment()
+        .map_err(|error| Error::new("resolve Focus settings", error.to_string()))?;
+    let clock = rmac_focus_runtime::ClockSampler::default();
+    let initial_clock = clock.sample();
+    let (mut runtime, mut update) = rmac_focus_runtime::Runtime::load(store, initial_clock)
+        .map_err(|error| Error::new("load Focus policy", format!("{error:?}")))?;
+    if sender.send(Ok(update.projection.clone())).await.is_err() {
+        return Ok(());
+    }
+
+    let (hint_tx, hint_rx) = async_channel::bounded(8);
+    let watcher = rmac_focus_linux::watch(hint_tx);
+    let evaluator = async {
+        loop {
+            let now = clock.sample();
+            let delay = rmac_focus_runtime::wake_delay(&update, now.unix_ms)
+                .unwrap_or(std::time::Duration::from_secs(24 * 60 * 60));
+            let timer = futures_util::FutureExt::fuse(async_io::Timer::after(delay));
+            let hint = futures_util::FutureExt::fuse(hint_rx.recv());
+            let closed = futures_util::FutureExt::fuse(sender.closed());
+            futures_util::pin_mut!(timer, hint, closed);
+            let available = futures_util::select! {
+                _ = timer => true,
+                event = hint => match event {
+                    Ok(rmac_focus_linux::Event::Refresh(_)) => true,
+                    Ok(rmac_focus_linux::Event::Unavailable) => false,
+                    Err(_) => return Ok(()),
+                },
+                _ = closed => return Ok(()),
+            };
+            if !available {
+                if sender
+                    .send(Err("Focus time-change watcher is reconnecting".into()))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                continue;
+            }
+            update = runtime
+                .apply_clock(clock.sample())
+                .map_err(|error| Error::new("evaluate Focus policy", format!("{error:?}")))?;
+            if sender.send(Ok(update.projection.clone())).await.is_err() {
+                return Ok(());
+            }
+        }
+    };
+    let (_, _) = futures_util::try_join!(
+        async {
+            watcher
+                .await
+                .map_err(|error| Error::new("watch Focus time state", error.to_string()))
+        },
+        evaluator,
     )?;
     Ok(())
 }
@@ -428,6 +551,7 @@ async fn consume(
     compositor: async_channel::Receiver<rmac_compositor::Event>,
     services: async_channel::Receiver<rmac_shell_status_linux::Event>,
     settings: async_channel::Receiver<Result<rmac_shell_settings::ShellSettings, String>>,
+    focus: async_channel::Receiver<Result<rmac_focus_runtime::Projection, String>>,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
     let mut published = coordinator.snapshot();
@@ -446,8 +570,15 @@ async fn consume(
         let compositor_event = futures_util::FutureExt::fuse(compositor.recv());
         let service_event = futures_util::FutureExt::fuse(services.recv());
         let settings_event = futures_util::FutureExt::fuse(settings.recv());
+        let focus_event = futures_util::FutureExt::fuse(focus.recv());
         let closed = futures_util::FutureExt::fuse(sender.closed());
-        futures_util::pin_mut!(compositor_event, service_event, settings_event, closed);
+        futures_util::pin_mut!(
+            compositor_event,
+            service_event,
+            settings_event,
+            focus_event,
+            closed
+        );
         futures_util::select! {
             event = compositor_event => {
                 let event = event.map_err(|_| Error::new("receive compositor state", "watcher stopped"))?;
@@ -470,6 +601,12 @@ async fn consume(
             event = settings_event => {
                 let event = event.map_err(|_| Error::new("receive shell settings", "watcher stopped"))?;
                 coordinator.apply_settings(event);
+            },
+            event = focus_event => {
+                let event = event.map_err(|_| Error::new("receive Focus state", "watcher stopped"))?;
+                // Policy is live, but mutation remains disabled until the
+                // cross-process Focus command channel is connected.
+                coordinator.apply_focus(event, false);
             },
             _ = closed => return Ok(()),
         }
@@ -621,6 +758,62 @@ mod tests {
         let update = publication(&previous, next).expect("status changed");
         assert!(update.visible);
         assert!(!update.quick_settings_visible);
+    }
+
+    #[test]
+    fn live_focus_authority_replaces_preferences_and_survives_source_loss() {
+        let mut coordinator = Coordinator::default();
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.focus.enabled = true;
+        settings.focus.selected_mode = Some("Stale preference".into());
+        coordinator.apply_settings(Ok(settings));
+        assert_eq!(coordinator.snapshot().status.focus, None);
+        assert!(!coordinator.snapshot().quick_settings.focus_available);
+
+        coordinator.apply_focus(
+            Ok(rmac_focus_runtime::Projection {
+                enabled: true,
+                mode_name: Some("Work".into()),
+                ends_at_unix_ms: Some(5_000),
+            }),
+            true,
+        );
+        let live = coordinator.snapshot();
+        assert_eq!(
+            live.status.focus.as_ref().unwrap().mode.as_deref(),
+            Some("Work")
+        );
+        assert!(live.quick_settings.focus_available);
+        assert_eq!(live.health.focus, SourceHealth::Healthy);
+
+        coordinator.apply_focus(Err("Focus service restarted".into()), false);
+        let unavailable = coordinator.snapshot();
+        assert_eq!(
+            unavailable.status.focus.as_ref().unwrap().mode.as_deref(),
+            Some("Work")
+        );
+        assert!(!unavailable.quick_settings.focus_available);
+        assert!(matches!(
+            unavailable.health.focus,
+            SourceHealth::Unavailable { .. }
+        ));
+    }
+
+    #[test]
+    fn live_focus_projection_does_not_imply_a_writable_command_channel() {
+        let mut coordinator = Coordinator::default();
+        coordinator.apply_focus(
+            Ok(rmac_focus_runtime::Projection {
+                enabled: true,
+                mode_name: Some("Work".into()),
+                ends_at_unix_ms: None,
+            }),
+            false,
+        );
+        let snapshot = coordinator.snapshot();
+        assert_eq!(snapshot.status.focus.unwrap().mode.as_deref(), Some("Work"));
+        assert!(!snapshot.quick_settings.focus_available);
+        assert_eq!(snapshot.health.focus, SourceHealth::Healthy);
     }
 
     #[test]

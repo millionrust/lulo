@@ -4994,6 +4994,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-focus-linux"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "futures-util",
+ "zbus",
+]
+
+[[package]]
+name = "rmac-focus-runtime"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rmac-focus",
+ "rmac-focus-store",
+ "rmac-notifications",
+]
+
+[[package]]
 name = "rmac-focus-store"
 version = "0.1.0"
 dependencies = [
@@ -5207,6 +5227,9 @@ dependencies = [
  "rmac-bluetooth",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-focus-linux",
+ "rmac-focus-runtime",
+ "rmac-focus-store",
  "rmac-network",
  "rmac-power",
  "rmac-quick-settings",

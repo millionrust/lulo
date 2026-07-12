@@ -12,17 +12,19 @@ socket, D-Bus connection, command process, timer, or persistence file.
 - `rmac-network`, `rmac-bluetooth`, `rmac-audio`, and `rmac-power` own platform
   state and mutations. Their snapshots are normalized into compact indicators;
   the projection never writes hardware state.
-- `rmac-shell-settings` owns indicator visibility and Focus preferences. Hidden
-  indicators are absent from the consumer snapshot rather than merely painted
+- `rmac-shell-settings` owns indicator visibility and saved UI preferences.
+  Hidden indicators are absent from the consumer snapshot rather than merely painted
   transparent.
-- the future notification and Focus services publish their runtime results into
+- the notification and Focus services publish their runtime results into
   the typed boundary. The current notification input is deliberately only an
   unread count and urgent flag; it is not a substitute for the E1 server.
 
 `rmac-shell-status-linux` publishes coalesced service refreshes from D-Bus and
 PipeWire. A UI must not turn this reducer into a polling loop. Initial snapshots
 establish coherent state; subsequent compositor, service, settings-watcher,
-notification, and Focus events update only their owned input.
+notification, and Focus events update only their owned input. Focus visibility
+comes from settings, while active mode/expiry comes exclusively from the live
+Focus authority and remains last-known-good across a service restart.
 
 ## Redraw contract
 

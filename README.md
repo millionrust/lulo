@@ -34,6 +34,8 @@ Shared crates:
 - `rmac-editor` — shared multiline editor construction and text helpers.
 - `rmac-focus` — real Focus modes, allow-lists, schedules, temporary activation, and delivery enforcement.
 - `rmac-focus-store` — private versioned Focus preferences/manual state with last-good recovery.
+- `rmac-focus-runtime` — persisted Focus orchestration, local clock sampling, enforcement, and shell projection.
+- `rmac-focus-linux` — timedate/logind wake hints for timezone, clock, resume, and service changes.
 - `rmac-storage` — atomic filesystem writes, durable cleanup, and typed failures.
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 - `rmac-launcher` — private, cancellable cross-provider launcher ranking and actions.

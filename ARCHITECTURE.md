@@ -204,9 +204,11 @@ The same domain owns the one-popover/multi-output lifecycle, available-control
 focus order, dismissal reasons, and commands derived from authoritative values;
 it does not import GPUI or Wayland input types.
 `rmac-quick-settings-system` is the blocking adapter above that boundary. It
-maps validated commands to NetworkManager, BlueZ, PipeWire/WirePlumber,
-power-profiles, and shell-settings operations, then rereads only the affected
-authority. The GPUI popover must run this adapter off its render executor.
+maps validated commands to NetworkManager, BlueZ, PipeWire/WirePlumber, and
+power-profiles, then rereads only the affected authority. Focus explicitly
+fails closed until its cross-process command channel is connected; it never
+writes legacy shell preferences. The GPUI popover must run this adapter off its
+render executor.
 
 The Dock begins with a compositor- and catalog-backed domain in `rmac-dock`.
 It preserves configured pinned order, groups niri windows by normalized desktop

@@ -57,6 +57,9 @@ unrelated status or turn a temporary Linux service restart into visual churn.
 Bounded channels provide backpressure instead of allowing an unbounded event
 queue during a desktop-service burst.
 
-Notification and Focus authorities are not part of this slice yet. The
-isolated layer-shell top-bar candidate is the next consumer; reference-PC
-validation remains required before this can satisfy the D2 product gate.
+The live Focus authority now publishes separately from preferences. Source
+loss preserves last-known-good top-bar state, marks Focus health unavailable,
+and disables Quick Settings mutation. Notification Center unread/urgent
+publication still needs its E3 runtime connection. The isolated layer-shell
+top-bar candidate remains the next visual consumer; reference-PC validation is
+still required before this can satisfy the D2 product gate.

@@ -117,21 +117,12 @@ impl Backend for SystemBackend {
     }
 
     fn set_focus_enabled(&self, enabled: bool) -> Result<(), String> {
-        let store = rmac_shell_settings::ShellSettingsStore::from_environment()
-            .map_err(|error| error.to_string())?;
-        let mut settings = store.load().map_err(|error| error.to_string())?.settings;
-        settings.focus.enabled = enabled;
-        store
-            .save(&settings)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        let _ = enabled;
+        Err("the live Focus command authority is not connected".into())
     }
 
     fn focus(&self) -> Result<rmac_shell_settings::FocusSettings, String> {
-        rmac_shell_settings::ShellSettingsStore::from_environment()
-            .and_then(|store| store.load())
-            .map(|snapshot| snapshot.settings.focus)
-            .map_err(|error| error.to_string())
+        Err("the live Focus command authority is not connected".into())
     }
 }
 
@@ -348,12 +339,19 @@ mod tests {
     }
 
     #[test]
-    fn focus_result_is_marked_available_only_after_store_reread() {
+    fn focus_result_is_marked_available_only_after_authority_reread() {
         let backend = FakeBackend::default();
         let inputs =
             execute(&operation(Command::SetFocusEnabled(true)), &backend).expect("Focus succeeds");
         assert!(inputs.focus_available);
         assert!(inputs.focus.enabled);
         assert_eq!(backend.calls.into_inner(), ["set focus true", "read focus"]);
+    }
+
+    #[test]
+    fn system_backend_never_mutates_legacy_focus_preferences() {
+        let backend = SystemBackend;
+        assert!(backend.set_focus_enabled(true).is_err());
+        assert!(backend.focus().is_err());
     }
 }

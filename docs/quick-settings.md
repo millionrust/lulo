@@ -55,7 +55,8 @@ Escape into these framework-neutral intents.
 - Sound mutations require an authoritative audio service snapshot; volume is
   rejected outside 0–100.
 - Power modes are limited to the exact profiles advertised by the host.
-- Focus is writable only while the shell-settings authority is reachable.
+- Focus is writable only while the live Focus authority is reachable; shell
+  settings control indicator visibility but never impersonate active policy.
 
 The transaction model alone is not the D3 completion claim.
 
@@ -63,10 +64,10 @@ The transaction model alone is not the D3 completion claim.
 
 `rmac-quick-settings-system` maps a validated operation to the existing typed
 platform authorities. It changes Wi-Fi through NetworkManager, Bluetooth
-through BlueZ, output sound through PipeWire/WirePlumber, power mode through
-the power-profile service, and current Focus state through the versioned shell
-settings store. The executor is deliberately blocking and must run on a
-background executor.
+through BlueZ, output sound through PipeWire/WirePlumber, and power mode
+through the power-profile service. Focus fails closed until its command channel
+to `rmac-focus-runtime` is connected; it never writes legacy shell preferences.
+The executor is deliberately blocking and must run on a background executor.
 
 Mutation and refresh failures remain distinct. A rejected mutation does not
 issue a misleading read; a successful mutation always rereads its affected
@@ -75,10 +76,11 @@ model's per-control merge rule and preventing an older Wi-Fi task from rolling
 back newer sound state.
 
 The layer-shell rendering, real focus restoration, semantic GPUI controls, and
-Orca/niri evidence remain pending. The existing
-`rmac-shell-runtime` now supplies full inputs, disables mutation when a source
-is unreachable, and emits a popover-specific redraw flag without waking the
-compact bar for device-list-only changes. A future
-Focus policy service must also serialize schedule/mode changes across shell
-processes; this executor only updates the current C4 settings authority and
-does not claim E4 complete.
+Orca/niri evidence remain pending. The existing `rmac-shell-runtime` now
+evaluates persisted Focus policy at startup and exact wake boundaries,
+resamples local time after time-zone/clock changes and resume, supplies full
+inputs, disables unsupported mutation, and emits a popover-specific redraw
+flag without waking the compact bar for device-list-only changes. Focus
+mutations must now be routed into the persisted runtime across shell processes;
+direct writes to legacy shell Focus fields are forbidden. The current executor
+still needs that routing before D3/E4 can be claimed complete.

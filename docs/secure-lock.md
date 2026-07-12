@@ -108,10 +108,13 @@ dependency lines—and the reasons no PAM crate is accepted yet—are recorded i
 `docs/rmac-lock-provider-dependency-review.md`.
 
 On Linux the same crate can perform a non-mutating Wayland registry preflight.
-It accepts only a compositor advertising `ext-session-lock-v1` version 1 and at
-least one `wl_output`, and drops the connection without binding or locking. The
-lock request is deliberately withheld until output surfaces exist; a partial
-provider must never be able to strand a developer in a blank locked session.
+It accepts only a compositor advertising `ext-session-lock-v1` version 1,
+`wl_compositor` version 4, `wl_shm` version 1, and at least one `wl_output`, then
+drops the connection without binding or locking. A prepared connection can bind
+those authorities, complete output initialization, and track live output
+add/remove/integer-scale events. Required-global removal is terminal. Neither
+API exposes the lock request, so this foundation cannot blank or strand a
+development session.
 
 The platform-neutral lock-surface lifecycle now coalesces configure events,
 requires the newest serial to be acknowledged before its exact-size commit,
@@ -124,11 +127,11 @@ requires the wire adapter to destroy the surface role while keeping any
 released-later buffers accounted for. This is executable protocol ordering, not
 a renderer or Wayland object implementation.
 
-The Linux adapter still requires the actual Wayland client, a reviewed PAM
-binding, bounded multi-message conversation handling, `pam_start`/`pam_end`
-lifetime correctness, renderer integration, and real niri/PAM evidence. Until
-then, the installed unit continues to run swaylock and the preview projection
-remains unrendered.
+The Linux adapter still requires session-lock acquisition and wire lock-surface
+objects, a shared-memory renderer, a reviewed PAM binding, bounded multi-message
+conversation handling, `pam_start`/`pam_end` lifetime correctness, and real
+niri/PAM evidence. Until then, the installed unit continues to run swaylock and
+the preview projection remains unrendered.
 
 ## Not complete yet
 

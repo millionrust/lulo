@@ -24,9 +24,13 @@ explicit display roundtrip after `unlock_and_destroy`.
 
 They are now direct, Linux-only dependencies of `rmac-lock-provider-linux`.
 Its first Wayland API is a non-mutating registry preflight: it confirms protocol
-version 1 and at least one output, then drops the connection without binding a
-global or requesting a lock. The actual acquisition API remains intentionally
-absent until lock surfaces and fail-closed event handling arrive together.
+version 1, `wl_compositor` version 4, `wl_shm` version 1, and at least one
+output, then drops the connection without binding a global or requesting a
+lock. A second safe API binds those authorities and every output, completes the
+two setup roundtrips needed to receive initial output scale, and tracks live
+output add/remove/scale events. Removal of a required singleton is terminal.
+The actual acquisition API remains intentionally absent until those objects can
+be combined with lock roles, buffers, and fail-closed event handling.
 
 ### Secret erasure
 

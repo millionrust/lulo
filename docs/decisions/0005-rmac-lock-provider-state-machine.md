@@ -72,6 +72,13 @@ limits buffers awaiting compositor release, and accounts for hotplug removal.
 This keeps renderer allocation and generated Wayland objects outside the core
 security state machine while making their ordering independently testable.
 
+The Linux Wayland boundary may preflight or prepare the connection without
+locking. Preparation binds the compositor, shared-memory, session-lock manager,
+and outputs, completes initial output-scale dispatch, and then tracks hotplug.
+Loss of a required singleton is terminal. Lock acquisition remains unavailable
+until the prepared objects can immediately create every output role and render
+through the bounded lifecycle.
+
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,
 suspend/resume, renderer failure, provider crash, accessibility, and emergency

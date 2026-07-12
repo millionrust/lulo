@@ -7,6 +7,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+rmac-lock-provider.workspace = true
 zeroize.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

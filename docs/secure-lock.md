@@ -113,6 +113,17 @@ least one `wl_output`, and drops the connection without binding or locking. The
 lock request is deliberately withheld until output surfaces exist; a partial
 provider must never be able to strand a developer in a blank locked session.
 
+The platform-neutral lock-surface lifecycle now coalesces configure events,
+requires the newest serial to be acknowledged before its exact-size commit,
+invalidates paints made stale by resize or scale changes, and retains committed
+buffer identities until compositor release. Integer scale is bounded to 8,
+each ARGB buffer to 512 MiB, and each output to three in-flight buffers. Invalid
+dimensions, arithmetic overflow, and more than 1 GiB reserved across all
+outputs fail before allocation. Output removal abandons an unfinished paint and
+requires the wire adapter to destroy the surface role while keeping any
+released-later buffers accounted for. This is executable protocol ordering, not
+a renderer or Wayland object implementation.
+
 The Linux adapter still requires the actual Wayland client, a reviewed PAM
 binding, bounded multi-message conversation handling, `pam_start`/`pam_end`
 lifetime correctness, renderer integration, and real niri/PAM evidence. Until

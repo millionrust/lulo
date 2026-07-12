@@ -65,6 +65,13 @@ This does not select a PAM binding or make the crate an authentication provider.
 The dependency decisions and remaining PAM acceptance gate are recorded in
 `docs/rmac-lock-provider-dependency-review.md`.
 
+The same adapter owns a bounded lock-surface lifecycle. It coalesces unhandled
+configures, permits only a paint for the newest configure and scale, carries the
+one serial that must be acknowledged before commit, rejects oversized layouts,
+limits buffers awaiting compositor release, and accounts for hotplug removal.
+This keeps renderer allocation and generated Wayland objects outside the core
+security state machine while making their ordering independently testable.
+
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,
 suspend/resume, renderer failure, provider crash, accessibility, and emergency

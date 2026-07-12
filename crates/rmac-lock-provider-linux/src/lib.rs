@@ -9,6 +9,8 @@ use std::fmt;
 
 use zeroize::Zeroize as _;
 
+pub mod surface;
+
 #[cfg(target_os = "linux")]
 pub mod wayland;
 

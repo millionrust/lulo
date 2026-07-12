@@ -230,6 +230,12 @@ animation or idle redraw. Clicking the submit target while that state or no
 prompt is visible must do nothing; the next PAM prompt or outcome must replace
 the status immediately.
 
+With a real prompt visible, verify keyboard focus draws one crisp accent ring at
+integer scales 1–4. Move focus away and back, repeat enter/leave, and exercise a
+second seat where available; the ring must follow aggregate focus without
+flashing or remaining after the final focused seat/capability disappears. It
+must not appear for hidden, authenticating, or binary states.
+
 ```sh
 cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked
 ```

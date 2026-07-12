@@ -109,6 +109,12 @@ state and aggregated across focused seats. Only the semantic boolean leaves the
 adapter; it repaints a noninteractive warning for text/password prompts without
 entering the credential queue.
 
+Keyboard focus is aggregated from the same tracked seats and crosses the
+adapter only as a semantic boolean. Interactive prompts draw a visible accent
+ring while at least one keyboard focuses the lock surface. Hidden,
+authenticating, and unsupported binary states do not imply focus, and neither
+the ring nor focus events carry input or unlock authority.
+
 The crate-only lock typestate now issues acquisition, immediately creates one
 role per output, renders only after configure, performs exact ack/scale/attach/
 damage/commit ordering, and retains every sealed frame until buffer release.

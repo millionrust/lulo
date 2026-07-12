@@ -144,7 +144,9 @@ single-use prompt editor as keyboard input. Caps Lock tests cover xkb locked
 state, focus-aware multi-seat aggregation, visual repaint, and separation from
 the bounded credential queue. Coordinator tests cover the static authenticating
 state before, after, and between PAM prompts; pointer tests prove that state and
-the no-prompt state are inert. Portable process tests prove
+the no-prompt state are inert. Multi-seat focus tests cover duplicate focus,
+retained focus on another seat, focus loss, and the visible ring's restriction
+to interactive prompts. Portable process tests prove
 readiness/hint ordering and
 distinguish authenticated unlock from compositor denial and post-lock failure.
 The feature-gated Linux runner derives its PAM name from the exact logind

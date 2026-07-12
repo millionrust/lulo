@@ -198,6 +198,14 @@ semantic boolean triggers a repaint but never enters the credential queue; the
 original upward indicator is drawn only for text/password prompts. Seat and raw
 modifier identities remain inside the Wayland adapter.
 
+The same per-seat aggregate projects whether any keyboard currently focuses a
+lock surface. Only interactive text, notice, or radio prompts draw the original
+two-pixel accent focus ring; authenticating, hidden, and unsupported binary
+states remain unfocused-looking. Duplicate enter/leave events do not repaint,
+one departing seat cannot clear focus retained by another, and capability or
+seat loss clears the aggregate. Focus state is presentation-only and never
+becomes credential input or unlock authority.
+
 The wire also owns a per-seat client repeat scheduler. Compositor rates are
 clamped to 100 events per second and delays to 10 seconds, a late event-loop
 iteration emits at most one repeat instead of replaying a burst, and release,

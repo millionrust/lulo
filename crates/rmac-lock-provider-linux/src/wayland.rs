@@ -28,7 +28,7 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ext_session_lock_v1::ExtSessionLockV1,
 };
 
-use crate::caps_lock::{CapsLockState, Error as CapsLockError};
+use crate::caps_lock::{CapsLockState, Error as CapsLockError, InputChange};
 use crate::key_repeat::RepeatScheduler;
 use crate::keyboard::DecodedKey;
 use crate::paint::{LockPalette, LockVisualState};
@@ -315,6 +315,9 @@ pub enum PreparedEvent {
         seat: SeatId,
         focused: bool,
     },
+    KeyboardFocusAvailable {
+        focused: bool,
+    },
     CapsLockChanged {
         active: bool,
     },
@@ -491,14 +494,20 @@ impl Default for PreparedState {
     }
 }
 
-fn record_caps_lock_change(
+fn record_input_change(
     events: &mut VecDeque<PreparedEvent>,
     failure: &mut Option<PreparedStateError>,
-    change: Result<Option<bool>, CapsLockError>,
+    change: Result<InputChange, CapsLockError>,
 ) {
     match change {
-        Ok(Some(active)) => events.push_back(PreparedEvent::CapsLockChanged { active }),
-        Ok(None) => {}
+        Ok(change) => {
+            if let Some(active) = change.caps_lock {
+                events.push_back(PreparedEvent::CapsLockChanged { active });
+            }
+            if let Some(focused) = change.keyboard_focus {
+                events.push_back(PreparedEvent::KeyboardFocusAvailable { focused });
+            }
+        }
         Err(_) if failure.is_none() => {
             *failure = Some(PreparedStateError::Keyboard(KeyboardFailure::CapsLockState));
         }
@@ -652,7 +661,7 @@ impl PreparedState {
         let Some(binding) = self.outputs.remove(&name) else {
             if let Some(mut seat) = self.seats.remove(&name) {
                 let caps_change = self.caps_lock.remove_seat(name);
-                record_caps_lock_change(&mut self.events, &mut self.failure, caps_change);
+                record_input_change(&mut self.events, &mut self.failure, caps_change);
                 let was_available = seat.keyboard.is_some() || self.keyboard_count() > 0;
                 let was_pointer_available = seat.pointer.is_some() || self.pointer_count() > 0;
                 if let Some(keyboard) = seat.keyboard.take() {
@@ -1213,13 +1222,13 @@ impl Dispatch<wl_seat::WlSeat, SeatData> for PreparedState {
             if binding.focused {
                 binding.focused = false;
                 let focus_change = state.caps_lock.set_focused(data.global_name, false);
-                record_caps_lock_change(&mut state.events, &mut state.failure, focus_change);
+                record_input_change(&mut state.events, &mut state.failure, focus_change);
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
                     seat: binding.seat,
                     focused: false,
                 });
             }
-            record_caps_lock_change(&mut state.events, &mut state.failure, caps_change);
+            record_input_change(&mut state.events, &mut state.failure, caps_change);
             if keyboard.version() >= 3 {
                 keyboard.release();
             }
@@ -1425,7 +1434,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                     })) {
                         Ok(Ok(())) => {
                             let change = state.caps_lock.set_locked(data.seat_global_name, false);
-                            record_caps_lock_change(&mut state.events, &mut state.failure, change);
+                            record_input_change(&mut state.events, &mut state.failure, change);
                         }
                         Ok(Err(error)) => {
                             state.record_failure(PreparedStateError::Keyboard(error.into()))
@@ -1439,7 +1448,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
             wl_keyboard::Event::Enter { .. } => {
                 binding.focused = true;
                 let change = state.caps_lock.set_focused(data.seat_global_name, true);
-                record_caps_lock_change(&mut state.events, &mut state.failure, change);
+                record_input_change(&mut state.events, &mut state.failure, change);
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
                     seat: data.seat,
                     focused: true,
@@ -1455,7 +1464,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                 binding.focused = false;
                 binding.repeat.clear();
                 let change = state.caps_lock.set_focused(data.seat_global_name, false);
-                record_caps_lock_change(&mut state.events, &mut state.failure, change);
+                record_input_change(&mut state.events, &mut state.failure, change);
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
                     seat: data.seat,
                     focused: false,
@@ -1546,11 +1555,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                             Ok(Ok(active)) => {
                                 let change =
                                     state.caps_lock.set_locked(data.seat_global_name, active);
-                                record_caps_lock_change(
-                                    &mut state.events,
-                                    &mut state.failure,
-                                    change,
-                                );
+                                record_input_change(&mut state.events, &mut state.failure, change);
                             }
                             Ok(Err(error)) => {
                                 state.record_failure(PreparedStateError::Keyboard(error.into()))

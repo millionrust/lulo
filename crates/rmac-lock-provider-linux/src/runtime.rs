@@ -39,6 +39,7 @@ pub struct Coordinator {
     queued_inputs: VecDeque<DecodedKey>,
     authentication_failed_visible: bool,
     caps_lock_active: bool,
+    keyboard_focused: bool,
 }
 
 impl Default for Coordinator {
@@ -51,6 +52,7 @@ impl Default for Coordinator {
             queued_inputs: VecDeque::new(),
             authentication_failed_visible: false,
             caps_lock_active: false,
+            keyboard_focused: false,
         }
     }
 }
@@ -97,6 +99,7 @@ impl Coordinator {
         );
         LockVisualState::new(prompt, self.authentication_failed_visible)
             .with_caps_lock(self.caps_lock_active)
+            .with_keyboard_focus(self.keyboard_focused)
     }
 
     #[cfg(any(target_os = "linux", test))]
@@ -139,6 +142,7 @@ impl Coordinator {
                 self.draining_cancelled_worker = None;
                 self.authentication_failed_visible = false;
                 self.caps_lock_active = false;
+                self.keyboard_focused = false;
                 self.apply_provider(ProviderEvent::CompositorFinished, &mut actions)?;
             }
             RuntimeEvent::UnlockFlushed => {
@@ -162,6 +166,12 @@ impl Coordinator {
             RuntimeEvent::CapsLockChanged(active) => {
                 if self.caps_lock_active != active {
                     self.caps_lock_active = active;
+                    actions.prompt_changed = true;
+                }
+            }
+            RuntimeEvent::KeyboardFocusAvailable(focused) => {
+                if self.keyboard_focused != focused {
+                    self.keyboard_focused = focused;
                     actions.prompt_changed = true;
                 }
             }
@@ -348,6 +358,7 @@ pub enum RuntimeEvent {
     Prompt(PendingPrompt),
     Input(DecodedKey),
     CapsLockChanged(bool),
+    KeyboardFocusAvailable(bool),
     AuthenticationFinished {
         attempt: AttemptId,
         outcome: AuthenticationOutcome,
@@ -366,6 +377,7 @@ impl fmt::Debug for RuntimeEvent {
             Self::Prompt(_) => "RuntimeEvent::Prompt(<redacted>)",
             Self::Input(_) => "RuntimeEvent::Input(<redacted>)",
             Self::CapsLockChanged(_) => "RuntimeEvent::CapsLockChanged(<redacted>)",
+            Self::KeyboardFocusAvailable(_) => "RuntimeEvent::KeyboardFocusAvailable(<redacted>)",
             Self::AuthenticationFinished { .. } => {
                 "RuntimeEvent::AuthenticationFinished(<redacted>)"
             }
@@ -641,6 +653,9 @@ pub(crate) mod linux {
             PreparedEvent::CapsLockChanged { active } => {
                 Some(RuntimeEvent::CapsLockChanged(active))
             }
+            PreparedEvent::KeyboardFocusAvailable { focused } => {
+                Some(RuntimeEvent::KeyboardFocusAvailable(focused))
+            }
             PreparedEvent::LockAcquired => Some(RuntimeEvent::LockAcquired),
             PreparedEvent::LockFinished => Some(RuntimeEvent::LockFinished),
             PreparedEvent::UnlockFlushed => Some(RuntimeEvent::UnlockFlushed),
@@ -708,6 +723,10 @@ pub(crate) mod linux {
             assert!(matches!(
                 runtime_event(PreparedEvent::CapsLockChanged { active: true }),
                 Some(RuntimeEvent::CapsLockChanged(true))
+            ));
+            assert!(matches!(
+                runtime_event(PreparedEvent::KeyboardFocusAvailable { focused: true }),
+                Some(RuntimeEvent::KeyboardFocusAvailable(true))
             ));
             assert!(
                 runtime_event(PreparedEvent::OutputScaleChanged { output, scale: 2 }).is_none()
@@ -952,6 +971,31 @@ mod tests {
         assert_eq!(
             format!("{:?}", RuntimeEvent::CapsLockChanged(true)),
             "RuntimeEvent::CapsLockChanged(<redacted>)"
+        );
+    }
+
+    #[test]
+    fn aggregate_keyboard_focus_repaints_without_becoming_input() {
+        let mut coordinator = Coordinator::new();
+        acquire(&mut coordinator);
+        let focused = coordinator
+            .apply(RuntimeEvent::KeyboardFocusAvailable(true))
+            .unwrap();
+        assert!(focused.prompt_changed);
+        assert!(coordinator.visual_state().keyboard_focused());
+
+        let unchanged = coordinator
+            .apply(RuntimeEvent::KeyboardFocusAvailable(true))
+            .unwrap();
+        assert!(!unchanged.prompt_changed);
+        let unfocused = coordinator
+            .apply(RuntimeEvent::KeyboardFocusAvailable(false))
+            .unwrap();
+        assert!(unfocused.prompt_changed);
+        assert!(!coordinator.visual_state().keyboard_focused());
+        assert_eq!(
+            format!("{:?}", RuntimeEvent::KeyboardFocusAvailable(true)),
+            "RuntimeEvent::KeyboardFocusAvailable(<redacted>)"
         );
     }
 

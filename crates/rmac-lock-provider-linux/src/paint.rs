@@ -48,6 +48,7 @@ pub struct LockVisualState {
     prompt: PromptVisual,
     authentication_failed: bool,
     caps_lock_active: bool,
+    keyboard_focused: bool,
 }
 
 impl Default for LockVisualState {
@@ -56,6 +57,7 @@ impl Default for LockVisualState {
             prompt: PromptVisual::Hidden,
             authentication_failed: false,
             caps_lock_active: false,
+            keyboard_focused: false,
         }
     }
 }
@@ -66,11 +68,17 @@ impl LockVisualState {
             prompt,
             authentication_failed,
             caps_lock_active: false,
+            keyboard_focused: false,
         }
     }
 
     pub const fn with_caps_lock(mut self, active: bool) -> Self {
         self.caps_lock_active = active;
+        self
+    }
+
+    pub const fn with_keyboard_focus(mut self, focused: bool) -> Self {
+        self.keyboard_focused = focused;
         self
     }
 
@@ -84,6 +92,10 @@ impl LockVisualState {
 
     pub const fn caps_lock_active(self) -> bool {
         self.caps_lock_active
+    }
+
+    pub const fn keyboard_focused(self) -> bool {
+        self.keyboard_focused
     }
 }
 
@@ -350,6 +362,45 @@ fn paint_pixel(
         color = color.blend(panel, if visual.authentication_failed { 76 } else { 58 });
     }
 
+    let interactive_prompt = matches!(
+        visual.prompt,
+        PromptVisual::Secret { .. }
+            | PromptVisual::Text { .. }
+            | PromptVisual::Notice
+            | PromptVisual::Radio { .. }
+    );
+    if visual.keyboard_focused && interactive_prompt {
+        let scale = i64::from(scale);
+        let outer = inside_rounded_rect(
+            i64::from(x),
+            i64::from(y),
+            center_x,
+            panel_center_y,
+            panel_half_width + 2 * scale,
+            panel_half_height + 2 * scale,
+            14 * scale,
+        );
+        let inner = inside_rounded_rect(
+            i64::from(x),
+            i64::from(y),
+            center_x,
+            panel_center_y,
+            panel_half_width,
+            panel_half_height,
+            12 * scale,
+        );
+        if outer && !inner {
+            color = color.blend(
+                if visual.authentication_failed {
+                    palette.error
+                } else {
+                    palette.accent
+                },
+                236,
+            );
+        }
+    }
+
     let accent_x = center_x + panel_half_width - i64::from(18 * scale);
     let accent_radius = i64::from(4 * scale);
     let accent_dx = i64::from(x) - accent_x;
@@ -553,6 +604,8 @@ mod tests {
         let mut hidden = Vec::new();
         let mut hidden_caps_lock = Vec::new();
         let mut authenticating = Vec::new();
+        let mut focused = Vec::new();
+        let mut focused_authenticating = Vec::new();
         paint_lock_frame(
             &mut secret,
             layout,
@@ -607,9 +660,29 @@ mod tests {
             None,
         )
         .unwrap();
+        paint_lock_frame(
+            &mut focused,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::new(PromptVisual::secret(9), false).with_keyboard_focus(true),
+            None,
+            None,
+        )
+        .unwrap();
+        paint_lock_frame(
+            &mut focused_authenticating,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::new(PromptVisual::Authenticating, false).with_keyboard_focus(true),
+            None,
+            None,
+        )
+        .unwrap();
         assert_ne!(secret, failed);
         assert_ne!(secret, caps_lock);
         assert_ne!(hidden, authenticating);
+        assert_ne!(secret, focused);
+        assert_eq!(authenticating, focused_authenticating);
         assert_eq!(hidden, hidden_caps_lock);
         let debug = format!(
             "{:?} {:?}",

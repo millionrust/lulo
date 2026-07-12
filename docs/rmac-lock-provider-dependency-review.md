@@ -61,7 +61,9 @@ panic boundary. Only semantic actions or a 64-byte bounded UTF-8 fragment leave
 the decoder; control characters and overlong fragments are erased and rejected,
 and diagnostics expose neither text nor raw keycodes. Caps Lock crosses only as
 a focus-aware aggregate boolean; seat identities and raw modifier masks remain
-inside the adapter.
+inside the adapter. Aggregate keyboard focus also crosses as one semantic
+boolean so the renderer can expose visible focus without learning seat
+identity.
 The fragment is erased on drop. The wrapper and the system library still need
 native malformed-keymap and compose evidence. Bounded per-seat client repeat is
 implemented without another dependency, but its live compositor behavior still

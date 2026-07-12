@@ -12,7 +12,7 @@ use std::io;
 use std::num::NonZeroU64;
 use std::os::fd::{AsFd as _, AsRawFd as _};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use wayland_client::globals::{registry_queue_init, GlobalError, GlobalListContents};
 use wayland_client::protocol::{
@@ -28,8 +28,9 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ext_session_lock_v1::ExtSessionLockV1,
 };
 
+use crate::key_repeat::RepeatScheduler;
 use crate::keyboard::DecodedKey;
-use crate::paint::LockPalette;
+use crate::paint::{LockPalette, LockVisualState};
 use crate::registry_probe;
 use crate::shm::{Error as ShmError, ShmFrame};
 use crate::surface::{BufferId, Error as SurfaceError, SurfaceSet};
@@ -207,6 +208,9 @@ impl LockConnection {
     /// Read and dispatch Wayland events for at most `timeout`, allowing the
     /// runtime to poll the PAM worker without blocking indefinitely.
     pub(crate) fn poll_dispatch(&mut self, timeout: Duration) -> Result<usize, WireError> {
+        let now = Instant::now();
+        self.inner.state.emit_due_repeats(now);
+        let timeout = self.inner.state.repeat_wait(timeout, now);
         let dispatched = self.dispatch_pending()?;
         if dispatched > 0 {
             return Ok(dispatched);
@@ -226,11 +230,13 @@ impl LockConnection {
         if result < 0 {
             let error = io::Error::last_os_error();
             if error.kind() == io::ErrorKind::Interrupted {
+                self.inner.state.emit_due_repeats(Instant::now());
                 return Ok(0);
             }
             return Err(WireError::Poll(error));
         }
         if result == 0 {
+            self.inner.state.emit_due_repeats(Instant::now());
             return Ok(0);
         }
         if descriptor.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
@@ -244,15 +250,22 @@ impl LockConnection {
             Err(wayland_client::backend::WaylandError::Io(error))
                 if error.kind() == io::ErrorKind::WouldBlock =>
             {
+                self.inner.state.emit_due_repeats(Instant::now());
                 return Ok(0);
             }
             Err(error) => return Err(WireError::Read(error)),
         }
-        self.dispatch_pending()
+        let dispatched = self.dispatch_pending()?;
+        self.inner.state.emit_due_repeats(Instant::now());
+        Ok(dispatched)
     }
 
     pub(crate) fn drain_events(&mut self) -> impl Iterator<Item = PreparedEvent> + '_ {
         self.inner.state.events.drain(..)
+    }
+
+    pub(crate) fn set_visual_state(&mut self, visual: LockVisualState) {
+        self.inner.state.set_visual_state(visual);
     }
 
     /// Send the authenticated unlock request and wait for a display-sync
@@ -336,6 +349,7 @@ struct SeatBinding {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     decoder: KeyboardDecoder,
     focused: bool,
+    repeat: RepeatScheduler<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -378,6 +392,7 @@ struct LockingState {
     lock_surfaces: BTreeMap<OutputId, LockSurfaceBinding>,
     buffers: BTreeMap<BufferId, BufferBinding>,
     pending_renders: BTreeSet<OutputId>,
+    visual: LockVisualState,
 }
 
 struct LockSurfaceBinding {
@@ -527,6 +542,7 @@ impl PreparedState {
                         keyboard: None,
                         decoder: KeyboardDecoder::new(),
                         focused: false,
+                        repeat: RepeatScheduler::default(),
                     },
                 );
             }
@@ -638,6 +654,48 @@ impl PreparedState {
             .count()
     }
 
+    fn repeat_wait(&self, requested: Duration, now: Instant) -> Duration {
+        self.seats
+            .values()
+            .filter_map(|seat| seat.repeat.deadline())
+            .map(|deadline| deadline.saturating_duration_since(now))
+            .min()
+            .map_or(requested, |until_repeat| requested.min(until_repeat))
+    }
+
+    fn emit_due_repeats(&mut self, now: Instant) {
+        let due = self
+            .seats
+            .values_mut()
+            .filter_map(|seat| seat.repeat.take_due(now).map(|key| (seat.seat, key)))
+            .collect::<Vec<_>>();
+        for (seat_id, key) in due {
+            let result = self
+                .seats
+                .values_mut()
+                .find(|seat| seat.seat == seat_id)
+                .map(|seat| catch_unwind(AssertUnwindSafe(|| seat.decoder.decode_press(key))));
+            match result {
+                Some(Ok(Ok(Some(input)))) => {
+                    self.events.push_back(PreparedEvent::KeyboardInput {
+                        seat: seat_id,
+                        input,
+                    });
+                }
+                Some(Ok(Ok(None))) => {}
+                Some(Ok(Err(error))) => {
+                    self.record_failure(PreparedStateError::Keyboard(error.into()));
+                }
+                Some(Err(_)) => self.record_failure(PreparedStateError::Keyboard(
+                    KeyboardFailure::DecoderPanicked,
+                )),
+                None => {
+                    self.record_failure(PreparedStateError::Keyboard(KeyboardFailure::SeatMissing))
+                }
+            }
+        }
+    }
+
     fn begin_lock(&mut self, queue_handle: &QueueHandle<Self>) -> Result<(), WireError> {
         if self.locking.is_some() {
             return Err(WireError::State(WireStateError::AlreadyLocking));
@@ -656,6 +714,7 @@ impl PreparedState {
             lock_surfaces: BTreeMap::new(),
             buffers: BTreeMap::new(),
             pending_renders: BTreeSet::new(),
+            visual: LockVisualState::default(),
         });
 
         let outputs: Vec<_> = self
@@ -737,6 +796,19 @@ impl PreparedState {
         }
     }
 
+    fn set_visual_state(&mut self, visual: LockVisualState) {
+        let Some(locking) = &mut self.locking else {
+            return;
+        };
+        if locking.visual == visual || !locking.phase.accepts_surfaces() {
+            return;
+        }
+        locking.visual = visual;
+        locking
+            .pending_renders
+            .extend(locking.lock_surfaces.keys().copied());
+    }
+
     fn render_pending(&mut self, queue_handle: &QueueHandle<Self>) -> Result<(), WireError> {
         let pending = self
             .locking
@@ -789,7 +861,12 @@ impl PreparedState {
                 .map_err(WireError::Surface)?;
             return Err(WireError::State(WireStateError::DuplicateBuffer));
         }
-        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT) {
+        let visual = self
+            .locking
+            .as_ref()
+            .map(|locking| locking.visual)
+            .unwrap_or_default();
+        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT, visual) {
             Ok(frame) => frame,
             Err(error) => {
                 self.surfaces
@@ -972,6 +1049,7 @@ impl Dispatch<wl_seat::WlSeat, SeatData> for PreparedState {
             }
         } else if let Some(keyboard) = binding.keyboard.take() {
             binding.decoder.clear_keymap();
+            binding.repeat.clear();
             if binding.focused {
                 binding.focused = false;
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
@@ -1012,6 +1090,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                         KeyboardFailure::InvalidKeymapFormat,
                     ));
                 } else {
+                    binding.repeat.clear();
                     match catch_unwind(AssertUnwindSafe(|| {
                         binding.decoder.install_keymap(fd, size)
                     })) {
@@ -1040,6 +1119,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                     return;
                 }
                 binding.focused = false;
+                binding.repeat.clear();
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
                     seat: data.seat,
                     focused: false,
@@ -1050,8 +1130,22 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                 state: key_state,
                 ..
             } => match key_state {
-                WEnum::Value(wl_keyboard::KeyState::Pressed)
-                | WEnum::Value(wl_keyboard::KeyState::Repeated) => {
+                WEnum::Value(wl_keyboard::KeyState::Pressed) => {
+                    let repeatable =
+                        match catch_unwind(AssertUnwindSafe(|| binding.decoder.key_repeats(key))) {
+                            Ok(Ok(repeatable)) => repeatable,
+                            Ok(Err(error)) => {
+                                state.record_failure(PreparedStateError::Keyboard(error.into()));
+                                return;
+                            }
+                            Err(_) => {
+                                state.record_failure(PreparedStateError::Keyboard(
+                                    KeyboardFailure::DecoderPanicked,
+                                ));
+                                return;
+                            }
+                        };
+                    binding.repeat.pressed(key, repeatable, Instant::now());
                     match catch_unwind(AssertUnwindSafe(|| binding.decoder.decode_press(key))) {
                         Ok(Ok(Some(input))) => {
                             state.events.push_back(PreparedEvent::KeyboardInput {
@@ -1068,7 +1162,25 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                         )),
                     }
                 }
-                WEnum::Value(wl_keyboard::KeyState::Released) => {}
+                WEnum::Value(wl_keyboard::KeyState::Repeated) => {
+                    binding.repeat.clear();
+                    match catch_unwind(AssertUnwindSafe(|| binding.decoder.decode_press(key))) {
+                        Ok(Ok(Some(input))) => {
+                            state.events.push_back(PreparedEvent::KeyboardInput {
+                                seat: data.seat,
+                                input,
+                            })
+                        }
+                        Ok(Ok(None)) => {}
+                        Ok(Err(error)) => {
+                            state.record_failure(PreparedStateError::Keyboard(error.into()))
+                        }
+                        Err(_) => state.record_failure(PreparedStateError::Keyboard(
+                            KeyboardFailure::DecoderPanicked,
+                        )),
+                    }
+                }
+                WEnum::Value(wl_keyboard::KeyState::Released) => binding.repeat.released(key),
                 WEnum::Unknown(_) => state.record_failure(PreparedStateError::Keyboard(
                     KeyboardFailure::InvalidKeyState,
                 )),
@@ -1107,10 +1219,11 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                     ));
                     return;
                 };
+                let config = binding.repeat.configure(rate, delay_ms, Instant::now());
                 state.events.push_back(PreparedEvent::KeyboardRepeat {
                     seat: data.seat,
-                    rate,
-                    delay_ms,
+                    rate: config.rate(),
+                    delay_ms: config.delay_ms(),
                 });
             }
             _ => {}

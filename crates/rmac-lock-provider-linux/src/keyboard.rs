@@ -100,13 +100,15 @@ impl std::error::Error for TextError {}
 /// input. Binary prompts remain module-specific and cannot be answered by this
 /// generic text/radio editor.
 pub struct PromptEditor {
+    kind: RequestKind,
     pending: Option<PendingPrompt>,
     state: EditorState,
 }
 
 impl PromptEditor {
     pub fn new(pending: PendingPrompt) -> Self {
-        let state = match pending.prompt().kind() {
+        let kind = pending.prompt().kind();
+        let state = match kind {
             RequestKind::EchoOff => EditorState::Secret(SecretInput::new()),
             RequestKind::EchoOn => EditorState::Text(TextInput::new()),
             RequestKind::Info | RequestKind::Error => EditorState::Notice,
@@ -114,9 +116,14 @@ impl PromptEditor {
             RequestKind::Binary => EditorState::Binary,
         };
         Self {
+            kind,
             pending: Some(pending),
             state,
         }
+    }
+
+    pub fn kind(&self) -> RequestKind {
+        self.kind
     }
 
     pub fn handle(&mut self, key: DecodedKey) -> Result<EditOutcome, EditError> {

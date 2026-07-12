@@ -3,6 +3,7 @@
 //! Pixels use the native-endian `wl_shm` ARGB8888 representation. The supported
 //! Ubuntu targets are little-endian, where each pixel is stored as BGRA bytes.
 
+use std::fmt;
 use std::io::{self, Write};
 
 use crate::surface::BufferLayout;
@@ -24,6 +25,7 @@ pub struct LockPalette {
     pub panel: Rgb,
     pub avatar: Rgb,
     pub accent: Rgb,
+    pub error: Rgb,
 }
 
 impl LockPalette {
@@ -35,7 +37,87 @@ impl LockPalette {
         panel: Rgb::new(211, 220, 237),
         avatar: Rgb::new(221, 228, 241),
         accent: Rgb::new(105, 166, 255),
+        error: Rgb::new(255, 105, 120),
     };
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct LockVisualState {
+    prompt: PromptVisual,
+    authentication_failed: bool,
+}
+
+impl Default for LockVisualState {
+    fn default() -> Self {
+        Self {
+            prompt: PromptVisual::Hidden,
+            authentication_failed: false,
+        }
+    }
+}
+
+impl LockVisualState {
+    pub const fn new(prompt: PromptVisual, authentication_failed: bool) -> Self {
+        Self {
+            prompt,
+            authentication_failed,
+        }
+    }
+
+    pub const fn prompt(self) -> PromptVisual {
+        self.prompt
+    }
+
+    pub const fn authentication_failed(self) -> bool {
+        self.authentication_failed
+    }
+}
+
+impl fmt::Debug for LockVisualState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("LockVisualState(<redacted>)")
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum PromptVisual {
+    Hidden,
+    Secret { dots: u8 },
+    Text { dots: u8 },
+    Notice,
+    Radio { selected: bool },
+    Binary,
+}
+
+impl PromptVisual {
+    pub fn secret(character_count: usize) -> Self {
+        Self::Secret {
+            dots: capped_dots(character_count),
+        }
+    }
+
+    pub fn text(character_count: usize) -> Self {
+        Self::Text {
+            dots: capped_dots(character_count),
+        }
+    }
+}
+
+impl fmt::Debug for PromptVisual {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Hidden => "PromptVisual::Hidden",
+            Self::Secret { .. } => "PromptVisual::Secret(<redacted>)",
+            Self::Text { .. } => "PromptVisual::Text(<redacted>)",
+            Self::Notice => "PromptVisual::Notice",
+            Self::Radio { .. } => "PromptVisual::Radio(<redacted>)",
+            Self::Binary => "PromptVisual::Binary",
+        })
+    }
+}
+
+fn capped_dots(character_count: usize) -> u8 {
+    character_count.min(12) as u8
 }
 
 impl Rgb {
@@ -80,6 +162,7 @@ pub fn paint_lock_frame(
     writer: &mut impl Write,
     layout: BufferLayout,
     palette: LockPalette,
+    visual: LockVisualState,
 ) -> io::Result<()> {
     let width = layout.width();
     let height = layout.height();
@@ -90,8 +173,15 @@ pub fn paint_lock_frame(
         while x < width {
             let pixels = (width - x).min(CHUNK_PIXELS as u32) as usize;
             for index in 0..pixels {
-                let pixel =
-                    paint_pixel(x + index as u32, y, width, height, layout.scale(), palette);
+                let pixel = paint_pixel(
+                    x + index as u32,
+                    y,
+                    width,
+                    height,
+                    layout.scale(),
+                    palette,
+                    visual,
+                );
                 let offset = index * 4;
                 chunk[offset..offset + 4].copy_from_slice(&pixel.argb8888());
             }
@@ -102,7 +192,15 @@ pub fn paint_lock_frame(
     Ok(())
 }
 
-fn paint_pixel(x: u32, y: u32, width: u32, height: u32, scale: u32, palette: LockPalette) -> Rgb {
+fn paint_pixel(
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    scale: u32,
+    palette: LockPalette,
+    visual: LockVisualState,
+) -> Rgb {
     let denominator = height.saturating_sub(1).max(1);
     let mut color = palette
         .top
@@ -139,7 +237,12 @@ fn paint_pixel(x: u32, y: u32, width: u32, height: u32, scale: u32, palette: Loc
         panel_half_height,
         i64::from(12 * scale),
     ) {
-        color = color.blend(palette.panel, 58);
+        let panel = if visual.authentication_failed {
+            palette.error
+        } else {
+            palette.panel
+        };
+        color = color.blend(panel, if visual.authentication_failed { 76 } else { 58 });
     }
 
     let accent_x = center_x + panel_half_width - i64::from(18 * scale);
@@ -147,10 +250,90 @@ fn paint_pixel(x: u32, y: u32, width: u32, height: u32, scale: u32, palette: Loc
     let accent_dx = i64::from(x) - accent_x;
     let accent_dy = i64::from(y) - panel_center_y;
     if accent_dx * accent_dx + accent_dy * accent_dy <= accent_radius * accent_radius {
-        color = color.blend(palette.accent, 238);
+        color = color.blend(
+            if visual.authentication_failed {
+                palette.error
+            } else {
+                palette.accent
+            },
+            238,
+        );
     }
 
+    color = paint_prompt(
+        color,
+        i64::from(x),
+        i64::from(y),
+        center_x,
+        panel_center_y,
+        scale,
+        palette,
+        visual.prompt,
+    );
+
     color
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_prompt(
+    mut color: Rgb,
+    x: i64,
+    y: i64,
+    center_x: i64,
+    center_y: i64,
+    scale: u32,
+    palette: LockPalette,
+    prompt: PromptVisual,
+) -> Rgb {
+    let scale = i64::from(scale);
+    match prompt {
+        PromptVisual::Secret { dots } | PromptVisual::Text { dots } => {
+            let count = i64::from(dots);
+            let spacing = 12 * scale;
+            let first = center_x - (count.saturating_sub(1) * spacing / 2);
+            for index in 0..count {
+                if inside_circle(x, y, first + index * spacing, center_y, 3 * scale) {
+                    color = color.blend(palette.panel, 224);
+                    break;
+                }
+            }
+        }
+        PromptVisual::Notice => {
+            for (offset, half_width) in [(-7, 34), (0, 42), (7, 28)] {
+                if (y - (center_y + i64::from(offset) * scale)).abs() <= scale
+                    && (x - center_x).abs() <= i64::from(half_width) * scale
+                {
+                    color = color.blend(palette.panel, 188);
+                }
+            }
+        }
+        PromptVisual::Radio { selected } => {
+            let selection_x = center_x + if selected { 9 * scale } else { -9 * scale };
+            if inside_rounded_rect(x, y, center_x, center_y, 19 * scale, 10 * scale, 10 * scale) {
+                color = color.blend(palette.panel, 92);
+            }
+            if inside_circle(x, y, selection_x, center_y, 7 * scale) {
+                color = color.blend(palette.accent, 230);
+            }
+        }
+        PromptVisual::Binary => {
+            for offset in [-9_i64, 0, 9] {
+                if (x - (center_x + offset * scale)).abs() <= 2 * scale
+                    && (y - center_y).abs() <= 7 * scale
+                {
+                    color = color.blend(palette.panel, 196);
+                }
+            }
+        }
+        PromptVisual::Hidden => {}
+    }
+    color
+}
+
+fn inside_circle(x: i64, y: i64, center_x: i64, center_y: i64, radius: i64) -> bool {
+    let dx = x - center_x;
+    let dy = y - center_y;
+    dx * dx + dy * dy <= radius * radius
 }
 
 fn percent(value: u32, numerator: u64) -> i64 {
@@ -199,8 +382,20 @@ mod tests {
         let layout = layout(320, 200, 1);
         let mut first = Vec::new();
         let mut second = Vec::new();
-        paint_lock_frame(&mut first, layout, LockPalette::MIDNIGHT).unwrap();
-        paint_lock_frame(&mut second, layout, LockPalette::MIDNIGHT).unwrap();
+        paint_lock_frame(
+            &mut first,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::default(),
+        )
+        .unwrap();
+        paint_lock_frame(
+            &mut second,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::default(),
+        )
+        .unwrap();
 
         assert_eq!(first, second);
         assert_eq!(first.len() as u64, layout.byte_len());
@@ -209,13 +404,47 @@ mod tests {
     }
 
     #[test]
+    fn prompt_and_failure_states_change_pixels_but_redact_diagnostics() {
+        let layout = layout(320, 200, 1);
+        let mut secret = Vec::new();
+        let mut failed = Vec::new();
+        paint_lock_frame(
+            &mut secret,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::new(PromptVisual::secret(9), false),
+        )
+        .unwrap();
+        paint_lock_frame(
+            &mut failed,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::new(PromptVisual::Hidden, true),
+        )
+        .unwrap();
+        assert_ne!(secret, failed);
+        let debug = format!(
+            "{:?} {:?}",
+            LockVisualState::new(PromptVisual::secret(9), false),
+            PromptVisual::Radio { selected: true }
+        );
+        assert!(!debug.contains('9'));
+        assert!(!debug.contains("true"));
+    }
+
+    #[test]
     fn painting_propagates_a_short_destination_failure() {
         let layout = layout(64, 64, 1);
         let mut writer = FailingWriter { remaining: 100 };
         assert_eq!(
-            paint_lock_frame(&mut writer, layout, LockPalette::MIDNIGHT)
-                .unwrap_err()
-                .kind(),
+            paint_lock_frame(
+                &mut writer,
+                layout,
+                LockPalette::MIDNIGHT,
+                LockVisualState::default(),
+            )
+            .unwrap_err()
+            .kind(),
             io::ErrorKind::WriteZero
         );
     }

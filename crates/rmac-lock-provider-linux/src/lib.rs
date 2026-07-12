@@ -9,6 +9,7 @@ use std::fmt;
 
 use zeroize::Zeroize as _;
 
+pub mod key_repeat;
 pub mod keyboard;
 pub mod paint;
 pub mod pam_broker;

@@ -98,12 +98,9 @@ impl KeyboardDecoder {
     }
 
     pub(super) fn decode_press(&mut self, raw_keycode: u32) -> Result<Option<DecodedKey>, Error> {
-        let keycode = raw_keycode
-            .checked_add(WAYLAND_KEYCODE_OFFSET)
-            .filter(|keycode| *keycode <= xkb::KEYCODE_MAX)
-            .ok_or(Error::InvalidKeycode)?;
+        let keycode = wayland_keycode(raw_keycode)?;
         let state = self.state.as_ref().ok_or(Error::KeymapUnavailable)?;
-        let keysym = state.key_get_one_sym(keycode.into());
+        let keysym = state.key_get_one_sym(keycode);
         let raw_keysym = keysym.raw();
 
         let action = match raw_keysym {
@@ -121,9 +118,15 @@ impl KeyboardDecoder {
             }
             xkb::keysyms::KEY_Left | xkb::keysyms::KEY_Up => Some(DecodedKey::SelectPrevious),
             xkb::keysyms::KEY_Right | xkb::keysyms::KEY_Down => Some(DecodedKey::SelectNext),
-            _ => self.decode_text(keysym, keycode.into())?,
+            _ => self.decode_text(keysym, keycode)?,
         };
         Ok(action)
+    }
+
+    pub(super) fn key_repeats(&self, raw_keycode: u32) -> Result<bool, Error> {
+        let keycode = wayland_keycode(raw_keycode)?;
+        let state = self.state.as_ref().ok_or(Error::KeymapUnavailable)?;
+        Ok(state.get_keymap().key_repeats(keycode))
     }
 
     fn decode_text(
@@ -162,6 +165,14 @@ impl KeyboardDecoder {
             compose.reset();
         }
     }
+}
+
+fn wayland_keycode(raw_keycode: u32) -> Result<xkb::Keycode, Error> {
+    raw_keycode
+        .checked_add(WAYLAND_KEYCODE_OFFSET)
+        .filter(|keycode| *keycode <= xkb::KEYCODE_MAX)
+        .map(Into::into)
+        .ok_or(Error::InvalidKeycode)
 }
 
 fn decoded_text(value: String) -> Option<DecodedKey> {
@@ -204,6 +215,7 @@ mod tests {
             panic!("evdev A did not decode as text");
         };
         letter.expose(|value| assert_eq!(value, "a"));
+        assert!(matches!(decoder.key_repeats(30), Ok(true)));
 
         let Some(DecodedKey::Text(space)) = decoder.decode_press(57).unwrap() else {
             panic!("space must remain valid credential text");

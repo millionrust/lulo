@@ -200,7 +200,9 @@ cargo test -p rmac-lock-provider-linux pam:: --locked -- --test-threads=1
 Run the Linux-only XKB decoder tests against the distribution libxkbcommon and
 keyboard data. They cover the Wayland keycode offset, ordinary text, a literal
 space in credentials, submit/cancel/backspace actions, missing keymaps, invalid
-keycodes, and pre-map size rejection:
+keycodes, pre-map size rejection, and key-repeat classification. The full
+package test also covers repeat rate/delay clamping, cancellation, and the
+no-catch-up-burst rule without connecting to a compositor:
 
 ```sh
 cargo test -p rmac-lock-provider-linux xkb_keyboard:: --locked -- --test-threads=1
@@ -208,8 +210,8 @@ cargo test -p rmac-lock-provider-linux xkb_keyboard:: --locked -- --test-threads
 
 A full native package test also links the generated session-lock/shm wire but
 does not issue a lock request. It also runs the portable runtime coordinator
-tests; Linux-only tests compile the pump and reject invalid usernames before a
-Wayland connection is attempted:
+and redacted visual-state/painting tests; Linux-only tests compile the pump and
+reject invalid usernames before a Wayland connection is attempted:
 
 ```sh
 cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked

@@ -177,6 +177,13 @@ bounded, drop-zeroized UTF-8 or redacted semantic actions leave that adapter;
 unsupported formats, invalid sizes/states, missing keymaps, and decoder panics
 fail preparation.
 
+The wire also owns a per-seat client repeat scheduler. Compositor rates are
+clamped to 100 events per second and delays to 10 seconds, a late event-loop
+iteration emits at most one repeat instead of replaying a burst, and release,
+focus loss, keymap replacement, or compositor-generated repeat cancels the
+client schedule. Repeated keys are decoded again against the current modifier
+state; raw key identity remains inside the Wayland adapter.
+
 A platform-neutral prompt editor now consumes those semantic keys and owns one
 broker prompt capability. It edits echo-off input in the existing fixed secret
 allocation, edits echo-on input in a separately zeroized bounded allocation,
@@ -205,13 +212,20 @@ synchronized wire method, and returns readiness, prompt-change, failure, and
 exit signals to a future supervisor. Username validation happens before
 connecting or locking. This pump is neither exported nor installed.
 
+The renderer now receives only a copyable redacted presentation snapshot. It
+paints capped password/text indicators, generic notice/radio/binary shapes, and
+authentication-failure color, and queues every configured output for repaint
+when that snapshot changes. It never receives PAM prompt text or credential
+bytes, its diagnostics redact both character counts and selection state, and a
+rendered failure still has no authority to unlock or declare secure readiness.
+
 The Linux adapter still requires an installed wrapper that derives the verified
-session username, renders prompt/error state, sends systemd readiness, maintains
-the logind locked hint, and owns emergency recovery. Client-side repeat
-scheduling, module-specific binary MFA UI, IME/accessibility support, and real
-niri/PAM evidence including the compiled fault tests also remain. Until then,
-the installed unit continues to run swaylock and the preview projection remains
-unrendered.
+session username, presents reviewed localized prompt/error text, sends systemd
+readiness, maintains the logind locked hint, and owns emergency recovery.
+Module-specific binary MFA UI, IME/accessibility support, and real niri/PAM
+evidence including the compiled fault tests also remain. Until then, the
+installed unit continues to run swaylock and the custom provider remains an
+internal, uninstalled implementation.
 
 ## Not complete yet
 

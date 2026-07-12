@@ -97,7 +97,9 @@ output scale, seat capabilities, and an `xkb_v1` keymap before readiness, then
 tracks hotplug, focus, modifiers, layout group, repeat metadata, and bounded
 semantic input. Keymap mapping is capped at 16 MiB; decoded text is capped at 64
 bytes, redacted, and erased on drop. Loss of a required singleton or malformed
-input state is terminal.
+input state is terminal. Per-seat client repeat clamps hostile compositor
+settings, emits no catch-up burst, re-decodes with current modifiers, and is
+cancelled on release, focus loss, keymap replacement, or compositor repeat.
 
 The crate-only lock typestate now issues acquisition, immediately creates one
 role per output, renders only after configure, performs exact ack/scale/attach/
@@ -126,13 +128,17 @@ action. Worker panic and invalid ordering fail closed. A crate-internal Linux
 pump multiplexes Wayland with worker/prompt polling and exposes only readiness,
 prompt-change, failure, and exit status to a future supervisor. It is not a
 shipped executable and does not yet own systemd notification, logind hints,
-prompt rendering, username derivation, or recovery.
+localized prompt text, username derivation, or recovery.
 
 The initial renderer is an opaque, dependency-free CPU composition written in
 bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after
 painting through kernel seals, and owned with its redacted buffer token. The
 wire preserves that ownership until the compositor's release event; rendering
-completion alone never authorizes readiness or unlock.
+completion alone never authorizes readiness or unlock. A copyable presentation
+snapshot contains only prompt category, a capped indicator count or selection,
+and failure state. Snapshot changes repaint configured outputs with abstract
+indicators; PAM prompt text and credential bytes never cross into the renderer,
+and diagnostic formatting redacts the snapshot's values.
 
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,

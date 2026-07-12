@@ -13,7 +13,9 @@ use rmac_lock_provider::{
 };
 
 use crate::keyboard::{DecodedKey, EditError, EditOutcome, PromptEditor};
+use crate::paint::{LockVisualState, PromptVisual};
 use crate::pam_broker::PendingPrompt;
+use crate::pam_conversation::RequestKind;
 
 const MAX_QUEUED_INPUTS: usize = 32;
 
@@ -23,6 +25,7 @@ pub struct Coordinator {
     draining_cancelled_worker: Option<AttemptId>,
     editor: Option<PromptEditor>,
     queued_inputs: VecDeque<DecodedKey>,
+    authentication_failed_visible: bool,
 }
 
 impl Default for Coordinator {
@@ -33,6 +36,7 @@ impl Default for Coordinator {
             draining_cancelled_worker: None,
             editor: None,
             queued_inputs: VecDeque::new(),
+            authentication_failed_visible: false,
         }
     }
 }
@@ -52,6 +56,26 @@ impl Coordinator {
 
     pub fn prompt_character_count(&self) -> Option<usize> {
         self.editor.as_ref().and_then(PromptEditor::character_count)
+    }
+
+    pub fn visual_state(&self) -> LockVisualState {
+        let prompt =
+            self.editor
+                .as_ref()
+                .map_or(PromptVisual::Hidden, |editor| match editor.kind() {
+                    RequestKind::EchoOff => {
+                        PromptVisual::secret(editor.character_count().unwrap_or_default())
+                    }
+                    RequestKind::EchoOn => {
+                        PromptVisual::text(editor.character_count().unwrap_or_default())
+                    }
+                    RequestKind::Info | RequestKind::Error => PromptVisual::Notice,
+                    RequestKind::Radio => PromptVisual::Radio {
+                        selected: editor.radio_selection().unwrap_or(false),
+                    },
+                    RequestKind::Binary => PromptVisual::Binary,
+                });
+        LockVisualState::new(prompt, self.authentication_failed_visible)
     }
 
     pub fn apply(&mut self, event: RuntimeEvent) -> Result<RuntimeActions, Error> {
@@ -75,6 +99,7 @@ impl Coordinator {
                 self.queued_inputs.clear();
                 self.attempt = None;
                 self.draining_cancelled_worker = None;
+                self.authentication_failed_visible = false;
                 self.apply_provider(ProviderEvent::CompositorFinished, &mut actions)?;
             }
             RuntimeEvent::UnlockFlushed => {
@@ -88,6 +113,7 @@ impl Coordinator {
                     return Err(Error::DuplicatePrompt);
                 }
                 self.editor = Some(PromptEditor::new(prompt));
+                self.authentication_failed_visible = false;
                 actions.prompt_changed = true;
                 self.replay_queued_inputs(&mut actions)?;
             }
@@ -138,6 +164,10 @@ impl Coordinator {
         }
         match self.provider.phase() {
             Phase::Locked => {
+                if self.authentication_failed_visible {
+                    self.authentication_failed_visible = false;
+                    actions.prompt_changed = true;
+                }
                 self.queue_input(input);
                 if self.draining_cancelled_worker.is_none() {
                     self.start_authentication(actions)?;
@@ -189,6 +219,7 @@ impl Coordinator {
                 let attempt = self.attempt.take().ok_or(Error::MissingAttemptToken)?;
                 self.apply_provider(ProviderEvent::AuthenticationCancelled(attempt), actions)?;
                 self.draining_cancelled_worker = Some(attempt);
+                self.authentication_failed_visible = false;
                 actions.prompt_changed = true;
             }
         }
@@ -219,9 +250,11 @@ impl Coordinator {
         self.queued_inputs.clear();
         match outcome {
             AuthenticationOutcome::Succeeded => {
+                self.authentication_failed_visible = false;
                 self.apply_provider(ProviderEvent::AuthenticationSucceeded(attempt), actions)?;
             }
             AuthenticationOutcome::Failed => {
+                self.authentication_failed_visible = true;
                 self.apply_provider(ProviderEvent::AuthenticationFailed(attempt), actions)?;
                 actions.authentication_failed = true;
             }
@@ -251,6 +284,10 @@ impl fmt::Debug for Coordinator {
             )
             .field("prompt", &self.editor.as_ref().map(|_| "<redacted>"))
             .field("queued_input", &"<redacted>")
+            .field(
+                "authentication_failed_visible",
+                &self.authentication_failed_visible,
+            )
             .finish()
     }
 }
@@ -477,6 +514,9 @@ mod linux {
             mut actions: RuntimeActions,
             status: &mut RuntimeStatus,
         ) -> Result<(), LinuxError> {
+            if actions.prompt_changed || actions.authentication_failed {
+                self.wire.set_visual_state(self.coordinator.visual_state());
+            }
             if let Some(attempt) = actions.start_authentication.take() {
                 if self.authentication.is_some() {
                     return Err(LinuxError::DuplicateWorker);
@@ -634,9 +674,17 @@ mod tests {
         let worker = thread::spawn(move || conversation.respond(Request::EchoOff(c"Password:")));
         let pending = ui.prompt_timeout(WAIT).unwrap().unwrap();
         coordinator.apply(RuntimeEvent::Prompt(pending)).unwrap();
+        assert!(matches!(
+            coordinator.visual_state().prompt(),
+            PromptVisual::Secret { dots: 0 }
+        ));
         coordinator
             .apply(RuntimeEvent::Input(text("sécure")))
             .unwrap();
+        assert!(matches!(
+            coordinator.visual_state().prompt(),
+            PromptVisual::Secret { dots: 6 }
+        ));
         coordinator
             .apply(RuntimeEvent::Input(DecodedKey::Submit))
             .unwrap();
@@ -708,6 +756,7 @@ mod tests {
             })
             .unwrap();
         assert!(actions.authentication_failed);
+        assert!(coordinator.visual_state().authentication_failed());
         assert!(actions.start_authentication.is_none());
         assert_eq!(coordinator.failed_attempts(), 1);
 

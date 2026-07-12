@@ -127,7 +127,9 @@ the one-shot unlock boundary, wrong-password retry, cancellation followed by
 worker drain, queued input reuse, stale completion rejection, worker panic,
 compositor finish, and bounded/redacted pre-prompt input. The Linux pump compiles
 against the real `Worker` and never joins it until `JoinHandle::is_finished` is
-true; the native Ubuntu matrix remains required.
+true. Presentation tests verify that the renderer receives only prompt category,
+a capped indicator count or selection, and failure state; debug output redacts
+those values. The native Ubuntu matrix remains required.
 
 `cargo deny 0.19.8 check` passed advisories, bans, licenses, and sources for the
 admitted lockfile on 2026-07-12.

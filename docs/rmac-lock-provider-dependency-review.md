@@ -53,8 +53,10 @@ panic boundary. Only semantic actions or a 64-byte bounded UTF-8 fragment leave
 the decoder; control characters and overlong fragments are erased and rejected,
 and diagnostics expose neither text nor raw keycodes.
 The fragment is erased on drop. The wrapper and the system library still need
-native malformed-keymap and compose evidence. Client-side repeat scheduling,
-input-method/IME support, and accessibility behavior also remain open gates.
+native malformed-keymap and compose evidence. Bounded per-seat client repeat is
+implemented without another dependency, but its live compositor behavior still
+needs Linux evidence. Input-method/IME support and accessibility behavior also
+remain open gates.
 
 References: the official
 [`wl_keyboard` protocol](https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_keyboard),

@@ -35,10 +35,22 @@ trait Focus {
     fn configuration_changed(&self) -> zbus::Result<()>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Snapshot {
     pub projection: Projection,
+    pub mode_id: Option<String>,
     pub persistence_healthy: bool,
+}
+
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Snapshot")
+            .field("projection", &self.projection)
+            .field("mode_id", &self.mode_id.as_ref().map(|_| "<redacted>"))
+            .field("persistence_healthy", &self.persistence_healthy)
+            .finish()
+    }
 }
 
 pub fn state() -> Result<Snapshot, Error> {
@@ -220,8 +232,10 @@ async fn watch_once(sender: &Sender<Result<Projection, String>>) -> Result<(), E
 
 fn decode(state: WireState) -> Result<Snapshot, Error> {
     let persistence_healthy = state.4;
+    let mode_id = state.0.then(|| state.1.clone());
     Ok(Snapshot {
         projection: projection(&state).map_err(|_| Error::Protocol)?,
+        mode_id,
         persistence_healthy,
     })
 }
@@ -285,6 +299,7 @@ mod tests {
         let snapshot = decode((true, "work".into(), "Work".into(), 5_000, false)).unwrap();
         assert!(snapshot.projection.enabled);
         assert_eq!(snapshot.projection.mode_name.as_deref(), Some("Work"));
+        assert_eq!(snapshot.mode_id.as_deref(), Some("work"));
         assert!(!snapshot.persistence_healthy);
         assert!(!format!("{snapshot:?}").contains("work"));
     }

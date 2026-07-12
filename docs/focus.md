@@ -110,5 +110,23 @@ last-known-good indicator, Quick Settings becomes non-writable, and health
 becomes unavailable. A stale saved toggle can no longer impersonate live Focus.
 Quick Settings now mutates and rereads only the D-Bus authority; connection
 loss makes the tile read-only while preserving last-known-good display state.
-The next slice connects this runtime to notification delivery and builds the
-full System Settings pane for modes, schedules, allow lists, and durations.
+
+System Settings now loads both live state and the complete configuration from
+that authority off the UI thread. Its Focus pane activates any built-in mode
+indefinitely or for one hour, turns off a manual mode, changes urgent delivery,
+and manages application allow lists discovered from Notification Center. It
+shows the authority's opaque active mode ID only for exact row selection; the
+client's default diagnostics continue to redact that ID.
+
+`rmac-focus-settings` performs every pane edit by rebuilding and validating the
+whole configuration before it can reach D-Bus. A fresh installation can create
+a real Monday-through-Friday 9:00 AM–5:00 PM schedule for any mode, then change
+its days, start/end time in 15-minute increments, enabled state, or delete it.
+Overnight ranges are presented honestly as continuing into the next day. The UI
+updates optimistically while busy, rereads authority after every mutation, and
+rolls back its optimistic configuration when both mutation and refresh fail.
+Errors remain visible and no control writes `focus.json` directly.
+
+The Focus pane still requires a scoped GPUI build and live Linux/niri evidence
+before E9 can be checked complete. Live configuration subscription and richer
+application name/icon resolution also remain follow-up work.

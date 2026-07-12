@@ -100,6 +100,11 @@ bytes, redacted, and erased on drop. Loss of a required singleton or malformed
 input state is terminal. Per-seat client repeat clamps hostile compositor
 settings, emits no catch-up burst, re-decodes with current modifiers, and is
 cancelled on release, focus loss, keymap replacement, or compositor repeat.
+Optional per-seat pointers retain only focus, surface-local position, and one
+redacted pressed target. A left-button release emits a semantic action only when
+it matches the pressed target; focus/capability/output/seat loss cancels it.
+Submit and radio selection share the keyboard editor path, while generic binary
+prompts expose no clickable reply.
 
 The crate-only lock typestate now issues acquisition, immediately creates one
 role per output, renders only after configure, performs exact ack/scale/attach/

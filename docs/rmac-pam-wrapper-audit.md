@@ -133,7 +133,11 @@ presentation label—not response bytes. Tests cover invalid UTF-8 fallback,
 Unicode preservation, whitespace normalization, bidi-control removal,
 scalar-safe truncation, alpha-mask bounds, and diagnostic redaction. A
 Linux-only test requires installed fonts to shape, rasterize, cache, and redact
-a mixed-script prompt. Portable process tests prove readiness/hint ordering and
+a mixed-script prompt. Pointer tests cover exact submit/radio hit regions,
+non-finite/out-of-bounds rejection, drag-away cancellation, focus-loss
+cancellation, and redacted gesture diagnostics; emitted actions reuse the same
+single-use prompt editor as keyboard input. Portable process tests prove
+readiness/hint ordering and
 distinguish authenticated unlock from compositor denial and post-lock failure.
 The feature-gated Linux runner derives its PAM name from the exact logind
 session only after verifying session ownership. The native Ubuntu matrix

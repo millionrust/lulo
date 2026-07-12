@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use wayland_client::globals::{registry_queue_init, GlobalError, GlobalListContents};
 use wayland_client::protocol::{
-    wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_registry, wl_seat, wl_shm, wl_shm_pool,
-    wl_surface,
+    wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_pointer, wl_registry, wl_seat, wl_shm,
+    wl_shm_pool, wl_surface,
 };
 use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
 
@@ -31,6 +31,7 @@ use wayland_protocols::ext::session_lock::v1::client::{
 use crate::key_repeat::RepeatScheduler;
 use crate::keyboard::DecodedKey;
 use crate::paint::{LockPalette, LockVisualState};
+use crate::pointer::{hit_test, PointerGesture, PointerTarget};
 use crate::prompt_label::PromptText;
 use crate::registry_probe;
 use crate::shm::{Error as ShmError, ShmFrame};
@@ -318,6 +319,17 @@ pub enum PreparedEvent {
         rate: u32,
         delay_ms: u32,
     },
+    PointerAvailabilityChanged {
+        available: bool,
+    },
+    PointerFocusChanged {
+        seat: SeatId,
+        focused: bool,
+    },
+    PointerInput {
+        seat: SeatId,
+        input: DecodedKey,
+    },
     LockAcquired,
     LockFinished,
     FrameCommitted(OutputId),
@@ -328,7 +340,7 @@ pub enum PreparedEvent {
 pub struct SeatId(NonZeroU64);
 
 impl SeatId {
-    fn new(value: u64) -> Option<Self> {
+    pub(crate) fn new(value: u64) -> Option<Self> {
         NonZeroU64::new(value).map(Self)
     }
 }
@@ -356,6 +368,14 @@ struct SeatBinding {
     decoder: KeyboardDecoder,
     focused: bool,
     repeat: RepeatScheduler<u32>,
+    pointer: Option<PointerBinding>,
+}
+
+struct PointerBinding {
+    proxy: wl_pointer::WlPointer,
+    output: Option<OutputId>,
+    position: Option<(f64, f64)>,
+    gesture: PointerGesture,
 }
 
 #[derive(Clone, Copy)]
@@ -371,6 +391,12 @@ struct SeatData {
 
 #[derive(Clone, Copy)]
 struct KeyboardData {
+    seat_global_name: u32,
+    seat: SeatId,
+}
+
+#[derive(Clone, Copy)]
+struct PointerData {
     seat_global_name: u32,
     seat: SeatId,
 }
@@ -566,6 +592,7 @@ impl PreparedState {
                         decoder: KeyboardDecoder::new(),
                         focused: false,
                         repeat: RepeatScheduler::default(),
+                        pointer: None,
                     },
                 );
             }
@@ -594,6 +621,7 @@ impl PreparedState {
         let Some(binding) = self.outputs.remove(&name) else {
             if let Some(mut seat) = self.seats.remove(&name) {
                 let was_available = seat.keyboard.is_some() || self.keyboard_count() > 0;
+                let was_pointer_available = seat.pointer.is_some() || self.pointer_count() > 0;
                 if let Some(keyboard) = seat.keyboard.take() {
                     if keyboard.version() >= 3 {
                         keyboard.release();
@@ -605,6 +633,17 @@ impl PreparedState {
                         focused: false,
                     });
                 }
+                if let Some(pointer) = seat.pointer.take() {
+                    if pointer.output.is_some() {
+                        self.events.push_back(PreparedEvent::PointerFocusChanged {
+                            seat: seat.seat,
+                            focused: false,
+                        });
+                    }
+                    if pointer.proxy.version() >= 3 {
+                        pointer.proxy.release();
+                    }
+                }
                 if seat.proxy.version() >= 5 {
                     seat.proxy.release();
                 }
@@ -612,6 +651,13 @@ impl PreparedState {
                 if available != was_available {
                     self.events
                         .push_back(PreparedEvent::KeyboardAvailabilityChanged { available });
+                }
+                let pointer_available = self.pointer_count() > 0;
+                if pointer_available != was_pointer_available {
+                    self.events
+                        .push_back(PreparedEvent::PointerAvailabilityChanged {
+                            available: pointer_available,
+                        });
                 }
             }
             return;
@@ -675,6 +721,22 @@ impl PreparedState {
             .values()
             .filter(|seat| seat.keyboard.is_some())
             .count()
+    }
+
+    fn pointer_count(&self) -> usize {
+        self.seats
+            .values()
+            .filter(|seat| seat.pointer.is_some())
+            .count()
+    }
+
+    fn pointer_target(&self, seat_global_name: u32) -> Option<PointerTarget> {
+        let pointer = self.seats.get(&seat_global_name)?.pointer.as_ref()?;
+        let output = pointer.output?;
+        let (x, y) = pointer.position?;
+        let (width, height) = self.surfaces.logical_size(output)?;
+        let visual = self.locking.as_ref()?.visual.prompt();
+        hit_test(width, height, visual, x, y)
     }
 
     fn repeat_wait(&self, requested: Duration, now: Instant) -> Duration {
@@ -790,6 +852,26 @@ impl PreparedState {
     }
 
     fn destroy_lock_surface(&mut self, output: OutputId) {
+        let mut unfocused = Vec::new();
+        for seat in self.seats.values_mut() {
+            let Some(pointer) = &mut seat.pointer else {
+                continue;
+            };
+            if pointer.output == Some(output) {
+                pointer.output = None;
+                pointer.position = None;
+                pointer.gesture.clear();
+                unfocused.push(seat.seat);
+            }
+        }
+        self.events.extend(
+            unfocused
+                .into_iter()
+                .map(|seat| PreparedEvent::PointerFocusChanged {
+                    seat,
+                    focused: false,
+                }),
+        );
         let Some(locking) = &mut self.locking else {
             return;
         };
@@ -1068,6 +1150,7 @@ impl Dispatch<wl_seat::WlSeat, SeatData> for PreparedState {
             return;
         };
         let was_available = state.keyboard_count() > 0;
+        let was_pointer_available = state.pointer_count() > 0;
         let Some(binding) = state.seats.get_mut(&data.global_name) else {
             state.record_failure(PreparedStateError::Keyboard(KeyboardFailure::SeatMissing));
             return;
@@ -1096,11 +1179,177 @@ impl Dispatch<wl_seat::WlSeat, SeatData> for PreparedState {
                 keyboard.release();
             }
         }
+        if capabilities.contains(wl_seat::Capability::Pointer) {
+            if binding.pointer.is_none() {
+                binding.pointer = Some(PointerBinding {
+                    proxy: seat.get_pointer(
+                        queue_handle,
+                        PointerData {
+                            seat_global_name: data.global_name,
+                            seat: data.seat,
+                        },
+                    ),
+                    output: None,
+                    position: None,
+                    gesture: PointerGesture::default(),
+                });
+            }
+        } else if let Some(pointer) = binding.pointer.take() {
+            if pointer.output.is_some() {
+                state.events.push_back(PreparedEvent::PointerFocusChanged {
+                    seat: binding.seat,
+                    focused: false,
+                });
+            }
+            if pointer.proxy.version() >= 3 {
+                pointer.proxy.release();
+            }
+        }
         let available = state.keyboard_count() > 0;
         if available != was_available {
             state
                 .events
                 .push_back(PreparedEvent::KeyboardAvailabilityChanged { available });
+        }
+        let pointer_available = state.pointer_count() > 0;
+        if pointer_available != was_pointer_available {
+            state
+                .events
+                .push_back(PreparedEvent::PointerAvailabilityChanged {
+                    available: pointer_available,
+                });
+        }
+    }
+}
+
+impl Dispatch<wl_pointer::WlPointer, PointerData> for PreparedState {
+    fn event(
+        state: &mut Self,
+        _pointer: &wl_pointer::WlPointer,
+        event: wl_pointer::Event,
+        data: &PointerData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        const BTN_LEFT: u32 = 0x110;
+
+        match event {
+            wl_pointer::Event::Enter {
+                surface,
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                let Some(output) = surface.data::<WireSurfaceData>().map(|data| data.output) else {
+                    state.record_failure(PreparedStateError::Pointer(
+                        PointerFailure::UnknownSurface,
+                    ));
+                    return;
+                };
+                if !state.locking.as_ref().is_some_and(|locking| {
+                    locking.phase.accepts_surfaces() && locking.lock_surfaces.contains_key(&output)
+                }) {
+                    return;
+                }
+                let Some(binding) = state.seats.get_mut(&data.seat_global_name) else {
+                    state.record_failure(PreparedStateError::Pointer(PointerFailure::SeatMissing));
+                    return;
+                };
+                let Some(pointer) = &mut binding.pointer else {
+                    state.record_failure(PreparedStateError::Pointer(
+                        PointerFailure::CapabilityMissing,
+                    ));
+                    return;
+                };
+                pointer.output = Some(output);
+                pointer.position = Some((surface_x, surface_y));
+                pointer.gesture.clear();
+                state.events.push_back(PreparedEvent::PointerFocusChanged {
+                    seat: data.seat,
+                    focused: true,
+                });
+            }
+            wl_pointer::Event::Leave { .. } => {
+                let Some(binding) = state.seats.get_mut(&data.seat_global_name) else {
+                    state.record_failure(PreparedStateError::Pointer(PointerFailure::SeatMissing));
+                    return;
+                };
+                let Some(pointer) = &mut binding.pointer else {
+                    state.record_failure(PreparedStateError::Pointer(
+                        PointerFailure::CapabilityMissing,
+                    ));
+                    return;
+                };
+                let was_focused = pointer.output.take().is_some();
+                pointer.position = None;
+                pointer.gesture.clear();
+                if was_focused {
+                    state.events.push_back(PreparedEvent::PointerFocusChanged {
+                        seat: data.seat,
+                        focused: false,
+                    });
+                }
+            }
+            wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                let Some(pointer) = state
+                    .seats
+                    .get_mut(&data.seat_global_name)
+                    .and_then(|binding| binding.pointer.as_mut())
+                else {
+                    state.record_failure(PreparedStateError::Pointer(
+                        PointerFailure::CapabilityMissing,
+                    ));
+                    return;
+                };
+                if pointer.output.is_some() {
+                    pointer.position = Some((surface_x, surface_y));
+                }
+            }
+            wl_pointer::Event::Button {
+                button,
+                state: button_state,
+                ..
+            } => {
+                let WEnum::Value(button_state) = button_state else {
+                    state.record_failure(PreparedStateError::Pointer(
+                        PointerFailure::InvalidButtonState,
+                    ));
+                    return;
+                };
+                if button != BTN_LEFT {
+                    return;
+                }
+                let target = state.pointer_target(data.seat_global_name);
+                let Some(pointer) = state
+                    .seats
+                    .get_mut(&data.seat_global_name)
+                    .and_then(|binding| binding.pointer.as_mut())
+                else {
+                    state.record_failure(PreparedStateError::Pointer(
+                        PointerFailure::CapabilityMissing,
+                    ));
+                    return;
+                };
+                match button_state {
+                    wl_pointer::ButtonState::Pressed => pointer.gesture.press(target),
+                    wl_pointer::ButtonState::Released => {
+                        if let Some(input) = pointer.gesture.release(target) {
+                            state.events.push_back(PreparedEvent::PointerInput {
+                                seat: data.seat,
+                                input,
+                            });
+                        }
+                    }
+                    _ => state.record_failure(PreparedStateError::Pointer(
+                        PointerFailure::InvalidButtonState,
+                    )),
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -1410,7 +1659,16 @@ pub enum PreparedStateError {
     RequiredGlobalRemoved,
     Surface(SurfaceError),
     Keyboard(KeyboardFailure),
+    Pointer(PointerFailure),
     Wire(WireStateError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PointerFailure {
+    SeatMissing,
+    CapabilityMissing,
+    UnknownSurface,
+    InvalidButtonState,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

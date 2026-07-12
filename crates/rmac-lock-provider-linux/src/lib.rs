@@ -14,6 +14,8 @@ pub mod keyboard;
 pub mod paint;
 pub mod pam_broker;
 pub mod pam_conversation;
+#[cfg(any(target_os = "linux", test))]
+mod pointer;
 #[cfg(any(test, all(target_os = "linux", feature = "development-provider")))]
 mod process;
 #[cfg(any(target_os = "linux", test))]

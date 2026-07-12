@@ -213,7 +213,9 @@ does not issue a lock request. It also runs the portable runtime coordinator
 and redacted visual-state/painting tests; Linux-only tests compile the pump,
 reject invalid usernames before a Wayland connection is attempted, and—with
 `fonts-inter` installed—shape, rasterize, cache, and redact a mixed-script PAM
-prompt:
+prompt. Portable tests also cover pointer hit regions and gesture cancellation;
+the live matrix must click submit, select both radio choices, drag out of a
+pressed target, remove pointer capability, and hot-unplug the focused output:
 
 ```sh
 cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked

@@ -34,6 +34,13 @@ singleton is terminal. An internal, crate-only typestate now combines those
 objects with lock roles, buffers, and fail-closed event handling. It is not an
 externally callable or installed acquisition API.
 
+The same core Wayland dependency supplies optional `wl_pointer` version 1–9
+objects; no cursor, gesture, or input dependency is added. Pointer capability,
+surface enter/leave, finite local motion, and Linux input-event button state are
+contained inside the adapter. Only a press/release-confirmed Submit or radio
+selection action crosses into the semantic editor. Pointer loss and hotplug
+cancel pending activation, and binary PAM styles have no generic target.
+
 ### Keyboard decoding
 
 Use exact `xkbcommon` 0.8.0 with default features disabled and only its Wayland

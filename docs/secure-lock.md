@@ -112,7 +112,8 @@ It accepts only a compositor advertising `ext-session-lock-v1` version 1,
 `wl_compositor` version 4, `wl_shm` version 1, at least one `wl_output`, and
 `wl_seat` version 4, then drops the connection without binding or locking. A
 prepared connection can bind those authorities, complete three output/seat/
-keymap initialization roundtrips, and track live output and keyboard events.
+keymap initialization roundtrips, and track live output, keyboard, and optional
+pointer events.
 Required-global removal is terminal. Neither public API exposes the lock
 request, so ordinary callers cannot blank or strand a development session.
 
@@ -177,6 +178,17 @@ keycode offset, locale compose sequences, and serialized modifier state. Only
 bounded, drop-zeroized UTF-8 or redacted semantic actions leave that adapter;
 unsupported formats, invalid sizes/states, missing keymaps, and decoder panics
 fail preparation.
+
+Pointer/touchpad capability is optional and tracked independently per seat. The
+wire binds and releases `wl_pointer`, records only redacted focus plus bounded
+surface-local coordinates, and clears a pending gesture on focus loss, output
+removal, capability loss, or seat removal. Pure hit testing mirrors the visible
+logical geometry: the 28-pixel submit target emits the same semantic Submit as
+Return, and the two radio halves emit previous/next selection. Activation needs
+the left-button press and release to resolve to the same target, so dragging
+away cancels it. Binary prompts remain inert because the generic editor cannot
+safely manufacture a module-specific binary reply. Raw coordinates and Linux
+button identities never enter the credential editor or diagnostics.
 
 The wire also owns a per-seat client repeat scheduler. Compositor rates are
 clamped to 100 events per second and delays to 10 seconds, a late event-loop

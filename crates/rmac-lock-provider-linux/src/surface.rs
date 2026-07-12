@@ -199,6 +199,15 @@ impl SurfaceSet {
             .sum()
     }
 
+    #[cfg(target_os = "linux")]
+    pub(crate) fn logical_size(&self, output: OutputId) -> Option<(u32, u32)> {
+        self.outputs.get(&output).and_then(|surface| {
+            surface
+                .configuration
+                .map(|configuration| (configuration.width, configuration.height))
+        })
+    }
+
     /// Register an output before creating its `wl_surface` and lock role.
     pub fn add_output(&mut self, output: OutputId) -> Result<(), Error> {
         match self.outputs.entry(output) {

@@ -444,6 +444,8 @@ pub(crate) mod linux {
 
     use crate::pam::{spawn_authentication, Worker, WorkerError};
     use crate::pam_broker::{conversation_channel, ConversationUi, UiDisconnected};
+    #[cfg(test)]
+    use crate::wayland::SeatId;
     use crate::wayland::{LockConnection, PreparedConnection, PreparedEvent, WireError};
 
     const MAX_POLL_WAIT: Duration = Duration::from_millis(50);
@@ -611,14 +613,17 @@ pub(crate) mod linux {
             PreparedEvent::OutputAdded(output) => Some(RuntimeEvent::OutputAdded(output)),
             PreparedEvent::OutputRemoved(output) => Some(RuntimeEvent::OutputRemoved(output)),
             PreparedEvent::FrameCommitted(output) => Some(RuntimeEvent::FrameCommitted(output)),
-            PreparedEvent::KeyboardInput { input, .. } => Some(RuntimeEvent::Input(input)),
+            PreparedEvent::KeyboardInput { input, .. }
+            | PreparedEvent::PointerInput { input, .. } => Some(RuntimeEvent::Input(input)),
             PreparedEvent::LockAcquired => Some(RuntimeEvent::LockAcquired),
             PreparedEvent::LockFinished => Some(RuntimeEvent::LockFinished),
             PreparedEvent::UnlockFlushed => Some(RuntimeEvent::UnlockFlushed),
             PreparedEvent::OutputScaleChanged { .. }
             | PreparedEvent::KeyboardAvailabilityChanged { .. }
             | PreparedEvent::KeyboardFocusChanged { .. }
-            | PreparedEvent::KeyboardRepeat { .. } => None,
+            | PreparedEvent::KeyboardRepeat { .. }
+            | PreparedEvent::PointerAvailabilityChanged { .. }
+            | PreparedEvent::PointerFocusChanged { .. } => None,
         }
     }
 
@@ -666,6 +671,13 @@ pub(crate) mod linux {
             assert!(matches!(
                 runtime_event(PreparedEvent::LockAcquired),
                 Some(RuntimeEvent::LockAcquired)
+            ));
+            assert!(matches!(
+                runtime_event(PreparedEvent::PointerInput {
+                    seat: SeatId::new(8).unwrap(),
+                    input: DecodedKey::Submit,
+                }),
+                Some(RuntimeEvent::Input(DecodedKey::Submit))
             ));
             assert!(
                 runtime_event(PreparedEvent::OutputScaleChanged { output, scale: 2 }).is_none()

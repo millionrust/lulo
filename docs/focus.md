@@ -137,5 +137,8 @@ failures, and reconnects with a bounded delay. This separation prevents a later
 healthy signal from hiding an earlier persistence error.
 
 The Focus pane still requires a scoped GPUI build and live Linux/niri evidence
-before E9 can be checked complete. Richer application name/icon resolution also
-remains follow-up work.
+before E9 can be checked complete. Installed portal application IDs are now
+resolved through the live XDG desktop-entry catalog for localized names and
+original theme icons. Resolution is exact except for the standard `.desktop`
+suffix alias; unmatched or transient D-Bus sender IDs retain an honest generic
+icon and their original identifier rather than borrowing a plausible name.

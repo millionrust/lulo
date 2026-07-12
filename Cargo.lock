@@ -5319,6 +5319,7 @@ dependencies = [
  "gpui-component-assets",
  "rmac-appearance",
  "rmac-appearance-portal",
+ "rmac-apps",
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-display",

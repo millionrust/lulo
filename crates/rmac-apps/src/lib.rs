@@ -82,6 +82,30 @@ pub fn discover() -> io::Result<Vec<Application>> {
     }
 }
 
+/// Resolve a trusted desktop-entry application ID without fuzzy matching.
+///
+/// Portal notification IDs normally omit the `.desktop` suffix while the XDG
+/// catalog keeps it. Exact IDs always win; the suffix alias is the only
+/// fallback so unrelated applications can never be mislabeled by basename or
+/// display-name similarity.
+pub fn find_desktop_entry<'a>(
+    catalog: &'a [Application],
+    application_id: &str,
+) -> Option<&'a Application> {
+    catalog
+        .iter()
+        .find(|application| application.id == application_id)
+        .or_else(|| {
+            if application_id.ends_with(".desktop") {
+                return None;
+            }
+            let desktop_id = format!("{application_id}.desktop");
+            catalog
+                .iter()
+                .find(|application| application.id == desktop_id)
+        })
+}
+
 pub fn launch(spec: &LaunchSpec) -> io::Result<Child> {
     match spec {
         LaunchSpec::OpenPath(path) => Command::new("open").arg(path).spawn(),
@@ -909,6 +933,37 @@ mod tests {
             path: vec![PathBuf::from("/usr/bin")],
             theme_cache: RefCell::new(HashMap::new()),
         }
+    }
+
+    fn application(id: &str, name: &str) -> Application {
+        Application {
+            id: id.into(),
+            name: name.into(),
+            source: PathBuf::from(format!("/apps/{id}")),
+            icon: None,
+            categories: Vec::new(),
+            launch: LaunchSpec::OpenPath(PathBuf::from(format!("/apps/{id}"))),
+        }
+    }
+
+    #[test]
+    fn desktop_entry_resolution_is_exact_with_one_portal_suffix_alias() {
+        let catalog = vec![
+            application("org.example.Chat.desktop", "Chat"),
+            application("org.example.Chat.Beta.desktop", "Chat Beta"),
+        ];
+        assert_eq!(
+            find_desktop_entry(&catalog, "org.example.Chat")
+                .map(|application| application.name.as_str()),
+            Some("Chat")
+        );
+        assert_eq!(
+            find_desktop_entry(&catalog, "org.example.Chat.desktop")
+                .map(|application| application.name.as_str()),
+            Some("Chat")
+        );
+        assert!(find_desktop_entry(&catalog, "Chat").is_none());
+        assert!(find_desktop_entry(&catalog, "org.example").is_none());
     }
 
     #[test]

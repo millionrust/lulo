@@ -15,7 +15,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use gpui::{
-    actions, div, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
     AssetSource, Context, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement as _,
     IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
@@ -211,6 +211,8 @@ struct Settings {
     notifications_loading: bool,
     notification_busy: Option<String>,
     notification_apps: Vec<rmac_notifications_linux::center::ApplicationPolicy>,
+    app_catalog: Vec<rmac_apps::Application>,
+    _app_catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 
     // Focus
     focus_policy_loading: bool,
@@ -660,6 +662,12 @@ impl Settings {
             Err(failure) => (Persisted::default(), Some(failure.to_string().into())),
         };
 
+        let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
+        let app_catalog_watcher = rmac_apps::watch_catalog(move || {
+            let _ = catalog_events.try_send(());
+        })
+        .ok();
+
         // Shell-owned sliders persist locally. System audio sliders are created
         // separately below and write through the platform audio service.
         let mk_slider = |cx: &mut Context<Self>, val: f32| {
@@ -818,6 +826,32 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_apps::discover() })
+                .await;
+            if let Ok(applications) = result {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        this.app_catalog = applications;
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+            if catalog_event_rx.recv().await.is_err() {
+                break;
+            }
+            cx.background_executor()
+                .timer(Duration::from_millis(200))
+                .await;
+            while catalog_event_rx.try_recv().is_ok() {}
+        })
+        .detach();
+
         let (focus_updates, focus_update_rx) = async_channel::bounded(4);
         cx.background_executor()
             .spawn(async move {
@@ -873,6 +907,8 @@ impl Settings {
             notifications_loading: true,
             notification_busy: None,
             notification_apps: Vec::new(),
+            app_catalog: Vec::new(),
+            _app_catalog_watcher: app_catalog_watcher,
 
             focus_policy_loading: true,
             focus_policy_busy: false,
@@ -2138,6 +2174,10 @@ impl Settings {
         &self.sections[self.selected.0][self.selected.1]
     }
 
+    fn application_identity(&self, app_id: &str) -> Option<&rmac_apps::Application> {
+        rmac_apps::find_desktop_entry(&self.app_catalog, app_id)
+    }
+
     fn go_back(&mut self, cx: &mut Context<Self>) {
         self.nav.pop();
         cx.notify();
@@ -3113,16 +3153,16 @@ impl Settings {
                         } else {
                             "Off"
                         };
-                        nav_row(
-                            view.clone(),
-                            "icons/bell.svg",
-                            if application.policy.enabled {
-                                accent()
-                            } else {
-                                secondary()
-                            },
-                            application.app_id.clone().into(),
-                            Some(value.into()),
+                        let identity = self.application_identity(&application.app_id);
+                        application_nav_row(
+                            &view,
+                            &application.app_id,
+                            identity
+                                .map(|identity| identity.name.as_str())
+                                .unwrap_or(&application.app_id),
+                            identity.and_then(|identity| identity.icon.as_ref()),
+                            value,
+                            application.policy.enabled,
                             SubPage::NotificationApp {
                                 app_id: application.app_id.clone(),
                             },
@@ -3408,10 +3448,15 @@ impl Settings {
                     .iter()
                     .filter_map(|application| {
                         let app_id = rmac_notifications::AppId::parse(&application.app_id).ok()?;
+                        let identity = self.application_identity(&application.app_id);
                         Some(focus_allowed_app_row(
                             &view,
                             mode_id,
                             &application.app_id,
+                            identity
+                                .map(|identity| identity.name.as_str())
+                                .unwrap_or(&application.app_id),
+                            identity.and_then(|identity| identity.icon.as_ref()),
                             mode.allowed_apps().contains(&app_id),
                             busy,
                         ))
@@ -4891,7 +4936,10 @@ impl Settings {
             ),
             SubPage::Storage => ("Storage".into(), self.storage_body()),
             SubPage::NotificationApp { app_id } => (
-                app_id.clone().into(),
+                self.application_identity(app_id)
+                    .map(|identity| identity.name.clone())
+                    .unwrap_or_else(|| app_id.clone())
+                    .into(),
                 self.notification_app_body(app_id, cx),
             ),
             SubPage::FocusMode { mode_id } => {
@@ -5207,6 +5255,60 @@ fn notification_toggle_row(
         .into_any_element()
 }
 
+fn application_icon(
+    icon: Option<&PathBuf>,
+    fallback_icon: &'static str,
+    fallback_color: Hsla,
+) -> AnyElement {
+    match icon {
+        Some(icon) => img(icon.clone())
+            .w(px(22.0))
+            .h(px(22.0))
+            .flex_none()
+            .into_any_element(),
+        None => tile(fallback_icon, fallback_color, 22.0).into_any_element(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn application_nav_row(
+    view: &Entity<Settings>,
+    app_id: &str,
+    display_name: &str,
+    icon: Option<&PathBuf>,
+    status: &'static str,
+    enabled: bool,
+    target: SubPage,
+) -> AnyElement {
+    let target_view = view.clone();
+    row_base()
+        .id(SharedString::from(format!("notification-app-{app_id}")))
+        .cursor_pointer()
+        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+        .child(application_icon(
+            icon,
+            "icons/bell.svg",
+            if enabled { accent() } else { secondary() },
+        ))
+        .child(text_block(display_name.to_owned().into(), None))
+        .child(
+            div()
+                .text_size(px(13.0))
+                .text_color(secondary())
+                .child(status),
+        )
+        .child(glyph(
+            "icons/chevron-right.svg",
+            14.0,
+            rmac_ui::mac::text_tertiary(),
+        ))
+        .on_click(move |_, _, cx| {
+            let target = target.clone();
+            target_view.update(cx, |settings, cx| settings.push(target, cx));
+        })
+        .into_any_element()
+}
+
 fn focus_schedule_row(
     view: &Entity<Settings>,
     schedule: &rmac_focus::Schedule,
@@ -5437,6 +5539,8 @@ fn focus_allowed_app_row(
     view: &Entity<Settings>,
     mode_id: &str,
     app_id: &str,
+    display_name: &str,
+    icon: Option<&PathBuf>,
     checked: bool,
     disabled: bool,
 ) -> AnyElement {
@@ -5454,8 +5558,8 @@ fn focus_allowed_app_row(
         });
     });
     row_base()
-        .child(tile("icons/app-window.svg", secondary(), 22.0))
-        .child(text_block(app_id.to_owned().into(), None))
+        .child(application_icon(icon, "icons/app-window.svg", secondary()))
+        .child(text_block(display_name.to_owned().into(), None))
         .child(toggle)
         .into_any_element()
 }

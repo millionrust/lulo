@@ -27,10 +27,10 @@ equivalents rather than simulated.
 | Displays | Real layout plus transient mode, scale, and rotation controls | niri output IPC/Wayland | Persistent validated layouts, visual positioning, and live signals |
 | Spotlight | Placeholder | rmac-search | Sources, exclusions, indexing state, global shortcut |
 | Wallpaper | Placeholder | rmac shell | Per-output wallpaper selection and persistence |
-| Notifications | Real service-backed app list plus allow/block, top-bar badge, and history controls with busy/error/authoritative refresh | `org.rmac.NotificationCenter1` | Live policy-change subscription, app-name/icon resolution, banner/sound UI after presentation exists, lock previews after secure lock, and Linux evidence |
+| Notifications | Real service-backed app list with live desktop-entry names/icons plus allow/block, top-bar badge, and history controls with busy/error/authoritative refresh | `org.rmac.NotificationCenter1` plus live XDG app catalog | Live policy-change subscription, banner/sound UI after presentation exists, lock previews after secure lock, and Linux evidence |
 | Sound | Real devices, defaults, volume, and mute | PipeWire/WirePlumber | Live signals, routes, and per-channel balance |
 | Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
-| Focus | Live service-backed state/configuration, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1` plus `org.rmac.NotificationCenter1` app catalog | Resolved app names/icons, scoped GPUI build, and Linux/niri interaction/accessibility evidence |
+| Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Placeholder | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Placeholder | session shell and logind | Idle timeout, lock, suspend, login presentation |
 | Privacy & Security | Placeholder | Portals, polkit, package security sources | Permission visibility and supported security controls |

@@ -225,6 +225,10 @@ truthful while the caller receives an actionable persistence error.
    clear/read authority with keyboard, focus, and Linux evidence. System
    Settings now exposes only already-observable allow/block, badge, and history
    controls; banner, sound, Focus-bypass, and lock-preview rows remain hidden
-   until their presentation/security adapters are active.
+   until their presentation/security adapters are active. Its application rows
+   use the live XDG catalog for localized names and original theme icons when
+   the authenticated application ID exactly matches a desktop-entry ID (with
+   only the standard `.desktop` suffix alias). Unresolved IDs keep a generic
+   icon and the real identifier; the UI never guesses by display name.
 4. E4 Focus UI: expose mode, schedule, duration, and allow-list editing through
    the single-writer authority and prove real delivery behavior on Linux.

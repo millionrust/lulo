@@ -1,0 +1,7 @@
+#%PAM-1.0
+# Ubuntu/Debian policy for the rmac session-lock authentication worker.
+# The system-owned common stacks preserve pam-auth-update choices such as
+# local passwords, directory accounts, fingerprint modules, and site policy.
+
+@include common-auth
+@include common-account

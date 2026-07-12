@@ -61,15 +61,18 @@ The adapter—not the state machine—owns secrets.
 Exact published-source review rejected `pam`, `pam-client2`, and `nonstick` for
 callback unwind, allocation, cleanup, or transaction-lifetime defects. The only
 accepted candidate dependency is raw `pam-sys2` with its optional bindgen path
-disabled; rmac must supply the small checked callback/RAII wrapper described in
-`docs/rmac-pam-wrapper-audit.md`. It is not admitted to the manifest until that
-wrapper and fault-injection tests exist.
+disabled. The admitted Linux-only development wrapper validates callback input,
+contains unwind, checks and wipes owned C allocations, preserves arbitrary
+bounded conversation ordering, and owns the complete start/auth/account/end
+transaction described in `docs/rmac-pam-wrapper-audit.md`. It remains excluded
+from the installed provider until its compiled fault tests and real PAM matrix
+execute on Ubuntu.
 
 `rmac-lock-provider-linux` is the start of that adapter boundary. Its first
 accepted primitive is fixed-capacity credential input, bounded to Linux-PAM's
 512-byte response limit and zeroized on editing, clear, transfer, and drop.
-This does not select a PAM binding or make the crate an authentication provider.
-The dependency decisions and remaining PAM acceptance gate are recorded in
+This alone does not make the crate an installed authentication provider. The
+dependency decisions and remaining production acceptance gate are recorded in
 `docs/rmac-lock-provider-dependency-review.md`.
 
 The same adapter owns a bounded lock-surface lifecycle. It coalesces unhandled
@@ -101,8 +104,8 @@ active lock.
 
 ## Consequences
 
-- Provider behavior can be reviewed and tested before introducing unsafe FFI or
-  another dependency source.
+- Provider behavior and the small isolated FFI boundary can be reviewed and
+  fault-tested independently of the presentation and service process.
 - Lock presentation work has an explicit interface that cannot accidentally
   transport credentials or authorize unlock from UI state.
 - The current product remains less visually complete but keeps its proven PAM

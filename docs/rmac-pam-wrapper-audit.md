@@ -77,10 +77,11 @@ on top of `pam-sys2`, rather than adopting any rejected high-level wrapper. This
 is the fallback allowed by the dependency review after no existing wrapper met
 the gate.
 
-## Required local-wrapper properties
+## Implemented local-wrapper properties
 
-Before `pam-sys2` is added to the product manifest, the local design and tests
-must prove all of the following:
+`pam-sys2` is now admitted as a Linux-only development dependency beneath a
+small rmac wrapper. The implementation provides the following reviewed
+properties:
 
 1. validate `num_msg` in `1..=PAM_MAX_NUM_MSG`, every outer pointer, every
    message pointer, every style, and bounded NUL termination before dereference;
@@ -97,9 +98,23 @@ must prove all of the following:
    end status, and call both `pam_authenticate` and `pam_acct_mgmt`;
 7. never implement `Send`/`Sync` for the PAM handle; construct and consume the
    whole transaction on one bounded worker thread;
-8. pass fault injection for nulls, negative/zero/33 message counts, allocation
-   failure, panic, malformed text/binary lengths, partial batches, and every
-   authentication/account/end outcome before real Ubuntu PAM testing.
+8. compile fault injection for nulls, negative/zero/33 message counts,
+   allocation failure, panic, partial batches, and authentication/account/end
+   outcomes before real Ubuntu PAM testing.
+
+The platform-neutral conversation contract has executable macOS tests for
+style/reply matching, response bounds, NUL rejection, binary header allowance,
+and diagnostic redaction. The raw callback and transaction fault tests compile
+for Linux but cannot execute on the macOS development kernel. They must run on
+the Ubuntu reference PC before this evidence is considered complete.
+`cargo deny 0.19.8 check` passed advisories, bans, licenses, and sources for the
+admitted lockfile on 2026-07-12.
+
+`pam-sys2` 1.0.2 has a cross-build defect: its build script uses the build
+host's `cfg!(target_os)` rather than Cargo's target OS. Native Linux builds pick
+Linux-PAM automatically. A Linux check from macOS must set
+`PAM_SYS_IMPL=linuxpam`; this override is required in cross-build CI and is not
+needed in the installed Ubuntu build.
 
 Linux-PAM owns successful response allocations after the callback returns, so
 rmac cannot honestly promise to overwrite that transferred copy itself. The
@@ -111,10 +126,11 @@ extra application copies.
 ## Evidence still required
 
 - archive crates.io owner data when the registry API is available (it returned
-  HTTP 403 during this review) and recheck advisories at dependency admission;
+  HTTP 403 during this review);
 - compare pre-generated x86_64/aarch64 layouts with Ubuntu 26.04 headers;
-- compile/link against the reference image's `libpam0g-dev` and package only the
-  runtime library dependency;
+- compile/link against the reference image's `libpam0g-dev`, install the
+  reviewed `pam/rmac-lock` common-auth/common-account policy as
+  `/etc/pam.d/rmac-lock`, and package only the runtime library dependency;
 - run password, wrong password, locked/expired account, cancellation, MFA,
   allocation failure, callback panic, and `pam_end` failure tests under
   sanitizers where supported.

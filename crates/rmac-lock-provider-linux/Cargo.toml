@@ -11,6 +11,8 @@ rmac-lock-provider.workspace = true
 zeroize.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+pam-sys2.workspace = true
 rustix.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true

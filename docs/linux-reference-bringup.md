@@ -34,7 +34,7 @@ sudo apt update
 sudo apt full-upgrade
 sudo apt install --yes \
   at-spi2-core build-essential clang curl dbus git jq libfontconfig1-dev \
-  libfreetype-dev libglib2.0-bin libssl-dev libvulkan-dev libwayland-dev \
+  libfreetype-dev libglib2.0-bin libpam0g-dev libssl-dev libvulkan-dev libwayland-dev \
   libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
   libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev mesa-vulkan-drivers \
   orca pciutils pkg-config python3-pyatspi sway swayidle swaylock vulkan-tools wayland-utils \
@@ -188,6 +188,19 @@ state. For the layer surface, verify the 40-logical-pixel exclusive zone,
 keyboard non-interference, overview behavior, maximize/fullscreen interaction,
 output hotplug, and mixed scaling. Then complete the four-hour interaction soak
 from ADR 0001.
+
+Run the Linux-only PAM callback and transaction fault tests natively. They use
+injected function tables and do not authenticate the current account or install
+the development PAM service:
+
+```sh
+cargo test -p rmac-lock-provider-linux pam:: --locked -- --test-threads=1
+```
+
+Record the exact output. Do not install `pam/rmac-lock` into `/etc/pam.d` or run
+real authentication until the separate recovery-console procedure and test
+account are ready. When cross-checking Linux from macOS, prefix Cargo with
+`PAM_SYS_IMPL=linuxpam`; native Linux builds select Linux-PAM automatically.
 
 For the top-bar candidate, require exactly one 32-logical-pixel bar on every
 output at 100%, 125%, 150%, and 200%. Verify crisp rendering across a mixed-DPI

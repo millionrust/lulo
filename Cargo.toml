@@ -26,6 +26,7 @@ futures-util = { version = "0.3", features = ["io"] }
 futures-lite = "2"
 image = { version = "0.25.10", default-features = false }
 kdl = { version = "=6.5.0", features = ["v1-fallback"] }
+libc = "=0.2.186"
 notify = "7"
 objc2 = "0.6"
 objc2-app-kit = "0.3"
@@ -81,6 +82,7 @@ rmac-wallpaper = { version = "=0.1.0", path = "crates/rmac-wallpaper" }
 rmac-wallpaper-image = { version = "=0.1.0", path = "crates/rmac-wallpaper-image" }
 rmac-wallpaper-runtime = { version = "=0.1.0", path = "crates/rmac-wallpaper-runtime" }
 rmac-wallpaper-system = { version = "=0.1.0", path = "crates/rmac-wallpaper-system" }
+pam-sys2 = "=1.0.2"
 quick-xml = "0.39.4"
 rust-embed = "8"
 rustix = { version = "=1.1.4", features = ["fs"] }

@@ -1,16 +1,20 @@
 //! Linux lock-provider adapter primitives.
 //!
-//! The Wayland and PAM adapters remain intentionally absent until their
-//! dependency review gates pass. This crate currently owns only bounded secret
-//! input: one fixed-capacity allocation, no cloning, redacted diagnostics, and
-//! guaranteed zeroization on backspace, clear, transfer, and drop.
+//! The Wayland and PAM adapters are under construction and remain disconnected
+//! from the installed lock service until their runtime evidence gates pass.
+//! Secret input uses one fixed-capacity allocation, no cloning, redacted
+//! diagnostics, and zeroization on backspace, clear, transfer, and drop.
 
 use std::fmt;
 
 use zeroize::Zeroize as _;
 
 pub mod paint;
+pub mod pam_conversation;
 pub mod surface;
+
+#[cfg(target_os = "linux")]
+pub mod pam;
 
 #[cfg(target_os = "linux")]
 pub mod shm;

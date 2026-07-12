@@ -4070,6 +4070,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pam-sys2"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63e07ea89c210813e1a48fc32cb358ba693aae8ca70163461e22d11f1884bf1d"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5098,6 +5107,8 @@ version = "0.1.0"
 name = "rmac-lock-provider-linux"
 version = "0.1.0"
 dependencies = [
+ "libc",
+ "pam-sys2",
  "rmac-lock-provider",
  "rustix 1.1.4",
  "wayland-client",

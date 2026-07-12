@@ -135,11 +135,21 @@ resize, and seal changes after the complete frame is flushed. The owned file
 and redacted buffer identity are ready to remain alive until `wl_buffer.release`.
 No Apple wallpaper, color token, icon, font, or other proprietary asset is used.
 
+The Linux PAM boundary now uses only raw, pre-generated `pam-sys2` declarations
+beneath rmac-owned code. Its typed worker conversation supports echo-on,
+echo-off, info, error, radio, and bounded binary batches. The callback validates
+outer pointers/counts/styles and bounded message termination, catches Rust
+panics, checks every C allocation, and overwrites partial responses on failure.
+The thread-bound transaction always runs authentication followed by account
+policy and pairs successful start with one end; injected APIs test failure
+ordering and preserve a secondary end error. The Ubuntu policy source includes
+both `common-auth` and `common-account`, preserving pam-auth-update/site choices.
+
 The Linux adapter still requires session-lock acquisition and wire lock-surface
-objects, `wl_shm_pool`/buffer release wiring, a reviewed PAM binding, bounded
-multi-message conversation handling, `pam_start`/`pam_end` lifetime correctness,
-and real niri/PAM evidence. Until then, the installed unit continues to run
-swaylock and the preview projection remains unrendered.
+objects, `wl_shm_pool`/buffer release wiring, UI/worker conversation transport,
+and real niri/PAM evidence including the compiled fault tests. Until then, the
+installed unit continues to run swaylock and the preview projection remains
+unrendered.
 
 ## Not complete yet
 

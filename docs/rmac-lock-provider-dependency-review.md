@@ -46,7 +46,7 @@ temporaries, swapped pages, hardware side channels, a malicious PAM module, or
 the kernel never copy a secret; product documentation and threat claims must
 remain narrower than that.
 
-## PAM candidates not yet accepted
+## PAM dependency decision
 
 ### `pam` 0.8.0
 
@@ -73,10 +73,14 @@ and `pam_start` error paths lose the boxed handler. `pam` 0.8.0 and `nonstick`
 
 Rejected as the default path. Exact-source review has now shown that none of the
 three high-level candidates satisfies the gate, so the reconsideration
-condition is met. The selected candidate boundary is raw `pam-sys2` 1.0.2 with
-default pre-generated bindings plus a small rmac-owned wrapper. It is not yet a
-manifest dependency: the local allocation, unwind, lifetime, transaction, and
-fault-injection design in `docs/rmac-pam-wrapper-audit.md` must land first.
+condition is met. Raw `pam-sys2` 1.0.2 is now a Linux-only development
+dependency with default pre-generated bindings and a small rmac-owned wrapper.
+The wrapper validates callback memory and limits, contains panics, wipes partial
+responses, supports every Linux conversation style, calls authentication plus
+account policy, and propagates normal-path `pam_end` failure. Injected raw APIs
+cover stage ordering and exactly-one end behavior without a real PAM service.
+It is not approved as the installed provider until the remaining Ubuntu matrix
+in `docs/rmac-pam-wrapper-audit.md` passes.
 
 ## Rendering remains open
 
@@ -94,9 +98,9 @@ dependencies. The current frame and backing file still need real `wl_shm_pool`
 and `wl_buffer` lifetime wiring, format/damage confirmation, and Ubuntu/niri
 evidence. GPUI windows cannot replace the privileged lock-surface role.
 
-## Acceptance gate for the PAM selection
+## Production acceptance gate for the PAM selection
 
-Before adding a PAM crate to `Cargo.toml`:
+Before replacing swaylock with the development PAM path:
 
 1. archive exact source/checksum/license and ownership evidence;
 2. review every unsafe block and C allocation/free path;

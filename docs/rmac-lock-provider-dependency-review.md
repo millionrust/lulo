@@ -135,6 +135,18 @@ move-only authentication token, destroys roles, and waits for a display-sync
 barrier. These paths still require Ubuntu/niri runtime evidence; GPUI windows
 cannot replace the privileged lock-surface role.
 
+## Development process boundary
+
+The uninstalled process is gated by the opt-in `development-provider` feature.
+It uses the workspace's existing `zbus` 5.16.0 line only on Linux to resolve the
+exact `XDG_SESSION_ID`, read the session UID/name, and call `SetLockedHint` on
+that resolved object. It rejects an effective-UID mismatch before connecting to
+Wayland or PAM. Readiness uses the already-required absolute
+`/usr/bin/systemd-notify` executable with fixed arguments and no shell; this
+matches the accepted swaylock supervisor boundary without adding libsystemd.
+The feature and binary are absent from the session installer, and no custom
+provider unit is installed while recovery evidence remains open.
+
 ## Production acceptance gate for the PAM selection
 
 Before replacing swaylock with the development PAM path:

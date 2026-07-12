@@ -5114,6 +5114,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols 0.32.13",
  "xkbcommon",
+ "zbus",
  "zeroize",
 ]
 

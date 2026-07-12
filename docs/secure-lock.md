@@ -209,8 +209,8 @@ ms lets it service Wayland while checking worker/prompt completion instead of
 blocking forever on either source. It converts wire input to coordinator events,
 spawns only the attempt requested by the core, consumes unlock authority in the
 synchronized wire method, and returns readiness, prompt-change, failure, and
-exit signals to a future supervisor. Username validation happens before
-connecting or locking. This pump is neither exported nor installed.
+an explicit authenticated/denied/failed-locked exit reason. Username validation
+happens before connecting or locking. The pump remains crate-internal.
 
 The renderer now receives only a copyable redacted presentation snapshot. It
 paints capped password/text indicators, generic notice/radio/binary shapes, and
@@ -219,13 +219,23 @@ when that snapshot changes. It never receives PAM prompt text or credential
 bytes, its diagnostics redact both character counts and selection state, and a
 rendered failure still has no authority to unlock or declare secure readiness.
 
-The Linux adapter still requires an installed wrapper that derives the verified
-session username, presents reviewed localized prompt/error text, sends systemd
-readiness, maintains the logind locked hint, and owns emergency recovery.
-Module-specific binary MFA UI, IME/accessibility support, and real niri/PAM
-evidence including the compiled fault tests also remain. Until then, the
-installed unit continues to run swaylock and the custom provider remains an
-internal, uninstalled implementation.
+An opt-in `development-provider` feature now supplies the uninstalled
+`rmac-lock-provider` process used by the future recovery/evidence harness. It
+resolves `XDG_SESSION_ID` through logind, reads the exact session's UID and PAM
+user name, and refuses to continue unless that UID equals the process's
+effective UID. A portable lifecycle orders `LockedHint=true` before systemd
+`READY=1`; denial never reports ready, failure after `locked` never clears the
+hint, and only authenticated unlock after the Wayland display-sync barrier
+attempts `LockedHint=false`. Hint failure remains an advisory warning, while a
+readiness notification failure terminates the provider so systemd can restart
+it fail-closed. Status and errors contain no session ID or username.
+
+The Linux adapter still requires a separate reviewed unit and recovery harness,
+reviewed localized prompt/error text, and emergency recovery. Module-specific
+binary MFA UI, IME/accessibility support, and real niri/PAM evidence including
+the compiled fault tests also remain. The development feature is not built by
+the session installer and must not be launched ad hoc. Until the full matrix
+passes, the installed unit continues to run swaylock.
 
 ## Not complete yet
 

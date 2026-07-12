@@ -217,10 +217,23 @@ reject invalid usernames before a Wayland connection is attempted:
 cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked
 ```
 
+The evidence-only process boundary may be compiled, but not launched, before
+the recovery harness exists. On Linux the compile-only gate is:
+
+```sh
+cargo clippy -p rmac-lock-provider-linux --locked \
+  --features development-provider --lib --bin rmac-lock-provider --tests \
+  -- -D warnings
+```
+
+On a macOS cross-check, add `--target x86_64-unknown-linux-gnu` and prefix the
+command with `PAM_SYS_IMPL=linuxpam`. This proves the exact-session logind proxy,
+systemd notification wrapper, and binary compile; it is not live lock evidence.
+
 Do not expose or invoke the crate-internal acquisition typestate ad hoc. Its
 first live run belongs in the dedicated nested-compositor/recovery procedure
 after the provider runtime, emergency TTY recovery, and kill/restart harness are
-in place.
+in place. The feature-gated binary does not waive this requirement.
 
 Record the exact output. Do not install `pam/rmac-lock` into `/etc/pam.d` or run
 real authentication until the separate recovery-console procedure and test

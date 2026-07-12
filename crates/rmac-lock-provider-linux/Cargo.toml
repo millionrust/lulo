@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
+[features]
+development-provider = ["dep:zbus"]
+
 [dependencies]
 rmac-lock-provider.workspace = true
 zeroize.workspace = true
@@ -17,3 +20,9 @@ rustix.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true
 xkbcommon.workspace = true
+zbus = { workspace = true, optional = true }
+
+[[bin]]
+name = "rmac-lock-provider"
+path = "src/bin/provider.rs"
+required-features = ["development-provider"]

@@ -126,9 +126,13 @@ permits one worker, bounds pre-prompt input, drains cancellation before worker
 reuse, rejects stale completion, and moves the core unlock token into one wire
 action. Worker panic and invalid ordering fail closed. A crate-internal Linux
 pump multiplexes Wayland with worker/prompt polling and exposes only readiness,
-prompt-change, failure, and exit status to a future supervisor. It is not a
-shipped executable and does not yet own systemd notification, logind hints,
-localized prompt text, username derivation, or recovery.
+prompt-change, failure, and an authenticated/denied/failed-locked exit reason.
+An opt-in, uninstalled process resolves the exact logind session, verifies its
+UID against the process, derives its PAM user name, sets the advisory locked
+hint before systemd readiness, and clears the hint only after authenticated
+unlock plus the display-sync barrier. Pure lifecycle tests reject impossible
+ordering and preserve the hint on post-lock failure. The process has no shipped
+unit and does not yet own localized prompt text or recovery.
 
 The initial renderer is an opaque, dependency-free CPU composition written in
 bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after

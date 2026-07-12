@@ -129,7 +129,11 @@ compositor finish, and bounded/redacted pre-prompt input. The Linux pump compile
 against the real `Worker` and never joins it until `JoinHandle::is_finished` is
 true. Presentation tests verify that the renderer receives only prompt category,
 a capped indicator count or selection, and failure state; debug output redacts
-those values. The native Ubuntu matrix remains required.
+those values. Portable process tests prove readiness/hint ordering and distinguish
+authenticated unlock from compositor denial and post-lock failure. The
+feature-gated Linux runner derives its PAM name from the exact logind session
+only after verifying session ownership. The native Ubuntu matrix remains
+required.
 
 `cargo deny 0.19.8 check` passed advisories, bans, licenses, and sources for the
 admitted lockfile on 2026-07-12.

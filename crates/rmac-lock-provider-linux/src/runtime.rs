@@ -18,6 +18,15 @@ use crate::pam_broker::PendingPrompt;
 use crate::pam_conversation::RequestKind;
 
 const MAX_QUEUED_INPUTS: usize = 32;
+#[cfg(any(target_os = "linux", test))]
+const MAX_USERNAME_BYTES: usize = 256;
+
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn valid_username(username: &str) -> bool {
+    !username.is_empty()
+        && username.len() <= MAX_USERNAME_BYTES
+        && !username.as_bytes().contains(&0)
+}
 
 pub struct Coordinator {
     provider: Provider,
@@ -332,6 +341,19 @@ pub enum AuthenticationOutcome {
     Panicked,
 }
 
+/// Why the Linux pump stopped asking the compositor for events.
+///
+/// Only `AuthenticatedUnlock` permits the process supervisor to clear
+/// logind's advisory locked hint. Denial and failure remain distinct because a
+/// failure after `locked` must preserve fail-closed recovery state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(any(target_os = "linux", test))]
+pub(crate) enum ProviderExit {
+    AuthenticatedUnlock,
+    Denied,
+    FailedLocked,
+}
+
 #[derive(Default, Eq, PartialEq)]
 pub struct RuntimeActions {
     pub notify_ready: bool,
@@ -397,7 +419,7 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 #[cfg(target_os = "linux")]
-mod linux {
+pub(crate) mod linux {
     use super::*;
     use std::time::Duration;
 
@@ -405,7 +427,6 @@ mod linux {
     use crate::pam_broker::{conversation_channel, ConversationUi, UiDisconnected};
     use crate::wayland::{LockConnection, PreparedConnection, PreparedEvent, WireError};
 
-    const MAX_USERNAME_BYTES: usize = 256;
     const MAX_POLL_WAIT: Duration = Duration::from_millis(50);
 
     /// Crate-internal Linux pump. It is deliberately not installed or exported
@@ -427,10 +448,7 @@ mod linux {
     #[allow(dead_code)]
     impl LinuxRuntime {
         pub(crate) fn connect(username: String) -> Result<Self, LinuxError> {
-            if username.is_empty()
-                || username.len() > MAX_USERNAME_BYTES
-                || username.as_bytes().contains(&0)
-            {
+            if !valid_username(&username) {
                 return Err(LinuxError::InvalidUsername);
             }
             let prepared = PreparedConnection::connect().map_err(LinuxError::Prepare)?;
@@ -455,7 +473,7 @@ mod linux {
                 };
                 let actions = self.coordinator.apply(event).map_err(LinuxError::Runtime)?;
                 self.execute(actions, &mut status)?;
-                if status.exit_provider {
+                if status.exit.is_some() {
                     return Ok(status);
                 }
             }
@@ -538,7 +556,17 @@ mod linux {
             status.notify_ready |= actions.notify_ready;
             status.prompt_changed |= actions.prompt_changed;
             status.authentication_failed |= actions.authentication_failed;
-            status.exit_provider |= actions.exit_provider;
+            if actions.exit_provider {
+                let exit = match self.coordinator.phase() {
+                    Phase::Finished => ProviderExit::AuthenticatedUnlock,
+                    Phase::Denied => ProviderExit::Denied,
+                    Phase::FailedLocked => ProviderExit::FailedLocked,
+                    _ => return Err(LinuxError::InvalidExitPhase),
+                };
+                if status.exit.replace(exit).is_some() {
+                    return Err(LinuxError::DuplicateExit);
+                }
+            }
             Ok(())
         }
     }
@@ -578,7 +606,7 @@ mod linux {
         pub(crate) notify_ready: bool,
         pub(crate) prompt_changed: bool,
         pub(crate) authentication_failed: bool,
-        pub(crate) exit_provider: bool,
+        pub(crate) exit: Option<ProviderExit>,
     }
 
     #[allow(dead_code)]
@@ -591,6 +619,8 @@ mod linux {
         SpawnWorker(std::io::Error),
         MissingWorker,
         DuplicateWorker,
+        InvalidExitPhase,
+        DuplicateExit,
     }
 
     impl fmt::Display for LinuxError {
@@ -652,6 +682,14 @@ mod tests {
 
     fn text(value: &str) -> DecodedKey {
         DecodedKey::Text(DecodedText::new(value.to_owned()).unwrap())
+    }
+
+    #[test]
+    fn pam_username_is_bounded_before_any_platform_connection() {
+        assert!(valid_username("user"));
+        assert!(!valid_username(""));
+        assert!(!valid_username("bad\0name"));
+        assert!(!valid_username(&"x".repeat(MAX_USERNAME_BYTES + 1)));
     }
 
     fn acquire(coordinator: &mut Coordinator) -> AttemptId {

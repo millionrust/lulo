@@ -14,6 +14,8 @@ pub mod keyboard;
 pub mod paint;
 pub mod pam_broker;
 pub mod pam_conversation;
+#[cfg(any(test, all(target_os = "linux", feature = "development-provider")))]
+mod process;
 pub mod runtime;
 pub mod surface;
 
@@ -25,6 +27,14 @@ pub mod shm;
 
 #[cfg(target_os = "linux")]
 pub mod wayland;
+
+/// Uninstalled process entry point for the Linux recovery/evidence harness.
+///
+/// The feature is deliberately opt-in and the session installer does not build
+/// or select it while swaylock remains the accepted provider.
+#[cfg(all(target_os = "linux", feature = "development-provider"))]
+#[doc(hidden)]
+pub mod development_process;
 
 #[cfg(target_os = "linux")]
 mod xkb_keyboard;

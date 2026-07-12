@@ -263,6 +263,16 @@ capped indicators and generic shapes remain as secondary state cues. Every
 configured output repaints when state or label identity changes, while rendered
 text still has no authority to unlock or declare secure readiness.
 
+When PAM is working without an outstanding prompt—before the first prompt,
+after a submitted response, or between messages—the coordinator now projects a
+static `Authenticating…` label and three-dot state cue. It is event-driven, does
+not claim measurable progress, and causes no animation or periodic redraw.
+Pointer activation is disabled while that state, a binary prompt, or no prompt
+is visible. Bounded keyboard input may still wait for the next real prompt under
+the existing 32-event queue; only that prompt can interpret it. PAM success,
+failure, cancellation, and multi-message transitions replace the status from
+authority rather than a UI timer.
+
 An opt-in `development-provider` feature now supplies the uninstalled
 `rmac-lock-provider` process used by the future recovery/evidence harness. It
 resolves `XDG_SESSION_ID` through logind, reads the exact session's UID and PAM

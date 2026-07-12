@@ -142,7 +142,9 @@ non-finite/out-of-bounds rejection, drag-away cancellation, focus-loss
 cancellation, and redacted gesture diagnostics; emitted actions reuse the same
 single-use prompt editor as keyboard input. Caps Lock tests cover xkb locked
 state, focus-aware multi-seat aggregation, visual repaint, and separation from
-the bounded credential queue. Portable process tests prove
+the bounded credential queue. Coordinator tests cover the static authenticating
+state before, after, and between PAM prompts; pointer tests prove that state and
+the no-prompt state are inert. Portable process tests prove
 readiness/hint ordering and
 distinguish authenticated unlock from compositor denial and post-lock failure.
 The feature-gated Linux runner derives its PAM name from the exact logind

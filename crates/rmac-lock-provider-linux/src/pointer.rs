@@ -72,7 +72,14 @@ pub(crate) fn hit_test(
     let center_y = percent(height, 58);
     let panel_half_width = percent(width, 32).min(210);
     let accent_x = center_x + panel_half_width - 18;
-    if inside_circle(x, y, accent_x, center_y, 14) && !matches!(prompt, PromptVisual::Binary) {
+    let can_submit = matches!(
+        prompt,
+        PromptVisual::Secret { .. }
+            | PromptVisual::Text { .. }
+            | PromptVisual::Notice
+            | PromptVisual::Radio { .. }
+    );
+    if inside_circle(x, y, accent_x, center_y, 14) && can_submit {
         return Some(PointerTarget::Submit);
     }
     if matches!(prompt, PromptVisual::Radio { .. })
@@ -110,7 +117,11 @@ mod tests {
             Some(PointerTarget::Submit)
         );
         assert_eq!(hit_test(800, 600, PromptVisual::Binary, 592.0, 348.0), None);
-        assert_eq!(hit_test(800, 600, PromptVisual::Hidden, 400.0, 348.0), None);
+        assert_eq!(hit_test(800, 600, PromptVisual::Hidden, 592.0, 348.0), None);
+        assert_eq!(
+            hit_test(800, 600, PromptVisual::Authenticating, 592.0, 348.0),
+            None
+        );
         assert!(matches!(
             PointerTarget::Submit.into_key(),
             DecodedKey::Submit

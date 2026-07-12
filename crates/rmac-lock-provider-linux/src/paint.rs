@@ -96,6 +96,7 @@ impl fmt::Debug for LockVisualState {
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum PromptVisual {
     Hidden,
+    Authenticating,
     Secret { dots: u8 },
     Text { dots: u8 },
     Notice,
@@ -121,6 +122,7 @@ impl fmt::Debug for PromptVisual {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Hidden => "PromptVisual::Hidden",
+            Self::Authenticating => "PromptVisual::Authenticating",
             Self::Secret { .. } => "PromptVisual::Secret(<redacted>)",
             Self::Text { .. } => "PromptVisual::Text(<redacted>)",
             Self::Notice => "PromptVisual::Notice",
@@ -415,6 +417,13 @@ fn paint_prompt(
 ) -> Rgb {
     let scale = i64::from(scale);
     match prompt {
+        PromptVisual::Authenticating => {
+            for offset in [-10_i64, 0, 10] {
+                if inside_circle(x, y, center_x + offset * scale, center_y, 2 * scale) {
+                    color = color.blend(palette.panel, 176);
+                }
+            }
+        }
         PromptVisual::Secret { dots } | PromptVisual::Text { dots } => {
             let count = i64::from(dots);
             let spacing = 12 * scale;
@@ -543,6 +552,7 @@ mod tests {
         let mut caps_lock = Vec::new();
         let mut hidden = Vec::new();
         let mut hidden_caps_lock = Vec::new();
+        let mut authenticating = Vec::new();
         paint_lock_frame(
             &mut secret,
             layout,
@@ -588,8 +598,18 @@ mod tests {
             None,
         )
         .unwrap();
+        paint_lock_frame(
+            &mut authenticating,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::new(PromptVisual::Authenticating, false),
+            None,
+            None,
+        )
+        .unwrap();
         assert_ne!(secret, failed);
         assert_ne!(secret, caps_lock);
+        assert_ne!(hidden, authenticating);
         assert_eq!(hidden, hidden_caps_lock);
         let debug = format!(
             "{:?} {:?}",

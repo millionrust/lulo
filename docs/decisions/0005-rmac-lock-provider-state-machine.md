@@ -181,6 +181,14 @@ separate layout roles but share the same eight-raster cap; prompt replacement
 retains the stable account raster. No full name, UID, or session identifier is
 rendered.
 
+An authenticating presentation state is derived only while the core remains in
+`Authenticating` and the broker has no outstanding prompt. It uses a fixed
+label and nonanimated cue, never invents percent progress, and cannot submit a
+pointer action. The state covers initial PAM work, submitted responses, and
+gaps between multi-message prompts; the next broker prompt or worker outcome is
+the only authority that replaces it. Existing bounded pre-prompt keyboard input
+remains separate from presentation.
+
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,
 suspend/resume, renderer failure, provider crash, accessibility, and emergency

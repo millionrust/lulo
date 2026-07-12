@@ -935,9 +935,11 @@ impl PreparedState {
     }
 
     fn set_visual_state(&mut self, visual: LockVisualState, prompt: Option<PromptText<'_>>) {
-        let text_changed = self
-            .text_renderer
-            .update(prompt, visual.authentication_failed());
+        let text_changed = self.text_renderer.update(
+            prompt,
+            visual.authentication_failed(),
+            matches!(visual.prompt(), crate::paint::PromptVisual::Authenticating),
+        );
         let Some(locking) = &mut self.locking else {
             return;
         };

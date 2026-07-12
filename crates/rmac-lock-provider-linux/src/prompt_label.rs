@@ -82,6 +82,7 @@ impl fmt::Debug for PromptText<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PromptKey {
     Pam(PromptId),
+    Authenticating,
     AuthenticationFailure,
 }
 
@@ -109,6 +110,13 @@ impl PromptLabel {
         Self {
             key: PromptKey::AuthenticationFailure,
             value: "Authentication failed. Try again.".to_owned(),
+        }
+    }
+
+    pub(crate) fn authenticating() -> Self {
+        Self {
+            key: PromptKey::Authenticating,
+            value: "Authenticating…".to_owned(),
         }
     }
 
@@ -244,6 +252,10 @@ mod tests {
         let failure = PromptLabel::authentication_failure();
         assert_eq!(failure.key(), PromptKey::AuthenticationFailure);
         failure.expose(|value| assert!(value.starts_with("Authentication failed")));
+
+        let authenticating = PromptLabel::authenticating();
+        assert_eq!(authenticating.key(), PromptKey::Authenticating);
+        authenticating.expose(|value| assert_eq!(value, "Authenticating…"));
     }
 
     #[test]

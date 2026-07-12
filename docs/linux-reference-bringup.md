@@ -224,6 +224,12 @@ pressed target, remove pointer capability, and hot-unplug the focused output.
 It must also toggle Caps Lock on focused US and non-US layouts, move focus
 between seats, replace the keymap, and remove the active keyboard capability:
 
+During initial PAM work, after Return/click submission, and between supported
+multi-message prompts, verify the fixed `Authenticating…` state appears without
+animation or idle redraw. Clicking the submit target while that state or no
+prompt is visible must do nothing; the next PAM prompt or outcome must replace
+the status immediately.
+
 ```sh
 cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked
 ```

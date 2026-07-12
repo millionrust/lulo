@@ -47,16 +47,19 @@ impl LockTextRenderer {
         &mut self,
         prompt: Option<PromptText<'_>>,
         authentication_failed: bool,
+        authenticating: bool,
     ) -> bool {
         let desired_key = prompt
             .map(PromptText::key)
-            .or_else(|| authentication_failed.then_some(PromptKey::AuthenticationFailure));
+            .or_else(|| authentication_failed.then_some(PromptKey::AuthenticationFailure))
+            .or_else(|| authenticating.then_some(PromptKey::Authenticating));
         if self.prompt.as_ref().map(PromptLabel::key) == desired_key {
             return false;
         }
         self.prompt = prompt
             .map(PromptLabel::from_prompt)
-            .or_else(|| authentication_failed.then(PromptLabel::authentication_failure));
+            .or_else(|| authentication_failed.then(PromptLabel::authentication_failure))
+            .or_else(|| authenticating.then(PromptLabel::authenticating));
         self.swash_cache = SwashCache::new();
         self.rasters
             .retain(|(role, _, _)| *role != TextRole::Prompt);
@@ -329,6 +332,7 @@ mod tests {
             assert!(renderer.update(
                 Some(PromptText::new(prompt.id(), prompt.kind(), text)),
                 false,
+                false,
             ));
             let first = renderer.rasters(layout()).unwrap();
             let second = renderer.rasters(layout()).unwrap();
@@ -340,10 +344,15 @@ mod tests {
             assert!(first.account().unwrap().bottom() < panel_center);
             assert!(first.prompt().unwrap().origin_y() > panel_center);
             assert_eq!(renderer.rasters.len(), 2);
-            assert!(renderer.update(None, true));
+            assert!(renderer.update(None, true, false));
             let failure = renderer.rasters(layout()).unwrap();
             assert_eq!(first.account(), failure.account());
             assert_ne!(first.prompt(), failure.prompt());
+            assert_eq!(renderer.rasters.len(), 2);
+            assert!(renderer.update(None, false, true));
+            let authenticating = renderer.rasters(layout()).unwrap();
+            assert_eq!(first.account(), authenticating.account());
+            assert_ne!(failure.prompt(), authenticating.prompt());
             assert_eq!(renderer.rasters.len(), 2);
             assert_eq!(format!("{renderer:?}"), "LockTextRenderer(<redacted>)");
             assert_eq!(format!("{first:?}"), "LockTextRasters(<redacted>)");

@@ -73,22 +73,28 @@ impl Coordinator {
     }
 
     pub fn visual_state(&self) -> LockVisualState {
-        let prompt =
-            self.editor
-                .as_ref()
-                .map_or(PromptVisual::Hidden, |editor| match editor.kind() {
-                    RequestKind::EchoOff => {
-                        PromptVisual::secret(editor.character_count().unwrap_or_default())
-                    }
-                    RequestKind::EchoOn => {
-                        PromptVisual::text(editor.character_count().unwrap_or_default())
-                    }
-                    RequestKind::Info | RequestKind::Error => PromptVisual::Notice,
-                    RequestKind::Radio => PromptVisual::Radio {
-                        selected: editor.radio_selection().unwrap_or(false),
-                    },
-                    RequestKind::Binary => PromptVisual::Binary,
-                });
+        let prompt = self.editor.as_ref().map_or_else(
+            || {
+                if self.provider.phase() == Phase::Authenticating {
+                    PromptVisual::Authenticating
+                } else {
+                    PromptVisual::Hidden
+                }
+            },
+            |editor| match editor.kind() {
+                RequestKind::EchoOff => {
+                    PromptVisual::secret(editor.character_count().unwrap_or_default())
+                }
+                RequestKind::EchoOn => {
+                    PromptVisual::text(editor.character_count().unwrap_or_default())
+                }
+                RequestKind::Info | RequestKind::Error => PromptVisual::Notice,
+                RequestKind::Radio => PromptVisual::Radio {
+                    selected: editor.radio_selection().unwrap_or(false),
+                },
+                RequestKind::Binary => PromptVisual::Binary,
+            },
+        );
         LockVisualState::new(prompt, self.authentication_failed_visible)
             .with_caps_lock(self.caps_lock_active)
     }
@@ -189,6 +195,7 @@ impl Coordinator {
             .ok_or(Error::MissingAttemptToken)?;
         self.attempt = Some(attempt);
         actions.start_authentication = Some(attempt);
+        actions.prompt_changed = true;
         actions.absorb(transition);
         Ok(())
     }
@@ -761,6 +768,7 @@ mod tests {
             .unwrap();
         let actions = coordinator.apply(RuntimeEvent::LockAcquired).unwrap();
         assert!(actions.notify_ready);
+        assert!(actions.prompt_changed);
         actions.start_authentication.unwrap()
     }
 
@@ -768,6 +776,10 @@ mod tests {
     fn successful_prompt_produces_only_core_unlock_authority() {
         let mut coordinator = Coordinator::new();
         let attempt = acquire(&mut coordinator);
+        assert_eq!(
+            coordinator.visual_state().prompt(),
+            PromptVisual::Authenticating
+        );
         let (mut conversation, ui) = conversation_channel();
         let worker = thread::spawn(move || conversation.respond(Request::EchoOff(c"Password:")));
         let pending = ui.prompt_timeout(WAIT).unwrap().unwrap();
@@ -794,6 +806,10 @@ mod tests {
         coordinator
             .apply(RuntimeEvent::Input(DecodedKey::Submit))
             .unwrap();
+        assert_eq!(
+            coordinator.visual_state().prompt(),
+            PromptVisual::Authenticating
+        );
 
         let Reply::Secret(secret) = worker.join().unwrap().unwrap() else {
             panic!("wrong response style");
@@ -842,6 +858,42 @@ mod tests {
         let pending = ui.prompt_timeout(WAIT).unwrap().unwrap();
         coordinator.apply(RuntimeEvent::Prompt(pending)).unwrap();
         assert_eq!(coordinator.prompt_character_count(), Some(1));
+        coordinator
+            .apply(RuntimeEvent::Input(DecodedKey::Cancel))
+            .unwrap();
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(ConversationError::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn multi_prompt_gap_is_truthfully_authenticating_and_accepts_the_next_prompt() {
+        let mut coordinator = Coordinator::new();
+        acquire(&mut coordinator);
+        let (mut conversation, ui) = conversation_channel();
+        let worker = thread::spawn(move || {
+            conversation.respond(Request::Info(c"Security notice"))?;
+            conversation.respond(Request::EchoOff(c"Password:"))
+        });
+
+        let notice = ui.prompt_timeout(WAIT).unwrap().unwrap();
+        coordinator.apply(RuntimeEvent::Prompt(notice)).unwrap();
+        assert_eq!(coordinator.visual_state().prompt(), PromptVisual::Notice);
+        coordinator
+            .apply(RuntimeEvent::Input(DecodedKey::Submit))
+            .unwrap();
+        assert_eq!(
+            coordinator.visual_state().prompt(),
+            PromptVisual::Authenticating
+        );
+
+        let password = ui.prompt_timeout(WAIT).unwrap().unwrap();
+        coordinator.apply(RuntimeEvent::Prompt(password)).unwrap();
+        assert!(matches!(
+            coordinator.visual_state().prompt(),
+            PromptVisual::Secret { dots: 0 }
+        ));
         coordinator
             .apply(RuntimeEvent::Input(DecodedKey::Cancel))
             .unwrap();

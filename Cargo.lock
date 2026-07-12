@@ -4994,6 +4994,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-focus-store"
+version = "0.1.0"
+dependencies = [
+ "rmac-focus",
+ "rmac-notifications",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-input"
 version = "0.1.0"
 dependencies = [

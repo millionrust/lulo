@@ -43,6 +43,10 @@ impl ScheduleId {
         validate_text(&value, MAX_ID_BYTES, false)?;
         Ok(Self(value))
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl fmt::Debug for ScheduleId {

@@ -40,6 +40,18 @@ only for temporary manual activation. Scheduled end remains a local-time rule
 and is intentionally not presented as a potentially false Unix timestamp.
 
 Mode names, IDs, schedule IDs, and allow-listed apps are redacted from default
-diagnostics. The next slice adds private atomic configuration/manual-state
-persistence, a timezone/timedate adapter, shell-status publication, and the
-System Settings/Quick Settings controls.
+diagnostics.
+
+`rmac-focus-store` persists configuration and the manual override under
+`$XDG_CONFIG_HOME/rmac/focus.json`. Its directory is forced to `0700`; primary
+and last-good files are created as `0600` before content is written and use
+same-directory atomic replacement. Input is capped at 1 MiB and every restored
+mode ID, name, app ID, schedule range/day/reference, duplicate, and manual mode
+reference is reconstructed through the domain validators. Unsupported or
+corrupt primary data uses last-good; double corruption returns four safe
+original defaults (Do Not Disturb, Personal, Work, Sleep) with no active manual
+override. Missing files are a clean first run. Permission/I/O failures remain
+errors, and paths plus all user/app identifiers are redacted from diagnostics.
+
+The next slice adds a timezone/timedate adapter, shell-status publication, and
+the System Settings/Quick Settings controls.

@@ -8,8 +8,9 @@ publish = false
 
 [dependencies]
 async-channel.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
 async-io.workspace = true
 futures-util.workspace = true
+rmac-focus.workspace = true
+rmac-focus-runtime.workspace = true
+rmac-focus-store.workspace = true
 zbus.workspace = true

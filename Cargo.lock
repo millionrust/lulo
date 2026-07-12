@@ -5000,6 +5000,9 @@ dependencies = [
  "async-channel 2.5.0",
  "async-io",
  "futures-util",
+ "rmac-focus",
+ "rmac-focus-runtime",
+ "rmac-focus-store",
  "zbus",
 ]
 
@@ -5191,6 +5194,7 @@ version = "0.1.0"
 dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
+ "rmac-focus-linux",
  "rmac-network",
  "rmac-power",
  "rmac-quick-settings",
@@ -5229,7 +5233,6 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-focus-linux",
  "rmac-focus-runtime",
- "rmac-focus-store",
  "rmac-network",
  "rmac-power",
  "rmac-quick-settings",

@@ -12,8 +12,9 @@ Run `scripts/linux/install-session-units.sh` once from the repository. It
 builds the release supervisor, installs it under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
 directory, and installs `~/.local/bin/rmac-session-start`.
-It also builds the notification service and installs its user-local portal
-descriptor, desktop-specific backend selection, and D-Bus activation file.
+It also builds the notification and Focus services, installs the notification
+portal descriptor and desktop-specific backend selection, and installs D-Bus
+activation files for both authorities.
 
 The start command must run from niri after the graphical session environment is
 available. It imports only `WAYLAND_DISPLAY`, `DISPLAY`, `XAUTHORITY`, desktop
@@ -35,8 +36,9 @@ need to be imported before these services start.
 
 ## Crash and restart policy
 
-Top bar, Dock, launcher, notification center, wallpaper, and the global
-shortcut broker each have their own service. They use `Restart=on-failure`, a
+Top bar, Dock, launcher, notification center, Focus authority, wallpaper, and
+the global shortcut broker each have their own service. They use
+`Restart=on-failure`, a
 one-second restart delay, and at most four starts in a 60-second interval. They
 are `PartOf` the normal rmac target; one component is not `RequiredBy` another.
 The unit conditions keep future D-phase services inactive—not failed—until

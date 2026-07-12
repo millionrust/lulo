@@ -17,7 +17,6 @@ rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-focus-linux.workspace = true
 rmac-focus-runtime.workspace = true
-rmac-focus-store.workspace = true
 rmac-network.workspace = true
 rmac-power.workspace = true
 rmac-quick-settings.workspace = true

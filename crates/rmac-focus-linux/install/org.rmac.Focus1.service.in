@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.rmac.Focus1
+Exec=@RMAC_FOCUS_EXEC@
+SystemdService=rmac-focus.service

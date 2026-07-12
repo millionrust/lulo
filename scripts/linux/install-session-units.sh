@@ -5,6 +5,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "${script_dir}/../.." && pwd)
 source_dir="${repo_root}/crates/rmac-session/units"
 notification_install_dir="${repo_root}/crates/rmac-notifications-linux/install"
+focus_install_dir="${repo_root}/crates/rmac-focus-linux/install"
 config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
 data_home=${XDG_DATA_HOME:-"${HOME}/.local/share"}
 unit_dir=${RMAC_SYSTEMD_USER_DIR:-"${config_home}/systemd/user"}
@@ -19,6 +20,7 @@ esac
 (cd "${repo_root}" && cargo build --locked --release \
     -p rmac-session --bin rmac-session-supervisor \
     -p rmac-notifications-linux --bin rmac-notification-center \
+    -p rmac-focus-linux --bin rmac-focus-service \
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch)
 
 install -d -m 0755 "${unit_dir}"
@@ -26,6 +28,7 @@ install -d -m 0755 "${libexec_dir}"
 install -d -m 0755 "${bin_dir}"
 install -m 0755 "${target_dir}/release/rmac-session-supervisor" "${libexec_dir}/rmac-session-supervisor"
 install -m 0755 "${target_dir}/release/rmac-notification-center" "${libexec_dir}/rmac-notification-center"
+install -m 0755 "${target_dir}/release/rmac-focus-service" "${libexec_dir}/rmac-focus-service"
 install -m 0755 "${target_dir}/release/rmac-shortcut-broker" "${libexec_dir}/rmac-shortcut-broker"
 install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/rmac-shortcut-dispatch"
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
@@ -49,6 +52,16 @@ install -m 0644 "${activation_tmp}" \
 rm -f "${activation_tmp}"
 trap - EXIT HUP INT TERM
 
+focus_activation_tmp=$(mktemp "${TMPDIR:-/tmp}/rmac-focus-service.XXXXXX")
+trap 'rm -f "${focus_activation_tmp}"' EXIT HUP INT TERM
+sed "s|@RMAC_FOCUS_EXEC@|${libexec_dir}/rmac-focus-service|g" \
+    "${focus_install_dir}/org.rmac.Focus1.service.in" \
+    >"${focus_activation_tmp}"
+install -m 0644 "${focus_activation_tmp}" \
+    "${dbus_service_dir}/org.rmac.Focus1.service"
+rm -f "${focus_activation_tmp}"
+trap - EXIT HUP INT TERM
+
 systemctl --user daemon-reload
 fallback_path="${config_home}/rmac/niri-shortcuts.kdl"
 "${libexec_dir}/rmac-shortcut-dispatch" write-niri-fallback \
@@ -56,6 +69,7 @@ fallback_path="${config_home}/rmac/niri-shortcuts.kdl"
 echo "Installed rmac user units in ${unit_dir}."
 echo "Installed the supervisor in ${libexec_dir}."
 echo "Installed the notification service and rmac notification portal backend."
+echo "Installed the Focus policy authority."
 echo "Start the session from niri with ${bin_dir}/rmac-session-start."
 echo "If shortcuts-status.json reports fallback-required, add this to niri config:"
 echo "include \"${fallback_path}\""

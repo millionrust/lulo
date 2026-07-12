@@ -65,9 +65,9 @@ The transaction model alone is not the D3 completion claim.
 `rmac-quick-settings-system` maps a validated operation to the existing typed
 platform authorities. It changes Wi-Fi through NetworkManager, Bluetooth
 through BlueZ, output sound through PipeWire/WirePlumber, and power mode
-through the power-profile service. Focus fails closed until its command channel
-to `rmac-focus-runtime` is connected; it never writes legacy shell preferences.
-The executor is deliberately blocking and must run on a background executor.
+through the power-profile service. Focus uses the session-owned
+`org.rmac.Focus1` authority and never writes legacy shell preferences. The
+executor is deliberately blocking and must run on a background executor.
 
 Mutation and refresh failures remain distinct. A rejected mutation does not
 issue a misleading read; a successful mutation always rereads its affected
@@ -76,11 +76,12 @@ model's per-control merge rule and preventing an older Wi-Fi task from rolling
 back newer sound state.
 
 The layer-shell rendering, real focus restoration, semantic GPUI controls, and
-Orca/niri evidence remain pending. The existing `rmac-shell-runtime` now
-evaluates persisted Focus policy at startup and exact wake boundaries,
-resamples local time after time-zone/clock changes and resume, supplies full
-inputs, disables unsupported mutation, and emits a popover-specific redraw
-flag without waking the compact bar for device-list-only changes. Focus
-mutations must now be routed into the persisted runtime across shell processes;
-direct writes to legacy shell Focus fields are forbidden. The current executor
-still needs that routing before D3/E4 can be claimed complete.
+Orca/niri evidence remain pending. The Focus service evaluates persisted policy
+at startup and exact wake boundaries and resamples local time after time-zone,
+clock, and resume changes. `rmac-shell-runtime` subscribes to that authority,
+supplies full inputs, disables mutation during reconnect, and emits a
+popover-specific redraw flag without waking the compact bar for
+device-list-only changes. Scheduled Focus cannot be deceptively switched off
+by a compact toggle; the user receives an actionable Settings instruction.
+D3/E4 still require the real layer-shell UI, Settings pane, notification
+enforcement connection, and Linux evidence.

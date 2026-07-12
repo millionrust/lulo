@@ -69,10 +69,22 @@ bounded delay and uses backpressure rather than polling. This follows the
 official logind contract that `PrepareForSleep` is emitted immediately before
 and after sleep.
 
+The same crate exports the single-writer `org.rmac.Focus1` user-session D-Bus
+authority. It owns the runtime and private store, exposes state, activate,
+disable, and Quick Settings enable/disable methods, and emits bounded typed
+state changes. Calls require an authenticated session-bus sender. Enabling from
+the compact tile selects Do Not Disturb; explicit mode and duration activation
+is available for the full Focus pane. A compact disable never pretends to
+override a running schedule: it returns an actionable instruction to change
+that schedule in Focus settings. Persistence degradation is returned to the
+caller even though the live in-memory policy remains truthful.
+
 The shell status reducer now accepts live Focus projection separately from
 shell preferences. Visibility remains a preference, but active mode and expiry
 come only from the Focus runtime. On service loss, the top bar preserves its
 last-known-good indicator, Quick Settings becomes non-writable, and health
 becomes unavailable. A stale saved toggle can no longer impersonate live Focus.
-The next slice connects this runtime to the notification service and implements
-the System Settings/Quick Settings mutations.
+Quick Settings now mutates and rereads only the D-Bus authority; connection
+loss makes the tile read-only while preserving last-known-good display state.
+The next slice connects this runtime to notification delivery and builds the
+full System Settings pane for modes, schedules, allow lists, and durations.

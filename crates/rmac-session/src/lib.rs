@@ -9,11 +9,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rmac_storage::{atomic_write, Failure};
 use serde::{Deserialize, Serialize};
 
-pub const COMPONENT_UNITS: [&str; 6] = [
+pub const COMPONENT_UNITS: [&str; 7] = [
     "rmac-top-bar.service",
     "rmac-dock.service",
     "rmac-launcher.service",
     "rmac-notification-center.service",
+    "rmac-focus.service",
     "rmac-wallpaper.service",
     "rmac-shortcut-broker.service",
 ];
@@ -471,6 +472,7 @@ mod tests {
             include_str!("../units/rmac-dock.service"),
             include_str!("../units/rmac-launcher.service"),
             include_str!("../units/rmac-notification-center.service"),
+            include_str!("../units/rmac-focus.service"),
             include_str!("../units/rmac-wallpaper.service"),
             include_str!("../units/rmac-shortcut-broker.service"),
         ];
@@ -487,6 +489,9 @@ mod tests {
         assert!(notifications.contains("Type=dbus"));
         assert!(notifications.contains("BusName=org.freedesktop.impl.portal.desktop.rmac"));
         assert!(notifications.contains("Before=xdg-desktop-portal.service"));
+        let focus = include_str!("../units/rmac-focus.service");
+        assert!(focus.contains("Type=dbus"));
+        assert!(focus.contains("BusName=org.rmac.Focus1"));
     }
 
     #[test]
@@ -506,5 +511,13 @@ mod tests {
         );
         assert!(activation.contains("@RMAC_NOTIFICATION_EXEC@"));
         assert!(activation.contains("SystemdService=rmac-notification-center.service"));
+    }
+
+    #[test]
+    fn focus_activation_asset_routes_to_the_supervised_authority() {
+        let activation = include_str!("../../rmac-focus-linux/install/org.rmac.Focus1.service.in");
+        assert!(activation.contains("Name=org.rmac.Focus1"));
+        assert!(activation.contains("@RMAC_FOCUS_EXEC@"));
+        assert!(activation.contains("SystemdService=rmac-focus.service"));
     }
 }

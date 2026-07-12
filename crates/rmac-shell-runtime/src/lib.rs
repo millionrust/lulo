@@ -364,91 +364,9 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
 async fn watch_focus(
     sender: Sender<Result<rmac_focus_runtime::Projection, String>>,
 ) -> Result<(), Error> {
-    loop {
-        match watch_focus_once(&sender).await {
-            Ok(()) if sender.is_closed() => return Ok(()),
-            Ok(()) => {
-                if sender
-                    .send(Err("Focus runtime stopped; reconnecting".into()))
-                    .await
-                    .is_err()
-                {
-                    return Ok(());
-                }
-            }
-            Err(error) => {
-                if sender.send(Err(error.to_string())).await.is_err() {
-                    return Ok(());
-                }
-            }
-        }
-        wait_or_closed(&sender, std::time::Duration::from_secs(1)).await;
-        if sender.is_closed() {
-            return Ok(());
-        }
-    }
-}
-
-async fn watch_focus_once(
-    sender: &Sender<Result<rmac_focus_runtime::Projection, String>>,
-) -> Result<(), Error> {
-    let store = rmac_focus_store::Store::from_environment()
-        .map_err(|error| Error::new("resolve Focus settings", error.to_string()))?;
-    let clock = rmac_focus_runtime::ClockSampler::default();
-    let initial_clock = clock.sample();
-    let (mut runtime, mut update) = rmac_focus_runtime::Runtime::load(store, initial_clock)
-        .map_err(|error| Error::new("load Focus policy", format!("{error:?}")))?;
-    if sender.send(Ok(update.projection.clone())).await.is_err() {
-        return Ok(());
-    }
-
-    let (hint_tx, hint_rx) = async_channel::bounded(8);
-    let watcher = rmac_focus_linux::watch(hint_tx);
-    let evaluator = async {
-        loop {
-            let now = clock.sample();
-            let delay = rmac_focus_runtime::wake_delay(&update, now.unix_ms)
-                .unwrap_or(std::time::Duration::from_secs(24 * 60 * 60));
-            let timer = futures_util::FutureExt::fuse(async_io::Timer::after(delay));
-            let hint = futures_util::FutureExt::fuse(hint_rx.recv());
-            let closed = futures_util::FutureExt::fuse(sender.closed());
-            futures_util::pin_mut!(timer, hint, closed);
-            let available = futures_util::select! {
-                _ = timer => true,
-                event = hint => match event {
-                    Ok(rmac_focus_linux::Event::Refresh(_)) => true,
-                    Ok(rmac_focus_linux::Event::Unavailable) => false,
-                    Err(_) => return Ok(()),
-                },
-                _ = closed => return Ok(()),
-            };
-            if !available {
-                if sender
-                    .send(Err("Focus time-change watcher is reconnecting".into()))
-                    .await
-                    .is_err()
-                {
-                    return Ok(());
-                }
-                continue;
-            }
-            update = runtime
-                .apply_clock(clock.sample())
-                .map_err(|error| Error::new("evaluate Focus policy", format!("{error:?}")))?;
-            if sender.send(Ok(update.projection.clone())).await.is_err() {
-                return Ok(());
-            }
-        }
-    };
-    let (_, _) = futures_util::try_join!(
-        async {
-            watcher
-                .await
-                .map_err(|error| Error::new("watch Focus time state", error.to_string()))
-        },
-        evaluator,
-    )?;
-    Ok(())
+    rmac_focus_linux::client::watch(sender)
+        .await
+        .map_err(|error| Error::new("watch Focus authority", error.to_string()))
 }
 
 async fn watch_compositor(sender: Sender<rmac_compositor::Event>) -> Result<(), Error> {
@@ -604,9 +522,8 @@ async fn consume(
             },
             event = focus_event => {
                 let event = event.map_err(|_| Error::new("receive Focus state", "watcher stopped"))?;
-                // Policy is live, but mutation remains disabled until the
-                // cross-process Focus command channel is connected.
-                coordinator.apply_focus(event, false);
+                let writable = event.is_ok();
+                coordinator.apply_focus(event, writable);
             },
             _ = closed => return Ok(()),
         }

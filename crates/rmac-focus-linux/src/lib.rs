@@ -7,6 +7,9 @@ use std::fmt;
 
 use async_channel::Sender;
 
+pub mod client;
+pub mod service;
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Reasons {
     pub initial: bool,

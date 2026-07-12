@@ -117,12 +117,19 @@ impl Backend for SystemBackend {
     }
 
     fn set_focus_enabled(&self, enabled: bool) -> Result<(), String> {
-        let _ = enabled;
-        Err("the live Focus command authority is not connected".into())
+        rmac_focus_linux::client::set_enabled(enabled)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     }
 
     fn focus(&self) -> Result<rmac_shell_settings::FocusSettings, String> {
-        Err("the live Focus command authority is not connected".into())
+        rmac_focus_linux::client::state()
+            .map(|snapshot| rmac_shell_settings::FocusSettings {
+                enabled: snapshot.projection.enabled,
+                selected_mode: snapshot.projection.mode_name,
+                ends_at_unix_ms: snapshot.projection.ends_at_unix_ms,
+            })
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -349,9 +356,9 @@ mod tests {
     }
 
     #[test]
-    fn system_backend_never_mutates_legacy_focus_preferences() {
-        let backend = SystemBackend;
-        assert!(backend.set_focus_enabled(true).is_err());
-        assert!(backend.focus().is_err());
+    fn focus_system_backend_routes_to_the_live_authority() {
+        let source = include_str!("lib.rs");
+        assert!(source.contains("rmac_focus_linux::client::set_enabled"));
+        assert!(source.contains("rmac_focus_linux::client::state"));
     }
 }

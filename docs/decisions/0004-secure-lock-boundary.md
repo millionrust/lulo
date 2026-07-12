@@ -71,6 +71,11 @@ or an unlocked secondary TTY/session.
     cannot authorize an unattended timeout. Capability is rechecked at action
     time, and logind continues to enforce active inhibitors and system-wide lid
     policy.
+13. Notification history exposes an in-process lock projection capped at 16
+    unread records. App hints can only restrict the user's per-app rule; hidden
+    records disappear and redacted records contain no title/body. No actions or
+    transport targets cross the boundary. Swaylock cannot consume the
+    projection, so the shipping provider continues to show nothing.
 
 ## Consequences
 

@@ -81,9 +81,19 @@ The existing delay-inhibitor coordinator locks before the machine sleeps.
 Lid-close policy remains the system-wide logind configuration and continues to
 respect its docked-display behavior rather than being overridden per session.
 
+Notification history now has a bounded, action-free lock projection. It applies
+the stricter of the authenticated app hint and the user's per-app policy,
+omits hidden and read records, redacts content when required, returns newest
+first, and never returns more than 16 records. The projection does not grant
+rendering authority. The current PAM-enabled swaylock provider has no content
+interface and therefore enforces the stricter global result: Notification
+Previews is truthfully shown as Hidden and no ineffective disclosure control is
+offered. A future rmac lock client must own the ext-session-lock surfaces and
+PAM handoff before it may consume this projection.
+
 ## Not complete yet
 
-- notification preview filtering and lock wallpaper authority;
+- a PAM-capable rmac lock presentation provider and lock wallpaper authority;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;
 - killed-locker automatic recovery and the documented TTY/manual recovery path;

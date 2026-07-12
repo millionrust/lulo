@@ -71,8 +71,14 @@ Opaque target decoding is bounded and rejects trailing or malformed bytes.
 
 `hide-on-lockscreen` and `hide-content-on-lockscreen` normalize to a typed lock
 visibility policy. No lock UI may weaken that policy. An unspecified hint stays
-`Policy`; the lock authority must resolve that through trusted per-app settings
-and hide it when no explicit policy has been established.
+`Policy`; `Center::lock_previews` resolves it through trusted per-app settings
+and applies whichever rule reveals less. The projection is newest-unread-first,
+capped at 16 records, and contains only notification ID, app identity, update
+time, and optional title/body. Hidden records are omitted; redacted records have
+no content. Actions, targets, categories, sounds, and transport replacement IDs
+never cross the lock projection boundary, and its diagnostics redact app and
+message data. The current swaylock provider consumes none of this projection,
+so it remains stricter and displays no notifications.
 
 ## Delivery and lifecycle
 

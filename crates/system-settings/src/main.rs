@@ -3987,9 +3987,15 @@ impl Settings {
                     "Authentication".into(),
                     "Password Required".into(),
                 ),
+                value_row(
+                    "icons/bell.svg",
+                    secondary(),
+                    "Notification Previews".into(),
+                    "Hidden".into(),
+                ),
             ]));
             cards.push(note_card(
-                "Notification previews and login presentation controls remain hidden until their secure adapters are available. Lid close and suspend follow the system’s supported logind policy and always pass through the pre-sleep lock boundary.",
+                "The current PAM-enabled swaylock provider cannot render notification content, so previews stay hidden even when an application policy would allow them. Lid close and suspend follow the system’s supported logind policy and always pass through the pre-sleep lock boundary.",
             ));
         }
         self.pane(cards)

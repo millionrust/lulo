@@ -17,6 +17,7 @@ const MAX_FILE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_HISTORY: usize = 500;
 const MAX_PER_APP: usize = 100;
 const MAX_POLICIES: usize = 512;
+const MAX_LOCK_PREVIEWS: usize = 16;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -24,6 +25,31 @@ pub enum LockPreview {
     Show,
     HideContent,
     Hide,
+}
+
+/// Bounded, action-free data that a secure session-lock client may render.
+///
+/// `content=None` intentionally reveals only application identity and recency.
+/// Action identifiers, targets, categories, sounds, and replacement identities
+/// never cross this boundary.
+#[derive(Clone, Eq, PartialEq)]
+pub struct LockPreviewRecord {
+    pub notification_id: NotificationId,
+    pub app_id: AppId,
+    pub content: Option<Content>,
+    pub updated_at: Time,
+}
+
+impl fmt::Debug for LockPreviewRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("LockPreviewRecord")
+            .field("notification_id", &self.notification_id)
+            .field("app_id", &"<redacted>")
+            .field("content", &self.content.as_ref().map(|_| "<redacted>"))
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -150,6 +176,33 @@ impl Center {
             .collect()
     }
 
+    /// Project newest unread records through both application hints and the
+    /// user's stricter per-app policy. The provider may request fewer records,
+    /// but can never exceed the security boundary's fixed maximum.
+    pub fn lock_previews(&self, requested: usize) -> Vec<LockPreviewRecord> {
+        let limit = requested.min(MAX_LOCK_PREVIEWS);
+        self.history
+            .iter()
+            .rev()
+            .filter(|record| record.unread)
+            .filter_map(|record| {
+                let policy = self.policy(record.source.app_id());
+                if !policy.enabled || !policy.history {
+                    return None;
+                }
+                let preview =
+                    restrict_lock_preview(policy.lock_preview, record.display.lock_screen);
+                (preview != LockPreview::Hide).then(|| LockPreviewRecord {
+                    notification_id: record.id,
+                    app_id: record.source.app_id().clone(),
+                    content: (preview == LockPreview::Show).then(|| record.content.clone()),
+                    updated_at: record.updated_at,
+                })
+            })
+            .take(limit)
+            .collect()
+    }
+
     pub fn upsert(&mut self, notification: Notification) {
         if !notification.delivery.history {
             return;
@@ -255,6 +308,30 @@ impl Center {
         if self.history.len() > MAX_HISTORY {
             self.history.drain(..self.history.len() - MAX_HISTORY);
         }
+    }
+}
+
+fn restrict_lock_preview(
+    policy: LockPreview,
+    application_hint: LockScreenVisibility,
+) -> LockPreview {
+    let hint = match application_hint {
+        LockScreenVisibility::Policy | LockScreenVisibility::Show => LockPreview::Show,
+        LockScreenVisibility::HideContent => LockPreview::HideContent,
+        LockScreenVisibility::Hide => LockPreview::Hide,
+    };
+    if preview_rank(policy) >= preview_rank(hint) {
+        policy
+    } else {
+        hint
+    }
+}
+
+fn preview_rank(preview: LockPreview) -> u8 {
+    match preview {
+        LockPreview::Show => 0,
+        LockPreview::HideContent => 1,
+        LockPreview::Hide => 2,
     }
 }
 
@@ -867,6 +944,84 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn lock_projection_applies_the_stricter_hint_without_actions_or_unbounded_data() {
+        let mut center = Center::default();
+        for (app, preview) in [
+            ("org.example.Chat", LockPreview::Show),
+            ("org.example.Mail", LockPreview::HideContent),
+            ("org.example.AppHint", LockPreview::Show),
+            ("org.example.Secret", LockPreview::Hide),
+            ("org.example.AppHide", LockPreview::Show),
+        ] {
+            center
+                .set_policy(
+                    AppId::parse(app).unwrap(),
+                    AppPolicy {
+                        lock_preview: preview,
+                        ..AppPolicy::default()
+                    },
+                )
+                .unwrap();
+        }
+
+        center.upsert(notification("org.example.Chat", "chat", 10, false));
+        center.upsert(notification("org.example.Mail", "mail", 20, false));
+        let mut app_restricted = notification("org.example.AppHint", "restricted", 30, false);
+        app_restricted.display.lock_screen = LockScreenVisibility::HideContent;
+        center.upsert(app_restricted);
+        center.upsert(notification("org.example.Secret", "secret", 40, false));
+        let mut app_hidden = notification("org.example.AppHide", "hidden", 45, false);
+        app_hidden.display.lock_screen = LockScreenVisibility::Hide;
+        center.upsert(app_hidden);
+
+        let previews = center.lock_previews(usize::MAX);
+        assert_eq!(previews.len(), 3);
+        assert_eq!(previews[0].app_id.as_str(), "org.example.AppHint");
+        assert!(previews[0].content.is_none());
+        assert_eq!(previews[1].app_id.as_str(), "org.example.Mail");
+        assert!(previews[1].content.is_none());
+        assert_eq!(previews[2].app_id.as_str(), "org.example.Chat");
+        assert_eq!(
+            previews[2].content.as_ref().unwrap().title(),
+            "Private title chat"
+        );
+        let debug = format!("{previews:?}");
+        assert!(!debug.contains("org.example"));
+        assert!(!debug.contains("Private title"));
+
+        let mail = AppId::parse("org.example.Mail").unwrap();
+        center.mark_all_read(Some(&mail));
+        assert!(center
+            .lock_previews(usize::MAX)
+            .iter()
+            .all(|preview| preview.app_id.as_str() != mail.as_str()));
+
+        let chat = AppId::parse("org.example.Chat").unwrap();
+        for index in 50..80 {
+            center.upsert(notification(
+                "org.example.Chat",
+                &format!("bounded-{index}"),
+                index,
+                false,
+            ));
+        }
+        assert_eq!(center.lock_previews(usize::MAX).len(), MAX_LOCK_PREVIEWS);
+        center
+            .set_policy(
+                chat,
+                AppPolicy {
+                    lock_preview: LockPreview::Hide,
+                    ..AppPolicy::default()
+                },
+            )
+            .unwrap();
+        assert!(center
+            .lock_previews(usize::MAX)
+            .iter()
+            .all(|preview| preview.app_id.as_str() != "org.example.Chat"));
     }
 
     #[test]

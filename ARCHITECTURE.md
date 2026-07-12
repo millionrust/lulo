@@ -227,6 +227,13 @@ uses the session-owned `org.rmac.Focus1` command authority and never writes
 legacy shell preferences. The GPUI popover must run this adapter off its render
 executor.
 
+`org.rmac.Focus1` is also the single writer for the full Focus configuration.
+Its bounded whole-config wire contract preserves modes, app allow lists,
+urgent behavior, and schedules; replacement validates the complete graph,
+persists atomically, reevaluates current policy, and emits a separate
+configuration-change signal. Settings clients subscribe before reading and
+never compose partial file writes.
+
 The Dock begins with a compositor- and catalog-backed domain in `rmac-dock`.
 It preserves configured pinned order, groups niri windows by normalized desktop
 identity, orders unpinned running apps by recent focus, and derives launch,

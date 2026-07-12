@@ -2,11 +2,13 @@
 
 use async_channel::Sender;
 use futures_util::StreamExt as _;
+use rmac_focus::Config;
 use rmac_focus_runtime::Projection;
 use rmac_notifications::{AppId, DeliveryPolicy};
 
 use crate::service::{
-    decode_policy, encode_policy, projection, WirePolicy, WireState, SCHEDULED_DISABLE_DETAIL,
+    decode_configuration, decode_policy, encode_configuration, encode_policy, projection,
+    WireConfiguration, WirePolicy, WireState, SCHEDULED_DISABLE_DETAIL,
 };
 
 #[cfg(test)]
@@ -23,9 +25,14 @@ trait Focus {
     fn activate(&self, mode_id: &str, duration_ms: u64) -> zbus::Result<WireState>;
     fn disable(&self) -> zbus::Result<WireState>;
     fn delivery_policy(&self, app_id: &str, base: WirePolicy) -> zbus::Result<WirePolicy>;
+    fn configuration(&self) -> zbus::Result<WireConfiguration>;
+    fn replace_configuration(&self, configuration: WireConfiguration) -> zbus::Result<WireState>;
 
     #[zbus(signal)]
     fn changed(&self, state: WireState) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn configuration_changed(&self) -> zbus::Result<()>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -58,6 +65,22 @@ pub fn disable() -> Result<Snapshot, Error> {
     let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(proxy.disable().map_err(call_error)?)?)
+}
+
+pub fn configuration() -> Result<Config, Error> {
+    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
+    decode_configuration(proxy.configuration().map_err(call_error)?).map_err(|_| Error::Protocol)
+}
+
+pub fn replace_configuration(configuration: &Config) -> Result<Snapshot, Error> {
+    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
+    ensure_persisted(decode(
+        proxy
+            .replace_configuration(encode_configuration(configuration))
+            .map_err(call_error)?,
+    )?)
 }
 
 pub async fn enforce(app_id: &AppId, base: DeliveryPolicy) -> Result<DeliveryPolicy, Error> {
@@ -114,6 +137,61 @@ pub async fn watch(sender: Sender<Result<Projection, String>>) -> Result<(), Err
     }
 }
 
+pub async fn watch_configuration(sender: Sender<Result<Config, String>>) -> Result<(), Error> {
+    loop {
+        match watch_configuration_once(&sender).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => {
+                if sender
+                    .send(Err("Focus authority stopped; reconnecting".into()))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+            }
+            Err(error) => {
+                if sender.send(Err(error.to_string())).await.is_err() {
+                    return Ok(());
+                }
+            }
+        }
+        let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
+            std::time::Duration::from_secs(1),
+        ));
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(timer, closed);
+        futures_util::select! {
+            _ = timer => {},
+            _ = closed => return Ok(()),
+        }
+    }
+}
+
+async fn watch_configuration_once(sender: &Sender<Result<Config, String>>) -> Result<(), Error> {
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|_| Error::Connect)?;
+    let proxy = FocusProxy::new(&connection)
+        .await
+        .map_err(|_| Error::Connect)?;
+    let mut changes = proxy
+        .receive_configuration_changed()
+        .await
+        .map_err(|_| Error::Subscribe)?;
+    let initial = decode_configuration(proxy.configuration().await.map_err(call_error)?)
+        .map_err(|_| Error::Protocol)?;
+    sender.send(Ok(initial)).await.map_err(|_| Error::Publish)?;
+    while changes.next().await.is_some() {
+        let configuration = decode_configuration(proxy.configuration().await.map_err(call_error)?)
+            .map_err(|_| Error::Protocol)?;
+        if sender.send(Ok(configuration)).await.is_err() {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
 async fn watch_once(sender: &Sender<Result<Projection, String>>) -> Result<(), Error> {
     let connection = zbus::Connection::session()
         .await
@@ -162,7 +240,8 @@ fn call_error(error: zbus::Error) -> Error {
             Error::Scheduled
         }
         zbus::Error::MethodError(_, Some(detail), _)
-            if detail == "Focus mode or duration is invalid" =>
+            if detail == "Focus mode or duration is invalid"
+                || detail == "Focus configuration is invalid" =>
         {
             Error::Invalid
         }

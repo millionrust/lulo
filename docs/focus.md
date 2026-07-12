@@ -79,6 +79,24 @@ override a running schedule: it returns an actionable instruction to change
 that schedule in Focus settings. Persistence degradation is returned to the
 caller even though the live in-memory policy remains truthful.
 
+The authority now exposes bounded `Configuration` and
+`ReplaceConfiguration` operations for the full Settings pane. One transaction
+contains all modes and schedules: mode ID, user-visible name, exact allowed-app
+set, urgent behavior, schedule ID/mode reference, weekday mask, local start/end
+minutes, priority, and enabled state. The decoder enforces the domain's 32-mode,
+64-schedule, and 256-app-per-mode limits before construction; duplicate app
+IDs, duplicate mode/schedule IDs, empty or unknown weekday masks, invalid local
+times, unknown mode references, and unbounded text fail closed. Encoding is
+deterministically ordered.
+
+Replacement reuses `rmac-focus-runtime`'s atomic whole-config mutation, retains
+a manual activation only if its mode still exists, reevaluates immediately,
+and reports degraded persistence without falsifying live state. A dedicated
+configuration-change signal is emitted even when active top-bar projection is
+unchanged. Settings clients subscribe before the initial read, reread after
+every signal, reconnect with bounded delay, and never edit `focus.json`
+directly.
+
 Notification admission uses the same authority's typed delivery-policy method.
 The notification service supplies its per-app enabled, banner, sound, history,
 and urgent-through-Focus choices; Focus composes the active mode and exact app

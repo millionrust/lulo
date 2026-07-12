@@ -1,8 +1,9 @@
 //! Single-writer Focus authority exported on the user session bus.
 
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use rmac_focus::{ActivationSource, ModeId};
+use rmac_focus::{ActivationSource, Config, Mode, ModeId, Schedule, ScheduleId, Weekday};
 use rmac_focus_runtime::{ClockSampler, PersistenceHealth, Projection, Runtime, Update};
 use rmac_notifications::{AppId, BannerPolicy, DeliveryPolicy, HistoryPolicy};
 use zbus::connection::Builder;
@@ -23,6 +24,12 @@ pub(crate) const SCHEDULED_DISABLE_DETAIL: &str =
 /// zero expiry represent absent optional values.
 pub type WireState = (bool, String, String, u64, bool);
 pub type WirePolicy = (bool, bool, bool, u8, bool, bool);
+pub type WireMode = (String, String, Vec<String>, bool);
+pub type WireSchedule = (String, String, u8, u16, u16, u8, bool);
+pub type WireConfiguration = (Vec<WireMode>, Vec<WireSchedule>);
+const MAX_WIRE_MODES: usize = 32;
+const MAX_WIRE_SCHEDULES: usize = 64;
+const MAX_WIRE_ALLOWED_APPS: usize = 256;
 
 #[derive(Clone)]
 struct FocusInterface {
@@ -50,6 +57,32 @@ impl FocusInterface {
             .map_err(|_| fdo::Error::InvalidArgs("notification policy is invalid".into()))?;
         let policy = lock(&self.runtime)?.enforce(&app_id, base);
         Ok(encode_policy(policy))
+    }
+
+    fn configuration(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<WireConfiguration> {
+        authenticated_sender(&header)?;
+        Ok(encode_configuration(lock(&self.runtime)?.config()))
+    }
+
+    async fn replace_configuration(
+        &self,
+        configuration: WireConfiguration,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<WireState> {
+        authenticated_sender(&header)?;
+        let configuration = decode_configuration(configuration).map_err(configuration_error)?;
+        let before = wire_state(&*lock(&self.runtime)?);
+        let after = {
+            let mut runtime = lock(&self.runtime)?;
+            let update = runtime
+                .replace_config(configuration, self.clock.sample())
+                .map_err(runtime_error)?;
+            wire_update(&runtime, &update)
+        };
+        emit_if_changed(&emitter, &before, &after).await?;
+        Self::configuration_changed(&emitter).await?;
+        Ok(after)
     }
 
     async fn set_enabled(
@@ -144,6 +177,9 @@ impl FocusInterface {
 
     #[zbus(signal)]
     async fn changed(emitter: &SignalEmitter<'_>, state: WireState) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn configuration_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
 }
 
 pub struct ServiceHandle {
@@ -301,6 +337,124 @@ pub fn decode_policy(policy: WirePolicy) -> Result<DeliveryPolicy, Error> {
     })
 }
 
+pub fn encode_configuration(configuration: &Config) -> WireConfiguration {
+    let modes = configuration
+        .modes()
+        .map(|mode| {
+            (
+                mode.id().as_str().to_owned(),
+                mode.name().to_owned(),
+                mode.allowed_apps()
+                    .iter()
+                    .map(|app_id| app_id.as_str().to_owned())
+                    .collect(),
+                mode.allow_urgent(),
+            )
+        })
+        .collect();
+    let schedules = configuration
+        .schedules()
+        .map(|schedule| {
+            (
+                schedule.id.as_str().to_owned(),
+                schedule.mode.as_str().to_owned(),
+                weekday_mask(&schedule.days),
+                schedule.start_minute,
+                schedule.end_minute,
+                schedule.priority,
+                schedule.enabled,
+            )
+        })
+        .collect();
+    (modes, schedules)
+}
+
+pub fn decode_configuration(configuration: WireConfiguration) -> Result<Config, Error> {
+    if configuration.0.is_empty()
+        || configuration.0.len() > MAX_WIRE_MODES
+        || configuration.1.len() > MAX_WIRE_SCHEDULES
+    {
+        return Err(Error::Protocol);
+    }
+    let modes = configuration
+        .0
+        .into_iter()
+        .map(|(id, name, apps, allow_urgent)| {
+            if apps.len() > MAX_WIRE_ALLOWED_APPS {
+                return Err(Error::Protocol);
+            }
+            let app_count = apps.len();
+            let allowed_apps = apps
+                .into_iter()
+                .map(AppId::parse)
+                .collect::<Result<BTreeSet<_>, _>>()
+                .map_err(|_| Error::Protocol)?;
+            if allowed_apps.len() != app_count {
+                return Err(Error::Protocol);
+            }
+            Mode::new(
+                ModeId::parse(id).map_err(|_| Error::Protocol)?,
+                name,
+                allowed_apps,
+                allow_urgent,
+            )
+            .map_err(|_| Error::Protocol)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let schedules = configuration
+        .1
+        .into_iter()
+        .map(
+            |(id, mode, days, start_minute, end_minute, priority, enabled)| {
+                Ok(Schedule {
+                    id: ScheduleId::parse(id).map_err(|_| Error::Protocol)?,
+                    mode: ModeId::parse(mode).map_err(|_| Error::Protocol)?,
+                    days: weekdays(days)?,
+                    start_minute,
+                    end_minute,
+                    priority,
+                    enabled,
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, Error>>()?;
+    Config::new(modes, schedules).map_err(|_| Error::Protocol)
+}
+
+fn weekday_mask(days: &BTreeSet<Weekday>) -> u8 {
+    days.iter().fold(0, |mask, day| mask | weekday_bit(*day))
+}
+
+fn weekdays(mask: u8) -> Result<BTreeSet<Weekday>, Error> {
+    if mask == 0 || mask & !0b0111_1111 != 0 {
+        return Err(Error::Protocol);
+    }
+    Ok([
+        Weekday::Monday,
+        Weekday::Tuesday,
+        Weekday::Wednesday,
+        Weekday::Thursday,
+        Weekday::Friday,
+        Weekday::Saturday,
+        Weekday::Sunday,
+    ]
+    .into_iter()
+    .filter(|day| mask & weekday_bit(*day) != 0)
+    .collect())
+}
+
+fn weekday_bit(day: Weekday) -> u8 {
+    1 << match day {
+        Weekday::Monday => 0,
+        Weekday::Tuesday => 1,
+        Weekday::Wednesday => 2,
+        Weekday::Thursday => 3,
+        Weekday::Friday => 4,
+        Weekday::Saturday => 5,
+        Weekday::Sunday => 6,
+    }
+}
+
 async fn emit_if_changed(
     emitter: &SignalEmitter<'_>,
     before: &WireState,
@@ -325,6 +479,10 @@ fn domain_error(_error: rmac_focus::Error) -> fdo::Error {
 
 fn runtime_error(_error: rmac_focus_runtime::Error) -> fdo::Error {
     fdo::Error::Failed("Focus policy could not be changed".into())
+}
+
+fn configuration_error(_error: Error) -> fdo::Error {
+    fdo::Error::InvalidArgs("Focus configuration is invalid".into())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -380,6 +538,30 @@ mod tests {
     }
 
     #[test]
+    fn configuration_wire_round_trip_is_bounded_and_deterministic() {
+        let configuration = rmac_focus_store::default_config().unwrap();
+        let wire = encode_configuration(&configuration);
+        assert_eq!(decode_configuration(wire.clone()).unwrap(), configuration);
+        assert_eq!(encode_configuration(&configuration), wire);
+
+        let mut duplicate_app = wire.clone();
+        duplicate_app.0[0].2 = vec!["org.example.App".into(), "org.example.App".into()];
+        assert!(decode_configuration(duplicate_app).is_err());
+
+        let mut invalid_days = wire;
+        invalid_days.1.push((
+            "invalid-days".into(),
+            "do-not-disturb".into(),
+            0,
+            60,
+            120,
+            1,
+            true,
+        ));
+        assert!(decode_configuration(invalid_days).is_err());
+    }
+
+    #[test]
     fn generated_interface_exposes_state_commands_policy_and_changes() {
         let path = std::env::temp_dir()
             .join(format!("rmac-focus-interface-{}", std::process::id()))
@@ -399,9 +581,12 @@ mod tests {
             "Activate",
             "Disable",
             "DeliveryPolicy",
+            "Configuration",
+            "ReplaceConfiguration",
         ] {
             assert!(xml.contains(&format!("method name=\"{method}\"")));
         }
         assert!(xml.contains("signal name=\"Changed\""));
+        assert!(xml.contains("signal name=\"ConfigurationChanged\""));
     }
 }

@@ -6,6 +6,8 @@ use std::path::Path;
 #[cfg(any(target_os = "linux", test))]
 use std::process::ExitStatus;
 
+use serde::{Deserialize, Serialize};
+
 #[cfg(target_os = "linux")]
 use std::io::Read as _;
 #[cfg(target_os = "linux")]
@@ -15,12 +17,52 @@ use std::process::{Child, Command, Stdio};
 const SYSTEMCTL: &str = "/usr/bin/systemctl";
 #[cfg(target_os = "linux")]
 const SYSTEMD_NOTIFY: &str = "/usr/bin/systemd-notify";
+#[cfg(target_os = "linux")]
+const SWAYIDLE: &str = "/usr/bin/swayidle";
 #[cfg(any(target_os = "linux", test))]
 const SWAYLOCK: &str = "/usr/bin/swaylock";
 #[cfg(target_os = "linux")]
 const LOCK_UNIT: &str = "rmac-lock.service";
 #[cfg(target_os = "linux")]
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+#[cfg(target_os = "linux")]
+const LOCK_ACTION: &str = "/usr/bin/systemctl --user start rmac-lock.service";
+#[cfg(target_os = "linux")]
+const MAX_IDLE_POLICY_BYTES: u64 = 16 * 1024;
+const MIN_IDLE_SECONDS: u32 = 60;
+const MAX_IDLE_SECONDS: u32 = 24 * 60 * 60;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct IdlePolicy {
+    pub version: u32,
+    pub lock_after_seconds: Option<u32>,
+}
+
+impl Default for IdlePolicy {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            lock_after_seconds: Some(5 * 60),
+        }
+    }
+}
+
+impl IdlePolicy {
+    pub fn validate(self) -> Result<Self, Error> {
+        if self.version != 1
+            || self
+                .lock_after_seconds
+                .is_some_and(|seconds| !(MIN_IDLE_SECONDS..=MAX_IDLE_SECONDS).contains(&seconds))
+        {
+            return Err(Error {
+                operation: Operation::ValidateIdlePolicy,
+                kind: io::ErrorKind::InvalidData,
+            });
+        }
+        Ok(self)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operation {
@@ -37,6 +79,10 @@ pub enum Operation {
     InhibitSleep,
     SubscribeLogind,
     ReadSignal,
+    ReadIdlePolicy,
+    ValidateIdlePolicy,
+    SpawnIdleManager,
+    WaitForIdleManager,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,6 +141,58 @@ pub fn request() -> Result<(), Error> {
             kind: io::ErrorKind::Unsupported,
         })
     }
+}
+
+#[cfg(target_os = "linux")]
+pub fn supervise_idle(policy_path: &Path) -> Result<(), Error> {
+    let policy = read_idle_policy(policy_path)?;
+    let Some(timeout) = policy.lock_after_seconds else {
+        loop {
+            std::thread::park();
+        }
+    };
+    let timeout = timeout.to_string();
+    let status = Command::new(SWAYIDLE)
+        .args(["-w", "timeout", timeout.as_str(), LOCK_ACTION])
+        .stdin(Stdio::null())
+        .status()
+        .map_err(|error| Error::io(Operation::SpawnIdleManager, error))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::failed(Operation::WaitForIdleManager))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn supervise_idle(_policy_path: &Path) -> Result<(), Error> {
+    Err(Error {
+        operation: Operation::SpawnIdleManager,
+        kind: io::ErrorKind::Unsupported,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn read_idle_policy(policy_path: &Path) -> Result<IdlePolicy, Error> {
+    if !policy_path.is_absolute() {
+        return Err(Error {
+            operation: Operation::ValidateIdlePolicy,
+            kind: io::ErrorKind::InvalidInput,
+        });
+    }
+    let metadata = std::fs::metadata(policy_path)
+        .map_err(|error| Error::io(Operation::ReadIdlePolicy, error))?;
+    if !metadata.is_file() || metadata.len() > MAX_IDLE_POLICY_BYTES {
+        return Err(Error {
+            operation: Operation::ValidateIdlePolicy,
+            kind: io::ErrorKind::InvalidData,
+        });
+    }
+    let bytes =
+        std::fs::read(policy_path).map_err(|error| Error::io(Operation::ReadIdlePolicy, error))?;
+    serde_json::from_slice::<IdlePolicy>(&bytes)
+        .map_err(|_| Error::failed(Operation::ValidateIdlePolicy))?
+        .validate()
 }
 
 #[cfg(target_os = "linux")]
@@ -414,5 +512,51 @@ mod tests {
                 })
             );
         }
+    }
+
+    #[test]
+    fn idle_policy_has_bounded_versioned_timeouts() {
+        assert_eq!(IdlePolicy::default().validate(), Ok(IdlePolicy::default()));
+        assert_eq!(
+            IdlePolicy {
+                version: 1,
+                lock_after_seconds: None,
+            }
+            .validate(),
+            Ok(IdlePolicy {
+                version: 1,
+                lock_after_seconds: None,
+            })
+        );
+        for policy in [
+            IdlePolicy {
+                version: 0,
+                lock_after_seconds: Some(300),
+            },
+            IdlePolicy {
+                version: 1,
+                lock_after_seconds: Some(MIN_IDLE_SECONDS - 1),
+            },
+            IdlePolicy {
+                version: 1,
+                lock_after_seconds: Some(MAX_IDLE_SECONDS + 1),
+            },
+        ] {
+            assert_eq!(
+                policy.validate(),
+                Err(Error {
+                    operation: Operation::ValidateIdlePolicy,
+                    kind: io::ErrorKind::InvalidData,
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn idle_policy_rejects_unrecognized_authority() {
+        assert!(serde_json::from_str::<IdlePolicy>(
+            r#"{"version":1,"lock_after_seconds":300,"command":"other"}"#
+        )
+        .is_err());
     }
 }

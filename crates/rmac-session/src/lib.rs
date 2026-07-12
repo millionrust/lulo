@@ -520,6 +520,21 @@ mod tests {
             .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
         assert!(safe_target
             .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
+
+        let idle_lock = include_str!("../units/rmac-idle-lock.service");
+        assert!(idle_lock.contains("After=rmac-lock-coordinator.service"));
+        assert!(idle_lock.contains("Restart=on-failure"));
+        assert!(idle_lock.contains("StartLimitIntervalSec=0"));
+        assert!(idle_lock.contains(
+            "ExecStart=%h/.local/libexec/rmac/rmac-idle-locker --policy %h/.config/rmac/lock-policy.json"
+        ));
+        assert!(!idle_lock.contains("/bin/sh"));
+        assert!(normal_target.contains("rmac-idle-lock.service"));
+        assert!(safe_target.contains("Wants=rmac-idle-lock.service"));
+
+        let default_policy = include_str!("../lock-policy.json");
+        assert!(default_policy.contains("\"version\": 1"));
+        assert!(default_policy.contains("\"lock_after_seconds\": 300"));
     }
 
     #[test]

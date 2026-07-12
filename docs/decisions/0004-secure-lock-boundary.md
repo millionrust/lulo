@@ -58,6 +58,10 @@ or an unlocked secondary TTY/session.
 9. Before E5 can be complete, lock-before-suspend, resume, lid close,
    multi-monitor hotplug, PAM, failure recovery, and emergency TTY recovery
    require Linux evidence.
+10. `/usr/bin/swayidle` supplies compositor idle detection only. A bounded,
+    versioned policy selects a timeout or Never, while rmac constructs the fixed
+    readiness-gated lock command. logind remains authoritative for lid and
+    suspend operations so two policy engines cannot race to suspend the host.
 
 ## Consequences
 
@@ -86,4 +90,6 @@ or an unlocked secondary TTY/session.
 - swaylock source and release policy: <https://github.com/swaywm/swaylock>
 - swaylock readiness/configuration contract:
   <https://github.com/swaywm/swaylock/blob/master/swaylock.1.scd>
+- swayidle event and wait contract:
+  <https://github.com/swaywm/swayidle/blob/master/swayidle.1.scd>
 - niri locker recovery guidance: <https://niri-wm.github.io/niri/FAQ.html>

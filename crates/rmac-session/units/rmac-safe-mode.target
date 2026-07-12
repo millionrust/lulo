@@ -3,3 +3,4 @@ Description=rmac diagnostic safe mode
 Documentation=https://github.com/rmac/rmac
 Conflicts=rmac-session.target
 Requires=rmac-session-supervisor.service rmac-lock-coordinator.service
+Wants=rmac-idle-lock.service

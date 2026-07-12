@@ -37,7 +37,7 @@ sudo apt install --yes \
   libfreetype-dev libglib2.0-bin libssl-dev libvulkan-dev libwayland-dev \
   libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
   libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev mesa-vulkan-drivers \
-  orca pciutils pkg-config python3-pyatspi sway vulkan-tools wayland-utils \
+  orca pciutils pkg-config python3-pyatspi sway swayidle swaylock vulkan-tools wayland-utils \
   xdg-desktop-portal xdg-desktop-portal-gnome
 ```
 
@@ -135,6 +135,7 @@ versions:
 systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=rmac:'
 systemctl --user show-environment | grep "^XDG_SESSION_ID=${XDG_SESSION_ID}$"
 systemctl --user --no-pager status rmac-lock-coordinator.service
+systemctl --user --no-pager status rmac-idle-lock.service
 busctl --user introspect org.freedesktop.Notifications \
   /org/freedesktop/Notifications org.freedesktop.Notifications
 busctl --user introspect org.freedesktop.impl.portal.desktop.rmac \

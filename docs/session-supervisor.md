@@ -95,6 +95,11 @@ safe-mode targets. It restarts without a start limit, becomes ready only after
 its logind signal subscriptions and sleep inhibitor exist, and keeps lock and
 lock-before-sleep behavior independent of optional shell surfaces.
 
+Both targets also want `rmac-idle-lock.service`. It reads only the validated
+timeout policy and supervises swayidle with a fixed lock command and unbounded
+crash restart. Disabling the timeout keeps the policy service alive without
+claiming an idle lock; it does not weaken manual or pre-sleep locking.
+
 ## Verification boundary
 
 Cross-platform tests parse healthy, inactive, malformed, and mismatched

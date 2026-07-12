@@ -33,3 +33,7 @@ path = "src/bin/locker.rs"
 [[bin]]
 name = "rmac-lock-coordinator"
 path = "src/bin/lock-coordinator.rs"
+
+[[bin]]
+name = "rmac-idle-locker"
+path = "src/bin/idle-locker.rs"

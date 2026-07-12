@@ -1,0 +1,14 @@
+[Unit]
+Description=rmac idle lock policy
+Documentation=https://github.com/rmac/rmac
+BindsTo=graphical-session.target
+After=rmac-lock-coordinator.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-idle-locker --policy %h/.config/rmac/lock-policy.json
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

@@ -51,9 +51,24 @@ claim it can override logind. Reference-PC failure injection must prove the
 supported configuration locks within the deadline and characterize forced
 suspend behavior before E5 is complete.
 
+Idle locking is owned by `rmac-idle-lock.service`, which runs `/usr/bin/swayidle`
+through a small validated wrapper. Its private versioned policy accepts only a
+lock timeout from 60 seconds through 24 hours, or `null` for Never. The wrapper
+constructs swayidle's arguments itself and exposes no configurable command;
+the timeout always starts the same readiness-gated lock unit. It does not use
+swayidle's logind hooks; exact-session logind work remains in the coordinator.
+The installer creates a five-minute default only when no user policy exists.
+Both normal and diagnostic sessions start this authority.
+
+Lid-close and explicit suspend remain logind operations rather than duplicate
+swayidle commands. The existing delay-inhibitor coordinator locks before those
+operations. A future Settings control may request a supported logind action,
+but must respect logind capability, authorization, docked-display policy, and
+active inhibitors.
+
 ## Not complete yet
 
-- idle timeout and lid-close policy authority;
+- a live settings API for idle timeout and supported suspend choices;
 - notification preview filtering and lock wallpaper authority;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;

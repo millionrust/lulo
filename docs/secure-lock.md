@@ -53,30 +53,36 @@ suspend behavior before E5 is complete.
 
 Idle locking is owned by `rmac-idle-lock.service`, which runs `/usr/bin/swayidle`
 through a small validated wrapper. Its private versioned policy accepts only a
-lock timeout from 60 seconds through 24 hours, or `null` for Never. The wrapper
-constructs swayidle's arguments itself and exposes no configurable command;
-the timeout always starts the same readiness-gated lock unit. It does not use
-swayidle's logind hooks; exact-session logind work remains in the coordinator.
-The installer creates a five-minute default only when no user policy exists.
-Both normal and diagnostic sessions start this authority.
+lock timeout from 60 seconds through 24 hours and an optional automatic-suspend
+timeout from five minutes through 24 hours; either may be `null` for Never. The
+wrapper constructs swayidle's arguments itself and exposes no configurable
+command. Lock timeout always starts the readiness-gated lock unit. Suspend
+timeout calls the fixed `RequestSuspend` method through `/usr/bin/busctl`. It
+does not use swayidle's logind hooks; exact-session logind work remains in the
+coordinator. The installer creates a five-minute lock and Never-suspend default
+only when no user policy exists. Both normal and diagnostic sessions start this
+authority.
 
 The required coordinator also owns `org.rmac.LockScreen1` on the user session
 bus. Settings subscribes before its initial read and receives complete policy
 snapshots. A timeout mutation validates the same versioned domain value,
 atomically replaces the private policy, and restarts the idle authority. If the
 new runtime cannot start, the service restores the previous file and runtime
-before returning an error. The UI exposes only five supported timeout choices,
-including Never, and reports loading, mutation, rollback, and reconnect states.
+before returning an error. The UI exposes five lock and five automatic-suspend
+choices, each including Never, and reports loading, mutation, rollback, and
+reconnect states.
 
-Lid-close and explicit suspend remain logind operations rather than duplicate
-swayidle commands. The existing delay-inhibitor coordinator locks before those
-operations. A future Settings control may request a supported logind action,
-but must respect logind capability, authorization, docked-display policy, and
-active inhibitors.
+Automatic suspend is exposed only when logind `CanSuspend()` returns `yes`.
+`challenge` is not accepted for an unattended action because no user is present
+to answer PolicyKit; `no`, `na`, malformed, and unavailable responses also hide
+the enabling choices. The request rechecks capability, then calls
+`Suspend(false)`, so logind remains the authorization and inhibitor authority.
+The existing delay-inhibitor coordinator locks before the machine sleeps.
+Lid-close policy remains the system-wide logind configuration and continues to
+respect its docked-display behavior rather than being overridden per session.
 
 ## Not complete yet
 
-- supported suspend choices and capability/authorization reporting;
 - notification preview filtering and lock wallpaper authority;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;

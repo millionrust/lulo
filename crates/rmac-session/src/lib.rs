@@ -538,6 +538,7 @@ mod tests {
         let default_policy = include_str!("../lock-policy.json");
         assert!(default_policy.contains("\"version\": 1"));
         assert!(default_policy.contains("\"lock_after_seconds\": 300"));
+        assert!(default_policy.contains("\"suspend_after_seconds\": null"));
     }
 
     #[test]

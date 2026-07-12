@@ -32,7 +32,7 @@ equivalents rather than simulated.
 | Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Placeholder | No service selected | Usage model only after a local-first privacy design |
-| Lock Screen | Real live timeout choices with busy/error/reconnect state; secure manual/logind/pre-sleep and idle lock paths | `org.rmac.LockScreen1`, niri `ext-session-lock-v1`, supervised PAM-enabled swaylock, validated swayidle policy, logind signals/hint, and delay inhibitor | Supported suspend choices, preview/login-presentation authority, scoped build, and Linux suspend/security/accessibility evidence |
+| Lock Screen | Real live lock and capability-gated automatic-suspend timeout choices with busy/error/reconnect state; secure manual/logind/pre-sleep and idle lock paths | `org.rmac.LockScreen1`, logind `CanSuspend`/`Suspend(false)`, niri `ext-session-lock-v1`, supervised PAM-enabled swaylock, validated swayidle policy, logind signals/hint, and delay inhibitor | Preview/login-presentation authority, scoped build, and Linux suspend/security/accessibility evidence |
 | Privacy & Security | Placeholder | Portals, polkit, package security sources | Permission visibility and supported security controls |
 
 ## Delivery order

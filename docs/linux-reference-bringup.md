@@ -140,6 +140,8 @@ busctl --user introspect org.rmac.LockScreen1 \
   /org/rmac/LockScreen1 org.rmac.LockScreen1
 busctl --user call org.rmac.LockScreen1 \
   /org/rmac/LockScreen1 org.rmac.LockScreen1 Settings
+busctl --system call org.freedesktop.login1 \
+  /org/freedesktop/login1 org.freedesktop.login1.Manager CanSuspend
 busctl --user introspect org.freedesktop.Notifications \
   /org/freedesktop/Notifications org.freedesktop.Notifications
 busctl --user introspect org.freedesktop.impl.portal.desktop.rmac \

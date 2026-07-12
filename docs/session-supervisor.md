@@ -96,15 +96,17 @@ its logind signal subscriptions and sleep inhibitor exist, and keeps lock and
 lock-before-sleep behavior independent of optional shell surfaces.
 
 Both targets also want `rmac-idle-lock.service`. It reads only the validated
-timeout policy and supervises swayidle with a fixed lock command and unbounded
-crash restart. Disabling the timeout keeps the policy service alive without
-claiming an idle lock; it does not weaken manual or pre-sleep locking.
+timeout policy and supervises swayidle with fixed lock and capability-gated
+suspend commands plus unbounded crash restart. Disabling both timeouts keeps the
+policy service alive; it does not weaken manual or pre-sleep locking.
 
 The coordinator owns the session-bus `org.rmac.LockScreen1` settings authority
 before reporting ready. It is intentionally not D-Bus activated: the normal or
 safe session target must establish the logind subscriptions and inhibitor at
 the same time as the policy API. Timeout writes atomically restart only the idle
-service, never the coordinator or active locker.
+service, never the coordinator or active locker. Automatic suspend is routed
+back through the coordinator so its logind capability check and pre-sleep lock
+ordering remain authoritative.
 
 ## Verification boundary
 

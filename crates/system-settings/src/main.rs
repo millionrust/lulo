@@ -2289,6 +2289,26 @@ impl Settings {
         .detach();
     }
 
+    fn set_suspend_after(&mut self, seconds: Option<u32>, cx: &mut Context<Self>) {
+        if self.lock_policy_loading || self.lock_policy_busy {
+            return;
+        }
+        self.lock_policy_busy = true;
+        self.lock_policy_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_shortcuts::lock_settings::set_suspend_after(seconds) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_lock_policy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Capture the current interactive state and write it to disk.
     fn persist(&mut self, cx: &App) {
         let snapshot = Persisted {
@@ -3858,6 +3878,101 @@ impl Settings {
                 );
             }
             cards.push(card(timeout_rows));
+            cards.push(section_header("Automatic Suspend"));
+            let suspend_authorized = policy.suspend_capability
+                == rmac_shortcuts::lock_settings::SuspendCapability::Authorized;
+            let suspend_options = [
+                (None, "Never", "Do not suspend automatically"),
+                (
+                    Some(15 * 60),
+                    "After 15 Minutes",
+                    "Suspend after fifteen minutes without input",
+                ),
+                (
+                    Some(30 * 60),
+                    "After 30 Minutes",
+                    "Suspend after thirty minutes without input",
+                ),
+                (
+                    Some(60 * 60),
+                    "After 1 Hour",
+                    "Suspend after one hour without input",
+                ),
+                (
+                    Some(3 * 60 * 60),
+                    "After 3 Hours",
+                    "Suspend after three hours without input",
+                ),
+            ];
+            let mut suspend_rows = suspend_options
+                .into_iter()
+                .filter(|(timeout, _, _)| timeout.is_none() || suspend_authorized)
+                .map(|(timeout, title, detail)| {
+                    let selected = policy.suspend_after_seconds == timeout;
+                    let option_view = view.clone();
+                    row_base()
+                        .id(ElementId::from(SharedString::from(format!(
+                            "suspend-timeout-{}",
+                            timeout.unwrap_or(0)
+                        ))))
+                        .child(tile("icons/power.svg", secondary(), 22.0))
+                        .child(text_block(title.into(), Some(detail.into())))
+                        .when(selected, |row| {
+                            row.child(glyph("icons/check.svg", 14.0, accent()))
+                        })
+                        .when(!selected && !self.lock_policy_busy, |row| {
+                            row.cursor_pointer()
+                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                                .on_click(move |_, _, cx| {
+                                    option_view.update(cx, |settings, cx| {
+                                        settings.set_suspend_after(timeout, cx)
+                                    });
+                                })
+                        })
+                        .when(self.lock_policy_busy, |row| row.opacity(0.55))
+                        .into_any_element()
+                })
+                .collect::<Vec<_>>();
+            if let Some(seconds) = policy.suspend_after_seconds {
+                let is_visible_choice = suspend_authorized
+                    && suspend_options
+                        .iter()
+                        .any(|(timeout, _, _)| *timeout == Some(seconds));
+                if !is_visible_choice {
+                    suspend_rows.insert(
+                        0,
+                        value_row(
+                            "icons/history.svg",
+                            secondary(),
+                            "Current Suspend Timeout".into(),
+                            format_power_duration(u64::from(seconds)).into(),
+                        ),
+                    );
+                }
+            }
+            cards.push(card(suspend_rows));
+            match policy.suspend_capability {
+                rmac_shortcuts::lock_settings::SuspendCapability::Authorized => {
+                    cards.push(note_card(
+                        "Automatic suspend uses the system login manager, respects active inhibitors, and always passes through the pre-sleep lock boundary.",
+                    ));
+                }
+                rmac_shortcuts::lock_settings::SuspendCapability::RequiresAuthentication => {
+                    cards.push(note_card(
+                        "Automatic suspend is unavailable because this computer requires interactive authorization. You can still suspend manually and approve the system prompt.",
+                    ));
+                }
+                rmac_shortcuts::lock_settings::SuspendCapability::Denied => {
+                    cards.push(note_card(
+                        "Automatic suspend is disabled by this computer’s authorization policy.",
+                    ));
+                }
+                rmac_shortcuts::lock_settings::SuspendCapability::Unavailable => {
+                    cards.push(note_card(
+                        "Automatic suspend is not supported by this computer or its current system service.",
+                    ));
+                }
+            }
             cards.push(section_header("Security"));
             cards.push(card(vec![
                 value_row(

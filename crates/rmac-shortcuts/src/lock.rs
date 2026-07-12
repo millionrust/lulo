@@ -25,18 +25,23 @@ const SWAYLOCK: &str = "/usr/bin/swaylock";
 const LOCK_UNIT: &str = "rmac-lock.service";
 #[cfg(target_os = "linux")]
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 const LOCK_ACTION: &str = "/usr/bin/systemctl --user start rmac-lock.service";
+#[cfg(any(target_os = "linux", test))]
+const SUSPEND_ACTION: &str = "/usr/bin/busctl --user call org.rmac.LockScreen1 /org/rmac/LockScreen1 org.rmac.LockScreen1 RequestSuspend";
 #[cfg(target_os = "linux")]
 const MAX_IDLE_POLICY_BYTES: u64 = 16 * 1024;
 const MIN_IDLE_SECONDS: u32 = 60;
 const MAX_IDLE_SECONDS: u32 = 24 * 60 * 60;
+const MIN_SUSPEND_SECONDS: u32 = 5 * 60;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct IdlePolicy {
     pub version: u32,
     pub lock_after_seconds: Option<u32>,
+    #[serde(default)]
+    pub suspend_after_seconds: Option<u32>,
 }
 
 impl Default for IdlePolicy {
@@ -44,6 +49,7 @@ impl Default for IdlePolicy {
         Self {
             version: 1,
             lock_after_seconds: Some(5 * 60),
+            suspend_after_seconds: None,
         }
     }
 }
@@ -54,6 +60,9 @@ impl IdlePolicy {
             || self
                 .lock_after_seconds
                 .is_some_and(|seconds| !(MIN_IDLE_SECONDS..=MAX_IDLE_SECONDS).contains(&seconds))
+            || self
+                .suspend_after_seconds
+                .is_some_and(|seconds| !(MIN_SUSPEND_SECONDS..=MAX_IDLE_SECONDS).contains(&seconds))
         {
             return Err(Error {
                 operation: Operation::ValidateIdlePolicy,
@@ -149,14 +158,14 @@ pub fn request() -> Result<(), Error> {
 #[cfg(target_os = "linux")]
 pub fn supervise_idle(policy_path: &Path) -> Result<(), Error> {
     let policy = read_idle_policy(policy_path)?;
-    let Some(timeout) = policy.lock_after_seconds else {
+    if policy.lock_after_seconds.is_none() && policy.suspend_after_seconds.is_none() {
         loop {
             std::thread::park();
         }
-    };
-    let timeout = timeout.to_string();
+    }
+    let arguments = idle_arguments(policy);
     let status = Command::new(SWAYIDLE)
-        .args(["-w", "timeout", timeout.as_str(), LOCK_ACTION])
+        .args(arguments)
         .stdin(Stdio::null())
         .status()
         .map_err(|error| Error::io(Operation::SpawnIdleManager, error))?;
@@ -165,6 +174,26 @@ pub fn supervise_idle(policy_path: &Path) -> Result<(), Error> {
     } else {
         Err(Error::failed(Operation::WaitForIdleManager))
     }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn idle_arguments(policy: IdlePolicy) -> Vec<String> {
+    let mut arguments = vec!["-w".to_owned()];
+    if let Some(timeout) = policy.lock_after_seconds {
+        arguments.extend([
+            "timeout".to_owned(),
+            timeout.to_string(),
+            LOCK_ACTION.to_owned(),
+        ]);
+    }
+    if let Some(timeout) = policy.suspend_after_seconds {
+        arguments.extend([
+            "timeout".to_owned(),
+            timeout.to_string(),
+            SUSPEND_ACTION.to_owned(),
+        ]);
+    }
+    arguments
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -567,25 +596,35 @@ mod tests {
             IdlePolicy {
                 version: 1,
                 lock_after_seconds: None,
+                suspend_after_seconds: None,
             }
             .validate(),
             Ok(IdlePolicy {
                 version: 1,
                 lock_after_seconds: None,
+                suspend_after_seconds: None,
             })
         );
         for policy in [
             IdlePolicy {
                 version: 0,
                 lock_after_seconds: Some(300),
+                suspend_after_seconds: None,
             },
             IdlePolicy {
                 version: 1,
                 lock_after_seconds: Some(MIN_IDLE_SECONDS - 1),
+                suspend_after_seconds: None,
             },
             IdlePolicy {
                 version: 1,
                 lock_after_seconds: Some(MAX_IDLE_SECONDS + 1),
+                suspend_after_seconds: None,
+            },
+            IdlePolicy {
+                version: 1,
+                lock_after_seconds: Some(300),
+                suspend_after_seconds: Some(MIN_SUSPEND_SECONDS - 1),
             },
         ] {
             assert_eq!(
@@ -604,5 +643,34 @@ mod tests {
             r#"{"version":1,"lock_after_seconds":300,"command":"other"}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn legacy_idle_policy_defaults_to_never_suspend() {
+        let policy: IdlePolicy =
+            serde_json::from_str(r#"{"version":1,"lock_after_seconds":300}"#).unwrap();
+        assert_eq!(policy.lock_after_seconds, Some(300));
+        assert_eq!(policy.suspend_after_seconds, None);
+        assert_eq!(policy.validate(), Ok(policy));
+    }
+
+    #[test]
+    fn idle_commands_are_fixed_and_timeouts_are_numeric_arguments() {
+        assert_eq!(
+            idle_arguments(IdlePolicy {
+                version: 1,
+                lock_after_seconds: Some(60),
+                suspend_after_seconds: Some(900),
+            }),
+            vec![
+                "-w".to_owned(),
+                "timeout".to_owned(),
+                "60".to_owned(),
+                LOCK_ACTION.to_owned(),
+                "timeout".to_owned(),
+                "900".to_owned(),
+                SUSPEND_ACTION.to_owned(),
+            ]
+        );
     }
 }

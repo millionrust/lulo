@@ -66,6 +66,11 @@ or an unlocked secondary TTY/session.
     changes atomically replace the private policy and restart swayidle; a failed
     apply restores the prior policy and runtime. The API accepts no executable,
     path, PAM, or compositor input.
+12. Automatic suspend choices appear only for logind `CanSuspend=yes` and call
+    logind `Suspend(false)` through a fixed session-bus request. `challenge`
+    cannot authorize an unattended timeout. Capability is rechecked at action
+    time, and logind continues to enforce active inhibitors and system-wide lid
+    policy.
 
 ## Consequences
 
@@ -75,8 +80,8 @@ or an unlocked secondary TTY/session.
   boundary.
 - The distro package and PAM configuration become explicit installation and
   hardware-matrix dependencies.
-- Lock Screen Settings must hide idle/suspend/preview controls until the delay
-  inhibitor and authoritative settings service exist.
+- Lock Screen Settings must hide any control whose delay-inhibitor, capability,
+  or authoritative adapter does not exist; notification previews remain hidden.
 
 ## Rejected alternatives
 

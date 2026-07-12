@@ -26,6 +26,10 @@ if [ ! -x /usr/bin/swayidle ]; then
     echo "swayidle is required at /usr/bin/swayidle for idle session locking." >&2
     exit 1
 fi
+if [ ! -x /usr/bin/busctl ]; then
+    echo "busctl is required at /usr/bin/busctl for automatic suspend requests." >&2
+    exit 1
+fi
 case ${target_dir} in
     /*) ;;
     *) target_dir="${repo_root}/${target_dir}" ;;

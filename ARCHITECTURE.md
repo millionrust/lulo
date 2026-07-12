@@ -327,6 +327,20 @@ publish diagnostics without reopening files, decoding images, or requesting a
 wallpaper frame. Default runtime `Debug` and errors redact source details and
 file paths.
 
+Wallpaper motion is an event-driven crossfade state in
+`rmac-wallpaper::transition`. Its smoothstep is bounded to two seconds and asks
+for frames only while opacity can change. Replacing an active target freezes
+the current blend and requests one renderer capture before beginning the next
+fade, so rapid changes do not jump or accumulate unbounded layers. Reduced
+motion presents immediately, including when enabled mid-transition.
+
+The session settings store—not the XDG Wallpaper portal—is the readable
+wallpaper authority. Portal v1 is a sandboxed-app mutation API with no state,
+output, or fit model. rmac will eventually implement its desktop backend for
+confirmed local background requests; rmac Settings never consumes its own
+portal. Remote fetching and lock-screen targets remain explicit failures until
+an isolated importer and E5 secure-lock authority exist. See ADR 0003.
+
 ## Persistence
 
 The target persistence contract is:

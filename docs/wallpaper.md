@@ -65,6 +65,31 @@ Aurora is cached at target physical size. Eviction leaves live renderer handles
 valid. Exact-file native events (including existing symlink targets) explicitly
 invalidate matching entries and force re-rasterization; there is no polling.
 
-The Wayland background layer surface and executable, portal interoperability
-decision, transitions/reduced-motion behavior, System Settings previews, and
-Linux hotplug/frame-time evidence remain pending. D9 is therefore not complete.
+## Motion
+
+Wallpaper changes use a 300 ms smoothstep crossfade capped at two seconds. The
+transition asks for presentation callbacks only while opacity can still change;
+the stable state has no timer or frame loop. If a new wallpaper arrives during
+a fade, the renderer captures the frozen current composite once and fades from
+that capture to the newest target. Stale captures are ignored and multiple
+rapid replacements update the pending target without accumulating layers.
+
+Reduced motion makes every replacement immediate. Enabling it during a fade or
+while capture is pending settles directly on the newest target.
+
+## Portal ownership
+
+The XDG Wallpaper portal version 1 is a mutation journey for sandboxed apps,
+not readable desktop state, and has no output or fit fields. The versioned rmac
+session store therefore remains authoritative. rmac Settings writes that store
+directly and never calls its own portal.
+
+ADR 0003 specifies a future rmac desktop backend: accept a bounded app identity
+and hostless local portal URI, always preview, validate through the same decoder,
+then atomically import and apply one whole-desktop Fill choice. Remote fetching
+and lock-screen/both requests fail until their real authorities exist. The
+backend and installer integration remain pending.
+
+The Wayland background layer surface and executable, portal backend, System
+Settings previews, and Linux hotplug/frame-time evidence remain pending. D9 is
+therefore not complete.

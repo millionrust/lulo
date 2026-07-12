@@ -1,5 +1,8 @@
 //! Framework-neutral wallpaper source, output planning, and fit geometry.
 
+pub mod portal;
+pub mod transition;
+
 use std::path::{Component, Path, PathBuf};
 
 pub const DEFAULT_BUILT_IN: BuiltInId = BuiltInId::Aurora;

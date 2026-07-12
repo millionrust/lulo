@@ -148,6 +148,8 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`docs/decisions/0001-gpui-linux-gate.md`](docs/decisions/0001-gpui-linux-gate.md) — framework migration gate.
 - [`docs/decisions/0002-gpui-version-policy.md`](docs/decisions/0002-gpui-version-policy.md) — exact pins, upgrade cadence, promotion, and rollback policy.
 - [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md) — pinned upstream comparison and pending Linux gates.
+- [`docs/wallpaper.md`](docs/wallpaper.md) — wallpaper authority, sources, geometry, decoding, and runtime contract.
+- [`docs/decisions/0003-wallpaper-portal-authority.md`](docs/decisions/0003-wallpaper-portal-authority.md) — session versus XDG portal wallpaper ownership.
 - [`PLAN.md`](PLAN.md) and [`PARITY.md`](PARITY.md) — prototype history.
 
 ## License

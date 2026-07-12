@@ -4987,6 +4987,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-focus"
+version = "0.1.0"
+dependencies = [
+ "rmac-notifications",
+]
+
+[[package]]
 name = "rmac-input"
 version = "0.1.0"
 dependencies = [

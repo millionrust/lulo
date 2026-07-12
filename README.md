@@ -32,6 +32,7 @@ Shared crates:
 - `rmac-appearance-portal` — read-only Linux Settings portal adapter with live reconnect.
 - `rmac-theme` — writable rmac theme preferences, resolution, live file events, and recovery.
 - `rmac-editor` — shared multiline editor construction and text helpers.
+- `rmac-focus` — real Focus modes, allow-lists, schedules, temporary activation, and delivery enforcement.
 - `rmac-storage` — atomic filesystem writes, durable cleanup, and typed failures.
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 - `rmac-launcher` — private, cancellable cross-provider launcher ranking and actions.

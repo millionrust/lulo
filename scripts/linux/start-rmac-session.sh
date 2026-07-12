@@ -21,6 +21,7 @@ set --
 [ "${DISPLAY+x}" = x ] && set -- "$@" DISPLAY
 [ "${XAUTHORITY+x}" = x ] && set -- "$@" XAUTHORITY
 [ "${XDG_CURRENT_DESKTOP+x}" = x ] && set -- "$@" XDG_CURRENT_DESKTOP
+[ "${XDG_SESSION_ID+x}" = x ] && set -- "$@" XDG_SESSION_ID
 [ "${XDG_SESSION_DESKTOP+x}" = x ] && set -- "$@" XDG_SESSION_DESKTOP
 [ "${XDG_SESSION_TYPE+x}" = x ] && set -- "$@" XDG_SESSION_TYPE
 [ "${XDG_RUNTIME_DIR+x}" = x ] && set -- "$@" XDG_RUNTIME_DIR

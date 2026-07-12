@@ -48,10 +48,16 @@ or an unlocked secondary TTY/session.
 7. The default appearance is an original quiet dark rmac treatment. It contains
    no notification content, screenshots, user files, or network resources. A
    user-owned config is installed only when absent and is never overwritten.
-8. Before E5 can be complete, a coordinator must listen for logind lock requests
-   and hold a delay sleep inhibitor until the locker readiness handshake
-   succeeds. Lock-before-suspend, resume, lid close, multi-monitor hotplug, PAM,
-   failure recovery, and emergency TTY recovery require Linux evidence.
+8. The bootstrap imports `XDG_SESSION_ID` through its routing-only allow-list.
+   `rmac-lock-coordinator` asks logind to resolve that exact session object,
+   listens for that session's `Lock()` signal, and holds a delay sleep
+   inhibitor. On `PrepareForSleep(true)` it retains the inhibitor until the lock
+   unit's readiness transaction succeeds; after resume it reacquires a fresh
+   inhibitor. It deliberately ignores logind `Unlock()` requests because PAM
+   is the only unlock authority.
+9. Before E5 can be complete, lock-before-suspend, resume, lid close,
+   multi-monitor hotplug, PAM, failure recovery, and emergency TTY recovery
+   require Linux evidence.
 
 ## Consequences
 

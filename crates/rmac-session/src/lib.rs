@@ -502,6 +502,24 @@ mod tests {
         assert!(!lock.contains("OnFailure=rmac-component-failure"));
         assert!(!lock.contains("NoNewPrivileges=yes"));
         assert!(!lock.contains("/bin/sh"));
+
+        let coordinator = include_str!("../units/rmac-lock-coordinator.service");
+        assert!(coordinator.contains("Type=notify"));
+        assert!(coordinator.contains("NotifyAccess=all"));
+        assert!(coordinator.contains("After=graphical-session-pre.target"));
+        assert!(!coordinator.contains("After=graphical-session.target"));
+        assert!(coordinator.contains("Restart=on-failure"));
+        assert!(coordinator.contains("StartLimitIntervalSec=0"));
+        assert!(coordinator.contains("NoNewPrivileges=yes"));
+        assert!(!coordinator.contains("OnFailure=rmac-component-failure"));
+        assert!(!coordinator.contains("/bin/sh"));
+
+        let normal_target = include_str!("../units/rmac-session.target");
+        let safe_target = include_str!("../units/rmac-safe-mode.target");
+        assert!(normal_target
+            .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
+        assert!(safe_target
+            .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
     }
 
     #[test]

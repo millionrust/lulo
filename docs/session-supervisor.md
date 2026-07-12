@@ -90,6 +90,11 @@ through the ordinary safe-mode failure budget could strand an already locked
 session without an authentication provider. See `docs/secure-lock.md` and ADR
 0004 for the security and recovery boundary.
 
+The companion `rmac-lock-coordinator.service` is required by both normal and
+safe-mode targets. It restarts without a start limit, becomes ready only after
+its logind signal subscriptions and sleep inhibitor exist, and keeps lock and
+lock-before-sleep behavior independent of optional shell surfaces.
+
 ## Verification boundary
 
 Cross-platform tests parse healthy, inactive, malformed, and mismatched

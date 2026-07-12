@@ -1,0 +1,16 @@
+[Unit]
+Description=rmac logind lock and sleep coordinator
+Documentation=https://github.com/rmac/rmac
+BindsTo=graphical-session.target
+After=graphical-session-pre.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=%h/.local/libexec/rmac/rmac-lock-coordinator
+TimeoutStartSec=10s
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

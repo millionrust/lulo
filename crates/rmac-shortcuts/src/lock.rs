@@ -32,6 +32,11 @@ pub enum Operation {
     NotifySupervisor,
     UpdateLockedHint,
     WaitForUnlock,
+    ConnectLogind,
+    ResolveSession,
+    InhibitSleep,
+    SubscribeLogind,
+    ReadSignal,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,6 +95,96 @@ pub fn request() -> Result<(), Error> {
             kind: io::ErrorKind::Unsupported,
         })
     }
+}
+
+#[cfg(target_os = "linux")]
+pub async fn coordinate() -> Result<(), Error> {
+    use futures_util::StreamExt as _;
+
+    let connection = zbus::Connection::system()
+        .await
+        .map_err(|_| Error::failed(Operation::ConnectLogind))?;
+    let manager = LoginManagerProxy::new(&connection)
+        .await
+        .map_err(|_| Error::failed(Operation::ConnectLogind))?;
+    let mut sleep_inhibitor = Some(acquire_sleep_inhibitor(&manager).await?);
+    let session_id = std::env::var("XDG_SESSION_ID")
+        .ok()
+        .filter(|session_id| !session_id.is_empty())
+        .ok_or_else(|| Error::failed(Operation::ResolveSession))?;
+    let session_path = manager
+        .get_session(&session_id)
+        .await
+        .map_err(|_| Error::failed(Operation::ResolveSession))?;
+    let session = LoginSessionProxy::builder(&connection)
+        .path(session_path)
+        .map_err(|_| Error::failed(Operation::ResolveSession))?
+        .build()
+        .await
+        .map_err(|_| Error::failed(Operation::ResolveSession))?;
+    let lock_requests = session
+        .receive_lock()
+        .await
+        .map_err(|_| Error::failed(Operation::SubscribeLogind))?;
+    let sleep_changes = manager
+        .receive_prepare_for_sleep()
+        .await
+        .map_err(|_| Error::failed(Operation::SubscribeLogind))?;
+    notify_systemd("rmac lock coordinator is ready")?;
+    futures_util::pin_mut!(lock_requests, sleep_changes);
+
+    loop {
+        let lock_request = futures_util::FutureExt::fuse(lock_requests.next());
+        let sleep_change = futures_util::FutureExt::fuse(sleep_changes.next());
+        futures_util::pin_mut!(lock_request, sleep_change);
+        futures_util::select! {
+            request_signal = lock_request => {
+                if request_signal.is_none() {
+                    return Err(Error::failed(Operation::ReadSignal));
+                }
+                if let Err(error) = request() {
+                    eprintln!("secure session lock request warning ({:?})", error.operation);
+                }
+            },
+            sleep_signal = sleep_change => {
+                let signal = sleep_signal.ok_or_else(|| Error::failed(Operation::ReadSignal))?;
+                let preparing = *signal
+                    .args()
+                    .map_err(|_| Error::failed(Operation::ReadSignal))?
+                    .start();
+                if preparing {
+                    match request() {
+                        Ok(()) => {
+                            sleep_inhibitor.take();
+                        }
+                        Err(error) => {
+                            eprintln!("secure pre-sleep lock warning ({:?})", error.operation);
+                        }
+                    }
+                } else {
+                    sleep_inhibitor = Some(acquire_sleep_inhibitor(&manager).await?);
+                }
+            },
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub async fn coordinate() -> Result<(), Error> {
+    Err(Error {
+        operation: Operation::ConnectLogind,
+        kind: io::ErrorKind::Unsupported,
+    })
+}
+
+#[cfg(target_os = "linux")]
+async fn acquire_sleep_inhibitor(
+    manager: &LoginManagerProxy<'_>,
+) -> Result<zbus::zvariant::OwnedFd, Error> {
+    manager
+        .inhibit("sleep", "rmac", "lock the session before sleep", "delay")
+        .await
+        .map_err(|_| Error::failed(Operation::InhibitSleep))
 }
 
 #[cfg(target_os = "linux")]
@@ -194,12 +289,14 @@ fn wait_for_ready(locker: &mut Child) -> Result<bool, Error> {
 
 #[cfg(target_os = "linux")]
 fn notify_ready() -> Result<(), Error> {
+    notify_systemd("rmac session is securely locked")
+}
+
+#[cfg(target_os = "linux")]
+fn notify_systemd(status: &str) -> Result<(), Error> {
+    let status_argument = format!("--status={status}");
     let status = Command::new(SYSTEMD_NOTIFY)
-        .args([
-            "--ready",
-            "--pid=parent",
-            "--status=rmac session is securely locked",
-        ])
+        .args(["--ready", "--pid=parent", status_argument.as_str()])
         .status()
         .map_err(|error| Error::io(Operation::NotifySupervisor, error))?;
     if status.success() {
@@ -243,6 +340,29 @@ fn set_locked_hint(locked: bool) -> Result<(), Error> {
 )]
 trait LoginSession {
     fn set_locked_hint(&self, locked: bool) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn lock(&self) -> zbus::Result<()>;
+}
+
+#[cfg(target_os = "linux")]
+#[zbus::proxy(
+    interface = "org.freedesktop.login1.Manager",
+    default_service = "org.freedesktop.login1",
+    default_path = "/org/freedesktop/login1"
+)]
+trait LoginManager {
+    fn get_session(&self, session_id: &str) -> zbus::Result<zbus::zvariant::OwnedObjectPath>;
+    fn inhibit(
+        &self,
+        what: &str,
+        who: &str,
+        why: &str,
+        mode: &str,
+    ) -> zbus::Result<zbus::zvariant::OwnedFd>;
+
+    #[zbus(signal)]
+    fn prepare_for_sleep(&self, start: bool) -> zbus::Result<()>;
 }
 
 #[cfg(test)]

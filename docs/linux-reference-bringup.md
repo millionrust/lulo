@@ -126,11 +126,15 @@ cat "$XDG_RUNTIME_DIR/rmac/shortcuts-status.json"
 ```
 
 After `rmac-session-start`, `XDG_CURRENT_DESKTOP` in the user manager must begin
-with `rmac:` and the restarted portal frontend must select the rmac notification
-backend. Verify both owned interfaces and their exact versions:
+with `rmac:`, `XDG_SESSION_ID` must identify the current logind session, and the
+lock coordinator must be active. The restarted portal frontend must select the
+rmac notification backend. Verify both owned interfaces and their exact
+versions:
 
 ```sh
 systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=rmac:'
+systemctl --user show-environment | grep "^XDG_SESSION_ID=${XDG_SESSION_ID}$"
+systemctl --user --no-pager status rmac-lock-coordinator.service
 busctl --user introspect org.freedesktop.Notifications \
   /org/freedesktop/Notifications org.freedesktop.Notifications
 busctl --user introspect org.freedesktop.impl.portal.desktop.rmac \

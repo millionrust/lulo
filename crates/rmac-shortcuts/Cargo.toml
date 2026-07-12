@@ -29,3 +29,7 @@ path = "src/bin/dispatch.rs"
 [[bin]]
 name = "rmac-locker"
 path = "src/bin/locker.rs"
+
+[[bin]]
+name = "rmac-lock-coordinator"
+path = "src/bin/lock-coordinator.rs"

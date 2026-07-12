@@ -32,15 +32,33 @@ It rejects `daemonize`, `ready-fd`, and nested `config` keys so appearance
 customization cannot detach swaylock from its control group or counterfeit the
 readiness channel.
 
+`rmac-lock-coordinator.service` runs in normal and diagnostic safe-mode
+sessions. The session bootstrap imports `XDG_SESSION_ID` through its narrow
+routing allow-list, and the coordinator asks logind to resolve that concrete
+session path. This is necessary because user-manager services do not reliably
+belong to the graphical session and logind does not emit session signals on the
+`/session/auto` convenience object. Before reporting itself ready it acquires a
+`sleep:delay` inhibitor and subscribes to the session `Lock()` plus manager
+`PrepareForSleep` signals. A lock request starts the same readiness-gated unit.
+Before sleep, the inhibitor is released only after that unit is ready; after
+resume, a new inhibitor is acquired. External logind `Unlock()` signals cannot
+bypass swaylock/PAM.
+
+The delay inhibitor is bounded by logind's configured maximum. If the locker
+cannot become ready before that system deadline, logind may force the suspend;
+the coordinator keeps the inhibitor open and reports the failure, but does not
+claim it can override logind. Reference-PC failure injection must prove the
+supported configuration locks within the deadline and characterize forced
+suspend behavior before E5 is complete.
+
 ## Not complete yet
 
-- logind `Lock()` signal listener;
-- delay `sleep` inhibitor and lock-readiness ordering before suspend/hibernate;
 - idle timeout and lid-close policy authority;
 - notification preview filtering and lock wallpaper authority;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;
 - killed-locker automatic recovery and the documented TTY/manual recovery path;
+- delay-inhibitor timing and forced-suspend failure evidence;
 - accessibility and keyboard-layout evidence on the Linux reference PC.
 
 Until those are proven, E5 and E10 remain unchecked and System Settings must not

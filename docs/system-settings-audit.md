@@ -32,7 +32,7 @@ equivalents rather than simulated.
 | Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Placeholder | No service selected | Usage model only after a local-first privacy design |
-| Lock Screen | Placeholder; secure manual lock boundary exists but no settings are exposed | niri `ext-session-lock-v1`, supervised PAM-enabled swaylock, and logind locked hint | logind lock listener, sleep inhibitor/ordering, idle/lid policy, preview authority, scoped build, and Linux security/accessibility evidence |
+| Lock Screen | Placeholder; secure manual/logind/pre-sleep lock boundary exists but no settings are exposed | niri `ext-session-lock-v1`, supervised PAM-enabled swaylock, logind signals/hint, and delay inhibitor | Idle/lid policy, preview authority, scoped build, and Linux suspend/security/accessibility evidence |
 | Privacy & Security | Placeholder | Portals, polkit, package security sources | Permission visibility and supported security controls |
 
 ## Delivery order

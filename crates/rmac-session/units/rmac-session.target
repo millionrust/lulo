@@ -4,7 +4,7 @@ Documentation=https://github.com/rmac/rmac
 BindsTo=graphical-session.target
 After=graphical-session-pre.target
 Conflicts=rmac-safe-mode.target
-Requires=rmac-session-supervisor.service
+Requires=rmac-session-supervisor.service rmac-lock-coordinator.service
 Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-notification-center.service rmac-focus.service rmac-wallpaper.service rmac-shortcut-broker.service
 
 [Install]

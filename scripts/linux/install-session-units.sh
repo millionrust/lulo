@@ -30,7 +30,7 @@ esac
     -p rmac-session --bin rmac-session-supervisor \
     -p rmac-notifications-linux --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
-    -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker)
+    -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator)
 
 install -d -m 0755 "${unit_dir}"
 install -d -m 0755 "${libexec_dir}"
@@ -41,6 +41,7 @@ install -m 0755 "${target_dir}/release/rmac-focus-service" "${libexec_dir}/rmac-
 install -m 0755 "${target_dir}/release/rmac-shortcut-broker" "${libexec_dir}/rmac-shortcut-broker"
 install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/rmac-shortcut-dispatch"
 install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"
+install -m 0755 "${target_dir}/release/rmac-lock-coordinator" "${libexec_dir}/rmac-lock-coordinator"
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
 install -d -m 0755 "${config_home}/rmac"
 if [ ! -e "${config_home}/rmac/swaylock.conf" ]; then
@@ -89,7 +90,7 @@ echo "Installed rmac user units in ${unit_dir}."
 echo "Installed the supervisor in ${libexec_dir}."
 echo "Installed the notification service and rmac notification portal backend."
 echo "Installed the Focus policy authority."
-echo "Installed the secure swaylock supervisor and default lock appearance."
+echo "Installed secure swaylock supervision, logind coordination, and the default lock appearance."
 echo "Start the session from niri with ${bin_dir}/rmac-session-start."
 echo "If shortcuts-status.json reports fallback-required, add this to niri config:"
 echo "include \"${fallback_path}\""

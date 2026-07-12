@@ -62,21 +62,21 @@ configured MFA conversations and strict secret lifetime.
 Advantages: authentication, account management, custom multi-message
 conversations, and RAII `pam_end` coverage. It is not accepted yet because it is
 a recent fork, is MPL-2.0 (requiring a new explicit product-policy exception),
-depends on the separate `pam-sys2` FFI/bindgen layer, and its published support
-statement names a much older tested Rust range. Acceptance requires reviewing
-the exact crates.io tarballs—not only repository HEAD—for unsafe blocks,
-conversation allocation/free rules, unwind behavior across FFI, `pam_end`
-status propagation, generated ABI bindings, build scripts, licenses, owners,
-and advisories, followed by Ubuntu x86_64/aarch64 compilation and real PAM tests.
+and its published support statement names a much older tested Rust range. The
+exact 0.5.5 artifact has now been rejected: its callback lacks a catch-unwind
+boundary, response allocation/cleanup does not meet the secret lifetime rule,
+and `pam_start` error paths lose the boxed handler. `pam` 0.8.0 and `nonstick`
+0.1.2 also fail the exact-source gate. See
+`docs/rmac-pam-wrapper-audit.md` for hashes and findings.
 
 ### Handwritten PAM FFI
 
-Rejected as the default path. A small local wrapper would remove a registry
-dependency but would make rmac directly responsible for C ABI layout,
-conversation ownership, allocation on every error path, unwind exclusion, and
-future Linux-PAM changes. Reconsider only if no reviewed wrapper can satisfy the
-gate, and then require a separately reviewed C/Rust shim with sanitizers and
-fault injection.
+Rejected as the default path. Exact-source review has now shown that none of the
+three high-level candidates satisfies the gate, so the reconsideration
+condition is met. The selected candidate boundary is raw `pam-sys2` 1.0.2 with
+default pre-generated bindings plus a small rmac-owned wrapper. It is not yet a
+manifest dependency: the local allocation, unwind, lifetime, transaction, and
+fault-injection design in `docs/rmac-pam-wrapper-audit.md` must land first.
 
 ## Rendering remains open
 

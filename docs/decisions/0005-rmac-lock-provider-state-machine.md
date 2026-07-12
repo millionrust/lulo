@@ -58,6 +58,13 @@ authentication and account policy, support arbitrary bounded conversation
 messages, keep PAM work off the render/event loop, and erase response buffers.
 The adapter—not the state machine—owns secrets.
 
+Exact published-source review rejected `pam`, `pam-client2`, and `nonstick` for
+callback unwind, allocation, cleanup, or transaction-lifetime defects. The only
+accepted candidate dependency is raw `pam-sys2` with its optional bindgen path
+disabled; rmac must supply the small checked callback/RAII wrapper described in
+`docs/rmac-pam-wrapper-audit.md`. It is not admitted to the manifest until that
+wrapper and fault-injection tests exist.
+
 `rmac-lock-provider-linux` is the start of that adapter boundary. Its first
 accepted primitive is fixed-capacity credential input, bounded to Linux-PAM's
 512-byte response limit and zeroized on editing, clear, transfer, and drop.

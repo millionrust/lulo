@@ -1,0 +1,122 @@
+# rmac PAM wrapper exact-source audit
+
+Date: 2026-07-12
+
+Scope: published crates that could back the custom lock provider's Linux-PAM
+application boundary. This is an implementation security review, not evidence
+that authentication works on the Ubuntu reference PC.
+
+## Artifacts reviewed
+
+| Crate | Published artifact SHA-256 | VCS revision | License |
+|---|---|---|---|
+| `pam` 0.8.0 | `8ab553c52103edb295d8f7d6a3b593dc22a30b1fb99643c777a8f36915e285ba` | `85d2683af51255397413de544e3e53397366f069` | MIT OR Apache-2.0 |
+| `pam-client2` 0.5.5 | `407daa00f98b05147dbbaa6d2f6bce574e76794fa4952a5b38764681a23dde5f` | `7551e27418d935a25facbf1854400b2e9a28f2c7` | MPL-2.0 |
+| `nonstick` 0.1.2 | `de28bc5222f0f8495fdf5134dd91b7dc880bfdc1fa0646499d80c13d7ebbbd46` | not present in artifact | MIT |
+| `pam-sys2` 1.0.2 | `63e07ea89c210813e1a48fc32cb358ba693aae8ca70163461e22d11f1884bf1d` | `a01492a3543d41b7749aff4a4ab74c7c510dec9d` | MIT OR Apache-2.0 |
+
+The hashes were calculated over the exact `.crate` downloads. Cargo manifests,
+all shipped Rust source, build scripts, licenses, and pre-generated Linux-PAM
+bindings were read from those archives. Upstream contracts remain Linux-PAM's
+application headers and documentation.
+
+## Rejected safe-wrapper candidates
+
+### `pam` 0.8.0
+
+Reject. Its conversation callback is marked with a FIXME asking for
+verification, performs no catch-unwind boundary, does not validate all incoming
+pointers/counts before dereference, and duplicates responses with `strdup`.
+On a partial conversation error it frees the response array but not strings
+already placed inside it. Upstream also labels environment support probably
+broken and retains a TODO to verify conversation leaks. These are disqualifying
+for a long-lived lock authority.
+
+### `pam-client2` 0.5.5
+
+Reject despite better API coverage and correct normal-path `pam_end` RAII.
+
+- `pam_converse` calls arbitrary Rust conversation methods from `extern "C"`
+  without `catch_unwind`.
+- Text responses are duplicated with unchecked `strdup`; allocation failure can
+  become a successful null response.
+- Error cleanup frees response strings without overwriting them.
+- A successful callback transfers another unzeroized secret copy to PAM.
+- `Context::from_boxed_conv` loses the boxed conversation handler when
+  `pam_start` fails, and also on the success-with-null-handle defense path.
+- `Context::drop` uses panicking conversation extraction before `pam_end`.
+- MPL-2.0 would require a product-policy exception, but licensing is not the
+  reason for rejection.
+
+### `nonstick` 0.1.2
+
+Reject despite its complete typed conversation model and intent to zero text.
+
+- The application conversation callback has no catch-unwind boundary and casts
+  a negative message count to `usize` before a documented validation layer.
+- Its C-heap `calloc` helper constructs `NonNull` with `new_unchecked` without
+  checking allocation failure, making OOM undefined behavior.
+- Text answers are cast from a zeroing string owner into a generic C-heap box;
+  normal `Answers` drop then frees them without calling the zeroing destructor.
+- Service names containing NUL panic, and `pam_end` return values are ignored.
+
+These findings also reject `nonstick2` as an unreviewed substitution; a name or
+fork change is not evidence that the exact paths above were corrected.
+
+## Accepted low-level candidate
+
+`pam-sys2` 1.0.2 is accepted only as a candidate raw ABI source, not as an
+authentication implementation. It ships pre-generated Linux-PAM declarations
+and compile-time layout assertions, uses no bindgen or network access under its
+default features, and links the system `pam` and `pam_misc` libraries. The
+optional source-generation feature must stay disabled. Its raw declarations
+are necessarily unsafe but add no callback, allocation, or transaction policy.
+
+The rmac wrapper must therefore own a deliberately small reviewed unsafe module
+on top of `pam-sys2`, rather than adopting any rejected high-level wrapper. This
+is the fallback allowed by the dependency review after no existing wrapper met
+the gate.
+
+## Required local-wrapper properties
+
+Before `pam-sys2` is added to the product manifest, the local design and tests
+must prove all of the following:
+
+1. validate `num_msg` in `1..=PAM_MAX_NUM_MSG`, every outer pointer, every
+   message pointer, every style, and bounded NUL termination before dereference;
+2. wrap the entire Rust callback body in `catch_unwind` and return
+   `PAM_CONV_ERR` after zeroing partial responses on panic or error;
+3. allocate response arrays and strings with checked C allocations, cap text at
+   `PAM_MAX_RESP_SIZE`, and overwrite every still-owned response before free;
+4. support echo-on, echo-off, info, error, radio, and bounded binary messages,
+   preserving the order of arbitrary multi-message batches;
+5. move rmac secret input into the worker without cloning and keep the single
+   unavoidable PAM-owned response copy inside the documented Linux-PAM trust
+   boundary;
+6. pair each successful `pam_start` with exactly one `pam_end`, propagate the
+   end status, and call both `pam_authenticate` and `pam_acct_mgmt`;
+7. never implement `Send`/`Sync` for the PAM handle; construct and consume the
+   whole transaction on one bounded worker thread;
+8. pass fault injection for nulls, negative/zero/33 message counts, allocation
+   failure, panic, malformed text/binary lengths, partial batches, and every
+   authentication/account/end outcome before real Ubuntu PAM testing.
+
+Linux-PAM owns successful response allocations after the callback returns, so
+rmac cannot honestly promise to overwrite that transferred copy itself. The
+supported Ubuntu PAM stack must be reviewed and tested for its cleanup behavior;
+all rmac-owned copies still require immediate zeroization. This limitation is a
+property of the PAM conversation ownership contract, not permission to retain
+extra application copies.
+
+## Evidence still required
+
+- archive crates.io owner data when the registry API is available (it returned
+  HTTP 403 during this review) and recheck advisories at dependency admission;
+- compare pre-generated x86_64/aarch64 layouts with Ubuntu 26.04 headers;
+- compile/link against the reference image's `libpam0g-dev` and package only the
+  runtime library dependency;
+- run password, wrong password, locked/expired account, cancellation, MFA,
+  allocation failure, callback panic, and `pam_end` failure tests under
+  sanitizers where supported.
+
+Until that evidence exists, swaylock remains the production PAM client.

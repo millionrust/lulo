@@ -194,6 +194,16 @@ frame. The same publication carries full Quick Settings snapshots and a
 separate redraw flag. A dead source disables its mutation surface while the
 compact top bar retains its last-known-good indicator.
 
+Notification admission is a composed authority, not a view decision.
+`rmac-notifications-linux` loads the private `rmac-notifications-store` Center,
+resolves per-app enabled/banner/sound/history/urgent policy, and asks the live
+`org.rmac.Focus1` authority to apply the active mode and exact allow list before
+posting to the shared protocol server. It reuses one session-bus connection;
+Focus loss fails normal banners closed while retaining policy-allowed history.
+The bounded runtime event stream carries the exact posted snapshot and persists
+validated Center changes off D-Bus dispatch, retaining expired history and
+removing dismissed, withdrawn, or action-closed records without a lookup race.
+
 Quick Settings consumes the same typed service snapshots through
 `rmac-quick-settings`. Its framework-neutral transaction model validates
 capabilities, permits only one in-flight mutation per control, retains the

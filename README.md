@@ -53,7 +53,7 @@ Shared crates:
 - `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
 - `rmac-notifications` — bounded notification validation, replacement, policy, actions, and history.
-- `rmac-notifications-linux` — shared freedesktop/XDG portal notification service and wire decoder.
+- `rmac-notifications-linux` — shared notification service, Focus-aware admission, history runtime, and wire decoder.
 - `rmac-notifications-runtime` — live banner placement, motion, focus, and service-command orchestration.
 - `rmac-notifications-store` — private crash-safe Center history, grouping, unread state, and app policy.
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.

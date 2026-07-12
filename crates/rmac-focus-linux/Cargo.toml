@@ -13,4 +13,5 @@ futures-util.workspace = true
 rmac-focus.workspace = true
 rmac-focus-runtime.workspace = true
 rmac-focus-store.workspace = true
+rmac-notifications.workspace = true
 zbus.workspace = true

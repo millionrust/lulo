@@ -176,14 +176,33 @@ immediately removes its existing records. Per-app policy separately controls
 enablement, banners, sounds, badges, urgent Focus bypass, history, and the
 trusted lock-screen preview level.
 
+The notification service now loads that Center before claiming either D-Bus
+name. Each legacy or portal post resolves the app policy, asks the live Focus
+authority to compose the active mode and exact allow list, and only then calls
+`Server::post`. The service keeps one reusable session-bus connection for this
+hot path. If Focus temporarily disappears, normal banners fail closed while
+policy-allowed history remains available in Notification Center. Urgent bypass
+still follows the app and active-mode policy. The per-app Sounds choice is part
+of authoritative `DeliveryPolicy`; disabling it prevents sound without
+silencing the banner or discarding history, while disabling banners alone does
+not silently disable an otherwise allowed sound. Focus suppression still
+suppresses both unless urgent bypass is allowed.
+
+Posted and closed runtime events update the private Center off the D-Bus
+dispatch path. A posted event carries its exact validated snapshot atomically,
+so an immediate sender withdrawal cannot race a later mutable-state lookup.
+Replacement upserts the full validated notification, expiry
+keeps its history, and dismissal, withdrawal, or action closure removes it.
+Each changed snapshot is atomically persisted; a save failure is reported
+without terminating the live protocol service.
+
 ## Next adapters and surfaces
 
 1. E1 media/evidence completion: validate icon and custom-sound descriptors and
    prove both interfaces on the Linux reference PC.
 2. E2 layer-surface renderer: render the runtime snapshot with real hover,
    keyboard, action, activation-token, and multi-output evidence on Linux.
-3. E3 Notification Center: persist permitted history atomically, group by app,
-   expose clear/read actions, and publish `Indicator` to shell status.
-4. E4 Focus: calculate schedule and allow-list policy, then pass the resulting
-   `DeliveryPolicy` into `Server::post`; it must not duplicate notification
-   state.
+3. E3 Notification Center UI: expose the persisted groups, clear/read actions,
+   per-app policy mutations, and publish `Indicator` to shell status.
+4. E4 Focus UI: expose mode, schedule, duration, and allow-list editing through
+   the single-writer authority and prove real delivery behavior on Linux.

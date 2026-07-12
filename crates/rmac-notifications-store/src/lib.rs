@@ -61,6 +61,7 @@ impl AppPolicy {
             } else {
                 BannerPolicy::Suppress
             },
+            sounds: self.sounds,
             history: if self.history {
                 HistoryPolicy::Allow
             } else {
@@ -155,6 +156,12 @@ impl Center {
                 .retain(|record| record.source.app_id() != app_id),
             None => self.history.clear(),
         }
+    }
+
+    pub fn remove(&mut self, id: NotificationId) -> bool {
+        let before = self.history.len();
+        self.history.retain(|record| record.id != id);
+        self.history.len() != before
     }
 
     pub fn mark_all_read(&mut self, app_id: Option<&AppId>) {
@@ -917,6 +924,28 @@ mod tests {
             .unwrap();
         center.upsert(notification("org.example.Chat", "two", 20, false));
         assert!(center.history().is_empty());
+    }
+
+    #[test]
+    fn per_app_sound_policy_reaches_authoritative_delivery() {
+        let policy = AppPolicy {
+            sounds: false,
+            ..AppPolicy::default()
+        };
+        let mut server = Server::new(10, TimeoutPolicy::default());
+        let request = protocol::portal(PortalInput {
+            app_id: "org.example.Chat".into(),
+            id: "one".into(),
+            title: Some("Message".into()),
+            ..PortalInput::default()
+        })
+        .unwrap();
+        let outcome = server
+            .post(request, Time(1), policy.delivery(false))
+            .unwrap();
+        assert!(outcome.delivery.banner);
+        assert!(!outcome.delivery.sound);
+        assert!(outcome.delivery.history);
     }
 
     #[test]

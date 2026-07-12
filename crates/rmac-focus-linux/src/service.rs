@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use rmac_focus::{ActivationSource, ModeId};
 use rmac_focus_runtime::{ClockSampler, PersistenceHealth, Projection, Runtime, Update};
+use rmac_notifications::{AppId, BannerPolicy, DeliveryPolicy, HistoryPolicy};
 use zbus::connection::Builder;
 use zbus::fdo;
 use zbus::message::Header;
@@ -21,6 +22,7 @@ pub(crate) const SCHEDULED_DISABLE_DETAIL: &str =
 /// whether the latest persistence operation succeeded. Empty strings and a
 /// zero expiry represent absent optional values.
 pub type WireState = (bool, String, String, u64, bool);
+pub type WirePolicy = (bool, bool, bool, u8, bool, bool);
 
 #[derive(Clone)]
 struct FocusInterface {
@@ -33,6 +35,21 @@ impl FocusInterface {
     fn state(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<WireState> {
         authenticated_sender(&header)?;
         Ok(wire_state(&*lock(&self.runtime)?))
+    }
+
+    fn delivery_policy(
+        &self,
+        app_id: &str,
+        base: WirePolicy,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<WirePolicy> {
+        authenticated_sender(&header)?;
+        let app_id = AppId::parse(app_id)
+            .map_err(|_| fdo::Error::InvalidArgs("notification app id is invalid".into()))?;
+        let base = decode_policy(base)
+            .map_err(|_| fdo::Error::InvalidArgs("notification policy is invalid".into()))?;
+        let policy = lock(&self.runtime)?.enforce(&app_id, base);
+        Ok(encode_policy(policy))
     }
 
     async fn set_enabled(
@@ -249,6 +266,41 @@ pub fn projection(state: &WireState) -> Result<Projection, Error> {
     })
 }
 
+pub fn encode_policy(policy: DeliveryPolicy) -> WirePolicy {
+    (
+        policy.enabled,
+        policy.banner == BannerPolicy::Allow,
+        policy.sounds,
+        match policy.history {
+            HistoryPolicy::Allow => 0,
+            HistoryPolicy::Transient => 1,
+            HistoryPolicy::Block => 2,
+        },
+        policy.allow_urgent_through_focus,
+        policy.focus_active,
+    )
+}
+
+pub fn decode_policy(policy: WirePolicy) -> Result<DeliveryPolicy, Error> {
+    Ok(DeliveryPolicy {
+        enabled: policy.0,
+        banner: if policy.1 {
+            BannerPolicy::Allow
+        } else {
+            BannerPolicy::Suppress
+        },
+        sounds: policy.2,
+        history: match policy.3 {
+            0 => HistoryPolicy::Allow,
+            1 => HistoryPolicy::Transient,
+            2 => HistoryPolicy::Block,
+            _ => return Err(Error::Protocol),
+        },
+        allow_urgent_through_focus: policy.4,
+        focus_active: policy.5,
+    })
+}
+
 async fn emit_if_changed(
     emitter: &SignalEmitter<'_>,
     before: &WireState,
@@ -295,6 +347,7 @@ impl std::error::Error for Error {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zbus::object_server::Interface;
 
     #[test]
     fn wire_projection_rejects_inconsistent_or_oversized_state() {
@@ -310,5 +363,45 @@ mod tests {
         assert!(projection.enabled);
         assert_eq!(projection.mode_name.as_deref(), Some("Work"));
         assert_eq!(projection.ends_at_unix_ms, Some(9_000));
+    }
+
+    #[test]
+    fn delivery_policy_wire_round_trip_preserves_every_capability() {
+        let policy = DeliveryPolicy {
+            enabled: true,
+            banner: BannerPolicy::Suppress,
+            sounds: false,
+            history: HistoryPolicy::Transient,
+            allow_urgent_through_focus: false,
+            focus_active: true,
+        };
+        assert_eq!(decode_policy(encode_policy(policy)).unwrap(), policy);
+        assert!(decode_policy((true, true, true, 3, true, false)).is_err());
+    }
+
+    #[test]
+    fn generated_interface_exposes_state_commands_policy_and_changes() {
+        let path = std::env::temp_dir()
+            .join(format!("rmac-focus-interface-{}", std::process::id()))
+            .join("focus.json");
+        let clock = Arc::new(ClockSampler::default());
+        let (runtime, _) =
+            Runtime::load(rmac_focus_store::Store::at(path), clock.sample()).unwrap();
+        let interface = FocusInterface {
+            runtime: Arc::new(Mutex::new(runtime)),
+            clock,
+        };
+        let mut xml = String::new();
+        interface.introspect_to_writer(&mut xml, 0);
+        for method in [
+            "State",
+            "SetEnabled",
+            "Activate",
+            "Disable",
+            "DeliveryPolicy",
+        ] {
+            assert!(xml.contains(&format!("method name=\"{method}\"")));
+        }
+        assert!(xml.contains("signal name=\"Changed\""));
     }
 }

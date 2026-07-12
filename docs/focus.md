@@ -79,6 +79,12 @@ override a running schedule: it returns an actionable instruction to change
 that schedule in Focus settings. Persistence degradation is returned to the
 caller even though the live in-memory policy remains truthful.
 
+Notification admission uses the same authority's typed delivery-policy method.
+The notification service supplies its per-app enabled, banner, sound, history,
+and urgent-through-Focus choices; Focus composes the active mode and exact app
+allow list without exporting that private list to every shell process. The
+wire decoder rejects unknown history modes and inconsistent state.
+
 The shell status reducer now accepts live Focus projection separately from
 shell preferences. Visibility remains a preference, but active mode and expiry
 come only from the Focus runtime. On service loss, the top bar preserves its

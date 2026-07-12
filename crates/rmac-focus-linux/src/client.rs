@@ -3,8 +3,11 @@
 use async_channel::Sender;
 use futures_util::StreamExt as _;
 use rmac_focus_runtime::Projection;
+use rmac_notifications::{AppId, DeliveryPolicy};
 
-use crate::service::{projection, WireState, SCHEDULED_DISABLE_DETAIL};
+use crate::service::{
+    decode_policy, encode_policy, projection, WirePolicy, WireState, SCHEDULED_DISABLE_DETAIL,
+};
 
 #[cfg(test)]
 use crate::service::{BUS_NAME, INTERFACE_NAME, OBJECT_PATH};
@@ -19,6 +22,7 @@ trait Focus {
     fn set_enabled(&self, enabled: bool) -> zbus::Result<WireState>;
     fn activate(&self, mode_id: &str, duration_ms: u64) -> zbus::Result<WireState>;
     fn disable(&self) -> zbus::Result<WireState>;
+    fn delivery_policy(&self, app_id: &str, base: WirePolicy) -> zbus::Result<WirePolicy>;
 
     #[zbus(signal)]
     fn changed(&self, state: WireState) -> zbus::Result<()>;
@@ -54,6 +58,29 @@ pub fn disable() -> Result<Snapshot, Error> {
     let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(proxy.disable().map_err(call_error)?)?)
+}
+
+pub async fn enforce(app_id: &AppId, base: DeliveryPolicy) -> Result<DeliveryPolicy, Error> {
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|_| Error::Connect)?;
+    enforce_with_connection(&connection, app_id, base).await
+}
+
+pub async fn enforce_with_connection(
+    connection: &zbus::Connection,
+    app_id: &AppId,
+    base: DeliveryPolicy,
+) -> Result<DeliveryPolicy, Error> {
+    let proxy = FocusProxy::new(connection)
+        .await
+        .map_err(|_| Error::Connect)?;
+    let wire = encode_policy(base);
+    let result = proxy
+        .delivery_policy(app_id.as_str(), wire)
+        .await
+        .map_err(call_error)?;
+    decode_policy(result).map_err(|_| Error::Protocol)
 }
 
 pub async fn watch(sender: Sender<Result<Projection, String>>) -> Result<(), Error> {

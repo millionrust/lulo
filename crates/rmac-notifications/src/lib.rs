@@ -431,6 +431,7 @@ pub enum BannerPolicy {
 pub struct DeliveryPolicy {
     pub enabled: bool,
     pub banner: BannerPolicy,
+    pub sounds: bool,
     pub history: HistoryPolicy,
     pub allow_urgent_through_focus: bool,
     pub focus_active: bool,
@@ -441,6 +442,7 @@ impl Default for DeliveryPolicy {
         Self {
             enabled: true,
             banner: BannerPolicy::Allow,
+            sounds: true,
             history: HistoryPolicy::Allow,
             allow_urgent_through_focus: true,
             focus_active: false,
@@ -913,7 +915,7 @@ fn delivery_for(request: &Request, policy: DeliveryPolicy) -> Delivery {
         || (policy.allow_urgent_through_focus && request.priority == Priority::Urgent);
     let banner = !request.display.tray_only && policy.banner == BannerPolicy::Allow && focus_allows;
     let history = !request.display.transient && policy.history == HistoryPolicy::Allow;
-    let sound = banner && request.sound != Sound::Silent;
+    let sound = focus_allows && policy.sounds && request.sound != Sound::Silent;
     Delivery {
         banner,
         history,
@@ -1146,6 +1148,26 @@ mod tests {
             }
         );
         assert_eq!(server.active().count(), 2);
+    }
+
+    #[test]
+    fn banner_and_sound_preferences_are_independent() {
+        let mut server = Server::new(10, TimeoutPolicy::default());
+        let policy = DeliveryPolicy {
+            banner: BannerPolicy::Suppress,
+            sounds: true,
+            ..DeliveryPolicy::default()
+        };
+        let outcome = server
+            .post(
+                portal_request("org.example.Chat", "silent-banner", "Message"),
+                Time(0),
+                policy,
+            )
+            .unwrap();
+        assert!(!outcome.delivery.banner);
+        assert!(outcome.delivery.sound);
+        assert!(outcome.delivery.history);
     }
 
     #[test]

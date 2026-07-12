@@ -584,6 +584,7 @@ mod tests {
         DeliveryPolicy {
             enabled: true,
             banner: BannerPolicy::Allow,
+            sounds: true,
             history: HistoryPolicy::Allow,
             allow_urgent_through_focus: true,
             focus_active: false,

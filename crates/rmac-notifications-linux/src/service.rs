@@ -6,8 +6,8 @@ use std::time::Instant;
 
 use async_channel::{Receiver, Sender};
 use rmac_notifications::{
-    ActionInvocation, AppId, Closed, DeliveryPolicy, Notification, NotificationId, PostOutcome,
-    Server, ServerError, Source, Time, TimeoutPolicy,
+    ActionInvocation, AppId, CloseReason, Closed, DeliveryPolicy, Notification, NotificationId,
+    PostOutcome, Server, ServerError, Source, Time, TimeoutPolicy,
 };
 use zbus::connection::Builder;
 use zbus::fdo;
@@ -20,9 +20,129 @@ const LEGACY_PATH: &str = "/org/freedesktop/Notifications";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
 const EVENT_CAPACITY: usize = 128;
 
+#[derive(Clone)]
+pub struct HistoryAuthority {
+    center: Arc<Mutex<rmac_notifications_store::Center>>,
+    store: rmac_notifications_store::Store,
+    focus_connection: Option<Connection>,
+}
+
+impl std::fmt::Debug for HistoryAuthority {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("HistoryAuthority(<redacted>)")
+    }
+}
+
+impl HistoryAuthority {
+    async fn load() -> Result<Self, ServiceError> {
+        let store = rmac_notifications_store::Store::from_environment()
+            .map_err(|_| ServiceError::History)?;
+        let center = store.load().map_err(|_| ServiceError::History)?.center;
+        let focus_connection = Connection::session().await.map_err(|_| ServiceError::Bus)?;
+        Ok(Self {
+            center: Arc::new(Mutex::new(center)),
+            store,
+            focus_connection: Some(focus_connection),
+        })
+    }
+
+    #[cfg(test)]
+    fn empty_at(path: std::path::PathBuf) -> Self {
+        Self {
+            center: Arc::new(Mutex::new(rmac_notifications_store::Center::default())),
+            store: rmac_notifications_store::Store::at(path),
+            focus_connection: None,
+        }
+    }
+
+    async fn policy(&self, app_id: &AppId) -> DeliveryPolicy {
+        let base = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .policy(app_id)
+            .delivery(false);
+        let resolved = match &self.focus_connection {
+            Some(connection) => {
+                rmac_focus_linux::client::enforce_with_connection(connection, app_id, base).await
+            }
+            None => Err(rmac_focus_linux::client::Error::Connect),
+        };
+        resolved.unwrap_or(DeliveryPolicy {
+            // Fail closed for banners while Focus state is unavailable;
+            // policy-allowed history remains recoverable in the Center.
+            focus_active: true,
+            ..base
+        })
+    }
+
+    pub fn record(&self, event: &RuntimeEvent) -> Result<(), ServiceError> {
+        let changed = {
+            let mut center = self
+                .center
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            match event {
+                RuntimeEvent::Posted {
+                    outcome,
+                    notification,
+                } if outcome.delivery.history => {
+                    if let Some(notification) = notification {
+                        center.upsert(notification.as_ref().clone());
+                        true
+                    } else {
+                        false
+                    }
+                }
+                RuntimeEvent::Closed(closed) if !matches!(closed.reason, CloseReason::Expired) => {
+                    center.remove(closed.id)
+                }
+                RuntimeEvent::Posted { .. }
+                | RuntimeEvent::Closed(_)
+                | RuntimeEvent::ActionInvoked(_) => false,
+            }
+        };
+        if changed {
+            let snapshot = self
+                .center
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
+            self.store
+                .save(&snapshot)
+                .map_err(|_| ServiceError::History)?;
+        }
+        Ok(())
+    }
+
+    pub fn indicator(&self) -> rmac_notifications::Indicator {
+        self.center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .indicator()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServiceError {
+    History,
+    Bus,
+}
+
+impl std::fmt::Display for ServiceError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "notification service failed ({self:?})")
+    }
+}
+
+impl std::error::Error for ServiceError {}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeEvent {
-    Posted(PostOutcome),
+    Posted {
+        outcome: PostOutcome,
+        notification: Option<Box<Notification>>,
+    },
     Closed(Closed),
     ActionInvoked(ActionInvocation),
 }
@@ -103,6 +223,23 @@ impl SharedCore {
         core.server.post(request, now, policy)
     }
 
+    fn post_event(
+        &self,
+        request: rmac_notifications::Request,
+        policy: DeliveryPolicy,
+    ) -> Result<(PostOutcome, Option<Box<Notification>>), ServerError> {
+        let mut core = self.lock();
+        let now = monotonic_time(core.started);
+        let outcome = core.server.post(request, now, policy)?;
+        let notification = core
+            .server
+            .active()
+            .find(|notification| notification.id == outcome.id)
+            .cloned()
+            .map(Box::new);
+        Ok((outcome, notification))
+    }
+
     pub fn withdraw(&self, app_id: &AppId, id: NotificationId) -> Result<Closed, ServerError> {
         self.lock().server.withdraw(app_id, id)
     }
@@ -157,6 +294,7 @@ fn monotonic_time(started: Instant) -> Time {
 pub struct LegacyInterface {
     core: SharedCore,
     events: Sender<RuntimeEvent>,
+    history: HistoryAuthority,
 }
 
 #[interface(name = "org.freedesktop.Notifications")]
@@ -192,11 +330,19 @@ impl LegacyInterface {
             expire_timeout,
         )
         .map_err(invalid_wire)?;
-        let outcome = self
+        let policy = self.history.policy(request.source.app_id()).await;
+        let (outcome, notification) = self
             .core
-            .post(request, DeliveryPolicy::default())
+            .post_event(request, policy)
             .map_err(domain_error)?;
-        publish(&self.events, RuntimeEvent::Posted(outcome)).await?;
+        publish(
+            &self.events,
+            RuntimeEvent::Posted {
+                outcome,
+                notification,
+            },
+        )
+        .await?;
         Ok(outcome.id.get())
     }
 
@@ -254,6 +400,7 @@ impl LegacyInterface {
 pub struct PortalInterface {
     core: SharedCore,
     events: Sender<RuntimeEvent>,
+    history: HistoryAuthority,
 }
 
 #[interface(name = "org.freedesktop.impl.portal.Notification")]
@@ -268,11 +415,19 @@ impl PortalInterface {
     ) -> fdo::Result<()> {
         verify_portal_caller(connection, &header).await?;
         let request = super::portal(app_id, id, notification).map_err(invalid_wire)?;
-        let outcome = self
+        let policy = self.history.policy(request.source.app_id()).await;
+        let (outcome, notification) = self
             .core
-            .post(request, DeliveryPolicy::default())
+            .post_event(request, policy)
             .map_err(domain_error)?;
-        publish(&self.events, RuntimeEvent::Posted(outcome)).await
+        publish(
+            &self.events,
+            RuntimeEvent::Posted {
+                outcome,
+                notification,
+            },
+        )
+        .await
     }
 
     async fn remove_notification(
@@ -326,11 +481,16 @@ pub struct ServiceHandle {
     connection: Connection,
     core: SharedCore,
     events: Sender<RuntimeEvent>,
+    history: HistoryAuthority,
 }
 
 impl ServiceHandle {
     pub fn snapshot(&self) -> Vec<Notification> {
         self.core.snapshot()
+    }
+
+    pub fn history(&self) -> &HistoryAuthority {
+        &self.history
     }
 
     pub async fn dismiss(&self, id: NotificationId) -> Result<Closed, ActionError> {
@@ -499,29 +659,39 @@ impl ServiceHandle {
     }
 }
 
-pub async fn serve() -> zbus::Result<(ServiceHandle, Receiver<RuntimeEvent>)> {
+pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceError> {
     let core = SharedCore::new(500, TimeoutPolicy::default());
+    let history = HistoryAuthority::load().await?;
     let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
     let legacy = LegacyInterface {
         core: core.clone(),
         events: events.clone(),
+        history: history.clone(),
     };
     let portal = PortalInterface {
         core: core.clone(),
         events: events.clone(),
+        history: history.clone(),
     };
-    let connection = Builder::session()?
-        .name("org.freedesktop.Notifications")?
-        .name("org.freedesktop.impl.portal.desktop.rmac")?
-        .serve_at(LEGACY_PATH, legacy)?
-        .serve_at(PORTAL_PATH, portal)?
+    let connection = Builder::session()
+        .map_err(|_| ServiceError::Bus)?
+        .name("org.freedesktop.Notifications")
+        .map_err(|_| ServiceError::Bus)?
+        .name("org.freedesktop.impl.portal.desktop.rmac")
+        .map_err(|_| ServiceError::Bus)?
+        .serve_at(LEGACY_PATH, legacy)
+        .map_err(|_| ServiceError::Bus)?
+        .serve_at(PORTAL_PATH, portal)
+        .map_err(|_| ServiceError::Bus)?
         .build()
-        .await?;
+        .await
+        .map_err(|_| ServiceError::Bus)?;
     Ok((
         ServiceHandle {
             connection,
             core,
             events,
+            history,
         },
         receiver,
     ))
@@ -682,8 +852,21 @@ mod tests {
     use super::*;
     use rmac_notifications::protocol::{self, PortalInput};
     use rmac_notifications::ActionTarget;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use zbus::object_server::Interface;
     use zbus::zvariant::to_bytes;
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    fn history_path(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join(format!(
+                "rmac-notification-service-{}-{label}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ))
+            .join("history.json")
+    }
 
     #[test]
     fn shared_core_keeps_one_authority_for_both_protocols() {
@@ -710,6 +893,56 @@ mod tests {
     }
 
     #[test]
+    fn runtime_events_persist_history_but_expiry_does_not_delete_it() {
+        let path = history_path("events");
+        let history = HistoryAuthority::empty_at(path.clone());
+        let core = SharedCore::new(10, TimeoutPolicy::default());
+        let request = protocol::portal(PortalInput {
+            app_id: "org.example.App".into(),
+            id: "one".into(),
+            title: Some("Private title".into()),
+            ..PortalInput::default()
+        })
+        .unwrap();
+        let posted = core.post(request, DeliveryPolicy::default()).unwrap();
+        let active = core.snapshot();
+        core.withdraw_portal(&AppId::parse("org.example.App").unwrap(), "one")
+            .unwrap();
+        history
+            .record(&RuntimeEvent::Posted {
+                outcome: posted,
+                notification: active.first().cloned().map(Box::new),
+            })
+            .unwrap();
+        assert_eq!(
+            rmac_notifications_store::Store::at(path.clone())
+                .load()
+                .unwrap()
+                .center
+                .history()
+                .len(),
+            1
+        );
+
+        history
+            .record(&RuntimeEvent::Closed(Closed {
+                id: posted.id,
+                reason: CloseReason::Expired,
+            }))
+            .unwrap();
+        assert_eq!(history.indicator().unread_count, 1);
+
+        history
+            .record(&RuntimeEvent::Closed(Closed {
+                id: posted.id,
+                reason: CloseReason::Dismissed,
+            }))
+            .unwrap();
+        assert_eq!(history.indicator().unread_count, 0);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn public_protocol_metadata_is_truthful() {
         assert_eq!(protocol_categories().len(), 14);
         assert_eq!(protocol_button_purposes().len(), 7);
@@ -721,11 +954,19 @@ mod tests {
     fn generated_interfaces_expose_the_standard_contracts() {
         let core = SharedCore::new(10, TimeoutPolicy::default());
         let (events, _receiver) = async_channel::bounded(4);
+        let history = HistoryAuthority::empty_at(
+            std::env::temp_dir().join("rmac-notification-interface-test.json"),
+        );
         let legacy = LegacyInterface {
             core: core.clone(),
             events: events.clone(),
+            history: history.clone(),
         };
-        let portal = PortalInterface { core, events };
+        let portal = PortalInterface {
+            core,
+            events,
+            history,
+        };
         let mut legacy_xml = String::new();
         legacy.introspect_to_writer(&mut legacy_xml, 0);
         assert!(legacy_xml.contains("org.freedesktop.Notifications"));

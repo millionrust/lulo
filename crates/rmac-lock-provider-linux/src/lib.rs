@@ -9,6 +9,104 @@ use std::fmt;
 
 use zeroize::Zeroize as _;
 
+#[cfg(target_os = "linux")]
+pub mod wayland;
+
+#[cfg(any(target_os = "linux", test))]
+mod registry_probe {
+    pub const MANAGER_INTERFACE: &str = "ext_session_lock_manager_v1";
+    pub const OUTPUT_INTERFACE: &str = "wl_output";
+    pub const REQUIRED_SESSION_LOCK_VERSION: u32 = 1;
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub struct Capabilities {
+        pub session_lock_version: u32,
+        pub output_count: usize,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    pub enum Error {
+        SessionLockUnavailable,
+        SessionLockVersion { advertised: u32, required: u32 },
+        NoOutputs,
+    }
+
+    pub fn classify<'a>(
+        interfaces: impl IntoIterator<Item = (&'a str, u32)>,
+    ) -> Result<Capabilities, Error> {
+        let mut manager_version = None;
+        let mut output_count = 0_usize;
+
+        for (name, version) in interfaces {
+            if name == MANAGER_INTERFACE {
+                manager_version =
+                    Some(manager_version.map_or(version, |current: u32| current.max(version)));
+            } else if name == OUTPUT_INTERFACE {
+                output_count = output_count.saturating_add(1);
+            }
+        }
+
+        let manager_version = manager_version.ok_or(Error::SessionLockUnavailable)?;
+        if manager_version < REQUIRED_SESSION_LOCK_VERSION {
+            return Err(Error::SessionLockVersion {
+                advertised: manager_version,
+                required: REQUIRED_SESSION_LOCK_VERSION,
+            });
+        }
+        if output_count == 0 {
+            return Err(Error::NoOutputs);
+        }
+
+        Ok(Capabilities {
+            session_lock_version: manager_version,
+            output_count,
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn accepts_version_one_with_every_observed_output() {
+            let capabilities = classify([
+                ("wl_compositor", 6),
+                (OUTPUT_INTERFACE, 4),
+                (MANAGER_INTERFACE, 1),
+                (OUTPUT_INTERFACE, 4),
+            ])
+            .unwrap();
+
+            assert_eq!(capabilities.session_lock_version, 1);
+            assert_eq!(capabilities.output_count, 2);
+        }
+
+        #[test]
+        fn rejects_a_missing_session_lock_manager() {
+            assert_eq!(
+                classify([(OUTPUT_INTERFACE, 4)]),
+                Err(Error::SessionLockUnavailable)
+            );
+        }
+
+        #[test]
+        fn rejects_an_unsupported_manager_version() {
+            assert_eq!(
+                classify([(MANAGER_INTERFACE, 0), (OUTPUT_INTERFACE, 4)]),
+                Err(Error::SessionLockVersion {
+                    advertised: 0,
+                    required: 1,
+                })
+            );
+        }
+
+        #[test]
+        fn rejects_a_headless_registry_snapshot() {
+            assert_eq!(classify([(MANAGER_INTERFACE, 1)]), Err(Error::NoOutputs));
+        }
+    }
+}
+
 /// Linux-PAM currently bounds a conversation response to 512 bytes. Keeping
 /// the allocation fixed also prevents secret copies caused by `Vec` growth.
 pub const MAX_SECRET_BYTES: usize = 512;

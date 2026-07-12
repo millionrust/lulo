@@ -8,3 +8,7 @@ publish = false
 
 [dependencies]
 zeroize.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client.workspace = true
+wayland-protocols.workspace = true

@@ -107,6 +107,12 @@ primitive, not authentication. The accepted Wayland and secret-erasure
 dependency lines—and the reasons no PAM crate is accepted yet—are recorded in
 `docs/rmac-lock-provider-dependency-review.md`.
 
+On Linux the same crate can perform a non-mutating Wayland registry preflight.
+It accepts only a compositor advertising `ext-session-lock-v1` version 1 and at
+least one `wl_output`, and drops the connection without binding or locking. The
+lock request is deliberately withheld until output surfaces exist; a partial
+provider must never be able to strand a developer in a blank locked session.
+
 The Linux adapter still requires the actual Wayland client, a reviewed PAM
 binding, bounded multi-message conversation handling, `pam_start`/`pam_end`
 lifetime correctness, renderer integration, and real niri/PAM evidence. Until

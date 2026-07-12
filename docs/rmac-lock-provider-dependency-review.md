@@ -22,6 +22,12 @@ client implementation. The adapter must still implement registry removal,
 output hotplug, exact configure/ack/commit ordering, dispatch failure, and an
 explicit display roundtrip after `unlock_and_destroy`.
 
+They are now direct, Linux-only dependencies of `rmac-lock-provider-linux`.
+Its first Wayland API is a non-mutating registry preflight: it confirms protocol
+version 1 and at least one output, then drops the connection without binding a
+global or requesting a lock. The actual acquisition API remains intentionally
+absent until lock surfaces and fail-closed event handling arrive together.
+
 ### Secret erasure
 
 Use exact `zeroize` 1.9.0, already resolved in the workspace and dual

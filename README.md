@@ -36,6 +36,7 @@ Shared crates:
 - `rmac-focus-store` — private versioned Focus preferences/manual state with last-good recovery.
 - `rmac-focus-runtime` — persisted Focus orchestration, local clock sampling, enforcement, and shell projection.
 - `rmac-focus-linux` — single-writer Focus D-Bus authority, typed clients, and timedate/logind wake hints.
+- `rmac-focus-settings` — validated whole-configuration edits used by the real Focus Settings pane.
 - `rmac-storage` — atomic filesystem writes, durable cleanup, and typed failures.
 - `rmac-apps` — macOS bundle and Linux desktop-entry discovery and launching.
 - `rmac-launcher` — private, cancellable cross-provider launcher ranking and actions.

@@ -5018,6 +5018,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-focus-settings"
+version = "0.1.0"
+dependencies = [
+ "rmac-focus",
+ "rmac-notifications",
+]
+
+[[package]]
 name = "rmac-focus-store"
 version = "0.1.0"
 dependencies = [
@@ -5313,8 +5321,12 @@ dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
  "rmac-display",
+ "rmac-focus",
+ "rmac-focus-linux",
+ "rmac-focus-settings",
  "rmac-input",
  "rmac-network",
+ "rmac-notifications",
  "rmac-notifications-linux",
  "rmac-notifications-store",
  "rmac-power",

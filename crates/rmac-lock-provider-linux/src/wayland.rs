@@ -1,15 +1,18 @@
 //! Non-mutating Wayland preflight for the future session-lock adapter.
 //!
-//! This module deliberately does not issue `ext_session_lock_manager_v1.lock`.
-//! Acquiring a session lock before output surfaces, input, and authentication
-//! are wired could leave a development session unusable. The probe proves only
-//! that the compositor advertises the rendering and keyboard globals,
-//! session-lock protocol version 1, and at least one output.
+//! Public APIs only probe or prepare the connection and cannot issue
+//! `ext_session_lock_manager_v1.lock`. A crate-internal typestate wires the
+//! complete object lifecycle for the unshipped provider runtime. The safe probe
+//! proves only that the compositor advertises the rendering and keyboard
+//! globals, session-lock protocol version 1, and at least one output.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
+use std::io;
 use std::num::NonZeroU64;
+use std::os::fd::{AsFd as _, AsRawFd as _};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::time::Duration;
 
 use wayland_client::globals::{registry_queue_init, GlobalError, GlobalListContents};
 use wayland_client::protocol::{
@@ -84,10 +87,10 @@ pub fn probe() -> Result<Capabilities, Error> {
 
 /// A safe Wayland connection prepared for future lock acquisition.
 ///
-/// Required globals and outputs are bound and hotplug is tracked, but this
-/// type has no method that can issue the session-lock request.
+/// Required globals and outputs are bound and hotplug is tracked, but no public
+/// method can issue the session-lock request.
 pub struct PreparedConnection {
-    _connection: Connection,
+    connection: Connection,
     _registry: wl_registry::WlRegistry,
     event_queue: EventQueue<PreparedState>,
     state: PreparedState,
@@ -118,7 +121,7 @@ impl PreparedConnection {
         state.require_input_ready()?;
 
         Ok(Self {
-            _connection: connection,
+            connection,
             _registry: registry,
             event_queue,
             state,
@@ -199,6 +202,53 @@ impl LockConnection {
         self.inner.state.render_pending(&queue_handle)?;
         self.inner.event_queue.flush().map_err(WireError::Flush)?;
         Ok(dispatched)
+    }
+
+    /// Read and dispatch Wayland events for at most `timeout`, allowing the
+    /// runtime to poll the PAM worker without blocking indefinitely.
+    pub(crate) fn poll_dispatch(&mut self, timeout: Duration) -> Result<usize, WireError> {
+        let dispatched = self.dispatch_pending()?;
+        if dispatched > 0 {
+            return Ok(dispatched);
+        }
+        let Some(guard) = self.inner.connection.prepare_read() else {
+            return self.dispatch_pending();
+        };
+        let timeout_ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+        let mut descriptor = libc::pollfd {
+            fd: self.inner.connection.as_fd().as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: descriptor references the live Wayland connection for this
+        // call only, and the one-element array has the advertised length.
+        let result = unsafe { libc::poll(&mut descriptor, 1, timeout_ms) };
+        if result < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                return Ok(0);
+            }
+            return Err(WireError::Poll(error));
+        }
+        if result == 0 {
+            return Ok(0);
+        }
+        if descriptor.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+            return Err(WireError::Poll(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "Wayland connection poll failed",
+            )));
+        }
+        match guard.read() {
+            Ok(_) => {}
+            Err(wayland_client::backend::WaylandError::Io(error))
+                if error.kind() == io::ErrorKind::WouldBlock =>
+            {
+                return Ok(0);
+            }
+            Err(error) => return Err(WireError::Read(error)),
+        }
+        self.dispatch_pending()
     }
 
     pub(crate) fn drain_events(&mut self) -> impl Iterator<Item = PreparedEvent> + '_ {
@@ -1263,6 +1313,8 @@ pub(crate) enum WireError {
     Prepare(PrepareError),
     Dispatch(wayland_client::DispatchError),
     Flush(wayland_client::backend::WaylandError),
+    Read(wayland_client::backend::WaylandError),
+    Poll(io::Error),
     PreparedState(PreparedStateError),
     State(WireStateError),
     Surface(SurfaceError),
@@ -1281,6 +1333,8 @@ impl std::error::Error for WireError {
             Self::Prepare(error) => Some(error),
             Self::Dispatch(error) => Some(error),
             Self::Flush(error) => Some(error),
+            Self::Read(error) => Some(error),
+            Self::Poll(error) => Some(error),
             Self::Surface(error) => Some(error),
             Self::Shm(error) => Some(error),
             Self::PreparedState(_) | Self::State(_) => None,

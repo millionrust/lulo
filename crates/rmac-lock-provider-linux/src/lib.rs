@@ -13,6 +13,7 @@ pub mod keyboard;
 pub mod paint;
 pub mod pam_broker;
 pub mod pam_conversation;
+pub mod runtime;
 pub mod surface;
 
 #[cfg(target_os = "linux")]

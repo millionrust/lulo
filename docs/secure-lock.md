@@ -186,12 +186,32 @@ PAM, notices acknowledge, radio prompts select, and Escape cancels. Generic
 binary MFA is intentionally rejected for a module-specific UI. Editor, event,
 and error diagnostics disclose neither input nor raw key identity.
 
-The Linux adapter still requires a complete runtime joining the internal wire,
-core provider, PAM worker, prompt editor, readiness notification, and recovery;
-client-side repeat scheduling, module-specific binary MFA UI, IME/accessibility
-support, and real niri/PAM evidence including the compiled fault tests also
-remain. Until then, the installed unit continues to run swaylock and the preview
-projection remains unrendered.
+A platform-neutral runtime coordinator now joins output/frame events, the
+authoritative compositor lock decision, authentication attempt IDs, broker
+prompts, semantic input, cancellation, worker completion, and the move-only
+unlock token. It starts one initial attempt only after `locked`, bounds
+pre-prompt input to 32 events, discards overflow instead of allocating or
+crashing, drains a cancelled PAM worker before starting another, rejects stale
+worker results, and treats worker panic as terminal fail-closed failure. Five
+native tests execute success, failure/retry, cancellation/drain, compositor
+finish, stale results, panic, bounded input, and diagnostic redaction.
+
+On Linux a crate-internal pump now owns that coordinator, the lock wire, one PAM
+worker, and its conversation endpoint. A `poll(2)` wait capped internally at 50
+ms lets it service Wayland while checking worker/prompt completion instead of
+blocking forever on either source. It converts wire input to coordinator events,
+spawns only the attempt requested by the core, consumes unlock authority in the
+synchronized wire method, and returns readiness, prompt-change, failure, and
+exit signals to a future supervisor. Username validation happens before
+connecting or locking. This pump is neither exported nor installed.
+
+The Linux adapter still requires an installed wrapper that derives the verified
+session username, renders prompt/error state, sends systemd readiness, maintains
+the logind locked hint, and owns emergency recovery. Client-side repeat
+scheduling, module-specific binary MFA UI, IME/accessibility support, and real
+niri/PAM evidence including the compiled fault tests also remain. Until then,
+the installed unit continues to run swaylock and the preview projection remains
+unrendered.
 
 ## Not complete yet
 

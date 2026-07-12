@@ -33,6 +33,10 @@ pub struct Worker {
 }
 
 impl Worker {
+    pub fn is_finished(&self) -> bool {
+        self.handle.is_finished()
+    }
+
     pub fn join(self) -> Result<(), WorkerError> {
         match self.handle.join() {
             Ok(result) => result.map_err(WorkerError::Pam),

@@ -207,7 +207,9 @@ cargo test -p rmac-lock-provider-linux xkb_keyboard:: --locked -- --test-threads
 ```
 
 A full native package test also links the generated session-lock/shm wire but
-does not issue a lock request:
+does not issue a lock request. It also runs the portable runtime coordinator
+tests; Linux-only tests compile the pump and reject invalid usernames before a
+Wayland connection is attempted:
 
 ```sh
 cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked

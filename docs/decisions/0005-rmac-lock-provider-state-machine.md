@@ -115,8 +115,18 @@ single-use broker prompt. Echo-off and echo-on buffers are bounded and erased,
 multi-scalar insertion is atomic, and submit/cancel move the one response
 capability exactly once. Notice and radio styles have generic keyboard behavior;
 binary MFA remains unavailable until its module-specific presentation exists.
-This editor still has no lock authority and is not yet driven by a live locked
-event loop.
+This editor still has no lock authority; no shipped presentation/event loop
+drives it yet.
+
+The platform-neutral runtime coordinator joins these boundaries without doing
+I/O. It starts authentication only after the compositor's `locked` event,
+permits one worker, bounds pre-prompt input, drains cancellation before worker
+reuse, rejects stale completion, and moves the core unlock token into one wire
+action. Worker panic and invalid ordering fail closed. A crate-internal Linux
+pump multiplexes Wayland with worker/prompt polling and exposes only readiness,
+prompt-change, failure, and exit status to a future supervisor. It is not a
+shipped executable and does not yet own systemd notification, logind hints,
+prompt rendering, username derivation, or recovery.
 
 The initial renderer is an opaque, dependency-free CPU composition written in
 bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after

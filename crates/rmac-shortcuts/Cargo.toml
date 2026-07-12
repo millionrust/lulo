@@ -16,6 +16,7 @@ serde_json.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd.workspace = true
+zbus.workspace = true
 
 [[bin]]
 name = "rmac-shortcut-broker"
@@ -24,3 +25,7 @@ path = "src/bin/broker.rs"
 [[bin]]
 name = "rmac-shortcut-dispatch"
 path = "src/bin/dispatch.rs"
+
+[[bin]]
+name = "rmac-locker"
+path = "src/bin/locker.rs"

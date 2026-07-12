@@ -32,11 +32,12 @@ portal or its backend restarts. Backend state is atomically written to
 `$XDG_RUNTIME_DIR/rmac/shortcuts-status.json`.
 
 Activated IDs pass through `rmac-shortcut-dispatch`, which accepts only the
-compiled allowlist and sends a small JSON ID to
-`$XDG_RUNTIME_DIR/rmac/shortcut-events.sock`. D-phase shell consumers bind that
-socket and remain responsible for the actual action. An unavailable consumer
-produces an explicit dispatch error; activations are not silently discarded or
-converted into shell commands.
+compiled allowlist. Normal shell IDs become a small JSON message on
+`$XDG_RUNTIME_DIR/rmac/shortcut-events.sock`; D-phase consumers remain
+responsible for those actions. Lock is the deliberate exception: it starts the
+fixed `rmac-lock.service` directly and waits for the lock readiness transaction,
+so shell availability cannot turn a security action into a dropped event. No
+shortcut is converted into a shell command.
 
 ## Explicit niri fallback
 
@@ -50,7 +51,9 @@ owner.
 Generated bindings use `repeat=false`, expose titles in niri's hotkey overlay,
 and call the dispatcher with separate `spawn` arguments. They never use
 `spawn-sh`, `sh -c`, interpolation, or user-provided command text. niri 26.04
-supports included KDL files and live validation/reload.
+supports included KDL files and live validation/reload. Only the lock binding
+uses `allow-when-locked=true`, matching niri's documented dead-locker recovery
+path; ordinary shell actions remain unavailable while locked.
 
 ## Verification
 

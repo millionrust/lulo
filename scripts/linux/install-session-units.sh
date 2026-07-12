@@ -6,12 +6,21 @@ repo_root=$(CDPATH= cd -- "${script_dir}/../.." && pwd)
 source_dir="${repo_root}/crates/rmac-session/units"
 notification_install_dir="${repo_root}/crates/rmac-notifications-linux/install"
 focus_install_dir="${repo_root}/crates/rmac-focus-linux/install"
+lock_config_source="${repo_root}/crates/rmac-session/swaylock.conf"
 config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
 data_home=${XDG_DATA_HOME:-"${HOME}/.local/share"}
 unit_dir=${RMAC_SYSTEMD_USER_DIR:-"${config_home}/systemd/user"}
 libexec_dir="${HOME}/.local/libexec/rmac"
 bin_dir=${RMAC_BIN_DIR:-"${HOME}/.local/bin"}
 target_dir=${CARGO_TARGET_DIR:-target}
+if [ ! -x /usr/bin/swaylock ]; then
+    echo "swaylock is required at /usr/bin/swaylock for secure session locking." >&2
+    exit 1
+fi
+if [ ! -x /usr/bin/systemd-notify ]; then
+    echo "systemd-notify is required at /usr/bin/systemd-notify." >&2
+    exit 1
+fi
 case ${target_dir} in
     /*) ;;
     *) target_dir="${repo_root}/${target_dir}" ;;
@@ -21,7 +30,7 @@ esac
     -p rmac-session --bin rmac-session-supervisor \
     -p rmac-notifications-linux --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
-    -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch)
+    -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker)
 
 install -d -m 0755 "${unit_dir}"
 install -d -m 0755 "${libexec_dir}"
@@ -31,7 +40,12 @@ install -m 0755 "${target_dir}/release/rmac-notification-center" "${libexec_dir}
 install -m 0755 "${target_dir}/release/rmac-focus-service" "${libexec_dir}/rmac-focus-service"
 install -m 0755 "${target_dir}/release/rmac-shortcut-broker" "${libexec_dir}/rmac-shortcut-broker"
 install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/rmac-shortcut-dispatch"
+install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
+install -d -m 0755 "${config_home}/rmac"
+if [ ! -e "${config_home}/rmac/swaylock.conf" ]; then
+    install -m 0644 "${lock_config_source}" "${config_home}/rmac/swaylock.conf"
+fi
 for unit in "${source_dir}"/*; do
     install -m 0644 "${unit}" "${unit_dir}/$(basename -- "${unit}")"
 done
@@ -75,6 +89,7 @@ echo "Installed rmac user units in ${unit_dir}."
 echo "Installed the supervisor in ${libexec_dir}."
 echo "Installed the notification service and rmac notification portal backend."
 echo "Installed the Focus policy authority."
+echo "Installed the secure swaylock supervisor and default lock appearance."
 echo "Start the session from niri with ${bin_dir}/rmac-session-start."
 echo "If shortcuts-status.json reports fallback-required, add this to niri config:"
 echo "include \"${fallback_path}\""

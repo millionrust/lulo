@@ -60,6 +60,7 @@ Shared crates:
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
 - `rmac-shell-status-linux` — coalesced D-Bus and PipeWire status refresh events.
 - `rmac-shell-runtime` — live top-bar/Quick Settings state, health, and last-known-good values.
+- `rmac-shortcuts` — portal/niri global shortcuts plus the fail-closed supervised session-lock boundary.
 - `rmac-quick-settings` — truthful transactions and keyboard-safe popover lifecycle.
 - `rmac-quick-settings-system` — typed quick-settings mutations and authority rereads.
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
@@ -159,6 +160,7 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`docs/gpui-current-upstream-spike.md`](docs/gpui-current-upstream-spike.md) — pinned upstream comparison and pending Linux gates.
 - [`docs/wallpaper.md`](docs/wallpaper.md) — wallpaper authority, sources, geometry, decoding, and runtime contract.
 - [`docs/decisions/0003-wallpaper-portal-authority.md`](docs/decisions/0003-wallpaper-portal-authority.md) — session versus XDG portal wallpaper ownership.
+- [`docs/decisions/0004-secure-lock-boundary.md`](docs/decisions/0004-secure-lock-boundary.md) — compositor, PAM, logind, and crash-recovery ownership for locking.
 - [`PLAN.md`](PLAN.md) and [`PARITY.md`](PARITY.md) — prototype history.
 
 ## License

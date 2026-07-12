@@ -492,6 +492,16 @@ mod tests {
         let focus = include_str!("../units/rmac-focus.service");
         assert!(focus.contains("Type=dbus"));
         assert!(focus.contains("BusName=org.rmac.Focus1"));
+
+        let lock = include_str!("../units/rmac-lock.service");
+        assert!(lock.contains("Type=notify"));
+        assert!(lock.contains("NotifyAccess=all"));
+        assert!(lock.contains("Restart=on-failure"));
+        assert!(lock.contains("StartLimitIntervalSec=0"));
+        assert!(lock.contains("KillMode=control-group"));
+        assert!(!lock.contains("OnFailure=rmac-component-failure"));
+        assert!(!lock.contains("NoNewPrivileges=yes"));
+        assert!(!lock.contains("/bin/sh"));
     }
 
     #[test]

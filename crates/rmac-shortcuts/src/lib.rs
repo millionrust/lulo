@@ -7,6 +7,8 @@ use async_channel::Sender;
 use rmac_storage::atomic_write;
 use serde::{Deserialize, Serialize};
 
+pub mod lock;
+
 pub const PORTAL_MINIMUM_VERSION: u32 = 1;
 pub const PORTAL_CONFIGURE_VERSION: u32 = 2;
 
@@ -221,9 +223,15 @@ pub fn render_niri_fallback(
     );
     output.push_str("binds {\n");
     for shortcut in shortcuts {
+        let allow_when_locked = if shortcut.id.0 == "lock" {
+            " allow-when-locked=true"
+        } else {
+            ""
+        };
         output.push_str(&format!(
-            "    {} repeat=false hotkey-overlay-title=\"{}\" {{ spawn \"{}\" \"{}\"; }}\n",
+            "    {} repeat=false{} hotkey-overlay-title=\"{}\" {{ spawn \"{}\" \"{}\"; }}\n",
             shortcut.niri_trigger,
+            allow_when_locked,
             escape_kdl(&shortcut.description),
             escape_kdl(dispatcher),
             shortcut.id.0,
@@ -269,6 +277,9 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
             Operation::Dispatch,
             format!("unknown shortcut {}", id.0),
         ));
+    }
+    if id.0 == "lock" {
+        return lock::request().map_err(|error| Error::new(Operation::Dispatch, error.to_string()));
     }
     let path = shortcut_socket_path()?;
     let socket = std::os::unix::net::UnixDatagram::unbound()
@@ -466,6 +477,8 @@ mod tests {
         assert!(!output.contains("spawn-sh"));
         assert!(!output.contains("sh -c"));
         assert!(output.contains("repeat=false"));
+        assert_eq!(output.matches("allow-when-locked=true").count(), 1);
+        assert!(output.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
     }
 
     #[test]

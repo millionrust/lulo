@@ -80,6 +80,16 @@ Automatic reference evidence collects only unit state properties and typed
 health, not journal message bodies, because application logs may contain
 private paths or content. Review journal excerpts before sharing them.
 
+## Secure locker exception
+
+`rmac-lock.service` is intentionally not a normal restart-budgeted shell
+component. It starts only on a lock request, becomes ready only after swaylock's
+compositor-confirmed readiness handshake, and restarts without a start-limit on
+failure because niri remains fail-closed when the locker disappears. Sending it
+through the ordinary safe-mode failure budget could strand an already locked
+session without an authentication provider. See `docs/secure-lock.md` and ADR
+0004 for the security and recovery boundary.
+
 ## Verification boundary
 
 Cross-platform tests parse healthy, inactive, malformed, and mismatched

@@ -290,11 +290,6 @@ struct Settings {
     // Keyboard, mouse, and trackpad
     input_loading: bool,
     input_busy: bool,
-
-    // General
-    handoff: bool,
-    airdrop_idx: usize,
-    airplay_receiver: bool,
 }
 
 enum AudioChange {
@@ -452,9 +447,6 @@ struct Persisted {
     play_on_startup: bool,
     play_ui_sounds: bool,
     alert_idx: usize,
-    handoff: bool,
-    airdrop_idx: usize,
-    airplay_receiver: bool,
 }
 
 impl Default for Persisted {
@@ -472,9 +464,6 @@ impl Default for Persisted {
             play_on_startup: true,
             play_ui_sounds: true,
             alert_idx: 0,
-            handoff: true,
-            airdrop_idx: 1,
-            airplay_receiver: false,
         }
     }
 }
@@ -531,10 +520,7 @@ impl Persisted {
                 "  \"mute\": {},\n",
                 "  \"play_on_startup\": {},\n",
                 "  \"play_ui_sounds\": {},\n",
-                "  \"alert_idx\": {},\n",
-                "  \"handoff\": {},\n",
-                "  \"airdrop_idx\": {},\n",
-                "  \"airplay_receiver\": {}\n",
+                "  \"alert_idx\": {}\n",
                 "}}\n",
             ),
             b(self.wifi_on),
@@ -549,9 +535,6 @@ impl Persisted {
             b(self.play_on_startup),
             b(self.play_ui_sounds),
             self.alert_idx,
-            b(self.handoff),
-            self.airdrop_idx,
-            b(self.airplay_receiver),
         )
     }
 
@@ -589,9 +572,6 @@ impl Persisted {
                     | "play_on_startup"
                     | "play_ui_sounds"
                     | "alert_idx"
-                    | "handoff"
-                    | "airdrop_idx"
-                    | "airplay_receiver"
             );
             if !recognized {
                 continue;
@@ -617,18 +597,12 @@ impl Persisted {
                 "play_on_startup" => p.play_on_startup = truthy,
                 "play_ui_sounds" => p.play_ui_sounds = truthy,
                 "alert_idx" => p.alert_idx = num as usize,
-                "handoff" => p.handoff = truthy,
-                "airdrop_idx" => p.airdrop_idx = num as usize,
-                "airplay_receiver" => p.airplay_receiver = truthy,
                 _ => {}
             }
         }
         // Clamp index-like fields so a corrupt file can't panic on lookup.
         if p.alert_idx >= ALERT_SOUNDS.len() {
             p.alert_idx = 0;
-        }
-        if p.airdrop_idx > 2 {
-            p.airdrop_idx = 1;
         }
         p.output_volume = p.output_volume.clamp(0.0, 100.0);
         p.alert_volume = p.alert_volume.clamp(0.0, 100.0);
@@ -1014,10 +988,6 @@ impl Settings {
 
             input_loading: true,
             input_busy: false,
-
-            handoff: saved.handoff,
-            airdrop_idx: saved.airdrop_idx,
-            airplay_receiver: saved.airplay_receiver,
         }
     }
 
@@ -2324,9 +2294,6 @@ impl Settings {
             play_on_startup: self.play_on_startup,
             play_ui_sounds: self.play_ui_sounds,
             alert_idx: self.alert_idx,
-            handoff: self.handoff,
-            airdrop_idx: self.airdrop_idx,
-            airplay_receiver: self.airplay_receiver,
         };
         self.persistence_error = snapshot
             .save()
@@ -2937,46 +2904,9 @@ impl Settings {
                     SubPage::Storage,
                 ),
             ]),
-            card(vec![switch_row(
-                "icons/folder-symlink.svg",
-                accent(),
-                "Allow Handoff between this Mac and your devices".into(),
-                None,
-                self.handoff,
-                cx,
-                |s, v| s.handoff = v,
-            )]),
-            {
-                let mut c = div()
-                    .v_flex()
-                    .mb_3()
-                    .rounded(px(10.0))
-                    .bg(card_bg())
-                    .border_1()
-                    .border_color(sep());
-                c = c.child(label_row("AirDrop", None));
-                c = c.child(div().h(px(1.0)).bg(sep()).mx_3());
-                c = c.child(
-                    segmented(
-                        view.clone(),
-                        "airdrop-seg",
-                        &["No One", "Contacts Only", "Everyone"],
-                        self.airdrop_idx,
-                        |s, i| s.airdrop_idx = i,
-                    )
-                    .p_3(),
-                );
-                c
-            },
-            card(vec![switch_row(
-                "icons/app-window.svg",
-                accent(),
-                "AirPlay Receiver".into(),
-                Some("Allow this Mac to receive AirPlay content.".into()),
-                self.airplay_receiver,
-                cx,
-                |s, v| s.airplay_receiver = v,
-            )]),
+            note_card(
+                "Device continuity and media-receiver controls are hidden until rmac has reviewed Linux service authorities for them.",
+            ),
         ];
         self.pane(cards)
     }
@@ -6715,33 +6645,12 @@ fn categories() -> Vec<Vec<Category>> {
                 "General",
                 "icons/settings.svg",
                 gray,
-                "Manage system information, updates, storage, language, startup, and sharing.",
-                vec![
-                    vec![
-                        row("icons/info.svg", gray, "About"),
-                        row("icons/refresh-cw.svg", gray, "Software Update"),
-                        row("icons/database.svg", gray, "Storage"),
-                    ],
-                    vec![row(
-                        "icons/heart-handshake.svg",
-                        red,
-                        "AppleCare & Warranty",
-                    )],
-                    vec![row(
-                        "icons/folder-symlink.svg",
-                        blue,
-                        "AirDrop & Continuity",
-                    )],
-                    vec![
-                        row("icons/key.svg", gray, "AutoFill & Passwords"),
-                        row("icons/clock.svg", gray, "Date & Time"),
-                        row("icons/languages.svg", blue, "Language & Region"),
-                        row("icons/power.svg", gray, "Login Items & Extensions"),
-                        row("icons/folder-symlink.svg", blue, "Sharing"),
-                        row("icons/hard-drive.svg", gray, "Startup Disk"),
-                        row("icons/history.svg", green, "Time Machine"),
-                    ],
-                ],
+                "View system information, update status, and storage.",
+                vec![vec![
+                    row("icons/info.svg", gray, "About"),
+                    row("icons/refresh-cw.svg", gray, "Software Update"),
+                    row("icons/database.svg", gray, "Storage"),
+                ]],
             ),
             cat(
                 "Accessibility",
@@ -6873,8 +6782,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        colon_value, notification_policy_with, os_release_value, NotificationPolicyChange,
-        Persisted,
+        categories, colon_value, notification_policy_with, os_release_value,
+        NotificationPolicyChange, Persisted,
     };
 
     #[test]
@@ -6892,9 +6801,6 @@ mod tests {
             play_on_startup: false,
             play_ui_sounds: false,
             alert_idx: 5,
-            handoff: false,
-            airdrop_idx: 2,
-            airplay_receiver: true,
         };
 
         let parsed = Persisted::parse(&expected.to_json()).unwrap();
@@ -6915,8 +6821,7 @@ mod tests {
                 "output_volume": 999,
                 "alert_volume": -10,
                 "balance": 101,
-                "alert_idx": 999,
-                "airdrop_idx": 999
+                "alert_idx": 999
             }"#,
         )
         .unwrap();
@@ -6925,7 +6830,6 @@ mod tests {
         assert_eq!(parsed.alert_volume, 0.0);
         assert_eq!(parsed.balance, 100.0);
         assert_eq!(parsed.alert_idx, 0);
-        assert_eq!(parsed.airdrop_idx, 1);
     }
 
     #[test]
@@ -6939,6 +6843,31 @@ mod tests {
         assert!(!serialized.contains("accent_idx"));
         assert!(!serialized.contains("show_color_in_menu"));
         assert!(!serialized.contains("large_sidebar"));
+    }
+
+    #[test]
+    fn legacy_apple_continuity_state_is_ignored_and_hidden() {
+        let parsed =
+            Persisted::parse(r#"{"handoff":1,"airdrop_idx":2,"airplay_receiver":1,"wifi_on":0}"#)
+                .unwrap();
+        assert!(!parsed.wifi_on);
+        let serialized = parsed.to_json();
+        for legacy in ["handoff", "airdrop_idx", "airplay_receiver"] {
+            assert!(!serialized.contains(legacy));
+        }
+
+        let general = categories()
+            .into_iter()
+            .flatten()
+            .find(|category| category.name.to_string() == "General")
+            .unwrap();
+        let labels = general
+            .cards
+            .into_iter()
+            .flatten()
+            .map(|row| row.label.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["About", "Software Update", "Storage"]);
     }
 
     #[test]

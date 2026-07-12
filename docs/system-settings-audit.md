@@ -13,7 +13,7 @@ equivalents rather than simulated.
 | Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
 | Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
-| General/About | Platform identity snapshot | os-release, sysinfo, DMI | Kernel detail and live hostname mutation |
+| General/About | Platform identity snapshot plus truthful read-only Update and Storage destinations; local-only Handoff/AirDrop/AirPlay state and Apple-only rows removed | os-release, sysinfo, DMI | Kernel detail, privacy-safe diagnostics, and live hostname mutation |
 | Software Update | Placeholder | Ubuntu update services | Check, progress, restart requirements; privileged actions via polkit |
 | Storage | macOS-shaped `df` snapshot | Filesystem/mount service | Per-volume usage and safe cleanup guidance |
 | Date & Time | Placeholder | timedate1 D-Bus | Time zone, automatic time, clock settings |
@@ -47,3 +47,11 @@ equivalents rather than simulated.
 
 Every pane keeps slow I/O off the first-frame/UI thread, consumes typed service
 snapshots, and must not persist a local toggle as a substitute for system state.
+
+General now exposes only About, the explicitly read-only Software Update status,
+and measured Storage. Device-continuity and media-receiver controls are hidden
+until reviewed Linux service authorities exist. Legacy `handoff`, `airdrop_idx`,
+and `airplay_receiver` keys remain harmless unknown input for migration, are not
+loaded into UI state, and disappear on the next legitimate save. AppleCare,
+AutoFill, Startup Disk, and Time Machine rows are absent rather than mapped to
+generic clickable placeholders.

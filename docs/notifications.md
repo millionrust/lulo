@@ -204,13 +204,24 @@ reconnect with bounded delay, and retain last-known-good indicator state while
 the authority restarts. A D-Bus activation entry routes the internal name to
 the already supervised notification-center process.
 
+The private interface also provides authenticated `Applications`, `MarkRead`,
+`Clear`, and `SetPolicy` methods. Empty app scope means “all”; non-empty IDs are
+validated by the notification domain. Application projection is bounded and
+combines explicit policies with apps that currently have history, applying
+truthful defaults where no override exists. Policy wire values cover enabled,
+banners, sounds, badges, history, urgent Focus bypass, and lock-screen preview;
+unknown preview values fail closed. Mutations execute off the D-Bus dispatch
+thread, atomically save the refreshed Center, emit indicator/policy signals,
+and return refreshed state. If saving fails, live state and signals remain
+truthful while the caller receives an actionable persistence error.
+
 ## Next adapters and surfaces
 
 1. E1 media/evidence completion: validate icon and custom-sound descriptors and
    prove both interfaces on the Linux reference PC.
 2. E2 layer-surface renderer: render the runtime snapshot with real hover,
    keyboard, action, activation-token, and multi-output evidence on Linux.
-3. E3 Notification Center UI: expose the persisted groups, clear/read actions,
-   per-app policy mutations, and publish `Indicator` to shell status.
+3. E3 Notification Center UI: render persisted groups and connect its existing
+   clear/read/policy authority with keyboard, focus, and Linux evidence.
 4. E4 Focus UI: expose mode, schedule, duration, and allow-list editing through
    the single-writer authority and prove real delivery behavior on Linux.

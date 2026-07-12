@@ -118,19 +118,36 @@ impl Center {
         self.policies.get(app_id).copied().unwrap_or_default()
     }
 
-    pub fn set_policy(&mut self, app_id: AppId, policy: AppPolicy) -> Result<(), Error> {
+    pub fn set_policy(&mut self, app_id: AppId, policy: AppPolicy) -> Result<bool, Error> {
         if !self.policies.contains_key(&app_id) && self.policies.len() >= MAX_POLICIES {
             return Err(Error::new(Operation::Validate, ErrorKind::Limit));
         }
+        let changed = self.policies.get(&app_id).copied() != Some(policy);
         self.policies.insert(app_id.clone(), policy);
         if !policy.history || !policy.enabled {
             self.clear(Some(&app_id));
         }
-        Ok(())
+        Ok(changed)
     }
 
     pub fn policies(&self) -> impl Iterator<Item = (&AppId, &AppPolicy)> {
         self.policies.iter()
+    }
+
+    pub fn applications(&self) -> Vec<(AppId, AppPolicy)> {
+        let app_ids: BTreeSet<_> = self
+            .policies
+            .keys()
+            .chain(self.history.iter().map(|record| record.source.app_id()))
+            .cloned()
+            .collect();
+        app_ids
+            .into_iter()
+            .map(|app_id| {
+                let policy = self.policy(&app_id);
+                (app_id, policy)
+            })
+            .collect()
     }
 
     pub fn upsert(&mut self, notification: Notification) {
@@ -149,13 +166,15 @@ impl Center {
         self.enforce_bounds(&app_id);
     }
 
-    pub fn clear(&mut self, app_id: Option<&AppId>) {
+    pub fn clear(&mut self, app_id: Option<&AppId>) -> bool {
+        let before = self.history.len();
         match app_id {
             Some(app_id) => self
                 .history
                 .retain(|record| record.source.app_id() != app_id),
             None => self.history.clear(),
         }
+        self.history.len() != before
     }
 
     pub fn remove(&mut self, id: NotificationId) -> bool {
@@ -164,12 +183,15 @@ impl Center {
         self.history.len() != before
     }
 
-    pub fn mark_all_read(&mut self, app_id: Option<&AppId>) {
+    pub fn mark_all_read(&mut self, app_id: Option<&AppId>) -> bool {
+        let mut changed = false;
         for record in &mut self.history {
             if app_id.is_none_or(|app_id| record.source.app_id() == app_id) {
+                changed |= record.unread;
                 record.unread = false;
             }
         }
+        changed
     }
 
     pub fn indicator(&self) -> Indicator {

@@ -32,6 +32,7 @@ pub struct HistoryAuthority {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RecordOutcome {
     pub indicator: rmac_notifications::Indicator,
+    pub changed: bool,
     pub persisted: bool,
 }
 
@@ -111,17 +112,69 @@ impl HistoryAuthority {
             }
         };
         if changed {
-            let snapshot = self
-                .center
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .clone();
-            Some(RecordOutcome {
-                indicator: snapshot.indicator(),
-                persisted: self.store.save(&snapshot).is_ok(),
-            })
+            Some(self.finish(true))
         } else {
             None
+        }
+    }
+
+    fn applications(&self) -> Vec<(String, crate::center::WireAppPolicy)> {
+        self.center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .applications()
+            .into_iter()
+            .map(|(app_id, policy)| {
+                (
+                    app_id.as_str().to_owned(),
+                    crate::center::encode_policy(policy),
+                )
+            })
+            .collect()
+    }
+
+    fn mark_read(&self, app_id: Option<&AppId>) -> RecordOutcome {
+        let changed = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .mark_all_read(app_id);
+        self.finish(changed)
+    }
+
+    fn clear(&self, app_id: Option<&AppId>) -> RecordOutcome {
+        let changed = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear(app_id);
+        self.finish(changed)
+    }
+
+    fn set_policy(
+        &self,
+        app_id: AppId,
+        policy: rmac_notifications_store::AppPolicy,
+    ) -> Result<RecordOutcome, ServiceError> {
+        let changed = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .set_policy(app_id, policy)
+            .map_err(|_| ServiceError::Invalid)?;
+        Ok(self.finish(changed))
+    }
+
+    fn finish(&self, changed: bool) -> RecordOutcome {
+        let snapshot = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        RecordOutcome {
+            indicator: snapshot.indicator(),
+            changed,
+            persisted: !changed || self.store.save(&snapshot).is_ok(),
         }
     }
 
@@ -146,18 +199,112 @@ impl CenterInterface {
         Ok((indicator.unread_count, indicator.has_urgent))
     }
 
+    fn applications(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<(String, crate::center::WireAppPolicy)>> {
+        authenticated_sender(&header)?;
+        Ok(self.history.applications())
+    }
+
+    async fn mark_read(
+        &self,
+        app_id: &str,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<(u32, bool)> {
+        authenticated_sender(&header)?;
+        let app_id = optional_app_id(app_id)?;
+        let history = self.history.clone();
+        let outcome = blocking::unblock(move || history.mark_read(app_id.as_ref())).await;
+        complete_center_mutation(&emitter, outcome, false).await
+    }
+
+    async fn clear(
+        &self,
+        app_id: &str,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<(u32, bool)> {
+        authenticated_sender(&header)?;
+        let app_id = optional_app_id(app_id)?;
+        let history = self.history.clone();
+        let outcome = blocking::unblock(move || history.clear(app_id.as_ref())).await;
+        complete_center_mutation(&emitter, outcome, false).await
+    }
+
+    async fn set_policy(
+        &self,
+        app_id: &str,
+        policy: crate::center::WireAppPolicy,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<(u32, bool)> {
+        authenticated_sender(&header)?;
+        let app_id = AppId::parse(app_id).map_err(|_| center_invalid())?;
+        let policy = crate::center::decode_policy(policy).map_err(|_| center_invalid())?;
+        let history = self.history.clone();
+        let outcome = blocking::unblock(move || history.set_policy(app_id, policy))
+            .await
+            .map_err(|_| center_invalid())?;
+        complete_center_mutation(&emitter, outcome, true).await
+    }
+
     #[zbus(signal)]
     async fn changed(
         emitter: &SignalEmitter<'_>,
         unread_count: u32,
         has_urgent: bool,
     ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    async fn policies_changed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+}
+
+fn optional_app_id(value: &str) -> fdo::Result<Option<AppId>> {
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        AppId::parse(value).map(Some).map_err(|_| center_invalid())
+    }
+}
+
+async fn complete_center_mutation(
+    emitter: &SignalEmitter<'_>,
+    outcome: RecordOutcome,
+    policy_changed: bool,
+) -> fdo::Result<(u32, bool)> {
+    if outcome.changed {
+        CenterInterface::changed(
+            emitter,
+            outcome.indicator.unread_count,
+            outcome.indicator.has_urgent,
+        )
+        .await
+        .map_err(fdo::Error::ZBus)?;
+        if policy_changed {
+            CenterInterface::policies_changed(emitter)
+                .await
+                .map_err(fdo::Error::ZBus)?;
+        }
+    }
+    if !outcome.persisted {
+        return Err(fdo::Error::Failed(
+            "Notification Center changed but could not be saved".into(),
+        ));
+    }
+    Ok((outcome.indicator.unread_count, outcome.indicator.has_urgent))
+}
+
+fn center_invalid() -> fdo::Error {
+    fdo::Error::InvalidArgs("Notification Center request is invalid".into())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceError {
     History,
     Bus,
+    Invalid,
 }
 
 impl std::fmt::Display for ServiceError {
@@ -1020,6 +1167,59 @@ mod tests {
     }
 
     #[test]
+    fn center_mutations_refresh_from_one_persisted_authority() {
+        let path = history_path("mutations");
+        let history = HistoryAuthority::empty_at(path.clone());
+        let core = SharedCore::new(10, TimeoutPolicy::default());
+        let request = protocol::portal(PortalInput {
+            app_id: "org.example.App".into(),
+            id: "one".into(),
+            title: Some("Private title".into()),
+            ..PortalInput::default()
+        })
+        .unwrap();
+        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        history
+            .record(&RuntimeEvent::Posted {
+                outcome,
+                notification,
+            })
+            .unwrap();
+        let applications = history.applications();
+        assert_eq!(applications.len(), 1);
+        assert_ne!(applications[0].0, "");
+
+        let app_id = AppId::parse("org.example.App").unwrap();
+        let read = history.mark_read(Some(&app_id));
+        assert!(read.changed);
+        assert!(read.persisted);
+        assert_eq!(read.indicator.unread_count, 0);
+
+        let policy = rmac_notifications_store::AppPolicy {
+            banners: false,
+            sounds: false,
+            ..rmac_notifications_store::AppPolicy::default()
+        };
+        let changed = history.set_policy(app_id.clone(), policy).unwrap();
+        assert!(changed.changed);
+        assert!(changed.persisted);
+        assert_eq!(
+            history.applications()[0].1,
+            crate::center::encode_policy(policy)
+        );
+
+        let cleared = history.clear(Some(&app_id));
+        assert!(cleared.changed);
+        assert!(cleared.persisted);
+        let loaded = rmac_notifications_store::Store::at(path.clone())
+            .load()
+            .unwrap();
+        assert_eq!(loaded.center.policy(&app_id), policy);
+        assert_eq!(loaded.center.indicator().unread_count, 0);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn public_protocol_metadata_is_truthful() {
         assert_eq!(protocol_categories().len(), 14);
         assert_eq!(protocol_button_purposes().len(), 7);
@@ -1065,7 +1265,12 @@ mod tests {
         center.introspect_to_writer(&mut center_xml, 0);
         assert!(center_xml.contains("org.rmac.NotificationCenter1"));
         assert!(center_xml.contains("method name=\"State\""));
+        assert!(center_xml.contains("method name=\"Applications\""));
+        assert!(center_xml.contains("method name=\"MarkRead\""));
+        assert!(center_xml.contains("method name=\"Clear\""));
+        assert!(center_xml.contains("method name=\"SetPolicy\""));
         assert!(center_xml.contains("signal name=\"Changed\""));
+        assert!(center_xml.contains("signal name=\"PoliciesChanged\""));
     }
 
     #[test]

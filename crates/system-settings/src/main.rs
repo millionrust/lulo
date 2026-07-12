@@ -260,11 +260,6 @@ struct Settings {
     input_volume_generation: u64,
     output_volume: Entity<SliderState>,
     input_volume: Entity<SliderState>,
-    alert_volume: Entity<SliderState>,
-    balance: Entity<SliderState>,
-    play_on_startup: bool,
-    play_ui_sounds: bool,
-    alert_idx: usize,
 
     // Battery and power profiles
     power_loading: bool,
@@ -393,16 +388,6 @@ const ACCENTS: &[(&str, u32)] = &[
     ("Graphite", 0x8e8e93),
 ];
 
-const ALERT_SOUNDS: &[&str] = &[
-    "Boop",
-    "Breeze",
-    "Bubble",
-    "Crystal",
-    "Funk",
-    "Heroine",
-    "Submarine",
-];
-
 const FOCUS_DAYS: [(rmac_focus::Weekday, &str); 7] = [
     (rmac_focus::Weekday::Monday, "M"),
     (rmac_focus::Weekday::Tuesday, "T"),
@@ -429,12 +414,7 @@ struct Persisted {
     bluetooth_on: bool,
     bt_discoverable: bool,
     output_volume: f32,
-    alert_volume: f32,
-    balance: f32,
     mute: bool,
-    play_on_startup: bool,
-    play_ui_sounds: bool,
-    alert_idx: usize,
 }
 
 impl Default for Persisted {
@@ -446,12 +426,7 @@ impl Default for Persisted {
             bluetooth_on: true,
             bt_discoverable: true,
             output_volume: 72.0,
-            alert_volume: 55.0,
-            balance: 50.0,
             mute: false,
-            play_on_startup: true,
-            play_ui_sounds: true,
-            alert_idx: 0,
         }
     }
 }
@@ -503,12 +478,7 @@ impl Persisted {
                 "  \"bluetooth_on\": {},\n",
                 "  \"bt_discoverable\": {},\n",
                 "  \"output_volume\": {},\n",
-                "  \"alert_volume\": {},\n",
-                "  \"balance\": {},\n",
-                "  \"mute\": {},\n",
-                "  \"play_on_startup\": {},\n",
-                "  \"play_ui_sounds\": {},\n",
-                "  \"alert_idx\": {}\n",
+                "  \"mute\": {}\n",
                 "}}\n",
             ),
             b(self.wifi_on),
@@ -517,12 +487,7 @@ impl Persisted {
             b(self.bluetooth_on),
             b(self.bt_discoverable),
             self.output_volume,
-            self.alert_volume,
-            self.balance,
             b(self.mute),
-            b(self.play_on_startup),
-            b(self.play_ui_sounds),
-            self.alert_idx,
         )
     }
 
@@ -554,12 +519,7 @@ impl Persisted {
                     | "bluetooth_on"
                     | "bt_discoverable"
                     | "output_volume"
-                    | "alert_volume"
-                    | "balance"
                     | "mute"
-                    | "play_on_startup"
-                    | "play_ui_sounds"
-                    | "alert_idx"
             );
             if !recognized {
                 continue;
@@ -579,22 +539,11 @@ impl Persisted {
                 "bluetooth_on" => p.bluetooth_on = truthy,
                 "bt_discoverable" => p.bt_discoverable = truthy,
                 "output_volume" => p.output_volume = num as f32,
-                "alert_volume" => p.alert_volume = num as f32,
-                "balance" => p.balance = num as f32,
                 "mute" => p.mute = truthy,
-                "play_on_startup" => p.play_on_startup = truthy,
-                "play_ui_sounds" => p.play_ui_sounds = truthy,
-                "alert_idx" => p.alert_idx = num as usize,
                 _ => {}
             }
         }
-        // Clamp index-like fields so a corrupt file can't panic on lookup.
-        if p.alert_idx >= ALERT_SOUNDS.len() {
-            p.alert_idx = 0;
-        }
         p.output_volume = p.output_volume.clamp(0.0, 100.0);
-        p.alert_volume = p.alert_volume.clamp(0.0, 100.0);
-        p.balance = p.balance.clamp(0.0, 100.0);
         Ok(p)
     }
 }
@@ -638,28 +587,10 @@ impl Settings {
         })
         .ok();
 
-        // Shell-owned sliders persist locally. System audio sliders are created
-        // separately below and write through the platform audio service.
-        let mk_slider = |cx: &mut Context<Self>, val: f32| {
-            let s = cx.new(|_| {
-                SliderState::new()
-                    .min(0.0)
-                    .max(100.0)
-                    .step(1.0)
-                    .default_value(val)
-            });
-            cx.observe(&s, |this, _, cx| {
-                this.persist(cx);
-                cx.notify();
-            })
-            .detach();
-            s
-        };
+        // System audio sliders write through the platform audio service.
         let output_volume =
             Self::audio_slider(cx, saved.output_volume, rmac_audio::DeviceKind::Output);
         let input_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Input);
-        let alert_volume = mk_slider(cx, saved.alert_volume);
-        let balance = mk_slider(cx, saved.balance);
 
         // Hardware discovery launches multiple platform commands, including
         // system_profiler. Keep it off the first-frame path and redraw once the
@@ -961,11 +892,6 @@ impl Settings {
             input_volume_generation: 0,
             output_volume,
             input_volume,
-            alert_volume,
-            balance,
-            play_on_startup: saved.play_on_startup,
-            play_ui_sounds: saved.play_ui_sounds,
-            alert_idx: saved.alert_idx,
 
             power_loading: true,
             power_busy: false,
@@ -2276,12 +2202,7 @@ impl Settings {
             bluetooth_on: self.bluetooth_on,
             bt_discoverable: self.bt_discoverable,
             output_volume: self.output_volume.read(cx).value().start(),
-            alert_volume: self.alert_volume.read(cx).value().start(),
-            balance: self.balance.read(cx).value().start(),
             mute: self.audio.output.muted,
-            play_on_startup: self.play_on_startup,
-            play_ui_sounds: self.play_ui_sounds,
-            alert_idx: self.alert_idx,
         };
         self.persistence_error = snapshot
             .save()
@@ -3901,7 +3822,6 @@ impl Settings {
         let view = cx.entity();
         let out = self.output_volume.read(cx).value().start().round() as i32;
         let input = self.input_volume.read(cx).value().start().round() as i32;
-        let alert = self.alert_volume.read(cx).value().start().round() as i32;
         let refresh_view = view.clone();
         let mut cards = vec![div()
             .flex()
@@ -4016,60 +3936,8 @@ impl Settings {
             ));
         }
 
-        let alert_card = div()
-            .v_flex()
-            .mb_3()
-            .rounded(px(10.0))
-            .bg(card_bg())
-            .border_1()
-            .border_color(sep())
-            .child(label_row(
-                "Alert sound",
-                Some(ALERT_SOUNDS[self.alert_idx].into()),
-            ))
-            .child(div().h(px(1.0)).bg(sep()).mx_3())
-            .child(
-                segmented_dynamic(
-                    view.clone(),
-                    "alert-seg",
-                    ALERT_SOUNDS,
-                    self.alert_idx,
-                    |s, i| s.alert_idx = i,
-                )
-                .p_3(),
-            )
-            .child(div().h(px(1.0)).bg(sep()).mx_3())
-            .child(slider_row(
-                "Alert volume",
-                &self.alert_volume,
-                format!("{alert}%").into(),
-            ));
-
-        let toggles = card(vec![
-            switch_row(
-                "icons/power.svg",
-                secondary(),
-                "Play sound on startup".into(),
-                None,
-                self.play_on_startup,
-                cx,
-                |s, v| s.play_on_startup = v,
-            ),
-            switch_row(
-                "icons/bell.svg",
-                secondary(),
-                "Play user interface sound effects".into(),
-                None,
-                self.play_ui_sounds,
-                cx,
-                |s, v| s.play_ui_sounds = v,
-            ),
-        ]);
-        cards.push(section_header("rmac Sounds"));
-        cards.push(alert_card);
-        cards.push(toggles);
         cards.push(note_card(
-            "Output, microphone, and default devices use the system audio service. Alert sounds and interface effects belong to the rmac desktop session.",
+            "Output, microphone, and default devices use the system audio service. Session alert sounds and interface effects stay hidden until the rmac sound policy service exists.",
         ));
         self.pane(cards)
     }
@@ -6729,12 +6597,7 @@ mod tests {
             bluetooth_on: false,
             bt_discoverable: false,
             output_volume: 31.0,
-            alert_volume: 42.0,
-            balance: 63.0,
             mute: true,
-            play_on_startup: false,
-            play_ui_sounds: false,
-            alert_idx: 5,
         };
 
         let parsed = Persisted::parse(&expected.to_json()).unwrap();
@@ -6752,18 +6615,12 @@ mod tests {
     fn persisted_ranges_are_safe_for_ui_controls() {
         let parsed = Persisted::parse(
             r#"{
-                "output_volume": 999,
-                "alert_volume": -10,
-                "balance": 101,
-                "alert_idx": 999
+                "output_volume": 999
             }"#,
         )
         .unwrap();
 
         assert_eq!(parsed.output_volume, 100.0);
-        assert_eq!(parsed.alert_volume, 0.0);
-        assert_eq!(parsed.balance, 100.0);
-        assert_eq!(parsed.alert_idx, 0);
     }
 
     #[test]
@@ -6802,6 +6659,25 @@ mod tests {
             .map(|row| row.label.to_string())
             .collect::<Vec<_>>();
         assert_eq!(labels, ["About", "Software Update", "Storage"]);
+    }
+
+    #[test]
+    fn legacy_local_sound_state_is_ignored_and_not_rewritten() {
+        let parsed = Persisted::parse(
+            r#"{"alert_volume":42,"balance":63,"play_on_startup":1,"play_ui_sounds":1,"alert_idx":5,"output_volume":31}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.output_volume, 31.0);
+        let serialized = parsed.to_json();
+        for legacy in [
+            "alert_volume",
+            "balance",
+            "play_on_startup",
+            "play_ui_sounds",
+            "alert_idx",
+        ] {
+            assert!(!serialized.contains(legacy));
+        }
     }
 
     #[test]

@@ -28,7 +28,7 @@ equivalents rather than simulated.
 | Spotlight | Placeholder | rmac-search | Sources, exclusions, indexing state, global shortcut |
 | Wallpaper | Placeholder | rmac shell | Per-output wallpaper selection and persistence |
 | Notifications | Live service-backed app/policy list with desktop-entry names/icons plus allow/block, top-bar badge, and history controls with separate stream/mutation errors | `org.rmac.NotificationCenter1` plus live XDG app catalog | Banner/sound UI after presentation exists, per-app lock-preview controls after a PAM-capable provider exists, scoped GPUI build, and Linux interaction/accessibility evidence |
-| Sound | Real devices, defaults, volume, and mute | PipeWire/WirePlumber | Live signals, routes, and per-channel balance |
+| Sound | Real devices, defaults, volume, and mute; local-only alert/startup/UI-sound controls removed | PipeWire/WirePlumber | Live signals, routes, authoritative session sound policy, and per-channel balance |
 | Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Hidden from production navigation | No service selected | Usage model only after a local-first privacy design |
@@ -61,3 +61,9 @@ navigation because neither has an accepted local-first privacy/service design.
 Required roadmap destinations that do not yet have a dedicated renderer show
 one explicit unavailable explanation; the old generic rows and clickable
 placeholder subpages have been removed.
+
+Sound now renders only controls backed by the system audio service. The former
+alert-sound picker, alert volume, startup sound, UI-effect toggles, and unused
+balance state were local persistence pretending to be session policy; they are
+hidden until an authoritative rmac sound-policy service exists. Their legacy
+keys are ignored and disappear on the next valid save.

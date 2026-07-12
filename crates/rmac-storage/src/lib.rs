@@ -182,6 +182,55 @@ pub fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
     result
 }
 
+/// Atomically replace a private state file.
+///
+/// On Unix, the temporary file is created as `0600` before any content is
+/// written and remains `0600` after replacement, regardless of umask or prior
+/// target permissions. Use this for notification content, recent-item data,
+/// and other user-private state—not user-authored documents whose permissions
+/// should be preserved.
+pub fn atomic_write_private(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "target has no parent directory",
+        )
+    })?;
+    let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("private-data");
+    let temporary = parent.join(format!(".{name}.tmp-{}-{sequence}", std::process::id()));
+
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temporary, path)?;
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
 /// Copy to a newly created destination and never overwrite an existing path.
 /// A copy/sync/permission failure removes only the destination created by this
 /// invocation, leaving no partial attachment behind.
@@ -236,6 +285,28 @@ mod tests {
         atomic_write(&target, b"after").unwrap();
 
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "after");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_atomic_write_never_inherits_a_public_target_mode() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let root = temp_root("private-atomic");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("notifications.json");
+        std::fs::write(&target, "before").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        atomic_write_private(&target, b"private notification").unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"private notification");
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
         std::fs::remove_dir_all(root).unwrap();
     }

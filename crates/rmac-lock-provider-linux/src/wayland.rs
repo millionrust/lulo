@@ -31,9 +31,11 @@ use wayland_protocols::ext::session_lock::v1::client::{
 use crate::key_repeat::RepeatScheduler;
 use crate::keyboard::DecodedKey;
 use crate::paint::{LockPalette, LockVisualState};
+use crate::prompt_label::PromptText;
 use crate::registry_probe;
 use crate::shm::{Error as ShmError, ShmFrame};
 use crate::surface::{BufferId, Error as SurfaceError, SurfaceSet};
+use crate::text_renderer::{Error as TextRendererError, LockTextRenderer};
 use crate::xkb_keyboard::{Error as XkbError, KeyboardDecoder};
 use rmac_lock_provider::{OutputId, UnlockAuthorization};
 
@@ -264,8 +266,12 @@ impl LockConnection {
         self.inner.state.events.drain(..)
     }
 
-    pub(crate) fn set_visual_state(&mut self, visual: LockVisualState) {
-        self.inner.state.set_visual_state(visual);
+    pub(crate) fn set_visual_state(
+        &mut self,
+        visual: LockVisualState,
+        prompt: Option<PromptText<'_>>,
+    ) {
+        self.inner.state.set_visual_state(visual, prompt);
     }
 
     /// Send the authenticated unlock request and wait for a display-sync
@@ -419,7 +425,6 @@ impl WireLockPhase {
     }
 }
 
-#[derive(Default)]
 struct PreparedState {
     compositor: Option<RequiredBinding<wl_compositor::WlCompositor>>,
     shm: Option<RequiredBinding<wl_shm::WlShm>>,
@@ -430,6 +435,24 @@ struct PreparedState {
     events: VecDeque<PreparedEvent>,
     failure: Option<PreparedStateError>,
     locking: Option<LockingState>,
+    text_renderer: LockTextRenderer,
+}
+
+impl Default for PreparedState {
+    fn default() -> Self {
+        Self {
+            compositor: None,
+            shm: None,
+            manager: None,
+            outputs: BTreeMap::new(),
+            seats: BTreeMap::new(),
+            surfaces: SurfaceSet::new(),
+            events: VecDeque::new(),
+            failure: None,
+            locking: None,
+            text_renderer: LockTextRenderer::default(),
+        }
+    }
 }
 
 impl PreparedState {
@@ -796,11 +819,14 @@ impl PreparedState {
         }
     }
 
-    fn set_visual_state(&mut self, visual: LockVisualState) {
+    fn set_visual_state(&mut self, visual: LockVisualState, prompt: Option<PromptText<'_>>) {
+        let text_changed = self
+            .text_renderer
+            .update(prompt, visual.authentication_failed());
         let Some(locking) = &mut self.locking else {
             return;
         };
-        if locking.visual == visual || !locking.phase.accepts_surfaces() {
+        if (locking.visual == visual && !text_changed) || !locking.phase.accepts_surfaces() {
             return;
         }
         locking.visual = visual;
@@ -866,7 +892,16 @@ impl PreparedState {
             .as_ref()
             .map(|locking| locking.visual)
             .unwrap_or_default();
-        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT, visual) {
+        let text = match self.text_renderer.raster(plan.layout()) {
+            Ok(text) => text,
+            Err(error) => {
+                self.surfaces
+                    .abandon_render(plan)
+                    .map_err(WireError::Surface)?;
+                return Err(WireError::Text(error));
+            }
+        };
+        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT, visual, text.as_ref()) {
             Ok(frame) => frame,
             Err(error) => {
                 self.surfaces
@@ -1432,6 +1467,7 @@ pub(crate) enum WireError {
     State(WireStateError),
     Surface(SurfaceError),
     Shm(ShmError),
+    Text(TextRendererError),
 }
 
 impl fmt::Display for WireError {
@@ -1450,6 +1486,7 @@ impl std::error::Error for WireError {
             Self::Poll(error) => Some(error),
             Self::Surface(error) => Some(error),
             Self::Shm(error) => Some(error),
+            Self::Text(error) => Some(error),
             Self::PreparedState(_) | Self::State(_) => None,
         }
     }

@@ -127,13 +127,17 @@ the one-shot unlock boundary, wrong-password retry, cancellation followed by
 worker drain, queued input reuse, stale completion rejection, worker panic,
 compositor finish, and bounded/redacted pre-prompt input. The Linux pump compiles
 against the real `Worker` and never joins it until `JoinHandle::is_finished` is
-true. Presentation tests verify that the renderer receives only prompt category,
-a capped indicator count or selection, and failure state; debug output redacts
-those values. Portable process tests prove readiness/hint ordering and distinguish
-authenticated unlock from compositor denial and post-lock failure. The
-feature-gated Linux runner derives its PAM name from the exact logind session
-only after verifying session ownership. The native Ubuntu matrix remains
-required.
+true. Presentation tests verify that the renderer receives prompt category, a
+capped indicator count or selection, failure state, and a separately bounded
+presentation label—not response bytes. Tests cover invalid UTF-8 fallback,
+Unicode preservation, whitespace normalization, bidi-control removal,
+scalar-safe truncation, alpha-mask bounds, and diagnostic redaction. A
+Linux-only test requires installed fonts to shape, rasterize, cache, and redact
+a mixed-script prompt. Portable process tests prove readiness/hint ordering and
+distinguish authenticated unlock from compositor denial and post-lock failure.
+The feature-gated Linux runner derives its PAM name from the exact logind
+session only after verifying session ownership. The native Ubuntu matrix
+remains required.
 
 `cargo deny 0.19.8 check` passed advisories, bans, licenses, and sources for the
 admitted lockfile on 2026-07-12.

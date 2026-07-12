@@ -5107,6 +5107,7 @@ version = "0.1.0"
 name = "rmac-lock-provider-linux"
 version = "0.1.0"
 dependencies = [
+ "cosmic-text",
  "libc",
  "pam-sys2",
  "rmac-lock-provider",

@@ -16,6 +16,8 @@ use crate::keyboard::{DecodedKey, EditError, EditOutcome, PromptEditor};
 use crate::paint::{LockVisualState, PromptVisual};
 use crate::pam_broker::PendingPrompt;
 use crate::pam_conversation::RequestKind;
+#[cfg(any(target_os = "linux", test))]
+use crate::prompt_label::PromptText;
 
 const MAX_QUEUED_INPUTS: usize = 32;
 #[cfg(any(target_os = "linux", test))]
@@ -85,6 +87,23 @@ impl Coordinator {
                     RequestKind::Binary => PromptVisual::Binary,
                 });
         LockVisualState::new(prompt, self.authentication_failed_visible)
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn with_presentation<R>(
+        &self,
+        use_presentation: impl FnOnce(LockVisualState, Option<PromptText<'_>>) -> R,
+    ) -> R {
+        let visual = self.visual_state();
+        let Some(prompt) = self.editor.as_ref().and_then(PromptEditor::prompt) else {
+            return use_presentation(visual, None);
+        };
+        prompt.text(|text| {
+            use_presentation(
+                visual,
+                Some(PromptText::new(prompt.id(), prompt.kind(), text)),
+            )
+        })
     }
 
     pub fn apply(&mut self, event: RuntimeEvent) -> Result<RuntimeActions, Error> {
@@ -533,7 +552,9 @@ pub(crate) mod linux {
             status: &mut RuntimeStatus,
         ) -> Result<(), LinuxError> {
             if actions.prompt_changed || actions.authentication_failed {
-                self.wire.set_visual_state(self.coordinator.visual_state());
+                let wire = &mut self.wire;
+                self.coordinator
+                    .with_presentation(|visual, prompt| wire.set_visual_state(visual, prompt));
             }
             if let Some(attempt) = actions.start_authentication.take() {
                 if self.authentication.is_some() {
@@ -712,6 +733,14 @@ mod tests {
         let worker = thread::spawn(move || conversation.respond(Request::EchoOff(c"Password:")));
         let pending = ui.prompt_timeout(WAIT).unwrap().unwrap();
         coordinator.apply(RuntimeEvent::Prompt(pending)).unwrap();
+        coordinator.with_presentation(|_, prompt| {
+            let label = crate::prompt_label::PromptLabel::from_prompt(prompt.unwrap());
+            label.expose(|value| assert_eq!(value, "Password:"));
+            assert_eq!(
+                format!("{label:?}"),
+                "PromptLabel { key: \"<redacted>\", value: \"<redacted>\" }"
+            );
+        });
         assert!(matches!(
             coordinator.visual_state().prompt(),
             PromptVisual::Secret { dots: 0 }

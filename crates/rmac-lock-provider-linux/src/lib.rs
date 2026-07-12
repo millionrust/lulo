@@ -16,6 +16,8 @@ pub mod pam_broker;
 pub mod pam_conversation;
 #[cfg(any(test, all(target_os = "linux", feature = "development-provider")))]
 mod process;
+#[cfg(any(target_os = "linux", test))]
+mod prompt_label;
 pub mod runtime;
 pub mod surface;
 
@@ -24,6 +26,9 @@ pub mod pam;
 
 #[cfg(target_os = "linux")]
 pub mod shm;
+
+#[cfg(target_os = "linux")]
+mod text_renderer;
 
 #[cfg(target_os = "linux")]
 pub mod wayland;

@@ -132,7 +132,7 @@ UID against the process, derives its PAM user name, sets the advisory locked
 hint before systemd readiness, and clears the hint only after authenticated
 unlock plus the display-sync barrier. Pure lifecycle tests reject impossible
 ordering and preserve the hint on post-lock failure. The process has no shipped
-unit and does not yet own localized prompt text or validated recovery.
+unit and does not yet have Linux-validated localized prompt shaping or recovery.
 
 Recovery development uses two non-enabled evidence-only units, never the
 shipping unit name. The custom unit has a bounded restart burst; a distinct
@@ -143,15 +143,20 @@ without unlocking, then complete authentication through swaylock. This proves
 the intended recovery sequence only when run on Linux; committed unit/script
 tests prove configuration separation but are not runtime evidence.
 
-The initial renderer is an opaque, dependency-free CPU composition written in
-bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after
+The initial renderer is an opaque CPU composition written in bounded chunks.
+Its Linux backing is a no-exec anonymous file, immutable after
 painting through kernel seals, and owned with its redacted buffer token. The
 wire preserves that ownership until the compositor's release event; rendering
-completion alone never authorizes readiness or unlock. A copyable presentation
-snapshot contains only prompt category, a capped indicator count or selection,
-and failure state. Snapshot changes repaint configured outputs with abstract
-indicators; PAM prompt text and credential bytes never cross into the renderer,
-and diagnostic formatting redacts the snapshot's values.
+completion alone never authorizes readiness or unlock. A copyable state snapshot
+contains prompt category, capped indicator count or selection, and failure
+state. A separate drop-zeroized label admits at most 256 bytes of normalized
+valid UTF-8 from the bounded PAM prompt, strips bidi controls, and falls back to
+fixed text when it cannot safely present the source. Credential responses never
+cross this boundary. Linux shapes the label with the existing exact
+`cosmic-text` line and installed fonts, then blends a bounded alpha raster into
+the sealed frame. Prompt identity avoids work on password edits; glyph state
+resets per prompt and at most eight 2 MiB layout masks are retained. Diagnostics
+redact label, identity, state values, and pixels. Raster failure is fail-closed.
 
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,

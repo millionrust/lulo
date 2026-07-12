@@ -5,10 +5,12 @@
 
 use std::fmt;
 use std::io::{self, Write};
+use std::sync::Arc;
 
 use crate::surface::BufferLayout;
 
 const CHUNK_PIXELS: usize = 4096;
+const MAX_TEXT_RASTER_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Rgb {
@@ -120,6 +122,78 @@ fn capped_dots(character_count: usize) -> u8 {
     character_count.min(12) as u8
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct TextRaster {
+    origin_x: i64,
+    origin_y: i64,
+    width: u32,
+    height: u32,
+    alpha: Arc<[u8]>,
+}
+
+impl TextRaster {
+    pub fn new(
+        origin_x: i64,
+        origin_y: i64,
+        width: u32,
+        height: u32,
+        alpha: Vec<u8>,
+    ) -> Result<Self, TextRasterError> {
+        let expected = usize::try_from(width)
+            .ok()
+            .and_then(|width| {
+                usize::try_from(height)
+                    .ok()
+                    .and_then(|height| width.checked_mul(height))
+            })
+            .ok_or(TextRasterError::InvalidDimensions)?;
+        if expected == 0 || expected > MAX_TEXT_RASTER_BYTES || alpha.len() != expected {
+            return Err(TextRasterError::InvalidDimensions);
+        }
+        Ok(Self {
+            origin_x,
+            origin_y,
+            width,
+            height,
+            alpha: alpha.into(),
+        })
+    }
+
+    fn alpha_at(&self, x: i64, y: i64) -> Option<u8> {
+        let local_x = x.checked_sub(self.origin_x)?;
+        let local_y = y.checked_sub(self.origin_y)?;
+        let local_x = u32::try_from(local_x).ok()?;
+        let local_y = u32::try_from(local_y).ok()?;
+        if local_x >= self.width || local_y >= self.height {
+            return None;
+        }
+        let index = usize::try_from(local_y)
+            .ok()?
+            .checked_mul(usize::try_from(self.width).ok()?)?
+            .checked_add(usize::try_from(local_x).ok()?)?;
+        self.alpha.get(index).copied()
+    }
+}
+
+impl fmt::Debug for TextRaster {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("TextRaster(<redacted>)")
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TextRasterError {
+    InvalidDimensions,
+}
+
+impl fmt::Display for TextRasterError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("lock prompt raster dimensions are invalid")
+    }
+}
+
+impl std::error::Error for TextRasterError {}
+
 impl Rgb {
     pub const fn new(red: u8, green: u8, blue: u8) -> Self {
         Self { red, green, blue }
@@ -163,6 +237,7 @@ pub fn paint_lock_frame(
     layout: BufferLayout,
     palette: LockPalette,
     visual: LockVisualState,
+    text: Option<&TextRaster>,
 ) -> io::Result<()> {
     let width = layout.width();
     let height = layout.height();
@@ -181,6 +256,7 @@ pub fn paint_lock_frame(
                     layout.scale(),
                     palette,
                     visual,
+                    text,
                 );
                 let offset = index * 4;
                 chunk[offset..offset + 4].copy_from_slice(&pixel.argb8888());
@@ -192,6 +268,7 @@ pub fn paint_lock_frame(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn paint_pixel(
     x: u32,
     y: u32,
@@ -200,6 +277,7 @@ fn paint_pixel(
     scale: u32,
     palette: LockPalette,
     visual: LockVisualState,
+    text: Option<&TextRaster>,
 ) -> Rgb {
     let denominator = height.saturating_sub(1).max(1);
     let mut color = palette
@@ -270,6 +348,10 @@ fn paint_pixel(
         palette,
         visual.prompt,
     );
+
+    if let Some(alpha) = text.and_then(|raster| raster.alpha_at(i64::from(x), i64::from(y))) {
+        color = color.blend(palette.panel, alpha);
+    }
 
     color
 }
@@ -387,6 +469,7 @@ mod tests {
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::default(),
+            None,
         )
         .unwrap();
         paint_lock_frame(
@@ -394,6 +477,7 @@ mod tests {
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::default(),
+            None,
         )
         .unwrap();
 
@@ -413,6 +497,7 @@ mod tests {
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::new(PromptVisual::secret(9), false),
+            None,
         )
         .unwrap();
         paint_lock_frame(
@@ -420,6 +505,7 @@ mod tests {
             layout,
             LockPalette::MIDNIGHT,
             LockVisualState::new(PromptVisual::Hidden, true),
+            None,
         )
         .unwrap();
         assert_ne!(secret, failed);
@@ -442,10 +528,41 @@ mod tests {
                 layout,
                 LockPalette::MIDNIGHT,
                 LockVisualState::default(),
+                None,
             )
             .unwrap_err()
             .kind(),
             io::ErrorKind::WriteZero
+        );
+    }
+
+    #[test]
+    fn bounded_text_raster_blends_without_exposing_pixels_to_debug() {
+        let layout = layout(64, 64, 1);
+        let mut plain = Vec::new();
+        let mut labelled = Vec::new();
+        let raster = TextRaster::new(30, 30, 2, 2, vec![255; 4]).unwrap();
+        paint_lock_frame(
+            &mut plain,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::default(),
+            None,
+        )
+        .unwrap();
+        paint_lock_frame(
+            &mut labelled,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::default(),
+            Some(&raster),
+        )
+        .unwrap();
+        assert_ne!(plain, labelled);
+        assert_eq!(format!("{raster:?}"), "TextRaster(<redacted>)");
+        assert_eq!(
+            TextRaster::new(0, 0, 2, 2, vec![0; 3]),
+            Err(TextRasterError::InvalidDimensions)
         );
     }
 

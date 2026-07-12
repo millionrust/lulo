@@ -7,7 +7,7 @@ use std::os::fd::{AsFd, BorrowedFd};
 
 use rustix::fs::{fcntl_add_seals, ftruncate, memfd_create, MemfdFlags, SealFlags};
 
-use crate::paint::{paint_lock_frame, LockPalette, LockVisualState};
+use crate::paint::{paint_lock_frame, LockPalette, LockVisualState, TextRaster};
 use crate::surface::{BufferId, BufferLayout, RenderPlan};
 
 pub struct ShmFrame {
@@ -21,6 +21,7 @@ impl ShmFrame {
         plan: &RenderPlan,
         palette: LockPalette,
         visual: LockVisualState,
+        text: Option<&TextRaster>,
     ) -> Result<Self, Error> {
         let layout = plan.layout();
         let fd = memfd_create(
@@ -32,7 +33,7 @@ impl ShmFrame {
         let file = File::from(fd);
         {
             let mut writer = BufWriter::with_capacity(64 * 1024, &file);
-            paint_lock_frame(&mut writer, layout, palette, visual).map_err(Error::Paint)?;
+            paint_lock_frame(&mut writer, layout, palette, visual, text).map_err(Error::Paint)?;
             writer.flush().map_err(Error::Paint)?;
         }
         fcntl_add_seals(

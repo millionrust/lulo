@@ -133,6 +133,7 @@ a second output-sized image. On Linux the destination is a CLOEXEC, no-exec
 anonymous memfd sized from the validated layout and sealed against write,
 resize, and seal changes after the complete frame is flushed. The owned file
 and redacted buffer identity are ready to remain alive until `wl_buffer.release`.
+Prompt shaping uses the distro's Inter and fallback fonts; no font is bundled.
 No Apple wallpaper, color token, icon, font, or other proprietary asset is used.
 
 The Linux-only internal lock typestate now issues the generated session-lock
@@ -212,12 +213,24 @@ synchronized wire method, and returns readiness, prompt-change, failure, and
 an explicit authenticated/denied/failed-locked exit reason. Username validation
 happens before connecting or locking. The pump remains crate-internal.
 
-The renderer now receives only a copyable redacted presentation snapshot. It
-paints capped password/text indicators, generic notice/radio/binary shapes, and
-authentication-failure color, and queues every configured output for repaint
-when that snapshot changes. It never receives PAM prompt text or credential
-bytes, its diagnostics redact both character counts and selection state, and a
-rendered failure still has no authority to unlock or declare secure readiness.
+The renderer receives a copyable redacted state snapshot plus at most one
+bounded PAM presentation label. Valid UTF-8 prompt text is normalized to one
+display string, whitespace is collapsed, bidi controls are removed, invalid or
+empty text gets a style-specific fallback, and the result is truncated on a
+scalar boundary to 256 bytes. The owned label is zeroized on replacement/drop;
+diagnostics expose neither text, prompt identity, character count, selection,
+nor raster pixels. Credential response bytes never enter this path.
+
+Linux shapes the label with exact `cosmic-text` 0.14.2 against installed Inter
+and Unicode fallback fonts before blending only its alpha mask into the sealed
+frame. Font discovery begins while the Wayland connection is prepared, before
+the session-lock request. A prompt-identity cache avoids reshaping on every
+password dot; at most eight layout variants of at most 2 MiB each survive, and
+the glyph cache resets for every new prompt. Failure to rasterize any glyph is
+a wire failure, not a silently unreadable authentication UI. The existing
+capped indicators and generic shapes remain as secondary state cues. Every
+configured output repaints when state or label identity changes, while a
+rendered label still has no authority to unlock or declare secure readiness.
 
 An opt-in `development-provider` feature now supplies the uninstalled
 `rmac-lock-provider` process used by the future recovery/evidence harness. It
@@ -230,12 +243,13 @@ attempts `LockedHint=false`. Hint failure remains an advisory warning, while a
 readiness notification failure terminates the provider so systemd can restart
 it fail-closed. Status and errors contain no session ID or username.
 
-The Linux adapter still requires Linux validation of its separate unit and
-recovery harness, reviewed localized prompt/error text, and emergency recovery.
-Module-specific binary MFA UI, IME/accessibility support, and real niri/PAM
-evidence including the compiled fault tests also remain. The development
-feature is not built by the session installer and must not be launched ad hoc.
-Until the full matrix passes, the installed unit continues to run swaylock.
+The Linux adapter still requires Linux validation of its separate unit,
+localized prompt shaping, font fallback, and recovery harness, plus emergency
+recovery. Module-specific binary MFA UI, IME/accessibility support, and real
+niri/PAM evidence including the compiled fault tests also remain. The
+development feature is not built by the session installer and must not be
+launched ad hoc. Until the full matrix passes, the installed unit continues to
+run swaylock.
 
 The first recovery harness is now repository-owned but remains opt-in. A
 separate installer builds only the feature-gated provider after checking for 25

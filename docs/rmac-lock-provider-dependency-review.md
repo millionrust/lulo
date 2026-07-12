@@ -135,6 +135,25 @@ move-only authentication token, destroys roles, and waits for a display-sync
 barrier. These paths still require Ubuntu/niri runtime evidence; GPUI windows
 cannot replace the privileged lock-surface role.
 
+### Prompt text shaping
+
+Use exact `cosmic-text` 0.14.2 with its default system-font discovery and swash
+rasterizer. It is MIT/Apache-2.0 licensed and was already resolved through GPUI,
+so this adds no second text stack or lockfile version. Ubuntu 26.04 supplies
+Inter 4.1 through `fonts-inter`; the session package must depend on it and the
+distribution's Unicode fallback fonts rather than bundling font files. The
+renderer requests Inter but permits system fallback so localized PAM text is not
+silently reduced to ASCII.
+
+Only the checked presentation label reaches shaping: valid UTF-8, normalized
+whitespace, no bidi controls, a 256-byte scalar-boundary cap, style fallback for
+invalid/empty text, drop zeroization, and redacted diagnostics. Response and
+credential bytes never enter the shaper. The prompt glyph cache is replaced for
+every prompt identity, layout masks are capped at eight entries and 2 MiB each,
+and an empty raster fails the provider wire. System font parsing, actual Inter
+selection, Unicode fallback, integer-scale quality, memory, and latency remain
+Linux evidence gates.
+
 ## Development process boundary
 
 The uninstalled process is gated by the opt-in `development-provider` feature.

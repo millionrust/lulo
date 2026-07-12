@@ -33,7 +33,7 @@ sudo add-apt-repository universe
 sudo apt update
 sudo apt full-upgrade
 sudo apt install --yes \
-  at-spi2-core build-essential clang curl dbus git jq libfontconfig1-dev \
+  at-spi2-core build-essential clang curl dbus fonts-inter git jq libfontconfig1-dev \
   libfreetype-dev libglib2.0-bin libpam0g-dev libssl-dev libvulkan-dev libwayland-dev \
   libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
   libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev mesa-vulkan-drivers \
@@ -210,8 +210,10 @@ cargo test -p rmac-lock-provider-linux xkb_keyboard:: --locked -- --test-threads
 
 A full native package test also links the generated session-lock/shm wire but
 does not issue a lock request. It also runs the portable runtime coordinator
-and redacted visual-state/painting tests; Linux-only tests compile the pump and
-reject invalid usernames before a Wayland connection is attempted:
+and redacted visual-state/painting tests; Linux-only tests compile the pump,
+reject invalid usernames before a Wayland connection is attempted, and—with
+`fonts-inter` installed—shape, rasterize, cache, and redact a mixed-script PAM
+prompt:
 
 ```sh
 cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked

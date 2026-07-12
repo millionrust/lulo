@@ -107,6 +107,14 @@ style/reply matching, response bounds, NUL rejection, binary header allowance,
 and diagnostic redaction. The raw callback and transaction fault tests compile
 for Linux but cannot execute on the macOS development kernel. They must run on
 the Ubuntu reference PC before this evidence is considered complete.
+
+The platform-neutral worker/UI broker has executable tests for ordered prompt
+delivery, unique redacted identities, secret allocation movement without a
+clone, response-style rejection on both sides, explicit and drop cancellation,
+UI disconnection, binary bounds, and prompt redaction. It permits at most one
+outstanding prompt and uses a unique single-use response capability, so delayed
+UI state cannot answer a subsequent PAM message.
+
 `cargo deny 0.19.8 check` passed advisories, bans, licenses, and sources for the
 admitted lockfile on 2026-07-12.
 

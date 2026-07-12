@@ -10,6 +10,7 @@ use std::fmt;
 use zeroize::Zeroize as _;
 
 pub mod paint;
+pub mod pam_broker;
 pub mod pam_conversation;
 pub mod surface;
 

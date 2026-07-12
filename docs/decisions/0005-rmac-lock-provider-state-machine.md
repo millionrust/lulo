@@ -68,6 +68,14 @@ transaction described in `docs/rmac-pam-wrapper-audit.md`. It remains excluded
 from the installed provider until its compiled fault tests and real PAM matrix
 execute on Ubuntu.
 
+The conversation transport is an rmac-owned, capacity-one worker/UI broker.
+Each prompt owns bounded, drop-zeroized content and a redacted monotonic ID; its
+single-use response capability prevents stale replies. UI loss, prompt drop,
+explicit cancellation, and response-style mismatch all wake the PAM worker and
+fail closed. Secret responses move through this channel without cloning. This
+transport does not grant lock authority and remains disconnected until secure
+Wayland input and the rest of the production evidence exist.
+
 `rmac-lock-provider-linux` is the start of that adapter boundary. Its first
 accepted primitive is fixed-capacity credential input, bounded to Linux-PAM's
 512-byte response limit and zeroized on editing, clear, transfer, and drop.

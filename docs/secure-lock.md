@@ -145,11 +145,20 @@ policy and pairs successful start with one end; injected APIs test failure
 ordering and preserve a secondary end error. The Ubuntu policy source includes
 both `common-auth` and `common-account`, preserving pam-auth-update/site choices.
 
+The worker/UI conversation now has a dependency-free bounded broker. PAM may
+publish only one owned prompt while it waits, every prompt is re-bounded and
+redacted, and textual or binary prompt storage is overwritten on drop. The UI
+receives a unique single-use response capability, so a stale reply cannot be
+replayed into a later prompt. Typed replies are checked on both sides, secrets
+move to the PAM worker without cloning, and explicit cancellation, prompt drop,
+or UI loss wakes the worker and fails closed. The UI endpoint is deliberately
+pollable so the eventual lock renderer never blocks its Wayland event loop.
+
 The Linux adapter still requires session-lock acquisition and wire lock-surface
-objects, `wl_shm_pool`/buffer release wiring, UI/worker conversation transport,
-and real niri/PAM evidence including the compiled fault tests. Until then, the
-installed unit continues to run swaylock and the preview projection remains
-unrendered.
+objects, `wl_shm_pool`/buffer release wiring, keyboard/layout input connected to
+the broker, and real niri/PAM evidence including the compiled fault tests. Until
+then, the installed unit continues to run swaylock and the preview projection
+remains unrendered.
 
 ## Not complete yet
 

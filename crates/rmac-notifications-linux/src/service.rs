@@ -6,15 +6,15 @@ use std::time::Instant;
 
 use async_channel::{Receiver, Sender};
 use rmac_notifications::{
-    AppId, Closed, DeliveryPolicy, Notification, NotificationId, PostOutcome, Server, ServerError,
-    Time, TimeoutPolicy,
+    ActionInvocation, AppId, Closed, DeliveryPolicy, Notification, NotificationId, PostOutcome,
+    Server, ServerError, Source, Time, TimeoutPolicy,
 };
 use zbus::connection::Builder;
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
-use zbus::zvariant::{OwnedValue, Value};
-use zbus::{interface, Connection};
+use zbus::zvariant::{serialized::Context, serialized::Data, Endian, OwnedValue, Str, Value};
+use zbus::{interface, Connection, Proxy};
 
 const LEGACY_PATH: &str = "/org/freedesktop/Notifications";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
@@ -24,7 +24,44 @@ const EVENT_CAPACITY: usize = 128;
 pub enum RuntimeEvent {
     Posted(PostOutcome),
     Closed(Closed),
+    ActionInvoked(ActionInvocation),
 }
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum ActionSelection {
+    Default,
+    Button(usize),
+    Named(String),
+}
+
+impl std::fmt::Debug for ActionSelection {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Default => formatter.write_str("Default"),
+            Self::Button(index) => formatter.debug_tuple("Button").field(index).finish(),
+            Self::Named(_) => formatter.write_str("Named(<redacted>)"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActionError {
+    UnknownNotification,
+    UnknownAction,
+    InvalidTarget,
+    InvalidApplication,
+    PersistentNotification,
+    Transport,
+    RuntimeUnavailable,
+}
+
+impl std::fmt::Display for ActionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "notification action failed ({self:?})")
+    }
+}
+
+impl std::error::Error for ActionError {}
 
 #[derive(Clone)]
 pub struct SharedCore {
@@ -76,6 +113,29 @@ impl SharedCore {
         external_id: &str,
     ) -> Result<Closed, ServerError> {
         self.lock().server.withdraw_portal(app_id, external_id)
+    }
+
+    pub fn dismiss(&self, id: NotificationId) -> Result<Closed, ServerError> {
+        self.lock().server.dismiss(id)
+    }
+
+    pub fn expire(&self) -> Vec<Closed> {
+        let mut core = self.lock();
+        let now = monotonic_time(core.started);
+        core.server.expire(now)
+    }
+
+    pub fn invoke(
+        &self,
+        id: NotificationId,
+        selection: &ActionSelection,
+    ) -> Result<(ActionInvocation, Option<Closed>), ServerError> {
+        let mut core = self.lock();
+        match selection {
+            ActionSelection::Default => core.server.invoke_default(id),
+            ActionSelection::Button(index) => core.server.invoke_button(id, *index),
+            ActionSelection::Named(action) => core.server.invoke(id, action),
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, Core> {
@@ -257,7 +317,175 @@ impl PortalInterface {
     ) -> zbus::Result<()>;
 }
 
-pub async fn serve() -> zbus::Result<(Connection, SharedCore, Receiver<RuntimeEvent>)> {
+#[derive(Clone, Debug)]
+pub struct ServiceHandle {
+    connection: Connection,
+    core: SharedCore,
+    events: Sender<RuntimeEvent>,
+}
+
+impl ServiceHandle {
+    pub fn snapshot(&self) -> Vec<Notification> {
+        self.core.snapshot()
+    }
+
+    pub async fn dismiss(&self, id: NotificationId) -> Result<Closed, ActionError> {
+        let source = self.source(id)?;
+        let closed = self.core.dismiss(id).map_err(action_domain_error)?;
+        publish_action(&self.events, RuntimeEvent::Closed(closed.clone())).await?;
+        if matches!(source, Source::Freedesktop { .. }) {
+            self.emit_legacy_closed(id, 2).await?;
+        }
+        Ok(closed)
+    }
+
+    pub async fn expire_due(&self) -> Result<Vec<Closed>, ActionError> {
+        let sources: HashMap<_, _> = self
+            .core
+            .snapshot()
+            .into_iter()
+            .map(|notification| (notification.id, notification.source))
+            .collect();
+        let closed = self.core.expire();
+        for event in &closed {
+            publish_action(&self.events, RuntimeEvent::Closed(event.clone())).await?;
+            if matches!(sources.get(&event.id), Some(Source::Freedesktop { .. })) {
+                self.emit_legacy_closed(event.id, 1).await?;
+            }
+        }
+        Ok(closed)
+    }
+
+    pub async fn invoke(
+        &self,
+        id: NotificationId,
+        selection: ActionSelection,
+        activation_token: Option<&str>,
+    ) -> Result<ActionInvocation, ActionError> {
+        let source = self.source(id)?;
+        let (invocation, closed) = self
+            .core
+            .invoke(id, &selection)
+            .map_err(action_domain_error)?;
+        self.dispatch_invocation(&source, &invocation, activation_token)
+            .await?;
+        publish_action(
+            &self.events,
+            RuntimeEvent::ActionInvoked(invocation.clone()),
+        )
+        .await?;
+        if let Some(closed) = closed {
+            publish_action(&self.events, RuntimeEvent::Closed(closed)).await?;
+            if matches!(source, Source::Freedesktop { .. }) {
+                self.emit_legacy_closed(id, 2).await?;
+            }
+        }
+        Ok(invocation)
+    }
+
+    fn source(&self, id: NotificationId) -> Result<Source, ActionError> {
+        self.core
+            .snapshot()
+            .into_iter()
+            .find(|notification| notification.id == id)
+            .map(|notification| notification.source)
+            .ok_or(ActionError::UnknownNotification)
+    }
+
+    async fn dispatch_invocation(
+        &self,
+        source: &Source,
+        invocation: &ActionInvocation,
+        activation_token: Option<&str>,
+    ) -> Result<(), ActionError> {
+        match source {
+            Source::Freedesktop { .. } => {
+                let emitter = SignalEmitter::new(&self.connection, LEGACY_PATH)
+                    .map_err(|_| ActionError::Transport)?;
+                if let Some(token) = activation_token {
+                    emitter
+                        .activation_token(invocation.notification_id.get(), token)
+                        .await
+                        .map_err(|_| ActionError::Transport)?;
+                }
+                LegacyInterfaceSignals::action_invoked(
+                    &emitter,
+                    invocation.notification_id.get(),
+                    &invocation.action_id,
+                )
+                .await
+                .map_err(|_| ActionError::Transport)
+            }
+            Source::Portal {
+                app_id,
+                external_id: _,
+            } if invocation.action_id.starts_with("app.") => {
+                self.activate_application(app_id, invocation, activation_token)
+                    .await
+            }
+            Source::Portal {
+                app_id,
+                external_id,
+            } => {
+                let emitter = SignalEmitter::new(&self.connection, PORTAL_PATH)
+                    .map_err(|_| ActionError::Transport)?;
+                PortalInterfaceSignals::action_invoked(
+                    &emitter,
+                    app_id.as_str(),
+                    external_id,
+                    &invocation.action_id,
+                    portal_parameters(invocation.target.as_ref(), activation_token)?,
+                )
+                .await
+                .map_err(|_| ActionError::Transport)
+            }
+        }
+    }
+
+    async fn activate_application(
+        &self,
+        app_id: &AppId,
+        invocation: &ActionInvocation,
+        activation_token: Option<&str>,
+    ) -> Result<(), ActionError> {
+        let object_path = application_object_path(app_id.as_str())?;
+        let proxy = Proxy::new(
+            &self.connection,
+            app_id.as_str(),
+            object_path.as_str(),
+            "org.freedesktop.Application",
+        )
+        .await
+        .map_err(|_| ActionError::InvalidApplication)?;
+        let parameters = invocation
+            .target
+            .as_ref()
+            .map(decode_target)
+            .transpose()?
+            .into_iter()
+            .collect::<Vec<_>>();
+        let platform_data = platform_data(activation_token);
+        let action_name = invocation
+            .action_id
+            .strip_prefix("app.")
+            .ok_or(ActionError::InvalidApplication)?;
+        let _: () = proxy
+            .call("ActivateAction", &(action_name, parameters, platform_data))
+            .await
+            .map_err(|_| ActionError::Transport)?;
+        Ok(())
+    }
+
+    async fn emit_legacy_closed(&self, id: NotificationId, reason: u32) -> Result<(), ActionError> {
+        SignalEmitter::new(&self.connection, LEGACY_PATH)
+            .map_err(|_| ActionError::Transport)?
+            .notification_closed(id.get(), reason)
+            .await
+            .map_err(|_| ActionError::Transport)
+    }
+}
+
+pub async fn serve() -> zbus::Result<(ServiceHandle, Receiver<RuntimeEvent>)> {
     let core = SharedCore::new(500, TimeoutPolicy::default());
     let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
     let legacy = LegacyInterface {
@@ -266,7 +494,7 @@ pub async fn serve() -> zbus::Result<(Connection, SharedCore, Receiver<RuntimeEv
     };
     let portal = PortalInterface {
         core: core.clone(),
-        events,
+        events: events.clone(),
     };
     let connection = Builder::session()?
         .name("org.freedesktop.Notifications")?
@@ -275,7 +503,14 @@ pub async fn serve() -> zbus::Result<(Connection, SharedCore, Receiver<RuntimeEv
         .serve_at(PORTAL_PATH, portal)?
         .build()
         .await?;
-    Ok((connection, core, receiver))
+    Ok((
+        ServiceHandle {
+            connection,
+            core,
+            events,
+        },
+        receiver,
+    ))
 }
 
 async fn publish(events: &Sender<RuntimeEvent>, event: RuntimeEvent) -> fdo::Result<()> {
@@ -283,6 +518,80 @@ async fn publish(events: &Sender<RuntimeEvent>, event: RuntimeEvent) -> fdo::Res
         .send(event)
         .await
         .map_err(|_| fdo::Error::Failed("notification runtime is unavailable".into()))
+}
+
+async fn publish_action(
+    events: &Sender<RuntimeEvent>,
+    event: RuntimeEvent,
+) -> Result<(), ActionError> {
+    events
+        .send(event)
+        .await
+        .map_err(|_| ActionError::RuntimeUnavailable)
+}
+
+fn action_domain_error(error: ServerError) -> ActionError {
+    match error {
+        ServerError::UnknownNotification => ActionError::UnknownNotification,
+        ServerError::UnknownAction => ActionError::UnknownAction,
+        ServerError::PersistentNotification => ActionError::PersistentNotification,
+        ServerError::Invalid(_) | ServerError::WrongOwner | ServerError::ExhaustedIds => {
+            ActionError::UnknownNotification
+        }
+    }
+}
+
+fn decode_target(target: &rmac_notifications::ActionTarget) -> Result<OwnedValue, ActionError> {
+    if target.signature() != "v" {
+        return Err(ActionError::InvalidTarget);
+    }
+    let data = Data::new(target.bytes(), Context::new_dbus(Endian::Little, 0));
+    let (value, consumed): (OwnedValue, usize) =
+        data.deserialize().map_err(|_| ActionError::InvalidTarget)?;
+    if consumed != target.bytes().len() {
+        return Err(ActionError::InvalidTarget);
+    }
+    Ok(value)
+}
+
+fn platform_data(activation_token: Option<&str>) -> HashMap<String, OwnedValue> {
+    activation_token
+        .map(|token| {
+            HashMap::from([(
+                "activation-token".into(),
+                OwnedValue::from(Str::from(token.to_owned())),
+            )])
+        })
+        .unwrap_or_default()
+}
+
+fn portal_parameters(
+    target: Option<&rmac_notifications::ActionTarget>,
+    activation_token: Option<&str>,
+) -> Result<Vec<OwnedValue>, ActionError> {
+    let mut parameters = Vec::with_capacity(2);
+    if let Some(target) = target {
+        parameters.push(decode_target(target)?);
+    }
+    parameters.push(OwnedValue::from(platform_data(activation_token)));
+    Ok(parameters)
+}
+
+fn application_object_path(app_id: &str) -> Result<String, ActionError> {
+    if app_id.is_empty() {
+        return Err(ActionError::InvalidApplication);
+    }
+    let mut path = String::with_capacity(app_id.len() + 1);
+    path.push('/');
+    for character in app_id.chars() {
+        path.push(match character {
+            '.' => '/',
+            '-' => '_',
+            character if character.is_ascii_alphanumeric() || character == '_' => character,
+            _ => return Err(ActionError::InvalidApplication),
+        });
+    }
+    Ok(path)
 }
 
 fn authenticated_sender(header: &Header<'_>) -> fdo::Result<String> {
@@ -330,6 +639,9 @@ fn domain_error(error: ServerError) -> fdo::Error {
         ServerError::Invalid(_) | ServerError::UnknownAction => {
             fdo::Error::InvalidArgs("notification request is invalid".into())
         }
+        ServerError::PersistentNotification => {
+            fdo::Error::AccessDenied("persistent notification cannot be dismissed".into())
+        }
     }
 }
 
@@ -355,7 +667,9 @@ fn protocol_button_purposes() -> &'static [&'static str] {
 mod tests {
     use super::*;
     use rmac_notifications::protocol::{self, PortalInput};
+    use rmac_notifications::ActionTarget;
     use zbus::object_server::Interface;
+    use zbus::zvariant::to_bytes;
 
     #[test]
     fn shared_core_keeps_one_authority_for_both_protocols() {
@@ -413,5 +727,40 @@ mod tests {
         assert!(portal_xml.contains("method name=\"RemoveNotification\""));
         assert!(portal_xml.contains("property name=\"version\" type=\"u\""));
         assert!(portal_xml.contains("property name=\"SupportedOptions\" type=\"a{sv}\""));
+    }
+
+    #[test]
+    fn opaque_targets_round_trip_and_platform_data_stays_last() {
+        let original = OwnedValue::from(Str::from("conversation-8472".to_owned()));
+        let encoded = to_bytes(Context::new_dbus(Endian::Little, 0), &original).unwrap();
+        let target = ActionTarget::new("v", encoded.bytes().to_vec()).unwrap();
+        let decoded = decode_target(&target).unwrap();
+        assert_eq!(String::try_from(decoded).unwrap(), "conversation-8472");
+
+        let parameters = portal_parameters(Some(&target), Some("activation-8472")).unwrap();
+        assert_eq!(parameters.len(), 2);
+        let platform =
+            HashMap::<String, OwnedValue>::try_from(parameters.into_iter().last().unwrap())
+                .unwrap();
+        assert_eq!(
+            String::try_from(platform.into_iter().next().unwrap().1).unwrap(),
+            "activation-8472"
+        );
+    }
+
+    #[test]
+    fn application_object_path_follows_desktop_entry_activation_rules() {
+        assert_eq!(
+            application_object_path("org.example.Photo-Viewer").unwrap(),
+            "/org/example/Photo_Viewer"
+        );
+        assert_eq!(
+            application_object_path("org.example.invalid/path"),
+            Err(ActionError::InvalidApplication)
+        );
+        assert!(
+            !format!("{:?}", ActionSelection::Named("secret-action".into()))
+                .contains("secret-action")
+        );
     }
 }

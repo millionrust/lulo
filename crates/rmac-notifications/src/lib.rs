@@ -20,7 +20,7 @@ const MAX_TARGET_BYTES: usize = 16 * 1024;
 const MAX_CATEGORY_BYTES: usize = 128;
 const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1_000;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NotificationId(u32);
 
 impl NotificationId {
@@ -548,6 +548,7 @@ pub enum ServerError {
     UnknownNotification,
     UnknownAction,
     WrongOwner,
+    PersistentNotification,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -674,7 +675,7 @@ impl Server {
             .get(&id)
             .ok_or(ServerError::UnknownNotification)?;
         if notification.display.persistent {
-            return Err(ServerError::UnknownNotification);
+            return Err(ServerError::PersistentNotification);
         }
         self.active.remove(&id);
         self.remove_history(id);
@@ -1191,6 +1192,25 @@ mod tests {
         assert_eq!(invocation.action_id, "app.reply");
         assert_eq!(closed.unwrap().reason, CloseReason::ActionInvoked);
         assert_eq!(server.history().count(), 1);
+    }
+
+    #[test]
+    fn persistent_notification_rejects_user_dismissal_but_allows_sender_withdrawal() {
+        let mut server = Server::new(10, TimeoutPolicy::default());
+        let mut request = portal_request("org.example.Chat", "one", "Ongoing call");
+        request.display.persistent = true;
+        let app_id = request.source.app_id().clone();
+        let posted = server
+            .post(request, Time(0), DeliveryPolicy::default())
+            .unwrap();
+        assert_eq!(
+            server.dismiss(posted.id),
+            Err(ServerError::PersistentNotification)
+        );
+        assert_eq!(
+            server.withdraw(&app_id, posted.id).unwrap().reason,
+            CloseReason::Withdrawn
+        );
     }
 
     #[test]

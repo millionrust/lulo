@@ -57,6 +57,15 @@ reason 3. The installed rmac portal descriptor and `portals.conf` selection are
 still required on the Linux reference machine before sandboxed apps can reach
 the backend.
 
+E2/E3 receive a `ServiceHandle`, never a raw connection. Its dismiss and expiry
+methods emit freedesktop close reasons 2 and 1. Action invocation preserves the
+declared target, emits the legacy activation-token signal before
+`ActionInvoked`, and reports the resulting close. Non-exported portal actions
+emit the backend `ActionInvoked` parameter array. `app.*` actions call
+`org.freedesktop.Application.ActivateAction`, stripping the prefix, deriving
+the standardized object path, and passing the target plus activation token.
+Opaque target decoding is bounded and rejects trailing or malformed bytes.
+
 `hide-on-lockscreen` and `hide-content-on-lockscreen` normalize to a typed lock
 visibility policy. No lock UI may weaken that policy. An unspecified hint stays
 `Policy`; the lock authority must resolve that through trusted per-app settings
@@ -100,9 +109,9 @@ inventing state.
 
 ## Next adapters and surfaces
 
-1. E1 action/media completion: validate icon and custom-sound descriptors, route
-   legacy and portal action activation with xdg-activation tokens, install the
-   backend descriptor, and prove both interfaces on the Linux reference PC.
+1. E1 media/install completion: validate icon and custom-sound descriptors,
+   install the backend descriptor, and prove both interfaces on the Linux
+   reference PC.
 2. E2 banner runtime: subscribe to reducer outcomes, pause visual expiry while
    hovered or keyboard-focused, stack deterministically, and request frames
    only while motion is active.

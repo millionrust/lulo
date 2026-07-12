@@ -6,26 +6,32 @@
 //! that the compositor advertises the rendering and keyboard globals,
 //! session-lock protocol version 1, and at least one output.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::num::NonZeroU64;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use wayland_client::globals::{registry_queue_init, GlobalError, GlobalListContents};
 use wayland_client::protocol::{
-    wl_compositor, wl_keyboard, wl_output, wl_registry, wl_seat, wl_shm,
+    wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_registry, wl_seat, wl_shm, wl_shm_pool,
+    wl_surface,
 };
 use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
 
 #[cfg(test)]
 use wayland_client::protocol::wl_output::WlOutput;
-use wayland_protocols::ext::session_lock::v1::client::ext_session_lock_manager_v1::ExtSessionLockManagerV1;
+use wayland_protocols::ext::session_lock::v1::client::{
+    ext_session_lock_manager_v1::ExtSessionLockManagerV1,
+    ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ext_session_lock_v1::ExtSessionLockV1,
+};
 
 use crate::keyboard::DecodedKey;
+use crate::paint::LockPalette;
 use crate::registry_probe;
-use crate::surface::{Error as SurfaceError, SurfaceSet};
+use crate::shm::{Error as ShmError, ShmFrame};
+use crate::surface::{BufferId, Error as SurfaceError, SurfaceSet};
 use crate::xkb_keyboard::{Error as XkbError, KeyboardDecoder};
-use rmac_lock_provider::OutputId;
+use rmac_lock_provider::{OutputId, UnlockAuthorization};
 
 /// Capabilities observed in one initial registry snapshot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -148,6 +154,75 @@ impl PreparedConnection {
         self.state.check_failure()?;
         Ok(dispatched)
     }
+
+    /// Internal typestate transition. It is intentionally unavailable outside
+    /// this crate until the provider runtime owns recovery and authentication.
+    #[allow(dead_code)]
+    pub(crate) fn acquire_for_runtime(mut self) -> Result<LockConnection, WireError> {
+        let queue_handle = self.event_queue.handle();
+        self.state.begin_lock(&queue_handle)?;
+        self.event_queue.flush().map_err(WireError::Flush)?;
+        Ok(LockConnection { inner: self })
+    }
+}
+
+/// Live session-lock connection. No constructor is exported outside this
+/// crate; this type exists so wire ordering can compile before product enablement.
+#[allow(dead_code)]
+pub(crate) struct LockConnection {
+    inner: PreparedConnection,
+}
+
+#[allow(dead_code)]
+impl LockConnection {
+    pub(crate) fn dispatch_pending(&mut self) -> Result<usize, WireError> {
+        let dispatched = self
+            .inner
+            .event_queue
+            .dispatch_pending(&mut self.inner.state)
+            .map_err(WireError::Dispatch)?;
+        self.inner.state.check_wire_failure()?;
+        let queue_handle = self.inner.event_queue.handle();
+        self.inner.state.render_pending(&queue_handle)?;
+        self.inner.event_queue.flush().map_err(WireError::Flush)?;
+        Ok(dispatched)
+    }
+
+    pub(crate) fn blocking_dispatch(&mut self) -> Result<usize, WireError> {
+        let dispatched = self
+            .inner
+            .event_queue
+            .blocking_dispatch(&mut self.inner.state)
+            .map_err(WireError::Dispatch)?;
+        self.inner.state.check_wire_failure()?;
+        let queue_handle = self.inner.event_queue.handle();
+        self.inner.state.render_pending(&queue_handle)?;
+        self.inner.event_queue.flush().map_err(WireError::Flush)?;
+        Ok(dispatched)
+    }
+
+    pub(crate) fn drain_events(&mut self) -> impl Iterator<Item = PreparedEvent> + '_ {
+        self.inner.state.events.drain(..)
+    }
+
+    /// Send the authenticated unlock request and wait for a display-sync
+    /// barrier before allowing the provider to exit.
+    pub(crate) fn unlock_and_flush(
+        &mut self,
+        _authorization: UnlockAuthorization,
+    ) -> Result<(), WireError> {
+        self.inner.state.send_unlock()?;
+        self.inner
+            .event_queue
+            .roundtrip(&mut self.inner.state)
+            .map_err(WireError::Dispatch)?;
+        self.inner.state.check_wire_failure()?;
+        self.inner
+            .state
+            .events
+            .push_back(PreparedEvent::UnlockFlushed);
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -174,6 +249,10 @@ pub enum PreparedEvent {
         rate: u32,
         delay_ms: u32,
     },
+    LockAcquired,
+    LockFinished,
+    FrameCommitted(OutputId),
+    UnlockFlushed,
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -193,7 +272,7 @@ impl fmt::Debug for SeatId {
 
 struct RequiredBinding<T> {
     global_name: u32,
-    _proxy: T,
+    proxy: T,
 }
 
 struct OutputBinding {
@@ -226,6 +305,55 @@ struct KeyboardData {
     seat: SeatId,
 }
 
+struct LockData;
+
+#[derive(Clone, Copy)]
+struct LockSurfaceData {
+    output: OutputId,
+}
+
+#[derive(Clone, Copy)]
+struct WireSurfaceData {
+    output: OutputId,
+}
+
+#[derive(Clone, Copy)]
+struct BufferData {
+    buffer: BufferId,
+}
+
+struct LockingState {
+    lock: ExtSessionLockV1,
+    phase: WireLockPhase,
+    lock_surfaces: BTreeMap<OutputId, LockSurfaceBinding>,
+    buffers: BTreeMap<BufferId, BufferBinding>,
+    pending_renders: BTreeSet<OutputId>,
+}
+
+struct LockSurfaceBinding {
+    surface: wl_surface::WlSurface,
+    role: ExtSessionLockSurfaceV1,
+}
+
+struct BufferBinding {
+    proxy: wl_buffer::WlBuffer,
+    _frame: ShmFrame,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WireLockPhase {
+    AwaitingDecision,
+    Locked,
+    Finished,
+    UnlockSent,
+}
+
+impl WireLockPhase {
+    fn accepts_surfaces(self) -> bool {
+        matches!(self, Self::AwaitingDecision | Self::Locked)
+    }
+}
+
 #[derive(Default)]
 struct PreparedState {
     compositor: Option<RequiredBinding<wl_compositor::WlCompositor>>,
@@ -236,6 +364,7 @@ struct PreparedState {
     surfaces: SurfaceSet,
     events: VecDeque<PreparedEvent>,
     failure: Option<PreparedStateError>,
+    locking: Option<LockingState>,
 }
 
 impl PreparedState {
@@ -254,7 +383,7 @@ impl PreparedState {
             {
                 self.compositor = Some(RequiredBinding {
                     global_name: name,
-                    _proxy: registry.bind(
+                    proxy: registry.bind(
                         name,
                         version.min(wl_compositor::WlCompositor::interface().version),
                         queue_handle,
@@ -267,7 +396,7 @@ impl PreparedState {
             {
                 self.shm = Some(RequiredBinding {
                     global_name: name,
-                    _proxy: registry.bind(
+                    proxy: registry.bind(
                         name,
                         version.min(wl_shm::WlShm::interface().version),
                         queue_handle,
@@ -281,7 +410,7 @@ impl PreparedState {
             {
                 self.manager = Some(RequiredBinding {
                     global_name: name,
-                    _proxy: registry.bind(
+                    proxy: registry.bind(
                         name,
                         version.min(ExtSessionLockManagerV1::interface().version),
                         queue_handle,
@@ -306,6 +435,22 @@ impl PreparedState {
                 }
                 self.outputs.insert(name, OutputBinding { output, proxy });
                 self.events.push_back(PreparedEvent::OutputAdded(output));
+                if self
+                    .locking
+                    .as_ref()
+                    .is_some_and(|locking| locking.phase.accepts_surfaces())
+                {
+                    if let Err(error) = self.create_lock_surface(output, queue_handle) {
+                        match error {
+                            WireError::State(failure) => {
+                                self.record_failure(PreparedStateError::Wire(failure))
+                            }
+                            _ => self.record_failure(PreparedStateError::Wire(
+                                WireStateError::UnexpectedWireFailure,
+                            )),
+                        }
+                    }
+                }
             }
             registry_probe::SEAT_INTERFACE
                 if !self.seats.contains_key(&name)
@@ -382,6 +527,7 @@ impl PreparedState {
             }
             return;
         };
+        self.destroy_lock_surface(binding.output);
         if binding.proxy.version() >= 3 {
             binding.proxy.release();
         }
@@ -442,6 +588,241 @@ impl PreparedState {
             .count()
     }
 
+    fn begin_lock(&mut self, queue_handle: &QueueHandle<Self>) -> Result<(), WireError> {
+        if self.locking.is_some() {
+            return Err(WireError::State(WireStateError::AlreadyLocking));
+        }
+        self.require_input_ready().map_err(WireError::Prepare)?;
+        let manager = self
+            .manager
+            .as_ref()
+            .ok_or(WireError::State(WireStateError::MissingRequiredBinding))?
+            .proxy
+            .clone();
+        let lock = manager.lock(queue_handle, LockData);
+        self.locking = Some(LockingState {
+            lock,
+            phase: WireLockPhase::AwaitingDecision,
+            lock_surfaces: BTreeMap::new(),
+            buffers: BTreeMap::new(),
+            pending_renders: BTreeSet::new(),
+        });
+
+        let outputs: Vec<_> = self
+            .outputs
+            .values()
+            .map(|binding| binding.output)
+            .collect();
+        for output in outputs {
+            self.create_lock_surface(output, queue_handle)?;
+        }
+        Ok(())
+    }
+
+    fn create_lock_surface(
+        &mut self,
+        output: OutputId,
+        queue_handle: &QueueHandle<Self>,
+    ) -> Result<(), WireError> {
+        let compositor = self
+            .compositor
+            .as_ref()
+            .ok_or(WireError::State(WireStateError::MissingRequiredBinding))?
+            .proxy
+            .clone();
+        let output_proxy = self
+            .outputs
+            .values()
+            .find(|binding| binding.output == output)
+            .ok_or(WireError::State(WireStateError::MissingOutput))?
+            .proxy
+            .clone();
+        let locking = self
+            .locking
+            .as_mut()
+            .ok_or(WireError::State(WireStateError::NotLocking))?;
+        if locking.lock_surfaces.contains_key(&output) {
+            return Err(WireError::State(WireStateError::DuplicateLockSurface));
+        }
+        let surface = compositor.create_surface(queue_handle, WireSurfaceData { output });
+        let role = locking.lock.get_lock_surface(
+            &surface,
+            &output_proxy,
+            queue_handle,
+            LockSurfaceData { output },
+        );
+        locking
+            .lock_surfaces
+            .insert(output, LockSurfaceBinding { surface, role });
+        Ok(())
+    }
+
+    fn destroy_lock_surface(&mut self, output: OutputId) {
+        let Some(locking) = &mut self.locking else {
+            return;
+        };
+        locking.pending_renders.remove(&output);
+        if let Some(binding) = locking.lock_surfaces.remove(&output) {
+            binding.role.destroy();
+            binding.surface.destroy();
+        }
+    }
+
+    fn destroy_all_lock_surfaces(&mut self) {
+        let outputs = self
+            .locking
+            .as_ref()
+            .map(|locking| locking.lock_surfaces.keys().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for output in outputs {
+            self.destroy_lock_surface(output);
+        }
+    }
+
+    fn queue_render(&mut self, output: OutputId) {
+        if let Some(locking) = &mut self.locking {
+            if locking.phase.accepts_surfaces() && locking.lock_surfaces.contains_key(&output) {
+                locking.pending_renders.insert(output);
+            }
+        }
+    }
+
+    fn render_pending(&mut self, queue_handle: &QueueHandle<Self>) -> Result<(), WireError> {
+        let pending = self
+            .locking
+            .as_mut()
+            .map(|locking| std::mem::take(&mut locking.pending_renders))
+            .unwrap_or_default();
+        for output in pending {
+            match self.render_output(output, queue_handle) {
+                Ok(()) | Err(WireError::Surface(SurfaceError::AwaitingConfigure)) => {}
+                Err(WireError::Surface(
+                    SurfaceError::BufferBackpressure | SurfaceError::GlobalBufferBudget,
+                )) => self.queue_render(output),
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
+    }
+
+    fn render_output(
+        &mut self,
+        output: OutputId,
+        queue_handle: &QueueHandle<Self>,
+    ) -> Result<(), WireError> {
+        let shm = self
+            .shm
+            .as_ref()
+            .ok_or(WireError::State(WireStateError::MissingRequiredBinding))?
+            .proxy
+            .clone();
+        let (wire_surface, role) = self
+            .locking
+            .as_ref()
+            .ok_or(WireError::State(WireStateError::NotLocking))?
+            .lock_surfaces
+            .get(&output)
+            .map(|binding| (binding.surface.clone(), binding.role.clone()))
+            .ok_or(WireError::State(WireStateError::MissingLockSurface))?;
+        let plan = self
+            .surfaces
+            .begin_render(output)
+            .map_err(WireError::Surface)?;
+        let buffer_id = plan.buffer();
+        if self
+            .locking
+            .as_ref()
+            .is_some_and(|locking| locking.buffers.contains_key(&buffer_id))
+        {
+            self.surfaces
+                .abandon_render(plan)
+                .map_err(WireError::Surface)?;
+            return Err(WireError::State(WireStateError::DuplicateBuffer));
+        }
+        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT) {
+            Ok(frame) => frame,
+            Err(error) => {
+                self.surfaces
+                    .abandon_render(plan)
+                    .map_err(WireError::Surface)?;
+                return Err(WireError::Shm(error));
+            }
+        };
+        let layout = frame.layout();
+        let pool = shm.create_pool(frame.as_fd(), frame.pool_size(), queue_handle, ());
+        let buffer = pool.create_buffer(
+            0,
+            layout.width() as i32,
+            layout.height() as i32,
+            layout.stride() as i32,
+            wl_shm::Format::Argb8888,
+            queue_handle,
+            BufferData { buffer: buffer_id },
+        );
+        pool.destroy();
+
+        let commit = match self.surfaces.commit_render(&plan) {
+            Ok(commit) => commit,
+            Err(error) => {
+                buffer.destroy();
+                let _ = self.surfaces.abandon_render(plan);
+                return Err(WireError::Surface(error));
+            }
+        };
+        if let Some(serial) = commit.ack_serial() {
+            role.ack_configure(serial);
+        }
+        wire_surface.set_buffer_scale(commit.layout().scale() as i32);
+        wire_surface.attach(Some(&buffer), 0, 0);
+        wire_surface.damage_buffer(
+            0,
+            0,
+            commit.layout().width() as i32,
+            commit.layout().height() as i32,
+        );
+        let Some(locking) = &mut self.locking else {
+            buffer.destroy();
+            let _ = self.surfaces.release_buffer(buffer_id);
+            return Err(WireError::State(WireStateError::NotLocking));
+        };
+        if locking.buffers.contains_key(&buffer_id) {
+            buffer.destroy();
+            let _ = self.surfaces.release_buffer(buffer_id);
+            return Err(WireError::State(WireStateError::DuplicateBuffer));
+        }
+        locking.buffers.insert(
+            buffer_id,
+            BufferBinding {
+                proxy: buffer,
+                _frame: frame,
+            },
+        );
+        wire_surface.commit();
+        self.events.push_back(PreparedEvent::FrameCommitted(output));
+        Ok(())
+    }
+
+    fn send_unlock(&mut self) -> Result<(), WireError> {
+        let locking = self
+            .locking
+            .as_mut()
+            .ok_or(WireError::State(WireStateError::NotLocking))?;
+        if locking.phase != WireLockPhase::Locked {
+            return Err(WireError::State(WireStateError::UnlockBeforeLocked));
+        }
+        locking.lock.unlock_and_destroy();
+        locking.phase = WireLockPhase::UnlockSent;
+        self.destroy_all_lock_surfaces();
+        Ok(())
+    }
+
+    fn check_wire_failure(&self) -> Result<(), WireError> {
+        match self.failure {
+            Some(failure) => Err(WireError::PreparedState(failure)),
+            None => Ok(()),
+        }
+    }
+
     fn record_failure(&mut self, failure: PreparedStateError) {
         if self.failure.is_none() {
             self.failure = Some(failure);
@@ -492,10 +873,13 @@ impl Dispatch<wl_output::WlOutput, OutputData> for PreparedState {
                 return;
             };
             match state.surfaces.set_scale(data.output, scale) {
-                Ok(true) => state.events.push_back(PreparedEvent::OutputScaleChanged {
-                    output: data.output,
-                    scale,
-                }),
+                Ok(true) => {
+                    state.events.push_back(PreparedEvent::OutputScaleChanged {
+                        output: data.output,
+                        scale,
+                    });
+                    state.queue_render(data.output);
+                }
                 Ok(false) => {}
                 Err(error) => state.record_failure(PreparedStateError::Surface(error)),
             }
@@ -684,8 +1068,140 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
     }
 }
 
+impl Dispatch<ExtSessionLockV1, LockData> for PreparedState {
+    fn event(
+        state: &mut Self,
+        lock: &ExtSessionLockV1,
+        event: wayland_protocols::ext::session_lock::v1::client::ext_session_lock_v1::Event,
+        _data: &LockData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        let Some(locking) = &mut state.locking else {
+            state.record_failure(PreparedStateError::Wire(WireStateError::NotLocking));
+            return;
+        };
+        match event {
+            wayland_protocols::ext::session_lock::v1::client::ext_session_lock_v1::Event::Locked
+                if locking.phase == WireLockPhase::AwaitingDecision =>
+            {
+                locking.phase = WireLockPhase::Locked;
+                state.events.push_back(PreparedEvent::LockAcquired);
+            }
+            wayland_protocols::ext::session_lock::v1::client::ext_session_lock_v1::Event::Finished
+                if matches!(
+                    locking.phase,
+                    WireLockPhase::AwaitingDecision | WireLockPhase::Locked
+                ) =>
+            {
+                let denied = locking.phase == WireLockPhase::AwaitingDecision;
+                locking.phase = WireLockPhase::Finished;
+                locking.pending_renders.clear();
+                state.events.push_back(PreparedEvent::LockFinished);
+                if denied {
+                    lock.destroy();
+                    state.destroy_all_lock_surfaces();
+                }
+            }
+            _ => state.record_failure(PreparedStateError::Wire(
+                WireStateError::InvalidLockEvent,
+            )),
+        }
+    }
+}
+
+impl Dispatch<ExtSessionLockSurfaceV1, LockSurfaceData> for PreparedState {
+    fn event(
+        state: &mut Self,
+        _role: &ExtSessionLockSurfaceV1,
+        event: wayland_protocols::ext::session_lock::v1::client::ext_session_lock_surface_v1::Event,
+        data: &LockSurfaceData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        if !state.locking.as_ref().is_some_and(|locking| {
+            locking.phase.accepts_surfaces() && locking.lock_surfaces.contains_key(&data.output)
+        }) {
+            return;
+        }
+        if let wayland_protocols::ext::session_lock::v1::client::ext_session_lock_surface_v1::Event::Configure {
+            serial,
+            width,
+            height,
+        } = event
+        {
+            match state.surfaces.configure(data.output, serial, width, height) {
+                Ok(()) => state.queue_render(data.output),
+                Err(error) => state.record_failure(PreparedStateError::Surface(error)),
+            }
+        }
+    }
+}
+
+impl Dispatch<wl_surface::WlSurface, WireSurfaceData> for PreparedState {
+    fn event(
+        state: &mut Self,
+        _surface: &wl_surface::WlSurface,
+        event: wl_surface::Event,
+        data: &WireSurfaceData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        if !state.locking.as_ref().is_some_and(|locking| {
+            locking.phase.accepts_surfaces() && locking.lock_surfaces.contains_key(&data.output)
+        }) {
+            return;
+        }
+        if let wl_surface::Event::PreferredBufferScale { factor } = event {
+            let Ok(scale) = u32::try_from(factor) else {
+                state.record_failure(PreparedStateError::InvalidOutputScale);
+                return;
+            };
+            match state.surfaces.set_scale(data.output, scale) {
+                Ok(true) => state.queue_render(data.output),
+                Ok(false) => {}
+                Err(error) => state.record_failure(PreparedStateError::Surface(error)),
+            }
+        }
+    }
+}
+
+impl Dispatch<wl_buffer::WlBuffer, BufferData> for PreparedState {
+    fn event(
+        state: &mut Self,
+        buffer: &wl_buffer::WlBuffer,
+        event: wl_buffer::Event,
+        data: &BufferData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        if !matches!(event, wl_buffer::Event::Release) {
+            return;
+        }
+        let Some(locking) = &mut state.locking else {
+            state.record_failure(PreparedStateError::Wire(WireStateError::NotLocking));
+            return;
+        };
+        let Some(binding) = locking.buffers.remove(&data.buffer) else {
+            state.record_failure(PreparedStateError::Surface(SurfaceError::UnknownBuffer));
+            return;
+        };
+        if binding.proxy != *buffer {
+            state.record_failure(PreparedStateError::Wire(
+                WireStateError::BufferIdentityMismatch,
+            ));
+            return;
+        }
+        binding.proxy.destroy();
+        if let Err(error) = state.surfaces.release_buffer(data.buffer) {
+            state.record_failure(PreparedStateError::Surface(error));
+        }
+    }
+}
+
 delegate_noop!(PreparedState: ignore wl_compositor::WlCompositor);
 delegate_noop!(PreparedState: ignore wl_shm::WlShm);
+delegate_noop!(PreparedState: ignore wl_shm_pool::WlShmPool);
 delegate_noop!(PreparedState: ignore ExtSessionLockManagerV1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -696,6 +1212,22 @@ pub enum PreparedStateError {
     RequiredGlobalRemoved,
     Surface(SurfaceError),
     Keyboard(KeyboardFailure),
+    Wire(WireStateError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WireStateError {
+    AlreadyLocking,
+    NotLocking,
+    MissingRequiredBinding,
+    MissingOutput,
+    DuplicateLockSurface,
+    MissingLockSurface,
+    DuplicateBuffer,
+    BufferIdentityMismatch,
+    UnlockBeforeLocked,
+    InvalidLockEvent,
+    UnexpectedWireFailure,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -721,6 +1253,37 @@ impl From<XkbError> for KeyboardFailure {
             XkbError::CompileKeymap => Self::CompileKeymap,
             XkbError::KeymapUnavailable => Self::KeymapUnavailable,
             XkbError::InvalidKeycode => Self::InvalidKeycode,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) enum WireError {
+    Prepare(PrepareError),
+    Dispatch(wayland_client::DispatchError),
+    Flush(wayland_client::backend::WaylandError),
+    PreparedState(PreparedStateError),
+    State(WireStateError),
+    Surface(SurfaceError),
+    Shm(ShmError),
+}
+
+impl fmt::Display for WireError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("secure Wayland lock wire transition failed")
+    }
+}
+
+impl std::error::Error for WireError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Prepare(error) => Some(error),
+            Self::Dispatch(error) => Some(error),
+            Self::Flush(error) => Some(error),
+            Self::Surface(error) => Some(error),
+            Self::Shm(error) => Some(error),
+            Self::PreparedState(_) | Self::State(_) => None,
         }
     }
 }
@@ -943,6 +1506,11 @@ mod tests {
         assert_eq!(
             ExtSessionLockManagerV1::interface().name,
             registry_probe::MANAGER_INTERFACE
+        );
+        assert_eq!(ExtSessionLockV1::interface().name, "ext_session_lock_v1");
+        assert_eq!(
+            ExtSessionLockSurfaceV1::interface().name,
+            "ext_session_lock_surface_v1"
         );
         assert_eq!(WlOutput::interface().name, registry_probe::OUTPUT_INTERFACE);
         assert_eq!(

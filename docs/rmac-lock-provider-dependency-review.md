@@ -18,9 +18,9 @@ Use the already-resolved Smithay stack when the adapter is implemented:
 The latter supplies the generated official
 `ext::session_lock::v1::client` interfaces. Both versions already exist in the
 workspace lockfile through GPUI, are MIT licensed, and avoid adding a second
-client implementation. The adapter must still implement registry removal,
-output hotplug, exact configure/ack/commit ordering, dispatch failure, and an
-explicit display roundtrip after `unlock_and_destroy`.
+client implementation. The adapter must preserve registry removal, output
+hotplug, exact configure/ack/commit ordering, dispatch failure, and an explicit
+display roundtrip after `unlock_and_destroy`.
 
 They are now direct, Linux-only dependencies of `rmac-lock-provider-linux`.
 Its first Wayland API is a non-mutating registry preflight: it confirms protocol
@@ -30,9 +30,9 @@ requesting a lock. A second safe API binds those authorities, every output, and
 every supported seat. Three setup roundtrips receive output scale, seat
 capabilities, and the keyboard keymap before readiness; live output, seat,
 focus, modifier, and keyboard events are then tracked. Removal of a required
-singleton is terminal. The actual acquisition API remains intentionally absent
-until those objects can be combined with lock roles, buffers, and fail-closed
-event handling.
+singleton is terminal. An internal, crate-only typestate now combines those
+objects with lock roles, buffers, and fail-closed event handling. It is not an
+externally callable or installed acquisition API.
 
 ### Keyboard decoding
 
@@ -111,7 +111,7 @@ cover stage ordering and exactly-one end behavior without a real PAM service.
 It is not approved as the installed provider until the remaining Ubuntu matrix
 in `docs/rmac-pam-wrapper-audit.md` passes.
 
-## Rendering remains open
+## Rendering evidence remains open
 
 The lock client should start with a CPU shared-memory path so authentication and
 recovery do not depend on Vulkan availability. Exact `rustix` 1.1.4 is now a
@@ -121,11 +121,17 @@ second syscall wrapper. Each frame is painted sequentially through a fixed
 16 KiB chunk, then sealed against write, grow, shrink, and further seal changes.
 The memfd also requests the Linux no-exec seal at creation.
 
-This removes the need to promote `memmap2` or `tiny-skia` for the first opaque
-frame. Those remain possible later renderer candidates, not product
-dependencies. The current frame and backing file still need real `wl_shm_pool`
-and `wl_buffer` lifetime wiring, format/damage confirmation, and Ubuntu/niri
-evidence. GPUI windows cannot replace the privileged lock-surface role.
+This removes the need to promote `tiny-skia` for the first opaque frame
+(`memmap2` is now present only through the XKB file-mapping feature). Those
+remain possible later renderer candidates, not product dependencies. The
+internal wire creates one role per output, waits for configure, acknowledges
+only the newest serial, creates and immediately destroys each `wl_shm_pool`,
+attaches/damages an ARGB8888 buffer at exact scale, and retains both the buffer
+proxy and backing frame until `wl_buffer.release`. Hotplug destroys the role and
+surface but not an unreleased buffer. Unlock consumes the core state machine's
+move-only authentication token, destroys roles, and waits for a display-sync
+barrier. These paths still require Ubuntu/niri runtime evidence; GPUI windows
+cannot replace the privileged lock-surface role.
 
 ## Production acceptance gate for the PAM selection
 

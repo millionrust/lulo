@@ -332,7 +332,7 @@ impl SurfaceSet {
 
     /// Validate that no newer configure/scale superseded the paint, then
     /// produce the ordered protocol commit description.
-    pub fn commit_render(&mut self, plan: RenderPlan) -> Result<Commit, Error> {
+    pub fn commit_render(&mut self, plan: &RenderPlan) -> Result<Commit, Error> {
         let surface = self
             .outputs
             .get_mut(&plan.output)
@@ -366,6 +366,21 @@ impl SurfaceSet {
             ack_serial,
             layout: plan.layout,
         })
+    }
+
+    /// Release an uncommitted render reservation after paint or wire creation
+    /// fails. A stale plan cannot clear a newer render.
+    pub fn abandon_render(&mut self, plan: RenderPlan) -> Result<(), Error> {
+        let surface = self
+            .outputs
+            .get_mut(&plan.output)
+            .ok_or(Error::StaleRender)?;
+        let active = surface.active_render.ok_or(Error::StaleRender)?;
+        if active.buffer != plan.buffer || active.revision != plan.revision {
+            return Err(Error::StaleRender);
+        }
+        surface.active_render = None;
+        Ok(())
     }
 
     /// Destroy or recycle a `wl_buffer` only after its release event.
@@ -523,10 +538,27 @@ mod tests {
         assert_eq!(plan.layout().height(), 1800);
         assert_eq!(plan.layout().stride(), 11_520);
         assert_eq!(plan.layout().byte_len(), 20_736_000);
-        let commit = set.commit_render(plan).unwrap();
+        let commit = set.commit_render(&plan).unwrap();
         assert_eq!(commit.ack_serial(), Some(41));
         assert_eq!(commit.layout().scale(), 2);
         assert_eq!(set.in_flight_buffer_count(), 1);
+    }
+
+    #[test]
+    fn failed_paint_abandons_only_its_exact_reservation() {
+        let id = output(1);
+        let mut set = SurfaceSet::new();
+        configured(&mut set, id);
+        let stale = set.begin_render(id).unwrap();
+        assert!(set.reserved_byte_count() > 0);
+
+        set.configure(id, 42, 800, 600).unwrap();
+        let current = set.begin_render(id).unwrap();
+        assert_eq!(set.abandon_render(stale), Err(Error::StaleRender));
+        assert!(set.reserved_byte_count() > 0);
+        set.abandon_render(current).unwrap();
+        assert_eq!(set.reserved_byte_count(), 0);
+        assert_eq!(set.in_flight_buffer_count(), 0);
     }
 
     #[test]
@@ -536,11 +568,11 @@ mod tests {
         configured(&mut set, id);
         let stale = set.begin_render(id).unwrap();
         set.configure(id, 42, 1280, 720).unwrap();
-        assert_eq!(set.commit_render(stale), Err(Error::StaleRender));
+        assert_eq!(set.commit_render(&stale), Err(Error::StaleRender));
 
         set.configure(id, 43, 1920, 1080).unwrap();
         let plan = set.begin_render(id).unwrap();
-        let commit = set.commit_render(plan).unwrap();
+        let commit = set.commit_render(&plan).unwrap();
         assert_eq!(commit.ack_serial(), Some(43));
         assert_eq!(commit.layout().width(), 1920);
     }
@@ -551,12 +583,12 @@ mod tests {
         let mut set = SurfaceSet::new();
         configured(&mut set, id);
         let plan = set.begin_render(id).unwrap();
-        let first = set.commit_render(plan).unwrap();
+        let first = set.commit_render(&plan).unwrap();
         assert_eq!(first.ack_serial(), Some(41));
 
         assert!(set.set_scale(id, 2).unwrap());
         let plan = set.begin_render(id).unwrap();
-        let scaled = set.commit_render(plan).unwrap();
+        let scaled = set.commit_render(&plan).unwrap();
         assert_eq!(scaled.ack_serial(), None);
         assert_eq!(scaled.layout().width(), 2880);
     }
@@ -567,7 +599,7 @@ mod tests {
         let mut set = SurfaceSet::new();
         configured(&mut set, id);
         let plan = set.begin_render(id).unwrap();
-        let committed = set.commit_render(plan).unwrap();
+        let committed = set.commit_render(&plan).unwrap();
         let abandoned = set.begin_render(id).unwrap();
 
         let removal = set.remove_output(id).unwrap();
@@ -586,7 +618,7 @@ mod tests {
         let mut buffers = Vec::new();
         for _ in 0..MAX_IN_FLIGHT_BUFFERS {
             let plan = set.begin_render(id).unwrap();
-            let commit = set.commit_render(plan).unwrap();
+            let commit = set.commit_render(&plan).unwrap();
             buffers.push(commit.buffer());
         }
         assert!(matches!(

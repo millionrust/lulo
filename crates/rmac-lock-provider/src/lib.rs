@@ -57,7 +57,7 @@ pub enum Phase {
 pub enum Event {
     OutputAdded(OutputId),
     OutputRemoved(OutputId),
-    FramePresented(OutputId),
+    FrameCommitted(OutputId),
     CompositorLocked,
     BeginAuthentication,
     AuthenticationSucceeded(AttemptId),
@@ -67,7 +67,7 @@ pub enum Event {
     UnlockCommitted,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct Transition {
     /// Complete the systemd `Type=notify` start transaction. This is emitted
     /// only for the compositor's `locked` event, never merely for a frame.
@@ -75,12 +75,27 @@ pub struct Transition {
     /// Start one PAM conversation. The adapter must not retain its credential
     /// after returning an outcome for this exact identifier.
     pub authentication_attempt: Option<AttemptId>,
-    /// Send `ext_session_lock_v1.unlock_and_destroy` immediately. Only a
-    /// matching successful authentication can set this bit.
-    pub send_unlock: bool,
+    /// Move-only authority to send `unlock_and_destroy`. Only a matching
+    /// successful authentication can construct this token.
+    pub unlock_authorization: Option<UnlockAuthorization>,
     /// Exit the provider after a compositor denial/failure or after the unlock
     /// request has been flushed. No exit transition itself unlocks a session.
     pub exit_provider: bool,
+}
+
+/// One-shot authority for the Linux wire to request unlock.
+///
+/// The private field prevents adapters from constructing this token directly;
+/// it is intentionally neither `Clone` nor `Copy`.
+#[derive(Eq, PartialEq)]
+pub struct UnlockAuthorization {
+    _private: (),
+}
+
+impl fmt::Debug for UnlockAuthorization {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UnlockAuthorization(<redacted>)")
+    }
 }
 
 pub struct Provider {
@@ -138,11 +153,11 @@ impl Provider {
         self.outputs.len()
     }
 
-    /// Presentation completeness is not the security readiness boundary. The
-    /// protocol permits the compositor to securely blank an output while the
-    /// client catches up, and its `locked` event remains authoritative.
-    pub fn presentation_complete(&self) -> bool {
-        !self.outputs.is_empty() && self.outputs.values().all(|presented| *presented)
+    /// Client-side commit completeness is not proof of presentation or the
+    /// security readiness boundary. The compositor may securely blank an
+    /// output while the client catches up; its `locked` event is authoritative.
+    pub fn frames_committed(&self) -> bool {
+        !self.outputs.is_empty() && self.outputs.values().all(|committed| *committed)
     }
 
     pub fn apply(&mut self, event: Event) -> Result<Transition, Error> {
@@ -169,9 +184,9 @@ impl Provider {
                 }
                 Ok(Transition::default())
             }
-            Event::FramePresented(output) => {
-                let presented = self.outputs.get_mut(&output).ok_or(Error::UnknownOutput)?;
-                *presented = true;
+            Event::FrameCommitted(output) => {
+                let committed = self.outputs.get_mut(&output).ok_or(Error::UnknownOutput)?;
+                *committed = true;
                 Ok(Transition::default())
             }
             Event::CompositorLocked if self.phase == Phase::Acquiring => {
@@ -201,7 +216,7 @@ impl Provider {
                 self.active_attempt = None;
                 self.phase = Phase::UnlockAuthorized;
                 Ok(Transition {
-                    send_unlock: true,
+                    unlock_authorization: Some(UnlockAuthorization { _private: () }),
                     ..Transition::default()
                 })
             }
@@ -289,8 +304,8 @@ mod tests {
     fn readiness_comes_only_from_the_compositor_locked_event() {
         let mut provider = Provider::new();
         provider.apply(Event::OutputAdded(output(1))).unwrap();
-        provider.apply(Event::FramePresented(output(1))).unwrap();
-        assert!(provider.presentation_complete());
+        provider.apply(Event::FrameCommitted(output(1))).unwrap();
+        assert!(provider.frames_committed());
         assert!(!provider.ready_notified);
 
         lock(&mut provider);
@@ -301,19 +316,19 @@ mod tests {
     }
 
     #[test]
-    fn hotplug_tracks_presentation_without_weakening_locked_readiness() {
+    fn hotplug_tracks_frame_commits_without_weakening_locked_readiness() {
         let mut provider = Provider::new();
         provider.apply(Event::OutputAdded(output(1))).unwrap();
-        provider.apply(Event::FramePresented(output(1))).unwrap();
+        provider.apply(Event::FrameCommitted(output(1))).unwrap();
         lock(&mut provider);
-        assert!(provider.presentation_complete());
+        assert!(provider.frames_committed());
 
         provider.apply(Event::OutputAdded(output(2))).unwrap();
-        assert!(!provider.presentation_complete());
-        provider.apply(Event::FramePresented(output(2))).unwrap();
-        assert!(provider.presentation_complete());
+        assert!(!provider.frames_committed());
+        provider.apply(Event::FrameCommitted(output(2))).unwrap();
+        assert!(provider.frames_committed());
         provider.apply(Event::OutputRemoved(output(1))).unwrap();
-        assert!(provider.presentation_complete());
+        assert!(provider.frames_committed());
         assert_eq!(provider.output_count(), 1);
         assert_eq!(
             provider.apply(Event::OutputRemoved(output(1))),
@@ -342,7 +357,11 @@ mod tests {
         let transition = provider
             .apply(Event::AuthenticationSucceeded(attempt))
             .unwrap();
-        assert!(transition.send_unlock);
+        let authorization = transition.unlock_authorization.unwrap();
+        assert_eq!(
+            format!("{authorization:?}"),
+            "UnlockAuthorization(<redacted>)"
+        );
         assert_eq!(provider.phase(), Phase::UnlockAuthorized);
         assert_eq!(
             provider.apply(Event::BeginAuthentication),
@@ -411,14 +430,14 @@ mod tests {
         let mut denied = Provider::new();
         let transition = denied.apply(Event::CompositorFinished).unwrap();
         assert!(transition.exit_provider);
-        assert!(!transition.send_unlock);
+        assert!(transition.unlock_authorization.is_none());
         assert_eq!(denied.phase(), Phase::Denied);
 
         let mut failed_locked = Provider::new();
         lock(&mut failed_locked);
         let transition = failed_locked.apply(Event::CompositorFinished).unwrap();
         assert!(transition.exit_provider);
-        assert!(!transition.send_unlock);
+        assert!(transition.unlock_authorization.is_none());
         assert_eq!(failed_locked.phase(), Phase::FailedLocked);
         assert_eq!(
             failed_locked.apply(Event::UnlockCommitted),

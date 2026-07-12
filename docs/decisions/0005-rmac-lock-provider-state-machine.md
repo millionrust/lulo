@@ -42,8 +42,8 @@ or D-Bus type. Its events and transitions enforce these invariants:
 3. Starting authentication produces a unique attempt token. Success, failure,
    and cancellation must carry the active token; stale results cannot mutate
    state.
-4. Only matching authentication success emits the unlock transition. Failure
-   increments a saturating public attempt count; cancellation does not.
+4. Only matching authentication success constructs a move-only unlock token.
+   Failure increments a saturating public attempt count; cancellation does not.
 5. A compositor `finished` event before readiness is a denied acquisition. The
    same event after readiness is a failed-but-still-locked terminal state. It
    never emits unlock.
@@ -97,9 +97,18 @@ output scale, seat capabilities, and an `xkb_v1` keymap before readiness, then
 tracks hotplug, focus, modifiers, layout group, repeat metadata, and bounded
 semantic input. Keymap mapping is capped at 16 MiB; decoded text is capped at 64
 bytes, redacted, and erased on drop. Loss of a required singleton or malformed
-input state is terminal. Lock acquisition remains unavailable until the
-prepared objects can immediately create every output role, render through the
-bounded lifecycle, and route semantic input through credential editing.
+input state is terminal.
+
+The crate-only lock typestate now issues acquisition, immediately creates one
+role per output, renders only after configure, performs exact ack/scale/attach/
+damage/commit ordering, and retains every sealed frame until buffer release.
+Hotplug creates or destroys roles while release accounting survives output
+removal. The wire requires the core's move-only authentication token before it
+may send `unlock_and_destroy`, destroy every role, and wait for a display-sync
+barrier before emitting the flush event. Client commit is tracked as commit—not
+presentation—and never replaces the compositor's authoritative `locked` event.
+This typestate remains unavailable outside the crate until the complete runtime
+and recovery path exist.
 
 The platform-neutral credential editor already joins semantic input to one
 single-use broker prompt. Echo-off and echo-on buffers are bounded and erased,
@@ -111,9 +120,9 @@ event loop.
 
 The initial renderer is an opaque, dependency-free CPU composition written in
 bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after
-painting through kernel seals, and owned with its redacted buffer token. Wire
-buffer creation and release must preserve that ownership until the compositor's
-release event; rendering completion alone never authorizes readiness or unlock.
+painting through kernel seals, and owned with its redacted buffer token. The
+wire preserves that ownership until the compositor's release event; rendering
+completion alone never authorizes readiness or unlock.
 
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,

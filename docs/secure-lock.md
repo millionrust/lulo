@@ -109,12 +109,12 @@ dependency lines—and the reasons no PAM crate is accepted yet—are recorded i
 
 On Linux the same crate can perform a non-mutating Wayland registry preflight.
 It accepts only a compositor advertising `ext-session-lock-v1` version 1,
-`wl_compositor` version 4, `wl_shm` version 1, and at least one `wl_output`, then
-drops the connection without binding or locking. A prepared connection can bind
-those authorities, complete output initialization, and track live output
-add/remove/integer-scale events. Required-global removal is terminal. Neither
-API exposes the lock request, so this foundation cannot blank or strand a
-development session.
+`wl_compositor` version 4, `wl_shm` version 1, at least one `wl_output`, and
+`wl_seat` version 4, then drops the connection without binding or locking. A
+prepared connection can bind those authorities, complete three output/seat/
+keymap initialization roundtrips, and track live output and keyboard events.
+Required-global removal is terminal. Neither public API exposes the lock
+request, so ordinary callers cannot blank or strand a development session.
 
 The platform-neutral lock-surface lifecycle now coalesces configure events,
 requires the newest serial to be acknowledged before its exact-size commit,
@@ -124,8 +124,8 @@ each ARGB buffer to 512 MiB, and each output to three in-flight buffers. Invalid
 dimensions, arithmetic overflow, and more than 1 GiB reserved across all
 outputs fail before allocation. Output removal abandons an unfinished paint and
 requires the wire adapter to destroy the surface role while keeping any
-released-later buffers accounted for. This is executable protocol ordering, not
-a renderer or Wayland object implementation.
+released-later buffers accounted for. Failed painting can now abandon only its
+exact reservation, so a wire error does not retain phantom memory budget.
 
 The first renderer is an original rmac midnight composition painted on the CPU
 as opaque ARGB8888. It uses a fixed 16 KiB working chunk rather than allocating
@@ -134,6 +134,19 @@ anonymous memfd sized from the validated layout and sealed against write,
 resize, and seal changes after the complete frame is flushed. The owned file
 and redacted buffer identity are ready to remain alive until `wl_buffer.release`.
 No Apple wallpaper, color token, icon, font, or other proprietary asset is used.
+
+The Linux-only internal lock typestate now issues the generated session-lock
+request and immediately creates exactly one empty `wl_surface` and lock role per
+current output; hotplug does the same. It waits for the first configure before
+painting, coalesces later configures, acknowledges before attach/commit, sets
+integer buffer scale, and damages the exact pixel extent. Each sealed frame is
+passed through a temporary `wl_shm_pool`; the pool is destroyed immediately,
+while the `wl_buffer` and frame remain owned until compositor release. Output
+removal destroys its role/surface but preserves unreleased buffers. The wire
+requires the core state machine's move-only authentication token before sending
+`unlock_and_destroy`; every role is then destroyed and a display-sync roundtrip
+must complete before exit. Client frame commits are reported only as commits;
+the compositor `locked` event remains the sole readiness/presentation authority.
 
 The Linux PAM boundary now uses only raw, pre-generated `pam-sys2` declarations
 beneath rmac-owned code. Its typed worker conversation supports echo-on,
@@ -173,12 +186,12 @@ PAM, notices acknowledge, radio prompts select, and Escape cancels. Generic
 binary MFA is intentionally rejected for a module-specific UI. Editor, event,
 and error diagnostics disclose neither input nor raw key identity.
 
-The Linux adapter still requires session-lock acquisition and wire lock-surface
-objects, `wl_shm_pool`/buffer release wiring, event-loop routing and client-side
-repeat scheduling, module-specific binary MFA UI, IME/accessibility support,
-and real niri/PAM evidence including the compiled fault tests. Until then, the
-installed unit continues to run swaylock and the preview projection remains
-unrendered.
+The Linux adapter still requires a complete runtime joining the internal wire,
+core provider, PAM worker, prompt editor, readiness notification, and recovery;
+client-side repeat scheduling, module-specific binary MFA UI, IME/accessibility
+support, and real niri/PAM evidence including the compiled fault tests also
+remain. Until then, the installed unit continues to run swaylock and the preview
+projection remains unrendered.
 
 ## Not complete yet
 

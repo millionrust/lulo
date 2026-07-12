@@ -206,6 +206,18 @@ keycodes, and pre-map size rejection:
 cargo test -p rmac-lock-provider-linux xkb_keyboard:: --locked -- --test-threads=1
 ```
 
+A full native package test also links the generated session-lock/shm wire but
+does not issue a lock request:
+
+```sh
+cargo test -p rmac-lock-provider -p rmac-lock-provider-linux --locked
+```
+
+Do not expose or invoke the crate-internal acquisition typestate ad hoc. Its
+first live run belongs in the dedicated nested-compositor/recovery procedure
+after the provider runtime, emergency TTY recovery, and kill/restart harness are
+in place.
+
 Record the exact output. Do not install `pam/rmac-lock` into `/etc/pam.d` or run
 real authentication until the separate recovery-console procedure and test
 account are ready. When cross-checking Linux from macOS, prefix Cargo with

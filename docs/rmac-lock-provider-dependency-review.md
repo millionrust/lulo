@@ -81,11 +81,18 @@ fault injection.
 ## Rendering remains open
 
 The lock client should start with a CPU shared-memory path so authentication and
-recovery do not depend on Vulkan availability. `tiny-skia` 0.11.4 and `memmap2`
-0.9.11 are already resolved candidates, but they are not promoted to direct
-product dependencies until a prototype proves exact buffer lifetime, scale,
-format, damage, release, resize, and memory bounds. GPUI windows cannot replace
-the privileged lock-surface role.
+recovery do not depend on Vulkan availability. Exact `rustix` 1.1.4 is now a
+direct Linux-only dependency for its safe `memfd_create`, resize, and sealing
+APIs; it was already resolved, is MIT/Apache-2.0 licensed, and introduces no
+second syscall wrapper. Each frame is painted sequentially through a fixed
+16 KiB chunk, then sealed against write, grow, shrink, and further seal changes.
+The memfd also requests the Linux no-exec seal at creation.
+
+This removes the need to promote `memmap2` or `tiny-skia` for the first opaque
+frame. Those remain possible later renderer candidates, not product
+dependencies. The current frame and backing file still need real `wl_shm_pool`
+and `wl_buffer` lifetime wiring, format/damage confirmation, and Ubuntu/niri
+evidence. GPUI windows cannot replace the privileged lock-surface role.
 
 ## Acceptance gate for the PAM selection
 

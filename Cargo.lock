@@ -5099,6 +5099,7 @@ name = "rmac-lock-provider-linux"
 version = "0.1.0"
 dependencies = [
  "rmac-lock-provider",
+ "rustix 1.1.4",
  "wayland-client",
  "wayland-protocols 0.32.13",
  "zeroize",

@@ -127,11 +127,19 @@ requires the wire adapter to destroy the surface role while keeping any
 released-later buffers accounted for. This is executable protocol ordering, not
 a renderer or Wayland object implementation.
 
+The first renderer is an original rmac midnight composition painted on the CPU
+as opaque ARGB8888. It uses a fixed 16 KiB working chunk rather than allocating
+a second output-sized image. On Linux the destination is a CLOEXEC, no-exec
+anonymous memfd sized from the validated layout and sealed against write,
+resize, and seal changes after the complete frame is flushed. The owned file
+and redacted buffer identity are ready to remain alive until `wl_buffer.release`.
+No Apple wallpaper, color token, icon, font, or other proprietary asset is used.
+
 The Linux adapter still requires session-lock acquisition and wire lock-surface
-objects, a shared-memory renderer, a reviewed PAM binding, bounded multi-message
-conversation handling, `pam_start`/`pam_end` lifetime correctness, and real
-niri/PAM evidence. Until then, the installed unit continues to run swaylock and
-the preview projection remains unrendered.
+objects, `wl_shm_pool`/buffer release wiring, a reviewed PAM binding, bounded
+multi-message conversation handling, `pam_start`/`pam_end` lifetime correctness,
+and real niri/PAM evidence. Until then, the installed unit continues to run
+swaylock and the preview projection remains unrendered.
 
 ## Not complete yet
 

@@ -79,6 +79,12 @@ Loss of a required singleton is terminal. Lock acquisition remains unavailable
 until the prepared objects can immediately create every output role and render
 through the bounded lifecycle.
 
+The initial renderer is an opaque, dependency-free CPU composition written in
+bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after
+painting through kernel seals, and owned with its redacted buffer token. Wire
+buffer creation and release must preserve that ownership until the compositor's
+release event; rendering completion alone never authorizes readiness or unlock.
+
 Swaylock remains the installed/default provider until the adapter passes the
 Linux PAM, wrong-password, cancel, MFA, output hotplug, scale/rotation,
 suspend/resume, renderer failure, provider crash, accessibility, and emergency

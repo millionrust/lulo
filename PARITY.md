@@ -30,7 +30,9 @@ evidence remains gated by the reference-PC framework work.
   startup-disk, and backup controls instead of persisting demo state. Assistant
   and Screen Time stay out of navigation, while required unfinished panes show
   an explicit unavailable state. Sound exposes only system-backed controls and
-  hides local-only alert/startup/UI-effect state; overall parity remains partial.
+  hides local-only alert/startup/UI-effect state. System Settings no longer
+  reads or writes a private settings file for service-owned state; overall
+  parity remains partial.
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).

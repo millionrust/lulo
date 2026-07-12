@@ -50,11 +50,12 @@ snapshots, and must not persist a local toggle as a substitute for system state.
 
 General now exposes only About, the explicitly read-only Software Update status,
 and measured Storage. Device-continuity and media-receiver controls are hidden
-until reviewed Linux service authorities exist. Legacy `handoff`, `airdrop_idx`,
-and `airplay_receiver` keys remain harmless unknown input for migration, are not
-loaded into UI state, and disappear on the next legitimate save. AppleCare,
-AutoFill, Startup Disk, and Time Machine rows are absent rather than mapped to
-generic clickable placeholders.
+until reviewed Linux service authorities exist. System Settings no longer reads
+or writes its obsolete private `settings.json`; NetworkManager, BlueZ, PipeWire,
+and the other typed services seed their own authoritative state. A stale file
+from an older installation is ignored and can be removed by packaging or
+uninstall cleanup. AppleCare, AutoFill, Startup Disk, and Time Machine rows are
+absent rather than mapped to generic clickable placeholders.
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.
@@ -65,5 +66,5 @@ placeholder subpages have been removed.
 Sound now renders only controls backed by the system audio service. The former
 alert-sound picker, alert volume, startup sound, UI-effect toggles, and unused
 balance state were local persistence pretending to be session policy; they are
-hidden until an authoritative rmac sound-policy service exists. Their legacy
-keys are ignored and disappear on the next valid save.
+hidden until an authoritative rmac sound-policy service exists. The obsolete
+private settings file containing those keys is ignored rather than migrated.

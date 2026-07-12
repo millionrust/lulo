@@ -2,20 +2,18 @@
 //!
 //! Sidebar (search · local account card · colored category tiles) + detail pane
 //! (hero icon/title/description + grouped rounded cards of rows). Several panes
-//! are interactive: Wi-Fi is service-backed; remaining local controls are being
-//! migrated pane-by-pane to typed Linux/macOS services.
+//! are interactive and backed by typed Linux/macOS services. Unsupported
+//! mutations are explicitly unavailable rather than represented by local state.
 //! Row chevrons push detail subpages with a back stack (toolbar back button +
 //! ⌘[). Read-only panes use real platform state rather than fabricated values.
 
-mod storage;
-
 use std::borrow::Cow;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::time::Duration;
 
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
     AssetSource, Context, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement as _,
     IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
@@ -183,7 +181,6 @@ struct Settings {
     focus: FocusHandle,
     focused_once: bool,
     dragging: bool,
-    persistence_error: Option<SharedString>,
     wifi_error: Option<SharedString>,
     bluetooth_error: Option<SharedString>,
     network_error: Option<SharedString>,
@@ -232,8 +229,6 @@ struct Settings {
     wifi_loading: bool,
     wifi_busy: bool,
     wifi_on: bool,
-    ask_to_join: bool,
-    joined: Option<usize>,
     wifi_interface: Option<String>,
     wifi_networks: Vec<rmac_network::WifiNetwork>,
 
@@ -398,156 +393,6 @@ const FOCUS_DAYS: [(rmac_focus::Weekday, &str); 7] = [
     (rmac_focus::Weekday::Sunday, "S"),
 ];
 
-// ---- on-disk persistence -------------------------------------------------
-//
-// The interactive settings state is serialized to a small flat JSON config
-// file so toggles/sliders/segmented choices survive a quit. We hand-roll a
-// tiny flat-JSON writer/reader (all values are numbers or 0/1 booleans) to
-// avoid pulling extra dependencies into the workspace lockfile.
-
-/// A snapshot of all persisted interactive state.
-#[derive(Clone, Debug, PartialEq)]
-struct Persisted {
-    wifi_on: bool,
-    ask_to_join: bool,
-    joined: Option<usize>,
-    bluetooth_on: bool,
-    bt_discoverable: bool,
-    output_volume: f32,
-    mute: bool,
-}
-
-impl Default for Persisted {
-    fn default() -> Self {
-        Self {
-            wifi_on: true,
-            ask_to_join: true,
-            joined: Some(0),
-            bluetooth_on: true,
-            bt_discoverable: true,
-            output_volume: 72.0,
-            mute: false,
-        }
-    }
-}
-
-fn config_path() -> Result<PathBuf, storage::Failure> {
-    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
-        storage::Failure::message(
-            storage::Operation::ResolveConfigPath,
-            Path::new("settings.json"),
-            "HOME is not set",
-        )
-    })?;
-    #[cfg(target_os = "macos")]
-    let dir = home.join("Library/Application Support/rmac-system-settings");
-    #[cfg(not(target_os = "macos"))]
-    let dir = {
-        match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
-            Some(x) if x.is_absolute() => x.join("rmac-system-settings"),
-            _ => home.join(".config/rmac-system-settings"),
-        }
-    };
-    Ok(dir.join("settings.json"))
-}
-
-impl Persisted {
-    fn load() -> Result<Self, storage::Failure> {
-        let path = config_path()?;
-        match storage::load_optional(&storage::RealStorage, &path)? {
-            Some(content) => Self::parse(&content).map_err(|detail| {
-                storage::Failure::message(storage::Operation::LoadSettings, &path, detail)
-            }),
-            None => Ok(Self::default()),
-        }
-    }
-
-    fn save(&self) -> Result<(), storage::Failure> {
-        let path = config_path()?;
-        storage::save(&storage::RealStorage, &path, self.to_json())
-    }
-
-    fn to_json(&self) -> String {
-        let b = |v: bool| if v { 1 } else { 0 };
-        format!(
-            concat!(
-                "{{\n",
-                "  \"wifi_on\": {},\n",
-                "  \"ask_to_join\": {},\n",
-                "  \"joined\": {},\n",
-                "  \"bluetooth_on\": {},\n",
-                "  \"bt_discoverable\": {},\n",
-                "  \"output_volume\": {},\n",
-                "  \"mute\": {}\n",
-                "}}\n",
-            ),
-            b(self.wifi_on),
-            b(self.ask_to_join),
-            self.joined.map(|j| j as i64).unwrap_or(-1),
-            b(self.bluetooth_on),
-            b(self.bt_discoverable),
-            self.output_volume,
-            b(self.mute),
-        )
-    }
-
-    /// Parse a flat JSON object of numeric values. Unknown or missing keys keep
-    /// their defaults; malformed recognized values reject the existing file.
-    fn parse(content: &str) -> Result<Self, String> {
-        let mut p = Self::default();
-        let trimmed = content.trim();
-        if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
-            return Err("settings file is not a complete JSON object".into());
-        }
-        let body = &trimmed[1..trimmed.len() - 1];
-        for part in body.split(',') {
-            let part = part
-                .trim()
-                .trim_matches(|c: char| c.is_whitespace() || c == '\n');
-            if part.is_empty() {
-                continue;
-            }
-            let (raw_key, raw) = part
-                .split_once(':')
-                .ok_or_else(|| "settings entry is missing ':'".to_string())?;
-            let key = raw_key.trim().trim_matches('"');
-            let recognized = matches!(
-                key,
-                "wifi_on"
-                    | "ask_to_join"
-                    | "joined"
-                    | "bluetooth_on"
-                    | "bt_discoverable"
-                    | "output_volume"
-                    | "mute"
-            );
-            if !recognized {
-                continue;
-            }
-            let raw = raw.trim().trim_matches('"');
-            let num: f64 = raw
-                .parse()
-                .map_err(|_| format!("setting '{key}' is not numeric"))?;
-            if !num.is_finite() {
-                return Err(format!("setting '{key}' is not finite"));
-            }
-            let truthy = num != 0.0;
-            match key {
-                "wifi_on" => p.wifi_on = truthy,
-                "ask_to_join" => p.ask_to_join = truthy,
-                "joined" => p.joined = if num < 0.0 { None } else { Some(num as usize) },
-                "bluetooth_on" => p.bluetooth_on = truthy,
-                "bt_discoverable" => p.bt_discoverable = truthy,
-                "output_volume" => p.output_volume = num as f32,
-                "mute" => p.mute = truthy,
-                _ => {}
-            }
-        }
-        p.output_volume = p.output_volume.clamp(0.0, 100.0);
-        Ok(p)
-    }
-}
-
 impl Settings {
     fn audio_slider(
         cx: &mut Context<Self>,
@@ -574,13 +419,6 @@ impl Settings {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
 
-        // A missing config is a normal first launch. Existing-but-unreadable or
-        // malformed state falls back safely and remains visible to the user.
-        let (saved, persistence_error) = match Persisted::load() {
-            Ok(saved) => (saved, None),
-            Err(failure) => (Persisted::default(), Some(failure.to_string().into())),
-        };
-
         let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
         let app_catalog_watcher = rmac_apps::watch_catalog(move || {
             let _ = catalog_events.try_send(());
@@ -588,8 +426,7 @@ impl Settings {
         .ok();
 
         // System audio sliders write through the platform audio service.
-        let output_volume =
-            Self::audio_slider(cx, saved.output_volume, rmac_audio::DeviceKind::Output);
+        let output_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Output);
         let input_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Input);
 
         // Hardware discovery launches multiple platform commands, including
@@ -824,7 +661,6 @@ impl Settings {
             focus: cx.focus_handle(),
             focused_once: false,
             dragging: false,
-            persistence_error,
             wifi_error: None,
             bluetooth_error: None,
             network_error: None,
@@ -866,9 +702,7 @@ impl Settings {
             wifi_available: false,
             wifi_loading: true,
             wifi_busy: false,
-            wifi_on: saved.wifi_on,
-            ask_to_join: saved.ask_to_join,
-            joined: saved.joined,
+            wifi_on: false,
             wifi_interface: None,
             wifi_networks: Vec::new(),
 
@@ -877,8 +711,8 @@ impl Settings {
             bluetooth_busy: false,
             bluetooth_discovering: false,
             bluetooth_adapter_name: None,
-            bluetooth_on: saved.bluetooth_on,
-            bt_discoverable: saved.bt_discoverable,
+            bluetooth_on: false,
+            bt_discoverable: false,
             bt_devices: Vec::new(),
 
             host_appearance: rmac_appearance::Snapshot::default(),
@@ -2191,23 +2025,6 @@ impl Settings {
             });
         })
         .detach();
-    }
-
-    /// Capture the current interactive state and write it to disk.
-    fn persist(&mut self, cx: &App) {
-        let snapshot = Persisted {
-            wifi_on: self.wifi_on,
-            ask_to_join: self.ask_to_join,
-            joined: self.joined,
-            bluetooth_on: self.bluetooth_on,
-            bt_discoverable: self.bt_discoverable,
-            output_volume: self.output_volume.read(cx).value().start(),
-            mute: self.audio.output.muted,
-        };
-        self.persistence_error = snapshot
-            .save()
-            .err()
-            .map(|failure| failure.to_string().into());
     }
 
     fn current(&self) -> &Category {
@@ -5209,9 +5026,8 @@ impl Render for Settings {
             window.focus(&self.focus);
         }
         let settings_error = self
-            .persistence_error
+            .wifi_error
             .clone()
-            .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
             .or_else(|| self.vpn_error.clone())
@@ -5240,7 +5056,6 @@ impl Render for Settings {
                         .border_l_0()
                         .border_r_0()
                         .on_dismiss(cx.listener(|this, _, _, cx| {
-                            this.persistence_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
@@ -5357,34 +5172,6 @@ fn section_header(title: &'static str) -> Div {
         .font_weight(rmac_ui::mac::SEMIBOLD)
         .text_color(secondary())
         .child(title)
-}
-
-/// A switch row whose state lives in the view; `set` writes the new bool.
-#[allow(clippy::too_many_arguments)]
-fn switch_row(
-    icon: &'static str,
-    color: Hsla,
-    title: SharedString,
-    sub: Option<SharedString>,
-    checked: bool,
-    cx: &Context<Settings>,
-    set: fn(&mut Settings, bool),
-) -> AnyElement {
-    let view = cx.entity();
-    let id = ElementId::from(SharedString::from(format!("sw-{title}")));
-    let sw = Toggle::new(id).checked(checked).on_change(move |v, _, cx| {
-        let nv = *v;
-        view.update(cx, |s, cx| {
-            set(s, nv);
-            s.persist(cx);
-            cx.notify();
-        });
-    });
-    row_base()
-        .child(tile(icon, color, 22.0))
-        .child(text_block(title, sub))
-        .child(sw)
-        .into_any_element()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6099,90 +5886,6 @@ fn nav_row(
     .into_any_element()
 }
 
-/// A segmented control over a fixed set of options; `set` writes the index.
-fn segmented(
-    view: Entity<Settings>,
-    id: &'static str,
-    options: &[&'static str],
-    selected: usize,
-    set: fn(&mut Settings, usize),
-) -> Div {
-    let mut row = div().flex().gap_1().w_full();
-    for (i, opt) in options.iter().enumerate() {
-        let is_sel = i == selected;
-        let v = view.clone();
-        row = row.child(
-            div()
-                .id(ElementId::from(SharedString::from(format!("{id}-{i}"))))
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h(px(26.0))
-                .rounded(px(6.0))
-                .cursor_pointer()
-                .text_size(px(12.0))
-                .when(is_sel, |el| el.bg(accent()).text_color(on_accent()))
-                .when(!is_sel, |el| {
-                    el.bg(rmac_ui::mac::control_fill())
-                        .text_color(label())
-                        .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
-                })
-                .child(*opt)
-                .on_click(move |_, _, cx| {
-                    v.update(cx, |s, cx| {
-                        set(s, i);
-                        s.persist(cx);
-                        cx.notify();
-                    });
-                }),
-        );
-    }
-    row
-}
-
-/// Like [`segmented`] but for a runtime slice (e.g. alert sound names).
-fn segmented_dynamic(
-    view: Entity<Settings>,
-    id: &'static str,
-    options: &[&'static str],
-    selected: usize,
-    set: fn(&mut Settings, usize),
-) -> Div {
-    let mut row = div().flex().flex_wrap().gap_1().w_full();
-    for (i, opt) in options.iter().enumerate() {
-        let is_sel = i == selected;
-        let v = view.clone();
-        row = row.child(
-            div()
-                .id(ElementId::from(SharedString::from(format!("{id}-{i}"))))
-                .flex()
-                .items_center()
-                .justify_center()
-                .px_2()
-                .h(px(26.0))
-                .rounded(px(6.0))
-                .cursor_pointer()
-                .text_size(px(12.0))
-                .when(is_sel, |el| el.bg(accent()).text_color(on_accent()))
-                .when(!is_sel, |el| {
-                    el.bg(rmac_ui::mac::control_fill())
-                        .text_color(label())
-                        .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
-                })
-                .child(*opt)
-                .on_click(move |_, _, cx| {
-                    v.update(cx, |s, cx| {
-                        set(s, i);
-                        s.persist(cx);
-                        cx.notify();
-                    });
-                }),
-        );
-    }
-    row
-}
-
 /// Build a rounded white card from rows, inserting inset separators.
 fn card(rows: Vec<AnyElement>) -> Div {
     let mut c = div()
@@ -6585,68 +6288,11 @@ fn main() {
 mod tests {
     use super::{
         categories, colon_value, notification_policy_with, os_release_value,
-        NotificationPolicyChange, Persisted,
+        NotificationPolicyChange,
     };
 
     #[test]
-    fn persisted_settings_round_trip() {
-        let expected = Persisted {
-            wifi_on: false,
-            ask_to_join: false,
-            joined: Some(3),
-            bluetooth_on: false,
-            bt_discoverable: false,
-            output_volume: 31.0,
-            mute: true,
-        };
-
-        let parsed = Persisted::parse(&expected.to_json()).unwrap();
-
-        assert_eq!(parsed, expected);
-    }
-
-    #[test]
-    fn malformed_existing_settings_are_reported() {
-        assert!(Persisted::parse("{\"wifi_on\": nope}").is_err());
-        assert!(Persisted::parse("{\"wifi_on\": 1").is_err());
-    }
-
-    #[test]
-    fn persisted_ranges_are_safe_for_ui_controls() {
-        let parsed = Persisted::parse(
-            r#"{
-                "output_volume": 999
-            }"#,
-        )
-        .unwrap();
-
-        assert_eq!(parsed.output_volume, 100.0);
-    }
-
-    #[test]
-    fn legacy_local_appearance_keys_are_ignored_and_not_rewritten() {
-        let parsed = Persisted::parse(
-            r#"{"appearance":2,"accent_idx":4,"show_color_in_menu":0,"large_sidebar":1}"#,
-        )
-        .unwrap();
-        let serialized = parsed.to_json();
-        assert!(!serialized.contains("appearance"));
-        assert!(!serialized.contains("accent_idx"));
-        assert!(!serialized.contains("show_color_in_menu"));
-        assert!(!serialized.contains("large_sidebar"));
-    }
-
-    #[test]
-    fn legacy_apple_continuity_state_is_ignored_and_hidden() {
-        let parsed =
-            Persisted::parse(r#"{"handoff":1,"airdrop_idx":2,"airplay_receiver":1,"wifi_on":0}"#)
-                .unwrap();
-        assert!(!parsed.wifi_on);
-        let serialized = parsed.to_json();
-        for legacy in ["handoff", "airdrop_idx", "airplay_receiver"] {
-            assert!(!serialized.contains(legacy));
-        }
-
+    fn general_navigation_contains_only_truthful_destinations() {
         let general = categories()
             .into_iter()
             .flatten()
@@ -6659,25 +6305,6 @@ mod tests {
             .map(|row| row.label.to_string())
             .collect::<Vec<_>>();
         assert_eq!(labels, ["About", "Software Update", "Storage"]);
-    }
-
-    #[test]
-    fn legacy_local_sound_state_is_ignored_and_not_rewritten() {
-        let parsed = Persisted::parse(
-            r#"{"alert_volume":42,"balance":63,"play_on_startup":1,"play_ui_sounds":1,"alert_idx":5,"output_volume":31}"#,
-        )
-        .unwrap();
-        assert_eq!(parsed.output_volume, 31.0);
-        let serialized = parsed.to_json();
-        for legacy in [
-            "alert_volume",
-            "balance",
-            "play_on_startup",
-            "play_ui_sounds",
-            "alert_idx",
-        ] {
-            assert!(!serialized.contains(legacy));
-        }
     }
 
     #[test]

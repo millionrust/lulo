@@ -1,6 +1,8 @@
 //! Live, last-known-good orchestration for the wallpaper session process.
 
+use std::collections::BTreeSet;
 use std::fmt;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -36,6 +38,7 @@ impl SourceHealth {
 pub struct HealthSnapshot {
     pub compositor: SourceHealth,
     pub settings: SourceHealth,
+    pub files: SourceHealth,
 }
 
 impl Default for HealthSnapshot {
@@ -43,6 +46,7 @@ impl Default for HealthSnapshot {
         Self {
             compositor: SourceHealth::Starting,
             settings: SourceHealth::Starting,
+            files: SourceHealth::Healthy,
         }
     }
 }
@@ -56,7 +60,7 @@ pub struct Snapshot {
 pub enum Update {
     Render {
         plan: rmac_wallpaper::Plan,
-        resolved: rmac_wallpaper_system::Resolution,
+        rasterized: rmac_wallpaper_image::Rasterized,
         health: HealthSnapshot,
     },
     Health(HealthSnapshot),
@@ -67,13 +71,13 @@ impl fmt::Debug for Update {
         match self {
             Self::Render {
                 plan,
-                resolved,
+                rasterized,
                 health,
             } => formatter
                 .debug_struct("Render")
                 .field("outputs", &plan.surfaces.len())
                 .field("plan_issues", &plan.issues)
-                .field("resolution_issues", &resolved.issues)
+                .field("raster_issues", &rasterized.issues)
                 .field("health", health)
                 .finish(),
             Self::Health(health) => formatter.debug_tuple("Health").field(health).finish(),
@@ -180,6 +184,14 @@ impl Coordinator {
         }
         before != self.snapshot()
     }
+
+    pub fn apply_file_health(&mut self, health: SourceHealth) -> bool {
+        if self.health.files == health {
+            return false;
+        }
+        self.health.files = health;
+        true
+    }
 }
 
 /// Publish render work only when the visible output plan changes. Health-only
@@ -278,11 +290,17 @@ async fn consume(
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
     let mut published: Option<Snapshot> = None;
+    let cache = std::sync::Arc::new(rmac_wallpaper_image::Cache::default());
+    let (file_tx, file_rx) = async_channel::bounded(1);
+    let mut _file_watcher = None;
+    let mut file_paths: Vec<PathBuf> = Vec::new();
     loop {
         let compositor_event = futures_util::FutureExt::fuse(compositor.recv());
         let settings_event = futures_util::FutureExt::fuse(settings.recv());
+        let file_event = futures_util::FutureExt::fuse(file_rx.recv());
         let closed = futures_util::FutureExt::fuse(sender.closed());
-        futures_util::pin_mut!(compositor_event, settings_event, closed);
+        futures_util::pin_mut!(compositor_event, settings_event, file_event, closed);
+        let mut force_render = false;
         futures_util::select! {
             event = compositor_event => {
                 let event = event.map_err(|_| Error::new(Operation::Consume, "compositor watcher stopped"))?;
@@ -292,12 +310,25 @@ async fn consume(
                 let event = event.map_err(|_| Error::new(Operation::Consume, "settings watcher stopped"))?;
                 coordinator.apply_settings(event);
             },
+            event = file_event => match event {
+                Ok(rmac_wallpaper_image::FileWatchEvent::Changed) => {
+                    for path in &file_paths {
+                        cache.invalidate_path(path);
+                    }
+                    coordinator.apply_file_health(SourceHealth::Healthy);
+                    force_render = true;
+                }
+                Ok(rmac_wallpaper_image::FileWatchEvent::Failed { detail }) => {
+                    coordinator.apply_file_health(SourceHealth::Unavailable { detail });
+                }
+                Err(_) => return Err(Error::new(Operation::Consume, "wallpaper file watcher stopped")),
+            },
             _ = closed => return Ok(()),
         }
         if !coordinator.ready() {
             continue;
         }
-        let next = coordinator.snapshot();
+        let mut next = coordinator.snapshot();
         let plan_changed = published
             .as_ref()
             .is_none_or(|previous| previous.plan != next.plan);
@@ -305,16 +336,33 @@ async fn consume(
             .as_ref()
             .is_none_or(|previous| previous.health != next.health);
         if plan_changed {
+            file_paths = selected_file_paths(&next.plan);
+            match rmac_wallpaper_image::watch_files(&file_paths, file_tx.clone()) {
+                Ok(watcher) => {
+                    _file_watcher = watcher;
+                    coordinator.apply_file_health(SourceHealth::Healthy);
+                }
+                Err(error) => {
+                    _file_watcher = None;
+                    coordinator.apply_file_health(SourceHealth::Unavailable {
+                        detail: error.detail().into(),
+                    });
+                }
+            }
+            next = coordinator.snapshot();
+        }
+        if plan_changed || force_render {
             let plan = next.plan.clone();
-            let resolution = blocking::unblock(move || {
-                let resolved = rmac_wallpaper_system::resolve_plan(&plan);
-                (plan, resolved)
+            let cache = cache.clone();
+            let rasterization = blocking::unblock(move || {
+                let rasterized = rmac_wallpaper_image::rasterize(&plan, &cache);
+                (plan, rasterized)
             })
             .await;
             if sender
                 .send(Update::Render {
-                    plan: resolution.0,
-                    resolved: resolution.1,
+                    plan: rasterization.0,
+                    rasterized: rasterization.1,
                     health: next.health.clone(),
                 })
                 .await
@@ -332,6 +380,15 @@ async fn consume(
         }
         published = Some(next);
     }
+}
+
+fn selected_file_paths(plan: &rmac_wallpaper::Plan) -> Vec<std::path::PathBuf> {
+    plan.surfaces
+        .iter()
+        .filter_map(|surface| rmac_wallpaper::file_path(&surface.source).map(Path::to_path_buf))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[cfg(test)]
@@ -450,17 +507,29 @@ mod tests {
             issues: Vec::new(),
         };
         let update = Update::Render {
-            resolved: rmac_wallpaper_system::resolve_plan(&plan),
+            rasterized: rmac_wallpaper_image::rasterize(
+                &plan,
+                &rmac_wallpaper_image::Cache::default(),
+            ),
             plan,
             health: HealthSnapshot {
                 compositor: SourceHealth::Unavailable {
                     detail: "secret socket path".into(),
                 },
                 settings: SourceHealth::Healthy,
+                files: SourceHealth::Healthy,
             },
         };
         let debug = format!("{update:?}");
         assert!(!debug.contains("alex"));
         assert!(!debug.contains("secret socket"));
+        assert_eq!(
+            selected_file_paths(match &update {
+                Update::Render { plan, .. } => plan,
+                Update::Health(_) => unreachable!(),
+            })
+            .len(),
+            1
+        );
     }
 }

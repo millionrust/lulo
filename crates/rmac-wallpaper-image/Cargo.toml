@@ -1,5 +1,5 @@
 [package]
-name = "rmac-wallpaper-runtime"
+name = "rmac-wallpaper-image"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,11 +8,9 @@ publish = false
 
 [dependencies]
 async-channel.workspace = true
-async-io.workspace = true
-blocking.workspace = true
-futures-util.workspace = true
+image = { workspace = true, features = ["jpeg", "png", "webp"] }
+notify.workspace = true
 rmac-compositor.workspace = true
-rmac-compositor-niri.workspace = true
 rmac-shell-settings.workspace = true
 rmac-wallpaper.workspace = true
-rmac-wallpaper-image.workspace = true
+rmac-wallpaper-system.workspace = true

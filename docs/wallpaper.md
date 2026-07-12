@@ -49,14 +49,22 @@ explicitly unavailable before its first publication. A transient disconnect or
 settings read failure changes source health but preserves the last-known-good
 output plan and wallpaper choices.
 
-Only a changed plan produces a render update. File validation and handle
-resolution run on the blocking pool before publication. A health-only update
-does not reopen a file, decode content, or request a frame. Watch setup retries
-after a bounded delay, settings filesystem bursts remain coalesced by the
-authority watcher, and closing the consumer ends the runtime cleanly. Runtime
-debug/error formatting redacts source details.
+Only a changed plan or selected-file event produces a render update. File
+validation, decode, procedural rasterization, and fit layout run on the blocking
+pool before publication; the renderer receives ready RGBA data. A health-only
+update does not reopen a file, decode content, or request a frame. Watch setup
+for the settings authority retries after a bounded delay, filesystem bursts
+remain coalesced by the authority watcher, and closing the consumer ends the
+runtime cleanly. Runtime debug/error formatting redacts source details.
 
-The Wayland background layer surface and executable, image decoder/cache/file
-invalidation, portal interoperability decision, transitions/reduced-motion
-behavior, System Settings previews, and Linux hotplug/frame-time evidence
-remain pending. D9 is therefore not complete.
+The decoder enables only PNG, JPEG, and WebP. It rejects zero or over-16,384
+axes, more than 40 megapixels, and codec allocations above the RGBA pixel bound.
+Custom images are fingerprinted by redacted canonical identity, size,
+modification time, and format, then shared across outputs in a 256 MiB LRU.
+Aurora is cached at target physical size. Eviction leaves live renderer handles
+valid. Exact-file native events (including existing symlink targets) explicitly
+invalidate matching entries and force re-rasterization; there is no polling.
+
+The Wayland background layer surface and executable, portal interoperability
+decision, transitions/reduced-motion behavior, System Settings previews, and
+Linux hotplug/frame-time evidence remain pending. D9 is therefore not complete.

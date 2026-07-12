@@ -307,14 +307,25 @@ regular file, recognizes PNG/JPEG/WebP magic, rewinds and retains the validated
 handle for decoding, and redacts paths from default errors and `Debug`. The
 built-in default is renderer-owned procedural metadata and an original rmac
 palette; no Apple or third-party wallpaper bitmap is bundled.
+
+`rmac-wallpaper-image` applies strict 16,384-pixel axis, 40-megapixel, and codec
+allocation limits before RGBA expansion. It rasterizes Aurora deterministically
+at output physical size, decodes each custom file once across output scales,
+and retains decoded images in a 256 MiB LRU whose eviction never invalidates a
+live renderer `Arc`. Its native exact-file watcher invalidates metadata keys and
+forces re-rasterization on change or replacement without polling. Wallpaper
+builds enable only PNG, JPEG, and WebP codecs; thumbnail-specific formats stay
+isolated in `rmac-thumbnails`.
+
 `rmac-wallpaper-runtime` combines the reconnecting niri output stream and
 versioned shell-settings watcher. It waits for both sources to resolve before
 the first publication, retains last-known-good outputs and choices through
 source failure, and builds a replacement plan only when visible state changes.
-Changed plans are resolved on the blocking pool and published with validated
-file handles; health-only changes publish diagnostics without reopening files,
-decoding images, or requesting a wallpaper frame. Default runtime `Debug` and
-errors redact source details and file paths.
+Changed plans and selected-file events are resolved, decoded, and laid out on
+the blocking pool, then published as ready RGBA surfaces. Health-only changes
+publish diagnostics without reopening files, decoding images, or requesting a
+wallpaper frame. Default runtime `Debug` and errors redact source details and
+file paths.
 
 ## Persistence
 

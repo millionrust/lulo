@@ -5309,6 +5309,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-wallpaper-image"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "image",
+ "notify",
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "rmac-wallpaper",
+ "rmac-wallpaper-system",
+]
+
+[[package]]
 name = "rmac-wallpaper-runtime"
 version = "0.1.0"
 dependencies = [
@@ -5320,7 +5333,7 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-shell-settings",
  "rmac-wallpaper",
- "rmac-wallpaper-system",
+ "rmac-wallpaper-image",
 ]
 
 [[package]]

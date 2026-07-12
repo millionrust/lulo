@@ -7,7 +7,7 @@ use std::time::SystemTime;
 
 pub const MAX_WALLPAPER_BYTES: u64 = 512 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ImageFormat {
     Png,
     Jpeg,

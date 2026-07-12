@@ -4,7 +4,7 @@ use std::path::{Component, Path, PathBuf};
 
 pub const DEFAULT_BUILT_IN: BuiltInId = BuiltInId::Aurora;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BuiltInId {
     Aurora,
 }

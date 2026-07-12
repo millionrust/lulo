@@ -27,6 +27,7 @@ pub type WirePolicy = (bool, bool, bool, u8, bool, bool);
 pub type WireMode = (String, String, Vec<String>, bool);
 pub type WireSchedule = (String, String, u8, u16, u16, u8, bool);
 pub type WireConfiguration = (Vec<WireMode>, Vec<WireSchedule>);
+pub type WireSettings = (WireConfiguration, WireState);
 const MAX_WIRE_MODES: usize = 32;
 const MAX_WIRE_SCHEDULES: usize = 64;
 const MAX_WIRE_ALLOWED_APPS: usize = 256;
@@ -62,6 +63,12 @@ impl FocusInterface {
     fn configuration(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<WireConfiguration> {
         authenticated_sender(&header)?;
         Ok(encode_configuration(lock(&self.runtime)?.config()))
+    }
+
+    fn settings(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<WireSettings> {
+        authenticated_sender(&header)?;
+        let runtime = lock(&self.runtime)?;
+        Ok((encode_configuration(runtime.config()), wire_state(&runtime)))
     }
 
     async fn replace_configuration(
@@ -582,6 +589,7 @@ mod tests {
             "Disable",
             "DeliveryPolicy",
             "Configuration",
+            "Settings",
             "ReplaceConfiguration",
         ] {
             assert!(xml.contains(&format!("method name=\"{method}\"")));

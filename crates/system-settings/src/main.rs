@@ -216,6 +216,7 @@ struct Settings {
     focus_policy_loading: bool,
     focus_policy_busy: bool,
     focus_policy_error: Option<SharedString>,
+    focus_policy_stream_error: Option<SharedString>,
     focus_policy_config: Option<rmac_focus::Config>,
     focus_policy_state: Option<rmac_focus_linux::client::Snapshot>,
 
@@ -381,9 +382,10 @@ struct FocusLoad {
 }
 
 fn load_focus() -> std::result::Result<FocusLoad, rmac_focus_linux::client::Error> {
+    let snapshot = rmac_focus_linux::client::settings()?;
     Ok(FocusLoad {
-        configuration: rmac_focus_linux::client::configuration()?,
-        state: rmac_focus_linux::client::state()?,
+        configuration: snapshot.configuration,
+        state: snapshot.state,
     })
 }
 
@@ -816,12 +818,24 @@ impl Settings {
         })
         .detach();
 
+        let (focus_updates, focus_update_rx) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_focus_linux::client::watch_settings(focus_updates).await;
+            })
+            .detach();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx.background_executor().spawn(async { load_focus() }).await;
-            let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_focus_update(result);
-                cx.notify();
-            });
+            while let Ok(update) = focus_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        this.apply_focus_stream_update(update);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
         })
         .detach();
 
@@ -863,6 +877,7 @@ impl Settings {
             focus_policy_loading: true,
             focus_policy_busy: false,
             focus_policy_error: None,
+            focus_policy_stream_error: None,
             focus_policy_config: None,
             focus_policy_state: None,
 
@@ -1484,6 +1499,24 @@ impl Settings {
             }
             Err(error) => {
                 self.focus_policy_error = Some(format!("Could not update Focus: {error}").into());
+            }
+        }
+    }
+
+    fn apply_focus_stream_update(
+        &mut self,
+        update: std::result::Result<rmac_focus_linux::client::SettingsSnapshot, String>,
+    ) {
+        self.focus_policy_loading = false;
+        match update {
+            Ok(update) => {
+                self.focus_policy_config = Some(update.configuration);
+                self.focus_policy_state = Some(update.state);
+                self.focus_policy_stream_error = None;
+            }
+            Err(error) => {
+                self.focus_policy_stream_error =
+                    Some(format!("Live Focus updates unavailable: {error}").into());
             }
         }
     }
@@ -3203,6 +3236,9 @@ impl Settings {
         if let Some(error) = &self.focus_policy_error {
             cards.push(note_card(error.clone()));
         }
+        if let Some(error) = &self.focus_policy_stream_error {
+            cards.push(note_card(error.clone()));
+        }
         if let Some(state) = &self.focus_policy_state {
             let active = state.projection.enabled;
             let status = state
@@ -3321,6 +3357,9 @@ impl Settings {
             );
         }
         if let Some(error) = &self.focus_policy_error {
+            body = body.child(note_card(error.clone()));
+        }
+        if let Some(error) = &self.focus_policy_stream_error {
             body = body.child(note_card(error.clone()));
         }
         body = body.child(card(vec![
@@ -3446,6 +3485,9 @@ impl Settings {
             );
         }
         if let Some(error) = &self.focus_policy_error {
+            body = body.child(note_card(error.clone()));
+        }
+        if let Some(error) = &self.focus_policy_stream_error {
             body = body.child(note_card(error.clone()));
         }
         body = body.child(card(vec![focus_schedule_toggle_row(

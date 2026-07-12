@@ -10,6 +10,7 @@ name = "rmac-system-settings"
 path = "src/main.rs"
 
 [dependencies]
+async-channel.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true

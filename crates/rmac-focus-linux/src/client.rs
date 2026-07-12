@@ -8,7 +8,7 @@ use rmac_notifications::{AppId, DeliveryPolicy};
 
 use crate::service::{
     decode_configuration, decode_policy, encode_configuration, encode_policy, projection,
-    WireConfiguration, WirePolicy, WireState, SCHEDULED_DISABLE_DETAIL,
+    WireConfiguration, WirePolicy, WireSettings, WireState, SCHEDULED_DISABLE_DETAIL,
 };
 
 #[cfg(test)]
@@ -26,6 +26,7 @@ trait Focus {
     fn disable(&self) -> zbus::Result<WireState>;
     fn delivery_policy(&self, app_id: &str, base: WirePolicy) -> zbus::Result<WirePolicy>;
     fn configuration(&self) -> zbus::Result<WireConfiguration>;
+    fn settings(&self) -> zbus::Result<WireSettings>;
     fn replace_configuration(&self, configuration: WireConfiguration) -> zbus::Result<WireState>;
 
     #[zbus(signal)]
@@ -40,6 +41,22 @@ pub struct Snapshot {
     pub projection: Projection,
     pub mode_id: Option<String>,
     pub persistence_healthy: bool,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct SettingsSnapshot {
+    pub configuration: Config,
+    pub state: Snapshot,
+}
+
+impl std::fmt::Debug for SettingsSnapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SettingsSnapshot")
+            .field("configuration", &self.configuration)
+            .field("state", &self.state)
+            .finish()
+    }
 }
 
 impl std::fmt::Debug for Snapshot {
@@ -83,6 +100,12 @@ pub fn configuration() -> Result<Config, Error> {
     let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode_configuration(proxy.configuration().map_err(call_error)?).map_err(|_| Error::Protocol)
+}
+
+pub fn settings() -> Result<SettingsSnapshot, Error> {
+    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
+    decode_settings(proxy.settings().map_err(call_error)?)
 }
 
 pub fn replace_configuration(configuration: &Config) -> Result<Snapshot, Error> {
@@ -180,6 +203,84 @@ pub async fn watch_configuration(sender: Sender<Result<Config, String>>) -> Resu
     }
 }
 
+/// Publishes complete configuration and live-state pairs for Settings clients.
+///
+/// Both signal streams are installed before the initial reads, closing the
+/// subscribe/read race. Any state or configuration signal triggers a complete
+/// reread so consumers never have to merge independently versioned payloads.
+pub async fn watch_settings(sender: Sender<Result<SettingsSnapshot, String>>) -> Result<(), Error> {
+    loop {
+        match watch_settings_once(&sender).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => {
+                if sender
+                    .send(Err("Focus authority stopped; reconnecting".into()))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+            }
+            Err(error) => {
+                if sender.send(Err(error.to_string())).await.is_err() {
+                    return Ok(());
+                }
+            }
+        }
+        let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
+            std::time::Duration::from_secs(1),
+        ));
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(timer, closed);
+        futures_util::select! {
+            _ = timer => {},
+            _ = closed => return Ok(()),
+        }
+    }
+}
+
+async fn watch_settings_once(
+    sender: &Sender<Result<SettingsSnapshot, String>>,
+) -> Result<(), Error> {
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|_| Error::Connect)?;
+    let proxy = FocusProxy::new(&connection)
+        .await
+        .map_err(|_| Error::Connect)?;
+    let state_changes = proxy
+        .receive_changed()
+        .await
+        .map_err(|_| Error::Subscribe)?;
+    let configuration_changes = proxy
+        .receive_configuration_changed()
+        .await
+        .map_err(|_| Error::Subscribe)?;
+    publish_settings(&proxy, sender).await?;
+    futures_util::pin_mut!(state_changes, configuration_changes);
+    loop {
+        let state_change = futures_util::FutureExt::fuse(state_changes.next());
+        let configuration_change = futures_util::FutureExt::fuse(configuration_changes.next());
+        futures_util::pin_mut!(state_change, configuration_change);
+        let open = futures_util::select! {
+            change = state_change => change.is_some(),
+            change = configuration_change => change.is_some(),
+        };
+        if !open {
+            return Ok(());
+        }
+        publish_settings(&proxy, sender).await?;
+    }
+}
+
+async fn publish_settings(
+    proxy: &FocusProxy<'_>,
+    sender: &Sender<Result<SettingsSnapshot, String>>,
+) -> Result<(), Error> {
+    let snapshot = decode_settings(proxy.settings().await.map_err(call_error)?)?;
+    sender.send(Ok(snapshot)).await.map_err(|_| Error::Publish)
+}
+
 async fn watch_configuration_once(sender: &Sender<Result<Config, String>>) -> Result<(), Error> {
     let connection = zbus::Connection::session()
         .await
@@ -240,6 +341,13 @@ fn decode(state: WireState) -> Result<Snapshot, Error> {
     })
 }
 
+fn decode_settings(settings: WireSettings) -> Result<SettingsSnapshot, Error> {
+    Ok(SettingsSnapshot {
+        configuration: decode_configuration(settings.0).map_err(|_| Error::Protocol)?,
+        state: decode(settings.1)?,
+    })
+}
+
 fn ensure_persisted(snapshot: Snapshot) -> Result<Snapshot, Error> {
     if snapshot.persistence_healthy {
         Ok(snapshot)
@@ -293,6 +401,8 @@ impl std::error::Error for Error {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmac_focus::{Mode, ModeId};
+    use std::collections::BTreeSet;
 
     #[test]
     fn decoding_exposes_persistence_health_without_private_state() {
@@ -317,5 +427,44 @@ mod tests {
         assert!(Error::Persistence
             .to_string()
             .contains("could not be saved"));
+    }
+
+    #[test]
+    fn settings_snapshot_debug_redacts_configuration_and_state_identity() {
+        let configuration = Config::new(
+            vec![Mode::new(
+                ModeId::parse("private-work-id").unwrap(),
+                "Private Work Name",
+                BTreeSet::new(),
+                false,
+            )
+            .unwrap()],
+            Vec::new(),
+        )
+        .unwrap();
+        let snapshot = decode_settings((
+            encode_configuration(&configuration),
+            (
+                true,
+                "private-work-id".into(),
+                "Private Work Name".into(),
+                0,
+                true,
+            ),
+        ))
+        .unwrap();
+        let debug = format!("{snapshot:?}");
+        assert!(!debug.contains("private-work-id"));
+        assert!(!debug.contains("Private Work Name"));
+        assert!(decode_settings((
+            (Vec::new(), Vec::new()),
+            (false, String::new(), String::new(), 0, true,)
+        ))
+        .is_err());
+        assert!(decode_settings((
+            encode_configuration(&configuration),
+            (true, String::new(), "Missing ID".into(), 0, true),
+        ))
+        .is_err());
     }
 }

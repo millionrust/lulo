@@ -5313,6 +5313,7 @@ version = "0.1.0"
 name = "rmac-system-settings"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
  "gpui",
  "gpui-component",
  "gpui-component-assets",

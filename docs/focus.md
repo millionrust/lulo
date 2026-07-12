@@ -127,6 +127,15 @@ updates optimistically while busy, rereads authority after every mutation, and
 rolls back its optimistic configuration when both mutation and refresh fail.
 Errors remain visible and no control writes `focus.json` directly.
 
+The authority's `Settings` method encodes configuration and live state while
+holding the same runtime lock. The Settings client installs both signal
+subscriptions before its initial atomic read, then publishes that complete
+pair. Every state or configuration signal repeats the atomic method, so the
+pane never has to merge independently versioned streams. Service loss preserves
+last-known-good content, reports connection health separately from mutation
+failures, and reconnects with a bounded delay. This separation prevents a later
+healthy signal from hiding an earlier persistence error.
+
 The Focus pane still requires a scoped GPUI build and live Linux/niri evidence
-before E9 can be checked complete. Live configuration subscription and richer
-application name/icon resolution also remain follow-up work.
+before E9 can be checked complete. Richer application name/icon resolution also
+remains follow-up work.

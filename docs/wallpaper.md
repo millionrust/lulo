@@ -41,7 +41,22 @@ both axes, Center preserves one image pixel per physical output pixel, and Tile
 repeats at that same natural scale. Geometry is computed in logical coordinates
 using the output scale and rejects zero, non-finite, or invalid inputs.
 
-The Wayland background layer surface, decoder/cache/invalidation runtime,
-portal interoperability decision, transitions/reduced-motion behavior,
-System Settings previews, and Linux hotplug/frame-time evidence remain pending.
-D9 is therefore not complete.
+## Live session runtime
+
+`rmac-wallpaper-runtime` watches the direct niri output authority and the
+versioned shell-settings store. It waits until both have resolved as healthy or
+explicitly unavailable before its first publication. A transient disconnect or
+settings read failure changes source health but preserves the last-known-good
+output plan and wallpaper choices.
+
+Only a changed plan produces a render update. File validation and handle
+resolution run on the blocking pool before publication. A health-only update
+does not reopen a file, decode content, or request a frame. Watch setup retries
+after a bounded delay, settings filesystem bursts remain coalesced by the
+authority watcher, and closing the consumer ends the runtime cleanly. Runtime
+debug/error formatting redacts source details.
+
+The Wayland background layer surface and executable, image decoder/cache/file
+invalidation, portal interoperability decision, transitions/reduced-motion
+behavior, System Settings previews, and Linux hotplug/frame-time evidence
+remain pending. D9 is therefore not complete.

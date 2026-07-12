@@ -67,6 +67,7 @@ rmac-thumbnails = { version = "=0.1.0", path = "crates/rmac-thumbnails" }
 rmac-theme = { version = "=0.1.0", path = "crates/rmac-theme" }
 rmac-ui = { version = "=0.1.0", path = "crates/rmac-ui" }
 rmac-wallpaper = { version = "=0.1.0", path = "crates/rmac-wallpaper" }
+rmac-wallpaper-runtime = { version = "=0.1.0", path = "crates/rmac-wallpaper-runtime" }
 rmac-wallpaper-system = { version = "=0.1.0", path = "crates/rmac-wallpaper-system" }
 quick-xml = "0.39.4"
 rust-embed = "8"

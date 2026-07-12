@@ -307,6 +307,14 @@ regular file, recognizes PNG/JPEG/WebP magic, rewinds and retains the validated
 handle for decoding, and redacts paths from default errors and `Debug`. The
 built-in default is renderer-owned procedural metadata and an original rmac
 palette; no Apple or third-party wallpaper bitmap is bundled.
+`rmac-wallpaper-runtime` combines the reconnecting niri output stream and
+versioned shell-settings watcher. It waits for both sources to resolve before
+the first publication, retains last-known-good outputs and choices through
+source failure, and builds a replacement plan only when visible state changes.
+Changed plans are resolved on the blocking pool and published with validated
+file handles; health-only changes publish diagnostics without reopening files,
+decoding images, or requesting a wallpaper frame. Default runtime `Debug` and
+errors redact source details and file paths.
 
 ## Persistence
 

@@ -110,6 +110,31 @@ Clearing, expiration, withdrawal, and action closure are distinct typed events
 so adapters can emit truthful protocol results and UI can animate without
 inventing state.
 
+## Banner behavior
+
+`rmac_notifications::banner::Stack` is the content-free E2 presentation state.
+It resolves active, pointer, then primary output according to an explicit
+policy and falls back only to a connected output. Hardware output identifiers
+are redacted from diagnostics. Each output shows at most three banners by
+default, newest first at the trailing top edge. A flood retires the oldest
+visual banner while retaining the authoritative notification and Center
+history; keyboard-focused banners are never displaced.
+
+Atomic replacement keeps the existing output and phase without replaying
+motion. Portal `show-as-new` deliberately moves to the newly resolved output
+and replays entrance motion. Full motion uses bounded 220 ms entrance and 180
+ms exit phases; reduced motion completes either phase immediately, including
+when the preference changes mid-transition. The scheduler requests frames only
+during those phases and otherwise returns one exact monotonic timeout.
+
+Banner timeout begins when the banner is visibly presented. Pointer hover and
+keyboard focus independently pause the exact remaining duration; removing one
+pause does not resume while the other remains. Moving keyboard focus into the
+stack emits one capture effect, moving among banners retains that capture, and
+leaving or closing the focused banner emits one restoration effect. Output
+disconnect moves visual banners to the connected fallback and reapplies the
+bound without closing their notification records.
+
 ## Next adapters and surfaces
 
 1. E1 media/evidence completion: validate icon and custom-sound descriptors and

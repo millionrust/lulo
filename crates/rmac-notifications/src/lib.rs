@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
+pub mod banner;
 pub mod protocol;
 
 const MAX_APP_ID_BYTES: usize = 256;

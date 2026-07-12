@@ -154,11 +154,31 @@ move to the PAM worker without cloning, and explicit cancellation, prompt drop,
 or UI loss wakes the worker and fails closed. The UI endpoint is deliberately
 pollable so the eventual lock renderer never blocks its Wayland event loop.
 
+The safe Wayland preparation path now also requires `wl_seat` version 4 and a
+keyboard capability, completes a third setup roundtrip, and refuses readiness
+until an `xkb_v1` keymap has compiled. It tracks every supported seat plus
+keyboard add/remove, focus, modifiers, group, and repeat metadata. Exact
+`xkbcommon` 0.8.0 decodes the compositor keymap with the mandatory Wayland
+keycode offset, locale compose sequences, and serialized modifier state. Only
+bounded, drop-zeroized UTF-8 or redacted semantic actions leave that adapter;
+unsupported formats, invalid sizes/states, missing keymaps, and decoder panics
+fail preparation.
+
+A platform-neutral prompt editor now consumes those semantic keys and owns one
+broker prompt capability. It edits echo-off input in the existing fixed secret
+allocation, edits echo-on input in a separately zeroized bounded allocation,
+and handles Unicode fragments atomically so overflow cannot retain a prefix.
+Backspace erases removed scalar bytes; submit moves secret/text responses to
+PAM, notices acknowledge, radio prompts select, and Escape cancels. Generic
+binary MFA is intentionally rejected for a module-specific UI. Editor, event,
+and error diagnostics disclose neither input nor raw key identity.
+
 The Linux adapter still requires session-lock acquisition and wire lock-surface
-objects, `wl_shm_pool`/buffer release wiring, keyboard/layout input connected to
-the broker, and real niri/PAM evidence including the compiled fault tests. Until
-then, the installed unit continues to run swaylock and the preview projection
-remains unrendered.
+objects, `wl_shm_pool`/buffer release wiring, event-loop routing and client-side
+repeat scheduling, module-specific binary MFA UI, IME/accessibility support,
+and real niri/PAM evidence including the compiled fault tests. Until then, the
+installed unit continues to run swaylock and the preview projection remains
+unrendered.
 
 ## Not complete yet
 

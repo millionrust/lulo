@@ -94,6 +94,7 @@ url = "2"
 walkdir = "2"
 wayland-client = "=0.31.14"
 wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
+xkbcommon = { version = "=0.8.0", default-features = false, features = ["wayland"] }
 zbus = { version = "5.16.0", features = ["blocking-api"] }
 zeroize = "=1.9.0"
 

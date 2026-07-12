@@ -16,3 +16,4 @@ pam-sys2.workspace = true
 rustix.workspace = true
 wayland-client.workspace = true
 wayland-protocols.workspace = true
+xkbcommon.workspace = true

@@ -24,13 +24,42 @@ explicit display roundtrip after `unlock_and_destroy`.
 
 They are now direct, Linux-only dependencies of `rmac-lock-provider-linux`.
 Its first Wayland API is a non-mutating registry preflight: it confirms protocol
-version 1, `wl_compositor` version 4, `wl_shm` version 1, and at least one
-output, then drops the connection without binding a global or requesting a
-lock. A second safe API binds those authorities and every output, completes the
-two setup roundtrips needed to receive initial output scale, and tracks live
-output add/remove/scale events. Removal of a required singleton is terminal.
-The actual acquisition API remains intentionally absent until those objects can
-be combined with lock roles, buffers, and fail-closed event handling.
+version 1, `wl_compositor` version 4, `wl_shm` version 1, at least one output,
+and `wl_seat` version 4, then drops the connection without binding a global or
+requesting a lock. A second safe API binds those authorities, every output, and
+every supported seat. Three setup roundtrips receive output scale, seat
+capabilities, and the keyboard keymap before readiness; live output, seat,
+focus, modifier, and keyboard events are then tracked. Removal of a required
+singleton is terminal. The actual acquisition API remains intentionally absent
+until those objects can be combined with lock roles, buffers, and fail-closed
+event handling.
+
+### Keyboard decoding
+
+Use exact `xkbcommon` 0.8.0 with default features disabled and only its Wayland
+file-mapping feature. It is MIT licensed, already existed in the workspace
+lockfile through GPUI, and calls the distribution `libxkbcommon` rather than
+shipping another keyboard engine. The admitted path is deliberately narrow:
+context construction, private read-only `xkb_v1` keymap mapping, state creation,
+serialized modifier updates, one-keysym lookup, UTF-8 lookup, and locale compose
+state. X11 support is not enabled. Official protocol rules require adding eight
+to Wayland keycodes and updating all depressed, latched, locked, and group masks;
+the adapter follows both rules.
+
+Keymap sizes are checked in `2..=16 MiB` before the wrapper's unsafe private
+mapping call, and unsupported formats and states fail preparation. Keymap
+installation, decoding, modifier updates, and compose reset are contained by a
+panic boundary. Only semantic actions or a 64-byte bounded UTF-8 fragment leave
+the decoder; control characters and overlong fragments are erased and rejected,
+and diagnostics expose neither text nor raw keycodes.
+The fragment is erased on drop. The wrapper and the system library still need
+native malformed-keymap and compose evidence. Client-side repeat scheduling,
+input-method/IME support, and accessibility behavior also remain open gates.
+
+References: the official
+[`wl_keyboard` protocol](https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_keyboard),
+[`xkb_state` API](https://xkbcommon.org/doc/current/group__state.html), and
+[`xkb_v1` keymap format](https://xkbcommon.org/doc/current/keymap-text-format-v1-v2.html).
 
 ### Secret erasure
 

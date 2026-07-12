@@ -102,6 +102,14 @@ impl TextResponse {
         })
     }
 
+    pub(crate) fn from_owned(mut bytes: Vec<u8>) -> Result<Self, ResponseError> {
+        if let Err(error) = validate_text(&bytes) {
+            bytes.zeroize();
+            return Err(error);
+        }
+        Ok(Self { bytes })
+    }
+
     pub fn expose<R>(&self, use_response: impl FnOnce(&[u8]) -> R) -> R {
         use_response(&self.bytes)
     }

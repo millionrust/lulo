@@ -92,10 +92,22 @@ security state machine while making their ordering independently testable.
 
 The Linux Wayland boundary may preflight or prepare the connection without
 locking. Preparation binds the compositor, shared-memory, session-lock manager,
-and outputs, completes initial output-scale dispatch, and then tracks hotplug.
-Loss of a required singleton is terminal. Lock acquisition remains unavailable
-until the prepared objects can immediately create every output role and render
-through the bounded lifecycle.
+outputs, and version-4 keyboard seats. It completes bounded roundtrips for
+output scale, seat capabilities, and an `xkb_v1` keymap before readiness, then
+tracks hotplug, focus, modifiers, layout group, repeat metadata, and bounded
+semantic input. Keymap mapping is capped at 16 MiB; decoded text is capped at 64
+bytes, redacted, and erased on drop. Loss of a required singleton or malformed
+input state is terminal. Lock acquisition remains unavailable until the
+prepared objects can immediately create every output role, render through the
+bounded lifecycle, and route semantic input through credential editing.
+
+The platform-neutral credential editor already joins semantic input to one
+single-use broker prompt. Echo-off and echo-on buffers are bounded and erased,
+multi-scalar insertion is atomic, and submit/cancel move the one response
+capability exactly once. Notice and radio styles have generic keyboard behavior;
+binary MFA remains unavailable until its module-specific presentation exists.
+This editor still has no lock authority and is not yet driven by a live locked
+event loop.
 
 The initial renderer is an opaque, dependency-free CPU composition written in
 bounded chunks. Its Linux backing is a no-exec anonymous file, immutable after

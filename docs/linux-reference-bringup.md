@@ -197,6 +197,15 @@ the development PAM service:
 cargo test -p rmac-lock-provider-linux pam:: --locked -- --test-threads=1
 ```
 
+Run the Linux-only XKB decoder tests against the distribution libxkbcommon and
+keyboard data. They cover the Wayland keycode offset, ordinary text, a literal
+space in credentials, submit/cancel/backspace actions, missing keymaps, invalid
+keycodes, and pre-map size rejection:
+
+```sh
+cargo test -p rmac-lock-provider-linux xkb_keyboard:: --locked -- --test-threads=1
+```
+
 Record the exact output. Do not install `pam/rmac-lock` into `/etc/pam.d` or run
 real authentication until the separate recovery-console procedure and test
 account are ready. When cross-checking Linux from macOS, prefix Cargo with

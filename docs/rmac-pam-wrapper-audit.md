@@ -115,6 +115,13 @@ UI disconnection, binary bounds, and prompt redaction. It permits at most one
 outstanding prompt and uses a unique single-use response capability, so delayed
 UI state cannot answer a subsequent PAM message.
 
+The semantic prompt editor has executable platform-neutral tests for Unicode
+secret editing and backspace, echo-on submission, notice acknowledgement,
+radio selection, cancellation, binary-prompt rejection, and exact-capacity
+overflow without partial insertion. These tests reach through the broker to the
+typed PAM conversation response; they do not replace the native PAM or keyboard
+matrix.
+
 `cargo deny 0.19.8 check` passed advisories, bans, licenses, and sources for the
 admitted lockfile on 2026-07-12.
 

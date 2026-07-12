@@ -483,5 +483,28 @@ mod tests {
             assert!(unit.contains("ConditionPathIsExecutable=%h/.local/libexec/rmac/"));
             assert!(!unit.contains("/bin/sh"));
         }
+        let notifications = include_str!("../units/rmac-notification-center.service");
+        assert!(notifications.contains("Type=dbus"));
+        assert!(notifications.contains("BusName=org.freedesktop.impl.portal.desktop.rmac"));
+        assert!(notifications.contains("Before=xdg-desktop-portal.service"));
+    }
+
+    #[test]
+    fn notification_portal_assets_select_only_the_rmac_backend_interface() {
+        let descriptor = include_str!("../../rmac-notifications-linux/install/rmac.portal");
+        assert!(descriptor.contains("DBusName=org.freedesktop.impl.portal.desktop.rmac"));
+        assert!(descriptor.contains("Interfaces=org.freedesktop.impl.portal.Notification;"));
+        assert!(descriptor.contains("UseIn=rmac"));
+
+        let selection = include_str!("../../rmac-notifications-linux/install/rmac-portals.conf");
+        assert!(selection.contains("default=gnome;gtk;*"));
+        assert!(selection.contains("org.freedesktop.impl.portal.Notification=rmac"));
+        assert!(!selection.contains("org.freedesktop.impl.portal.FileChooser=rmac"));
+
+        let activation = include_str!(
+            "../../rmac-notifications-linux/install/org.freedesktop.impl.portal.desktop.rmac.service.in"
+        );
+        assert!(activation.contains("@RMAC_NOTIFICATION_EXEC@"));
+        assert!(activation.contains("SystemdService=rmac-notification-center.service"));
     }
 }

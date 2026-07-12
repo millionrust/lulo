@@ -1,0 +1,4 @@
+[portal]
+DBusName=org.freedesktop.impl.portal.desktop.rmac
+Interfaces=org.freedesktop.impl.portal.Notification;
+UseIn=rmac

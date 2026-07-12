@@ -3,6 +3,19 @@ set -eu
 
 # Import only graphical-session routing values. Never copy the whole login
 # environment because it can contain credentials and application secrets.
+state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
+normal_session=true
+if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
+    normal_session=false
+else
+    case ":${XDG_CURRENT_DESKTOP:-}:" in
+        *:rmac:*) ;;
+        ::) XDG_CURRENT_DESKTOP=rmac ;;
+        *) XDG_CURRENT_DESKTOP="rmac:${XDG_CURRENT_DESKTOP}" ;;
+    esac
+    export XDG_CURRENT_DESKTOP
+fi
+
 set --
 [ "${WAYLAND_DISPLAY+x}" = x ] && set -- "$@" WAYLAND_DISPLAY
 [ "${DISPLAY+x}" = x ] && set -- "$@" DISPLAY
@@ -21,9 +34,11 @@ if [ "$#" -gt 0 ]; then
     fi
 fi
 
-state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
-if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
+if [ "${normal_session}" = false ]; then
     systemctl --user start rmac-safe-mode.target
 else
     systemctl --user start rmac-session.target
+    # xdg-desktop-portal reads desktop-specific backend selection at startup.
+    # Restart only an already-running frontend after the rmac backend is ready.
+    systemctl --user try-restart xdg-desktop-portal.service
 fi

@@ -125,6 +125,27 @@ systemctl --user --no-pager status rmac-session.target
 cat "$XDG_RUNTIME_DIR/rmac/shortcuts-status.json"
 ```
 
+After `rmac-session-start`, `XDG_CURRENT_DESKTOP` in the user manager must begin
+with `rmac:` and the restarted portal frontend must select the rmac notification
+backend. Verify both owned interfaces and their exact versions:
+
+```sh
+systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=rmac:'
+busctl --user introspect org.freedesktop.Notifications \
+  /org/freedesktop/Notifications org.freedesktop.Notifications
+busctl --user introspect org.freedesktop.impl.portal.desktop.rmac \
+  /org/freedesktop/portal/desktop org.freedesktop.impl.portal.Notification
+busctl --user get-property org.freedesktop.impl.portal.desktop.rmac \
+  /org/freedesktop/portal/desktop \
+  org.freedesktop.impl.portal.Notification version
+```
+
+The final property command must return `u 2`. Send one legacy notification and
+one notification through a sandboxed test app, replace each in place, invoke an
+action with an activation token, close each, and record the matching signal and
+absence of duplicate banners. This is reference-PC evidence; do not substitute
+the macOS compile-time introspection test.
+
 The D-phase component units are condition-gated until their binaries are
 installed, so they remain skipped rather than entering false crash loops. The
 supervisor must be active and its JSON health output must identify every unit.

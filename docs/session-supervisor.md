@@ -12,6 +12,8 @@ Run `scripts/linux/install-session-units.sh` once from the repository. It
 builds the release supervisor, installs it under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
 directory, and installs `~/.local/bin/rmac-session-start`.
+It also builds the notification service and installs its user-local portal
+descriptor, desktop-specific backend selection, and D-Bus activation file.
 
 The start command must run from niri after the graphical session environment is
 available. It imports only `WAYLAND_DISPLAY`, `DISPLAY`, `XAUTHORITY`, desktop
@@ -20,6 +22,12 @@ into the systemd user manager and D-Bus activation environment. It never
 imports the entire process environment, `PATH`, tokens, agent sockets, or
 arbitrary secrets. It then starts the normal target unless a persistent
 safe-mode marker exists.
+
+For a normal rmac shell start, the command prepends `rmac` to
+`XDG_CURRENT_DESKTOP`, imports that exact value, starts the shell services, and
+uses `try-restart` on an already-running portal frontend so notification
+selection is adopted. It preserves niri as the secondary desktop identity.
+Safe mode neither changes the desktop identity nor restarts the portal.
 
 systemd's environment.d generator is also valid for stable user-manager
 configuration, but graphical values created by the live niri session still

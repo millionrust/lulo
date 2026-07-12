@@ -53,9 +53,12 @@ backpressured runtime event stream. Legacy ownership is the authenticated
 unique D-Bus sender—not the untrusted visible `app_name`. Portal methods verify
 that the caller currently owns `org.freedesktop.portal.Desktop` before trusting
 its forwarded app ID. `CloseNotification` checks ownership and emits protocol
-reason 3. The installed rmac portal descriptor and `portals.conf` selection are
-still required on the Linux reference machine before sandboxed apps can reach
-the backend.
+reason 3. The session installer places the rmac portal descriptor, D-Bus
+activation service, and `rmac-portals.conf` under the user's XDG data home.
+Normal startup prepends `rmac` to `XDG_CURRENT_DESKTOP`, starts the backend, and
+then restarts only an already-running portal frontend so it rereads selection.
+Safe mode does none of those changes. Other portal interfaces continue through
+the GNOME/GTK fallback order.
 
 E2/E3 receive a `ServiceHandle`, never a raw connection. Its dismiss and expiry
 methods emit freedesktop close reasons 2 and 1. Action invocation preserves the
@@ -109,9 +112,8 @@ inventing state.
 
 ## Next adapters and surfaces
 
-1. E1 media/install completion: validate icon and custom-sound descriptors,
-   install the backend descriptor, and prove both interfaces on the Linux
-   reference PC.
+1. E1 media/evidence completion: validate icon and custom-sound descriptors and
+   prove both interfaces on the Linux reference PC.
 2. E2 banner runtime: subscribe to reducer outcomes, pause visual expiry while
    hovered or keyboard-focused, stack deterministically, and request frames
    only while motion is active.

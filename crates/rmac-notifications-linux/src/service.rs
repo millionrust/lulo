@@ -125,6 +125,10 @@ impl SharedCore {
         core.server.expire(now)
     }
 
+    pub fn expire_one(&self, id: NotificationId) -> Result<Closed, ServerError> {
+        self.lock().server.expire_one(id)
+    }
+
     pub fn invoke(
         &self,
         id: NotificationId,
@@ -352,6 +356,16 @@ impl ServiceHandle {
             if matches!(sources.get(&event.id), Some(Source::Freedesktop { .. })) {
                 self.emit_legacy_closed(event.id, 1).await?;
             }
+        }
+        Ok(closed)
+    }
+
+    pub async fn expire_banner(&self, id: NotificationId) -> Result<Closed, ActionError> {
+        let source = self.source(id)?;
+        let closed = self.core.expire_one(id).map_err(action_domain_error)?;
+        publish_action(&self.events, RuntimeEvent::Closed(closed.clone())).await?;
+        if matches!(source, Source::Freedesktop { .. }) {
+            self.emit_legacy_closed(id, 1).await?;
         }
         Ok(closed)
     }

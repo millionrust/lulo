@@ -135,13 +135,28 @@ leaving or closing the focused banner emits one restoration effect. Output
 disconnect moves visual banners to the connected fallback and reapplies the
 bound without closing their notification records.
 
+`rmac-notifications-runtime` joins this state with the authoritative
+notification snapshot, compositor topology/focus, and resolved appearance. It
+copies no content. A post uses the notification's computed banner delivery and
+timeout duration, then resolves the focused connected output. Temporary loss
+of the compositor keeps the last-known-good topology; hotplug moves existing
+banners without closing records. Appearance changes can finish active motion
+immediately.
+
+Runtime effects collapse to one redraw plus typed focus and service commands.
+Paused timeout completion emits `Expire(id)`, which calls the service's
+single-banner expiry path instead of scanning other notifications whose
+banners may still be paused. User dismissal emits `Dismiss(id)`. Successful
+action dispatch closes only the visual banner because the service already owns
+the notification transaction. This keeps D-Bus signals, Center history, and UI
+animation in one order without polling or content duplication.
+
 ## Next adapters and surfaces
 
 1. E1 media/evidence completion: validate icon and custom-sound descriptors and
    prove both interfaces on the Linux reference PC.
-2. E2 banner runtime: subscribe to reducer outcomes, pause visual expiry while
-   hovered or keyboard-focused, stack deterministically, and request frames
-   only while motion is active.
+2. E2 layer-surface renderer: render the runtime snapshot with real hover,
+   keyboard, action, activation-token, and multi-output evidence on Linux.
 3. E3 Notification Center: persist permitted history atomically, group by app,
    expose clear/read actions, and publish `Indicator` to shell status.
 4. E4 Focus: calculate schedule and allow-list policy, then pass the resulting

@@ -699,27 +699,33 @@ impl Server {
                     .map(|_| *id)
             })
             .collect();
-        for id in &expired {
-            let retain = self
-                .active
-                .get(id)
-                .is_some_and(|notification| notification.delivery.history);
-            if retain {
-                if let Some(notification) = self.active.get_mut(id) {
-                    notification.banner_visible = false;
-                    notification.expires_at = None;
-                }
-            } else {
-                self.active.remove(id);
-            }
-        }
         expired
             .into_iter()
-            .map(|id| Closed {
-                id,
-                reason: CloseReason::Expired,
-            })
+            .filter_map(|id| self.expire_one(id).ok())
             .collect()
+    }
+
+    /// Closes one visibly presented banner when the presentation runtime's
+    /// exact (possibly hover/focus-paused) deadline elapses.
+    pub fn expire_one(&mut self, id: NotificationId) -> Result<Closed, ServerError> {
+        let retain = self
+            .active
+            .get(&id)
+            .ok_or(ServerError::UnknownNotification)?
+            .delivery
+            .history;
+        if retain {
+            if let Some(notification) = self.active.get_mut(&id) {
+                notification.banner_visible = false;
+                notification.expires_at = None;
+            }
+        } else {
+            self.active.remove(&id);
+        }
+        Ok(Closed {
+            id,
+            reason: CloseReason::Expired,
+        })
     }
 
     pub fn invoke(

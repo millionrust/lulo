@@ -50,6 +50,7 @@ Shared crates:
 - `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, and radio control.
 - `rmac-notifications` — bounded notification validation, replacement, policy, actions, and history.
 - `rmac-notifications-linux` — shared freedesktop/XDG portal notification service and wire decoder.
+- `rmac-notifications-runtime` — live banner placement, motion, focus, and service-command orchestration.
 - `rmac-shell-status` — redraw-aware focused-context and shell-indicator projection.
 - `rmac-shell-status-linux` — coalesced D-Bus and PipeWire status refresh events.
 - `rmac-shell-runtime` — live top-bar/Quick Settings state, health, and last-known-good values.

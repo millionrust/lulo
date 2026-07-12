@@ -28,10 +28,19 @@ and problem classification. Transport and persistence adapters must preserve
 that property: never log request payloads, document paths, message text, or
 serialized action targets.
 
+`protocol::portal` maps portal-v2 priority, display hints, default activation,
+buttons, targets, category, and sound policy. It advertises only the standardized
+categories and button purposes it understands. Unknown display hints remain
+forward-compatible; an unknown button purpose is treated as an ordinary button
+when it has a label, or rejected when no accessible label could be shown.
+`protocol::freedesktop` maps action pairs, default activation, urgency,
+resident/transient/suppress-sound hints, replacement, and exact timeout values.
+The visible legacy `app_name` is never used as authenticated ownership.
+
 `hide-on-lockscreen` and `hide-content-on-lockscreen` normalize to a typed lock
-visibility policy. No lock UI may weaken that policy. The secure default is to
-hide a notification on the lock screen when no explicit trusted policy has
-been established.
+visibility policy. No lock UI may weaken that policy. An unspecified hint stays
+`Policy`; the lock authority must resolve that through trusted per-app settings
+and hide it when no explicit policy has been established.
 
 ## Delivery and lifecycle
 

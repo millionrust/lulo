@@ -7,6 +7,8 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 
+pub mod protocol;
+
 const MAX_APP_ID_BYTES: usize = 256;
 const MAX_EXTERNAL_ID_BYTES: usize = 256;
 const MAX_TITLE_BYTES: usize = 512;
@@ -79,9 +81,11 @@ pub enum Sound {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LockScreenVisibility {
+    /// Defer to the user's per-app lock-screen policy.
+    #[default]
+    Policy,
     Show,
     HideContent,
-    #[default]
     Hide,
 }
 
@@ -140,6 +144,7 @@ pub struct Action {
     id: String,
     label: String,
     target: Option<ActionTarget>,
+    purpose: Option<String>,
 }
 
 impl Action {
@@ -152,7 +157,19 @@ impl Action {
         let label = label.into();
         validate_identifier(&id, MAX_ACTION_ID_BYTES, Field::ActionId)?;
         validate_text(&label, MAX_ACTION_LABEL_BYTES, false, Field::ActionLabel)?;
-        Ok(Self { id, label, target })
+        Ok(Self {
+            id,
+            label,
+            target,
+            purpose: None,
+        })
+    }
+
+    pub fn with_purpose(mut self, purpose: impl Into<String>) -> Result<Self, ValidationError> {
+        let purpose = purpose.into();
+        validate_identifier(&purpose, MAX_CATEGORY_BYTES, Field::ActionPurpose)?;
+        self.purpose = Some(purpose);
+        Ok(self)
     }
 
     pub fn id(&self) -> &str {
@@ -166,15 +183,20 @@ impl Action {
     pub fn target(&self) -> Option<&ActionTarget> {
         self.target.as_ref()
     }
+
+    pub fn purpose(&self) -> Option<&str> {
+        self.purpose.as_deref()
+    }
 }
 
 impl fmt::Debug for Action {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Action")
-            .field("id", &self.id)
+            .field("id", &"<redacted>")
             .field("label", &"<redacted>")
             .field("target", &self.target)
+            .field("purpose", &self.purpose.as_ref().map(|_| "<redacted>"))
             .finish()
     }
 }
@@ -295,7 +317,7 @@ impl fmt::Debug for Request {
             .field("timeout", &self.timeout)
             .field("default_action", &self.default_action)
             .field("actions", &self.actions)
-            .field("category", &self.category)
+            .field("category", &self.category.as_ref().map(|_| "<redacted>"))
             .field("sound", &self.sound)
             .field("display", &self.display)
             .field("replaces", &self.replaces)
@@ -337,6 +359,7 @@ pub enum Field {
     ActionId,
     ActionLabel,
     ActionTarget,
+    ActionPurpose,
     Actions,
     Category,
     DisplayHints,
@@ -494,12 +517,24 @@ pub struct Closed {
     pub reason: CloseReason,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ActionInvocation {
     pub notification_id: NotificationId,
     pub app_id: AppId,
     pub action_id: String,
     pub target: Option<ActionTarget>,
+}
+
+impl fmt::Debug for ActionInvocation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ActionInvocation")
+            .field("notification_id", &self.notification_id)
+            .field("app_id", &self.app_id)
+            .field("action_id", &"<redacted>")
+            .field("target", &self.target)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

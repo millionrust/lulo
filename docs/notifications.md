@@ -229,6 +229,13 @@ truthful while the caller receives an actionable persistence error.
    use the live XDG catalog for localized names and original theme icons when
    the authenticated application ID exactly matches a desktop-entry ID (with
    only the standard `.desktop` suffix alias). Unresolved IDs keep a generic
-   icon and the real identifier; the UI never guesses by display name.
+   icon and the real identifier; the UI never guesses by display name. The
+   Settings client subscribes to both policy changes and Center state changes
+   before its initial application read, because first/last history records can
+   also change the application set. Each wake rereads a bounded, validated,
+   uniquely keyed list; service loss preserves last-known-good rows and
+   reconnects after a bounded delay. Stream-health errors remain separate from
+   mutation/persistence failures so a reconnect cannot hide an unsuccessful
+   user action.
 4. E4 Focus UI: expose mode, schedule, duration, and allow-list editing through
    the single-writer authority and prove real delivery behavior on Linux.

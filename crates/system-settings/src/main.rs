@@ -206,6 +206,7 @@ struct Settings {
     input_error: Option<SharedString>,
     theme_error: Option<SharedString>,
     notification_error: Option<SharedString>,
+    notification_stream_error: Option<SharedString>,
 
     // Notifications
     notifications_loading: bool,
@@ -814,15 +815,25 @@ impl Settings {
         })
         .detach();
 
+        let (notification_updates, notification_update_rx) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_notifications_linux::center::watch_applications(notification_updates)
+                    .await;
+            })
+            .detach();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_notifications_linux::center::applications() })
-                .await;
-            let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_notifications_update(result);
-                cx.notify();
-            });
+            while let Ok(update) = notification_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        this.apply_notification_stream_update(update);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
         })
         .detach();
 
@@ -903,6 +914,7 @@ impl Settings {
             input_error: None,
             theme_error: None,
             notification_error: None,
+            notification_stream_error: None,
 
             notifications_loading: true,
             notification_busy: None,
@@ -1447,6 +1459,26 @@ impl Settings {
             Err(error) => {
                 self.notification_error =
                     Some(format!("Could not update Notifications: {error}").into());
+            }
+        }
+    }
+
+    fn apply_notification_stream_update(
+        &mut self,
+        update: std::result::Result<
+            Vec<rmac_notifications_linux::center::ApplicationPolicy>,
+            String,
+        >,
+    ) {
+        self.notifications_loading = false;
+        match update {
+            Ok(applications) => {
+                self.notification_apps = applications;
+                self.notification_stream_error = None;
+            }
+            Err(error) => {
+                self.notification_stream_error =
+                    Some(format!("Live Notification updates unavailable: {error}").into());
             }
         }
     }
@@ -3139,6 +3171,9 @@ impl Settings {
         if let Some(error) = &self.notification_error {
             cards.push(note_card(error.clone()));
         }
+        if let Some(error) = &self.notification_stream_error {
+            cards.push(note_card(error.clone()));
+        }
         if !self.notifications_loading {
             let rows = if self.notification_apps.is_empty() {
                 vec![EmptyState::new("No applications yet")
@@ -3195,6 +3230,9 @@ impl Settings {
             );
         }
         if let Some(error) = &self.notification_error {
+            body = body.child(note_card(error.clone()));
+        }
+        if let Some(error) = &self.notification_stream_error {
             body = body.child(note_card(error.clone()));
         }
         body.child(card(vec![

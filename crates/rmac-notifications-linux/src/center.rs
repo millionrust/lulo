@@ -4,6 +4,7 @@ use async_channel::Sender;
 use futures_util::StreamExt as _;
 use rmac_notifications::{AppId, Indicator};
 use rmac_notifications_store::{AppPolicy, LockPreview};
+use std::collections::BTreeSet;
 
 pub type WireAppPolicy = (bool, bool, bool, bool, bool, bool, u8);
 const MAX_WIRE_APPLICATIONS: usize = 1_012;
@@ -82,20 +83,31 @@ impl std::fmt::Debug for ApplicationPolicy {
 pub fn applications() -> Result<Vec<ApplicationPolicy>, Error> {
     let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
-    let applications = proxy.applications().map_err(call_error)?;
+    decode_applications(proxy.applications().map_err(call_error)?)
+}
+
+fn decode_applications(
+    applications: Vec<(String, WireAppPolicy)>,
+) -> Result<Vec<ApplicationPolicy>, Error> {
     if applications.len() > MAX_WIRE_APPLICATIONS {
         return Err(Error::Protocol);
     }
-    applications
+    let mut seen = BTreeSet::new();
+    let mut applications = applications
         .into_iter()
         .map(|(app_id, policy)| {
             let app_id = AppId::parse(app_id).map_err(|_| Error::Protocol)?;
+            if !seen.insert(app_id.clone()) {
+                return Err(Error::Protocol);
+            }
             Ok(ApplicationPolicy {
                 app_id: app_id.as_str().to_owned(),
                 policy: decode_policy(policy)?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    applications.sort_by(|left, right| left.app_id.cmp(&right.app_id));
+    Ok(applications)
 }
 
 pub fn mark_read(app_id: Option<&str>) -> Result<Indicator, Error> {
@@ -155,6 +167,82 @@ pub async fn watch(sender: Sender<Result<Indicator, String>>) -> Result<(), Erro
             _ = closed => return Ok(()),
         }
     }
+}
+
+pub async fn watch_applications(
+    sender: Sender<Result<Vec<ApplicationPolicy>, String>>,
+) -> Result<(), Error> {
+    loop {
+        match watch_applications_once(&sender).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => publish_applications_error(&sender, Error::Stopped).await?,
+            Err(error) => publish_applications_error(&sender, error).await?,
+        }
+        let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
+            std::time::Duration::from_secs(1),
+        ));
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(timer, closed);
+        futures_util::select! {
+            _ = timer => {},
+            _ = closed => return Ok(()),
+        }
+    }
+}
+
+async fn watch_applications_once(
+    sender: &Sender<Result<Vec<ApplicationPolicy>, String>>,
+) -> Result<(), Error> {
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|_| Error::Connect)?;
+    let proxy = CenterProxy::new(&connection)
+        .await
+        .map_err(|_| Error::Connect)?;
+    let policy_changes = proxy
+        .receive_policies_changed()
+        .await
+        .map_err(|_| Error::Subscribe)?;
+    let center_changes = proxy
+        .receive_changed()
+        .await
+        .map_err(|_| Error::Subscribe)?;
+    publish_applications(&proxy, sender).await?;
+    futures_util::pin_mut!(policy_changes, center_changes);
+    loop {
+        let policy_change = futures_util::FutureExt::fuse(policy_changes.next());
+        let center_change = futures_util::FutureExt::fuse(center_changes.next());
+        futures_util::pin_mut!(policy_change, center_change);
+        let open = futures_util::select! {
+            change = policy_change => change.is_some(),
+            change = center_change => change.is_some(),
+        };
+        if !open {
+            return Ok(());
+        }
+        publish_applications(&proxy, sender).await?;
+    }
+}
+
+async fn publish_applications(
+    proxy: &CenterProxy<'_>,
+    sender: &Sender<Result<Vec<ApplicationPolicy>, String>>,
+) -> Result<(), Error> {
+    let applications = decode_applications(proxy.applications().await.map_err(call_error)?)?;
+    sender
+        .send(Ok(applications))
+        .await
+        .map_err(|_| Error::Publish)
+}
+
+async fn publish_applications_error(
+    sender: &Sender<Result<Vec<ApplicationPolicy>, String>>,
+    error: Error,
+) -> Result<(), Error> {
+    sender
+        .send(Err(error.to_string()))
+        .await
+        .map_err(|_| Error::Publish)
 }
 
 async fn watch_once(sender: &Sender<Result<Indicator, String>>) -> Result<(), Error> {
@@ -263,5 +351,28 @@ mod tests {
             policy,
         };
         assert!(!format!("{application:?}").contains("org.private.App"));
+    }
+
+    #[test]
+    fn application_decoder_is_bounded_unique_and_deterministic() {
+        let policy = encode_policy(AppPolicy::default());
+        let applications = decode_applications(vec![
+            ("org.example.Zed".into(), policy),
+            ("org.example.Alpha".into(), policy),
+        ])
+        .unwrap();
+        assert_eq!(applications[0].app_id, "org.example.Alpha");
+        assert_eq!(applications[1].app_id, "org.example.Zed");
+        assert!(decode_applications(vec![
+            ("org.example.Duplicate".into(), policy),
+            ("org.example.Duplicate".into(), policy),
+        ])
+        .is_err());
+        assert!(decode_applications(vec![("".into(), policy)]).is_err());
+        assert!(decode_applications(vec![
+            ("org.example.TooMany".into(), policy);
+            MAX_WIRE_APPLICATIONS + 1
+        ])
+        .is_err());
     }
 }

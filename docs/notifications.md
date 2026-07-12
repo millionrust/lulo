@@ -7,9 +7,9 @@ sound dependency. E2 banners, E3 Notification Center, E4 Focus, shell status,
 and both Linux protocol adapters must consume this same reducer.
 
 The contract follows XDG Notification portal version 2 and the freedesktop.org
-Desktop Notifications Specification 1.3. A future portal adapter maps its
+Desktop Notifications Specification 1.3. The portal adapter maps its
 application-scoped string ID to `Source::Portal`; reusing that ID updates the
-existing record without flicker unless `show-as-new` was requested. A future
+existing record without flicker unless `show-as-new` was requested. The
 `org.freedesktop.Notifications` adapter maps the returned nonzero integer to
 `NotificationId`, passes `replaces_id` back as `Request::replaces`, and converts
 close reasons to the protocol signal values.
@@ -45,6 +45,17 @@ inert text with bounded input and balanced-tag validation. Custom icon and sound
 file descriptors are not retained by the reducer. Until the media validator and
 player exist, the freedesktop server advertises only `actions`, `body`, and
 `persistence`—not markup, sound, hyperlinks, or image capabilities.
+
+The same crate now serves `org.freedesktop.Notifications` at the standard
+object path and `org.freedesktop.impl.portal.Notification` version 2 at the
+portal backend path. Both interfaces share one locked reducer and a bounded,
+backpressured runtime event stream. Legacy ownership is the authenticated
+unique D-Bus sender—not the untrusted visible `app_name`. Portal methods verify
+that the caller currently owns `org.freedesktop.portal.Desktop` before trusting
+its forwarded app ID. `CloseNotification` checks ownership and emits protocol
+reason 3. The installed rmac portal descriptor and `portals.conf` selection are
+still required on the Linux reference machine before sandboxed apps can reach
+the backend.
 
 `hide-on-lockscreen` and `hide-content-on-lockscreen` normalize to a typed lock
 visibility policy. No lock UI may weaken that policy. An unspecified hint stays
@@ -89,8 +100,9 @@ inventing state.
 
 ## Next adapters and surfaces
 
-1. E1 Linux service: own `org.freedesktop.Notifications`, implement capabilities,
-   `Notify`, `CloseNotification`, signals, and the XDG portal backend mapping.
+1. E1 action/media completion: validate icon and custom-sound descriptors, route
+   legacy and portal action activation with xdg-activation tokens, install the
+   backend descriptor, and prove both interfaces on the Linux reference PC.
 2. E2 banner runtime: subscribe to reducer outcomes, pause visual expiry while
    hovered or keyboard-focused, stack deterministically, and request frames
    only while motion is active.

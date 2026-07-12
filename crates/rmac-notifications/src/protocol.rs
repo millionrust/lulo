@@ -301,7 +301,7 @@ pub fn freedesktop(input: FreedesktopInput) -> Result<Request, ProtocolError> {
             resident: input.hints.resident,
             ..DisplayHints::default()
         },
-        replaces: (input.replaces_id != 0).then_some(super::NotificationId(input.replaces_id)),
+        replaces: super::NotificationId::from_protocol(input.replaces_id),
     };
     request.validate()?;
     Ok(request)

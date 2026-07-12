@@ -7,5 +7,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+async-channel.workspace = true
+async-io.workspace = true
 rmac-notifications.workspace = true
 zbus.workspace = true

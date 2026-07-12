@@ -24,6 +24,10 @@ const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1_000;
 pub struct NotificationId(u32);
 
 impl NotificationId {
+    pub fn from_protocol(value: u32) -> Option<Self> {
+        (value != 0).then_some(Self(value))
+    }
+
     pub fn get(self) -> u32 {
         self.0
     }

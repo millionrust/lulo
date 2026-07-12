@@ -13,6 +13,8 @@ use rmac_notifications::protocol::{
 use rmac_notifications::{ActionTarget, Request};
 use zbus::zvariant::{serialized::Context, to_bytes, Endian, OwnedValue};
 
+pub mod service;
+
 pub const FREEDESKTOP_CAPABILITIES: &[&str] = &["actions", "body", "persistence"];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -9,6 +9,8 @@ use std::fmt;
 
 use zeroize::Zeroize as _;
 
+#[cfg(any(target_os = "linux", test))]
+mod caps_lock;
 pub mod key_repeat;
 pub mod keyboard;
 pub mod paint;

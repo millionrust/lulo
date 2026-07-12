@@ -104,7 +104,10 @@ Optional per-seat pointers retain only focus, surface-local position, and one
 redacted pressed target. A left-button release emits a semantic action only when
 it matches the pressed target; focus/capability/output/seat loss cancels it.
 Submit and radio selection share the keyboard editor path, while generic binary
-prompts expose no clickable reply.
+prompts expose no clickable reply. Caps Lock is derived from xkb locked-modifier
+state and aggregated across focused seats. Only the semantic boolean leaves the
+adapter; it repaints a noninteractive warning for text/password prompts without
+entering the credential queue.
 
 The crate-only lock typestate now issues acquisition, immediately creates one
 role per output, renders only after configure, performs exact ack/scale/attach/

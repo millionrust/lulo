@@ -49,7 +49,8 @@ lockfile through GPUI, and calls the distribution `libxkbcommon` rather than
 shipping another keyboard engine. The admitted path is deliberately narrow:
 context construction, private read-only `xkb_v1` keymap mapping, state creation,
 serialized modifier updates, one-keysym lookup, UTF-8 lookup, and locale compose
-state. X11 support is not enabled. Official protocol rules require adding eight
+state, plus the standard Caps Lock modifier-name query. X11 support is not
+enabled. Official protocol rules require adding eight
 to Wayland keycodes and updating all depressed, latched, locked, and group masks;
 the adapter follows both rules.
 
@@ -58,7 +59,9 @@ mapping call, and unsupported formats and states fail preparation. Keymap
 installation, decoding, modifier updates, and compose reset are contained by a
 panic boundary. Only semantic actions or a 64-byte bounded UTF-8 fragment leave
 the decoder; control characters and overlong fragments are erased and rejected,
-and diagnostics expose neither text nor raw keycodes.
+and diagnostics expose neither text nor raw keycodes. Caps Lock crosses only as
+a focus-aware aggregate boolean; seat identities and raw modifier masks remain
+inside the adapter.
 The fragment is erased on drop. The wrapper and the system library still need
 native malformed-keymap and compose evidence. Bounded per-seat client repeat is
 implemented without another dependency, but its live compositor behavior still

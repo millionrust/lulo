@@ -47,6 +47,7 @@ impl LockPalette {
 pub struct LockVisualState {
     prompt: PromptVisual,
     authentication_failed: bool,
+    caps_lock_active: bool,
 }
 
 impl Default for LockVisualState {
@@ -54,6 +55,7 @@ impl Default for LockVisualState {
         Self {
             prompt: PromptVisual::Hidden,
             authentication_failed: false,
+            caps_lock_active: false,
         }
     }
 }
@@ -63,7 +65,13 @@ impl LockVisualState {
         Self {
             prompt,
             authentication_failed,
+            caps_lock_active: false,
         }
+    }
+
+    pub const fn with_caps_lock(mut self, active: bool) -> Self {
+        self.caps_lock_active = active;
+        self
     }
 
     pub const fn prompt(self) -> PromptVisual {
@@ -72,6 +80,10 @@ impl LockVisualState {
 
     pub const fn authentication_failed(self) -> bool {
         self.authentication_failed
+    }
+
+    pub const fn caps_lock_active(self) -> bool {
+        self.caps_lock_active
     }
 }
 
@@ -338,6 +350,25 @@ fn paint_pixel(
         );
     }
 
+    if visual.caps_lock_active
+        && matches!(
+            visual.prompt,
+            PromptVisual::Secret { .. } | PromptVisual::Text { .. }
+        )
+    {
+        let scale = i64::from(scale);
+        let indicator_x = center_x - panel_half_width + 18 * scale;
+        let indicator_y = panel_center_y;
+        let local_x = (i64::from(x) - indicator_x).abs();
+        let local_y = i64::from(y) - (indicator_y - 7 * scale);
+        let arrow_head = (0..=6 * scale).contains(&local_y) && local_x <= local_y;
+        let arrow_stem = local_x <= scale
+            && (indicator_y - scale..=indicator_y + 6 * scale).contains(&i64::from(y));
+        if arrow_head || arrow_stem {
+            color = color.blend(palette.error, 232);
+        }
+    }
+
     color = paint_prompt(
         color,
         i64::from(x),
@@ -492,6 +523,9 @@ mod tests {
         let layout = layout(320, 200, 1);
         let mut secret = Vec::new();
         let mut failed = Vec::new();
+        let mut caps_lock = Vec::new();
+        let mut hidden = Vec::new();
+        let mut hidden_caps_lock = Vec::new();
         paint_lock_frame(
             &mut secret,
             layout,
@@ -508,10 +542,36 @@ mod tests {
             None,
         )
         .unwrap();
+        paint_lock_frame(
+            &mut caps_lock,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::new(PromptVisual::secret(9), false).with_caps_lock(true),
+            None,
+        )
+        .unwrap();
+        paint_lock_frame(
+            &mut hidden,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::default(),
+            None,
+        )
+        .unwrap();
+        paint_lock_frame(
+            &mut hidden_caps_lock,
+            layout,
+            LockPalette::MIDNIGHT,
+            LockVisualState::default().with_caps_lock(true),
+            None,
+        )
+        .unwrap();
         assert_ne!(secret, failed);
+        assert_ne!(secret, caps_lock);
+        assert_eq!(hidden, hidden_caps_lock);
         let debug = format!(
             "{:?} {:?}",
-            LockVisualState::new(PromptVisual::secret(9), false),
+            LockVisualState::new(PromptVisual::secret(9), false).with_caps_lock(true),
             PromptVisual::Radio { selected: true }
         );
         assert!(!debug.contains('9'));

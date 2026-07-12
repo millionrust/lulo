@@ -190,6 +190,14 @@ away cancels it. Binary prompts remain inert because the generic editor cannot
 safely manufacture a module-specific binary reply. Raw coordinates and Linux
 button identities never enter the credential editor or diagnostics.
 
+Caps Lock state follows xkbcommon's locked modifier rather than inferring from
+key presses. A platform-neutral aggregate shows the warning only while at least
+one focused keyboard seat reports Caps Lock, keeps it active when another such
+seat remains, and clears it on focus, capability, keymap, or seat loss. The
+semantic boolean triggers a repaint but never enters the credential queue; the
+original upward indicator is drawn only for text/password prompts. Seat and raw
+modifier identities remain inside the Wayland adapter.
+
 The wire also owns a per-seat client repeat scheduler. Compositor rates are
 clamped to 100 events per second and delays to 10 seconds, a late event-loop
 iteration emits at most one repeat instead of replaying a burst, and release,

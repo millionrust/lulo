@@ -136,7 +136,9 @@ Linux-only test requires installed fonts to shape, rasterize, cache, and redact
 a mixed-script prompt. Pointer tests cover exact submit/radio hit regions,
 non-finite/out-of-bounds rejection, drag-away cancellation, focus-loss
 cancellation, and redacted gesture diagnostics; emitted actions reuse the same
-single-use prompt editor as keyboard input. Portable process tests prove
+single-use prompt editor as keyboard input. Caps Lock tests cover xkb locked
+state, focus-aware multi-seat aggregation, visual repaint, and separation from
+the bounded credential queue. Portable process tests prove
 readiness/hint ordering and
 distinguish authenticated unlock from compositor denial and post-lock failure.
 The feature-gated Linux runner derives its PAM name from the exact logind

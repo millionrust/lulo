@@ -28,6 +28,7 @@ use wayland_protocols::ext::session_lock::v1::client::{
     ext_session_lock_surface_v1::ExtSessionLockSurfaceV1, ext_session_lock_v1::ExtSessionLockV1,
 };
 
+use crate::caps_lock::{CapsLockState, Error as CapsLockError};
 use crate::key_repeat::RepeatScheduler;
 use crate::keyboard::DecodedKey;
 use crate::paint::{LockPalette, LockVisualState};
@@ -310,6 +311,9 @@ pub enum PreparedEvent {
         seat: SeatId,
         focused: bool,
     },
+    CapsLockChanged {
+        active: bool,
+    },
     KeyboardInput {
         seat: SeatId,
         input: DecodedKey,
@@ -462,6 +466,7 @@ struct PreparedState {
     failure: Option<PreparedStateError>,
     locking: Option<LockingState>,
     text_renderer: LockTextRenderer,
+    caps_lock: CapsLockState,
 }
 
 impl Default for PreparedState {
@@ -477,7 +482,23 @@ impl Default for PreparedState {
             failure: None,
             locking: None,
             text_renderer: LockTextRenderer::default(),
+            caps_lock: CapsLockState::default(),
         }
+    }
+}
+
+fn record_caps_lock_change(
+    events: &mut VecDeque<PreparedEvent>,
+    failure: &mut Option<PreparedStateError>,
+    change: Result<Option<bool>, CapsLockError>,
+) {
+    match change {
+        Ok(Some(active)) => events.push_back(PreparedEvent::CapsLockChanged { active }),
+        Ok(None) => {}
+        Err(_) if failure.is_none() => {
+            *failure = Some(PreparedStateError::Keyboard(KeyboardFailure::CapsLockState));
+        }
+        Err(_) => {}
     }
 }
 
@@ -574,6 +595,12 @@ impl PreparedState {
                     self.record_failure(PreparedStateError::InvalidSeatId);
                     return;
                 };
+                if self.caps_lock.add_seat(name).is_err() {
+                    self.record_failure(PreparedStateError::Keyboard(
+                        KeyboardFailure::CapsLockState,
+                    ));
+                    return;
+                }
                 let proxy = registry.bind(
                     name,
                     version.min(wl_seat::WlSeat::interface().version),
@@ -620,6 +647,8 @@ impl PreparedState {
 
         let Some(binding) = self.outputs.remove(&name) else {
             if let Some(mut seat) = self.seats.remove(&name) {
+                let caps_change = self.caps_lock.remove_seat(name);
+                record_caps_lock_change(&mut self.events, &mut self.failure, caps_change);
                 let was_available = seat.keyboard.is_some() || self.keyboard_count() > 0;
                 let was_pointer_available = seat.pointer.is_some() || self.pointer_count() > 0;
                 if let Some(keyboard) = seat.keyboard.take() {
@@ -1168,13 +1197,17 @@ impl Dispatch<wl_seat::WlSeat, SeatData> for PreparedState {
         } else if let Some(keyboard) = binding.keyboard.take() {
             binding.decoder.clear_keymap();
             binding.repeat.clear();
+            let caps_change = state.caps_lock.set_locked(data.global_name, false);
             if binding.focused {
                 binding.focused = false;
+                let focus_change = state.caps_lock.set_focused(data.global_name, false);
+                record_caps_lock_change(&mut state.events, &mut state.failure, focus_change);
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
                     seat: binding.seat,
                     focused: false,
                 });
             }
+            record_caps_lock_change(&mut state.events, &mut state.failure, caps_change);
             if keyboard.version() >= 3 {
                 keyboard.release();
             }
@@ -1378,7 +1411,10 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                     match catch_unwind(AssertUnwindSafe(|| {
                         binding.decoder.install_keymap(fd, size)
                     })) {
-                        Ok(Ok(())) => {}
+                        Ok(Ok(())) => {
+                            let change = state.caps_lock.set_locked(data.seat_global_name, false);
+                            record_caps_lock_change(&mut state.events, &mut state.failure, change);
+                        }
                         Ok(Err(error)) => {
                             state.record_failure(PreparedStateError::Keyboard(error.into()))
                         }
@@ -1390,6 +1426,8 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
             }
             wl_keyboard::Event::Enter { .. } => {
                 binding.focused = true;
+                let change = state.caps_lock.set_focused(data.seat_global_name, true);
+                record_caps_lock_change(&mut state.events, &mut state.failure, change);
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
                     seat: data.seat,
                     focused: true,
@@ -1404,6 +1442,8 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                 }
                 binding.focused = false;
                 binding.repeat.clear();
+                let change = state.caps_lock.set_focused(data.seat_global_name, false);
+                record_caps_lock_change(&mut state.events, &mut state.failure, change);
                 state.events.push_back(PreparedEvent::KeyboardFocusChanged {
                     seat: data.seat,
                     focused: false,
@@ -1487,7 +1527,27 @@ impl Dispatch<wl_keyboard::WlKeyboard, KeyboardData> for PreparedState {
                         group,
                     )
                 })) {
-                    Ok(Ok(())) => {}
+                    Ok(Ok(())) => {
+                        let active =
+                            catch_unwind(AssertUnwindSafe(|| binding.decoder.caps_lock_active()));
+                        match active {
+                            Ok(Ok(active)) => {
+                                let change =
+                                    state.caps_lock.set_locked(data.seat_global_name, active);
+                                record_caps_lock_change(
+                                    &mut state.events,
+                                    &mut state.failure,
+                                    change,
+                                );
+                            }
+                            Ok(Err(error)) => {
+                                state.record_failure(PreparedStateError::Keyboard(error.into()))
+                            }
+                            Err(_) => state.record_failure(PreparedStateError::Keyboard(
+                                KeyboardFailure::DecoderPanicked,
+                            )),
+                        }
+                    }
                     Ok(Err(error)) => {
                         state.record_failure(PreparedStateError::Keyboard(error.into()))
                     }
@@ -1690,6 +1750,7 @@ pub enum WireStateError {
 pub enum KeyboardFailure {
     UnknownSeatCapabilities,
     SeatMissing,
+    CapsLockState,
     InvalidKeymapFormat,
     InvalidKeymapSize,
     MapKeymap,

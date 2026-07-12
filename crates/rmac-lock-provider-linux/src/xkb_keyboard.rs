@@ -97,6 +97,11 @@ impl KeyboardDecoder {
         Ok(())
     }
 
+    pub(super) fn caps_lock_active(&self) -> Result<bool, Error> {
+        let state = self.state.as_ref().ok_or(Error::KeymapUnavailable)?;
+        Ok(state.mod_name_is_active(xkb::MOD_NAME_CAPS, xkb::STATE_MODS_LOCKED))
+    }
+
     pub(super) fn decode_press(&mut self, raw_keycode: u32) -> Result<Option<DecodedKey>, Error> {
         let keycode = wayland_keycode(raw_keycode)?;
         let state = self.state.as_ref().ok_or(Error::KeymapUnavailable)?;
@@ -234,6 +239,20 @@ mod tests {
             decoder.decode_press(1),
             Ok(Some(DecodedKey::Cancel))
         ));
+
+        let caps_index = decoder
+            .state
+            .as_ref()
+            .unwrap()
+            .get_keymap()
+            .mod_get_index(xkb::MOD_NAME_CAPS);
+        assert!(caps_index < u32::BITS);
+        decoder
+            .update_modifiers(0, 0, 1_u32 << caps_index, 0)
+            .unwrap();
+        assert!(matches!(decoder.caps_lock_active(), Ok(true)));
+        decoder.update_modifiers(0, 0, 0, 0).unwrap();
+        assert!(matches!(decoder.caps_lock_active(), Ok(false)));
     }
 
     #[test]
@@ -262,6 +281,10 @@ mod tests {
         assert!(matches!(
             decoder.decode_press(u32::MAX),
             Err(Error::InvalidKeycode)
+        ));
+        assert!(matches!(
+            decoder.caps_lock_active(),
+            Err(Error::KeymapUnavailable)
         ));
         assert_eq!(format!("{decoder:?}"), "KeyboardDecoder(<redacted>)");
     }

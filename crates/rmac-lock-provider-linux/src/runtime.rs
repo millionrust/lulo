@@ -37,6 +37,7 @@ pub struct Coordinator {
     editor: Option<PromptEditor>,
     queued_inputs: VecDeque<DecodedKey>,
     authentication_failed_visible: bool,
+    caps_lock_active: bool,
 }
 
 impl Default for Coordinator {
@@ -48,6 +49,7 @@ impl Default for Coordinator {
             editor: None,
             queued_inputs: VecDeque::new(),
             authentication_failed_visible: false,
+            caps_lock_active: false,
         }
     }
 }
@@ -87,6 +89,7 @@ impl Coordinator {
                     RequestKind::Binary => PromptVisual::Binary,
                 });
         LockVisualState::new(prompt, self.authentication_failed_visible)
+            .with_caps_lock(self.caps_lock_active)
     }
 
     #[cfg(any(target_os = "linux", test))]
@@ -128,6 +131,7 @@ impl Coordinator {
                 self.attempt = None;
                 self.draining_cancelled_worker = None;
                 self.authentication_failed_visible = false;
+                self.caps_lock_active = false;
                 self.apply_provider(ProviderEvent::CompositorFinished, &mut actions)?;
             }
             RuntimeEvent::UnlockFlushed => {
@@ -147,6 +151,12 @@ impl Coordinator {
             }
             RuntimeEvent::Input(input) => {
                 self.handle_input(input, &mut actions)?;
+            }
+            RuntimeEvent::CapsLockChanged(active) => {
+                if self.caps_lock_active != active {
+                    self.caps_lock_active = active;
+                    actions.prompt_changed = true;
+                }
             }
             RuntimeEvent::AuthenticationFinished { attempt, outcome } => {
                 self.authentication_finished(attempt, outcome, &mut actions)?;
@@ -329,6 +339,7 @@ pub enum RuntimeEvent {
     UnlockFlushed,
     Prompt(PendingPrompt),
     Input(DecodedKey),
+    CapsLockChanged(bool),
     AuthenticationFinished {
         attempt: AttemptId,
         outcome: AuthenticationOutcome,
@@ -346,6 +357,7 @@ impl fmt::Debug for RuntimeEvent {
             Self::UnlockFlushed => "RuntimeEvent::UnlockFlushed",
             Self::Prompt(_) => "RuntimeEvent::Prompt(<redacted>)",
             Self::Input(_) => "RuntimeEvent::Input(<redacted>)",
+            Self::CapsLockChanged(_) => "RuntimeEvent::CapsLockChanged(<redacted>)",
             Self::AuthenticationFinished { .. } => {
                 "RuntimeEvent::AuthenticationFinished(<redacted>)"
             }
@@ -615,6 +627,9 @@ pub(crate) mod linux {
             PreparedEvent::FrameCommitted(output) => Some(RuntimeEvent::FrameCommitted(output)),
             PreparedEvent::KeyboardInput { input, .. }
             | PreparedEvent::PointerInput { input, .. } => Some(RuntimeEvent::Input(input)),
+            PreparedEvent::CapsLockChanged { active } => {
+                Some(RuntimeEvent::CapsLockChanged(active))
+            }
             PreparedEvent::LockAcquired => Some(RuntimeEvent::LockAcquired),
             PreparedEvent::LockFinished => Some(RuntimeEvent::LockFinished),
             PreparedEvent::UnlockFlushed => Some(RuntimeEvent::UnlockFlushed),
@@ -678,6 +693,10 @@ pub(crate) mod linux {
                     input: DecodedKey::Submit,
                 }),
                 Some(RuntimeEvent::Input(DecodedKey::Submit))
+            ));
+            assert!(matches!(
+                runtime_event(PreparedEvent::CapsLockChanged { active: true }),
+                Some(RuntimeEvent::CapsLockChanged(true))
             ));
             assert!(
                 runtime_event(PreparedEvent::OutputScaleChanged { output, scale: 2 }).is_none()
@@ -849,6 +868,31 @@ mod tests {
             Err(Error::StaleWorker)
         );
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn caps_lock_changes_repaint_without_entering_the_input_queue() {
+        let mut coordinator = Coordinator::new();
+        acquire(&mut coordinator);
+        let actions = coordinator
+            .apply(RuntimeEvent::CapsLockChanged(true))
+            .unwrap();
+        assert!(actions.prompt_changed);
+        assert!(coordinator.visual_state().caps_lock_active());
+
+        let unchanged = coordinator
+            .apply(RuntimeEvent::CapsLockChanged(true))
+            .unwrap();
+        assert!(!unchanged.prompt_changed);
+        let hidden = coordinator
+            .apply(RuntimeEvent::CapsLockChanged(false))
+            .unwrap();
+        assert!(hidden.prompt_changed);
+        assert!(!coordinator.visual_state().caps_lock_active());
+        assert_eq!(
+            format!("{:?}", RuntimeEvent::CapsLockChanged(true)),
+            "RuntimeEvent::CapsLockChanged(<redacted>)"
+        );
     }
 
     #[test]

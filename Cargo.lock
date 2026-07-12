@@ -5067,6 +5067,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-notifications"
+version = "0.1.0"
+
+[[package]]
 name = "rmac-places"
 version = "0.1.0"
 

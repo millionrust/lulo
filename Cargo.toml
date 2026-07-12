@@ -39,6 +39,7 @@ rmac-compositor-niri = { version = "=0.1.0", path = "crates/rmac-compositor-niri
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
+rmac-notifications = { version = "=0.1.0", path = "crates/rmac-notifications" }
 rmac-audio = { version = "=0.1.0", path = "crates/rmac-audio" }
 rmac-display = { version = "=0.1.0", path = "crates/rmac-display" }
 rmac-dock = { version = "=0.1.0", path = "crates/rmac-dock" }

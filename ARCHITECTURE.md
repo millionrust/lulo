@@ -203,6 +203,10 @@ Focus loss fails normal banners closed while retaining policy-allowed history.
 The bounded runtime event stream carries the exact posted snapshot and persists
 validated Center changes off D-Bus dispatch, retaining expired history and
 removing dismissed, withdrawn, or action-closed records without a lookup race.
+Its private `org.rmac.NotificationCenter1` interface publishes only unread and
+urgent indicator state. The shell subscribes before reading, retains
+last-known-good state through reconnects, and never receives notification
+content through this status boundary.
 
 Quick Settings consumes the same typed service snapshots through
 `rmac-quick-settings`. Its framework-neutral transaction model validates

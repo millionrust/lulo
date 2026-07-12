@@ -194,7 +194,15 @@ so an immediate sender withdrawal cannot race a later mutable-state lookup.
 Replacement upserts the full validated notification, expiry
 keeps its history, and dismissal, withdrawal, or action closure removes it.
 Each changed snapshot is atomically persisted; a save failure is reported
-without terminating the live protocol service.
+without terminating the live protocol service or freezing the live indicator.
+
+The same service owns `org.rmac.NotificationCenter1`. Its state method and
+change signal expose only unread count and urgent presence—never content or app
+identity. The signal is emitted after each in-memory Center change even when a
+disk save is degraded. Shell clients subscribe before their initial read,
+reconnect with bounded delay, and retain last-known-good indicator state while
+the authority restarts. A D-Bus activation entry routes the internal name to
+the already supervised notification-center process.
 
 ## Next adapters and surfaces
 

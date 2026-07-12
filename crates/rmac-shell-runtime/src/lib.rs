@@ -20,6 +20,7 @@ pub struct HealthSnapshot {
     pub compositor: SourceHealth,
     pub settings: SourceHealth,
     pub focus: SourceHealth,
+    pub notifications: SourceHealth,
     pub network: SourceHealth,
     pub bluetooth: SourceHealth,
     pub audio: SourceHealth,
@@ -152,6 +153,28 @@ impl Coordinator {
                 // Preserve last-known-good status while disabling mutations.
                 self.quick_settings.focus_available = false;
                 self.health.focus = SourceHealth::Unavailable { detail };
+            }
+        }
+        before != self.snapshot()
+    }
+
+    pub fn apply_notifications(
+        &mut self,
+        notifications: Result<rmac_notifications::Indicator, String>,
+    ) -> bool {
+        let before = self.snapshot();
+        match notifications {
+            Ok(notifications) => {
+                self.status.apply(rmac_shell_status::Event::Notifications(
+                    rmac_shell_status::NotificationIndicator {
+                        unread_count: notifications.unread_count,
+                        has_urgent: notifications.has_urgent,
+                    },
+                ));
+                self.health.notifications = SourceHealth::Healthy;
+            }
+            Err(detail) => {
+                self.health.notifications = SourceHealth::Unavailable { detail };
             }
         }
         before != self.snapshot()
@@ -341,13 +364,22 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (service_tx, service_rx) = async_channel::bounded(8);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
     let (focus_tx, focus_rx) = async_channel::bounded(4);
+    let (notification_tx, notification_rx) = async_channel::bounded(4);
 
     let compositor = watch_compositor(compositor_tx);
     let services = rmac_shell_status_linux::watch(service_tx);
     let settings = watch_settings(settings_tx);
     let focus = watch_focus(focus_tx);
-    let consumer = consume(sender, compositor_rx, service_rx, settings_rx, focus_rx);
-    let (_, _, _, _, _) = futures_util::try_join!(
+    let notifications = watch_notifications(notification_tx);
+    let consumer = consume(
+        sender,
+        compositor_rx,
+        service_rx,
+        settings_rx,
+        focus_rx,
+        notification_rx,
+    );
+    let (_, _, _, _, _, _) = futures_util::try_join!(
         compositor,
         async {
             services
@@ -356,9 +388,18 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
         },
         settings,
         focus,
+        notifications,
         consumer,
     )?;
     Ok(())
+}
+
+async fn watch_notifications(
+    sender: Sender<Result<rmac_notifications::Indicator, String>>,
+) -> Result<(), Error> {
+    rmac_notifications_linux::center::watch(sender)
+        .await
+        .map_err(|error| Error::new("watch Notification Center", error.to_string()))
 }
 
 async fn watch_focus(
@@ -470,6 +511,7 @@ async fn consume(
     services: async_channel::Receiver<rmac_shell_status_linux::Event>,
     settings: async_channel::Receiver<Result<rmac_shell_settings::ShellSettings, String>>,
     focus: async_channel::Receiver<Result<rmac_focus_runtime::Projection, String>>,
+    notifications: async_channel::Receiver<Result<rmac_notifications::Indicator, String>>,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
     let mut published = coordinator.snapshot();
@@ -489,12 +531,14 @@ async fn consume(
         let service_event = futures_util::FutureExt::fuse(services.recv());
         let settings_event = futures_util::FutureExt::fuse(settings.recv());
         let focus_event = futures_util::FutureExt::fuse(focus.recv());
+        let notification_event = futures_util::FutureExt::fuse(notifications.recv());
         let closed = futures_util::FutureExt::fuse(sender.closed());
         futures_util::pin_mut!(
             compositor_event,
             service_event,
             settings_event,
             focus_event,
+            notification_event,
             closed
         );
         futures_util::select! {
@@ -524,6 +568,10 @@ async fn consume(
                 let event = event.map_err(|_| Error::new("receive Focus state", "watcher stopped"))?;
                 let writable = event.is_ok();
                 coordinator.apply_focus(event, writable);
+            },
+            event = notification_event => {
+                let event = event.map_err(|_| Error::new("receive Notification Center state", "watcher stopped"))?;
+                coordinator.apply_notifications(event);
             },
             _ = closed => return Ok(()),
         }
@@ -731,6 +779,28 @@ mod tests {
         assert_eq!(snapshot.status.focus.unwrap().mode.as_deref(), Some("Work"));
         assert!(!snapshot.quick_settings.focus_available);
         assert_eq!(snapshot.health.focus, SourceHealth::Healthy);
+    }
+
+    #[test]
+    fn notification_center_indicator_survives_a_source_restart() {
+        let mut coordinator = Coordinator::default();
+        assert!(
+            coordinator.apply_notifications(Ok(rmac_notifications::Indicator {
+                unread_count: 4,
+                has_urgent: true,
+            }))
+        );
+        let live = coordinator.snapshot();
+        assert_eq!(live.status.notifications.unwrap().unread_count, 4);
+        assert_eq!(live.health.notifications, SourceHealth::Healthy);
+
+        assert!(coordinator.apply_notifications(Err("Center restarted".into())));
+        let unavailable = coordinator.snapshot();
+        assert_eq!(unavailable.status.notifications.unwrap().unread_count, 4);
+        assert!(matches!(
+            unavailable.health.notifications,
+            SourceHealth::Unavailable { .. }
+        ));
     }
 
     #[test]

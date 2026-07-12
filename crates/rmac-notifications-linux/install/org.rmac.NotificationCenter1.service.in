@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.rmac.NotificationCenter1
+Exec=@RMAC_NOTIFICATION_EXEC@
+SystemdService=rmac-notification-center.service

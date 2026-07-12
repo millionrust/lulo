@@ -49,6 +49,11 @@ sed "s|@RMAC_NOTIFICATION_EXEC@|${libexec_dir}/rmac-notification-center|g" \
     >"${activation_tmp}"
 install -m 0644 "${activation_tmp}" \
     "${dbus_service_dir}/org.freedesktop.impl.portal.desktop.rmac.service"
+sed "s|@RMAC_NOTIFICATION_EXEC@|${libexec_dir}/rmac-notification-center|g" \
+    "${notification_install_dir}/org.rmac.NotificationCenter1.service.in" \
+    >"${activation_tmp}"
+install -m 0644 "${activation_tmp}" \
+    "${dbus_service_dir}/org.rmac.NotificationCenter1.service"
 rm -f "${activation_tmp}"
 trap - EXIT HUP INT TERM
 

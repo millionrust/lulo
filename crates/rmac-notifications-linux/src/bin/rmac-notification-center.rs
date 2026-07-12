@@ -5,8 +5,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // history now without blocking the session-bus dispatch executor.
         while let Ok(event) = events.recv().await {
             let history = service.history().clone();
-            if let Err(error) = blocking::unblock(move || history.record(&event)).await {
-                eprintln!("{error}");
+            if let Some(outcome) = blocking::unblock(move || history.record(&event)).await {
+                if !outcome.persisted {
+                    eprintln!("notification service failed (History)");
+                }
+                if let Err(error) = service.emit_indicator(outcome.indicator).await {
+                    eprintln!("{error}");
+                }
             }
         }
         Ok::<_, Box<dyn std::error::Error>>(())

@@ -18,6 +18,8 @@ use zbus::{interface, Connection, Proxy};
 
 const LEGACY_PATH: &str = "/org/freedesktop/Notifications";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
+pub const CENTER_BUS_NAME: &str = "org.rmac.NotificationCenter1";
+pub const CENTER_PATH: &str = "/org/rmac/NotificationCenter1";
 const EVENT_CAPACITY: usize = 128;
 
 #[derive(Clone)]
@@ -25,6 +27,12 @@ pub struct HistoryAuthority {
     center: Arc<Mutex<rmac_notifications_store::Center>>,
     store: rmac_notifications_store::Store,
     focus_connection: Option<Connection>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecordOutcome {
+    pub indicator: rmac_notifications::Indicator,
+    pub persisted: bool,
 }
 
 impl std::fmt::Debug for HistoryAuthority {
@@ -76,7 +84,7 @@ impl HistoryAuthority {
         })
     }
 
-    pub fn record(&self, event: &RuntimeEvent) -> Result<(), ServiceError> {
+    pub fn record(&self, event: &RuntimeEvent) -> Option<RecordOutcome> {
         let changed = {
             let mut center = self
                 .center
@@ -108,11 +116,13 @@ impl HistoryAuthority {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone();
-            self.store
-                .save(&snapshot)
-                .map_err(|_| ServiceError::History)?;
+            Some(RecordOutcome {
+                indicator: snapshot.indicator(),
+                persisted: self.store.save(&snapshot).is_ok(),
+            })
+        } else {
+            None
         }
-        Ok(())
     }
 
     pub fn indicator(&self) -> rmac_notifications::Indicator {
@@ -121,6 +131,27 @@ impl HistoryAuthority {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .indicator()
     }
+}
+
+#[derive(Clone, Debug)]
+struct CenterInterface {
+    history: HistoryAuthority,
+}
+
+#[interface(name = "org.rmac.NotificationCenter1")]
+impl CenterInterface {
+    fn state(&self, #[zbus(header)] header: Header<'_>) -> fdo::Result<(u32, bool)> {
+        authenticated_sender(&header)?;
+        let indicator = self.history.indicator();
+        Ok((indicator.unread_count, indicator.has_urgent))
+    }
+
+    #[zbus(signal)]
+    async fn changed(
+        emitter: &SignalEmitter<'_>,
+        unread_count: u32,
+        has_urgent: bool,
+    ) -> zbus::Result<()>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -493,6 +524,17 @@ impl ServiceHandle {
         &self.history
     }
 
+    pub async fn emit_indicator(
+        &self,
+        indicator: rmac_notifications::Indicator,
+    ) -> Result<(), ServiceError> {
+        let emitter =
+            SignalEmitter::new(&self.connection, CENTER_PATH).map_err(|_| ServiceError::Bus)?;
+        CenterInterface::changed(&emitter, indicator.unread_count, indicator.has_urgent)
+            .await
+            .map_err(|_| ServiceError::Bus)
+    }
+
     pub async fn dismiss(&self, id: NotificationId) -> Result<Closed, ActionError> {
         let source = self.source(id)?;
         let closed = self.core.dismiss(id).map_err(action_domain_error)?;
@@ -673,15 +715,22 @@ pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceE
         events: events.clone(),
         history: history.clone(),
     };
+    let center = CenterInterface {
+        history: history.clone(),
+    };
     let connection = Builder::session()
         .map_err(|_| ServiceError::Bus)?
         .name("org.freedesktop.Notifications")
         .map_err(|_| ServiceError::Bus)?
         .name("org.freedesktop.impl.portal.desktop.rmac")
         .map_err(|_| ServiceError::Bus)?
+        .name(CENTER_BUS_NAME)
+        .map_err(|_| ServiceError::Bus)?
         .serve_at(LEGACY_PATH, legacy)
         .map_err(|_| ServiceError::Bus)?
         .serve_at(PORTAL_PATH, portal)
+        .map_err(|_| ServiceError::Bus)?
+        .serve_at(CENTER_PATH, center)
         .map_err(|_| ServiceError::Bus)?
         .build()
         .await
@@ -908,12 +957,12 @@ mod tests {
         let active = core.snapshot();
         core.withdraw_portal(&AppId::parse("org.example.App").unwrap(), "one")
             .unwrap();
-        history
+        assert!(history
             .record(&RuntimeEvent::Posted {
                 outcome: posted,
                 notification: active.first().cloned().map(Box::new),
             })
-            .unwrap();
+            .is_some());
         assert_eq!(
             rmac_notifications_store::Store::at(path.clone())
                 .load()
@@ -924,22 +973,50 @@ mod tests {
             1
         );
 
-        history
+        assert!(history
             .record(&RuntimeEvent::Closed(Closed {
                 id: posted.id,
                 reason: CloseReason::Expired,
             }))
-            .unwrap();
+            .is_none());
         assert_eq!(history.indicator().unread_count, 1);
 
-        history
+        assert!(history
             .record(&RuntimeEvent::Closed(Closed {
                 id: posted.id,
                 reason: CloseReason::Dismissed,
             }))
-            .unwrap();
+            .is_some());
         assert_eq!(history.indicator().unread_count, 0);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn save_failure_keeps_the_live_indicator_truthful() {
+        let root = history_path("save-failure");
+        std::fs::create_dir_all(root.parent().unwrap()).unwrap();
+        let blocker = root.parent().unwrap().join("not-a-directory");
+        std::fs::write(&blocker, b"block").unwrap();
+        let history = HistoryAuthority::empty_at(blocker.join("history.json"));
+        let core = SharedCore::new(10, TimeoutPolicy::default());
+        let request = protocol::portal(PortalInput {
+            app_id: "org.example.App".into(),
+            id: "one".into(),
+            title: Some("Private title".into()),
+            ..PortalInput::default()
+        })
+        .unwrap();
+        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        let recorded = history
+            .record(&RuntimeEvent::Posted {
+                outcome,
+                notification,
+            })
+            .unwrap();
+        assert_eq!(recorded.indicator.unread_count, 1);
+        assert!(!recorded.persisted);
+        assert_eq!(history.indicator().unread_count, 1);
+        std::fs::remove_dir_all(root.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -965,8 +1042,9 @@ mod tests {
         let portal = PortalInterface {
             core,
             events,
-            history,
+            history: history.clone(),
         };
+        let center = CenterInterface { history };
         let mut legacy_xml = String::new();
         legacy.introspect_to_writer(&mut legacy_xml, 0);
         assert!(legacy_xml.contains("org.freedesktop.Notifications"));
@@ -982,6 +1060,12 @@ mod tests {
         assert!(portal_xml.contains("method name=\"RemoveNotification\""));
         assert!(portal_xml.contains("property name=\"version\" type=\"u\""));
         assert!(portal_xml.contains("property name=\"SupportedOptions\" type=\"a{sv}\""));
+
+        let mut center_xml = String::new();
+        center.introspect_to_writer(&mut center_xml, 0);
+        assert!(center_xml.contains("org.rmac.NotificationCenter1"));
+        assert!(center_xml.contains("method name=\"State\""));
+        assert!(center_xml.contains("signal name=\"Changed\""));
     }
 
     #[test]

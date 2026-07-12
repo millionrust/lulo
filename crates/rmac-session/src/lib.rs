@@ -511,6 +511,13 @@ mod tests {
         );
         assert!(activation.contains("@RMAC_NOTIFICATION_EXEC@"));
         assert!(activation.contains("SystemdService=rmac-notification-center.service"));
+
+        let center_activation = include_str!(
+            "../../rmac-notifications-linux/install/org.rmac.NotificationCenter1.service.in"
+        );
+        assert!(center_activation.contains("Name=org.rmac.NotificationCenter1"));
+        assert!(center_activation.contains("@RMAC_NOTIFICATION_EXEC@"));
+        assert!(center_activation.contains("SystemdService=rmac-notification-center.service"));
     }
 
     #[test]

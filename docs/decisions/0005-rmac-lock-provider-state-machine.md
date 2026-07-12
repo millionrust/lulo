@@ -143,8 +143,12 @@ Recovery development uses two non-enabled evidence-only units, never the
 shipping unit name. The custom unit has a bounded restart burst; a distinct
 fallback unit runs the accepted swaylock supervisor against the same private
 nested-compositor environment. The interactive harness must observe a ready
-custom instance, kill it, observe a new ready PID and restart count, stop it
-without unlocking, then complete authentication through swaylock. This proves
+custom instance, stop its event loop, observe a watchdog-driven ready
+replacement, kill that replacement, observe a second new ready PID and restart
+count, stop it without unlocking, then complete authentication through
+swaylock. The watchdog is armed only after compositor-confirmed readiness and
+uses the manager-provided interval, so startup work cannot counterfeit liveness
+and late checks cannot emit a catch-up burst. This proves
 the intended recovery sequence only when run on Linux; committed unit/script
 tests prove configuration separation but are not runtime evidence.
 

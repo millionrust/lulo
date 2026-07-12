@@ -4,8 +4,88 @@
 //! so readiness and advisory-hint ordering can be tested on every host.
 
 use std::fmt;
+use std::time::{Duration, Instant};
 
 use crate::runtime::ProviderExit;
+
+/// Event-loop watchdog cadence derived from systemd's process-scoped
+/// `WATCHDOG_USEC` contract. It remains dormant until secure readiness and
+/// coalesces late checks instead of emitting a catch-up burst.
+pub(crate) struct WatchdogSchedule {
+    interval: Option<Duration>,
+    next: Option<Instant>,
+}
+
+impl WatchdogSchedule {
+    pub(crate) fn from_environment_values(
+        watchdog_usec: Option<&str>,
+        watchdog_pid: Option<&str>,
+        current_pid: u32,
+    ) -> Result<Self, Error> {
+        let Some(watchdog_usec) = watchdog_usec else {
+            return Ok(Self::disabled());
+        };
+        if let Some(watchdog_pid) = watchdog_pid {
+            let watchdog_pid = watchdog_pid
+                .parse::<u32>()
+                .map_err(|_| Error::InvalidWatchdogEnvironment)?;
+            if watchdog_pid != current_pid {
+                return Ok(Self::disabled());
+            }
+        }
+        let timeout = watchdog_usec
+            .parse::<u64>()
+            .ok()
+            .filter(|timeout| *timeout != 0)
+            .map(Duration::from_micros)
+            .ok_or(Error::InvalidWatchdogEnvironment)?;
+        let interval = (timeout / 2).max(Duration::from_micros(1));
+        Ok(Self {
+            interval: Some(interval),
+            next: None,
+        })
+    }
+
+    fn disabled() -> Self {
+        Self {
+            interval: None,
+            next: None,
+        }
+    }
+
+    pub(crate) fn arm(&mut self, now: Instant) -> Result<(), Error> {
+        let Some(interval) = self.interval else {
+            return Ok(());
+        };
+        if self.next.is_some() {
+            return Err(Error::DuplicateWatchdogArm);
+        }
+        self.next = Some(now.checked_add(interval).ok_or(Error::WatchdogOverflow)?);
+        Ok(())
+    }
+
+    pub(crate) fn heartbeat_due(&mut self, now: Instant) -> Result<bool, Error> {
+        let Some(next) = self.next else {
+            return Ok(false);
+        };
+        if now < next {
+            return Ok(false);
+        }
+        let interval = self.interval.ok_or(Error::InvalidWatchdogState)?;
+        self.next = Some(now.checked_add(interval).ok_or(Error::WatchdogOverflow)?);
+        Ok(true)
+    }
+}
+
+impl fmt::Debug for WatchdogSchedule {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WatchdogSchedule")
+            .field("enabled", &self.interval.is_some())
+            .field("armed", &self.next.is_some())
+            .finish()
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct ProcessLifecycle {
@@ -122,6 +202,10 @@ pub(crate) enum Error {
     DeniedAfterReady,
     FailureBeforeReady,
     NotifyReady,
+    InvalidWatchdogEnvironment,
+    DuplicateWatchdogArm,
+    InvalidWatchdogState,
+    WatchdogOverflow,
 }
 
 impl fmt::Display for Error {
@@ -245,5 +329,53 @@ mod tests {
             Err(Error::NotifyReady)
         );
         assert_eq!(failing.events, ["hint:true", "ready"]);
+    }
+
+    #[test]
+    fn watchdog_is_process_scoped_and_dormant_until_armed() {
+        let now = Instant::now();
+        let mut disabled = WatchdogSchedule::from_environment_values(None, Some("42"), 42).unwrap();
+        disabled.arm(now).unwrap();
+        assert!(!disabled
+            .heartbeat_due(now + Duration::from_secs(60))
+            .unwrap());
+
+        let mismatched =
+            WatchdogSchedule::from_environment_values(Some("10000000"), Some("41"), 42).unwrap();
+        assert!(format!("{mismatched:?}").contains("enabled: false"));
+        assert_eq!(
+            WatchdogSchedule::from_environment_values(Some("invalid"), None, 42).unwrap_err(),
+            Error::InvalidWatchdogEnvironment
+        );
+        assert_eq!(
+            WatchdogSchedule::from_environment_values(Some("100"), Some("invalid"), 42)
+                .unwrap_err(),
+            Error::InvalidWatchdogEnvironment
+        );
+    }
+
+    #[test]
+    fn watchdog_uses_half_interval_without_late_catch_up() {
+        let now = Instant::now();
+        let mut watchdog =
+            WatchdogSchedule::from_environment_values(Some("10000000"), Some("42"), 42).unwrap();
+        assert!(!watchdog.heartbeat_due(now).unwrap());
+        watchdog.arm(now).unwrap();
+        assert!(!watchdog
+            .heartbeat_due(now + Duration::from_millis(4_999))
+            .unwrap());
+        assert!(watchdog
+            .heartbeat_due(now + Duration::from_secs(5))
+            .unwrap());
+        assert!(!watchdog
+            .heartbeat_due(now + Duration::from_secs(5))
+            .unwrap());
+        assert!(watchdog
+            .heartbeat_due(now + Duration::from_secs(30))
+            .unwrap());
+        assert!(!watchdog
+            .heartbeat_due(now + Duration::from_secs(30))
+            .unwrap());
+        assert_eq!(watchdog.arm(now), Err(Error::DuplicateWatchdogArm));
     }
 }

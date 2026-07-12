@@ -7,11 +7,13 @@
 use std::env;
 use std::fmt;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use zbus::zvariant::OwnedObjectPath;
 
-use crate::process::{execute_actions, ProcessEffects, ProcessLifecycle, ProcessTermination};
+use crate::process::{
+    execute_actions, ProcessEffects, ProcessLifecycle, ProcessTermination, WatchdogSchedule,
+};
 use crate::runtime::linux::LinuxRuntime;
 use crate::runtime::ProviderExit;
 
@@ -23,6 +25,14 @@ const POLL_WAIT: Duration = Duration::from_secs(1);
 /// restart condition.
 pub fn run() -> Result<(), Error> {
     let session = SessionContext::connect()?;
+    let watchdog_usec = env::var("WATCHDOG_USEC").ok();
+    let watchdog_pid = env::var("WATCHDOG_PID").ok();
+    let mut watchdog = WatchdogSchedule::from_environment_values(
+        watchdog_usec.as_deref(),
+        watchdog_pid.as_deref(),
+        std::process::id(),
+    )
+    .map_err(|_| Error::new(Operation::ResolveWatchdog))?;
     let mut runtime = LinuxRuntime::connect(session.username.clone())
         .map_err(|_| Error::new(Operation::ConnectProvider))?;
     let mut lifecycle = ProcessLifecycle::default();
@@ -35,9 +45,22 @@ pub fn run() -> Result<(), Error> {
         let actions = lifecycle
             .apply(status.notify_ready, exit)
             .map_err(|_| Error::new(Operation::ApplyLifecycle))?;
+        let became_ready = actions.notify_systemd_ready;
 
         let executed = execute_actions(actions, &mut SessionEffects(&session))
             .map_err(|_| Error::new(Operation::NotifySystemd))?;
+        let now = Instant::now();
+        if became_ready {
+            watchdog
+                .arm(now)
+                .map_err(|_| Error::new(Operation::ResolveWatchdog))?;
+        }
+        if watchdog
+            .heartbeat_due(now)
+            .map_err(|_| Error::new(Operation::ResolveWatchdog))?
+        {
+            notify_watchdog()?;
+        }
         if executed.locked_hint_failed {
             eprintln!("secure lock advisory state warning");
         }
@@ -142,6 +165,20 @@ fn notify_ready() -> Result<(), Error> {
     }
 }
 
+fn notify_watchdog() -> Result<(), Error> {
+    let status = Command::new(SYSTEMD_NOTIFY)
+        .args(["--watchdog", "--pid=parent"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .status()
+        .map_err(|_| Error::new(Operation::NotifyWatchdog))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(Error::new(Operation::NotifyWatchdog))
+    }
+}
+
 #[zbus::proxy(
     interface = "org.freedesktop.login1.Manager",
     default_service = "org.freedesktop.login1",
@@ -170,10 +207,12 @@ pub enum Operation {
     ResolveSession,
     SessionOwnership,
     ResolveUsername,
+    ResolveWatchdog,
     ConnectProvider,
     PollProvider,
     ApplyLifecycle,
     NotifySystemd,
+    NotifyWatchdog,
     ProviderDenied,
     ProviderFailedLocked,
 }

@@ -487,6 +487,8 @@ mod evidence_assets {
     fn evidence_units_are_separate_readiness_gated_crash_domains() {
         assert!(CUSTOM_UNIT.contains("Type=notify"));
         assert!(CUSTOM_UNIT.contains("NotifyAccess=all"));
+        assert!(CUSTOM_UNIT.contains("WatchdogSec=10s"));
+        assert!(CUSTOM_UNIT.contains("WatchdogSignal=SIGKILL"));
         assert!(CUSTOM_UNIT.contains("Restart=on-failure"));
         assert!(CUSTOM_UNIT.contains("StartLimitIntervalSec=30s"));
         assert!(CUSTOM_UNIT.contains("StartLimitBurst=5"));
@@ -526,10 +528,12 @@ mod evidence_assets {
         assert!(RECOVERY_GATE.contains("NESTED-LOCK-RECOVERY"));
         assert!(RECOVERY_GATE.contains("WLR_BACKENDS=wayland"));
         assert!(RECOVERY_GATE.contains("--signal=KILL"));
+        assert!(RECOVERY_GATE.contains("--signal=STOP"));
         assert!(RECOVERY_GATE.contains("rmac-lock-fallback-evidence.service"));
         assert!(RECOVERY_GATE.contains("SetLockedHint b false"));
         assert!(RECOVERY_GATE.contains("target/linux-evidence"));
         assert!(RECOVERY_GATE.contains("custom_restart_count"));
+        assert!(RECOVERY_GATE.contains("watchdog_restart=pass"));
         assert!(!RECOVERY_GATE.contains("journalctl"));
         assert!(!RECOVERY_GATE.contains("rmac-lock.service"));
     }

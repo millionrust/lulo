@@ -255,6 +255,15 @@ attempts `LockedHint=false`. Hint failure remains an advisory warning, while a
 readiness notification failure terminates the provider so systemd can restart
 it fail-closed. Status and errors contain no session ID or username.
 
+The evidence provider also participates in systemd's process-scoped watchdog
+contract. It validates the manager-provided watchdog environment before the
+Wayland connection can lock, arms only after compositor-confirmed readiness,
+and sends one fixed watchdog notification at half the configured interval.
+Late event-loop checks never emit a catch-up burst. The evidence unit uses a
+ten-second timeout and `SIGKILL`, so a stopped provider is replaced without
+waiting for code inside the failed process; notification failure is fatal and
+therefore enters the same bounded restart path.
+
 The Linux adapter still requires Linux validation of its separate unit,
 localized prompt shaping, font fallback, and recovery harness, plus emergency
 recovery. Module-specific binary MFA UI, IME/accessibility support, and real
@@ -274,8 +283,9 @@ display without a start limit. Neither unit replaces or aliases
 
 The interactive gate creates a nested Sway compositor, passes its generated
 Wayland display through a private bounded environment file, waits for
-compositor-confirmed custom-provider readiness, sends `SIGKILL` to the provider,
-and proves systemd starts a new ready instance. It then stops the custom unit
+compositor-confirmed custom-provider readiness, sends `SIGSTOP` and proves the
+watchdog starts a new ready instance, then sends `SIGKILL` and proves crash
+restart independently. It then stops the custom unit
 while the nested session remains locked and starts the swaylock fallback. The
 test succeeds only after the user authenticates in that fallback. Execution is
 refused for root, SSH sessions, nonstandard runtime directories, missing local
@@ -289,7 +299,7 @@ these separation and recovery contracts; real Linux execution remains pending.
 - a reviewed Linux Wayland/PAM adapter, rmac lock presentation, and wallpaper;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;
-- real killed-locker recovery evidence and the documented TTY/manual recovery
+- real hung/killed-locker recovery evidence and the documented TTY/manual recovery
   path;
 - delay-inhibitor timing and forced-suspend failure evidence;
 - accessibility and keyboard-layout evidence on the Linux reference PC.

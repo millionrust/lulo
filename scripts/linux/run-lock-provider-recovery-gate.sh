@@ -56,7 +56,7 @@ for path in "${unit_dir}/${custom_unit}" "${unit_dir}/${fallback_unit}"; do
   fi
 done
 
-echo "This test opens a nested compositor, kills its lock provider, and requires"
+echo "This test opens a nested compositor, hangs and kills its lock provider, and requires"
 echo "you to authenticate through swaylock before the test can finish."
 read -r -p "Type NESTED-LOCK-RECOVERY to continue: " confirmation </dev/tty
 if [[ ${confirmation} != NESTED-LOCK-RECOVERY ]]; then
@@ -146,10 +146,10 @@ case ${first_restarts} in
     ;;
 esac
 
-/usr/bin/systemctl --user kill --kill-whom=main --signal=KILL "${custom_unit}"
+/usr/bin/systemctl --user kill --kill-whom=main --signal=STOP "${custom_unit}"
 attempts=0
 restarted=false
-while (( attempts < 150 )); do
+while (( attempts < 250 )); do
   next_pid=$(unit_value "${custom_unit}" MainPID)
   restarts=$(unit_value "${custom_unit}" NRestarts)
   if [[ ${next_pid} =~ ^[1-9][0-9]*$ && ${next_pid} != "${first_pid}" &&
@@ -162,10 +162,35 @@ while (( attempts < 150 )); do
   ((attempts += 1))
 done
 if [[ ${restarted} != true ]]; then
+  echo "custom provider watchdog did not recover the stopped event loop" >&2
+  exit 1
+fi
+echo "Watchdog recovery from a stopped event loop passed."
+printf 'watchdog_restart=pass\n' >>"${report}"
+printf 'watchdog_restart_count=%s\n' "${restarts}" >>"${report}"
+
+watchdog_pid=${next_pid}
+watchdog_restarts=${restarts}
+/usr/bin/systemctl --user kill --kill-whom=main --signal=KILL "${custom_unit}"
+attempts=0
+restarted=false
+while (( attempts < 150 )); do
+  next_pid=$(unit_value "${custom_unit}" MainPID)
+  restarts=$(unit_value "${custom_unit}" NRestarts)
+  if [[ ${next_pid} =~ ^[1-9][0-9]*$ && ${next_pid} != "${watchdog_pid}" &&
+        ${restarts} =~ ^[0-9]+$ && ${restarts} -gt ${watchdog_restarts} &&
+        $(unit_value "${custom_unit}" ActiveState) == active ]]; then
+    restarted=true
+    break
+  fi
+  sleep 0.1
+  ((attempts += 1))
+done
+if [[ ${restarted} != true ]]; then
   echo "custom provider did not recover after SIGKILL" >&2
   exit 1
 fi
-echo "Automatic custom-provider restart passed."
+echo "Automatic crash restart passed."
 printf 'custom_restart=pass\n' >>"${report}"
 printf 'custom_restart_count=%s\n' "${restarts}" >>"${report}"
 

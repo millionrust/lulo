@@ -114,7 +114,11 @@ Their units live under `crates/rmac-lock-provider-linux/evidence`, have no
 by the explicit evidence installer. The normal installer neither builds the
 feature-gated provider nor references those units. The recovery gate runs them
 against a nested compositor and retains the installed `rmac-lock.service` as
-the production swaylock path.
+the production swaylock path. The custom evidence unit also sets a ten-second
+systemd watchdog with `SIGKILL`; its provider arms the manager-derived heartbeat
+only after compositor-confirmed readiness. The recovery gate proves both a
+watchdog replacement for a stopped event loop and an ordinary crash restart
+before testing authenticated swaylock fallback.
 
 ## Verification boundary
 

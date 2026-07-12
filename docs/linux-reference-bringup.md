@@ -258,15 +258,17 @@ bash scripts/linux/run-lock-provider-recovery-gate.sh --execute
 ```
 
 The script asks for the exact `NESTED-LOCK-RECOVERY` acknowledgement. It opens a
-nested Sway window, proves a ready custom provider restarts after `SIGKILL`, and
+nested Sway window, stops a ready custom provider and proves its watchdog starts
+a new ready process, kills that replacement and proves ordinary crash restart,
 then transfers the still-locked nested compositor to the swaylock evidence
 fallback. Enter the test user's password in that nested window. Success requires
 the fallback to exit normally after authentication. The trap stops evidence
 units, terminates nested Sway, clears the advisory test hint, and removes its
 private runtime files even on failure.
 
-The gate writes only timestamps, pass/fail state, and the numeric restart count
-to `target/linux-evidence/<timestamp>/lock-provider-recovery.txt`. It does not
+The gate writes only timestamps, pass/fail state, and numeric watchdog/crash
+restart counts to
+`target/linux-evidence/<timestamp>/lock-provider-recovery.txt`. It does not
 capture the user name, session ID, display name, PID, journal, PAM messages, or
 credential content. The nested-Sway log is kept only in the private runtime
 directory and removed by cleanup; inspect it locally before changing that

@@ -37,6 +37,15 @@ when it has a label, or rejected when no accessible label could be shown.
 resident/transient/suppress-sound hints, replacement, and exact timeout values.
 The visible legacy `app_name` is never used as authenticated ownership.
 
+`rmac-notifications-linux` is the only `a{sv}` decoder. Known keys with the
+wrong D-Bus type fail with redacted field-only errors; unknown extensible keys
+are ignored. Portal targets are serialized into bounded canonical variant bytes
+and targets containing file descriptors are rejected. Markup bodies become
+inert text with bounded input and balanced-tag validation. Custom icon and sound
+file descriptors are not retained by the reducer. Until the media validator and
+player exist, the freedesktop server advertises only `actions`, `body`, and
+`persistence`—not markup, sound, hyperlinks, or image capabilities.
+
 `hide-on-lockscreen` and `hide-content-on-lockscreen` normalize to a typed lock
 visibility policy. No lock UI may weaken that policy. An unspecified hint stays
 `Policy`; the lock authority must resolve that through trusted per-app settings

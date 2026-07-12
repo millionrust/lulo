@@ -5071,6 +5071,14 @@ name = "rmac-notifications"
 version = "0.1.0"
 
 [[package]]
+name = "rmac-notifications-linux"
+version = "0.1.0"
+dependencies = [
+ "rmac-notifications",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-places"
 version = "0.1.0"
 

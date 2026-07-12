@@ -5091,6 +5091,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-lock-provider"
+version = "0.1.0"
+
+[[package]]
 name = "rmac-mounts"
 version = "0.1.0"
 dependencies = [

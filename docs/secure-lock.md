@@ -91,9 +91,23 @@ Previews is truthfully shown as Hidden and no ineffective disclosure control is
 offered. A future rmac lock client must own the ext-session-lock surfaces and
 PAM handoff before it may consume this projection.
 
+`rmac-lock-provider` now defines that future client's dependency-free security
+state machine. It separates compositor readiness from output presentation,
+tracks hotplugged output frames, issues unique asynchronous authentication
+tokens, rejects stale outcomes, and emits unlock only for the matching success.
+Compositor denial before readiness and compositor failure after readiness are
+different terminal states, but neither unlocks. Diagnostics redact output and
+attempt identity. See ADR 0005.
+
+This is not yet an authentication provider. The Linux adapter still requires a
+reviewed PAM binding, bounded multi-message conversation handling, secret
+erasure, `pam_start`/`pam_end` lifetime correctness, renderer integration, and
+real niri/PAM evidence. Until then, the installed unit continues to run
+swaylock and the preview projection remains unrendered.
+
 ## Not complete yet
 
-- a PAM-capable rmac lock presentation provider and lock wallpaper authority;
+- a reviewed Linux Wayland/PAM adapter, rmac lock presentation, and wallpaper;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;
 - killed-locker automatic recovery and the documented TTY/manual recovery path;

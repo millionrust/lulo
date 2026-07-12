@@ -5,6 +5,10 @@ The accepted boundary is documented in
 integration and its remaining proof rather than treating visual similarity as
 security evidence.
 
+The operator procedure is `docs/secure-lock-recovery.md`. It restores the
+accepted PAM provider or terminates the exact graphical session; it never
+documents an authentication bypass.
+
 ## Current path
 
 The global `lock` shortcut bypasses the general shell-event socket and runs the
@@ -336,8 +340,7 @@ these separation and recovery contracts; real Linux execution remains pending.
 - a reviewed Linux Wayland/PAM adapter, rmac lock presentation, and wallpaper;
 - PAM password, wrong-password, cancellation, and supported MFA evidence;
 - output add/remove, scaling, rotation, suspend/resume, and GPU-reset evidence;
-- real hung/killed-locker recovery evidence and the documented TTY/manual recovery
-  path;
+- real hung/killed-locker and documented TTY/manual recovery evidence;
 - delay-inhibitor timing and forced-suspend failure evidence;
 - accessibility and keyboard-layout evidence on the Linux reference PC.
 

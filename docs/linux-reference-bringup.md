@@ -257,7 +257,8 @@ systemd notification wrapper, and binary compile; it is not live lock evidence.
 
 Do not run this gate until the normal swaylock session units work, a local outer
 terminal remains open, and you have separately proved that `Ctrl+Alt+F3` reaches
-a login TTY. Use a disposable test user. Review
+a login TTY. Follow `docs/secure-lock-recovery.md` and use a disposable test
+user. Review
 `crates/rmac-lock-provider-linux/pam/rmac-lock`, then install that exact policy
 as `/etc/pam.d/rmac-lock` through the reference machine's authorized packaging
 or administrator procedure; the repository scripts never write `/etc`.

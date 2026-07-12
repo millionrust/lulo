@@ -88,7 +88,8 @@ compositor-confirmed readiness handshake, and restarts without a start-limit on
 failure because niri remains fail-closed when the locker disappears. Sending it
 through the ordinary safe-mode failure budget could strand an already locked
 session without an authentication provider. See `docs/secure-lock.md` and ADR
-0004 for the security and recovery boundary.
+0004 for the security boundary, and `docs/secure-lock-recovery.md` for the
+same-user TTY and destructive last-resort procedures.
 
 The companion `rmac-lock-coordinator.service` is required by both normal and
 safe-mode targets. It restarts without a start limit, becomes ready only after

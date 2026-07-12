@@ -484,6 +484,7 @@ mod evidence_assets {
     const NORMAL_INSTALLER: &str = include_str!("../../../scripts/linux/install-session-units.sh");
     const RECOVERY_GATE: &str =
         include_str!("../../../scripts/linux/run-lock-provider-recovery-gate.sh");
+    const RECOVERY_RUNBOOK: &str = include_str!("../../../docs/secure-lock-recovery.md");
 
     #[test]
     fn evidence_units_are_separate_readiness_gated_crash_domains() {
@@ -538,5 +539,21 @@ mod evidence_assets {
         assert!(RECOVERY_GATE.contains("watchdog_restart=pass"));
         assert!(!RECOVERY_GATE.contains("journalctl"));
         assert!(!RECOVERY_GATE.contains("rmac-lock.service"));
+    }
+
+    #[test]
+    fn recovery_runbook_restores_authentication_or_terminates_the_exact_session() {
+        assert!(RECOVERY_RUNBOOK.contains("systemctl --user start rmac-lock.service"));
+        assert!(RECOVERY_RUNBOOK.contains("systemctl --user reset-failed rmac-lock.service"));
+        assert!(RECOVERY_RUNBOOK.contains("Do not use `sudo systemctl --user`"));
+        assert!(RECOVERY_RUNBOOK.contains("loginctl terminate-session SESSION_ID"));
+        assert!(RECOVERY_RUNBOOK.contains("explicitly accepts that loss"));
+        assert!(RECOVERY_RUNBOOK.contains("not clear `LockedHint`"));
+        assert!(RECOVERY_RUNBOOK.contains("Type=wayland"));
+        assert!(RECOVERY_RUNBOOK.contains("Remote=no"));
+        assert!(!RECOVERY_RUNBOOK.contains("loginctl unlock-session"));
+        assert!(!RECOVERY_RUNBOOK.contains("SetLockedHint b false"));
+        assert!(!RECOVERY_RUNBOOK.contains("killall"));
+        assert!(!RECOVERY_RUNBOOK.contains("pkill"));
     }
 }

@@ -5046,6 +5046,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-gtk-settings"
+version = "0.1.0"
+
+[[package]]
 name = "rmac-input"
 version = "0.1.0"
 dependencies = [
@@ -5415,6 +5419,7 @@ dependencies = [
  "rmac-focus",
  "rmac-focus-linux",
  "rmac-focus-settings",
+ "rmac-gtk-settings",
  "rmac-input",
  "rmac-locale",
  "rmac-locale-linux",

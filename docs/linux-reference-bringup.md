@@ -188,8 +188,9 @@ hit regions, focus-ring displacement, and text that does not update live. Do not
 count editor, note-body, or terminal content fonts as failures; those are
 separate user-controlled content typography.
 
-Open one GTK application that uses the GNOME interface setting. Record the
-effective authority before and after its supported text-size change:
+Open one GTK application that uses the GNOME interface setting. In System
+Settings → Accessibility → GTK Application Text, apply Standard, Large, and
+Extra Large. Record the effective authority before and after each change:
 
 ```sh
 gsettings get org.gnome.desktop.interface text-scaling-factor

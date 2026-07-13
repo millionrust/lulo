@@ -190,6 +190,7 @@ struct Settings {
     storage_error: Option<SharedString>,
     audio: rmac_audio::Snapshot,
     input: rmac_input::Snapshot,
+    gtk_text: Option<rmac_gtk_settings::Snapshot>,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -206,6 +207,7 @@ struct Settings {
     display_error: Option<SharedString>,
     input_error: Option<SharedString>,
     theme_error: Option<SharedString>,
+    gtk_text_error: Option<SharedString>,
     notification_error: Option<SharedString>,
     notification_stream_error: Option<SharedString>,
 
@@ -263,6 +265,10 @@ struct Settings {
     theme: Option<rmac_theme::Snapshot>,
     theme_loading: bool,
     theme_busy: bool,
+
+    // External GTK application text
+    gtk_text_loading: bool,
+    gtk_text_busy: bool,
 
     // Sound
     audio_loading: bool,
@@ -833,6 +839,18 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
+                .spawn(async { rmac_gtk_settings::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_gtk_text_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
                 .spawn(async { load_theme_state().await })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -986,6 +1004,7 @@ impl Settings {
             storage_error: None,
             audio: rmac_audio::Snapshot::default(),
             input: rmac_input::Snapshot::default(),
+            gtk_text: None,
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -1002,6 +1021,7 @@ impl Settings {
             display_error: None,
             input_error: None,
             theme_error: None,
+            gtk_text_error: None,
             notification_error: None,
             notification_stream_error: None,
 
@@ -1051,6 +1071,8 @@ impl Settings {
             theme: None,
             theme_loading: true,
             theme_busy: false,
+            gtk_text_loading: true,
+            gtk_text_busy: false,
 
             audio_loading: true,
             audio_busy: false,
@@ -2395,6 +2417,24 @@ impl Settings {
         }
     }
 
+    fn finish_gtk_text_update(
+        &mut self,
+        result: std::result::Result<rmac_gtk_settings::Snapshot, rmac_gtk_settings::Error>,
+    ) {
+        self.gtk_text_loading = false;
+        self.gtk_text_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.gtk_text = Some(snapshot);
+                self.gtk_text_error = None;
+            }
+            Err(error) => {
+                self.gtk_text_error =
+                    Some(format!("Could not update GTK text scaling: {error}").into());
+            }
+        }
+    }
+
     fn finish_theme_update(&mut self, result: std::result::Result<ThemeLoad, String>) {
         self.theme_loading = false;
         self.theme_busy = false;
@@ -2932,6 +2972,50 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_gtk_text(&mut self, cx: &mut Context<Self>) {
+        if self.gtk_text_loading || self.gtk_text_busy {
+            return;
+        }
+        self.gtk_text_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_gtk_settings::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_gtk_text_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_gtk_text_scale(&mut self, factor: f64, cx: &mut Context<Self>) {
+        if self.gtk_text_loading
+            || self.gtk_text_busy
+            || !self
+                .gtk_text
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.available && snapshot.writable)
+        {
+            return;
+        }
+        self.gtk_text_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_gtk_settings::set_text_scale(factor) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_gtk_text_update(result);
                 cx.notify();
             });
         })
@@ -5003,6 +5087,7 @@ impl Settings {
     fn render_accessibility(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
+        let gtk_refresh_view = view.clone();
         let mut cards = vec![card(vec![row_base()
             .child(tile("icons/accessibility.svg", accent(), 22.0))
             .child(text_block(
@@ -5085,6 +5170,52 @@ impl Settings {
             cards.push(note_card(
                 "The rmac visual accessibility preference service is unavailable.",
             ));
+        }
+
+        cards.push(section_header("GTK Application Text"));
+        cards.push(card(vec![row_base()
+            .child(tile("icons/app-window.svg", secondary(), 22.0))
+            .child(text_block(
+                "GTK text scaling".into(),
+                Some("GNOME interface authority; separate from rmac and display scale".into()),
+            ))
+            .child(
+                Button::new("gtk-text-refresh", "Refresh")
+                    .busy(self.gtk_text_busy)
+                    .disabled(self.gtk_text_loading || self.gtk_text_busy)
+                    .on_click(move |_, _, cx| {
+                        gtk_refresh_view.update(cx, |settings, cx| settings.refresh_gtk_text(cx));
+                    }),
+            )
+            .into_any_element()]));
+        if self.gtk_text_loading {
+            cards.push(note_card("Loading GTK text scaling from GSettings…"));
+        } else if let Some(snapshot) = &self.gtk_text {
+            if snapshot.available {
+                let selected = GTK_TEXT_SCALE_OPTIONS
+                    .iter()
+                    .position(|(_, factor)| (snapshot.factor - factor).abs() < 0.001);
+                cards.push(card(vec![
+                    gtk_text_scale_row(
+                        view.clone(),
+                        selected,
+                        snapshot.writable && !self.gtk_text_busy,
+                    ),
+                    value_row(
+                        "icons/app-window.svg",
+                        secondary(),
+                        "Effective GTK text".into(),
+                        format!("{}%", (snapshot.factor * 100.0).round() as u16).into(),
+                    ),
+                ]));
+                if let Some(detail) = &snapshot.detail {
+                    cards.push(note_card(detail.clone()));
+                }
+            } else {
+                cards.push(note_card(snapshot.detail.clone().unwrap_or_else(|| {
+                    "The GNOME interface text-scaling authority is unavailable.".into()
+                })));
+            }
         }
 
         let keyboard_view = view.clone();
@@ -8041,7 +8172,8 @@ impl Render for Settings {
             .or_else(|| self.power_error.clone())
             .or_else(|| self.display_error.clone())
             .or_else(|| self.input_error.clone())
-            .or_else(|| self.theme_error.clone());
+            .or_else(|| self.theme_error.clone())
+            .or_else(|| self.gtk_text_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -8082,6 +8214,7 @@ impl Render for Settings {
                             this.display_error = None;
                             this.input_error = None;
                             this.theme_error = None;
+                            this.gtk_text_error = None;
                             cx.notify();
                         })),
                 )
@@ -8685,6 +8818,7 @@ fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedStr
 
 type InputOption = (&'static str, InputChange);
 type ThemeOption = (&'static str, ThemeChange);
+type GtkTextScaleOption = (&'static str, f64);
 
 const THEME_CONTRAST_OPTIONS: [ThemeOption; 3] = [
     (
@@ -8728,6 +8862,8 @@ const THEME_TEXT_SCALE_OPTIONS: [ThemeOption; 3] = [
         ThemeChange::TextScale(rmac_theme::TextScalePreference::ExtraLarge),
     ),
 ];
+const GTK_TEXT_SCALE_OPTIONS: [GtkTextScaleOption; 3] =
+    [("Standard", 1.0), ("Large", 1.2), ("Extra Large", 1.3)];
 
 const KEYBOARD_DELAYS: [InputOption; 5] = [
     ("Short", InputChange::KeyboardRepeatDelay(200)),
@@ -8888,6 +9024,57 @@ fn theme_segment_row(
                 .text_size(rmac_ui::text_px(13.0))
                 .text_color(label())
                 .child(title),
+        )
+        .child(control)
+        .into_any_element()
+}
+
+fn gtk_text_scale_row(
+    view: Entity<Settings>,
+    selected: Option<usize>,
+    enabled: bool,
+) -> AnyElement {
+    let mut control = div().flex().gap_1().w(px(290.0));
+    for (index, (option_label, factor)) in GTK_TEXT_SCALE_OPTIONS.iter().copied().enumerate() {
+        let option_view = view.clone();
+        control = control.child(
+            div()
+                .id(ElementId::from(SharedString::from(format!(
+                    "gtk-text-scale-{index}"
+                ))))
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h(px(26.0))
+                .rounded(px(6.0))
+                .text_size(rmac_ui::text_px(11.0))
+                .when(selected == Some(index), |element| {
+                    element.bg(accent()).text_color(on_accent())
+                })
+                .when(selected != Some(index), |element| {
+                    element.bg(rmac_ui::mac::control_fill()).text_color(label())
+                })
+                .when(enabled, |element| {
+                    element
+                        .cursor_pointer()
+                        .hover(|hover| hover.bg(rmac_ui::mac::control_fill_hover()))
+                        .on_click(move |_, _, cx| {
+                            option_view
+                                .update(cx, |settings, cx| settings.set_gtk_text_scale(factor, cx));
+                        })
+                })
+                .when(!enabled, |element| element.opacity(0.55))
+                .child(option_label),
+        );
+    }
+    row_base()
+        .child(
+            div()
+                .flex_1()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(label())
+                .child("GTK application text"),
         )
         .child(control)
         .into_any_element()

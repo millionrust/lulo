@@ -73,6 +73,154 @@ pub fn set_default_device(kind: DeviceKind, id: &str) -> Result<(), Error> {
     system_set_default_device(kind, id)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
+pub async fn watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    system_watch(sender).await
+}
+
+#[cfg(not(target_os = "macos"))]
+const WATCH_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+#[cfg(not(target_os = "macos"))]
+const WATCH_QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(75);
+#[cfg(not(target_os = "macos"))]
+const WATCH_MAX_COALESCE: std::time::Duration = std::time::Duration::from_millis(250);
+
+#[cfg(not(target_os = "macos"))]
+async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    let mut unavailable_reported = false;
+    loop {
+        match watch_once(&sender, &mut unavailable_reported).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => {}
+            Err(_) if sender.is_closed() => return Ok(()),
+            Err(_) => publish_unavailable(&sender, &mut unavailable_reported).await?,
+        }
+        async_io::Timer::after(WATCH_RECONNECT_DELAY).await;
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    sender
+        .send(WatchEvent::Unavailable)
+        .await
+        .map_err(|_| Error::new("watch audio changes", "the event consumer closed"))
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn watch_once(
+    sender: &async_channel::Sender<WatchEvent>,
+    unavailable_reported: &mut bool,
+) -> Result<(), Error> {
+    use std::process::Stdio;
+
+    use futures_lite::io::AsyncReadExt as _;
+
+    let mut command = async_process::Command::new("pw-mon");
+    command
+        .arg("--color=never")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    let mut child = command
+        .spawn()
+        .map_err(|error| Error::new("start the PipeWire monitor", error.to_string()))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| Error::new("start the PipeWire monitor", "stdout was not captured"))?;
+    let mut buffer = [0_u8; 8192];
+
+    loop {
+        let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(next, closed);
+        let read = futures_util::select! {
+            read = next => read,
+            _ = closed => return Ok(()),
+        }
+        .map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+        if read == 0 {
+            return monitor_status_error(child).await;
+        }
+
+        let flush_deadline = std::time::Instant::now() + WATCH_MAX_COALESCE;
+        loop {
+            let remaining = flush_deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
+            let quiet = futures_util::FutureExt::fuse(async_io::Timer::after(WATCH_QUIET_PERIOD));
+            let maximum = futures_util::FutureExt::fuse(async_io::Timer::after(remaining));
+            let closed = futures_util::FutureExt::fuse(sender.closed());
+            futures_util::pin_mut!(next, quiet, maximum, closed);
+            futures_util::select! {
+                read = next => {
+                    let read = read.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+                    if read == 0 {
+                        return monitor_status_error(child).await;
+                    }
+                },
+                _ = quiet => break,
+                _ = maximum => break,
+                _ = closed => return Ok(()),
+            }
+        }
+        publish_changed(sender, unavailable_reported).await?;
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn monitor_status_error(mut child: async_process::Child) -> Result<(), Error> {
+    let status = child
+        .status()
+        .await
+        .map_err(|error| Error::new("wait for the PipeWire monitor", error.to_string()))?;
+    Err(Error::new(
+        "watch PipeWire changes",
+        format!("pw-mon exited with {status}"),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn publish_changed(
+    sender: &async_channel::Sender<WatchEvent>,
+    unavailable_reported: &mut bool,
+) -> Result<(), Error> {
+    if *unavailable_reported {
+        sender
+            .send(WatchEvent::Changed)
+            .await
+            .map_err(|_| Error::new("publish audio recovery", "the event consumer closed"))?;
+    } else {
+        let _ = sender.try_send(WatchEvent::Changed);
+    }
+    *unavailable_reported = false;
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn publish_unavailable(
+    sender: &async_channel::Sender<WatchEvent>,
+    unavailable_reported: &mut bool,
+) -> Result<(), Error> {
+    if !*unavailable_reported {
+        sender
+            .send(WatchEvent::Unavailable)
+            .await
+            .map_err(|_| Error::new("publish audio outage", "the event consumer closed"))?;
+        *unavailable_reported = true;
+    }
+    Ok(())
+}
+
 #[cfg(not(target_os = "macos"))]
 fn system_snapshot() -> Result<Snapshot, Error> {
     let status = command("wpctl", &["status"], "read PipeWire devices")?;

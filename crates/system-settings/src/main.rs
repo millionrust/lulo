@@ -584,6 +584,19 @@ fn vpn_stream_snapshot_is_current(
     !busy && !loading && captured_generation == current_generation
 }
 
+fn audio_stream_snapshot_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    busy: bool,
+    loading: bool,
+) -> bool {
+    !busy && !loading && captured_generation == current_generation
+}
+
+fn audio_change_needs_followup(busy: bool, loading: bool, stream_unavailable: bool) -> bool {
+    busy || (loading && stream_unavailable)
+}
+
 fn power_stream_snapshot_is_current(
     captured_generation: u64,
     current_generation: u64,
@@ -729,6 +742,7 @@ struct Settings {
     vpn_error: Option<SharedString>,
     vpn_stream_error: Option<SharedString>,
     audio_error: Option<SharedString>,
+    audio_stream_error: Option<SharedString>,
     power_error: Option<SharedString>,
     power_stream_error: Option<SharedString>,
     display_error: Option<SharedString>,
@@ -860,6 +874,8 @@ struct Settings {
     // Sound
     audio_loading: bool,
     audio_busy: bool,
+    audio_generation: u64,
+    audio_refresh_pending: bool,
     output_volume_generation: u64,
     input_volume_generation: u64,
     output_volume: Entity<SliderState>,
@@ -1489,6 +1505,78 @@ impl Settings {
         })
         .detach();
 
+        let (audio_updates, audio_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_audio::watch(audio_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = audio_update_rx.recv().await {
+                match event {
+                    rmac_audio::WatchEvent::Changed => {
+                        let generation = match this.update(cx, |this: &mut Settings, cx| {
+                            if this.audio_busy || this.audio_loading {
+                                if audio_change_needs_followup(
+                                    this.audio_busy,
+                                    this.audio_loading,
+                                    this.audio_stream_error.is_some(),
+                                ) {
+                                    this.audio_refresh_pending = true;
+                                }
+                                None
+                            } else {
+                                this.audio_stream_error = None;
+                                cx.notify();
+                                Some(this.audio_generation)
+                            }
+                        }) {
+                            Ok(generation) => generation,
+                            Err(_) => break,
+                        };
+                        let Some(generation) = generation else {
+                            continue;
+                        };
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_audio::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if audio_stream_snapshot_is_current(
+                                    generation,
+                                    this.audio_generation,
+                                    this.audio_busy,
+                                    this.audio_loading,
+                                ) {
+                                    this.finish_audio_stream_update(result, cx);
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_audio::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.audio_stream_error = Some(
+                                    "Live audio updates are temporarily unavailable while PipeWire reconnects"
+                                        .into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+
         let (power_updates, power_update_rx) = async_channel::bounded(1);
         cx.background_executor()
             .spawn(async move {
@@ -2083,6 +2171,7 @@ impl Settings {
             vpn_error: None,
             vpn_stream_error: None,
             audio_error: None,
+            audio_stream_error: None,
             power_error: None,
             power_stream_error: None,
             display_error: None,
@@ -2201,6 +2290,8 @@ impl Settings {
 
             audio_loading: true,
             audio_busy: false,
+            audio_generation: 0,
+            audio_refresh_pending: false,
             output_volume_generation: 0,
             input_volume_generation: 0,
             output_volume,
@@ -4831,27 +4922,53 @@ impl Settings {
         result: std::result::Result<rmac_audio::Snapshot, rmac_audio::Error>,
         cx: &mut Context<Self>,
     ) {
+        let refresh_pending = std::mem::take(&mut self.audio_refresh_pending);
         self.audio_loading = false;
         self.audio_busy = false;
         match result {
             Ok(snapshot) => {
-                self.output_volume_generation = self.output_volume_generation.wrapping_add(1);
-                self.input_volume_generation = self.input_volume_generation.wrapping_add(1);
-                self.output_volume = Self::audio_slider(
-                    cx,
-                    f32::from(snapshot.output.volume),
-                    rmac_audio::DeviceKind::Output,
-                );
-                self.input_volume = Self::audio_slider(
-                    cx,
-                    f32::from(snapshot.input.volume),
-                    rmac_audio::DeviceKind::Input,
-                );
-                self.audio = snapshot;
+                self.replace_audio_snapshot(snapshot, cx);
                 self.audio_error = None;
+                self.audio_stream_error = None;
             }
             Err(error) => {
                 self.audio_error = Some(format!("Could not update Sound: {error}").into());
+            }
+        }
+        if refresh_pending {
+            self.refresh_audio(cx);
+        }
+    }
+
+    fn replace_audio_snapshot(&mut self, snapshot: rmac_audio::Snapshot, cx: &mut Context<Self>) {
+        self.output_volume_generation = self.output_volume_generation.wrapping_add(1);
+        self.input_volume_generation = self.input_volume_generation.wrapping_add(1);
+        self.output_volume = Self::audio_slider(
+            cx,
+            f32::from(snapshot.output.volume),
+            rmac_audio::DeviceKind::Output,
+        );
+        self.input_volume = Self::audio_slider(
+            cx,
+            f32::from(snapshot.input.volume),
+            rmac_audio::DeviceKind::Input,
+        );
+        self.audio = snapshot;
+    }
+
+    fn finish_audio_stream_update(
+        &mut self,
+        result: std::result::Result<rmac_audio::Snapshot, rmac_audio::Error>,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(snapshot) => {
+                self.replace_audio_snapshot(snapshot, cx);
+                self.audio_stream_error = None;
+            }
+            Err(_) => {
+                self.audio_stream_error =
+                    Some("Live audio state could not be refreshed from PipeWire".into());
             }
         }
     }
@@ -4860,6 +4977,7 @@ impl Settings {
         if self.audio_loading || self.audio_busy {
             return;
         }
+        self.audio_generation = self.audio_generation.wrapping_add(1);
         self.audio_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4941,6 +5059,7 @@ impl Settings {
     }
 
     fn apply_audio_change(&mut self, change: AudioChange, cx: &mut Context<Self>) {
+        self.audio_generation = self.audio_generation.wrapping_add(1);
         self.audio_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -14225,6 +14344,7 @@ impl Render for Settings {
             .or_else(|| self.vpn_error.clone())
             .or_else(|| self.vpn_stream_error.clone())
             .or_else(|| self.audio_error.clone())
+            .or_else(|| self.audio_stream_error.clone())
             .or_else(|| self.power_error.clone())
             .or_else(|| self.power_stream_error.clone())
             .or_else(|| self.display_error.clone())
@@ -14371,6 +14491,7 @@ impl Render for Settings {
                             this.vpn_error = None;
                             this.vpn_stream_error = None;
                             this.audio_error = None;
+                            this.audio_stream_error = None;
                             this.power_error = None;
                             this.power_stream_error = None;
                             this.display_error = None;
@@ -16212,6 +16333,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
+        audio_change_needs_followup, audio_stream_snapshot_is_current,
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, charge_threshold_description,
         composite_wallpaper_pixel, network_stream_snapshot_is_current, notification_policy_with,
@@ -16268,6 +16390,22 @@ mod tests {
         assert!(!power_stream_snapshot_is_current(8, 9, false, false));
         assert!(!power_stream_snapshot_is_current(9, 9, true, false));
         assert!(!power_stream_snapshot_is_current(9, 9, false, true));
+    }
+
+    #[test]
+    fn audio_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(audio_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!audio_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!audio_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!audio_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn audio_changes_retain_recovery_without_duplicating_initial_load() {
+        assert!(!audio_change_needs_followup(false, true, false));
+        assert!(audio_change_needs_followup(false, true, true));
+        assert!(audio_change_needs_followup(true, false, false));
+        assert!(!audio_change_needs_followup(false, false, true));
     }
 
     #[test]

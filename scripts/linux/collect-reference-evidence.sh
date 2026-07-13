@@ -40,6 +40,8 @@ command_version() {
   echo "current_desktop=${XDG_CURRENT_DESKTOP:-unset}"
   echo "session_desktop=${XDG_SESSION_DESKTOP:-unset}"
   echo "wayland_display=${WAYLAND_DISPLAY:-unset}"
+  echo "x11_display=${DISPLAY:-unset}"
+  echo "repository_available_kib=$(df -Pk "$repo_root" | awk 'NR == 2 { print $4 }')"
   echo
   command_version rustc --version --verbose
   command_version cargo --version
@@ -77,6 +79,8 @@ fi
     gsettings get org.gnome.desktop.interface toolkit-accessibility 2>&1 || true
     echo -n "screen-reader-enabled="
     gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled 2>&1 || true
+    echo -n "gtk-text-scaling-factor="
+    gsettings get org.gnome.desktop.interface text-scaling-factor 2>&1 || true
   else
     echo "gsettings: not installed"
   fi

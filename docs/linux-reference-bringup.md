@@ -173,6 +173,54 @@ owners. Reload niri and validate the generated file before interaction testing:
 niri validate
 ```
 
+### 5.1 Accessibility and scale evidence
+
+Keep at least 15 GiB free throughout this pass. Before any Cargo command, record
+`df -h /` and stop if less than 25 GiB is available for a build that may exceed
+1 GiB. Reuse the repository's normal `target` directory and run one scoped Cargo
+pipeline at a time.
+
+In System Settings → Accessibility, exercise Standard, Large, and Extra Large
+application text. At each value, inspect all seven apps at 100% output scale,
+then repeat the Extra Large pass at every supported niri output scale from 100%
+through 200%. Record clipping, overlap, truncation that hides state, incorrect
+hit regions, focus-ring displacement, and text that does not update live. Do not
+count editor, note-body, or terminal content fonts as failures; those are
+separate user-controlled content typography.
+
+Open one GTK application that uses the GNOME interface setting. Record the
+effective authority before and after its supported text-size change:
+
+```sh
+gsettings get org.gnome.desktop.interface text-scaling-factor
+```
+
+The GTK application must visibly adopt the value without changing niri output
+scale. This is external-toolkit evidence only; it does not prove rmac scaling.
+
+For keyboard evidence, select each Key repeat preset, refresh System Settings,
+and confirm that the exact delay and rate remain displayed. In `wev`, hold one
+printable key long enough to distinguish Standard, Deliberate, and Minimal, and
+record the observed initial delay and repeat cadence. A custom niri delay/rate
+combination must leave every preset unselected while still showing its exact
+values. Sticky Keys, Slow Keys, and Bounce Keys must remain described as
+unavailable unless niri gains a real compositor authority.
+
+For pointer evidence, select all three Mouse precision presets and confirm
+pointer motion changes without output scaling or synthetic cursor movement.
+Enable middle-button emulation, press left and right together in a test app,
+and verify exactly one middle-click action; disable it and verify the chord no
+longer produces that action. Repeat the configuration round-trip for a touchpad
+that supports the libinput property. Test Trackpad drag lock and Ignore while
+typing separately. Mouse Keys, dwell click, and double-click timing must remain
+unavailable rather than showing switches that niri cannot enforce.
+
+Finally, start Orca with niri's documented default `Super`–`Alt`–`S` shortcut.
+Refresh the readiness card and record the full-niri-session, Xwayland, and Orca
+rows independently. Then run the upstream accessibility probe below and record
+the precise rmac AT-SPI failure; environment readiness is not application
+accessibility proof.
+
 Run the evidence collector again, then launch the current-upstream probes:
 
 ```sh

@@ -244,8 +244,11 @@ applies its factor to each GPUI window's rem base on open and on live changes;
 semantic typography tokens and shared rmac components use the same factor.
 This is deliberately labeled rmac application text size: display scale,
 terminal/editor content fonts, GTK, browsers, and other toolkit applications
-remain separate, and fixed-pixel app-specific text still requires migration and
-clipping evidence. The pane also discovers screen-reader readiness off the UI
+remain separate. All System Settings-owned labels, values, section headings,
+buttons, segmented controls, sidebar text, and pane chrome now use the live
+factor; fixed-height segmented/accent controls retain sufficient logical height
+at the bounded 130% maximum. Other apps still require fixed-text migration and
+Linux clipping evidence. The pane also discovers screen-reader readiness off the UI
 thread: a full niri desktop session, non-empty Xwayland `DISPLAY`, and an Orca
 executable found within a bounded PATH search are reported independently. It
 shows niri's documented default `Super`–`Alt`–`S` shortcut but does not claim

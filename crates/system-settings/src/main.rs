@@ -3391,14 +3391,14 @@ impl Settings {
                     .v_flex()
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(rmac_ui::text_px(13.0))
                             .font_weight(rmac_ui::mac::SEMIBOLD)
                             .text_color(label())
                             .child(self.account.clone()),
                     )
                     .child(
                         div()
-                            .text_size(px(11.0))
+                            .text_size(rmac_ui::text_px(11.0))
                             .text_color(secondary())
                             .child("Local Account"),
                     ),
@@ -3444,7 +3444,7 @@ impl Settings {
                             .child(tile(cat.icon, cat.color, 20.0))
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_size(rmac_ui::text_px(13.0))
                                     .text_color(if selected { on_accent() } else { label() })
                                     .child(cat.name.clone()),
                             ),
@@ -3609,7 +3609,7 @@ impl Settings {
                     .pb_1()
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .font_weight(rmac_ui::mac::SEMIBOLD)
                             .text_color(secondary())
                             .child("Networks"),
@@ -3620,7 +3620,7 @@ impl Settings {
                             .px_2()
                             .py_1()
                             .rounded(px(6.0))
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(accent())
                             .cursor_pointer()
                             .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -3738,7 +3738,7 @@ impl Settings {
                     .pb_1()
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .font_weight(rmac_ui::mac::SEMIBOLD)
                             .text_color(secondary())
                             .child("Devices"),
@@ -3749,7 +3749,7 @@ impl Settings {
                             .px_2()
                             .py_1()
                             .rounded(px(6.0))
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(accent())
                             .cursor_pointer()
                             .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -3910,7 +3910,7 @@ impl Settings {
                 ))
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(rmac_ui::text_px(13.0))
                         .text_color(secondary())
                         .child(snapshot.timezone.clone()),
                 )
@@ -4070,7 +4070,7 @@ impl Settings {
                 ))
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(rmac_ui::text_px(13.0))
                         .text_color(secondary())
                         .child(snapshot.language().to_owned()),
                 )
@@ -4232,7 +4232,7 @@ impl Settings {
                 ))
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(rmac_ui::text_px(13.0))
                         .text_color(secondary())
                         .child(keyboard),
                 )
@@ -4537,7 +4537,7 @@ impl Settings {
                         .when(busy, |row| {
                             row.child(
                                 div()
-                                    .text_size(px(11.0))
+                                    .text_size(rmac_ui::text_px(11.0))
                                     .text_color(secondary())
                                     .child("Saving…"),
                             )
@@ -4648,7 +4648,7 @@ impl Settings {
                         .when(busy, |row| {
                             row.child(
                                 div()
-                                    .text_size(px(11.0))
+                                    .text_size(rmac_ui::text_px(11.0))
                                     .text_color(secondary())
                                     .child("Saving…"),
                             )
@@ -5201,7 +5201,7 @@ impl Settings {
             .pb_1()
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child("rmac Appearance"),
@@ -5212,7 +5212,7 @@ impl Settings {
                     .px_2()
                     .py_1()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -5268,7 +5268,7 @@ impl Settings {
                     )
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(if selected { accent() } else { label() })
                             .child(name),
                     )
@@ -5316,7 +5316,7 @@ impl Settings {
                 .rounded(px(6.0))
                 .flex()
                 .items_center()
-                .text_size(px(11.0))
+                .text_size(rmac_ui::text_px(11.0))
                 .text_color(if automatic_selected {
                     on_accent()
                 } else {
@@ -5382,7 +5382,7 @@ impl Settings {
                     )
                     .child(
                         div()
-                            .text_size(px(10.0))
+                            .text_size(rmac_ui::text_px(10.0))
                             .text_color(secondary())
                             .child(name),
                     )
@@ -5483,7 +5483,7 @@ impl Settings {
                     .px_2()
                     .py_1()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(accent())
                     .when(!self.notifications_loading, |button| {
                         button
@@ -5625,7 +5625,7 @@ impl Settings {
                     .px_2()
                     .py_1()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(accent())
                     .when(!self.focus_policy_loading, |button| {
                         button
@@ -5679,7 +5679,7 @@ impl Settings {
                             .px_2()
                             .py_1()
                             .rounded(px(6.0))
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(accent())
                             .cursor_pointer()
                             .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -5725,7 +5725,7 @@ impl Settings {
             } else {
                 cards.push(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .font_weight(rmac_ui::mac::SEMIBOLD)
                         .text_color(secondary())
                         .mt_3()
@@ -5808,7 +5808,7 @@ impl Settings {
 
         body = body.child(
             div()
-                .text_size(px(12.0))
+                .text_size(rmac_ui::text_px(12.0))
                 .font_weight(rmac_ui::mac::SEMIBOLD)
                 .text_color(secondary())
                 .mt_3()
@@ -5845,7 +5845,7 @@ impl Settings {
 
         body = body.child(
             div()
-                .text_size(px(12.0))
+                .text_size(rmac_ui::text_px(12.0))
                 .font_weight(rmac_ui::mac::SEMIBOLD)
                 .text_color(secondary())
                 .mt_3()
@@ -6000,7 +6000,7 @@ impl Settings {
                 .px_2()
                 .py_1()
                 .rounded(px(6.0))
-                .text_size(px(12.0))
+                .text_size(rmac_ui::text_px(12.0))
                 .text_color(accent())
                 .when(
                     !self.lock_policy_loading && !self.lock_policy_busy,
@@ -6223,7 +6223,7 @@ impl Settings {
             .pb_1()
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child("System Audio"),
@@ -6234,7 +6234,7 @@ impl Settings {
                     .px_2()
                     .py_1()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -6359,7 +6359,7 @@ impl Settings {
                     .when(d.is_default, |el| {
                         el.child(
                             div()
-                                .text_size(px(12.0))
+                                .text_size(rmac_ui::text_px(12.0))
                                 .text_color(secondary())
                                 .child("Default"),
                         )
@@ -6396,7 +6396,7 @@ impl Settings {
             .pb_1()
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child("niri · libinput"),
@@ -6407,7 +6407,7 @@ impl Settings {
                     .px_2()
                     .py_1()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -6618,7 +6618,7 @@ impl Settings {
             .pb_1()
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child("Battery & Energy"),
@@ -6629,7 +6629,7 @@ impl Settings {
                     .px_2()
                     .py_1()
                     .rounded(px(6.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(accent())
                     .cursor_pointer()
                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -6810,7 +6810,7 @@ impl Settings {
             .pb_1()
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child(if self.display.compositor.is_empty() {
@@ -6831,7 +6831,7 @@ impl Settings {
                                 .px_2()
                                 .py_1()
                                 .rounded(px(6.0))
-                                .text_size(px(12.0))
+                                .text_size(rmac_ui::text_px(12.0))
                                 .text_color(hsl(0xff3b30))
                                 .cursor_pointer()
                                 .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -6849,7 +6849,7 @@ impl Settings {
                             .px_2()
                             .py_1()
                             .rounded(px(6.0))
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(accent())
                             .cursor_pointer()
                             .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -6889,7 +6889,7 @@ impl Settings {
                     .px_1()
                     .pt_2()
                     .pb_1()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child(title),
@@ -7167,7 +7167,7 @@ impl Settings {
                 .pb_1()
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .font_weight(rmac_ui::mac::SEMIBOLD)
                         .text_color(secondary())
                         .child("Interfaces"),
@@ -7178,7 +7178,7 @@ impl Settings {
                         .px_2()
                         .py_1()
                         .rounded(px(6.0))
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(accent())
                         .cursor_pointer()
                         .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -7219,7 +7219,7 @@ impl Settings {
                     .px_1()
                     .pt_2()
                     .pb_1()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child(heading),
@@ -7316,7 +7316,7 @@ impl Settings {
                 .pb_1()
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .font_weight(rmac_ui::mac::SEMIBOLD)
                         .text_color(secondary())
                         .child("VPN Configurations"),
@@ -7327,7 +7327,7 @@ impl Settings {
                         .px_2()
                         .py_1()
                         .rounded(px(6.0))
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(accent())
                         .cursor_pointer()
                         .hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -7469,18 +7469,21 @@ impl Settings {
                                 .items_baseline()
                                 .child(
                                     div()
-                                        .text_size(px(15.0))
+                                        .text_size(rmac_ui::text_px(15.0))
                                         .font_weight(rmac_ui::mac::SEMIBOLD)
                                         .text_color(label())
                                         .child(volume.mount.name.clone()),
                                 )
-                                .child(div().text_size(px(13.0)).text_color(secondary()).child(
-                                    format!(
-                                        "{} available of {}",
-                                        fmt_gb(usage.available),
-                                        fmt_gb(usage.total)
-                                    ),
-                                )),
+                                .child(
+                                    div()
+                                        .text_size(rmac_ui::text_px(13.0))
+                                        .text_color(secondary())
+                                        .child(format!(
+                                            "{} available of {}",
+                                            fmt_gb(usage.available),
+                                            fmt_gb(usage.total)
+                                        )),
+                                ),
                         )
                         .child(
                             div()
@@ -7571,14 +7574,14 @@ impl Settings {
             .pb_4()
             .child(
                 div()
-                    .text_size(px(20.0))
+                    .text_size(rmac_ui::text_px(20.0))
                     .font_weight(rmac_ui::mac::BOLD)
                     .text_color(label())
                     .child(title),
             )
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(secondary())
                     .child("‹ Back, or press ⌘["),
             );
@@ -7679,7 +7682,7 @@ impl Settings {
                         .child(text_block(update.name.clone().into(), Some(detail.into())))
                         .child(
                             div()
-                                .text_size(px(12.0))
+                                .text_size(rmac_ui::text_px(12.0))
                                 .text_color(secondary())
                                 .child(update.version.clone()),
                         )
@@ -7744,7 +7747,7 @@ impl Settings {
                 ))
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(rmac_ui::text_px(13.0))
                         .text_color(secondary())
                         .child(si.display_hostname().to_owned()),
                 )
@@ -8054,7 +8057,7 @@ fn locale_preview_row(
         .child(
             div()
                 .max_w(px(260.0))
-                .text_size(px(13.0))
+                .text_size(rmac_ui::text_px(13.0))
                 .text_color(secondary())
                 .child(example.unwrap_or("Uses locale convention").to_owned()),
         )
@@ -8164,7 +8167,7 @@ fn application_nav_row(
         .child(text_block(display_name.to_owned().into(), None))
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(rmac_ui::text_px(13.0))
                 .text_color(secondary())
                 .child(status),
         )
@@ -8214,7 +8217,7 @@ fn focus_schedule_row(
                 .px_2()
                 .py_1()
                 .rounded(px(6.0))
-                .text_size(px(12.0))
+                .text_size(rmac_ui::text_px(12.0))
                 .text_color(accent())
                 .when(!disabled, |button| {
                     button
@@ -8281,7 +8284,7 @@ fn focus_day_button(
         .items_center()
         .justify_center()
         .rounded(px(16.0))
-        .text_size(px(12.0))
+        .text_size(rmac_ui::text_px(12.0))
         .font_weight(rmac_ui::mac::SEMIBOLD)
         .bg(if selected { accent() } else { card_bg() })
         .text_color(if selected { on_accent() } else { label() })
@@ -8325,7 +8328,7 @@ fn focus_time_row(
         .justify_center()
         .rounded(px(6.0))
         .bg(rmac_ui::mac::hover())
-        .text_size(px(18.0))
+        .text_size(rmac_ui::text_px(18.0))
         .when(!disabled, |button| {
             button.cursor_pointer().on_click(move |_, _, cx| {
                 previous_view.update(cx, |settings, cx| {
@@ -8350,7 +8353,7 @@ fn focus_time_row(
         .justify_center()
         .rounded(px(6.0))
         .bg(rmac_ui::mac::hover())
-        .text_size(px(18.0))
+        .text_size(rmac_ui::text_px(18.0))
         .when(!disabled, |button| {
             button.cursor_pointer().on_click(move |_, _, cx| {
                 next_view.update(cx, |settings, cx| {
@@ -8371,7 +8374,7 @@ fn focus_time_row(
                     div()
                         .w(px(74.0))
                         .text_center()
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .child(focus_time(minute)),
                 )
                 .child(increment),
@@ -8502,7 +8505,7 @@ fn bluetooth_device_row(view: &Entity<Settings>, device: &rmac_bluetooth::Device
                 .px_2()
                 .py_1()
                 .rounded(px(6.0))
-                .text_size(px(12.0))
+                .text_size(rmac_ui::text_px(12.0))
                 .text_color(if device.paired { accent() } else { secondary() })
                 .when(device.paired, |element| {
                     element
@@ -8530,7 +8533,7 @@ fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedStr
             div()
                 .w(px(110.0))
                 .flex_none()
-                .text_size(px(13.0))
+                .text_size(rmac_ui::text_px(13.0))
                 .text_color(label())
                 .child(title),
         )
@@ -8540,7 +8543,7 @@ fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedStr
                 .w(px(44.0))
                 .flex_none()
                 .text_right()
-                .text_size(px(12.0))
+                .text_size(rmac_ui::text_px(12.0))
                 .text_color(secondary())
                 .child(value),
         )
@@ -8754,7 +8757,7 @@ fn input_segment_row(
         .child(
             div()
                 .flex_1()
-                .text_size(px(13.0))
+                .text_size(rmac_ui::text_px(13.0))
                 .text_color(label())
                 .child(title),
         )
@@ -8809,7 +8812,12 @@ fn nav_row(
         .child(tile(icon, color, 22.0))
         .child(text_block(title, None));
     if let Some(v) = value {
-        r = r.child(div().text_size(px(13.0)).text_color(secondary()).child(v));
+        r = r.child(
+            div()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(secondary())
+                .child(v),
+        );
     }
     r.child(glyph(
         "icons/chevron-right.svg",

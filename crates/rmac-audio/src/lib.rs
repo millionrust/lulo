@@ -23,6 +23,24 @@ impl Availability {
 }
 
 #[derive(Clone, PartialEq, Eq)]
+pub struct Balance {
+    pub value: i8,
+    left_volume: u32,
+    right_volume: u32,
+    left_first: bool,
+}
+
+impl fmt::Debug for Balance {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Balance")
+            .field("value", &self.value)
+            .field("has_channel_authority", &true)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct Route {
     pub index: i32,
     pub name: String,
@@ -94,6 +112,7 @@ pub struct Device {
     pub name: String,
     pub is_default: bool,
     pub routes: Vec<Route>,
+    pub balance: Option<Balance>,
     authority_name: String,
     authority_device_id: Option<String>,
     authority_route_device: Option<i32>,
@@ -107,6 +126,7 @@ impl fmt::Debug for Device {
             .field("name", &self.name)
             .field("is_default", &self.is_default)
             .field("routes", &self.routes)
+            .field("balance", &self.balance)
             .field("has_authority_name", &(!self.authority_name.is_empty()))
             .field(
                 "has_route_authority",
@@ -183,6 +203,10 @@ pub fn set_profile(device: &HardwareDevice, profile: &Profile) -> Result<Snapsho
 
 pub fn set_route(kind: DeviceKind, device: &Device, route: &Route) -> Result<Snapshot, Error> {
     system_set_route(kind, device, route)
+}
+
+pub fn set_balance(device: &Device, value: i8) -> Result<Snapshot, Error> {
+    system_set_balance(device, value.clamp(-100, 100))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -355,6 +379,7 @@ struct GraphNode {
     kind: DeviceKind,
     device_id: Option<String>,
     route_device: Option<i32>,
+    balance: Option<Balance>,
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -766,6 +791,103 @@ fn system_set_route(
 }
 
 #[cfg(not(target_os = "macos"))]
+fn system_set_balance(expected_device: &Device, value: i8) -> Result<Snapshot, Error> {
+    if expected_device.balance.is_none() {
+        return Err(Error::new(
+            "change output balance",
+            "the selected node did not advertise writable stereo channels",
+        ));
+    }
+    let current =
+        exact_routed_device(DeviceKind::Output, expected_device, "change output balance")?;
+    let current_balance = current.balance.as_ref().ok_or_else(|| {
+        Error::new(
+            "change output balance",
+            "the selected node no longer advertises writable stereo channels",
+        )
+    })?;
+    if current_balance.value == value {
+        return system_snapshot();
+    }
+    let (left, right) = balance_channel_targets(current_balance, value);
+    let (first, second) = if current_balance.left_first {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    let parameter = format!(
+        "{{ channelVolumes: [ {}, {} ] }}",
+        spa_channel_volume(first),
+        spa_channel_volume(second)
+    );
+    command(
+        "pw-cli",
+        &["set-param", &expected_device.id, "Props", &parameter],
+        "change output balance",
+    )?;
+
+    let deadline = std::time::Instant::now() + MUTATION_VERIFY_TIMEOUT;
+    loop {
+        match exact_routed_device(DeviceKind::Output, expected_device, "verify output balance") {
+            Ok(device)
+                if device
+                    .balance
+                    .as_ref()
+                    .is_some_and(|balance| balance.value.abs_diff(value) <= 1) =>
+            {
+                let snapshot = system_snapshot()?;
+                if snapshot.outputs.iter().any(|device| {
+                    device.id == expected_device.id
+                        && device.authority_name == expected_device.authority_name
+                        && device
+                            .balance
+                            .as_ref()
+                            .is_some_and(|balance| balance.value.abs_diff(value) <= 1)
+                }) {
+                    return Ok(snapshot);
+                }
+            }
+            Ok(_) => {}
+            Err(error) if std::time::Instant::now() >= deadline => return Err(error),
+            Err(_) => {}
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Error::new(
+                "verify output balance",
+                "PipeWire did not confirm the requested balance within three seconds",
+            ));
+        }
+        std::thread::sleep(MUTATION_VERIFY_INTERVAL);
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn balance_channel_targets(current: &Balance, value: i8) -> (u32, u32) {
+    let maximum = current.left_volume.max(current.right_volume);
+    if value >= 0 {
+        (
+            attenuated_channel_volume(maximum, 100 - u32::from(value as u8)),
+            maximum,
+        )
+    } else {
+        (
+            maximum,
+            attenuated_channel_volume(maximum, 100 - u32::from(value.unsigned_abs())),
+        )
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn attenuated_channel_volume(maximum: u32, percent: u32) -> u32 {
+    ((u64::from(maximum) * u64::from(percent) + 50) / 100) as u32
+}
+
+#[cfg(not(target_os = "macos"))]
+fn spa_channel_volume(value: u32) -> String {
+    format!("{}.{:06}", value / 1_000_000, value % 1_000_000)
+}
+
+#[cfg(not(target_os = "macos"))]
 fn read_graph_metadata(operation: &'static str) -> Result<GraphMetadata, Error> {
     let dump = command("pw-dump", &["--no-colors"], operation)?;
     parse_pw_dump_metadata(&dump).map_err(|error| Error::new(operation, error.detail))
@@ -918,6 +1040,14 @@ fn system_set_route(_: DeviceKind, _: &Device, _: &Route) -> Result<Snapshot, Er
     Err(Error::new(
         "change audio route",
         "macOS does not expose routes through the scripting adapter",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn system_set_balance(_: &Device, _: i8) -> Result<Snapshot, Error> {
+    Err(Error::new(
+        "change output balance",
+        "macOS does not expose balance through the scripting adapter",
     ))
 }
 
@@ -1088,6 +1218,7 @@ fn parse_wpctl_list(output: &str, kind: DeviceKind) -> Result<Vec<Device>, Error
             name: bounded_label(authority_name),
             is_default,
             routes: Vec::new(),
+            balance: None,
             authority_name: authority_name.to_owned(),
             authority_device_id: None,
             authority_route_device: None,
@@ -1154,6 +1285,7 @@ fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Error> {
                     kind,
                     device_id: json_u32(props.get("device.id")).map(|id| id.to_string()),
                     route_device: json_i32(props.get("card.profile.device")),
+                    balance: parse_node_balance(object),
                 };
                 let id = id.to_string();
                 if graph.nodes.insert(id.clone(), node).is_some() {
@@ -1432,6 +1564,86 @@ fn parse_route_direction(value: Option<&serde_json::Value>) -> Option<RouteDirec
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
+fn parse_node_balance(object: &serde_json::Value) -> Option<Balance> {
+    let permissions = object.get("permissions")?.as_array()?;
+    let writable = permissions
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .any(|permission| permission == "w");
+    let executable = permissions
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .any(|permission| permission == "x");
+    if !writable || !executable {
+        return None;
+    }
+    let params = object.get("info")?.get("params")?;
+    let prop_info = params.get("PropInfo")?.as_array()?;
+    let channel_volumes_advertised = prop_info.iter().any(|property| {
+        property.get("id").and_then(serde_json::Value::as_str) == Some("channelVolumes")
+            && property
+                .get("container")
+                .and_then(serde_json::Value::as_str)
+                == Some("Array")
+    });
+    if !channel_volumes_advertised {
+        return None;
+    }
+    let props = params.get("Props")?.as_array()?;
+    if props.len() != 1 {
+        return None;
+    }
+    let channel_map = props[0].get("channelMap")?.as_array()?;
+    let channel_volumes = props[0].get("channelVolumes")?.as_array()?;
+    if channel_map.len() != 2 || channel_volumes.len() != 2 {
+        return None;
+    }
+    let first = channel_map[0].as_str()?;
+    let second = channel_map[1].as_str()?;
+    let left_first = match (first, second) {
+        ("FL", "FR") => true,
+        ("FR", "FL") => false,
+        _ => return None,
+    };
+    let first_volume = scaled_channel_volume(&channel_volumes[0])?;
+    let second_volume = scaled_channel_volume(&channel_volumes[1])?;
+    let (left_volume, right_volume) = if left_first {
+        (first_volume, second_volume)
+    } else {
+        (second_volume, first_volume)
+    };
+    let value = balance_percent(left_volume, right_volume)?;
+    Some(Balance {
+        value,
+        left_volume,
+        right_volume,
+        left_first,
+    })
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn scaled_channel_volume(value: &serde_json::Value) -> Option<u32> {
+    const SCALE: f64 = 1_000_000.0;
+    let value = value.as_f64()?;
+    (value.is_finite() && (0.0..=10.0).contains(&value)).then_some((value * SCALE).round() as u32)
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn balance_percent(left: u32, right: u32) -> Option<i8> {
+    const MIN_ADJUSTABLE_VOLUME: u32 = 10_000;
+    let maximum = left.max(right);
+    if maximum < MIN_ADJUSTABLE_VOLUME {
+        return None;
+    }
+    let difference = i64::from(right) - i64::from(left);
+    Some(
+        ((difference * 100) as f64 / f64::from(maximum))
+            .round()
+            .clamp(-100.0, 100.0) as i8,
+    )
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
 fn apply_graph_metadata(devices: &mut [Device], graph: &GraphMetadata, kind: DeviceKind) {
     for device in devices {
         let Some(node) = graph
@@ -1442,6 +1654,9 @@ fn apply_graph_metadata(devices: &mut [Device], graph: &GraphMetadata, kind: Dev
             continue;
         };
         device.name.clone_from(&node.description);
+        if kind == DeviceKind::Output {
+            device.balance.clone_from(&node.balance);
+        }
         let (Some(device_id), Some(route_device)) = (&node.device_id, node.route_device) else {
             continue;
         };
@@ -1522,6 +1737,7 @@ fn parse_macos_audio_devices(output: &str) -> (Vec<Device>, Vec<Device>) {
                     name: name.clone(),
                     is_default: default_output,
                     routes: Vec::new(),
+                    balance: None,
                     authority_name: name.clone(),
                     authority_device_id: None,
                     authority_route_device: None,
@@ -1533,6 +1749,7 @@ fn parse_macos_audio_devices(output: &str) -> (Vec<Device>, Vec<Device>) {
                     name: name.clone(),
                     is_default: default_input,
                     routes: Vec::new(),
+                    balance: None,
                     authority_name: name,
                     authority_device_id: None,
                     authority_route_device: None,
@@ -1679,6 +1896,7 @@ mod tests {
             name: "Built-in Audio".into(),
             is_default: true,
             routes: Vec::new(),
+            balance: None,
             authority_name: "alsa_output.private-hardware-identity".into(),
             authority_device_id: Some("41".into()),
             authority_route_device: Some(0),
@@ -1693,10 +1911,13 @@ mod tests {
     fn pipewire_json_correlates_exact_profiles_routes_and_node_identity() {
         let graph = parse_pw_dump_metadata(
             r#"[
-                {"id":52,"type":"PipeWire:Interface:Node","info":{"props":{
+                {"id":52,"type":"PipeWire:Interface:Node","permissions":["r","w","x","m"],"info":{"props":{
                     "media.class":"Audio/Sink","node.name":"alsa_output.analog",
                     "node.description":"Built-in Audio Analog Stereo",
-                    "device.id":41,"card.profile.device":4}}},
+                    "device.id":41,"card.profile.device":4},"params":{
+                    "PropInfo":[{"id":"channelVolumes","container":"Array"}],
+                    "Props":[{"channelMap":["FL","FR"],"channelVolumes":[0.4,0.8]}]
+                }}},
                 {"id":53,"type":"PipeWire:Interface:Node","info":{"props":{
                     "media.class":"Stream/Output/Audio","node.description":"Private Stream"}}},
                 {"id":41,"type":"PipeWire:Interface:Device","info":{"props":{
@@ -1731,6 +1952,10 @@ mod tests {
         assert_eq!(outputs[0].routes[0].name, "Speakers");
         assert_eq!(outputs[0].authority_device_id.as_deref(), Some("41"));
         assert_eq!(outputs[0].authority_route_device, Some(4));
+        assert_eq!(
+            outputs[0].balance.as_ref().map(|balance| balance.value),
+            Some(50)
+        );
         assert!(!graph.nodes.contains_key("53"));
         assert!(parse_pw_dump_metadata("not json").is_err());
     }
@@ -1755,6 +1980,47 @@ mod tests {
             ]
         });
         assert!(parse_routes(&stale, 1).is_none());
+    }
+
+    #[test]
+    fn stereo_balance_preserves_the_louder_channel_without_amplification() {
+        let current = Balance {
+            value: 50,
+            left_volume: 400_000,
+            right_volume: 800_000,
+            left_first: true,
+        };
+        assert_eq!(balance_channel_targets(&current, 0), (800_000, 800_000));
+        assert_eq!(balance_channel_targets(&current, -25), (800_000, 600_000));
+        assert_eq!(balance_channel_targets(&current, 75), (200_000, 800_000));
+        assert_eq!(balance_channel_targets(&current, 100), (0, 800_000));
+        assert_eq!(balance_channel_targets(&current, -100), (800_000, 0));
+    }
+
+    #[test]
+    fn balance_requires_writable_exact_front_stereo_channels() {
+        let base = serde_json::json!({
+            "permissions": ["r", "w", "x"],
+            "info": {"params": {
+                "PropInfo": [{"id": "channelVolumes", "container": "Array"}],
+                "Props": [{"channelMap": ["FL", "FR"], "channelVolumes": [0.5, 0.5]}]
+            }}
+        });
+        assert_eq!(
+            parse_node_balance(&base).map(|balance| balance.value),
+            Some(0)
+        );
+
+        let mut read_only = base.clone();
+        read_only["permissions"] = serde_json::json!(["r"]);
+        assert!(parse_node_balance(&read_only).is_none());
+
+        let mut surround = base;
+        surround["info"]["params"]["Props"][0]["channelMap"] =
+            serde_json::json!(["FL", "FR", "FC"]);
+        surround["info"]["params"]["Props"][0]["channelVolumes"] =
+            serde_json::json!([0.5, 0.5, 0.5]);
+        assert!(parse_node_balance(&surround).is_none());
     }
 
     #[test]

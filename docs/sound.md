@@ -3,8 +3,7 @@
 System Settings treats the user's PipeWire graph and WirePlumber policy as the
 Linux authority for audio devices, defaults, volume, mute, ports, and device
 profiles. It does not keep a private audio preference document or present alert
-sounds, interface effects, or balance controls that have no reviewed session
-authority.
+sounds or interface effects that have no reviewed session authority.
 
 ## Current snapshot and mutations
 
@@ -62,6 +61,23 @@ profile may legitimately leave no default sink or source; Settings then hides
 that direction's volume/mute controls, and Quick Settings marks Sound
 unavailable instead of sending a mutation to a nonexistent default.
 
+## Stereo balance
+
+System Settings shows a macOS-style L/R balance control for the default output
+only when the current PipeWire node advertises a writable `channelVolumes`
+array and an exact two-channel `FL`/`FR` map. Read-only nodes, mono and surround
+maps, ambiguous parameter records, malformed values, and effectively silent
+channels do not expose the control. This keeps the absence of a safe mutation
+contract visible instead of guessing how a device maps its channels.
+
+Every balance change revalidates the exact current node and private route
+association, rereads its channel order and volumes, and preserves the louder
+channel while attenuating the other; rmac never amplifies a channel to create
+balance. It sends an argument-separated `pw-cli set-param` `Props` update,
+polls the exact balance for at most three seconds, and returns success only
+after a complete snapshot contains the requested value. The current session is
+authoritative; rmac does not claim or maintain separate balance persistence.
+
 ## Live changes and recovery
 
 On Linux, the audio watcher starts the official `pw-mon --color=never` monitor
@@ -86,9 +102,8 @@ cannot be silently lost or overwrite newer readback.
 
 ## Explicitly remaining
 
-F6 remains open until rmac adds and the Ubuntu/niri reference PC proves:
+F6 remains open until the Ubuntu/niri reference PC proves:
 
-- per-channel balance only where a real channel map supports it;
 - PipeWire and WirePlumber stop/restart, missing tools, monitor failure,
   external changes, Bluetooth/USB/HDMI hotplug, and suspend/resume behavior;
 - keyboard, 100–200% scaling, contrast, Orca, slider latency, event coalescing,
@@ -97,4 +112,5 @@ F6 remains open until rmac adds and the Ubuntu/niri reference PC proves:
 The implementation follows the official
 [`pw-mon` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-mon_1.html),
 [`pw-dump` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-dump_1.html),
+[`pw-cli` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-cli_1.html),
 and [WirePlumber `wpctl` interface](https://pipewire.pages.freedesktop.org/wireplumber/tools/wpctl.html).

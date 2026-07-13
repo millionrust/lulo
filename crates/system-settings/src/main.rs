@@ -886,8 +886,10 @@ struct Settings {
     audio_refresh_pending: bool,
     output_volume_generation: u64,
     input_volume_generation: u64,
+    output_balance_generation: u64,
     output_volume: Entity<SliderState>,
     input_volume: Entity<SliderState>,
+    output_balance: Entity<SliderState>,
 
     // Battery and power profiles
     power_loading: bool,
@@ -915,6 +917,7 @@ enum AudioChange {
         rmac_audio::Device,
         rmac_audio::Route,
     ),
+    Balance(rmac_audio::Device, i8),
 }
 
 #[derive(Clone, Copy)]
@@ -1133,6 +1136,23 @@ impl Settings {
         slider
     }
 
+    fn audio_balance_slider(cx: &mut Context<Self>, value: f32) -> Entity<SliderState> {
+        let slider = cx.new(|_| {
+            SliderState::new()
+                .min(-100.0)
+                .max(100.0)
+                .step(1.0)
+                .default_value(value)
+        });
+        cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
+            let SliderEvent::Change(value) = event;
+            this.schedule_audio_balance(value.start(), cx);
+            cx.notify();
+        })
+        .detach();
+        slider
+    }
+
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
@@ -1146,6 +1166,7 @@ impl Settings {
         // System audio sliders write through the platform audio service.
         let output_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Output);
         let input_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Input);
+        let output_balance = Self::audio_balance_slider(cx, 0.0);
 
         // Hardware discovery launches multiple platform commands, including
         // system_profiler. Keep it off the first-frame path and redraw once the
@@ -2308,8 +2329,10 @@ impl Settings {
             audio_refresh_pending: false,
             output_volume_generation: 0,
             input_volume_generation: 0,
+            output_balance_generation: 0,
             output_volume,
             input_volume,
+            output_balance,
 
             power_loading: true,
             power_busy: false,
@@ -4957,6 +4980,7 @@ impl Settings {
     fn replace_audio_snapshot(&mut self, snapshot: rmac_audio::Snapshot, cx: &mut Context<Self>) {
         self.output_volume_generation = self.output_volume_generation.wrapping_add(1);
         self.input_volume_generation = self.input_volume_generation.wrapping_add(1);
+        self.output_balance_generation = self.output_balance_generation.wrapping_add(1);
         self.output_volume = Self::audio_slider(
             cx,
             f32::from(snapshot.output.volume),
@@ -4967,6 +4991,13 @@ impl Settings {
             f32::from(snapshot.input.volume),
             rmac_audio::DeviceKind::Input,
         );
+        let balance = snapshot
+            .outputs
+            .iter()
+            .find(|device| device.is_default)
+            .and_then(|device| device.balance.as_ref())
+            .map_or(0.0, |balance| f32::from(balance.value));
+        self.output_balance = Self::audio_balance_slider(cx, balance);
         self.audio = snapshot;
     }
 
@@ -5097,6 +5128,36 @@ impl Settings {
         self.apply_audio_change(AudioChange::Route(kind, device, route), cx);
     }
 
+    fn schedule_audio_balance(&mut self, value: f32, cx: &mut Context<Self>) {
+        if self.audio_loading || !self.audio.available || !self.audio.has_output {
+            return;
+        }
+        self.output_balance_generation = self.output_balance_generation.wrapping_add(1);
+        let generation = self.output_balance_generation;
+        let value = value.round().clamp(-100.0, 100.0) as i8;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            cx.background_executor()
+                .timer(Duration::from_millis(120))
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.output_balance_generation != generation || this.audio_busy {
+                    return;
+                }
+                let Some(device) = this
+                    .audio
+                    .outputs
+                    .iter()
+                    .find(|device| device.is_default && device.balance.is_some())
+                    .cloned()
+                else {
+                    return;
+                };
+                this.apply_audio_change(AudioChange::Balance(device, value), cx);
+            });
+        })
+        .detach();
+    }
+
     fn apply_audio_change(&mut self, change: AudioChange, cx: &mut Context<Self>) {
         self.audio_generation = self.audio_generation.wrapping_add(1);
         self.audio_busy = true;
@@ -5116,6 +5177,9 @@ impl Settings {
                         }
                         AudioChange::Route(kind, device, route) => {
                             return rmac_audio::set_route(kind, &device, &route);
+                        }
+                        AudioChange::Balance(device, value) => {
+                            return rmac_audio::set_balance(&device, value);
                         }
                     }
                     rmac_audio::snapshot()
@@ -11859,27 +11923,35 @@ impl Settings {
                             settings.set_audio_muted(rmac_audio::DeviceKind::Output, *muted, cx)
                         });
                     });
-                cards.push(
-                    div()
-                        .v_flex()
-                        .mb_3()
-                        .rounded(px(10.0))
-                        .bg(card_bg())
-                        .border_1()
-                        .border_color(sep())
-                        .child(slider_row(
-                            "Output volume",
-                            &self.output_volume,
-                            format!("{out}%").into(),
-                        ))
+                let mut output_card = div()
+                    .v_flex()
+                    .mb_3()
+                    .rounded(px(10.0))
+                    .bg(card_bg())
+                    .border_1()
+                    .border_color(sep())
+                    .child(slider_row(
+                        "Output volume",
+                        &self.output_volume,
+                        format!("{out}%").into(),
+                    ));
+                if self
+                    .audio
+                    .outputs
+                    .iter()
+                    .any(|device| device.is_default && device.balance.is_some())
+                {
+                    output_card = output_card
                         .child(div().h(px(1.0)).bg(sep()).mx_3())
-                        .child(
-                            row_base()
-                                .child(tile("icons/volume-2.svg", secondary(), 22.0))
-                                .child(text_block("Mute output".into(), None))
-                                .child(output_mute),
-                        ),
+                        .child(balance_slider_row(&self.output_balance));
+                }
+                output_card = output_card.child(div().h(px(1.0)).bg(sep()).mx_3()).child(
+                    row_base()
+                        .child(tile("icons/volume-2.svg", secondary(), 22.0))
+                        .child(text_block("Mute output".into(), None))
+                        .child(output_mute),
                 );
+                cards.push(output_card);
             } else {
                 cards.push(note_card("No output device is currently active."));
             }
@@ -15529,6 +15601,39 @@ fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedStr
                 .text_color(secondary())
                 .child(value),
         )
+}
+
+fn balance_slider_row(state: &Entity<SliderState>) -> Div {
+    row_base()
+        .child(
+            div()
+                .w(px(110.0))
+                .flex_none()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(label())
+                .child("Balance"),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .flex_1()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(secondary())
+                        .child("L"),
+                )
+                .child(div().flex_1().child(Slider::new(state).w_full()))
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(secondary())
+                        .child("R"),
+                ),
+        )
+        .child(div().w(px(44.0)).flex_none())
 }
 
 type InputOption = (&'static str, InputChange);

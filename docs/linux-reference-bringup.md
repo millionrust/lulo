@@ -173,7 +173,7 @@ owners. Reload niri and validate the generated file before interaction testing:
 niri validate
 ```
 
-### 5.1 Accessibility and scale evidence
+### 5.1 Accessibility, scale, privacy, and security evidence
 
 Keep at least 15 GiB free throughout this pass. Before any Cargo command, record
 `df -h /` and stop if less than 25 GiB is available for a build that may exceed
@@ -186,11 +186,14 @@ Start the dedicated collector. Add the optional code checks only with at least
 ```sh
 bash scripts/linux/run-accessibility-evidence.sh
 bash scripts/linux/run-accessibility-evidence.sh --with-code-checks
+bash scripts/linux/run-privacy-security-evidence.sh
+bash scripts/linux/run-privacy-security-evidence.sh --with-code-checks
 ```
 
-The command writes authoritative environment values and a manual checklist
-under ignored `target/linux-evidence/<UTC timestamp>/accessibility/`. Complete
-every checklist row; its creation alone is not evidence that a test passed.
+The commands write authoritative environment values and manual checklists under
+the ignored `target/linux-evidence/<UTC timestamp>/accessibility/` and
+`privacy-security/` directories. Complete every checklist row; its creation
+alone is not evidence that a test passed.
 
 In System Settings → Accessibility, exercise Standard, Large, and Extra Large
 application text. At each value, inspect all seven apps at 100% output scale,

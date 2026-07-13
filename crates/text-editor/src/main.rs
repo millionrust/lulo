@@ -741,14 +741,14 @@ impl EditorView {
                     .items_center()
                     .justify_center()
                     .gap_1()
-                    .text_size(px(13.0))
+                    .text_size(rmac_ui::text_px(13.0))
                     .font_weight(mac::MEDIUM)
                     .text_color(mac::text())
                     .child(title)
                     .when(dirty, |d| {
                         d.child(
                             div()
-                                .text_size(px(12.0))
+                                .text_size(rmac_ui::text_px(12.0))
                                 .text_color(mac::text_secondary())
                                 .child("— Edited"),
                         )
@@ -831,7 +831,7 @@ impl EditorView {
             .child(
                 div()
                     .min_w(px(64.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::text_secondary())
                     .child(status),
             )
@@ -949,7 +949,7 @@ impl EditorView {
             .border_color(mac::separator())
             .child(
                 div()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::text_secondary())
                     .child("Read-only RTF preview — formatting shown as in the document."),
             )
@@ -984,7 +984,7 @@ impl EditorView {
 
         let cell = |s: String| {
             div()
-                .text_size(px(11.0))
+                .text_size(rmac_ui::text_px(11.0))
                 .text_color(mac::text_secondary())
                 .child(s)
         };
@@ -1120,7 +1120,7 @@ impl Render for EditorView {
                         .bg(mac::error_background())
                         .border_b_1()
                         .border_color(mac::error_border())
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))

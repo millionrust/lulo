@@ -3215,6 +3215,24 @@ impl Settings {
         cx.notify();
     }
 
+    fn select_category(&mut self, name: &str, cx: &mut Context<Self>) {
+        let target = self
+            .sections
+            .iter()
+            .enumerate()
+            .find_map(|(section, items)| {
+                items
+                    .iter()
+                    .position(|category| category.name.as_ref() == name)
+                    .map(|item| (section, item))
+            });
+        if let Some(target) = target {
+            self.selected = target;
+            self.nav.clear();
+            cx.notify();
+        }
+    }
+
     // ---- chrome -------------------------------------------------------
 
     fn render_topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -3432,6 +3450,7 @@ impl Settings {
                 "Language & Region" => self.render_language_region(cx),
                 "Login Items" => self.render_login_items(cx),
                 "Sharing" => self.render_sharing(cx),
+                "Accessibility" => self.render_accessibility(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(),
@@ -4916,6 +4935,130 @@ impl Settings {
         }
         cards.push(note_card(
             "The switch controls only smbd.service runtime and boot state. Share definitions, permissions, credentials, and firewall policy remain separate authorities. rmac does not present AirDrop because Linux has no compatible local authority.",
+        ));
+        self.pane(cards)
+    }
+
+    // ---- Accessibility -----------------------------------------------
+
+    fn render_accessibility(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let mut cards = vec![card(vec![row_base()
+            .child(tile("icons/accessibility.svg", accent(), 22.0))
+            .child(text_block(
+                "Visual preferences".into(),
+                Some("Live across rmac apps and shell surfaces".into()),
+            ))
+            .child(
+                Button::new("accessibility-refresh", "Refresh")
+                    .busy(self.theme_busy)
+                    .disabled(self.theme_loading || self.theme_busy)
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
+                    }),
+            )
+            .into_any_element()])];
+        if self.theme_loading {
+            cards.push(note_card("Loading accessibility preferences…"));
+            return self.pane(cards);
+        }
+        if let Some(theme) = &self.theme {
+            let preferences = &theme.preferences;
+            cards.push(section_header("Vision"));
+            cards.push(card(vec![
+                theme_segment_row(
+                    view.clone(),
+                    "accessibility-contrast",
+                    "Display contrast",
+                    &THEME_CONTRAST_OPTIONS,
+                    match preferences.contrast {
+                        rmac_theme::ContrastPreference::Automatic => 0,
+                        rmac_theme::ContrastPreference::Normal => 1,
+                        rmac_theme::ContrastPreference::Higher => 2,
+                    },
+                    !self.theme_busy,
+                ),
+                theme_segment_row(
+                    view.clone(),
+                    "accessibility-motion",
+                    "Interface motion",
+                    &THEME_MOTION_OPTIONS,
+                    match preferences.motion {
+                        rmac_theme::MotionPreferenceSetting::Automatic => 0,
+                        rmac_theme::MotionPreferenceSetting::Full => 1,
+                        rmac_theme::MotionPreferenceSetting::Reduced => 2,
+                    },
+                    !self.theme_busy,
+                ),
+                value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "Effective visual mode".into(),
+                    format!(
+                        "{} contrast · {} motion",
+                        match theme.effective.contrast {
+                            rmac_appearance::Contrast::Normal => "Normal",
+                            rmac_appearance::Contrast::Higher => "Higher",
+                        },
+                        match theme.effective.motion {
+                            rmac_appearance::MotionPreference::Full => "Full",
+                            rmac_appearance::MotionPreference::Reduced => "Reduced",
+                        }
+                    )
+                    .into(),
+                ),
+            ]));
+        } else {
+            cards.push(note_card(
+                "The rmac visual accessibility preference service is unavailable.",
+            ));
+        }
+
+        let keyboard_view = view.clone();
+        let mouse_view = view.clone();
+        let trackpad_view = view;
+        cards.push(section_header("Motor"));
+        cards.push(card(vec![
+            row_base()
+                .child(tile("icons/keyboard.svg", secondary(), 22.0))
+                .child(text_block(
+                    "Keyboard".into(),
+                    Some("Repeat timing and layout controls backed by niri".into()),
+                ))
+                .child(
+                    Button::new("accessibility-keyboard", "Open").on_click(move |_, _, cx| {
+                        keyboard_view
+                            .update(cx, |settings, cx| settings.select_category("Keyboard", cx));
+                    }),
+                )
+                .into_any_element(),
+            row_base()
+                .child(tile("icons/mouse.svg", secondary(), 22.0))
+                .child(text_block(
+                    "Pointer".into(),
+                    Some("Speed, acceleration, handedness, and scroll controls".into()),
+                ))
+                .child(
+                    Button::new("accessibility-mouse", "Mouse").on_click(move |_, _, cx| {
+                        mouse_view.update(cx, |settings, cx| settings.select_category("Mouse", cx));
+                    }),
+                )
+                .child(Button::new("accessibility-trackpad", "Trackpad").on_click(
+                    move |_, _, cx| {
+                        trackpad_view
+                            .update(cx, |settings, cx| settings.select_category("Trackpad", cx));
+                    },
+                ))
+                .into_any_element(),
+        ]));
+
+        cards.push(section_header("Text & Screen Reader"));
+        cards.push(note_card(
+            "System-wide text scaling is not exposed until rmac, GTK, portals, and the niri session can agree on one effective scale without double-scaling applications.",
+        ));
+        cards.push(note_card(
+            "Orca activation is not controlled here yet. The current GPUI integration still requires Linux AT-SPI and Orca runtime evidence before rmac can claim screen-reader-facing controls.",
         ));
         self.pane(cards)
     }

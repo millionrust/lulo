@@ -5423,6 +5423,8 @@ name = "rmac-system-settings"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
+ "async-io",
+ "blocking",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
@@ -5431,6 +5433,8 @@ dependencies = [
  "rmac-apps",
  "rmac-audio",
  "rmac-bluetooth",
+ "rmac-compositor",
+ "rmac-compositor-niri",
  "rmac-display",
  "rmac-focus",
  "rmac-focus-linux",
@@ -5452,6 +5456,7 @@ dependencies = [
  "rmac-privacy-linux",
  "rmac-sharing",
  "rmac-sharing-linux",
+ "rmac-shell-settings",
  "rmac-shortcuts",
  "rmac-system-info",
  "rmac-theme",

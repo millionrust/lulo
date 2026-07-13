@@ -138,6 +138,126 @@ enum SubPage {
     FocusSchedule { schedule_id: String },
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum DockChange {
+    Placement(rmac_shell_settings::DockPlacement),
+    Outputs(rmac_shell_settings::OutputScope),
+    Autohide(bool),
+    Magnification(bool),
+    MagnificationScale(f32),
+    ReserveSpace(bool),
+    RepeatedClick(rmac_shell_settings::RepeatedClickBehavior),
+}
+
+impl DockChange {
+    fn apply(self, dock: &mut rmac_shell_settings::DockSettings) {
+        match self {
+            Self::Placement(value) => dock.placement = value,
+            Self::Outputs(value) => dock.outputs = value,
+            Self::Autohide(value) => dock.autohide = value,
+            Self::Magnification(value) => dock.magnification = value,
+            Self::MagnificationScale(value) => dock.magnification_scale = value,
+            Self::ReserveSpace(value) => dock.reserve_space = value,
+            Self::RepeatedClick(value) => dock.repeated_click = value,
+        }
+    }
+}
+
+enum ShellSettingsStreamUpdate {
+    Snapshot(Box<rmac_shell_settings::Snapshot>),
+    Unavailable(String),
+}
+
+enum DockMutation {
+    Change(DockChange),
+    Restore(rmac_shell_settings::DockSettings),
+}
+
+impl DockMutation {
+    fn apply(self, settings: &mut rmac_shell_settings::ShellSettings) {
+        match self {
+            Self::Change(change) => change.apply(&mut settings.dock),
+            Self::Restore(dock) => settings.dock = dock,
+        }
+    }
+}
+
+async fn watch_shell_settings(sender: async_channel::Sender<ShellSettingsStreamUpdate>) {
+    loop {
+        let setup = blocking::unblock(|| {
+            let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
+            let watcher = store.watch()?;
+            let snapshot = store.load()?;
+            Ok::<_, rmac_shell_settings::Error>((store, watcher, snapshot))
+        })
+        .await;
+        let (mut store, watcher, snapshot) = match setup {
+            Ok(setup) => setup,
+            Err(error) => {
+                if sender
+                    .send(ShellSettingsStreamUpdate::Unavailable(error.to_string()))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                async_io::Timer::after(Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+        if sender
+            .send(ShellSettingsStreamUpdate::Snapshot(Box::new(snapshot)))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        loop {
+            match watcher.recv().await {
+                Ok(rmac_shell_settings::StoreEvent::Changed) => {
+                    let (returned_store, result) = blocking::unblock(move || {
+                        let result = store.load();
+                        (store, result)
+                    })
+                    .await;
+                    store = returned_store;
+                    let update = match result {
+                        Ok(snapshot) => ShellSettingsStreamUpdate::Snapshot(Box::new(snapshot)),
+                        Err(error) => ShellSettingsStreamUpdate::Unavailable(error.to_string()),
+                    };
+                    if sender.send(update).await.is_err() {
+                        return;
+                    }
+                }
+                Ok(rmac_shell_settings::StoreEvent::WatchError(error)) => {
+                    if sender
+                        .send(ShellSettingsStreamUpdate::Unavailable(error.to_string()))
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    break;
+                }
+                Err(_) => break,
+            }
+        }
+        async_io::Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+fn persist_dock_mutation(
+    mutation: DockMutation,
+) -> std::result::Result<rmac_shell_settings::Snapshot, rmac_shell_settings::Error> {
+    let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
+    let mut settings = store.load()?.settings;
+    mutation.apply(&mut settings);
+    store.save(&settings)?;
+    // Read the complete document back so UI state is accepted only from the
+    // same authority every shell process consumes.
+    store.load()
+}
+
 struct Settings {
     system_data_loading: bool,
     system_data_busy: bool,
@@ -209,6 +329,8 @@ struct Settings {
     display_error: Option<SharedString>,
     input_error: Option<SharedString>,
     theme_error: Option<SharedString>,
+    shell_settings_error: Option<SharedString>,
+    shell_settings_stream_error: Option<SharedString>,
     gtk_text_error: Option<SharedString>,
     privacy_error: Option<SharedString>,
     privacy_stream_error: Option<SharedString>,
@@ -236,6 +358,13 @@ struct Settings {
     lock_policy_error: Option<SharedString>,
     lock_policy_stream_error: Option<SharedString>,
     lock_policy: Option<rmac_shortcuts::lock_settings::Snapshot>,
+
+    // Desktop & Dock
+    shell_settings_loading: bool,
+    shell_settings_busy: bool,
+    shell_settings: Option<rmac_shell_settings::Snapshot>,
+    shell_settings_revert: Option<rmac_shell_settings::DockSettings>,
+    dock_compositor: rmac_compositor::State,
 
     // Network
     network_loading: bool,
@@ -450,6 +579,38 @@ const ACCENTS: &[(&str, u32)] = &[
     ("Yellow", 0xffcc00),
     ("Green", 0x34c759),
     ("Graphite", 0x8e8e93),
+];
+
+type DockOption = (&'static str, DockChange);
+
+const DOCK_PLACEMENT_OPTIONS: [DockOption; 3] = [
+    (
+        "Left",
+        DockChange::Placement(rmac_shell_settings::DockPlacement::Left),
+    ),
+    (
+        "Bottom",
+        DockChange::Placement(rmac_shell_settings::DockPlacement::Bottom),
+    ),
+    (
+        "Right",
+        DockChange::Placement(rmac_shell_settings::DockPlacement::Right),
+    ),
+];
+const DOCK_MAGNIFICATION_OPTIONS: [DockOption; 3] = [
+    ("1.25×", DockChange::MagnificationScale(1.25)),
+    ("1.5×", DockChange::MagnificationScale(1.5)),
+    ("2×", DockChange::MagnificationScale(2.0)),
+];
+const DOCK_REPEATED_CLICK_OPTIONS: [DockOption; 2] = [
+    (
+        "Cycle Windows",
+        DockChange::RepeatedClick(rmac_shell_settings::RepeatedClickBehavior::CycleWindows),
+    ),
+    (
+        "Do Nothing",
+        DockChange::RepeatedClick(rmac_shell_settings::RepeatedClickBehavior::DoNothing),
+    ),
 ];
 
 const FOCUS_DAYS: [(rmac_focus::Weekday, &str); 7] = [
@@ -1031,6 +1192,62 @@ impl Settings {
         })
         .detach();
 
+        let (shell_settings_updates, shell_settings_update_rx) = async_channel::bounded(2);
+        cx.background_executor()
+            .spawn(watch_shell_settings(shell_settings_updates))
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(update) = shell_settings_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        this.apply_shell_settings_stream_update(update);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        let (dock_compositor_events, dock_compositor_event_rx) = async_channel::bounded(64);
+        cx.background_executor()
+            .spawn(async move {
+                loop {
+                    let result = rmac_compositor_niri::watch(dock_compositor_events.clone()).await;
+                    if dock_compositor_events.is_closed() {
+                        return;
+                    }
+                    if result.is_err()
+                        && dock_compositor_events
+                            .send(rmac_compositor::Event::ConnectionChanged {
+                                state: rmac_compositor::ConnectionState::Disconnected,
+                            })
+                            .await
+                            .is_err()
+                    {
+                        return;
+                    }
+                    async_io::Timer::after(Duration::from_secs(1)).await;
+                }
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = dock_compositor_event_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        this.dock_compositor.apply(event);
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             system_data_busy: false,
@@ -1104,6 +1321,8 @@ impl Settings {
             display_error: None,
             input_error: None,
             theme_error: None,
+            shell_settings_error: None,
+            shell_settings_stream_error: None,
             gtk_text_error: None,
             privacy_error: None,
             privacy_stream_error: None,
@@ -1128,6 +1347,12 @@ impl Settings {
             lock_policy_error: None,
             lock_policy_stream_error: None,
             lock_policy: None,
+
+            shell_settings_loading: true,
+            shell_settings_busy: false,
+            shell_settings: None,
+            shell_settings_revert: None,
+            dock_compositor: rmac_compositor::State::default(),
 
             network_loading: true,
             network_busy: false,
@@ -1181,6 +1406,140 @@ impl Settings {
             input_loading: true,
             input_busy: false,
         }
+    }
+
+    fn apply_shell_settings_stream_update(&mut self, update: ShellSettingsStreamUpdate) {
+        self.shell_settings_loading = false;
+        match update {
+            ShellSettingsStreamUpdate::Snapshot(snapshot) => {
+                self.shell_settings_stream_error = None;
+                if self.shell_settings_busy {
+                    return;
+                }
+                if self
+                    .shell_settings
+                    .as_ref()
+                    .is_some_and(|current| current.settings.dock != snapshot.settings.dock)
+                {
+                    self.shell_settings_revert = None;
+                }
+                self.shell_settings = Some(*snapshot);
+                self.shell_settings_error = None;
+            }
+            ShellSettingsStreamUpdate::Unavailable(error) => {
+                self.shell_settings_stream_error =
+                    Some(format!("Live Desktop & Dock updates are unavailable: {error}").into());
+            }
+        }
+    }
+
+    fn finish_shell_settings_mutation(
+        &mut self,
+        result: std::result::Result<rmac_shell_settings::Snapshot, rmac_shell_settings::Error>,
+        previous: Option<rmac_shell_settings::DockSettings>,
+    ) {
+        self.shell_settings_loading = false;
+        self.shell_settings_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.shell_settings = Some(snapshot);
+                self.shell_settings_revert = previous;
+                self.shell_settings_error = None;
+                self.shell_settings_stream_error = None;
+            }
+            Err(error) => {
+                self.shell_settings_error =
+                    Some(format!("Could not update Desktop & Dock: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_shell_settings(&mut self, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        self.shell_settings_loading = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(|| {
+                rmac_shell_settings::ShellSettingsStore::from_environment()?.load()
+            })
+            .await;
+            let _ =
+                this.update(cx, |this: &mut Settings, cx| {
+                    this.shell_settings_loading = false;
+                    match result {
+                        Ok(snapshot) => {
+                            if this.shell_settings.as_ref().is_some_and(|current| {
+                                current.settings.dock != snapshot.settings.dock
+                            }) {
+                                this.shell_settings_revert = None;
+                            }
+                            this.shell_settings = Some(snapshot);
+                            this.shell_settings_error = None;
+                            this.shell_settings_stream_error = None;
+                        }
+                        Err(error) => {
+                            this.shell_settings_error =
+                                Some(format!("Could not refresh Desktop & Dock: {error}").into());
+                        }
+                    }
+                    cx.notify();
+                });
+        })
+        .detach();
+    }
+
+    fn apply_dock_change(&mut self, change: DockChange, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        let previous = snapshot.settings.dock.clone();
+        let mut next = previous.clone();
+        change.clone().apply(&mut next);
+        if next == previous {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result =
+                blocking::unblock(move || persist_dock_mutation(DockMutation::Change(change)))
+                    .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_shell_settings_mutation(result, Some(previous));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn revert_dock_change(&mut self, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(previous) = self.shell_settings_revert.clone() else {
+            return;
+        };
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result =
+                blocking::unblock(move || persist_dock_mutation(DockMutation::Restore(previous)))
+                    .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_shell_settings_mutation(result, None);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn apply_system_snapshot(&mut self, snapshot: SystemSnapshot) {
@@ -3793,7 +4152,7 @@ impl Settings {
                 "Privacy & Security" => self.render_privacy_security(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
-                "Desktop & Dock" => self.render_desktop_dock_readiness(),
+                "Desktop & Dock" => self.render_desktop_dock(cx),
                 "Spotlight" => self.render_spotlight_readiness(),
                 "Wallpaper" => self.render_wallpaper_readiness(),
                 _ => self.render_unregistered_category(),
@@ -3853,12 +4212,267 @@ impl Settings {
         div().v_flex().child(self.render_hero()).children(cards)
     }
 
-    // ---- explicit readiness panes ------------------------------------
+    // ---- explicit shell-owned panes ----------------------------------
 
-    fn render_desktop_dock_readiness(&self) -> Div {
-        self.pane(vec![note_card(
-            "The rmac Dock already consumes durable shell settings, but System Settings does not yet provide the reviewed editor or niri capability checks required for placement, output scope, hiding, magnification, and window behavior. This pane is read-only and changes nothing.",
-        )])
+    fn render_desktop_dock(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let revert_view = view.clone();
+        let mut cards = vec![div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child("rmac Dock"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        Button::new("dock-revert", "Revert")
+                            .disabled(
+                                self.shell_settings_loading
+                                    || self.shell_settings_busy
+                                    || self.shell_settings_revert.is_none(),
+                            )
+                            .on_click(move |_, _, cx| {
+                                revert_view
+                                    .update(cx, |settings, cx| settings.revert_dock_change(cx));
+                            }),
+                    )
+                    .child(
+                        Button::new(
+                            "dock-refresh",
+                            if self.shell_settings_busy {
+                                "Applying…"
+                            } else if self.shell_settings_loading {
+                                "Loading…"
+                            } else {
+                                "Refresh"
+                            },
+                        )
+                        .disabled(self.shell_settings_loading || self.shell_settings_busy)
+                        .on_click(move |_, _, cx| {
+                            refresh_view
+                                .update(cx, |settings, cx| settings.refresh_shell_settings(cx));
+                        }),
+                    ),
+            )];
+
+        if self.shell_settings_loading && self.shell_settings.is_none() {
+            cards.push(note_card("Loading the authoritative Dock settings…"));
+            return self.pane(cards);
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            cards.push(note_card(
+                "The versioned rmac shell-settings authority is unavailable. No Dock preference can be changed until it is readable again.",
+            ));
+            return self.pane(cards);
+        };
+        let dock = &snapshot.settings.dock;
+        let enabled = !self.shell_settings_busy;
+        let outputs_live =
+            self.dock_compositor.connection == rmac_compositor::ConnectionState::Connected;
+
+        cards.push(section_header("Position and visibility"));
+        cards.push(card(vec![
+            dock_segment_row(
+                view.clone(),
+                "dock-placement",
+                "Position on screen",
+                &DOCK_PLACEMENT_OPTIONS,
+                match dock.placement {
+                    rmac_shell_settings::DockPlacement::Left => Some(0),
+                    rmac_shell_settings::DockPlacement::Bottom => Some(1),
+                    rmac_shell_settings::DockPlacement::Right => Some(2),
+                },
+                enabled,
+            ),
+            dock_switch_row(
+                view.clone(),
+                "dock-autohide",
+                "Automatically hide and show the Dock",
+                Some("Reveal uses deliberate edge pressure so it does not steal focus".into()),
+                dock.autohide,
+                enabled,
+                DockChange::Autohide,
+            ),
+            dock_switch_row(
+                view.clone(),
+                "dock-reserve-space",
+                "Reserve screen space",
+                Some("Keep tiled windows outside the visible Dock area".into()),
+                dock.reserve_space,
+                enabled,
+                DockChange::ReserveSpace,
+            ),
+        ]));
+
+        cards.push(section_header("Magnification"));
+        cards.push(card(vec![
+            dock_switch_row(
+                view.clone(),
+                "dock-magnification",
+                "Magnify icons",
+                Some("Reduced Motion overrides this effect at runtime".into()),
+                dock.magnification,
+                enabled,
+                DockChange::Magnification,
+            ),
+            dock_segment_row(
+                view.clone(),
+                "dock-magnification-scale",
+                "Maximum size",
+                &DOCK_MAGNIFICATION_OPTIONS,
+                [1.25_f32, 1.5, 2.0]
+                    .iter()
+                    .position(|value| (dock.magnification_scale - value).abs() < f32::EPSILON),
+                enabled && dock.magnification,
+            ),
+        ]));
+        if ![1.25_f32, 1.5, 2.0]
+            .iter()
+            .any(|value| (dock.magnification_scale - value).abs() < f32::EPSILON)
+        {
+            cards.push(note_card(format!(
+                "The saved magnification is {:.2}×. Choose a preset to replace it, or leave it unchanged.",
+                dock.magnification_scale
+            )));
+        }
+
+        cards.push(section_header("Application clicks"));
+        cards.push(card(vec![dock_segment_row(
+            view.clone(),
+            "dock-repeated-click",
+            "Click a focused app again",
+            &DOCK_REPEATED_CLICK_OPTIONS,
+            match dock.repeated_click {
+                rmac_shell_settings::RepeatedClickBehavior::CycleWindows => Some(0),
+                rmac_shell_settings::RepeatedClickBehavior::DoNothing => Some(1),
+                rmac_shell_settings::RepeatedClickBehavior::HideApplication => None,
+            },
+            enabled,
+        )]));
+        if dock.repeated_click == rmac_shell_settings::RepeatedClickBehavior::HideApplication {
+            cards.push(note_card(
+                "The saved behavior requests application hiding, but niri has no application-hide action. The Dock reports that action as unavailable; choose Cycle Windows or Do Nothing for supported behavior.",
+            ));
+        }
+
+        cards.push(section_header("Displays"));
+        let mut output_rows = vec![dock_output_row(
+            &view,
+            "all",
+            "All displays".into(),
+            Some("Follow every enabled niri output".into()),
+            dock.outputs == rmac_shell_settings::OutputScope::All,
+            enabled,
+            rmac_shell_settings::OutputScope::All,
+        )];
+        for output in self
+            .dock_compositor
+            .outputs
+            .values()
+            .filter(|output| output.enabled())
+        {
+            let output_id = output.id.0.clone();
+            let display_name = format!("{} {}", output.make, output.model)
+                .trim()
+                .to_owned();
+            let title = if display_name.is_empty() {
+                output_id.clone()
+            } else {
+                display_name
+            };
+            let selected =
+                dock.outputs == rmac_shell_settings::OutputScope::Named(output_id.clone());
+            output_rows.push(dock_output_row(
+                &view,
+                &format!("named-{output_id}"),
+                title.into(),
+                Some(format!("niri output {output_id}").into()),
+                selected,
+                enabled && outputs_live,
+                rmac_shell_settings::OutputScope::Named(output_id),
+            ));
+        }
+        cards.push(card(output_rows));
+
+        match &dock.outputs {
+            rmac_shell_settings::OutputScope::Primary => cards.push(note_card(
+                "Primary output is saved, but the current Dock runtime has no authoritative primary-output source and would create no surface. Choose All displays or a connected niri output.",
+            )),
+            rmac_shell_settings::OutputScope::Named(name)
+                if !self
+                    .dock_compositor
+                    .outputs
+                    .values()
+                    .any(|output| output.enabled() && output.id.0 == *name) =>
+            {
+                cards.push(note_card(format!(
+                    "The saved output {name} is not currently enabled in niri. The preference is preserved, but the Dock creates no surface there until it returns."
+                )));
+            }
+            _ => {}
+        }
+
+        let connection = match self.dock_compositor.connection {
+            rmac_compositor::ConnectionState::Connected => "Connected",
+            rmac_compositor::ConnectionState::Connecting => "Connecting",
+            rmac_compositor::ConnectionState::Reconnecting => "Reconnecting",
+            rmac_compositor::ConnectionState::Disconnected => "Unavailable",
+        };
+        let enabled_outputs = self
+            .dock_compositor
+            .outputs
+            .values()
+            .filter(|output| output.enabled())
+            .count();
+        cards.push(section_header("Authority"));
+        cards.push(card(vec![
+            value_row(
+                "icons/settings.svg",
+                accent(),
+                "Saved preferences".into(),
+                "C4 shell settings".into(),
+            ),
+            value_row(
+                "icons/monitor.svg",
+                secondary(),
+                "niri event stream".into(),
+                connection.into(),
+            ),
+            value_row(
+                "icons/app-window.svg",
+                secondary(),
+                "Enabled outputs".into(),
+                enabled_outputs.to_string().into(),
+            ),
+        ]));
+        if snapshot.recovered_from_last_good || snapshot.migrated_from.is_some() {
+            cards.push(note_card(snapshot.detail.clone().unwrap_or_else(|| {
+                snapshot.migrated_from.map_or_else(
+                    || "Recovered the last-known-good Dock preferences.".into(),
+                    |version| format!("Migrated Dock preferences from version {version}."),
+                )
+            })));
+        }
+        if self.dock_compositor.connection != rmac_compositor::ConnectionState::Connected {
+            cards.push(note_card(
+                "niri is not connected in this process. Output-specific choices are limited to currently known outputs; saved Dock policy remains editable and is applied when the rmac niri session is available.",
+            ));
+        }
+        cards.push(note_card(
+            "These controls configure only the original rmac Dock. They do not modify GNOME or third-party docks, and niri continues to own workspace and window-layout rules.",
+        ));
+        self.pane(cards)
     }
 
     fn render_spotlight_readiness(&self) -> Div {
@@ -8780,6 +9394,8 @@ impl Render for Settings {
             .or_else(|| self.display_error.clone())
             .or_else(|| self.input_error.clone())
             .or_else(|| self.theme_error.clone())
+            .or_else(|| self.shell_settings_error.clone())
+            .or_else(|| self.shell_settings_stream_error.clone())
             .or_else(|| self.gtk_text_error.clone())
             .or_else(|| self.privacy_error.clone())
             .or_else(|| self.privacy_stream_error.clone());
@@ -8823,6 +9439,8 @@ impl Render for Settings {
                             this.display_error = None;
                             this.input_error = None;
                             this.theme_error = None;
+                            this.shell_settings_error = None;
+                            this.shell_settings_stream_error = None;
                             this.gtk_text_error = None;
                             this.privacy_error = None;
                             this.privacy_stream_error = None;
@@ -9588,6 +10206,98 @@ fn accent_preference(hex: u32) -> rmac_theme::AccentPreference {
     ])
 }
 
+fn dock_segment_row(
+    view: Entity<Settings>,
+    id: &'static str,
+    title: &'static str,
+    options: &'static [DockOption],
+    selected: Option<usize>,
+    enabled: bool,
+) -> AnyElement {
+    let mut control = div().flex().gap_1().w(px(290.0));
+    for (index, (option_label, change)) in options.iter().cloned().enumerate() {
+        let option_view = view.clone();
+        control = control.child(
+            Button::new(
+                ElementId::from(SharedString::from(format!("{id}-{index}"))),
+                option_label,
+            )
+            .flex_1()
+            .selected(selected == Some(index))
+            .disabled(!enabled)
+            .on_click(move |_, _, cx| {
+                option_view.update(cx, |settings, cx| {
+                    settings.apply_dock_change(change.clone(), cx)
+                });
+            }),
+        );
+    }
+    row_base()
+        .child(
+            div()
+                .flex_1()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(label())
+                .child(title),
+        )
+        .child(control)
+        .into_any_element()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dock_switch_row(
+    view: Entity<Settings>,
+    id: &'static str,
+    title: &'static str,
+    subtitle: Option<SharedString>,
+    checked: bool,
+    enabled: bool,
+    change: fn(bool) -> DockChange,
+) -> AnyElement {
+    let toggle_view = view.clone();
+    let toggle = Toggle::new(id)
+        .checked(checked)
+        .disabled(!enabled)
+        .on_click(move |value, _, cx| {
+            toggle_view.update(cx, |settings, cx| {
+                settings.apply_dock_change(change(*value), cx)
+            });
+        });
+    row_base()
+        .child(text_block(title.into(), subtitle))
+        .child(toggle)
+        .into_any_element()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dock_output_row(
+    view: &Entity<Settings>,
+    id: &str,
+    title: SharedString,
+    subtitle: Option<SharedString>,
+    selected: bool,
+    enabled: bool,
+    scope: rmac_shell_settings::OutputScope,
+) -> AnyElement {
+    let output_view = view.clone();
+    row_base()
+        .child(text_block(title, subtitle))
+        .child(
+            Button::new(
+                ElementId::from(SharedString::from(format!("dock-output-{id}"))),
+                if selected { "Selected" } else { "Use" },
+            )
+            .selected(selected)
+            .disabled(!enabled || selected)
+            .on_click(move |_, _, cx| {
+                output_view.update(cx, |settings, cx| {
+                    settings.apply_dock_change(DockChange::Outputs(scope.clone()), cx)
+                });
+            }),
+        )
+        .into_any_element()
+}
+
 fn theme_segment_row(
     view: Entity<Settings>,
     id: &'static str,
@@ -10021,7 +10731,7 @@ fn categories() -> Vec<Vec<Category>> {
                 "Desktop & Dock",
                 "icons/app-window.svg",
                 gray,
-                "Review current Dock integration status and limitations.",
+                "Choose authoritative rmac Dock behavior and display placement.",
             ),
             cat(
                 "Displays",
@@ -10137,8 +10847,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        categories, category_has_dedicated_renderer, notification_policy_with,
-        NotificationPolicyChange, ScreenReaderCapability, GENERAL_DESTINATIONS,
+        categories, category_has_dedicated_renderer, notification_policy_with, DockChange,
+        DockMutation, NotificationPolicyChange, ScreenReaderCapability, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -10201,5 +10911,95 @@ mod tests {
         assert_eq!(changed.badges, original.badges);
         assert_eq!(changed.urgent_through_focus, original.urgent_through_focus);
         assert_eq!(changed.lock_preview, original.lock_preview);
+    }
+
+    #[test]
+    fn dock_changes_touch_only_the_selected_policy() {
+        let original = rmac_shell_settings::DockSettings::default();
+
+        let mut dock = original.clone();
+        DockChange::Placement(rmac_shell_settings::DockPlacement::Left).apply(&mut dock);
+        assert_eq!(
+            dock,
+            rmac_shell_settings::DockSettings {
+                placement: rmac_shell_settings::DockPlacement::Left,
+                ..original.clone()
+            }
+        );
+
+        let mut dock = original.clone();
+        DockChange::Outputs(rmac_shell_settings::OutputScope::Named("DP-1".into()))
+            .apply(&mut dock);
+        assert_eq!(
+            dock,
+            rmac_shell_settings::DockSettings {
+                outputs: rmac_shell_settings::OutputScope::Named("DP-1".into()),
+                ..original.clone()
+            }
+        );
+
+        let mut dock = original.clone();
+        DockChange::Autohide(true).apply(&mut dock);
+        assert_eq!(
+            dock,
+            rmac_shell_settings::DockSettings {
+                autohide: true,
+                ..original.clone()
+            }
+        );
+
+        let mut dock = original.clone();
+        DockChange::Magnification(false).apply(&mut dock);
+        assert_eq!(
+            dock,
+            rmac_shell_settings::DockSettings {
+                magnification: false,
+                ..original.clone()
+            }
+        );
+
+        let mut dock = original.clone();
+        DockChange::MagnificationScale(2.0).apply(&mut dock);
+        assert_eq!(
+            dock,
+            rmac_shell_settings::DockSettings {
+                magnification_scale: 2.0,
+                ..original.clone()
+            }
+        );
+
+        let mut dock = original.clone();
+        DockChange::ReserveSpace(false).apply(&mut dock);
+        assert_eq!(
+            dock,
+            rmac_shell_settings::DockSettings {
+                reserve_space: false,
+                ..original.clone()
+            }
+        );
+
+        let mut dock = original.clone();
+        DockChange::RepeatedClick(rmac_shell_settings::RepeatedClickBehavior::DoNothing)
+            .apply(&mut dock);
+        assert_eq!(
+            dock,
+            rmac_shell_settings::DockSettings {
+                repeated_click: rmac_shell_settings::RepeatedClickBehavior::DoNothing,
+                ..original
+            }
+        );
+    }
+
+    #[test]
+    fn dock_mutation_preserves_unrelated_shell_settings() {
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.clock.show_seconds = true;
+        settings.spotlight.include_removable_mounts = true;
+
+        DockMutation::Change(DockChange::Autohide(true)).apply(&mut settings);
+
+        assert!(settings.dock.autohide);
+        assert!(settings.clock.show_seconds);
+        assert!(settings.spotlight.include_removable_mounts);
     }
 }

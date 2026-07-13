@@ -11,6 +11,8 @@ path = "src/main.rs"
 
 [dependencies]
 async-channel.workspace = true
+async-io.workspace = true
+blocking.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
@@ -19,6 +21,8 @@ rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
 rmac-apps.workspace = true
 rmac-bluetooth.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-niri.workspace = true
 rmac-display.workspace = true
 rmac-focus.workspace = true
 rmac-focus-linux.workspace = true
@@ -41,6 +45,7 @@ rmac-portal.workspace = true
 rmac-shortcuts.workspace = true
 rmac-sharing.workspace = true
 rmac-sharing-linux.workspace = true
+rmac-shell-settings.workspace = true
 rmac-system-info.workspace = true
 rmac-theme.workspace = true
 rmac-time.workspace = true

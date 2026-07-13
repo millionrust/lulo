@@ -70,6 +70,15 @@ last-known-good sibling, and uses a bounded one-item channel so filesystem
 bursts coalesce. On notification, consumers reload the complete authoritative
 snapshot; they do not merge partial filesystem events into local UI state.
 
+System Settings' Desktop & Dock pane is also a client of this contract. It
+establishes the watcher before its initial load, retries watcher setup, and
+keeps the last successful snapshot through stream failures. A mutation reloads
+the latest complete document, changes only the typed Dock policy, saves it, and
+then rereads the authority before updating the UI. A one-step rollback restores
+only the previous Dock policy on top of the latest unrelated shell settings.
+The pane consumes the direct niri event stream separately for live enabled-
+output capability; it never infers output availability from the settings file.
+
 Tests cover v3 round trips, v1/v2 migration/rewrite, unknown fields and versions,
 corrupt-primary recovery, validation, watcher filtering, and injected primary
 write failure with last-known-good rollback.

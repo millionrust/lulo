@@ -566,6 +566,15 @@ fn bluetooth_stream_snapshot_is_current(
     !busy && !loading && captured_generation == current_generation
 }
 
+fn network_stream_snapshot_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    busy: bool,
+    loading: bool,
+) -> bool {
+    !busy && !loading && captured_generation == current_generation
+}
+
 struct WifiPasswordPrompt {
     network: rmac_network::WifiNetworkId,
     ssid: SharedString,
@@ -597,6 +606,25 @@ struct BluetoothPairingState {
 struct BluetoothForgetPrompt {
     device_id: String,
     name: SharedString,
+}
+
+struct NetworkEditorState {
+    interface: SharedString,
+    configuration: rmac_network::NetworkConfiguration,
+    ipv4_method: rmac_network::IpMethod,
+    ipv4_addresses: Entity<InputState>,
+    ipv4_gateway: Entity<InputState>,
+    ipv4_dns: Entity<InputState>,
+    ipv4_ignore_auto_dns: bool,
+    ipv6_method: rmac_network::IpMethod,
+    ipv6_addresses: Entity<InputState>,
+    ipv6_gateway: Entity<InputState>,
+    ipv6_dns: Entity<InputState>,
+    ipv6_ignore_auto_dns: bool,
+    proxy_method: rmac_network::ProxyMethod,
+    proxy_url: Entity<InputState>,
+    proxy_browser_only: bool,
+    validation_error: Option<SharedString>,
 }
 
 struct Settings {
@@ -666,6 +694,7 @@ struct Settings {
     bluetooth_error: Option<SharedString>,
     bluetooth_stream_error: Option<SharedString>,
     network_error: Option<SharedString>,
+    network_stream_error: Option<SharedString>,
     vpn_error: Option<SharedString>,
     audio_error: Option<SharedString>,
     power_error: Option<SharedString>,
@@ -726,6 +755,8 @@ struct Settings {
     // Network
     network_loading: bool,
     network_busy: bool,
+    network_generation: u64,
+    network_editor: Option<NetworkEditorState>,
 
     // VPN
     vpn: rmac_network::VpnSnapshot,
@@ -1417,33 +1448,59 @@ impl Settings {
             while let Ok(event) = wifi_update_rx.recv().await {
                 match event {
                     rmac_network::WifiWatchEvent::Changed => {
-                        let generation = match this.update(cx, |this: &mut Settings, cx| {
+                        let generations = match this.update(cx, |this: &mut Settings, cx| {
                             this.wifi_stream_error = None;
+                            this.network_stream_error = None;
                             cx.notify();
-                            (!this.wifi_busy && !this.wifi_loading)
-                                .then_some(this.wifi_generation)
+                            (
+                                (!this.wifi_busy && !this.wifi_loading)
+                                    .then_some(this.wifi_generation),
+                                (!this.network_busy && !this.network_loading)
+                                    .then_some(this.network_generation),
+                            )
                         }) {
-                            Ok(generation) => generation,
+                            Ok(generations) => generations,
                             Err(_) => break,
                         };
-                        let Some(generation) = generation else {
+                        if generations.0.is_none() && generations.1.is_none() {
                             continue;
-                        };
-                        let result = cx
+                        }
+                        let results = cx
                             .background_executor()
-                            .spawn(async { rmac_network::snapshot() })
+                            .spawn(async move {
+                                (
+                                    generations.0.map(|_| rmac_network::snapshot()),
+                                    generations.1.map(|_| rmac_network::network_snapshot()),
+                                )
+                            })
                             .await;
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                if wifi_stream_snapshot_is_current(
-                                    generation,
-                                    this.wifi_generation,
-                                    this.wifi_busy,
-                                    this.wifi_loading,
-                                ) {
-                                    this.finish_wifi_stream_update(result);
-                                    cx.notify();
+                                if let (Some(generation), Some(result)) =
+                                    (generations.0, results.0)
+                                {
+                                    if wifi_stream_snapshot_is_current(
+                                        generation,
+                                        this.wifi_generation,
+                                        this.wifi_busy,
+                                        this.wifi_loading,
+                                    ) {
+                                        this.finish_wifi_stream_update(result);
+                                    }
                                 }
+                                if let (Some(generation), Some(result)) =
+                                    (generations.1, results.1)
+                                {
+                                    if network_stream_snapshot_is_current(
+                                        generation,
+                                        this.network_generation,
+                                        this.network_busy,
+                                        this.network_loading,
+                                    ) {
+                                        this.finish_network_stream_update(result);
+                                    }
+                                }
+                                cx.notify();
                             })
                             .is_err()
                         {
@@ -1455,6 +1512,10 @@ impl Settings {
                             .update(cx, |this: &mut Settings, cx| {
                                 this.wifi_stream_error = Some(
                                     "Live Wi-Fi updates are temporarily unavailable while NetworkManager reconnects"
+                                        .into(),
+                                );
+                                this.network_stream_error = Some(
+                                    "Live Network updates are temporarily unavailable while NetworkManager reconnects"
                                         .into(),
                                 );
                                 cx.notify();
@@ -1840,6 +1901,7 @@ impl Settings {
             bluetooth_error: None,
             bluetooth_stream_error: None,
             network_error: None,
+            network_stream_error: None,
             vpn_error: None,
             audio_error: None,
             power_error: None,
@@ -1895,6 +1957,8 @@ impl Settings {
 
             network_loading: true,
             network_busy: false,
+            network_generation: 0,
+            network_editor: None,
 
             vpn: rmac_network::VpnSnapshot::default(),
             vpn_loading: true,
@@ -3532,6 +3596,339 @@ impl Settings {
         }
     }
 
+    fn start_network_edit(
+        &mut self,
+        interface: String,
+        configuration: rmac_network::NetworkConfiguration,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.network_busy || self.network_loading || !configuration.editable {
+            return;
+        }
+        let ipv4_addresses = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(configuration.ipv4.addresses_text())
+                .placeholder("192.0.2.20/24")
+        });
+        let ipv4_gateway = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(configuration.ipv4.gateway_text())
+                .placeholder("192.0.2.1")
+        });
+        let ipv4_dns = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(configuration.ipv4.dns_text())
+                .placeholder("1.1.1.1, 9.9.9.9")
+        });
+        let ipv6_addresses = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(configuration.ipv6.addresses_text())
+                .placeholder("2001:db8::20/64")
+        });
+        let ipv6_gateway = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(configuration.ipv6.gateway_text())
+                .placeholder("2001:db8::1")
+        });
+        let ipv6_dns = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(configuration.ipv6.dns_text())
+                .placeholder("2606:4700:4700::1111")
+        });
+        let proxy_url = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(configuration.proxy.pac_url_text().to_owned())
+                .placeholder("https://proxy.example/proxy.pac")
+        });
+        self.network_editor = Some(NetworkEditorState {
+            interface: interface.into(),
+            ipv4_method: configuration.ipv4.method.clone(),
+            ipv4_ignore_auto_dns: configuration.ipv4.ignore_auto_dns,
+            ipv6_method: configuration.ipv6.method.clone(),
+            ipv6_ignore_auto_dns: configuration.ipv6.ignore_auto_dns,
+            proxy_method: configuration.proxy.method,
+            proxy_browser_only: configuration.proxy.browser_only,
+            configuration,
+            ipv4_addresses,
+            ipv4_gateway,
+            ipv4_dns,
+            ipv6_addresses,
+            ipv6_gateway,
+            ipv6_dns,
+            proxy_url,
+            validation_error: None,
+        });
+        self.network_error = None;
+        cx.notify();
+    }
+
+    fn set_network_ip_method(
+        &mut self,
+        family: rmac_network::IpFamily,
+        method: rmac_network::IpMethod,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.network_busy {
+            return;
+        }
+        let Some(editor) = &self.network_editor else {
+            return;
+        };
+        let fields = match family {
+            rmac_network::IpFamily::V4 => [
+                editor.ipv4_addresses.clone(),
+                editor.ipv4_gateway.clone(),
+                editor.ipv4_dns.clone(),
+            ],
+            rmac_network::IpFamily::V6 => [
+                editor.ipv6_addresses.clone(),
+                editor.ipv6_gateway.clone(),
+                editor.ipv6_dns.clone(),
+            ],
+        };
+        if matches!(
+            method,
+            rmac_network::IpMethod::Disabled | rmac_network::IpMethod::LinkLocal
+        ) {
+            for field in fields {
+                field.update(cx, |state, cx| state.set_value("", window, cx));
+            }
+        }
+        if let Some(editor) = &mut self.network_editor {
+            match family {
+                rmac_network::IpFamily::V4 => {
+                    editor.ipv4_method = method;
+                    if matches!(
+                        editor.ipv4_method,
+                        rmac_network::IpMethod::Disabled | rmac_network::IpMethod::LinkLocal
+                    ) {
+                        editor.ipv4_ignore_auto_dns = false;
+                    }
+                }
+                rmac_network::IpFamily::V6 => {
+                    editor.ipv6_method = method;
+                    if matches!(
+                        editor.ipv6_method,
+                        rmac_network::IpMethod::Disabled | rmac_network::IpMethod::LinkLocal
+                    ) {
+                        editor.ipv6_ignore_auto_dns = false;
+                    }
+                }
+            }
+            editor.validation_error = None;
+        }
+        cx.notify();
+    }
+
+    fn set_network_ignore_auto_dns(
+        &mut self,
+        family: rmac_network::IpFamily,
+        value: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.network_busy {
+            return;
+        }
+        if let Some(editor) = &mut self.network_editor {
+            match family {
+                rmac_network::IpFamily::V4 => editor.ipv4_ignore_auto_dns = value,
+                rmac_network::IpFamily::V6 => editor.ipv6_ignore_auto_dns = value,
+            }
+            editor.validation_error = None;
+            cx.notify();
+        }
+    }
+
+    fn set_network_proxy_method(
+        &mut self,
+        method: rmac_network::ProxyMethod,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.network_busy {
+            return;
+        }
+        let Some(editor) = &self.network_editor else {
+            return;
+        };
+        let proxy_url = editor.proxy_url.clone();
+        if method == rmac_network::ProxyMethod::None {
+            proxy_url.update(cx, |state, cx| state.set_value("", window, cx));
+        }
+        if let Some(editor) = &mut self.network_editor {
+            editor.proxy_method = method;
+            if method == rmac_network::ProxyMethod::None {
+                editor.proxy_browser_only = false;
+            }
+            editor.validation_error = None;
+        }
+        cx.notify();
+    }
+
+    fn set_network_proxy_browser_only(&mut self, value: bool, cx: &mut Context<Self>) {
+        if self.network_busy {
+            return;
+        }
+        if let Some(editor) = &mut self.network_editor {
+            editor.proxy_browser_only = value;
+            editor.validation_error = None;
+            cx.notify();
+        }
+    }
+
+    fn cancel_network_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.network_busy {
+            self.network_editor = None;
+            self.network_error = None;
+            cx.notify();
+        }
+    }
+
+    fn submit_network_edit(&mut self, cx: &mut Context<Self>) {
+        if self.network_busy || self.network_loading {
+            return;
+        }
+        let Some(editor) = &self.network_editor else {
+            return;
+        };
+        let ipv4_addresses = editor.ipv4_addresses.read(cx).value();
+        let ipv4_gateway = editor.ipv4_gateway.read(cx).value();
+        let ipv4_dns = editor.ipv4_dns.read(cx).value();
+        let ipv6_addresses = editor.ipv6_addresses.read(cx).value();
+        let ipv6_gateway = editor.ipv6_gateway.read(cx).value();
+        let ipv6_dns = editor.ipv6_dns.read(cx).value();
+        let proxy_url = editor.proxy_url.read(cx).value();
+        let ipv4 = rmac_network::IpConfiguration::parse(
+            rmac_network::IpFamily::V4,
+            editor.ipv4_method.clone(),
+            &ipv4_addresses,
+            &ipv4_gateway,
+            &ipv4_dns,
+            editor.ipv4_ignore_auto_dns,
+        );
+        let ipv6 = rmac_network::IpConfiguration::parse(
+            rmac_network::IpFamily::V6,
+            editor.ipv6_method.clone(),
+            &ipv6_addresses,
+            &ipv6_gateway,
+            &ipv6_dns,
+            editor.ipv6_ignore_auto_dns,
+        );
+        let proxy = rmac_network::ProxyConfiguration::new(
+            editor.proxy_method,
+            &proxy_url,
+            editor.proxy_browser_only,
+        );
+        let edit = match ipv4
+            .and_then(|ipv4| ipv6.map(|ipv6| (ipv4, ipv6)))
+            .and_then(|(ipv4, ipv6)| proxy.map(|proxy| (ipv4, ipv6, proxy)))
+            .and_then(|(ipv4, ipv6, proxy)| {
+                rmac_network::NetworkEdit::new(&editor.configuration, ipv4, ipv6, proxy)
+            }) {
+            Ok(edit) => edit,
+            Err(error) => {
+                if let Some(editor) = &mut self.network_editor {
+                    editor.validation_error = Some(error.to_string().into());
+                }
+                cx.notify();
+                return;
+            }
+        };
+        if edit.ipv4 == editor.configuration.ipv4
+            && edit.ipv6 == editor.configuration.ipv6
+            && edit.proxy == editor.configuration.proxy
+        {
+            self.network_editor = None;
+            cx.notify();
+            return;
+        }
+        self.network_generation = self.network_generation.wrapping_add(1);
+        self.network_busy = true;
+        self.network_error = None;
+        if let Some(editor) = &mut self.network_editor {
+            editor.validation_error = None;
+        }
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result = rmac_network::update_network_connection(&edit);
+                    let recovery = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_network::network_snapshot().ok());
+                    (result, recovery)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.network_loading = false;
+                this.network_busy = false;
+                match result {
+                    Ok(snapshot) => {
+                        this.network = snapshot;
+                        this.network_editor = None;
+                        this.network_error = None;
+                        this.network_stream_error = None;
+                    }
+                    Err(error) => {
+                        if let Some(snapshot) = recovery {
+                            this.network = snapshot;
+                        }
+                        let message: SharedString =
+                            format!("Could not save Network settings: {error}").into();
+                        this.network_error = Some(message.clone());
+                        if let Some(editor) = &mut this.network_editor {
+                            editor.validation_error = Some(message);
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_network_stream_update(
+        &mut self,
+        result: std::result::Result<rmac_network::NetworkSnapshot, rmac_network::Error>,
+    ) {
+        match result {
+            Ok(snapshot) => {
+                let stale_editor = self.apply_external_network_snapshot(snapshot);
+                self.network_stream_error = None;
+                if stale_editor {
+                    self.network_error = Some(
+                        "The connection profile changed outside System Settings. Reopen Details to edit the current values."
+                            .into(),
+                    );
+                }
+            }
+            Err(_) => {
+                self.network_stream_error =
+                    Some("Live Network state could not be refreshed from NetworkManager".into());
+            }
+        }
+    }
+
+    fn apply_external_network_snapshot(&mut self, snapshot: rmac_network::NetworkSnapshot) -> bool {
+        let stale_editor = self.network_editor.as_ref().is_some_and(|editor| {
+            snapshot
+                .devices
+                .iter()
+                .filter_map(|device| device.configuration.as_ref())
+                .find(|configuration| configuration.id == editor.configuration.id)
+                != Some(&editor.configuration)
+        });
+        self.network = snapshot;
+        if stale_editor {
+            self.network_editor = None;
+        }
+        stale_editor
+    }
+
     fn finish_network_update(
         &mut self,
         result: std::result::Result<rmac_network::NetworkSnapshot, rmac_network::Error>,
@@ -3540,8 +3937,15 @@ impl Settings {
         self.network_busy = false;
         match result {
             Ok(snapshot) => {
-                self.network = snapshot;
-                self.network_error = None;
+                if self.apply_external_network_snapshot(snapshot) {
+                    self.network_error = Some(
+                        "The connection profile changed outside System Settings. Reopen Details to edit the current values."
+                            .into(),
+                    );
+                } else {
+                    self.network_error = None;
+                }
+                self.network_stream_error = None;
             }
             Err(error) => {
                 self.network_error = Some(format!("Could not update Network: {error}").into());
@@ -3553,6 +3957,7 @@ impl Settings {
         if self.network_busy || self.network_loading {
             return;
         }
+        self.network_generation = self.network_generation.wrapping_add(1);
         self.network_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -11311,7 +11716,7 @@ impl Settings {
         self.pane(cards)
     }
 
-    // ---- Network (real read-only) -------------------------------------
+    // ---- Network ------------------------------------------------------
 
     fn render_network(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
@@ -11397,6 +11802,10 @@ impl Settings {
             return self.pane(cards);
         }
 
+        if self.network_editor.is_some() {
+            cards.extend(self.render_network_editor(cx));
+        }
+
         for device in &self.network.devices {
             let title = device
                 .connection
@@ -11463,9 +11872,230 @@ impl Settings {
                     address.clone().into(),
                 ));
             }
+            if let Some(configuration) = &device.configuration {
+                let edit_view = view.clone();
+                let edit_interface = device.interface.clone();
+                let edit_configuration = configuration.clone();
+                let enabled = configuration.editable && !self.network_busy;
+                rows.push(
+                    row_base()
+                        .child(text_block(
+                            "Connection Details".into(),
+                            configuration
+                                .limitation
+                                .as_ref()
+                                .map(|limitation| limitation.clone().into()),
+                        ))
+                        .child(
+                            Button::new(
+                                ElementId::from(SharedString::from(format!(
+                                    "network-edit-{}",
+                                    device.interface
+                                ))),
+                                if configuration.editable {
+                                    "Details…"
+                                } else {
+                                    "Read Only"
+                                },
+                            )
+                            .disabled(!enabled)
+                            .on_click(move |_, window, cx| {
+                                edit_view.update(cx, |settings, cx| {
+                                    settings.start_network_edit(
+                                        edit_interface.clone(),
+                                        edit_configuration.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                });
+                            }),
+                        )
+                        .into_any_element(),
+                );
+            } else if let Some(error) = &device.configuration_error {
+                rows.push(
+                    row_base()
+                        .child(text_block(
+                            "Connection Details".into(),
+                            Some(error.clone().into()),
+                        ))
+                        .child(
+                            Button::new(
+                                ElementId::from(SharedString::from(format!(
+                                    "network-edit-unavailable-{}",
+                                    device.interface
+                                ))),
+                                "Unavailable",
+                            )
+                            .disabled(true),
+                        )
+                        .into_any_element(),
+                );
+            } else {
+                rows.push(
+                    row_base()
+                        .child(text_block(
+                            "Connection Details".into(),
+                            Some("Connect this interface to edit its active profile".into()),
+                        ))
+                        .child(
+                            Button::new(
+                                ElementId::from(SharedString::from(format!(
+                                    "network-edit-inactive-{}",
+                                    device.interface
+                                ))),
+                                "Unavailable",
+                            )
+                            .disabled(true),
+                        )
+                        .into_any_element(),
+                );
+            }
             cards.push(card(rows));
         }
         self.pane(cards)
+    }
+
+    fn render_network_editor(&self, cx: &Context<Self>) -> Vec<Div> {
+        let Some(editor) = &self.network_editor else {
+            return Vec::new();
+        };
+        let view = cx.entity();
+        let busy = self.network_busy;
+        let ipv4_values_enabled = !busy
+            && !matches!(
+                editor.ipv4_method,
+                rmac_network::IpMethod::Disabled | rmac_network::IpMethod::LinkLocal
+            );
+        let ipv6_values_enabled = !busy
+            && !matches!(
+                editor.ipv6_method,
+                rmac_network::IpMethod::Disabled | rmac_network::IpMethod::LinkLocal
+            );
+        let proxy_values_enabled =
+            !busy && editor.proxy_method == rmac_network::ProxyMethod::Automatic;
+        let cancel_view = view.clone();
+        let save_view = view.clone();
+        let mut sections = vec![
+            section_header(format!(
+                "{} · {}",
+                editor.configuration.name, editor.interface
+            )),
+            note_card(
+                "IP and DNS changes are staged on the active connection and verified before the complete profile is saved. Proxy-only changes are saved atomically. On failure, rmac restores the previous authority only when no newer external edit would be overwritten.",
+            ),
+            section_header("IPv4"),
+            card(vec![
+                network_ip_method_row(
+                    view.clone(),
+                    rmac_network::IpFamily::V4,
+                    &editor.ipv4_method,
+                    !busy,
+                ),
+                network_field_row(
+                    "Addresses",
+                    "Comma-separated addresses with prefixes",
+                    &editor.ipv4_addresses,
+                    ipv4_values_enabled,
+                ),
+                network_field_row(
+                    "Router",
+                    "Optional default gateway",
+                    &editor.ipv4_gateway,
+                    ipv4_values_enabled,
+                ),
+                network_field_row(
+                    "DNS Servers",
+                    "Comma-separated IPv4 addresses",
+                    &editor.ipv4_dns,
+                    ipv4_values_enabled,
+                ),
+                network_dns_policy_row(
+                    view.clone(),
+                    rmac_network::IpFamily::V4,
+                    editor.ipv4_ignore_auto_dns,
+                    ipv4_values_enabled,
+                ),
+            ]),
+            section_header("IPv6"),
+            card(vec![
+                network_ip_method_row(
+                    view.clone(),
+                    rmac_network::IpFamily::V6,
+                    &editor.ipv6_method,
+                    !busy,
+                ),
+                network_field_row(
+                    "Addresses",
+                    "Comma-separated addresses with prefixes",
+                    &editor.ipv6_addresses,
+                    ipv6_values_enabled,
+                ),
+                network_field_row(
+                    "Router",
+                    "Optional default gateway",
+                    &editor.ipv6_gateway,
+                    ipv6_values_enabled,
+                ),
+                network_field_row(
+                    "DNS Servers",
+                    "Comma-separated IPv6 addresses",
+                    &editor.ipv6_dns,
+                    ipv6_values_enabled,
+                ),
+                network_dns_policy_row(
+                    view.clone(),
+                    rmac_network::IpFamily::V6,
+                    editor.ipv6_ignore_auto_dns,
+                    ipv6_values_enabled,
+                ),
+            ]),
+            section_header("Proxy"),
+            card(vec![
+                network_proxy_method_row(view.clone(), editor.proxy_method, !busy),
+                network_field_row(
+                    "Configuration URL",
+                    "HTTP, HTTPS, or absolute file URL",
+                    &editor.proxy_url,
+                    proxy_values_enabled,
+                ),
+                network_proxy_browser_row(
+                    view.clone(),
+                    editor.proxy_browser_only,
+                    proxy_values_enabled,
+                ),
+            ]),
+        ];
+        if let Some(error) = &editor.validation_error {
+            sections.push(note_card(error.clone()));
+        }
+        sections.push(
+            div()
+                .flex()
+                .justify_end()
+                .items_center()
+                .gap_2()
+                .mb_3()
+                .child(
+                    Button::new("network-edit-cancel", "Cancel")
+                        .disabled(busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| settings.cancel_network_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new(
+                        "network-edit-save",
+                        if busy { "Applying…" } else { "Apply" },
+                    )
+                    .primary()
+                    .disabled(busy)
+                    .on_click(move |_, _, cx| {
+                        save_view.update(cx, |settings, cx| settings.submit_network_edit(cx));
+                    }),
+                ),
+        );
+        sections
     }
 
     // ---- VPN ----------------------------------------------------------
@@ -12097,6 +12727,7 @@ impl Render for Settings {
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.bluetooth_stream_error.clone())
             .or_else(|| self.network_error.clone())
+            .or_else(|| self.network_stream_error.clone())
             .or_else(|| self.vpn_error.clone())
             .or_else(|| self.audio_error.clone())
             .or_else(|| self.power_error.clone())
@@ -12128,11 +12759,20 @@ impl Render for Settings {
                 {
                     cx.stop_propagation();
                     this.cancel_bluetooth_forget(cx);
+                } else if event.keystroke.key == "escape"
+                    && this.network_editor.is_some()
+                    && !this.network_busy
+                {
+                    cx.stop_propagation();
+                    this.cancel_network_edit(cx);
                 }
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, _| {
-                if this.wifi_forgetting.is_some() || this.bluetooth_forgetting.is_some() {
+                if this.wifi_forgetting.is_some()
+                    || this.bluetooth_forgetting.is_some()
+                    || this.network_busy
+                {
                     return;
                 }
                 if let Some(cancellation) = &this.wifi_cancellation {
@@ -12170,6 +12810,7 @@ impl Render for Settings {
                             this.bluetooth_error = None;
                             this.bluetooth_stream_error = None;
                             this.network_error = None;
+                            this.network_stream_error = None;
                             this.vpn_error = None;
                             this.audio_error = None;
                             this.power_error = None;
@@ -12204,6 +12845,162 @@ impl Render for Settings {
 const SIDEBAR_W: f32 = 248.0;
 
 // ---- row / control builders ----------------------------------------------
+
+fn network_ip_method_row(
+    view: Entity<Settings>,
+    family: rmac_network::IpFamily,
+    selected: &rmac_network::IpMethod,
+    enabled: bool,
+) -> AnyElement {
+    let options = match family {
+        rmac_network::IpFamily::V4 => vec![
+            ("Automatic", rmac_network::IpMethod::Automatic),
+            ("Manual", rmac_network::IpMethod::Manual),
+            ("Link-Local", rmac_network::IpMethod::LinkLocal),
+            ("Off", rmac_network::IpMethod::Disabled),
+        ],
+        rmac_network::IpFamily::V6 => vec![
+            ("Automatic", rmac_network::IpMethod::Automatic),
+            ("DHCP", rmac_network::IpMethod::Dhcp),
+            ("Manual", rmac_network::IpMethod::Manual),
+            ("Link-Local", rmac_network::IpMethod::LinkLocal),
+            ("Off", rmac_network::IpMethod::Disabled),
+        ],
+    };
+    let mut control = div().flex().gap_1().w(px(390.0));
+    for (index, (label, method)) in options.into_iter().enumerate() {
+        let method_view = view.clone();
+        let chosen = method.clone();
+        control = control.child(
+            Button::new(
+                ElementId::from(SharedString::from(format!(
+                    "network-{}-method-{index}",
+                    match family {
+                        rmac_network::IpFamily::V4 => "ipv4",
+                        rmac_network::IpFamily::V6 => "ipv6",
+                    }
+                ))),
+                label,
+            )
+            .flex_1()
+            .selected(*selected == method)
+            .disabled(!enabled)
+            .on_click(move |_, window, cx| {
+                method_view.update(cx, |settings, cx| {
+                    settings.set_network_ip_method(family, chosen.clone(), window, cx)
+                });
+            }),
+        );
+    }
+    row_base()
+        .child(text_block(
+            "Configure".into(),
+            Some("Choose how this connection receives addresses".into()),
+        ))
+        .child(control)
+        .into_any_element()
+}
+
+fn network_field_row(
+    title: &'static str,
+    subtitle: &'static str,
+    editor: &Entity<InputState>,
+    enabled: bool,
+) -> AnyElement {
+    row_base()
+        .child(text_block(title.into(), Some(subtitle.into())))
+        .child(
+            div()
+                .w(px(390.0))
+                .child(TextField::new(editor).small().disabled(!enabled)),
+        )
+        .into_any_element()
+}
+
+fn network_dns_policy_row(
+    view: Entity<Settings>,
+    family: rmac_network::IpFamily,
+    checked: bool,
+    enabled: bool,
+) -> AnyElement {
+    let id = match family {
+        rmac_network::IpFamily::V4 => "network-ipv4-ignore-auto-dns",
+        rmac_network::IpFamily::V6 => "network-ipv6-ignore-auto-dns",
+    };
+    row_base()
+        .child(text_block(
+            "Use only these DNS servers".into(),
+            Some("Ignore DNS supplied automatically by the network".into()),
+        ))
+        .child(
+            Toggle::new(id)
+                .checked(checked)
+                .disabled(!enabled)
+                .on_click(move |value, _, cx| {
+                    view.update(cx, |settings, cx| {
+                        settings.set_network_ignore_auto_dns(family, *value, cx)
+                    });
+                }),
+        )
+        .into_any_element()
+}
+
+fn network_proxy_method_row(
+    view: Entity<Settings>,
+    selected: rmac_network::ProxyMethod,
+    enabled: bool,
+) -> AnyElement {
+    let mut control = div().flex().gap_1().w(px(390.0));
+    for (index, (label, method)) in [
+        ("Off", rmac_network::ProxyMethod::None),
+        ("Automatic", rmac_network::ProxyMethod::Automatic),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let method_view = view.clone();
+        control = control.child(
+            Button::new(
+                ElementId::from(SharedString::from(format!("network-proxy-method-{index}"))),
+                label,
+            )
+            .flex_1()
+            .selected(selected == method)
+            .disabled(!enabled)
+            .on_click(move |_, window, cx| {
+                method_view.update(cx, |settings, cx| {
+                    settings.set_network_proxy_method(method, window, cx)
+                });
+            }),
+        );
+    }
+    row_base()
+        .child(text_block(
+            "Configure".into(),
+            Some("Use a proxy auto-configuration source".into()),
+        ))
+        .child(control)
+        .into_any_element()
+}
+
+fn network_proxy_browser_row(view: Entity<Settings>, checked: bool, enabled: bool) -> AnyElement {
+    row_base()
+        .child(text_block(
+            "Web browsers only".into(),
+            Some("Other applications may ignore this proxy configuration".into()),
+        ))
+        .child(
+            Toggle::new("network-proxy-browser-only")
+                .checked(checked)
+                .disabled(!enabled)
+                .on_click(move |value, _, cx| {
+                    view.update(cx, |settings, cx| {
+                        settings.set_network_proxy_browser_only(*value, cx)
+                    });
+                }),
+        )
+        .into_any_element()
+}
 
 fn row_base() -> Div {
     div()
@@ -13755,8 +14552,8 @@ mod tests {
     use super::{
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, composite_wallpaper_pixel,
-        notification_policy_with, render_wallpaper_preview, wallpaper_selection,
-        wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
+        network_stream_snapshot_is_current, notification_policy_with, render_wallpaper_preview,
+        wallpaper_selection, wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
         ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
         WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
@@ -13783,6 +14580,14 @@ mod tests {
         assert!(!bluetooth_stream_snapshot_is_current(10, 11, false, false));
         assert!(!bluetooth_stream_snapshot_is_current(11, 11, true, false));
         assert!(!bluetooth_stream_snapshot_is_current(11, 11, false, true));
+    }
+
+    #[test]
+    fn network_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(network_stream_snapshot_is_current(5, 5, false, false));
+        assert!(!network_stream_snapshot_is_current(4, 5, false, false));
+        assert!(!network_stream_snapshot_is_current(5, 5, true, false));
+        assert!(!network_stream_snapshot_is_current(5, 5, false, true));
     }
 
     #[test]

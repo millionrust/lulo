@@ -10,7 +10,7 @@ equivalents rather than simulated.
 |---|---|---|---|
 | Wi-Fi | Real state, radio mutation, access-point scan, typed security, exact saved/open/Enhanced Open activation, masked WPA Personal/SAE password sheet, one-shot Secret Agent, cancellation, complete Known Networks inventory, confirmed exact-profile forgetting with active disconnect, coalesced live signals, owner-loss/restart recovery, bounded completion, and authoritative readback | NetworkManager D-Bus | Enterprise setup plus Linux signal/restart/permission/cancellation/wrong-secret/partial-delete evidence |
 | Bluetooth | Real adapter and discovery state; exact-device connect/disconnect; one-transaction KeyboardDisplay agent for numeric comparison, PIN/passkey entry, just-works and service authorization; explicit reject/cancel and 60-second prompt timeout; post-pair trust plus authoritative `Paired`/`Trusted` verification; confirmed adapter-owned removal; coalesced live signals and BlueZ owner-loss/restart recovery | BlueZ ObjectManager, AgentManager1, Agent1, Device1, and Adapter1 D-Bus APIs | Ubuntu pairing matrix, timeout/rejection/cancel, remove/partial-failure, daemon-restart, keyboard, scale, and accessibility evidence |
-| Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
+| Network | Real interfaces, route, IP, gateway, and DNS state; active-profile IPv4/IPv6/DNS/PAC editor with strict typed validation, exact opaque identity, stable full-map reads, version-checked in-memory staging and disk persistence, applied-state verification, ownership-aware rollback, coalesced live signals, and owner-loss/restart recovery | NetworkManager Settings, Settings.Connection, Device, ActiveConnection, and IP configuration D-Bus APIs | Ubuntu mutation/polkit/failure/concurrency/rollback matrix plus keyboard, scale, and accessibility evidence |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
 | Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
 | General/About | Typed privacy-safe OS, kernel, architecture, hardware, graphics, and session facts; validated hostname mutation with busy/error state; authoritative refresh; redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs/sysfs, display service | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname refresh, and clipboard contents |
@@ -81,6 +81,24 @@ removal to the owning adapter's `RemoveDevice`; failures trigger a recovery
 snapshot. BlueZ signals are coalesced into full reads, while owner loss keeps
 last-known-good state and owner recovery forces a refresh. The exact contract
 and remaining F2 evidence are recorded in [`bluetooth.md`](bluetooth.md).
+
+Network Connection Details edits only the profile currently active on an exact
+NetworkManager device. The private mutation identity combines device,
+ActiveConnection, Settings.Connection, and UUID; every relationship is
+revalidated before a full non-secret settings map is cloned. IPv4/IPv6 methods,
+CIDR addresses, gateway, DNS, automatic-DNS policy, and NetworkManager's PAC
+proxy model are strictly typed and bounded. Unsupported methods, inline PAC
+scripts, deprecated arrays, inaccessible settings, and external unsaved state
+remain read-only. The transaction uses global `Settings.VersionId` around a
+stable read, `Update2` for version-checked in-memory staging,
+`GetAppliedConnection`/`Reapply` to stage and verify IP/DNS without dirtying the
+saved profile, fresh applied readback, and version-checked
+`Update2` to persist only after proof.
+Rollback restores and verifies the original complete map only if that map still
+exactly matches rmac's staged candidate; a newer external edit is never
+overwritten. The shared coalesced NetworkManager stream refreshes both Network
+and Wi-Fi with independent mutation generations. The complete contract and F3
+reference-PC matrix are recorded in [`network.md`](network.md).
 
 General now exposes only About, the explicitly read-only Software Update status,
 and measured Storage. Device-continuity and media-receiver controls are hidden

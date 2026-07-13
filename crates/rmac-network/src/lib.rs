@@ -9,8 +9,14 @@ use std::process::Command;
 use std::time::Duration;
 use zeroize::Zeroize as _;
 
+mod network_editor;
 #[cfg(any(not(target_os = "macos"), test))]
 mod secret_agent;
+
+pub use network_editor::{
+    IpAddress, IpConfiguration, IpFamily, IpMethod, NetworkConfiguration, NetworkConnectionId,
+    NetworkEdit, NetworkValidationError, ProxyConfiguration, ProxyMethod,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WifiPersonalMode {
@@ -301,6 +307,8 @@ pub struct NetworkDevice {
     pub gateway: Option<String>,
     pub dns: Vec<String>,
     pub hardware_address: Option<String>,
+    pub configuration: Option<NetworkConfiguration>,
+    pub configuration_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -442,6 +450,10 @@ pub fn connect_with_password(
 
 pub fn network_snapshot() -> Result<NetworkSnapshot, Error> {
     system_network_snapshot()
+}
+
+pub fn update_network_connection(edit: &NetworkEdit) -> Result<NetworkSnapshot, Error> {
+    network_editor::system_update(edit)
 }
 
 pub fn vpn_snapshot() -> Result<VpnSnapshot, Error> {
@@ -1405,6 +1417,20 @@ fn linux_network_snapshot() -> Result<NetworkSnapshot, Error> {
         addresses.dedup();
         dns.sort();
         dns.dedup();
+        let (configuration, configuration_error) = active_path
+            .as_ref()
+            .filter(|active| active.as_str() != "/")
+            .map_or(
+                (None, None),
+                |active| match network_editor::linux_active_configuration(
+                    &connection,
+                    &path,
+                    active,
+                ) {
+                    Ok(configuration) => (configuration, None),
+                    Err(error) => (None, Some(error.to_string())),
+                },
+            );
         devices.push(NetworkDevice {
             interface,
             kind,
@@ -1415,6 +1441,8 @@ fn linux_network_snapshot() -> Result<NetworkSnapshot, Error> {
             gateway,
             dns,
             hardware_address,
+            configuration,
+            configuration_error,
         });
     }
     sort_devices(&mut devices);
@@ -1912,6 +1940,10 @@ fn macos_network_snapshot() -> Result<NetworkSnapshot, Error> {
             gateway: route_field("gateway:"),
             dns,
             hardware_address,
+            configuration: None,
+            configuration_error: Some(
+                "Connection editing is available on the Linux product target".into(),
+            ),
         }],
     })
 }
@@ -2545,6 +2577,8 @@ mod tests {
             gateway: None,
             dns: Vec::new(),
             hardware_address: None,
+            configuration: None,
+            configuration_error: None,
         };
         let mut devices = vec![
             make("wlan0", DeviceKind::WiFi, DeviceState::Connected, false),

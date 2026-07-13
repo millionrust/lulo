@@ -112,6 +112,21 @@ pub fn set_profile(profile: PowerProfile) -> Result<(), Error> {
     system_set_profile(profile)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
+pub async fn watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    system_watch(sender).await
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+const UPOWER_SERVICE: &str = "org.freedesktop.UPower";
+#[cfg(not(target_os = "macos"))]
+const WATCH_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
 #[cfg(not(target_os = "macos"))]
 fn system_snapshot() -> Result<Snapshot, Error> {
     let connection = zbus::blocking::Connection::system()
@@ -344,6 +359,223 @@ fn system_set_profile(profile: PowerProfile) -> Result<(), Error> {
     Err(Error::new("change the power profile", failures.join("; ")))
 }
 
+#[cfg(not(target_os = "macos"))]
+async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    let mut unavailable_reported = false;
+    loop {
+        match watch_once(&sender, &mut unavailable_reported).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => {}
+            Err(_) if sender.is_closed() => return Ok(()),
+            Err(_) => publish_unavailable(&sender, &mut unavailable_reported).await?,
+        }
+        async_io::Timer::after(WATCH_RECONNECT_DELAY).await;
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    sender
+        .send(WatchEvent::Unavailable)
+        .await
+        .map_err(|_| Error::new("watch power changes", "the event consumer closed"))
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn watch_once(
+    sender: &async_channel::Sender<WatchEvent>,
+    unavailable_reported: &mut bool,
+) -> Result<(), Error> {
+    use futures_util::{FutureExt as _, StreamExt as _};
+    use zbus::{message::Type, MatchRule, MessageStream};
+
+    let connection = zbus::Connection::system()
+        .await
+        .map_err(|error| Error::new("connect power event stream", error.to_string()))?;
+    let upower_rule = service_signal_rule(UPOWER_SERVICE, "build UPower signal filter")?;
+    let modern_profiles_rule = service_signal_rule(
+        PROFILE_ENDPOINTS[0].destination,
+        "build power-profile signal filter",
+    )?;
+    let legacy_profiles_rule = service_signal_rule(
+        PROFILE_ENDPOINTS[1].destination,
+        "build legacy power-profile signal filter",
+    )?;
+    let owner_rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .sender("org.freedesktop.DBus")
+        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
+        .path("/org/freedesktop/DBus")
+        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
+        .interface("org.freedesktop.DBus")
+        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
+        .member("NameOwnerChanged")
+        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
+        .build();
+    let mut upower = MessageStream::for_match_rule(upower_rule, &connection, Some(64))
+        .await
+        .map_err(|error| Error::new("subscribe to UPower changes", error.to_string()))?
+        .fuse();
+    let mut modern_profiles =
+        MessageStream::for_match_rule(modern_profiles_rule, &connection, Some(16))
+            .await
+            .map_err(|error| Error::new("subscribe to power-profile changes", error.to_string()))?
+            .fuse();
+    let mut legacy_profiles =
+        MessageStream::for_match_rule(legacy_profiles_rule, &connection, Some(16))
+            .await
+            .map_err(|error| {
+                Error::new(
+                    "subscribe to legacy power-profile changes",
+                    error.to_string(),
+                )
+            })?
+            .fuse();
+    let mut owners = MessageStream::for_match_rule(owner_rule, &connection, Some(32))
+        .await
+        .map_err(|error| Error::new("subscribe to power service restarts", error.to_string()))?
+        .fuse();
+
+    let dbus = zbus::fdo::DBusProxy::new(&connection)
+        .await
+        .map_err(|error| Error::new("inspect UPower service", error.to_string()))?;
+    let service = zbus::names::BusName::try_from(UPOWER_SERVICE)
+        .map_err(|error| Error::new("inspect UPower service", error.to_string()))?;
+    let mut upower_available = dbus
+        .name_has_owner(service)
+        .await
+        .map_err(|error| Error::new("inspect UPower service", error.to_string()))?;
+    if upower_available {
+        publish_changed(sender, unavailable_reported).await?;
+    } else {
+        publish_unavailable(sender, unavailable_reported).await?;
+    }
+
+    loop {
+        let closed = sender.closed().fuse();
+        futures_util::pin_mut!(closed);
+        let event = futures_util::select! {
+            message = upower.next() => {
+                read_signal(message, "read UPower change")?;
+                Some(PowerOwnerEvent::Upower(true))
+            },
+            message = modern_profiles.next() => {
+                read_signal(message, "read power-profile change")?;
+                Some(PowerOwnerEvent::Profiles)
+            },
+            message = legacy_profiles.next() => {
+                read_signal(message, "read legacy power-profile change")?;
+                Some(PowerOwnerEvent::Profiles)
+            },
+            message = owners.next() => read_owner_event(message)?,
+            _ = closed => return Ok(()),
+        };
+        match event {
+            Some(PowerOwnerEvent::Upower(false)) => {
+                upower_available = false;
+                publish_unavailable(sender, unavailable_reported).await?;
+            }
+            Some(PowerOwnerEvent::Upower(true)) => {
+                upower_available = true;
+                publish_changed(sender, unavailable_reported).await?;
+            }
+            Some(PowerOwnerEvent::Profiles) if upower_available => {
+                publish_changed(sender, unavailable_reported).await?;
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn service_signal_rule(
+    service: &'static str,
+    operation: &'static str,
+) -> Result<zbus::MatchRule<'static>, Error> {
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender(service)
+        .map_err(|error| Error::new(operation, error.to_string()))?
+        .build();
+    Ok(rule)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_signal(
+    message: Option<Result<zbus::Message, zbus::Error>>,
+    operation: &'static str,
+) -> Result<(), Error> {
+    match message {
+        Some(Ok(_)) => Ok(()),
+        Some(Err(error)) => Err(Error::new(operation, error.to_string())),
+        None => Err(Error::new(operation, "the signal stream ended")),
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PowerOwnerEvent {
+    Upower(bool),
+    Profiles,
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_owner_event(
+    message: Option<Result<zbus::Message, zbus::Error>>,
+) -> Result<Option<PowerOwnerEvent>, Error> {
+    let message = message
+        .ok_or_else(|| Error::new("read power service owner", "the signal stream ended"))?
+        .map_err(|error| Error::new("read power service owner", error.to_string()))?;
+    let (name, _old_owner, new_owner): (String, String, String) = message
+        .body()
+        .deserialize()
+        .map_err(|error| Error::new("read power service owner", error.to_string()))?;
+    Ok(power_owner_event(&name, &new_owner))
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn power_owner_event(name: &str, new_owner: &str) -> Option<PowerOwnerEvent> {
+    if name == UPOWER_SERVICE {
+        Some(PowerOwnerEvent::Upower(!new_owner.is_empty()))
+    } else if name == "org.freedesktop.UPower.PowerProfiles" || name == "net.hadess.PowerProfiles" {
+        Some(PowerOwnerEvent::Profiles)
+    } else {
+        None
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn publish_changed(
+    sender: &async_channel::Sender<WatchEvent>,
+    unavailable_reported: &mut bool,
+) -> Result<(), Error> {
+    if *unavailable_reported {
+        sender
+            .send(WatchEvent::Changed)
+            .await
+            .map_err(|_| Error::new("publish power recovery", "the event consumer closed"))?;
+    } else {
+        let _ = sender.try_send(WatchEvent::Changed);
+    }
+    *unavailable_reported = false;
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn publish_unavailable(
+    sender: &async_channel::Sender<WatchEvent>,
+    unavailable_reported: &mut bool,
+) -> Result<(), Error> {
+    if !*unavailable_reported {
+        sender
+            .send(WatchEvent::Unavailable)
+            .await
+            .map_err(|_| Error::new("publish power outage", "the event consumer closed"))?;
+        *unavailable_reported = true;
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 fn system_snapshot() -> Result<Snapshot, Error> {
     let pmset = command("pmset", &["-g", "batt"], "read battery state")?;
@@ -522,6 +754,27 @@ mod tests {
                 PowerProfile::Performance
             ]
         );
+    }
+
+    #[test]
+    fn owner_events_distinguish_upower_outages_from_optional_profile_changes() {
+        assert_eq!(
+            power_owner_event("org.freedesktop.UPower", ""),
+            Some(PowerOwnerEvent::Upower(false))
+        );
+        assert_eq!(
+            power_owner_event("org.freedesktop.UPower", ":1.42"),
+            Some(PowerOwnerEvent::Upower(true))
+        );
+        assert_eq!(
+            power_owner_event("org.freedesktop.UPower.PowerProfiles", ""),
+            Some(PowerOwnerEvent::Profiles)
+        );
+        assert_eq!(
+            power_owner_event("net.hadess.PowerProfiles", ":1.43"),
+            Some(PowerOwnerEvent::Profiles)
+        );
+        assert_eq!(power_owner_event("org.example.Other", ":1.44"), None);
     }
 
     #[test]

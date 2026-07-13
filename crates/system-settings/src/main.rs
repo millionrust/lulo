@@ -584,6 +584,19 @@ fn vpn_stream_snapshot_is_current(
     !busy && !loading && captured_generation == current_generation
 }
 
+fn power_stream_snapshot_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    busy: bool,
+    loading: bool,
+) -> bool {
+    !busy && !loading && captured_generation == current_generation
+}
+
+fn power_change_needs_followup(busy: bool, loading: bool, stream_unavailable: bool) -> bool {
+    busy || (loading && stream_unavailable)
+}
+
 struct WifiPasswordPrompt {
     network: rmac_network::WifiNetworkId,
     ssid: SharedString,
@@ -717,6 +730,7 @@ struct Settings {
     vpn_stream_error: Option<SharedString>,
     audio_error: Option<SharedString>,
     power_error: Option<SharedString>,
+    power_stream_error: Option<SharedString>,
     display_error: Option<SharedString>,
     input_error: Option<SharedString>,
     theme_error: Option<SharedString>,
@@ -854,6 +868,8 @@ struct Settings {
     // Battery and power profiles
     power_loading: bool,
     power_busy: bool,
+    power_generation: u64,
+    power_refresh_pending: bool,
 
     // Displays
     display_loading: bool,
@@ -1473,6 +1489,78 @@ impl Settings {
         })
         .detach();
 
+        let (power_updates, power_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_power::watch(power_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = power_update_rx.recv().await {
+                match event {
+                    rmac_power::WatchEvent::Changed => {
+                        let generation = match this.update(cx, |this: &mut Settings, cx| {
+                            if this.power_busy || this.power_loading {
+                                if power_change_needs_followup(
+                                    this.power_busy,
+                                    this.power_loading,
+                                    this.power_stream_error.is_some(),
+                                ) {
+                                    this.power_refresh_pending = true;
+                                }
+                                None
+                            } else {
+                                this.power_stream_error = None;
+                                cx.notify();
+                                Some(this.power_generation)
+                            }
+                        }) {
+                            Ok(generation) => generation,
+                            Err(_) => break,
+                        };
+                        let Some(generation) = generation else {
+                            continue;
+                        };
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_power::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if power_stream_snapshot_is_current(
+                                    generation,
+                                    this.power_generation,
+                                    this.power_busy,
+                                    this.power_loading,
+                                ) {
+                                    this.finish_power_stream_update(result);
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_power::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.power_stream_error = Some(
+                                    "Live battery updates are temporarily unavailable while UPower reconnects"
+                                        .into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+
         let (wifi_updates, wifi_update_rx) = async_channel::bounded(1);
         cx.background_executor()
             .spawn(async move {
@@ -1674,7 +1762,7 @@ impl Settings {
                 .spawn(async { rmac_power::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_power_update(result);
+                this.finish_power_update(result, cx);
                 cx.notify();
             });
         })
@@ -1996,6 +2084,7 @@ impl Settings {
             vpn_stream_error: None,
             audio_error: None,
             power_error: None,
+            power_stream_error: None,
             display_error: None,
             input_error: None,
             theme_error: None,
@@ -2119,6 +2208,8 @@ impl Settings {
 
             power_loading: true,
             power_busy: false,
+            power_generation: 0,
+            power_refresh_pending: false,
 
             display_loading: true,
             display_busy: false,
@@ -4877,16 +4968,38 @@ impl Settings {
     fn finish_power_update(
         &mut self,
         result: std::result::Result<rmac_power::Snapshot, rmac_power::Error>,
+        cx: &mut Context<Self>,
     ) {
+        let refresh_pending = std::mem::take(&mut self.power_refresh_pending);
         self.power_loading = false;
         self.power_busy = false;
         match result {
             Ok(snapshot) => {
                 self.power = snapshot;
                 self.power_error = None;
+                self.power_stream_error = None;
             }
             Err(error) => {
                 self.power_error = Some(format!("Could not update Battery: {error}").into());
+            }
+        }
+        if refresh_pending {
+            self.refresh_power(cx);
+        }
+    }
+
+    fn finish_power_stream_update(
+        &mut self,
+        result: std::result::Result<rmac_power::Snapshot, rmac_power::Error>,
+    ) {
+        match result {
+            Ok(snapshot) => {
+                self.power = snapshot;
+                self.power_stream_error = None;
+            }
+            Err(_) => {
+                self.power_stream_error =
+                    Some("Live battery state could not be refreshed from UPower".into());
             }
         }
     }
@@ -4895,6 +5008,7 @@ impl Settings {
         if self.power_loading || self.power_busy {
             return;
         }
+        self.power_generation = self.power_generation.wrapping_add(1);
         self.power_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4903,7 +5017,7 @@ impl Settings {
                 .spawn(async { rmac_power::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_power_update(result);
+                this.finish_power_update(result, cx);
                 cx.notify();
             });
         })
@@ -4918,6 +5032,7 @@ impl Settings {
         {
             return;
         }
+        self.power_generation = self.power_generation.wrapping_add(1);
         self.power_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4929,7 +5044,7 @@ impl Settings {
                 })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_power_update(result);
+                this.finish_power_update(result, cx);
                 cx.notify();
             });
         })
@@ -14012,6 +14127,7 @@ impl Render for Settings {
             .or_else(|| self.vpn_stream_error.clone())
             .or_else(|| self.audio_error.clone())
             .or_else(|| self.power_error.clone())
+            .or_else(|| self.power_stream_error.clone())
             .or_else(|| self.display_error.clone())
             .or_else(|| self.input_error.clone())
             .or_else(|| self.theme_error.clone())
@@ -14157,6 +14273,7 @@ impl Render for Settings {
                             this.vpn_stream_error = None;
                             this.audio_error = None;
                             this.power_error = None;
+                            this.power_stream_error = None;
                             this.display_error = None;
                             this.input_error = None;
                             this.theme_error = None;
@@ -15898,11 +16015,11 @@ mod tests {
     use super::{
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, composite_wallpaper_pixel,
-        network_stream_snapshot_is_current, notification_policy_with, render_wallpaper_preview,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
-        DockChange, NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
-        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
-        GENERAL_DESTINATIONS,
+        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
+        power_stream_snapshot_is_current, render_wallpaper_preview, vpn_stream_snapshot_is_current,
+        wallpaper_selection, wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
+        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
+        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -15943,6 +16060,22 @@ mod tests {
         assert!(!vpn_stream_snapshot_is_current(2, 3, false, false));
         assert!(!vpn_stream_snapshot_is_current(3, 3, true, false));
         assert!(!vpn_stream_snapshot_is_current(3, 3, false, true));
+    }
+
+    #[test]
+    fn power_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(power_stream_snapshot_is_current(9, 9, false, false));
+        assert!(!power_stream_snapshot_is_current(8, 9, false, false));
+        assert!(!power_stream_snapshot_is_current(9, 9, true, false));
+        assert!(!power_stream_snapshot_is_current(9, 9, false, true));
+    }
+
+    #[test]
+    fn power_changes_retain_recovery_without_duplicating_initial_load() {
+        assert!(!power_change_needs_followup(false, true, false));
+        assert!(power_change_needs_followup(false, true, true));
+        assert!(power_change_needs_followup(true, false, false));
+        assert!(!power_change_needs_followup(false, false, true));
     }
 
     #[test]

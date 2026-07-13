@@ -33,7 +33,7 @@ equivalents rather than simulated.
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Hidden from production navigation | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Real live lock and capability-gated automatic-suspend choices; truthful Hidden preview state; secure manual/logind/pre-sleep and idle paths | `org.rmac.LockScreen1`, provider security state machine, bounded action-free notification projection, logind `CanSuspend`/`Suspend(false)`, niri `ext-session-lock-v1`, PAM-enabled swaylock, and delay inhibitor | Reviewed Wayland/PAM adapter and rmac presentation, preview controls, scoped build, and Linux security/accessibility evidence |
-| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens, version-gated per-app reset confirmation and authoritative resample; cached PackageKit security-update summary and direct update navigation; explicit native/active-access and coverage limits | `rmac-privacy`, `rmac-privacy-linux`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit | Additional portal tables only with documented semantics, Ubuntu security coverage/automatic-update authority, application source inventory, live PermissionStore changes, and Linux revoke/access evidence |
+| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens and version-gated reset; PackageKit security-update summary; Ubuntu Pro Client package-origin, contract/service, and unattended-upgrades authorities with partial-failure visibility; explicit native/active-access and non-APT limits | `rmac-privacy`, `rmac-privacy-linux`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit, Ubuntu Pro Client offline API | Standard-release support-period authority, non-APT application source inventory, supported automatic-update mutation, live PermissionStore changes, and Linux revoke/access evidence |
 
 ## Delivery order
 
@@ -295,6 +295,18 @@ revoking native-application access. The pane also reuses the cached PackageKit
 security-update count and opens the full Software Update destination, while
 keeping Ubuntu security coverage and repository trust explicitly separate.
 Authority reference: [XDG PermissionStore](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.PermissionStore.html).
+
+The Ubuntu security subsection now reads three independent, offline Ubuntu Pro
+Client APIs rather than treating the PackageKit update count as coverage. The
+package summary reports installed APT origins; attachment validity and enabled
+services report Ubuntu Pro state; and the unattended-upgrades status reports
+the timer, periodic job, frequency, allowed origins, disabled reason, and last
+run. Each endpoint can fail without hiding successful authorities. “Enabled”
+requires the unattended-upgrades service, APT timer, periodic job, and a
+non-zero upgrade interval. The pane does not infer repository trust, standard
+release support dates, or Flatpak/Snap/AppImage/manual-install status from these
+values. Authority references: [Ubuntu Pro Client API](https://documentation.ubuntu.com/pro-client/en/docs/references/api/)
+and [unattended-upgrade](https://manpages.ubuntu.com/manpages/noble/man8/unattended-upgrade.8.html).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

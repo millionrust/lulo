@@ -5266,6 +5266,7 @@ name = "rmac-privacy-linux"
 version = "0.1.0"
 dependencies = [
  "rmac-privacy",
+ "serde_json",
  "zbus",
 ]
 

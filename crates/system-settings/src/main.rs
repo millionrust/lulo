@@ -192,6 +192,7 @@ struct Settings {
     input: rmac_input::Snapshot,
     gtk_text: Option<rmac_gtk_settings::Snapshot>,
     privacy: Option<rmac_privacy::Snapshot>,
+    security_coverage: Option<rmac_privacy::SecurityCoverageSnapshot>,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -276,6 +277,7 @@ struct Settings {
     privacy_loading: bool,
     privacy_busy: Option<(rmac_privacy::PortalResource, String)>,
     privacy_reset_confirmation: Option<rmac_privacy::PortalDecision>,
+    security_coverage_loading: bool,
 
     // Sound
     audio_loading: bool,
@@ -868,6 +870,19 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let snapshot = cx
+                .background_executor()
+                .spawn(async { rmac_privacy_linux::security_coverage_snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.security_coverage = Some(snapshot);
+                this.security_coverage_loading = false;
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
                 .spawn(async { load_theme_state().await })
@@ -1025,6 +1040,7 @@ impl Settings {
             input: rmac_input::Snapshot::default(),
             gtk_text: None,
             privacy: None,
+            security_coverage: None,
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -1098,6 +1114,7 @@ impl Settings {
             privacy_loading: true,
             privacy_busy: None,
             privacy_reset_confirmation: None,
+            security_coverage_loading: true,
 
             audio_loading: true,
             audio_busy: false,
@@ -3078,6 +3095,26 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_privacy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_security_coverage(&mut self, cx: &mut Context<Self>) {
+        if self.security_coverage_loading {
+            return;
+        }
+        self.security_coverage_loading = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let snapshot = cx
+                .background_executor()
+                .spawn(async { rmac_privacy_linux::security_coverage_snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.security_coverage = Some(snapshot);
+                this.security_coverage_loading = false;
                 cx.notify();
             });
         })
@@ -5544,6 +5581,7 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let updates_view = view.clone();
+        let coverage_view = view.clone();
         let mut cards = vec![card(vec![row_base()
             .child(tile("icons/shield.svg", accent(), 22.0))
             .child(text_block(
@@ -5708,8 +5746,154 @@ impl Settings {
                 }),
             )
             .into_any_element()]));
+
+        cards.push(section_header("Ubuntu Security Coverage"));
+        cards.push(card(vec![row_base()
+            .child(tile("icons/shield.svg", accent(), 22.0))
+            .child(text_block(
+                "Installed package security".into(),
+                Some("Ubuntu Pro Client · local machine-readable authorities".into()),
+            ))
+            .child(
+                Button::new("privacy-refresh-coverage", "Refresh")
+                    .busy(self.security_coverage_loading)
+                    .disabled(self.security_coverage_loading)
+                    .on_click(move |_, _, cx| {
+                        coverage_view.update(cx, |settings, cx| {
+                            settings.refresh_security_coverage(cx);
+                        });
+                    }),
+            )
+            .into_any_element()]));
+        if self.security_coverage_loading && self.security_coverage.is_none() {
+            cards.push(note_card(
+                "Reading package origins, Ubuntu Pro services, and unattended-upgrades status…",
+            ));
+        } else if let Some(coverage) = &self.security_coverage {
+            if let Some(sources) = &coverage.package_sources {
+                cards.push(card(vec![
+                    value_row(
+                        "icons/info.svg",
+                        secondary(),
+                        "Installed APT packages".into(),
+                        sources.installed.to_string().into(),
+                    ),
+                    value_row(
+                        "icons/shield.svg",
+                        accent(),
+                        "Ubuntu archive".into(),
+                        format!(
+                            "{} Main/Restricted · {} Universe/Multiverse",
+                            sources.main + sources.restricted,
+                            sources.universe + sources.multiverse
+                        )
+                        .into(),
+                    ),
+                    value_row(
+                        "icons/shield.svg",
+                        accent(),
+                        "Ubuntu Pro archives".into(),
+                        format!(
+                            "{} ESM Infra · {} ESM Apps",
+                            sources.esm_infra, sources.esm_apps
+                        )
+                        .into(),
+                    ),
+                    value_row(
+                        "icons/app-window.svg",
+                        secondary(),
+                        "Other package origins".into(),
+                        format!(
+                            "{} third-party · {} unknown",
+                            sources.third_party, sources.unknown
+                        )
+                        .into(),
+                    ),
+                ]));
+            }
+            if let Some(pro) = &coverage.pro {
+                let contract = if pro.contract_valid {
+                    format!(
+                        "Valid · {} days remaining",
+                        pro.contract_remaining_days.max(0)
+                    )
+                } else if pro.attached {
+                    format!(
+                        "Attached but not valid{}",
+                        pro.contract_status
+                            .as_deref()
+                            .map(|status| format!(" · {status}"))
+                            .unwrap_or_default()
+                    )
+                } else {
+                    "Not attached".to_string()
+                };
+                let services = if pro.enabled_services.is_empty() {
+                    "No Ubuntu Pro services enabled".to_string()
+                } else {
+                    format!("Enabled: {}", pro.enabled_services.join(", "))
+                };
+                cards.push(card(vec![value_row(
+                    "icons/shield.svg",
+                    if pro.contract_valid {
+                        accent()
+                    } else {
+                        secondary()
+                    },
+                    "Ubuntu Pro contract".into(),
+                    format!("{contract} · {services}").into(),
+                )]));
+            }
+            if let Some(automatic) = &coverage.automatic_updates {
+                let status = if automatic.fully_enabled() {
+                    format!(
+                        "Enabled · every {} day(s)",
+                        automatic.upgrade_frequency_days
+                    )
+                } else {
+                    automatic
+                        .disabled_reason
+                        .clone()
+                        .unwrap_or_else(|| "Not fully enabled".into())
+                };
+                cards.push(card(vec![value_row(
+                    "icons/refresh-cw.svg",
+                    if automatic.fully_enabled() {
+                        accent()
+                    } else {
+                        secondary()
+                    },
+                    "Automatic security updates".into(),
+                    status.into(),
+                )]));
+                cards.push(note_card(format!(
+                    "Allowed unattended-upgrade origins: {}. APT timer: {} · periodic job: {} · package-list refresh: every {} day(s){}.",
+                    if automatic.allowed_origins.is_empty() {
+                        "none reported".to_string()
+                    } else {
+                        automatic.allowed_origins.join(", ")
+                    },
+                    if automatic.apt_timer_enabled { "enabled" } else { "disabled" },
+                    if automatic.periodic_job_enabled { "enabled" } else { "disabled" },
+                    automatic.package_list_frequency_days,
+                    automatic
+                        .last_run
+                        .as_deref()
+                        .map(|last_run| format!(" · last run {last_run}"))
+                        .unwrap_or_default()
+                )));
+            }
+            for issue in &coverage.issues {
+                cards.push(note_card(issue.clone()));
+            }
+            if !coverage.pro_client_available {
+                cards.push(note_card(
+                    "Ubuntu Pro Client is unavailable or does not provide the required offline API endpoints on this system.",
+                ));
+            }
+        }
         cards.push(note_card(
-            "Reset removes only the selected stored portal decision through PermissionStore version 2. Permission tokens are displayed verbatim because the store does not interpret them. Native application access, active capture, sandbox declarations, Ubuntu security coverage, and repository trust have separate authorities.",
+            "Reset removes only the selected stored portal decision through PermissionStore version 2. Permission tokens are displayed verbatim because the store does not interpret them. Package-origin counts describe installed APT packages, not the trustworthiness of a repository or the security state of Flatpak, Snap, AppImage, or manually installed software.",
         ));
         self.pane(cards)
     }

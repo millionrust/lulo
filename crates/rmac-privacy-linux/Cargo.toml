@@ -7,4 +7,5 @@ authors.workspace = true
 
 [dependencies]
 rmac-privacy.workspace = true
+serde_json.workspace = true
 zbus.workspace = true

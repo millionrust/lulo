@@ -177,6 +177,7 @@ struct Settings {
     sharing_loading: bool,
     sharing_busy: bool,
     sharing_error: Option<SharedString>,
+    sharing_stream_error: Option<SharedString>,
     sharing: Option<rmac_sharing::Snapshot>,
     sharing_confirmation: Option<bool>,
     power: rmac_power::Snapshot,
@@ -559,6 +560,50 @@ impl Settings {
         })
         .detach();
 
+        let (sharing_updates, sharing_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_sharing_linux::watch(sharing_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = sharing_update_rx.recv().await {
+                match event {
+                    rmac_sharing::WatchEvent::Changed => {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_sharing_linux::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if !this.sharing_busy {
+                                    this.finish_sharing_update(result);
+                                    this.sharing_stream_error = None;
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_sharing::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.sharing_stream_error =
+                                    Some("Live Sharing updates are temporarily unavailable".into());
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = rmac_updates_linux::snapshot(rmac_updates::Request::cached()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -889,6 +934,7 @@ impl Settings {
             sharing_loading: true,
             sharing_busy: false,
             sharing_error: None,
+            sharing_stream_error: None,
             sharing: None,
             sharing_confirmation: None,
             power: rmac_power::Snapshot::default(),
@@ -4654,7 +4700,7 @@ impl Settings {
                     .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
                     .child(text_block(
                         "Authoritative state".into(),
-                        Some("ssh.service · systemd system manager".into()),
+                        Some("Live ssh.service · systemd · UFW files".into()),
                     ))
                     .child(refresh)
                     .into_any_element(),
@@ -7425,6 +7471,7 @@ impl Render for Settings {
             .or_else(|| self.login_items_error.clone())
             .or_else(|| self.login_items_stream_error.clone())
             .or_else(|| self.sharing_error.clone())
+            .or_else(|| self.sharing_stream_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -7464,6 +7511,7 @@ impl Render for Settings {
                             this.login_items_error = None;
                             this.login_items_stream_error = None;
                             this.sharing_error = None;
+                            this.sharing_stream_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;

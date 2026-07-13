@@ -19,7 +19,7 @@ equivalents rather than simulated.
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Included niri config traversal and Linux polkit/restart/scale/accessibility evidence |
 | Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, portal-selected validated add/replace, Trash-backed user-entry removal, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, and resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Linux interaction/scale/accessibility evidence |
-| Sharing | Capability-detected OpenSSH service with separate runtime/boot state, explicit enable/disable confirmation, systemd system-manager/polkit mutation, bounded completion wait, read-only UFW allowance truth, authoritative refresh, and no AirDrop branding; file sharing explicitly unavailable | `rmac-sharing`, `rmac-sharing-linux`, `org.freedesktop.systemd1`, `ssh.service`, UFW status | reviewed SMB authority, live service/firewall signals, and Linux polkit/network/scale/accessibility evidence |
+| Sharing | Capability-detected OpenSSH service with separate runtime/boot state, explicit enable/disable confirmation, systemd system-manager/polkit mutation, bounded completion wait, read-only UFW allowance truth, systemd property/unit-file/restart stream plus filtered UFW file events with reconnect, authoritative refresh, and no AirDrop branding; file sharing explicitly unavailable | `rmac-sharing`, `rmac-sharing-linux`, `org.freedesktop.systemd1`, `ssh.service`, UFW status/configuration | reviewed SMB authority and Linux polkit/network/scale/accessibility evidence |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
 | Assistant & Intelligence | Hidden from production navigation | Optional local/provider integrations | Leave absent until a privacy design exists |
@@ -211,6 +211,13 @@ AirDrop is not presented. Authority references: Ubuntu's
 [OpenSSH server guidance](https://documentation.ubuntu.com/server/how-to/security/openssh-server/),
 [firewall guidance](https://documentation.ubuntu.com/server/how-to/security/firewalls/),
 and [`org.freedesktop.systemd1(5)`](https://manpages.ubuntu.com/manpages/resolute/en/man5/org.freedesktop.systemd1.5.html).
+
+A capacity-one Sharing stream follows systemd unit properties, unit-file
+changes, and manager reappearance on the system bus, while a filtered native
+watch covers UFW policy/profile files. Bus loss and watcher failures surface as
+a separate live-update error, and the systemd stream reconnects after failure.
+Every event schedules a complete off-thread systemd/UFW resample; signal and
+filesystem payloads never directly mutate presentation state.
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

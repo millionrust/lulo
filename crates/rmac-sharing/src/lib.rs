@@ -2,6 +2,12 @@
 
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FirewallState {
     AllowsSsh,

@@ -167,6 +167,10 @@ struct Settings {
     x11_variant_editor: Option<Entity<InputState>>,
     x11_options_editor: Option<Entity<InputState>>,
     x11_keyboard_revert: Option<rmac_locale::X11Keyboard>,
+    login_items_loading: bool,
+    login_item_busy: Option<String>,
+    login_items_error: Option<SharedString>,
+    login_items: Option<rmac_login_items::Snapshot>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -523,6 +527,18 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_login_items_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_login_items_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         let (locale_updates, locale_update_rx) = async_channel::bounded(1);
         cx.background_executor()
             .spawn(async move {
@@ -798,6 +814,10 @@ impl Settings {
             x11_variant_editor: None,
             x11_options_editor: None,
             x11_keyboard_revert: None,
+            login_items_loading: true,
+            login_item_busy: None,
+            login_items_error: None,
+            login_items: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -1457,6 +1477,64 @@ impl Settings {
                     this.x11_keyboard_revert = None;
                 }
                 this.finish_locale_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_login_items_update(
+        &mut self,
+        result: std::result::Result<rmac_login_items::Snapshot, rmac_login_items::Error>,
+    ) {
+        self.login_items_loading = false;
+        self.login_item_busy = None;
+        match result {
+            Ok(snapshot) => {
+                self.login_items = Some(snapshot);
+                self.login_items_error = None;
+            }
+            Err(error) => {
+                self.login_items_error =
+                    Some(format!("Could not update login items: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_login_items(&mut self, cx: &mut Context<Self>) {
+        if self.login_items_loading || self.login_item_busy.is_some() {
+            return;
+        }
+        self.login_item_busy = Some("refresh".into());
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_login_items_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_login_items_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_login_item_enabled(&mut self, id: String, enabled: bool, cx: &mut Context<Self>) {
+        if self.login_item_busy.is_some() {
+            return;
+        }
+        self.login_item_busy = Some(id.clone());
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_login_items_linux::set_enabled(&id, enabled) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_login_items_update(result);
                 cx.notify();
             });
         })
@@ -2977,6 +3055,7 @@ impl Settings {
                 "Displays" => self.render_displays(cx),
                 "Date & Time" => self.render_date_time(cx),
                 "Language & Region" => self.render_language_region(cx),
+                "Login Items" => self.render_login_items(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(),
@@ -3848,6 +3927,121 @@ impl Settings {
         }
         cards.push(note_card(
             "New applications and services use an applied locale immediately. Sign out and back in before judging the current desktop session.",
+        ));
+        self.pane(cards)
+    }
+
+    // ---- Login Items -------------------------------------------------
+
+    fn render_login_items(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let refresh = Button::new("refresh-login-items", "Refresh")
+            .busy(self.login_item_busy.as_deref() == Some("refresh"))
+            .disabled(self.login_items_loading || self.login_item_busy.is_some())
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_login_items(cx));
+            });
+        let Some(snapshot) = &self.login_items else {
+            return self.pane(vec![
+                card(vec![row_base()
+                    .child(tile("icons/app-window.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Open at login".into(),
+                        Some("XDG autostart directories".into()),
+                    ))
+                    .child(refresh)
+                    .into_any_element()]),
+                note_card(if self.login_items_loading {
+                    "Reading effective XDG autostart entries…"
+                } else {
+                    "Autostart entries are unavailable. No private fallback toggles are shown."
+                }),
+            ]);
+        };
+
+        let mut cards = vec![section_header("Open at login")];
+        if snapshot.items.is_empty() {
+            cards.push(note_card("No effective XDG autostart entries were found."));
+        } else {
+            let rows = snapshot
+                .items
+                .iter()
+                .map(|item| {
+                    let id = item.id.clone();
+                    let toggle_view = view.clone();
+                    let busy = self.login_item_busy.as_deref() == Some(item.id.as_str());
+                    let subtitle = item.session_detail.clone().unwrap_or_else(|| {
+                        if item.user_owned {
+                            "User autostart entry".into()
+                        } else {
+                            "System autostart entry".into()
+                        }
+                    });
+                    row_base()
+                        .child(tile("icons/app-window.svg", accent(), 22.0))
+                        .child(text_block(item.name.clone().into(), Some(subtitle.into())))
+                        .child(
+                            Toggle::new(ElementId::from(SharedString::from(format!(
+                                "login-item-{}",
+                                item.id
+                            ))))
+                            .checked(item.enabled)
+                            .disabled(self.login_item_busy.is_some() || !item.can_toggle)
+                            .on_click(move |enabled, _, cx| {
+                                toggle_view.update(cx, |settings, cx| {
+                                    settings.set_login_item_enabled(id.clone(), *enabled, cx);
+                                });
+                            }),
+                        )
+                        .when(busy, |row| {
+                            row.child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(secondary())
+                                    .child("Saving…"),
+                            )
+                        })
+                        .into_any_element()
+                })
+                .collect();
+            cards.push(card(rows));
+        }
+
+        if !snapshot.issues.is_empty() {
+            cards.push(section_header("Entries needing attention"));
+            cards.push(card(
+                snapshot
+                    .issues
+                    .iter()
+                    .map(|issue| {
+                        row_base()
+                            .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                            .child(text_block(
+                                issue.file.clone().into(),
+                                Some(issue.detail.clone().into()),
+                            ))
+                            .into_any_element()
+                    })
+                    .collect(),
+            ));
+        }
+        let refresh_row = row_base()
+            .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+            .child(text_block(
+                "Authoritative state".into(),
+                Some("XDG precedence and Hidden overrides".into()),
+            ))
+            .child(refresh)
+            .into_any_element();
+        cards.push(card(vec![refresh_row]));
+        if snapshot.truncated {
+            cards.push(note_card(
+                "The autostart inventory exceeded the bounded display limit.",
+            ));
+        }
+        cards.push(note_card(
+            "This slice manages XDG application autostart only. systemd user background services, reveal, and reviewed add/remove flows are not connected yet.",
         ));
         self.pane(cards)
     }
@@ -6556,6 +6750,7 @@ impl Render for Settings {
             .or_else(|| self.time_stream_error.clone())
             .or_else(|| self.locale_error.clone())
             .or_else(|| self.locale_stream_error.clone())
+            .or_else(|| self.login_items_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -6592,6 +6787,7 @@ impl Render for Settings {
                             this.time_stream_error = None;
                             this.locale_error = None;
                             this.locale_stream_error = None;
+                            this.login_items_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
@@ -7601,6 +7797,12 @@ fn categories() -> Vec<Vec<Category>> {
                 "Choose the system language and inspect regional formats.",
             ),
             cat(
+                "Login Items",
+                "icons/app-window.svg",
+                blue,
+                "Choose applications and services that start when you sign in.",
+            ),
+            cat(
                 "Accessibility",
                 "icons/accessibility.svg",
                 blue,
@@ -7725,6 +7927,7 @@ mod tests {
 
         assert!(!names.iter().any(|name| name == "Handoff"));
         assert!(names.iter().any(|name| name == "Language & Region"));
+        assert!(names.iter().any(|name| name == "Login Items"));
     }
 
     #[test]

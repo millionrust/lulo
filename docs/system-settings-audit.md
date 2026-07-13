@@ -18,7 +18,7 @@ equivalents rather than simulated.
 | Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Included niri config traversal and Linux polkit/restart/scale/accessibility evidence |
-| Login Items | Placeholder | systemd user/XDG autostart | Enable/disable user startup entries |
+| Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, managed system-entry restoration, malformed-entry visibility, authoritative refresh, and last-known-good failures | `rmac-login-items`, `rmac-login-items-linux`, XDG config/autostart and desktop-entry specifications | systemd user units, reveal, reviewed add/remove, live filesystem events, and Linux scale/accessibility evidence |
 | Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
@@ -135,6 +135,24 @@ the [official niri integration contract](https://github.com/YaLTeR/niri/wiki/Int
 Linux [`nl_langinfo_l(3)`](https://man7.org/linux/man-pages/man3/nl_langinfo.3.html),
 [`strftime_l(3)`](https://man7.org/linux/man-pages/man3/strftime.3.html), and
 [`strfmon_l(3)`](https://man7.org/linux/man-pages/man3/strfmon.3.html).
+
+Login Items currently owns the XDG application-autostart half of F14. It scans
+`$XDG_CONFIG_HOME/autostart` before each `$XDG_CONFIG_DIRS/autostart`, so a
+higher-priority filename always hides lower copies exactly as specified. Valid
+entries expose their effective `Hidden` state and whether `OnlyShowIn` or
+`NotShowIn` excludes the current desktop, including unavailable `TryExec`
+requirements. Malformed or unreadable
+higher-priority entries remain visible as issues and still suppress lower
+copies; rmac never silently runs or rewrites them. Disabling a user entry
+atomically preserves its contents while changing `Hidden`. Disabling a system
+entry creates a full user copy marked as an rmac-managed hidden override;
+re-enabling removes only that marked override and reveals the original system
+entry. Every mutation re-enumerates authority, and failures retain the last
+known-good snapshot. systemd user services, reveal, add/remove, and live file
+events remain pending. Authority references: the freedesktop.org
+[Desktop Application Autostart Specification](https://specifications.freedesktop.org/autostart/0.5/),
+[Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry/latest-single/),
+and [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

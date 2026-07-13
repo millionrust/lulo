@@ -5136,6 +5136,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-login-items"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-login-items-linux"
+version = "0.1.0"
+dependencies = [
+ "rmac-login-items",
+ "rmac-storage",
+]
+
+[[package]]
 name = "rmac-mounts"
 version = "0.1.0"
 dependencies = [
@@ -5384,6 +5396,8 @@ dependencies = [
  "rmac-input",
  "rmac-locale",
  "rmac-locale-linux",
+ "rmac-login-items",
+ "rmac-login-items-linux",
  "rmac-mounts",
  "rmac-network",
  "rmac-notifications",

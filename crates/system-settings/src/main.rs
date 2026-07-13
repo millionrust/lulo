@@ -4688,13 +4688,13 @@ impl Settings {
                     .into_any_element(),
                 value_row(
                     "icons/shield.svg",
-                    if remote.firewall == rmac_sharing::FirewallState::AllowsSsh {
+                    if remote.firewall == rmac_sharing::FirewallState::Allows {
                         hsl(0x34c759)
                     } else {
                         secondary()
                     },
                     "Firewall".into(),
-                    remote.firewall.label().into(),
+                    remote.firewall.label("SSH").into(),
                 ),
                 row_base()
                     .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
@@ -4750,7 +4750,7 @@ impl Settings {
                 )
                 .into_any_element()]));
         }
-        if remote.firewall != rmac_sharing::FirewallState::AllowsSsh {
+        if remote.firewall != rmac_sharing::FirewallState::Allows {
             cards.push(note_card(
                 remote.firewall_detail.clone().unwrap_or_else(|| {
                     "A running SSH service does not prove that other computers can reach it. Network and router firewalls remain separate authorities.".into()
@@ -4758,8 +4758,78 @@ impl Settings {
             ));
         }
         cards.push(section_header("File Sharing"));
+        let file = &snapshot.file_sharing;
+        cards.push(card(vec![
+            value_row(
+                "icons/hard-drive.svg",
+                accent(),
+                "SMB File Sharing".into(),
+                if file.available {
+                    format!(
+                        "{} · {}",
+                        file.service_state.as_deref().unwrap_or("unknown"),
+                        if file.enabled_at_boot {
+                            "starts at boot"
+                        } else {
+                            "disabled at boot"
+                        }
+                    )
+                    .into()
+                } else {
+                    "Samba file server is not installed".into()
+                },
+            ),
+            value_row(
+                "icons/shield.svg",
+                if file.firewall == rmac_sharing::FirewallState::Allows {
+                    hsl(0x34c759)
+                } else {
+                    secondary()
+                },
+                "Firewall".into(),
+                file.firewall.label("Samba").into(),
+            ),
+            value_row(
+                "icons/folder-symlink.svg",
+                secondary(),
+                "Effective shares".into(),
+                if file.shares.is_empty() {
+                    "None reported".into()
+                } else {
+                    format!("{} configured", file.shares.len()).into()
+                },
+            ),
+        ]));
+        if !file.shares.is_empty() {
+            cards.push(card(
+                file.shares
+                    .iter()
+                    .map(|share| {
+                        value_row(
+                            "icons/folder-symlink.svg",
+                            secondary(),
+                            share.name.clone().into(),
+                            "SMB share".into(),
+                        )
+                    })
+                    .collect(),
+            ));
+        }
+        if file.shares_truncated {
+            cards.push(note_card(
+                "The effective Samba share inventory exceeded the bounded display limit.",
+            ));
+        }
+        if let Some(error) = &file.configuration_error {
+            cards.push(note_card(error.clone()));
+        }
+        if file.firewall != rmac_sharing::FirewallState::Allows {
+            cards.push(note_card(file.firewall_detail.clone().unwrap_or_else(|| {
+                "A running SMB service does not prove that other computers can reach it. Network and router firewalls remain separate authorities.".into()
+            })));
+        }
         cards.push(note_card(
-            "No reviewed SMB file-sharing authority is connected yet. rmac does not present AirDrop or a local toggle that would imply file sharing exists.",
+            "File Sharing is read-only while safe service and share mutation is reviewed. rmac does not present AirDrop because Linux has no compatible local authority.",
         ));
         self.pane(cards)
     }

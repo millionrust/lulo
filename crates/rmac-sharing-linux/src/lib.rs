@@ -1,8 +1,10 @@
 //! Linux sharing adapter backed by systemd and read-only firewall inspection.
 
-#[cfg(any(target_os = "linux", test))]
-use rmac_sharing::FirewallState;
+#[cfg(target_os = "linux")]
+use rmac_sharing::FileSharing;
 use rmac_sharing::{Error, ErrorKind, RemoteLogin, Service, Snapshot};
+#[cfg(any(target_os = "linux", test))]
+use rmac_sharing::{FirewallState, Share};
 
 #[cfg(target_os = "linux")]
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
@@ -49,7 +51,7 @@ pub fn set_remote_login(enabled: bool) -> Result<Snapshot, Error> {
 
 #[cfg(target_os = "linux")]
 pub async fn watch(sender: async_channel::Sender<rmac_sharing::WatchEvent>) -> Result<(), Error> {
-    let _firewall = match firewall_watcher(sender.clone()) {
+    let _configuration = match configuration_watcher(sender.clone()) {
         Ok(watcher) => watcher,
         Err(_) => {
             let _ = sender.try_send(rmac_sharing::WatchEvent::Unavailable);
@@ -78,13 +80,17 @@ pub async fn watch(sender: async_channel::Sender<rmac_sharing::WatchEvent>) -> R
 }
 
 #[cfg(target_os = "linux")]
-fn firewall_watcher(
+fn configuration_watcher(
     sender: async_channel::Sender<rmac_sharing::WatchEvent>,
 ) -> Result<Option<notify::RecommendedWatcher>, Error> {
     use notify::{RecursiveMode, Watcher as _};
 
-    let root = std::path::PathBuf::from("/etc/ufw");
-    if !root.is_dir() {
+    let roots = ["/etc/ufw", "/etc/samba"]
+        .into_iter()
+        .map(std::path::PathBuf::from)
+        .filter(|root| root.is_dir())
+        .collect::<Vec<_>>();
+    if roots.is_empty() {
         return Ok(None);
     }
     let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
@@ -95,14 +101,21 @@ fn firewall_watcher(
         if matches!(event.kind, notify::EventKind::Access(_)) {
             return;
         }
-        if event.paths.is_empty() || event.paths.iter().any(|path| firewall_path_relevant(path)) {
+        if event.paths.is_empty()
+            || event
+                .paths
+                .iter()
+                .any(|path| firewall_path_relevant(path) || samba_path_relevant(path))
+        {
             let _ = sender.try_send(rmac_sharing::WatchEvent::Changed);
         }
     })
     .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
-    watcher
-        .watch(&root, RecursiveMode::Recursive)
-        .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
+    for root in roots {
+        watcher
+            .watch(&root, RecursiveMode::Recursive)
+            .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
+    }
     Ok(Some(watcher))
 }
 
@@ -114,6 +127,13 @@ fn firewall_path_relevant(path: &std::path::Path) -> bool {
     ) || path.ancestors().any(|ancestor| {
         ancestor.file_name().and_then(|name| name.to_str()) == Some("applications.d")
     })
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn samba_path_relevant(path: &std::path::Path) -> bool {
+    path.ancestors()
+        .any(|ancestor| ancestor == std::path::Path::new("/etc/samba"))
+        && path.extension().and_then(|extension| extension.to_str()) == Some("conf")
 }
 
 #[cfg(target_os = "linux")]
@@ -226,55 +246,111 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     let files = manager
         .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
         .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
-    let selected = ["ssh.service", "sshd.service"]
-        .into_iter()
-        .find_map(|candidate| {
-            files.iter().find_map(|(name, state)| {
-                let id = std::path::Path::new(name)
-                    .file_name()
-                    .and_then(|name| name.to_str())?;
-                (id == candidate).then(|| (candidate.to_owned(), state.clone()))
+    let remote_service = service_state(
+        &connection,
+        &manager,
+        &files,
+        &["ssh.service", "sshd.service"],
+    )?;
+    let file_service = service_state(&connection, &manager, &files, &["smbd.service"])?;
+    let (remote_firewall, remote_firewall_detail) = firewall_state(FirewallService::Ssh);
+    let (file_firewall, file_firewall_detail) = firewall_state(FirewallService::Samba);
+    let (shares, shares_truncated, configuration_error) = samba_shares();
+    let file_sharing = match file_service {
+        Some(service) => FileSharing {
+            available: true,
+            unit: Some(service.unit),
+            active: service.active_state == "active",
+            service_state: Some(service.active_state),
+            enabled_at_boot: unit_enabled(&service.unit_file_state),
+            unit_file_state: Some(service.unit_file_state),
+            shares,
+            shares_truncated,
+            configuration_error,
+            firewall: file_firewall,
+            firewall_detail: file_firewall_detail,
+        },
+        None => FileSharing {
+            shares,
+            shares_truncated,
+            configuration_error,
+            firewall: file_firewall,
+            firewall_detail: file_firewall_detail,
+            ..FileSharing::default()
+        },
+    };
+    Ok(Snapshot {
+        remote_login: remote_service
+            .map(|service| RemoteLogin {
+                available: true,
+                unit: Some(service.unit),
+                active: service.active_state == "active",
+                service_state: Some(service.active_state),
+                enabled_at_boot: unit_enabled(&service.unit_file_state),
+                unit_file_state: Some(service.unit_file_state),
+                firewall: remote_firewall,
+                firewall_detail: remote_firewall_detail.clone(),
             })
-        });
-    let Some((unit, unit_file_state)) = selected else {
-        let (firewall, firewall_detail) = firewall_state();
-        return Ok(Snapshot {
-            remote_login: RemoteLogin {
-                firewall,
-                firewall_detail,
+            .unwrap_or(RemoteLogin {
+                firewall: remote_firewall,
+                firewall_detail: remote_firewall_detail,
                 ..RemoteLogin::default()
-            },
-        });
+            }),
+        file_sharing,
+    })
+}
+
+#[cfg(target_os = "linux")]
+struct SystemdServiceState {
+    unit: String,
+    unit_file_state: String,
+    active_state: String,
+}
+
+#[cfg(target_os = "linux")]
+fn service_state(
+    connection: &zbus::blocking::Connection,
+    manager: &zbus::blocking::Proxy<'_>,
+    files: &[(String, String)],
+    candidates: &[&str],
+) -> Result<Option<SystemdServiceState>, Error> {
+    let selected = candidates.iter().find_map(|candidate| {
+        files.iter().find_map(|(name, state)| {
+            let id = std::path::Path::new(name)
+                .file_name()
+                .and_then(|name| name.to_str())?;
+            (id == *candidate).then(|| ((*candidate).to_owned(), state.clone()))
+        })
+    });
+    let Some((unit, unit_file_state)) = selected else {
+        return Ok(None);
     };
     let path: zbus::zvariant::OwnedObjectPath = manager
         .call("LoadUnit", &(unit.as_str(),))
         .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
     let unit_proxy = zbus::blocking::Proxy::new(
-        &connection,
+        connection,
         "org.freedesktop.systemd1",
         path.as_str(),
         "org.freedesktop.systemd1.Unit",
     )
     .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
-    let active_state: String = unit_proxy
+    let active_state = unit_proxy
         .get_property("ActiveState")
         .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
-    let (firewall, firewall_detail) = firewall_state();
-    Ok(Snapshot {
-        remote_login: RemoteLogin {
-            available: true,
-            unit: Some(unit),
-            active: active_state == "active",
-            service_state: Some(active_state),
-            enabled_at_boot: matches!(
-                unit_file_state.as_str(),
-                "enabled" | "enabled-runtime" | "linked" | "linked-runtime"
-            ),
-            unit_file_state: Some(unit_file_state),
-            firewall,
-            firewall_detail,
-        },
-    })
+    Ok(Some(SystemdServiceState {
+        unit,
+        unit_file_state,
+        active_state,
+    }))
+}
+
+#[cfg(target_os = "linux")]
+fn unit_enabled(state: &str) -> bool {
+    matches!(
+        state,
+        "enabled" | "enabled-runtime" | "linked" | "linked-runtime"
+    )
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -399,7 +475,7 @@ fn wait_for_state(_enabled: bool) -> Result<Snapshot, Error> {
 }
 
 #[cfg(target_os = "linux")]
-fn firewall_state() -> (FirewallState, Option<String>) {
+fn firewall_state(service: FirewallService) -> (FirewallState, Option<String>) {
     let output = std::process::Command::new("ufw").arg("status").output();
     let Ok(output) = output else {
         return (
@@ -414,11 +490,18 @@ fn firewall_state() -> (FirewallState, Option<String>) {
         );
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    let state = parse_ufw_status(&text);
+    let state = parse_ufw_status(&text, service);
     if state == FirewallState::ActiveUnverified {
         (
             state,
-            Some("No explicit OpenSSH or TCP port 22 allow rule was found".into()),
+            Some(match service {
+                FirewallService::Ssh => {
+                    "No explicit OpenSSH or TCP port 22 allow rule was found".into()
+                }
+                FirewallService::Samba => {
+                    "No explicit UFW Samba profile allow rule was found".into()
+                }
+            }),
         )
     } else {
         (state, None)
@@ -426,21 +509,101 @@ fn firewall_state() -> (FirewallState, Option<String>) {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn parse_ufw_status(text: &str) -> FirewallState {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FirewallService {
+    Ssh,
+    Samba,
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_ufw_status(text: &str, service: FirewallService) -> FirewallState {
     let lowercase = text.to_ascii_lowercase();
     if lowercase
         .lines()
         .any(|line| line.trim() == "status: inactive")
     {
         FirewallState::Inactive
-    } else if lowercase.lines().any(|line| {
-        (line.contains("openssh") || line.contains("22/tcp") || line.contains("ssh "))
-            && line.contains("allow")
+    } else if lowercase.lines().any(|line| match service {
+        FirewallService::Ssh => {
+            (line.contains("openssh") || line.contains("22/tcp") || line.contains("ssh "))
+                && line.contains("allow")
+        }
+        FirewallService::Samba => line.contains("samba") && line.contains("allow"),
     }) {
-        FirewallState::AllowsSsh
+        FirewallState::Allows
     } else {
         FirewallState::ActiveUnverified
     }
+}
+
+#[cfg(target_os = "linux")]
+fn samba_shares() -> (Vec<Share>, bool, Option<String>) {
+    const MAX_OUTPUT_BYTES: usize = 512 * 1024;
+    let output = std::process::Command::new("testparm").arg("-s").output();
+    let Ok(output) = output else {
+        return (
+            Vec::new(),
+            false,
+            Some("Samba's testparm validator is not installed or could not be executed".into()),
+        );
+    };
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        let detail = detail.trim();
+        return (
+            Vec::new(),
+            false,
+            Some(if detail.is_empty() {
+                "Samba rejected the effective configuration".into()
+            } else {
+                format!("Samba rejected the effective configuration: {detail}")
+            }),
+        );
+    }
+    if output.stdout.len() > MAX_OUTPUT_BYTES {
+        return (
+            Vec::new(),
+            true,
+            Some("Samba's effective configuration exceeded the safe read limit".into()),
+        );
+    }
+    let Ok(text) = String::from_utf8(output.stdout) else {
+        return (
+            Vec::new(),
+            false,
+            Some("Samba returned a non-UTF-8 effective configuration".into()),
+        );
+    };
+    let (shares, truncated) = parse_samba_shares(&text);
+    (shares, truncated, None)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn parse_samba_shares(text: &str) -> (Vec<Share>, bool) {
+    const MAX_SHARES: usize = 128;
+    let mut names = text
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim_end();
+            let name = line.strip_prefix('[')?.strip_suffix(']')?.trim();
+            (!name.is_empty()
+                && name.len() <= 128
+                && !name.chars().any(char::is_control)
+                && !matches!(
+                    name.to_ascii_lowercase().as_str(),
+                    "global" | "printers" | "print$"
+                ))
+            .then(|| name.to_owned())
+        })
+        .collect::<Vec<_>>();
+    names.sort_by_key(|name| name.to_ascii_lowercase());
+    names.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    let truncated = names.len() > MAX_SHARES;
+    names.truncate(MAX_SHARES);
+    (
+        names.into_iter().map(|name| Share { name }).collect(),
+        truncated,
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -496,17 +659,60 @@ mod tests {
     #[test]
     fn ufw_parser_requires_an_explicit_allow_rule() {
         assert_eq!(
-            parse_ufw_status("Status: inactive\n"),
+            parse_ufw_status("Status: inactive\n", FirewallService::Ssh),
             FirewallState::Inactive
         );
         assert_eq!(
-            parse_ufw_status("Status: active\n22/tcp ALLOW Anywhere\n"),
-            FirewallState::AllowsSsh
+            parse_ufw_status(
+                "Status: active\n22/tcp ALLOW Anywhere\n",
+                FirewallService::Ssh
+            ),
+            FirewallState::Allows
         );
         assert_eq!(
-            parse_ufw_status("Status: active\n22/tcp DENY Anywhere\n"),
+            parse_ufw_status(
+                "Status: active\n22/tcp DENY Anywhere\n",
+                FirewallService::Ssh
+            ),
             FirewallState::ActiveUnverified
         );
+        assert_eq!(
+            parse_ufw_status(
+                "Status: active\nSamba ALLOW Anywhere\n",
+                FirewallService::Samba
+            ),
+            FirewallState::Allows
+        );
+        assert_eq!(
+            parse_ufw_status(
+                "Status: active\n445/tcp ALLOW Anywhere\n",
+                FirewallService::Samba
+            ),
+            FirewallState::ActiveUnverified
+        );
+    }
+
+    #[test]
+    fn samba_parser_exposes_only_bounded_file_share_names() {
+        let (shares, truncated) = parse_samba_shares(
+            "[global]\n[homes]\n[printers]\n[print$]\n[Team Files]\n[team files]\n\t[option value]\n",
+        );
+        assert!(!truncated);
+        assert_eq!(
+            shares
+                .iter()
+                .map(|share| share.name.as_str())
+                .collect::<Vec<_>>(),
+            ["homes", "Team Files"]
+        );
+
+        let input = (0..130)
+            .map(|index| format!("[share-{index}]"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (shares, truncated) = parse_samba_shares(&input);
+        assert!(truncated);
+        assert_eq!(shares.len(), 128);
     }
 
     #[test]
@@ -516,6 +722,12 @@ mod tests {
         )));
         assert!(!firewall_path_relevant(std::path::Path::new(
             "/etc/ufw/sysctl.conf"
+        )));
+        assert!(samba_path_relevant(std::path::Path::new(
+            "/etc/samba/smb.conf"
+        )));
+        assert!(!samba_path_relevant(std::path::Path::new(
+            "/etc/samba/private/secrets.tdb"
         )));
         assert!(!owner_change_reappeared("org.freedesktop.systemd1", ""));
         assert!(owner_change_reappeared("org.freedesktop.systemd1", ":1.42"));

@@ -205,16 +205,26 @@ Firewall reachability is a separate read-only fact. A fixed, argument-separated
 `ufw status` query reports an explicit OpenSSH/TCP 22 allow rule, inactive UFW,
 active-but-unverified policy, or unavailable/authorization-required inspection.
 The pane does not change firewall rules and states that daemon activity cannot
-prove reachability through host, network, or router firewalls. File Sharing is
-shown as unavailable until an SMB authority and permission model are reviewed;
-AirDrop is not presented. Authority references: Ubuntu's
+prove reachability through host, network, or router firewalls. File Sharing now
+reads Ubuntu's canonical `smbd.service` runtime and boot state independently.
+It runs Samba's fixed, argument-separated `testparm -s` validator off the UI
+thread and displays only bounded effective share names, excluding global and
+printer-only sections; share paths and credentials are never exposed. Invalid,
+oversized, unavailable, or non-UTF-8 configuration output is reported without
+inventing state. A separate UFW result recognizes only the complete named Samba
+application profile, rather than claiming that one manually opened SMB port is
+sufficient. SMB mutation remains unavailable until its service, configuration,
+authorization, and rollback model is reviewed. AirDrop is not presented because
+Linux has no compatible local authority. Authority references: Ubuntu's
 [OpenSSH server guidance](https://documentation.ubuntu.com/server/how-to/security/openssh-server/),
 [firewall guidance](https://documentation.ubuntu.com/server/how-to/security/firewalls/),
+[Samba file-server guidance](https://documentation.ubuntu.com/server/how-to/samba/file-server/),
+[Samba's `testparm(1)` reference](https://www.samba.org/samba/samba/docs/man/manpages/testparm.1.html),
 and [`org.freedesktop.systemd1(5)`](https://manpages.ubuntu.com/manpages/resolute/en/man5/org.freedesktop.systemd1.5.html).
 
 A capacity-one Sharing stream follows systemd unit properties, unit-file
 changes, and manager reappearance on the system bus, while a filtered native
-watch covers UFW policy/profile files. Bus loss and watcher failures surface as
+watch covers UFW policy/profile files and Samba configuration snippets. Bus loss and watcher failures surface as
 a separate live-update error, and the systemd stream reconnects after failure.
 Every event schedules a complete off-thread systemd/UFW resample; signal and
 filesystem payloads never directly mutate presentation state.

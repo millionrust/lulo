@@ -56,10 +56,19 @@ impl Assignment {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FormatPreview {
+    pub date_time: String,
+    pub number: String,
+    pub currency: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub locale: Vec<Assignment>,
     pub installed_locales: Vec<String>,
     pub installed_locales_truncated: bool,
+    pub format_preview: Option<FormatPreview>,
+    pub format_preview_error: Option<String>,
     pub x11_layout: String,
     pub x11_model: String,
     pub x11_variant: String,

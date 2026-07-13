@@ -5110,6 +5110,7 @@ dependencies = [
  "async-channel 2.5.0",
  "async-io",
  "futures-util",
+ "libc",
  "rmac-locale",
  "zbus",
 ]

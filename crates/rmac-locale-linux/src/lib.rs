@@ -2,6 +2,9 @@
 
 use rmac_locale::{Error, ErrorKind, Service, Snapshot};
 
+#[cfg(target_os = "linux")]
+use rmac_locale::FormatPreview;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemService;
 
@@ -144,16 +147,197 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     let proxy = locale_proxy(&connection)?;
     let locale = rmac_locale::normalize_assignments(property(&proxy, "Locale")?)?;
     let (installed_locales, installed_locales_truncated) = installed_locales()?;
+    let (format_preview, format_preview_error) = match format_preview(&locale) {
+        Ok(preview) => (Some(preview), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     Ok(Snapshot {
         locale,
         installed_locales,
         installed_locales_truncated,
+        format_preview,
+        format_preview_error,
         x11_layout: property(&proxy, "X11Layout")?,
         x11_model: property(&proxy, "X11Model")?,
         x11_variant: property(&proxy, "X11Variant")?,
         x11_options: property(&proxy, "X11Options")?,
         console_keymap: property(&proxy, "VConsoleKeymap")?,
     })
+}
+
+#[cfg(target_os = "linux")]
+fn format_preview(locale: &[rmac_locale::Assignment]) -> Result<FormatPreview, Error> {
+    let language = assignment(locale, "LANG").unwrap_or("C");
+    let date_locale = assignment(locale, "LC_TIME").unwrap_or(language);
+    let number_locale = assignment(locale, "LC_NUMERIC").unwrap_or(language);
+    let currency_locale = assignment(locale, "LC_MONETARY").unwrap_or(language);
+
+    let date = NativeLocale::new(date_locale)?;
+    let number = NativeLocale::new(number_locale)?;
+    let currency = NativeLocale::new(currency_locale)?;
+    let decimal = number.langinfo(libc::RADIXCHAR)?;
+    let thousands = number.langinfo(libc::THOUSEP)?;
+    let number = grouped_number(&thousands, &decimal);
+    Ok(FormatPreview {
+        date_time: date.date_time()?,
+        number,
+        currency: currency.currency()?,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn assignment<'a>(locale: &'a [rmac_locale::Assignment], key: &str) -> Option<&'a str> {
+    locale
+        .iter()
+        .find(|assignment| assignment.key == key)
+        .map(|assignment| assignment.value.as_str())
+}
+
+#[cfg(target_os = "linux")]
+struct NativeLocale(libc::locale_t);
+
+#[cfg(target_os = "linux")]
+impl NativeLocale {
+    fn new(name: &str) -> Result<Self, Error> {
+        let name = std::ffi::CString::new(name)
+            .map_err(|_| Error::new(ErrorKind::Protocol, "locale name contains an invalid byte"))?;
+        // SAFETY: `name` is a live NUL-terminated string, the base locale is
+        // null as required for a new object, and the returned handle is owned
+        // by this RAII wrapper until `freelocale` in Drop.
+        let locale =
+            unsafe { libc::newlocale(libc::LC_ALL_MASK, name.as_ptr(), std::ptr::null_mut()) };
+        if locale.is_null() {
+            Err(Error::new(
+                ErrorKind::Protocol,
+                format!("could not load locale {name:?} for preview"),
+            ))
+        } else {
+            Ok(Self(locale))
+        }
+    }
+
+    fn langinfo(&self, item: libc::nl_item) -> Result<String, Error> {
+        // SAFETY: the locale handle remains valid for this call and glibc
+        // returns a NUL-terminated string owned by the locale object.
+        let value = unsafe { libc::nl_langinfo_l(item, self.0) };
+        if value.is_null() {
+            return Err(Error::new(
+                ErrorKind::Protocol,
+                "the locale did not provide format information",
+            ));
+        }
+        // SAFETY: `nl_langinfo_l` returned a non-null NUL-terminated string,
+        // and it is copied before the locale handle can be freed.
+        let value = unsafe { std::ffi::CStr::from_ptr(value) };
+        bounded_preview(value.to_string_lossy().into_owned())
+    }
+
+    fn date_time(&self) -> Result<String, Error> {
+        let format = std::ffi::CString::new("%c").expect("static format has no NUL");
+        let mut output = [0_u8; 256];
+        // January 15, 2024 at 13:45:00, a Monday. This deterministic sample
+        // makes locale previews comparable without reading or changing time.
+        // SAFETY: a zeroed `libc::tm` is valid, and every field consumed by
+        // this fixed formatting call is populated immediately below.
+        let mut time: libc::tm = unsafe { std::mem::zeroed() };
+        time.tm_sec = 0;
+        time.tm_min = 45;
+        time.tm_hour = 13;
+        time.tm_mday = 15;
+        time.tm_mon = 0;
+        time.tm_year = 124;
+        time.tm_wday = 1;
+        time.tm_yday = 14;
+        time.tm_isdst = -1;
+        // SAFETY: `output` is writable for its full declared length, `format`
+        // is NUL-terminated, `time` is initialized, and the locale is live.
+        let written = unsafe {
+            libc::strftime_l(
+                output.as_mut_ptr().cast(),
+                output.len(),
+                format.as_ptr(),
+                &time,
+                self.0,
+            )
+        };
+        if written == 0 {
+            return Err(Error::new(
+                ErrorKind::Protocol,
+                "the locale date and time preview was too long",
+            ));
+        }
+        String::from_utf8(output[..written].to_vec()).map_err(|_| {
+            Error::new(
+                ErrorKind::Protocol,
+                "the locale date and time preview is not UTF-8",
+            )
+        })
+    }
+
+    fn currency(&self) -> Result<String, Error> {
+        let format = std::ffi::CString::new("%n").expect("static format has no NUL");
+        let mut output = [0_u8; 256];
+        // SAFETY: `output` is writable for its full length, the format is a
+        // NUL-terminated fixed `%n`, the variadic argument has the required
+        // `double` type, and the locale handle remains live for the call.
+        let written = unsafe {
+            strfmon_l(
+                output.as_mut_ptr().cast(),
+                output.len(),
+                self.0,
+                format.as_ptr(),
+                1234.56_f64,
+            )
+        };
+        if written < 0 {
+            return Err(Error::new(
+                ErrorKind::Protocol,
+                "the locale could not format a currency preview",
+            ));
+        }
+        String::from_utf8(output[..written as usize].to_vec()).map_err(|_| {
+            Error::new(
+                ErrorKind::Protocol,
+                "the locale currency preview is not UTF-8",
+            )
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn strfmon_l(
+        output: *mut libc::c_char,
+        max: libc::size_t,
+        locale: libc::locale_t,
+        format: *const libc::c_char,
+        ...
+    ) -> libc::ssize_t;
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for NativeLocale {
+    fn drop(&mut self) {
+        // SAFETY: this wrapper owns the non-null locale handle exactly once.
+        unsafe { libc::freelocale(self.0) };
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn grouped_number(thousands: &str, decimal: &str) -> String {
+    format!("1{thousands}234{decimal}56")
+}
+
+#[cfg(target_os = "linux")]
+fn bounded_preview(value: String) -> Result<String, Error> {
+    if value.len() > 255 || value.chars().any(|character| character.is_control()) {
+        Err(Error::new(
+            ErrorKind::Protocol,
+            "the locale returned invalid preview text",
+        ))
+    } else {
+        Ok(value)
+    }
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -268,5 +452,11 @@ mod tests {
         assert!(!owner_change_reappeared("org.freedesktop.locale1", ""));
         assert!(owner_change_reappeared("org.freedesktop.locale1", ":1.42"));
         assert!(!owner_change_reappeared("org.example.Other", ":1.42"));
+    }
+
+    #[test]
+    fn number_example_follows_locale_separators() {
+        let number = grouped_number(" ", ",");
+        assert_eq!(number, "1 234,56");
     }
 }

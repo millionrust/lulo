@@ -3477,33 +3477,39 @@ impl Settings {
             }
         }
 
-        cards.push(section_header("Formats"));
+        cards.push(section_header("Format examples"));
+        let preview = snapshot.format_preview.as_ref();
         cards.push(card(vec![
-            value_row(
+            locale_preview_row(
                 "icons/clock.svg",
-                secondary(),
-                "Dates and times".into(),
-                locale_format(snapshot, "LC_TIME").into(),
+                "Dates and times",
+                locale_format(snapshot, "LC_TIME"),
+                preview.map(|preview| preview.date_time.as_str()),
             ),
-            value_row(
+            locale_preview_row(
                 "icons/info.svg",
-                secondary(),
-                "Numbers".into(),
-                locale_format(snapshot, "LC_NUMERIC").into(),
+                "Numbers",
+                locale_format(snapshot, "LC_NUMERIC"),
+                preview.map(|preview| preview.number.as_str()),
             ),
-            value_row(
+            locale_preview_row(
                 "icons/database.svg",
-                secondary(),
-                "Currency".into(),
-                locale_format(snapshot, "LC_MONETARY").into(),
+                "Currency",
+                locale_format(snapshot, "LC_MONETARY"),
+                preview.map(|preview| preview.currency.as_str()),
             ),
-            value_row(
+            locale_preview_row(
                 "icons/settings.svg",
-                secondary(),
-                "Measurement".into(),
-                locale_format(snapshot, "LC_MEASUREMENT").into(),
+                "Measurement",
+                locale_format(snapshot, "LC_MEASUREMENT"),
+                None,
             ),
         ]));
+        if let Some(error) = &snapshot.format_preview_error {
+            cards.push(note_card(format!(
+                "Format examples are unavailable: {error}. Locale assignments remain authoritative."
+            )));
+        }
 
         let keyboard = if snapshot.x11_layout.is_empty() {
             "Not reported by systemd-localed".to_owned()
@@ -6413,6 +6419,28 @@ fn locale_format(snapshot: &rmac_locale::Snapshot, key: &str) -> String {
         .find(|assignment| assignment.key == key)
         .map(|assignment| assignment.value.clone())
         .unwrap_or_else(|| snapshot.language().to_owned())
+}
+
+fn locale_preview_row(
+    icon: &'static str,
+    title: &'static str,
+    source: String,
+    example: Option<&str>,
+) -> AnyElement {
+    row_base()
+        .child(tile(icon, secondary(), 22.0))
+        .child(text_block(
+            title.into(),
+            Some(format!("Locale: {source}").into()),
+        ))
+        .child(
+            div()
+                .max_w(px(260.0))
+                .text_size(px(13.0))
+                .text_color(secondary())
+                .child(example.unwrap_or("Uses locale convention").to_owned()),
+        )
+        .into_any_element()
 }
 
 /// An informational note card, e.g. to flag a pane as simulated/demo state

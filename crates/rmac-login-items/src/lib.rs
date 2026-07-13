@@ -8,6 +8,12 @@ pub const MAX_BACKGROUND_SERVICES: usize = 512;
 pub const MAX_ISSUES: usize = 128;
 pub const MAX_ENTRY_BYTES: usize = 256 * 1024;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Item {
     pub id: String,

@@ -7,8 +7,12 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+async-channel.workspace = true
+notify.workspace = true
 rmac-login-items.workspace = true
 rmac-storage.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+async-io.workspace = true
+futures-util.workspace = true
 zbus.workspace = true

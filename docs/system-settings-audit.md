@@ -18,7 +18,7 @@ equivalents rather than simulated.
 | Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Included niri config traversal and Linux polkit/restart/scale/accessibility evidence |
-| Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, resolvable-file reveal, authoritative refresh, and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, `org.freedesktop.systemd1` user manager | reviewed add/remove, live filesystem/D-Bus events, and Linux scale/accessibility evidence |
+| Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, `org.freedesktop.systemd1` user manager | reviewed add/remove and Linux scale/accessibility evidence |
 | Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
@@ -141,15 +141,14 @@ Login Items currently owns the XDG application-autostart half of F14. It scans
 higher-priority filename always hides lower copies exactly as specified. Valid
 entries expose their effective `Hidden` state and whether `OnlyShowIn` or
 `NotShowIn` excludes the current desktop, including unavailable `TryExec`
-requirements. Malformed or unreadable
-higher-priority entries remain visible as issues and still suppress lower
+requirements. Malformed or unreadable higher-priority entries remain visible as issues and still suppress lower
 copies; rmac never silently runs or rewrites them. Disabling a user entry
 atomically preserves its contents while changing `Hidden`. Disabling a system
 entry creates a full user copy marked as an rmac-managed hidden override;
 re-enabling removes only that marked override and reveals the original system
 entry. Every mutation re-enumerates authority, and failures retain the last
 known-good snapshot. Reveal resolves the effective entry again immediately
-before passing its path to the desktop portal. Add/remove and live file events remain pending.
+before passing its path to the desktop portal. Add/remove remains pending.
 Authority references: the freedesktop.org
 [Desktop Application Autostart Specification](https://specifications.freedesktop.org/autostart/0.5/),
 [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry/latest-single/),
@@ -172,6 +171,12 @@ When systemd exposes an absolute unit path, or the unit can be resolved through
 its authoritative `UnitPath` search order, the pane offers the same portal-backed
 reveal action. Stale IDs and files that disappear before activation fail visibly
 instead of opening a guessed location.
+One capacity-one stream combines filtered events from the effective XDG
+autostart and user-unit directories with systemd's `UnitFilesChanged` signal.
+Manager reappearance triggers a refresh, session-bus loss reports a separate
+stream error, and the watcher reconnects without allowing event bursts to grow
+memory. Every event causes a complete off-thread authority resample; event
+payloads never mutate UI state directly.
 Authority reference: [Ubuntu 26.04 `org.freedesktop.systemd1(5)`](https://manpages.ubuntu.com/manpages/resolute/en/man5/org.freedesktop.systemd1.5.html).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search

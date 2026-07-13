@@ -170,6 +170,7 @@ struct Settings {
     login_items_loading: bool,
     login_item_busy: Option<String>,
     login_items_error: Option<SharedString>,
+    login_items_stream_error: Option<SharedString>,
     login_items: Option<rmac_login_items::Snapshot>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
@@ -446,6 +447,51 @@ impl Settings {
                 this.apply_system_snapshot(snapshot);
                 cx.notify();
             });
+        })
+        .detach();
+
+        let (login_item_updates, login_item_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_login_items_linux::watch(login_item_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = login_item_update_rx.recv().await {
+                match event {
+                    rmac_login_items::WatchEvent::Changed => {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_login_items_linux::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if this.login_item_busy.is_none() {
+                                    this.finish_login_items_update(result);
+                                    this.login_items_stream_error = None;
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_login_items::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.login_items_stream_error = Some(
+                                    "Live Login Items updates are temporarily unavailable".into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
         })
         .detach();
 
@@ -817,6 +863,7 @@ impl Settings {
             login_items_loading: true,
             login_item_busy: None,
             login_items_error: None,
+            login_items_stream_error: None,
             login_items: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
@@ -4196,7 +4243,7 @@ impl Settings {
             .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
             .child(text_block(
                 "Authoritative state".into(),
-                Some("XDG precedence · systemd user unit files".into()),
+                Some("Live XDG files · systemd user unit changes".into()),
             ))
             .child(refresh)
             .into_any_element();
@@ -6917,6 +6964,7 @@ impl Render for Settings {
             .or_else(|| self.locale_error.clone())
             .or_else(|| self.locale_stream_error.clone())
             .or_else(|| self.login_items_error.clone())
+            .or_else(|| self.login_items_stream_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -6954,6 +7002,7 @@ impl Render for Settings {
                             this.locale_error = None;
                             this.locale_stream_error = None;
                             this.login_items_error = None;
+                            this.login_items_stream_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;

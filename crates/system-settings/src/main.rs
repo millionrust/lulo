@@ -1541,6 +1541,31 @@ impl Settings {
         .detach();
     }
 
+    fn set_background_service_enabled(
+        &mut self,
+        id: String,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.login_item_busy.is_some() {
+            return;
+        }
+        self.login_item_busy = Some(format!("systemd:{id}"));
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_login_items_linux::set_background_enabled(&id, enabled) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_login_items_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn finish_wifi_update(
         &mut self,
         result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
@@ -4008,6 +4033,70 @@ impl Settings {
             cards.push(card(rows));
         }
 
+        cards.push(section_header("Allow in background"));
+        if snapshot.background_services.is_empty() {
+            cards.push(note_card(if snapshot.background_services_error.is_some() {
+                "The systemd user manager is unavailable. XDG application login items remain usable."
+            } else {
+                "No enabled or user-installed systemd background services were found."
+            }));
+        } else {
+            let rows = snapshot
+                .background_services
+                .iter()
+                .map(|service| {
+                    let id = service.id.clone();
+                    let toggle_view = view.clone();
+                    let busy_key = format!("systemd:{}", service.id);
+                    let busy = self.login_item_busy.as_deref() == Some(busy_key.as_str());
+                    let subtitle = format!("{} · {}", service.detail, service.state.label());
+                    row_base()
+                        .child(tile("icons/settings.svg", secondary(), 22.0))
+                        .child(text_block(
+                            service.name.clone().into(),
+                            Some(subtitle.into()),
+                        ))
+                        .child(
+                            Toggle::new(ElementId::from(SharedString::from(format!(
+                                "background-service-{}",
+                                service.id
+                            ))))
+                            .checked(service.enabled)
+                            .disabled(self.login_item_busy.is_some() || !service.can_toggle)
+                            .on_click(move |enabled, _, cx| {
+                                toggle_view.update(cx, |settings, cx| {
+                                    settings.set_background_service_enabled(
+                                        id.clone(),
+                                        *enabled,
+                                        cx,
+                                    );
+                                });
+                            }),
+                        )
+                        .when(busy, |row| {
+                            row.child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(secondary())
+                                    .child("Saving…"),
+                            )
+                        })
+                        .into_any_element()
+                })
+                .collect();
+            cards.push(card(rows));
+        }
+        if let Some(error) = &snapshot.background_services_error {
+            cards.push(note_card(format!(
+                "Background service status is unavailable: {error}"
+            )));
+        }
+        if snapshot.background_services_truncated {
+            cards.push(note_card(
+                "The systemd user service inventory exceeded the bounded display limit.",
+            ));
+        }
+
         if !snapshot.issues.is_empty() {
             cards.push(section_header("Entries needing attention"));
             cards.push(card(
@@ -4030,7 +4119,7 @@ impl Settings {
             .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
             .child(text_block(
                 "Authoritative state".into(),
-                Some("XDG precedence and Hidden overrides".into()),
+                Some("XDG precedence · systemd user unit files".into()),
             ))
             .child(refresh)
             .into_any_element();
@@ -4041,7 +4130,7 @@ impl Settings {
             ));
         }
         cards.push(note_card(
-            "This slice manages XDG application autostart only. systemd user background services, reveal, and reviewed add/remove flows are not connected yet.",
+            "Changes to systemd user services take effect at the next sign-in; this pane does not start or stop running services. Reveal and reviewed add/remove flows are not connected yet.",
         ));
         self.pane(cards)
     }

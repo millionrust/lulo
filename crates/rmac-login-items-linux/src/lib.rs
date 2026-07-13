@@ -1,6 +1,8 @@
 //! XDG autostart adapter for the supported Linux session.
 
-use rmac_login_items::{Error, ErrorKind, Issue, Item, Service, Snapshot};
+use rmac_login_items::{BackgroundService, Error, ErrorKind, Issue, Item, Service, Snapshot};
+#[cfg(target_os = "linux")]
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +21,15 @@ impl Default for SystemService {
 
 impl Service for SystemService {
     fn snapshot(&self) -> Result<Snapshot, Error> {
-        discover(&self.environment)
+        let mut snapshot = discover(&self.environment)?;
+        match systemd_background_services(&self.environment) {
+            Ok((services, truncated)) => {
+                snapshot.background_services = services;
+                snapshot.background_services_truncated = truncated;
+            }
+            Err(error) => snapshot.background_services_error = Some(error.to_string()),
+        }
+        Ok(snapshot)
     }
 
     fn set_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error> {
@@ -59,6 +69,40 @@ impl Service for SystemService {
         }
         self.snapshot()
     }
+
+    fn set_background_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error> {
+        rmac_login_items::validate_service_id(id)?;
+        let current = self.snapshot()?;
+        let item = current
+            .background_services
+            .iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "user service no longer exists"))?;
+        if item.enabled == enabled {
+            return Ok(current);
+        }
+        if !item.can_toggle {
+            return Err(Error::new(
+                ErrorKind::Mutation,
+                "this user service does not have a safe persistent transition",
+            ));
+        }
+        systemd_set_enabled(id, enabled)?;
+        let refreshed = self.snapshot()?;
+        let changed = refreshed
+            .background_services
+            .iter()
+            .find(|item| item.id == id)
+            .is_some_and(|item| item.enabled == enabled);
+        if changed {
+            Ok(refreshed)
+        } else {
+            Err(Error::new(
+                ErrorKind::Mutation,
+                "the user manager did not confirm the requested unit-file state",
+            ))
+        }
+    }
 }
 
 pub fn snapshot() -> Result<Snapshot, Error> {
@@ -69,10 +113,16 @@ pub fn set_enabled(id: &str, enabled: bool) -> Result<Snapshot, Error> {
     SystemService::default().set_enabled(id, enabled)
 }
 
+pub fn set_background_enabled(id: &str, enabled: bool) -> Result<Snapshot, Error> {
+    SystemService::default().set_background_enabled(id, enabled)
+}
+
 #[derive(Clone, Debug)]
 struct Environment {
     config_home: PathBuf,
     config_dirs: Vec<PathBuf>,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    data_home: PathBuf,
     desktops: Vec<String>,
 }
 
@@ -88,6 +138,13 @@ impl Environment {
             .filter(|value| !value.is_empty())
             .map(|value| std::env::split_paths(&value).collect())
             .unwrap_or_else(|| vec![PathBuf::from("/etc/xdg")]);
+        let data_home = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+            })
+            .unwrap_or_else(|| PathBuf::from("/.rmac-unavailable"));
         let desktops = std::env::var("XDG_CURRENT_DESKTOP")
             .unwrap_or_default()
             .split(':')
@@ -97,6 +154,7 @@ impl Environment {
         Self {
             config_home,
             config_dirs,
+            data_home,
             desktops,
         }
     }
@@ -105,6 +163,138 @@ impl Environment {
         std::iter::once(self.config_home.join("autostart"))
             .chain(self.config_dirs.iter().map(|path| path.join("autostart")))
     }
+
+    #[cfg(target_os = "linux")]
+    fn user_unit_dirs(&self) -> [PathBuf; 2] {
+        [
+            self.config_home.join("systemd/user"),
+            self.data_home.join("systemd/user"),
+        ]
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn systemd_background_services(
+    environment: &Environment,
+) -> Result<(Vec<BackgroundService>, bool), Error> {
+    let connection = zbus::blocking::Connection::session().map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "the systemd user manager is unavailable on the session bus",
+        )
+    })?;
+    let proxy = systemd_proxy(&connection)?;
+    let files = proxy
+        .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
+        .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
+    let user_dirs = environment.user_unit_dirs();
+    let user_names = user_unit_names(&user_dirs);
+    let mut services = HashMap::new();
+    for (raw_name, state) in files {
+        let path = Path::new(&raw_name);
+        let Some(id) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !id.ends_with(".service") {
+            continue;
+        }
+        let user_owned = user_names.contains(id)
+            || path.is_absolute()
+                && user_dirs
+                    .iter()
+                    .any(|directory| path.starts_with(directory));
+        if let Some(service) = rmac_login_items::background_service(id, &state, user_owned)? {
+            services.insert(id.to_owned(), service);
+        }
+    }
+    let mut services = services.into_values().collect::<Vec<_>>();
+    services.sort_by(|left, right| left.name.cmp(&right.name).then(left.id.cmp(&right.id)));
+    let truncated = services.len() > rmac_login_items::MAX_BACKGROUND_SERVICES;
+    services.truncate(rmac_login_items::MAX_BACKGROUND_SERVICES);
+    Ok((services, truncated))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn systemd_background_services(
+    _environment: &Environment,
+) -> Result<(Vec<BackgroundService>, bool), Error> {
+    Err(Error::new(
+        ErrorKind::Unavailable,
+        "systemd user services are available in the supported Linux session",
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn user_unit_names(directories: &[PathBuf]) -> HashSet<String> {
+    directories
+        .iter()
+        .filter_map(|directory| std::fs::read_dir(directory).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+        .filter(|name| name.ends_with(".service"))
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn systemd_set_enabled(id: &str, enabled: bool) -> Result<(), Error> {
+    let connection = zbus::blocking::Connection::session().map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "the systemd user manager is unavailable",
+        )
+    })?;
+    let proxy = systemd_proxy(&connection)?;
+    let files = vec![id];
+    if enabled {
+        let (carries_install_info, _changes): (bool, Vec<(String, String, String)>) = proxy
+            .call("EnableUnitFiles", &(files, false, false))
+            .map_err(systemd_mutation_error)?;
+        if !carries_install_info {
+            return Err(Error::new(
+                ErrorKind::Mutation,
+                "the unit has no [Install] information and cannot be enabled",
+            ));
+        }
+    } else {
+        let _: Vec<(String, String, String)> = proxy
+            .call("DisableUnitFiles", &(files, false))
+            .map_err(systemd_mutation_error)?;
+    }
+    proxy
+        .call::<_, _, ()>("Reload", &())
+        .map_err(systemd_mutation_error)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn systemd_set_enabled(_id: &str, _enabled: bool) -> Result<(), Error> {
+    Err(Error::new(
+        ErrorKind::Unavailable,
+        "systemd user service changes are available in the supported Linux session",
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn systemd_proxy(
+    connection: &zbus::blocking::Connection,
+) -> Result<zbus::blocking::Proxy<'_>, Error> {
+    zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.systemd1",
+        "/org/freedesktop/systemd1",
+        "org.freedesktop.systemd1.Manager",
+    )
+    .map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "the systemd user manager is unavailable",
+        )
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn systemd_mutation_error(error: zbus::Error) -> Error {
+    Error::new(ErrorKind::Mutation, error.to_string())
 }
 
 fn discover(environment: &Environment) -> Result<Snapshot, Error> {
@@ -191,6 +381,9 @@ fn discover(environment: &Environment) -> Result<Snapshot, Error> {
     items.sort_by(|left, right| left.name.cmp(&right.name).then(left.id.cmp(&right.id)));
     Ok(Snapshot {
         items,
+        background_services: Vec::new(),
+        background_services_truncated: false,
+        background_services_error: None,
         issues,
         truncated,
     })
@@ -246,10 +439,11 @@ mod tests {
         let system = root.join("system");
         std::fs::create_dir_all(system.join("autostart")).unwrap();
         (
-            root,
+            root.clone(),
             Environment {
                 config_home: user,
                 config_dirs: vec![system],
+                data_home: root.join("data"),
                 desktops: vec!["rmac".into()],
             },
         )

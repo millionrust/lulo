@@ -5145,6 +5145,7 @@ version = "0.1.0"
 dependencies = [
  "rmac-login-items",
  "rmac-storage",
+ "zbus",
 ]
 
 [[package]]

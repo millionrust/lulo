@@ -4,6 +4,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 pub const MAX_ITEMS: usize = 512;
+pub const MAX_BACKGROUND_SERVICES: usize = 512;
 pub const MAX_ISSUES: usize = 128;
 pub const MAX_ENTRY_BYTES: usize = 256 * 1024;
 
@@ -26,9 +27,64 @@ pub struct Issue {
     pub detail: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnitFileState {
+    Enabled,
+    Disabled,
+    Linked,
+    Runtime,
+    Masked,
+    Static,
+    Other,
+}
+
+impl UnitFileState {
+    pub fn from_systemd(value: &str) -> Self {
+        match value {
+            "enabled" => Self::Enabled,
+            "disabled" => Self::Disabled,
+            "linked" => Self::Linked,
+            "enabled-runtime" | "linked-runtime" => Self::Runtime,
+            "masked" | "masked-runtime" => Self::Masked,
+            "static" | "indirect" | "generated" | "transient" => Self::Static,
+            _ => Self::Other,
+        }
+    }
+
+    pub fn enabled(self) -> bool {
+        matches!(self, Self::Enabled | Self::Linked | Self::Runtime)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Enabled => "Enabled",
+            Self::Disabled => "Disabled",
+            Self::Linked => "Linked",
+            Self::Runtime => "Runtime only",
+            Self::Masked => "Masked",
+            Self::Static => "Static",
+            Self::Other => "Unmanaged state",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BackgroundService {
+    pub id: String,
+    pub name: String,
+    pub state: UnitFileState,
+    pub enabled: bool,
+    pub can_toggle: bool,
+    pub detail: String,
+    pub user_owned: bool,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub items: Vec<Item>,
+    pub background_services: Vec<BackgroundService>,
+    pub background_services_truncated: bool,
+    pub background_services_error: Option<String>,
     pub issues: Vec<Issue>,
     pub truncated: bool,
 }
@@ -80,6 +136,7 @@ impl std::error::Error for Error {}
 pub trait Service {
     fn snapshot(&self) -> Result<Snapshot, Error>;
     fn set_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error>;
+    fn set_background_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error>;
 }
 
 pub fn validate_id(id: &str) -> Result<(), Error> {
@@ -98,6 +155,78 @@ pub fn validate_id(id: &str) -> Result<(), Error> {
     } else {
         Ok(())
     }
+}
+
+pub fn validate_service_id(id: &str) -> Result<(), Error> {
+    if id.is_empty()
+        || id.len() > 255
+        || !id.ends_with(".service")
+        || id.contains('/')
+        || id.contains('\\')
+        || id == ".service"
+        || id.chars().any(|character| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | '@' | ':'))
+        })
+    {
+        Err(Error::new(
+            ErrorKind::InvalidEntry,
+            "the systemd user service identifier is invalid",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+pub fn background_service(
+    id: &str,
+    raw_state: &str,
+    user_owned: bool,
+) -> Result<Option<BackgroundService>, Error> {
+    validate_service_id(id)?;
+    let state = UnitFileState::from_systemd(raw_state);
+    let visible = user_owned
+        || matches!(
+            state,
+            UnitFileState::Enabled
+                | UnitFileState::Linked
+                | UnitFileState::Runtime
+                | UnitFileState::Masked
+        );
+    if !visible {
+        return Ok(None);
+    }
+    let protected = id.starts_with("rmac-");
+    let can_toggle = !protected
+        && matches!(
+            state,
+            UnitFileState::Enabled | UnitFileState::Disabled | UnitFileState::Linked
+        );
+    let name = id
+        .strip_suffix(".service")
+        .unwrap_or(id)
+        .replace(['-', '_'], " ");
+    let detail = if protected {
+        "Required by the rmac session".into()
+    } else if state == UnitFileState::Runtime {
+        "Runtime-only state is read-only; it ends at logout or reboot".into()
+    } else if state == UnitFileState::Masked {
+        "Masked services must be reviewed and unmasked outside this pane".into()
+    } else if state == UnitFileState::Static || state == UnitFileState::Other {
+        "This unit has no safe persistent enable/disable transition".into()
+    } else if user_owned {
+        "User-installed systemd service".into()
+    } else {
+        "System-provided user service".into()
+    };
+    Ok(Some(BackgroundService {
+        id: id.into(),
+        name,
+        state,
+        enabled: state.enabled(),
+        can_toggle,
+        detail,
+        user_owned,
+    }))
 }
 
 pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
@@ -258,5 +387,36 @@ mod tests {
                 .kind(),
             ErrorKind::InvalidEntry
         );
+    }
+
+    #[test]
+    fn systemd_states_expose_only_safe_persistent_transitions() {
+        let enabled = background_service("example.service", "enabled", false)
+            .unwrap()
+            .unwrap();
+        assert!(enabled.enabled);
+        assert!(enabled.can_toggle);
+        assert!(background_service("unused.service", "disabled", false)
+            .unwrap()
+            .is_none());
+        assert!(
+            background_service("custom.service", "disabled", true)
+                .unwrap()
+                .unwrap()
+                .can_toggle
+        );
+        assert!(
+            !background_service("rmac-dock.service", "enabled", true)
+                .unwrap()
+                .unwrap()
+                .can_toggle
+        );
+        assert!(
+            !background_service("temporary.service", "enabled-runtime", true)
+                .unwrap()
+                .unwrap()
+                .can_toggle
+        );
+        assert!(validate_service_id("../bad.service").is_err());
     }
 }

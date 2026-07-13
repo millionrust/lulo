@@ -8,7 +8,7 @@ equivalents rather than simulated.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|
-| Wi-Fi | Real state, radio mutation, access-point scan | NetworkManager D-Bus | Known/open connection activation, secret agent, live signals |
+| Wi-Fi | Real state, radio mutation, access-point scan, exact saved/open activation, bounded ActiveConnection completion, authoritative readback, and honest protected-network gating | NetworkManager D-Bus | Secret agent/password sheet, forget, live signals, restart recovery, and Linux permission/wrong-secret evidence |
 | Bluetooth | Real adapter, discovery, and known-device connections | BlueZ D-Bus | Confirmation agent for new-device pairing and live signals |
 | Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
@@ -47,6 +47,15 @@ equivalents rather than simulated.
 
 Every pane keeps slow I/O off the first-frame/UI thread, consumes typed service
 snapshots, and must not persist a local toggle as a substitute for system state.
+
+Wi-Fi rows retain exact private SSID bytes plus security class instead of using
+their lossy display labels as command identifiers. Selecting a known network
+activates its most recent compatible saved profile; selecting an open network
+asks NetworkManager to complete and persist a profile from the live device and
+access point. A bounded ActiveConnection state watch and fresh snapshot are
+required before Settings reports success. New protected networks are visibly
+disabled until the Secret Agent/password boundary exists. The complete
+transaction and remaining F1 gates are recorded in [`wifi.md`](wifi.md).
 
 General now exposes only About, the explicitly read-only Software Update status,
 and measured Storage. Device-continuity and media-receiver controls are hidden

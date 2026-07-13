@@ -104,9 +104,14 @@ replace the all-at-once snapshot with service-specific updates where useful.
 
 `rmac-network` now starts that migration for Wi-Fi. Linux reads radio/device and
 access-point state from NetworkManager D-Bus, requests scans, and changes the
-real `WirelessEnabled` property; macOS retains `networksetup`. System Settings
-keeps all calls off the UI thread and surfaces service failures. The complete
-pane-to-service contract is tracked in `docs/system-settings-audit.md`.
+real `WirelessEnabled` property. It also correlates exact SSID bytes and
+security class with accessible saved profiles, activates known profiles, adds
+and activates open profiles, and requires bounded ActiveConnection plus fresh
+snapshot confirmation. macOS retains `networksetup`. System Settings keeps all
+calls off the UI thread and surfaces service failures. Protected first-time
+connections remain gated on a reviewed Secret Agent. The complete pane-to-
+service contract is tracked in `docs/system-settings-audit.md` and
+`docs/wifi.md`.
 
 `rmac-bluetooth` backs the Bluetooth pane through BlueZ's D-Bus ObjectManager
 on Linux. Adapter power/discoverability, bounded discovery, and known-device

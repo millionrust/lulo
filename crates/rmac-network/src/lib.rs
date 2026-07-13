@@ -5,13 +5,56 @@ use std::collections::HashMap;
 use std::fmt;
 #[cfg(target_os = "macos")]
 use std::process::Command;
+#[cfg(not(target_os = "macos"))]
+use std::time::Duration;
+
+/// Exact NetworkManager identity for a visible Wi-Fi network.
+///
+/// SSIDs are byte arrays, not necessarily UTF-8. Keeping those bytes private
+/// prevents callers from accidentally activating a lossy display string. The
+/// security class is part of the identity so an open and protected AP using
+/// the same visible name cannot be conflated.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct WifiNetworkId {
+    ssid: Vec<u8>,
+    secure: bool,
+}
+
+impl WifiNetworkId {
+    pub fn from_bytes(ssid: impl Into<Vec<u8>>, secure: bool) -> Option<Self> {
+        let ssid = ssid.into();
+        (!ssid.is_empty() && ssid.len() <= 32).then_some(Self { ssid, secure })
+    }
+
+    pub fn is_secure(&self) -> bool {
+        self.secure
+    }
+}
+
+impl fmt::Debug for WifiNetworkId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("WifiNetworkId")
+            .field("ssid_bytes", &self.ssid.len())
+            .field("secure", &self.secure)
+            .finish()
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WifiNetwork {
+    pub id: WifiNetworkId,
     pub ssid: String,
     pub strength: u8,
     pub secure: bool,
+    pub known: bool,
     pub connected: bool,
+}
+
+impl WifiNetwork {
+    pub fn can_connect(&self) -> bool {
+        !self.connected && (self.known || !self.secure)
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -184,6 +227,7 @@ pub trait WifiService {
     fn snapshot(&self) -> Result<WifiSnapshot, Error>;
     fn set_enabled(&self, enabled: bool) -> Result<(), Error>;
     fn request_scan(&self) -> Result<(), Error>;
+    fn connect(&self, network: &WifiNetworkId) -> Result<WifiSnapshot, Error>;
 }
 
 pub struct SystemWifiService;
@@ -198,6 +242,10 @@ pub fn set_enabled(enabled: bool) -> Result<(), Error> {
 
 pub fn request_scan() -> Result<(), Error> {
     SystemWifiService.request_scan()
+}
+
+pub fn connect(network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+    SystemWifiService.connect(network)
 }
 
 pub fn network_snapshot() -> Result<NetworkSnapshot, Error> {
@@ -276,12 +324,14 @@ impl WifiService for SystemWifiService {
             .call::<_, _, ()>("RequestScan", &(options,))
             .map_err(|error| Error::new("scan for Wi-Fi networks", error.to_string()))
     }
+
+    fn connect(&self, network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+        linux_connect_wifi(network)
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
 fn linux_snapshot() -> Result<WifiSnapshot, Error> {
-    use zbus::zvariant::OwnedObjectPath;
-
     let connection = system_connection("connect to NetworkManager")?;
     let manager = manager_proxy(&connection)?;
     let enabled = manager
@@ -304,8 +354,54 @@ fn linux_snapshot() -> Result<WifiSnapshot, Error> {
     let interface = device_proxy
         .get_property::<String>("Interface")
         .map_err(|error| Error::new("read Wi-Fi interface", error.to_string()))?;
+    let profiles = linux_wifi_profiles(&connection)?;
+    let raw = linux_wifi_access_points(&connection, &device)?
+        .into_iter()
+        .map(|access_point| RawNetwork {
+            known: profiles.iter().any(|profile| profile.id == access_point.id),
+            id: access_point.id,
+            strength: access_point.strength,
+            connected: access_point.connected,
+        })
+        .collect();
+    let networks = normalize_networks(raw);
+    let current_ssid = networks
+        .iter()
+        .find(|network| network.connected)
+        .map(|network| network.ssid.clone());
+    Ok(WifiSnapshot {
+        available: true,
+        enabled,
+        interface: Some(interface),
+        current_ssid,
+        networks,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+struct WifiAccessPointRecord {
+    id: WifiNetworkId,
+    path: zbus::zvariant::OwnedObjectPath,
+    strength: u8,
+    connected: bool,
+}
+
+#[cfg(not(target_os = "macos"))]
+struct WifiProfileRecord {
+    id: WifiNetworkId,
+    connection_path: zbus::zvariant::OwnedObjectPath,
+    timestamp: u64,
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_wifi_access_points(
+    connection: &zbus::blocking::Connection,
+    device: &zbus::zvariant::OwnedObjectPath,
+) -> Result<Vec<WifiAccessPointRecord>, Error> {
+    use zbus::zvariant::OwnedObjectPath;
+
     let wireless = zbus::blocking::Proxy::new(
-        &connection,
+        connection,
         "org.freedesktop.NetworkManager",
         device.as_str(),
         "org.freedesktop.NetworkManager.Device.Wireless",
@@ -314,13 +410,13 @@ fn linux_snapshot() -> Result<WifiSnapshot, Error> {
     let active = wireless
         .get_property::<OwnedObjectPath>("ActiveAccessPoint")
         .map_err(|error| Error::new("read active Wi-Fi network", error.to_string()))?;
-    let access_points = wireless
+    let paths = wireless
         .call::<_, _, Vec<OwnedObjectPath>>("GetAllAccessPoints", &())
         .map_err(|error| Error::new("list Wi-Fi networks", error.to_string()))?;
-    let mut raw = Vec::new();
-    for path in access_points {
+    let mut access_points = Vec::new();
+    for path in paths {
         let proxy = zbus::blocking::Proxy::new(
-            &connection,
+            connection,
             "org.freedesktop.NetworkManager",
             path.as_str(),
             "org.freedesktop.NetworkManager.AccessPoint",
@@ -341,25 +437,192 @@ fn linux_snapshot() -> Result<WifiSnapshot, Error> {
         let rsn = proxy
             .get_property::<u32>("RsnFlags")
             .map_err(|error| Error::new("read Wi-Fi security", error.to_string()))?;
-        raw.push(RawNetwork {
-            ssid,
+        drop(proxy);
+        let secure = flags & 0x1 != 0 || wpa != 0 || rsn != 0;
+        let Some(id) = WifiNetworkId::from_bytes(ssid, secure) else {
+            continue;
+        };
+        access_points.push(WifiAccessPointRecord {
+            id,
             strength,
-            secure: flags & 0x1 != 0 || wpa != 0 || rsn != 0,
             connected: path == active,
+            path,
         });
     }
-    let networks = normalize_networks(raw);
-    let current_ssid = networks
-        .iter()
-        .find(|network| network.connected)
-        .map(|network| network.ssid.clone());
-    Ok(WifiSnapshot {
-        available: true,
-        enabled,
-        interface: Some(interface),
-        current_ssid,
-        networks,
-    })
+    Ok(access_points)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_wifi_profiles(
+    connection: &zbus::blocking::Connection,
+) -> Result<Vec<WifiProfileRecord>, Error> {
+    use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+
+    let settings = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        "/org/freedesktop/NetworkManager/Settings",
+        "org.freedesktop.NetworkManager.Settings",
+    )
+    .map_err(|error| Error::new("open saved Wi-Fi connections", error.to_string()))?;
+    let paths = settings
+        .call::<_, _, Vec<OwnedObjectPath>>("ListConnections", &())
+        .map_err(|error| Error::new("list saved Wi-Fi connections", error.to_string()))?;
+    let mut profiles = Vec::new();
+    for path in paths {
+        let Ok(proxy) = zbus::blocking::Proxy::new(
+            connection,
+            "org.freedesktop.NetworkManager",
+            path.as_str(),
+            "org.freedesktop.NetworkManager.Settings.Connection",
+        ) else {
+            continue;
+        };
+        let Ok(settings) =
+            proxy.call::<_, _, HashMap<String, HashMap<String, OwnedValue>>>("GetSettings", &())
+        else {
+            // Profiles outside this user's permissions are not activatable and
+            // must not make a visible AP appear to be a known network.
+            continue;
+        };
+        drop(proxy);
+        let Some((id, timestamp)) = wifi_profile_identity(&settings) else {
+            continue;
+        };
+        profiles.push(WifiProfileRecord {
+            id,
+            connection_path: path,
+            timestamp,
+        });
+    }
+    profiles.sort_by(|left, right| {
+        right.timestamp.cmp(&left.timestamp).then_with(|| {
+            left.connection_path
+                .as_str()
+                .cmp(right.connection_path.as_str())
+        })
+    });
+    Ok(profiles)
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn wifi_profile_identity(
+    settings: &HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>,
+) -> Option<(WifiNetworkId, u64)> {
+    let connection = settings.get("connection")?;
+    (property_string(connection, "type").as_deref() == Some("802-11-wireless")).then_some(())?;
+    let wireless = settings.get("802-11-wireless")?;
+    let ssid = property_bytes(wireless, "ssid")?;
+    let secure = settings.contains_key("802-11-wireless-security");
+    let id = WifiNetworkId::from_bytes(ssid, secure)?;
+    Some((id, property::<u64>(connection, "timestamp").unwrap_or(0)))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_connect_wifi(network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+    use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+
+    let connection = system_connection("connect to NetworkManager")?;
+    let manager = manager_proxy(&connection)?;
+    let enabled = manager
+        .get_property::<bool>("WirelessEnabled")
+        .map_err(|error| Error::new("read Wi-Fi power", error.to_string()))?;
+    if !enabled {
+        return Err(Error::new("connect Wi-Fi", "Wi-Fi is turned off"));
+    }
+    let device = wifi_device_path(&connection)?
+        .ok_or_else(|| Error::new("connect Wi-Fi", "no Wi-Fi adapter found"))?;
+    let access_point = linux_wifi_access_points(&connection, &device)?
+        .into_iter()
+        .filter(|access_point| access_point.id == *network)
+        .max_by_key(|access_point| (access_point.connected, access_point.strength))
+        .ok_or_else(|| Error::new("connect Wi-Fi", "the network is no longer in range"))?;
+    if access_point.connected {
+        return linux_snapshot();
+    }
+
+    let profile = linux_wifi_profiles(&connection)?
+        .into_iter()
+        .find(|profile| profile.id == *network);
+    let active_path = if let Some(profile) = profile {
+        manager
+            .call::<_, _, OwnedObjectPath>(
+                "ActivateConnection",
+                &(profile.connection_path, device.clone(), access_point.path),
+            )
+            .map_err(|error| Error::new("connect saved Wi-Fi network", error.to_string()))?
+    } else {
+        if network.is_secure() {
+            return Err(Error::new(
+                "connect Wi-Fi",
+                "this protected network needs a password",
+            ));
+        }
+        let template = HashMap::<String, HashMap<String, OwnedValue>>::new();
+        let (_, active_path) = manager
+            .call::<_, _, (OwnedObjectPath, OwnedObjectPath)>(
+                "AddAndActivateConnection",
+                &(template, device.clone(), access_point.path),
+            )
+            .map_err(|error| Error::new("connect open Wi-Fi network", error.to_string()))?;
+        active_path
+    };
+    wait_for_wifi_activation(&connection, &active_path, network)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wait_for_wifi_activation(
+    connection: &zbus::blocking::Connection,
+    active_path: &zbus::zvariant::OwnedObjectPath,
+    network: &WifiNetworkId,
+) -> Result<WifiSnapshot, Error> {
+    let proxy = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        active_path.as_str(),
+        "org.freedesktop.NetworkManager.Connection.Active",
+    )
+    .map_err(|error| Error::new("watch Wi-Fi activation", error.to_string()))?;
+    for _ in 0..40 {
+        match proxy.get_property::<u32>("State") {
+            Ok(2) => {
+                let snapshot = linux_snapshot()?;
+                if snapshot
+                    .networks
+                    .iter()
+                    .any(|candidate| candidate.id == *network && candidate.connected)
+                {
+                    return Ok(snapshot);
+                }
+            }
+            Ok(3 | 4) => {
+                return Err(Error::new(
+                    "connect Wi-Fi",
+                    "NetworkManager rejected the connection",
+                ));
+            }
+            Ok(_) => {}
+            Err(_) => {
+                let snapshot = linux_snapshot()?;
+                if snapshot
+                    .networks
+                    .iter()
+                    .any(|candidate| candidate.id == *network && candidate.connected)
+                {
+                    return Ok(snapshot);
+                }
+                return Err(Error::new(
+                    "connect Wi-Fi",
+                    "the connection attempt disappeared before completion",
+                ));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    Err(Error::new(
+        "connect Wi-Fi",
+        "the connection did not finish within 10 seconds",
+    ))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -726,7 +989,7 @@ fn wifi_device_path(
     Ok(None)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(not(target_os = "macos"), test))]
 fn property<T>(properties: &HashMap<String, zbus::zvariant::OwnedValue>, key: &str) -> Option<T>
 where
     for<'a> T: TryFrom<&'a zbus::zvariant::OwnedValue>,
@@ -736,7 +999,7 @@ where
         .and_then(|value| T::try_from(value).ok())
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(not(target_os = "macos"), test))]
 fn property_string(
     properties: &HashMap<String, zbus::zvariant::OwnedValue>,
     key: &str,
@@ -746,6 +1009,17 @@ fn property_string(
         .and_then(|value| <&str>::try_from(value).ok())
         .map(str::to_string)
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn property_bytes(
+    properties: &HashMap<String, zbus::zvariant::OwnedValue>,
+    key: &str,
+) -> Option<Vec<u8>> {
+    properties
+        .get(key)
+        .and_then(|value| value.try_clone().ok())
+        .and_then(|value| Vec::<u8>::try_from(value).ok())
 }
 
 #[cfg(target_os = "macos")]
@@ -770,11 +1044,16 @@ impl WifiService for SystemWifiService {
         };
         let networks = current_ssid
             .iter()
-            .map(|ssid| WifiNetwork {
-                ssid: ssid.clone(),
-                strength: 100,
-                secure: true,
-                connected: true,
+            .filter_map(|ssid| {
+                let id = WifiNetworkId::from_bytes(ssid.as_bytes().to_vec(), true)?;
+                Some(WifiNetwork {
+                    id,
+                    ssid: ssid.clone(),
+                    strength: 100,
+                    secure: true,
+                    known: true,
+                    connected: true,
+                })
             })
             .collect();
         Ok(WifiSnapshot {
@@ -802,6 +1081,21 @@ impl WifiService for SystemWifiService {
 
     fn request_scan(&self) -> Result<(), Error> {
         Ok(())
+    }
+
+    fn connect(&self, network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+        let snapshot = self.snapshot()?;
+        if snapshot
+            .networks
+            .iter()
+            .any(|candidate| candidate.id == *network && candidate.connected)
+        {
+            return Ok(snapshot);
+        }
+        Err(Error::new(
+            "connect Wi-Fi",
+            "network activation is provided by the Linux NetworkManager session",
+        ))
     }
 }
 
@@ -959,36 +1253,36 @@ fn command(program: &'static str, arguments: &[&str]) -> Result<String, Error> {
 
 #[cfg(any(not(target_os = "macos"), test))]
 struct RawNetwork {
-    ssid: Vec<u8>,
+    id: WifiNetworkId,
     strength: u8,
-    secure: bool,
+    known: bool,
     connected: bool,
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
 fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwork> {
-    let mut networks = HashMap::<String, WifiNetwork>::new();
+    let mut networks = HashMap::<WifiNetworkId, WifiNetwork>::new();
     for raw in network_data {
-        let ssid = String::from_utf8_lossy(&raw.ssid).trim().to_string();
-        if ssid.is_empty() {
-            continue;
-        }
+        let ssid = display_ssid(&raw.id.ssid);
+        let id = raw.id;
         let network = WifiNetwork {
-            ssid: ssid.clone(),
+            id: id.clone(),
+            ssid,
             strength: raw.strength.min(100),
-            secure: raw.secure,
+            secure: id.secure,
+            known: raw.known,
             connected: raw.connected,
         };
         networks
-            .entry(ssid)
+            .entry(id)
             .and_modify(|existing| {
-                let secure = existing.secure || network.secure;
+                let known = existing.known || network.known;
                 if !existing.connected
                     && (network.connected || network.strength > existing.strength)
                 {
                     *existing = network.clone();
                 }
-                existing.secure = secure;
+                existing.known = known;
             })
             .or_insert(network);
     }
@@ -999,8 +1293,28 @@ fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwork> {
             .cmp(&left.connected)
             .then_with(|| right.strength.cmp(&left.strength))
             .then_with(|| left.ssid.to_lowercase().cmp(&right.ssid.to_lowercase()))
+            .then_with(|| right.secure.cmp(&left.secure))
     });
     networks
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn display_ssid(ssid: &[u8]) -> String {
+    let display = String::from_utf8_lossy(ssid)
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                '\u{fffd}'
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    if display.trim().is_empty() {
+        "Unnamed Network".to_string()
+    } else {
+        display
+    }
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -1137,38 +1451,44 @@ fn parse_macos_vpn_profiles(output: &str) -> Vec<VpnProfile> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zbus::zvariant::{DynamicType, OwnedValue, Str, Value};
+
+    fn owned<T>(value: T) -> OwnedValue
+    where
+        T: Into<Value<'static>> + DynamicType,
+    {
+        OwnedValue::try_from(Value::new(value)).unwrap()
+    }
+
+    fn string(value: &str) -> OwnedValue {
+        OwnedValue::from(Str::from(value.to_owned()))
+    }
 
     #[test]
     fn networks_are_deduplicated_sorted_and_clamped() {
         let networks = normalize_networks(vec![
             RawNetwork {
-                ssid: b"Cafe".to_vec(),
+                id: WifiNetworkId::from_bytes(b"Cafe".to_vec(), true).unwrap(),
                 strength: 45,
-                secure: false,
+                known: false,
                 connected: false,
             },
             RawNetwork {
-                ssid: b"Home".to_vec(),
+                id: WifiNetworkId::from_bytes(b"Home".to_vec(), true).unwrap(),
                 strength: 150,
-                secure: true,
+                known: true,
                 connected: true,
             },
             RawNetwork {
-                ssid: b"Cafe".to_vec(),
+                id: WifiNetworkId::from_bytes(b"Cafe".to_vec(), true).unwrap(),
                 strength: 72,
-                secure: true,
+                known: true,
                 connected: false,
             },
             RawNetwork {
-                ssid: b"Home".to_vec(),
+                id: WifiNetworkId::from_bytes(b"Home".to_vec(), true).unwrap(),
                 strength: 200,
-                secure: false,
-                connected: false,
-            },
-            RawNetwork {
-                ssid: Vec::new(),
-                strength: 99,
-                secure: false,
+                known: false,
                 connected: false,
             },
         ]);
@@ -1176,9 +1496,90 @@ mod tests {
         assert_eq!(networks.len(), 2);
         assert_eq!(networks[0].ssid, "Home");
         assert_eq!(networks[0].strength, 100);
+        assert!(networks[0].known);
+        assert!(!networks[0].can_connect());
         assert_eq!(networks[1].ssid, "Cafe");
         assert_eq!(networks[1].strength, 72);
         assert!(networks[1].secure);
+        assert!(networks[1].known);
+        assert!(networks[1].can_connect());
+    }
+
+    #[test]
+    fn open_and_protected_networks_with_the_same_ssid_stay_distinct() {
+        let networks = normalize_networks(vec![
+            RawNetwork {
+                id: WifiNetworkId::from_bytes(b"Shared Name".to_vec(), false).unwrap(),
+                strength: 80,
+                known: false,
+                connected: false,
+            },
+            RawNetwork {
+                id: WifiNetworkId::from_bytes(b"Shared Name".to_vec(), true).unwrap(),
+                strength: 70,
+                known: true,
+                connected: false,
+            },
+        ]);
+
+        assert_eq!(networks.len(), 2);
+        assert!(!networks[0].secure);
+        assert!(networks[0].can_connect());
+        assert!(networks[1].secure);
+        assert!(networks[1].known);
+        assert!(networks[1].can_connect());
+    }
+
+    #[test]
+    fn wifi_network_ids_validate_length_and_redact_ssid_bytes() {
+        assert!(WifiNetworkId::from_bytes(Vec::new(), false).is_none());
+        assert!(WifiNetworkId::from_bytes(vec![b'x'; 33], false).is_none());
+        let id = WifiNetworkId::from_bytes(b"Private Network".to_vec(), true).unwrap();
+        let debug = format!("{id:?}");
+        assert!(!debug.contains("Private Network"));
+        assert!(debug.contains("ssid_bytes: 15"));
+    }
+
+    #[test]
+    fn saved_wifi_profiles_preserve_exact_ssid_security_and_recency() {
+        let settings = HashMap::from([
+            (
+                "connection".to_string(),
+                HashMap::from([
+                    ("type".to_string(), string("802-11-wireless")),
+                    ("timestamp".to_string(), owned(42_u64)),
+                ]),
+            ),
+            (
+                "802-11-wireless".to_string(),
+                HashMap::from([("ssid".to_string(), owned(b"Studio".to_vec()))]),
+            ),
+            (
+                "802-11-wireless-security".to_string(),
+                HashMap::from([("key-mgmt".to_string(), string("wpa-psk"))]),
+            ),
+        ]);
+
+        let (id, timestamp) = wifi_profile_identity(&settings).unwrap();
+        assert_eq!(id.ssid, b"Studio");
+        assert!(id.is_secure());
+        assert_eq!(timestamp, 42);
+    }
+
+    #[test]
+    fn non_wifi_profiles_are_not_treated_as_known_networks() {
+        let settings = HashMap::from([
+            (
+                "connection".to_string(),
+                HashMap::from([("type".to_string(), string("802-3-ethernet"))]),
+            ),
+            (
+                "802-11-wireless".to_string(),
+                HashMap::from([("ssid".to_string(), owned(b"Studio".to_vec()))]),
+            ),
+        ]);
+
+        assert!(wifi_profile_identity(&settings).is_none());
     }
 
     #[test]

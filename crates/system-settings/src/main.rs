@@ -683,6 +683,7 @@ struct Settings {
     wifi_available: bool,
     wifi_loading: bool,
     wifi_busy: bool,
+    wifi_connecting: Option<rmac_network::WifiNetworkId>,
     wifi_on: bool,
     wifi_interface: Option<String>,
     wifi_networks: Vec<rmac_network::WifiNetwork>,
@@ -1713,6 +1714,7 @@ impl Settings {
             wifi_available: false,
             wifi_loading: true,
             wifi_busy: false,
+            wifi_connecting: None,
             wifi_on: false,
             wifi_interface: None,
             wifi_networks: Vec::new(),
@@ -3237,6 +3239,7 @@ impl Settings {
     ) {
         self.wifi_loading = false;
         self.wifi_busy = false;
+        self.wifi_connecting = None;
         match result {
             Ok(snapshot) => {
                 self.wifi_available = snapshot.available;
@@ -4460,6 +4463,37 @@ impl Settings {
                     std::thread::sleep(Duration::from_millis(750));
                     rmac_network::snapshot()
                 })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn connect_wifi(&mut self, network: rmac_network::WifiNetworkId, cx: &mut Context<Self>) {
+        if self.wifi_busy || self.wifi_loading || !self.wifi_available || !self.wifi_on {
+            return;
+        }
+        let Some(candidate) = self
+            .wifi_networks
+            .iter()
+            .find(|candidate| candidate.id == network)
+        else {
+            return;
+        };
+        if !candidate.can_connect() {
+            return;
+        }
+        self.wifi_busy = true;
+        self.wifi_connecting = Some(network.clone());
+        self.wifi_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_network::connect(&network) })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
@@ -5916,6 +5950,8 @@ impl Settings {
         let view = cx.entity();
         let power_subtitle = if self.wifi_loading {
             Some("Reading system state…".into())
+        } else if self.wifi_connecting.is_some() {
+            Some("Connecting to network…".into())
         } else if self.wifi_busy {
             Some("Applying change…".into())
         } else {
@@ -5924,12 +5960,12 @@ impl Settings {
                 .map(|interface| format!("NetworkManager · {interface}").into())
         };
         let power_view = view.clone();
-        let power =
-            Toggle::new("wifi-power")
-                .checked(self.wifi_on)
-                .on_click(move |enabled, _, cx| {
-                    power_view.update(cx, |settings, cx| settings.set_wifi_enabled(*enabled, cx));
-                });
+        let power = Toggle::new("wifi-power")
+            .checked(self.wifi_on)
+            .disabled(self.wifi_loading || self.wifi_busy || !self.wifi_available)
+            .on_click(move |enabled, _, cx| {
+                power_view.update(cx, |settings, cx| settings.set_wifi_enabled(*enabled, cx));
+            });
         let mut cards = vec![card(vec![row_base()
             .child(tile("icons/wifi.svg", accent(), 22.0))
             .child(text_block("Wi-Fi".into(), power_subtitle))
@@ -5949,11 +5985,14 @@ impl Settings {
 
         if self.wifi_on {
             let refresh_view = view.clone();
-            let refresh_label = if self.wifi_busy {
-                "Scanning…"
-            } else {
-                "Refresh"
-            };
+            let refresh = Button::new("wifi-refresh", "Refresh")
+                .small()
+                .ghost()
+                .busy(self.wifi_busy)
+                .disabled(self.wifi_busy)
+                .on_click(move |_, _, cx| {
+                    refresh_view.update(cx, |settings, cx| settings.refresh_wifi(cx));
+                });
             cards.push(
                 div()
                     .flex()
@@ -5969,21 +6008,7 @@ impl Settings {
                             .text_color(secondary())
                             .child("Networks"),
                     )
-                    .child(
-                        div()
-                            .id("wifi-refresh")
-                            .px_2()
-                            .py_1()
-                            .rounded(px(6.0))
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(accent())
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            .child(refresh_label)
-                            .on_click(move |_, _, cx| {
-                                refresh_view.update(cx, |settings, cx| settings.refresh_wifi(cx));
-                            }),
-                    ),
+                    .child(refresh),
             );
 
             let rows = if self.wifi_networks.is_empty() {
@@ -5993,30 +6018,62 @@ impl Settings {
             } else {
                 self.wifi_networks
                     .iter()
-                    .map(|network| {
-                        let status = if network.connected {
+                    .enumerate()
+                    .map(|(index, network)| {
+                        let connecting = self.wifi_connecting.as_ref() == Some(&network.id);
+                        let status = if connecting {
+                            "Connecting…".to_string()
+                        } else if network.connected {
                             format!("Connected · {}%", network.strength)
+                        } else if network.known {
+                            format!("Known Network · {}%", network.strength)
                         } else if network.secure {
-                            format!("Secured · {}%", network.strength)
+                            format!("Password Required · {}%", network.strength)
                         } else {
-                            format!("Open · {}%", network.strength)
+                            format!("Open Network · {}%", network.strength)
                         };
-                        value_row(
-                            "icons/wifi.svg",
-                            if network.connected {
-                                accent()
-                            } else {
-                                secondary()
-                            },
-                            network.ssid.clone().into(),
-                            status.into(),
+                        let can_connect = !self.wifi_busy && network.can_connect();
+                        let network_id = network.id.clone();
+                        let network_view = view.clone();
+                        ListRow::new(
+                            SharedString::from(format!("wifi-network-{index}")),
+                            div()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .gap_3()
+                                .child(tile(
+                                    "icons/wifi.svg",
+                                    if network.connected || connecting {
+                                        accent()
+                                    } else {
+                                        secondary()
+                                    },
+                                    22.0,
+                                ))
+                                .child(text_block(network.ssid.clone().into(), None))
+                                .child(
+                                    div()
+                                        .text_size(rmac_ui::text_px(13.0))
+                                        .text_color(secondary())
+                                        .child(status),
+                                ),
                         )
+                        .h(px(50.0))
+                        .px_3()
+                        .disabled(!can_connect)
+                        .on_activate(move |_, _, cx| {
+                            network_view.update(cx, |settings, cx| {
+                                settings.connect_wifi(network_id.clone(), cx)
+                            });
+                        })
+                        .into_any_element()
                     })
                     .collect()
             };
             cards.push(card(rows));
             cards.push(note_card(
-                "Network discovery and Wi-Fi power are live. Joining a new protected network will be added with the NetworkManager secret-agent flow.",
+                "Select a known or open network to connect. A new protected network remains unavailable until the NetworkManager password flow is present.",
             ));
         }
 

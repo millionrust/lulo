@@ -395,9 +395,12 @@ mod tests {
             interface: Some("wlan0".into()),
             current_ssid: Some("Office Wi-Fi".into()),
             networks: vec![rmac_network::WifiNetwork {
+                id: rmac_network::WifiNetworkId::from_bytes(b"Office Wi-Fi".to_vec(), true)
+                    .unwrap(),
                 ssid: "Office Wi-Fi".into(),
                 strength: 76,
                 secure: true,
+                known: true,
                 connected: true,
             }],
         }));

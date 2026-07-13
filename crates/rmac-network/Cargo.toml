@@ -7,3 +7,6 @@ authors.workspace = true
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 zbus.workspace = true
+
+[dev-dependencies]
+zbus.workspace = true

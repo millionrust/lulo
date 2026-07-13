@@ -5211,6 +5211,7 @@ dependencies = [
  "async-channel 2.5.0",
  "async-io",
  "futures-util",
+ "libloading",
  "url",
  "zbus",
  "zeroize",

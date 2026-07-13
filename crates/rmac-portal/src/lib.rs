@@ -127,6 +127,49 @@ pub async fn choose_wallpaper_file() -> Result<Option<PathBuf>, Error> {
     }
 }
 
+/// Ask the desktop portal for one local VPN configuration file.
+///
+/// VPN plugins own their input formats, so this chooser deliberately uses a
+/// generic bounded configuration filter. The selected plugin and
+/// `rmac-network` must still validate and stage the file before persistence.
+pub async fn choose_vpn_configuration() -> Result<Option<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let request = OpenFileRequest::default()
+            .title("Import VPN Configuration")
+            .accept_label("Choose")
+            .modal(true)
+            .filter(FileFilter::new("VPN configurations").glob("*"))
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(None),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        let Some(uri) = response.uris().first() else {
+            return Ok(None);
+        };
+        uri.to_file_path().map(Some).map_err(|()| Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the portal returned a non-local VPN configuration".into(),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the VPN chooser is available in the supported Linux session".into(),
+        })
+    }
+}
+
 /// Ask the desktop portal for one local directory to exclude from search.
 pub async fn choose_search_exclusion() -> Result<Option<PathBuf>, Error> {
     #[cfg(target_os = "linux")]

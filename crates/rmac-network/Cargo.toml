@@ -13,6 +13,7 @@ zeroize.workspace = true
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 async-io.workspace = true
 futures-util.workspace = true
+libloading.workspace = true
 zbus.workspace = true
 
 [dev-dependencies]

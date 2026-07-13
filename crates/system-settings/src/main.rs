@@ -775,6 +775,10 @@ struct Settings {
     vpn_busy: Option<rmac_network::VpnProfileId>,
     vpn_cancellation: Option<rmac_network::VpnCancellation>,
     vpn_generation: u64,
+    vpn_import_capabilities: rmac_network::VpnImportCapabilities,
+    vpn_import_loading: bool,
+    vpn_import_busy: bool,
+    vpn_import_preview: Option<rmac_network::VpnImportPreview>,
 
     // Wi-Fi
     wifi_available: bool,
@@ -1473,7 +1477,9 @@ impl Settings {
                                     .then_some(this.network_generation),
                                 (this.vpn_busy.is_none()
                                     && !this.vpn_loading
-                                    && !this.vpn_refreshing)
+                                    && !this.vpn_refreshing
+                                    && !this.vpn_import_busy
+                                    && this.vpn_import_preview.is_none())
                                     .then_some(this.vpn_generation),
                             )
                         }) {
@@ -1528,7 +1534,10 @@ impl Settings {
                                     if vpn_stream_snapshot_is_current(
                                         generation,
                                         this.vpn_generation,
-                                        this.vpn_busy.is_some() || this.vpn_refreshing,
+                                        this.vpn_busy.is_some()
+                                            || this.vpn_refreshing
+                                            || this.vpn_import_busy
+                                            || this.vpn_import_preview.is_some(),
                                         this.vpn_loading,
                                     ) {
                                         this.finish_vpn_stream_update(result);
@@ -1599,6 +1608,19 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_vpn_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let capabilities = cx
+                .background_executor()
+                .spawn(async { rmac_network::vpn_import_capabilities() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_import_capabilities = capabilities;
+                this.vpn_import_loading = false;
                 cx.notify();
             });
         })
@@ -2005,6 +2027,10 @@ impl Settings {
             vpn_busy: None,
             vpn_cancellation: None,
             vpn_generation: 0,
+            vpn_import_capabilities: rmac_network::VpnImportCapabilities::default(),
+            vpn_import_loading: true,
+            vpn_import_busy: false,
+            vpn_import_preview: None,
 
             wifi_available: false,
             wifi_loading: true,
@@ -4052,7 +4078,12 @@ impl Settings {
     }
 
     fn refresh_vpn(&mut self, cx: &mut Context<Self>) {
-        if self.vpn_loading || self.vpn_refreshing || self.vpn_busy.is_some() {
+        if self.vpn_loading
+            || self.vpn_refreshing
+            || self.vpn_busy.is_some()
+            || self.vpn_import_busy
+            || self.vpn_import_preview.is_some()
+        {
             return;
         }
         self.vpn_generation = self.vpn_generation.wrapping_add(1);
@@ -4077,7 +4108,12 @@ impl Settings {
         enabled: bool,
         cx: &mut Context<Self>,
     ) {
-        if self.vpn_loading || self.vpn_refreshing || self.vpn_busy.is_some() {
+        if self.vpn_loading
+            || self.vpn_refreshing
+            || self.vpn_busy.is_some()
+            || self.vpn_import_busy
+            || self.vpn_import_preview.is_some()
+        {
             return;
         }
         self.vpn_generation = self.vpn_generation.wrapping_add(1);
@@ -4136,6 +4172,101 @@ impl Settings {
                 self.vpn_error = Some(format!("Could not update VPN: {error}").into());
             }
         }
+    }
+
+    fn choose_vpn_import(
+        &mut self,
+        capability: rmac_network::VpnImportCapabilityId,
+        cx: &mut Context<Self>,
+    ) {
+        if self.vpn_loading
+            || self.vpn_refreshing
+            || self.vpn_busy.is_some()
+            || self.vpn_import_busy
+            || self.vpn_import_preview.is_some()
+        {
+            return;
+        }
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_import_busy = true;
+        self.vpn_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = match rmac_portal::choose_vpn_configuration().await {
+                Ok(Some(path)) => {
+                    cx.background_executor()
+                        .spawn(async move {
+                            rmac_network::preview_vpn_import(&capability, &path)
+                                .map(Some)
+                                .map_err(|error| error.to_string())
+                        })
+                        .await
+                }
+                Ok(None) => Ok(None),
+                Err(error) => Err(error.to_string()),
+            };
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_import_busy = false;
+                match result {
+                    Ok(Some(preview)) => {
+                        this.vpn_import_preview = Some(preview);
+                        this.vpn_error = None;
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        this.vpn_error =
+                            Some(format!("Could not import VPN configuration: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_vpn_import(&mut self, keep: bool, cx: &mut Context<Self>) {
+        if self.vpn_import_busy || self.vpn_busy.is_some() {
+            return;
+        }
+        let Some(preview) = self
+            .vpn_import_preview
+            .as_ref()
+            .map(|preview| preview.id.clone())
+        else {
+            return;
+        };
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_import_busy = true;
+        self.vpn_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_network::finish_vpn_import(&preview, keep) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_import_busy = false;
+                match result {
+                    Ok(snapshot) => {
+                        this.vpn = snapshot;
+                        this.vpn_import_preview = None;
+                        this.vpn_error = None;
+                        this.vpn_stream_error = None;
+                    }
+                    Err(error) => {
+                        this.vpn_error = Some(
+                            format!(
+                                "Could not {} VPN import: {error}",
+                                if keep { "save" } else { "cancel" }
+                            )
+                            .into(),
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn finish_audio_update(
@@ -12220,7 +12351,9 @@ impl Settings {
             count => format!("{count} VPNs Connected"),
         };
         let refresh_view = view.clone();
-        let refresh_label = if self.vpn_busy.is_some() {
+        let refresh_label = if self.vpn_import_busy {
+            "Importing…"
+        } else if self.vpn_busy.is_some() {
             "Updating…"
         } else if self.vpn_refreshing {
             "Refreshing…"
@@ -12280,73 +12413,215 @@ impl Settings {
         }
         if self.vpn.profiles.is_empty() {
             cards.push(note_card(
-                "No VPN configurations are installed. Profile import will be added next.",
+                "No VPN configurations are installed. Import a configuration below.",
             ));
-            return self.pane(cards);
-        }
-
-        let rows = self
-            .vpn
-            .profiles
-            .iter()
-            .enumerate()
-            .map(|(index, profile)| {
-                let id = profile.id.clone();
-                let switch_id = id.clone();
-                let profile_view = view.clone();
-                let applying = self.vpn_busy.as_ref() == Some(&id);
-                let connecting = applying && self.vpn_cancellation.is_some();
-                let subtitle = if connecting {
-                    format!("{} · Connecting…", profile.service)
-                } else if applying {
-                    format!("{} · Disconnecting…", profile.service)
-                } else {
-                    format!("{} · {}", profile.service, profile.state.label())
-                };
-                let control = if connecting {
-                    Button::new(("vpn-stop", index), "Stop")
-                        .on_click(move |_, _, cx| {
-                            profile_view
-                                .update(cx, |settings, cx| settings.cancel_vpn_activation(cx));
+        } else {
+            let rows = self
+                .vpn
+                .profiles
+                .iter()
+                .enumerate()
+                .map(|(index, profile)| {
+                    let id = profile.id.clone();
+                    let switch_id = id.clone();
+                    let profile_view = view.clone();
+                    let applying = self.vpn_busy.as_ref() == Some(&id);
+                    let connecting = applying && self.vpn_cancellation.is_some();
+                    let subtitle = if connecting {
+                        format!("{} · Connecting…", profile.service)
+                    } else if applying {
+                        format!("{} · Disconnecting…", profile.service)
+                    } else {
+                        format!("{} · {}", profile.service, profile.state.label())
+                    };
+                    let control = if connecting {
+                        Button::new(("vpn-stop", index), "Stop")
+                            .on_click(move |_, _, cx| {
+                                profile_view
+                                    .update(cx, |settings, cx| settings.cancel_vpn_activation(cx));
+                            })
+                            .into_any_element()
+                    } else {
+                        Toggle::new(ElementId::from(SharedString::from(format!(
+                            "vpn-profile-{index}"
+                        ))))
+                        .checked(profile.state.is_enabled())
+                        .disabled(
+                            self.vpn_busy.is_some()
+                                || self.vpn_refreshing
+                                || self.vpn_import_busy
+                                || self.vpn_import_preview.is_some(),
+                        )
+                        .on_click(move |enabled, _, cx| {
+                            let id = switch_id.clone();
+                            profile_view.update(cx, |settings, cx| {
+                                settings.set_vpn_enabled(id, *enabled, cx)
+                            });
                         })
                         .into_any_element()
-                } else {
-                    Toggle::new(ElementId::from(SharedString::from(format!(
-                        "vpn-profile-{index}"
-                    ))))
-                    .checked(profile.state.is_enabled())
-                    .disabled(self.vpn_busy.is_some() || self.vpn_refreshing)
-                    .on_click(move |enabled, _, cx| {
-                        let id = switch_id.clone();
-                        profile_view.update(cx, |settings, cx| {
-                            settings.set_vpn_enabled(id, *enabled, cx)
-                        });
-                    })
-                    .into_any_element()
-                };
-                row_base()
-                    .child(tile(
-                        "icons/key.svg",
-                        if profile.state == rmac_network::VpnState::Connected {
-                            hsl(0x34c759)
-                        } else {
-                            accent()
-                        },
-                        22.0,
-                    ))
-                    .child(text_block(
-                        profile.name.clone().into(),
-                        Some(subtitle.into()),
-                    ))
-                    .child(control)
-                    .into_any_element()
-            })
-            .collect();
-        cards.push(card(rows));
+                    };
+                    row_base()
+                        .child(tile(
+                            "icons/key.svg",
+                            if profile.state == rmac_network::VpnState::Connected {
+                                hsl(0x34c759)
+                            } else {
+                                accent()
+                            },
+                            22.0,
+                        ))
+                        .child(text_block(
+                            profile.name.clone().into(),
+                            Some(subtitle.into()),
+                        ))
+                        .child(control)
+                        .into_any_element()
+                })
+                .collect();
+            cards.push(card(rows));
+        }
+        cards.push(section_header("Import Configuration"));
+        if self.vpn_import_loading {
+            cards.push(note_card("Checking installed VPN importers…"));
+        } else if !self.vpn_import_capabilities.available {
+            cards.push(note_card(
+                self.vpn_import_capabilities
+                    .limitation
+                    .clone()
+                    .unwrap_or_else(|| "VPN import is unavailable on this system".to_string()),
+            ));
+        } else if self.vpn_import_capabilities.plugins.is_empty() {
+            cards.push(note_card(
+                "No reviewed import-capable NetworkManager VPN plugins are installed.",
+            ));
+        } else {
+            let import_rows = self
+                .vpn_import_capabilities
+                .plugins
+                .iter()
+                .enumerate()
+                .map(|(index, capability)| {
+                    let capability_id = capability.id.clone();
+                    let import_view = view.clone();
+                    row_base()
+                        .child(tile("icons/key.svg", accent(), 20.0))
+                        .child(text_block(
+                            capability.name.clone().into(),
+                            Some(capability.format_hint.clone().into()),
+                        ))
+                        .child(
+                            Button::new(("vpn-import", index), "Import…")
+                                .disabled(
+                                    self.vpn_import_busy
+                                        || self.vpn_busy.is_some()
+                                        || self.vpn_import_preview.is_some(),
+                                )
+                                .on_click(move |_, _, cx| {
+                                    let capability = capability_id.clone();
+                                    import_view.update(cx, |settings, cx| {
+                                        settings.choose_vpn_import(capability, cx)
+                                    });
+                                }),
+                        )
+                        .into_any_element()
+                })
+                .collect();
+            cards.push(card(import_rows));
+            if let Some(limitation) = &self.vpn_import_capabilities.limitation {
+                cards.push(note_card(limitation.clone()));
+            }
+        }
         cards.push(note_card(
             "Connections are controlled by the system network service. Authentication prompts are handled by the installed VPN plugin.",
         ));
         self.pane(cards)
+    }
+
+    fn render_vpn_import_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let preview = self.vpn_import_preview.as_ref()?;
+        let busy = self.vpn_import_busy;
+        let content = div()
+            .w(px(420.0))
+            .v_flex()
+            .gap_4()
+            .p_5()
+            .rounded(px(14.0))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(format!("Import “{}”?", preview.name)),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child(format!(
+                                "{} recognized “{}”.",
+                                preview.service, preview.source_name
+                            )),
+                    ),
+            )
+            .child(note_card(
+                "The profile is temporary and cannot connect automatically. Import saves it to NetworkManager; passwords and keys remain under NetworkManager and the VPN plugin’s authority.",
+            ))
+            .when(busy, |dialog| {
+                dialog.child(Progress::indeterminate().label("Finishing VPN import…"))
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "vpn-import-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .disabled(busy)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.finish_vpn_import(false, cx)
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "vpn-import-confirm",
+                            "Import",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .disabled(busy)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.finish_vpn_import(true, cx)
+                        })),
+                    ),
+            );
+        Some(
+            rmac_ui::dialog("vpn-import-dialog", content)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" if !this.vpn_import_busy => {
+                            cx.stop_propagation();
+                            this.finish_vpn_import(false, cx);
+                        }
+                        "enter" if !this.vpn_import_busy => {
+                            cx.stop_propagation();
+                            this.finish_vpn_import(true, cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
     }
 
     /// Direct per-volume capacity state from the mount service.
@@ -12869,6 +13144,7 @@ impl Render for Settings {
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
         let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
         let bluetooth_forget_dialog = self.render_bluetooth_forget_dialog(cx);
+        let vpn_import_dialog = self.render_vpn_import_dialog(cx);
         div()
             .size_full()
             .v_flex()
@@ -12887,6 +13163,12 @@ impl Render for Settings {
                     cx.stop_propagation();
                     this.cancel_vpn_activation(cx);
                 } else if event.keystroke.key == "escape"
+                    && this.vpn_import_preview.is_some()
+                    && !this.vpn_import_busy
+                {
+                    cx.stop_propagation();
+                    this.finish_vpn_import(false, cx);
+                } else if event.keystroke.key == "escape"
                     && this.network_editor.is_some()
                     && !this.network_busy
                 {
@@ -12895,9 +13177,18 @@ impl Render for Settings {
                 }
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
-            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, _| {
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 if let Some(cancellation) = &this.vpn_cancellation {
                     cancellation.cancel();
+                    return;
+                }
+                if this.vpn_import_preview.is_some() {
+                    if !this.vpn_import_busy {
+                        this.finish_vpn_import(false, cx);
+                    }
+                    return;
+                }
+                if this.vpn_import_busy {
                     return;
                 }
                 if this.wifi_forgetting.is_some()
@@ -12974,6 +13265,7 @@ impl Render for Settings {
             .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_forget_dialog, |root, dialog| root.child(dialog))
+            .when_some(vpn_import_dialog, |root, dialog| root.child(dialog))
     }
 }
 

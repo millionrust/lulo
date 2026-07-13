@@ -12,10 +12,15 @@ use zeroize::Zeroize as _;
 mod network_editor;
 #[cfg(any(not(target_os = "macos"), test))]
 mod secret_agent;
+mod vpn_import;
 
 pub use network_editor::{
     IpAddress, IpConfiguration, IpFamily, IpMethod, NetworkConfiguration, NetworkConnectionId,
     NetworkEdit, NetworkValidationError, ProxyConfiguration, ProxyMethod,
+};
+pub use vpn_import::{
+    VpnImportCapabilities, VpnImportCapability, VpnImportCapabilityId, VpnImportPreview,
+    VpnImportPreviewId,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -493,6 +498,21 @@ pub fn update_network_connection(edit: &NetworkEdit) -> Result<NetworkSnapshot, 
 
 pub fn vpn_snapshot() -> Result<VpnSnapshot, Error> {
     system_vpn_snapshot()
+}
+
+pub fn vpn_import_capabilities() -> VpnImportCapabilities {
+    vpn_import::capabilities()
+}
+
+pub fn preview_vpn_import(
+    capability: &VpnImportCapabilityId,
+    path: &std::path::Path,
+) -> Result<VpnImportPreview, Error> {
+    vpn_import::preview(capability, path)
+}
+
+pub fn finish_vpn_import(preview: &VpnImportPreviewId, keep: bool) -> Result<VpnSnapshot, Error> {
+    vpn_import::finish(preview, keep)
 }
 
 pub fn set_vpn_enabled(

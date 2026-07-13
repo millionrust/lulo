@@ -28,6 +28,7 @@ futures-lite = "2"
 image = { version = "0.25.10", default-features = false }
 kdl = { version = "=6.5.0", features = ["v1-fallback"] }
 libc = "=0.2.186"
+libloading = "=0.8.9"
 notify = "7"
 objc2 = "0.6"
 objc2-app-kit = "0.3"

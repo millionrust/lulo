@@ -6,6 +6,8 @@ connects profiles with bounded completion and live refresh, and can stage a
 reviewed installed plugin's configuration for confirmation before anything is
 written to disk. Existing profiles can be deleted through a separate exact,
 confirmed transaction. General plugin-specific editing remains open F4 work.
+It also offers a bounded typed editor for the common non-secret fields that can
+be changed without reconstructing plugin-owned settings.
 
 ## Scope and private identity
 
@@ -101,6 +103,35 @@ boundary; names are never accepted as authority. Failure after disconnection
 leaves the profile installed and triggers an independent recovery snapshot.
 Failure after Delete never claims success without authoritative absence.
 
+## Non-secret profile editing
+
+Details opens off the UI thread and captures an opaque identity containing the
+exact Settings path, UUID, stable `Settings.VersionId` read, and complete
+non-secret `GetSettings` map. Temporary `Unsaved=true` objects are rejected.
+Plugin-backed profiles expose name, optional account name, persistence policy,
+and the unsigned connection timeout. Native WireGuard profiles expose name
+only because their protocol fields are not the generic `vpn` setting. Names and
+usernames are trimmed, bounded to 256 characters, and reject control
+characters; timeout input must fit NetworkManager's `uint32` contract.
+
+NetworkManager's full `Update`, `UpdateUnsaved`, and `Update2` methods replace
+the prior settings while `GetSettings` intentionally omits secrets. rmac
+therefore never rebuilds a VPN map from that incomplete read. After exact
+preflight revalidation, it invokes the official `nmcli connection modify uuid`
+frontend with separate arguments and only the four reviewed property names. No
+shell is involved, standard streams are discarded, the process has a fixed C
+locale and 20-second bound, and passwords, certificates, private keys, and
+plugin-specific data never enter the command or rmac memory.
+
+Command exit status is not authoritative. A stable D-Bus read must prove the
+exact requested typed values, persistent `Unsaved=false` state, unchanged
+connection type, and an unchanged projection of every other visible setting;
+a fresh VPN snapshot must contain the same opaque profile with its new name.
+If another editor changes the profile before Save, the original full map no
+longer matches and rmac refuses to mutate it. If other fields change during the
+unversioned partial NetworkManager transaction, rmac leaves the newer state
+untouched and requires a refresh instead of attempting a lossy rollback.
+
 ## Activation and deactivation
 
 Connecting calls NetworkManager's `ActivateConnection` with the exact saved
@@ -145,9 +176,9 @@ preview exists, so that temporary object is never presented as an installed VPN.
 
 F4 remains open. The next slices must:
 
-- define supported typed editors without lossy rewriting of plugin-owned data,
-  and delegate any new secrets to NetworkManager's appropriate secret flags or
-  agent rather than rmac preferences;
+- delegate any new secret mutation to NetworkManager's appropriate secret flags
+  or agent rather than rmac preferences; plugin-specific configuration remains
+  under the installed plugin's own editor/authority;
 - prove capability discovery, each supported import format, secret handling,
   authentication, connect, cancel, failure, save/cancel preview, active/inactive
   deletion and concurrent-edit preservation,

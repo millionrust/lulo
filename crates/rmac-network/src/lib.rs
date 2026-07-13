@@ -13,6 +13,7 @@ mod network_editor;
 #[cfg(any(not(target_os = "macos"), test))]
 mod secret_agent;
 mod vpn_delete;
+mod vpn_editor;
 mod vpn_import;
 
 pub use network_editor::{
@@ -20,6 +21,7 @@ pub use network_editor::{
     NetworkEdit, NetworkValidationError, ProxyConfiguration, ProxyMethod,
 };
 pub use vpn_delete::{VpnDeletePreview, VpnDeletePreviewId};
+pub use vpn_editor::{VpnEditValidationError, VpnProfileConfiguration, VpnProfileEdit};
 pub use vpn_import::{
     VpnImportCapabilities, VpnImportCapability, VpnImportCapabilityId, VpnImportPreview,
     VpnImportPreviewId,
@@ -523,6 +525,14 @@ pub fn prepare_vpn_delete(id: &VpnProfileId) -> Result<VpnDeletePreview, Error> 
 
 pub fn delete_vpn_profile(preview: &VpnDeletePreviewId) -> Result<VpnSnapshot, Error> {
     vpn_delete::delete(preview)
+}
+
+pub fn vpn_profile_configuration(id: &VpnProfileId) -> Result<VpnProfileConfiguration, Error> {
+    vpn_editor::configuration(id)
+}
+
+pub fn update_vpn_profile(edit: &VpnProfileEdit) -> Result<VpnSnapshot, Error> {
+    vpn_editor::update(edit)
 }
 
 pub fn set_vpn_enabled(

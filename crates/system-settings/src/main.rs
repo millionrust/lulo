@@ -636,6 +636,15 @@ struct NetworkEditorState {
     validation_error: Option<SharedString>,
 }
 
+struct VpnEditorState {
+    configuration: rmac_network::VpnProfileConfiguration,
+    name: Entity<InputState>,
+    username: Entity<InputState>,
+    timeout: Entity<InputState>,
+    persistent: bool,
+    validation_error: Option<SharedString>,
+}
+
 struct Settings {
     system_data_loading: bool,
     system_data_busy: bool,
@@ -779,6 +788,9 @@ struct Settings {
     vpn_import_loading: bool,
     vpn_import_busy: bool,
     vpn_import_preview: Option<rmac_network::VpnImportPreview>,
+    vpn_editor_loading: Option<rmac_network::VpnProfileId>,
+    vpn_editor_busy: bool,
+    vpn_editor: Option<VpnEditorState>,
     vpn_delete_preparing: Option<rmac_network::VpnProfileId>,
     vpn_delete_busy: bool,
     vpn_delete_preview: Option<rmac_network::VpnDeletePreview>,
@@ -1544,6 +1556,9 @@ impl Settings {
                                             || this.vpn_refreshing
                                             || this.vpn_import_busy
                                             || this.vpn_import_preview.is_some()
+                                            || this.vpn_editor_loading.is_some()
+                                            || this.vpn_editor_busy
+                                            || this.vpn_editor.is_some()
                                             || this.vpn_delete_preparing.is_some()
                                             || this.vpn_delete_busy
                                             || this.vpn_delete_preview.is_some(),
@@ -2040,6 +2055,9 @@ impl Settings {
             vpn_import_loading: true,
             vpn_import_busy: false,
             vpn_import_preview: None,
+            vpn_editor_loading: None,
+            vpn_editor_busy: false,
+            vpn_editor: None,
             vpn_delete_preparing: None,
             vpn_delete_busy: false,
             vpn_delete_preview: None,
@@ -4095,6 +4113,9 @@ impl Settings {
             || self.vpn_busy.is_some()
             || self.vpn_import_busy
             || self.vpn_import_preview.is_some()
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_editor.is_some()
             || self.vpn_delete_preparing.is_some()
             || self.vpn_delete_busy
             || self.vpn_delete_preview.is_some()
@@ -4128,6 +4149,9 @@ impl Settings {
             || self.vpn_busy.is_some()
             || self.vpn_import_busy
             || self.vpn_import_preview.is_some()
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_editor.is_some()
             || self.vpn_delete_preparing.is_some()
             || self.vpn_delete_busy
             || self.vpn_delete_preview.is_some()
@@ -4202,6 +4226,9 @@ impl Settings {
             || self.vpn_busy.is_some()
             || self.vpn_import_busy
             || self.vpn_import_preview.is_some()
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_editor.is_some()
             || self.vpn_delete_preparing.is_some()
             || self.vpn_delete_busy
             || self.vpn_delete_preview.is_some()
@@ -4248,6 +4275,9 @@ impl Settings {
     fn finish_vpn_import(&mut self, keep: bool, cx: &mut Context<Self>) {
         if self.vpn_import_busy
             || self.vpn_busy.is_some()
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_editor.is_some()
             || self.vpn_delete_preparing.is_some()
             || self.vpn_delete_busy
             || self.vpn_delete_preview.is_some()
@@ -4295,12 +4325,194 @@ impl Settings {
         .detach();
     }
 
+    fn start_vpn_edit(
+        &mut self,
+        id: rmac_network::VpnProfileId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.vpn_loading
+            || self.vpn_refreshing
+            || self.vpn_busy.is_some()
+            || self.vpn_import_busy
+            || self.vpn_import_preview.is_some()
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_editor.is_some()
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy
+            || self.vpn_delete_preview.is_some()
+        {
+            return;
+        }
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_editor_loading = Some(id.clone());
+        self.vpn_error = None;
+        let window_handle = window.window_handle();
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_network::vpn_profile_configuration(&id) })
+                .await;
+            let _ = cx.update_window(window_handle, |_, window, cx| {
+                let _ = this.update(cx, |this: &mut Settings, cx| {
+                    this.vpn_editor_loading = None;
+                    match result {
+                        Ok(configuration) => {
+                            let name = cx.new(|cx| {
+                                InputState::new(window, cx)
+                                    .default_value(configuration.name.clone())
+                                    .placeholder("VPN connection name")
+                            });
+                            let username = cx.new(|cx| {
+                                InputState::new(window, cx)
+                                    .default_value(configuration.username.clone())
+                                    .placeholder("Optional account name")
+                            });
+                            let timeout = cx.new(|cx| {
+                                InputState::new(window, cx)
+                                    .default_value(configuration.timeout.to_string())
+                                    .placeholder("0")
+                            });
+                            this.vpn_editor = Some(VpnEditorState {
+                                persistent: configuration.persistent,
+                                configuration,
+                                name,
+                                username,
+                                timeout,
+                                validation_error: None,
+                            });
+                        }
+                        Err(error) => {
+                            this.vpn_error =
+                                Some(format!("Could not open VPN details: {error}").into());
+                        }
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+    }
+
+    fn set_vpn_editor_persistent(&mut self, persistent: bool, cx: &mut Context<Self>) {
+        if self.vpn_editor_busy {
+            return;
+        }
+        if let Some(editor) = &mut self.vpn_editor {
+            editor.persistent = persistent;
+            editor.validation_error = None;
+            cx.notify();
+        }
+    }
+
+    fn cancel_vpn_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.vpn_editor_busy && self.vpn_editor_loading.is_none() {
+            self.vpn_editor = None;
+            self.vpn_error = None;
+            cx.notify();
+        }
+    }
+
+    fn submit_vpn_edit(&mut self, cx: &mut Context<Self>) {
+        if self.vpn_editor_busy || self.vpn_editor_loading.is_some() {
+            return;
+        }
+        let Some(editor) = &self.vpn_editor else {
+            return;
+        };
+        let name = editor.name.read(cx).value();
+        let username = editor.username.read(cx).value();
+        let timeout_text = editor.timeout.read(cx).value();
+        let timeout = match timeout_text.trim().parse::<u32>() {
+            Ok(timeout) => timeout,
+            Err(_) => {
+                if let Some(editor) = &mut self.vpn_editor {
+                    editor.validation_error = Some(
+                        "Enter a whole connection timeout from 0 to 4294967295 seconds".into(),
+                    );
+                }
+                cx.notify();
+                return;
+            }
+        };
+        let edit = match rmac_network::VpnProfileEdit::new(
+            &editor.configuration,
+            &name,
+            &username,
+            editor.persistent,
+            timeout,
+        ) {
+            Ok(edit) => edit,
+            Err(error) => {
+                if let Some(editor) = &mut self.vpn_editor {
+                    editor.validation_error = Some(error.to_string().into());
+                }
+                cx.notify();
+                return;
+            }
+        };
+        if edit.is_unchanged(&editor.configuration) {
+            self.vpn_editor = None;
+            cx.notify();
+            return;
+        }
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_editor_busy = true;
+        self.vpn_error = None;
+        if let Some(editor) = &mut self.vpn_editor {
+            editor.validation_error = None;
+        }
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result = rmac_network::update_vpn_profile(&edit);
+                    let recovery = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_network::vpn_snapshot().ok());
+                    (result, recovery)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_editor_busy = false;
+                if let Some(snapshot) = recovery {
+                    this.vpn = snapshot;
+                }
+                match result {
+                    Ok(snapshot) => {
+                        this.vpn = snapshot;
+                        this.vpn_editor = None;
+                        this.vpn_error = None;
+                        this.vpn_stream_error = None;
+                    }
+                    Err(error) => {
+                        let message: SharedString =
+                            format!("Could not save VPN details: {error}").into();
+                        this.vpn_error = Some(message.clone());
+                        if let Some(editor) = &mut this.vpn_editor {
+                            editor.validation_error = Some(message);
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn request_vpn_delete(&mut self, id: rmac_network::VpnProfileId, cx: &mut Context<Self>) {
         if self.vpn_loading
             || self.vpn_refreshing
             || self.vpn_busy.is_some()
             || self.vpn_import_busy
             || self.vpn_import_preview.is_some()
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_editor.is_some()
             || self.vpn_delete_preparing.is_some()
             || self.vpn_delete_busy
             || self.vpn_delete_preview.is_some()
@@ -12477,6 +12689,12 @@ impl Settings {
         let refresh_view = view.clone();
         let refresh_label = if self.vpn_delete_busy || self.vpn_delete_preparing.is_some() {
             "Deleting…"
+        } else if self.vpn_editor_busy {
+            "Saving…"
+        } else if self.vpn_editor_loading.is_some() {
+            "Opening…"
+        } else if self.vpn_editor.is_some() {
+            "Editing…"
         } else if self.vpn_import_busy {
             "Importing…"
         } else if self.vpn_busy.is_some() {
@@ -12537,6 +12755,12 @@ impl Settings {
             ));
             return self.pane(cards);
         }
+        if self.vpn_editor_loading.is_some() {
+            cards.push(note_card("Opening current VPN profile details…"));
+        }
+        if self.vpn_editor.is_some() {
+            cards.extend(self.render_vpn_editor(cx));
+        }
         if self.vpn.profiles.is_empty() {
             cards.push(note_card(
                 "No VPN configurations are installed. Import a configuration below.",
@@ -12553,6 +12777,8 @@ impl Settings {
                     let profile_view = view.clone();
                     let delete_id = id.clone();
                     let delete_view = view.clone();
+                    let edit_id = id.clone();
+                    let edit_view = view.clone();
                     let applying = self.vpn_busy.as_ref() == Some(&id);
                     let connecting = applying && self.vpn_cancellation.is_some();
                     let preparing_delete = self.vpn_delete_preparing.as_ref() == Some(&id);
@@ -12580,6 +12806,9 @@ impl Settings {
                                 || self.vpn_refreshing
                                 || self.vpn_import_busy
                                 || self.vpn_import_preview.is_some()
+                                || self.vpn_editor_loading.is_some()
+                                || self.vpn_editor_busy
+                                || self.vpn_editor.is_some()
                                 || self.vpn_delete_preparing.is_some()
                                 || self.vpn_delete_busy
                                 || self.vpn_delete_preview.is_some(),
@@ -12597,31 +12826,67 @@ impl Settings {
                         .items_center()
                         .gap_2()
                         .when(cfg!(target_os = "linux"), |controls| {
-                            controls.child(
-                                Button::new(
-                                    ("vpn-delete", index),
-                                    if preparing_delete {
-                                        "Preparing…"
-                                    } else {
-                                        "Delete…"
-                                    },
+                            controls
+                                .child(
+                                    Button::new(
+                                        ("vpn-edit", index),
+                                        if self.vpn_editor_loading.as_ref() == Some(&id) {
+                                            "Opening…"
+                                        } else {
+                                            "Details…"
+                                        },
+                                    )
+                                    .disabled(
+                                        self.vpn_busy.is_some()
+                                            || self.vpn_refreshing
+                                            || self.vpn_import_busy
+                                            || self.vpn_import_preview.is_some()
+                                            || self.vpn_editor_loading.is_some()
+                                            || self.vpn_editor_busy
+                                            || self.vpn_editor.is_some()
+                                            || self.vpn_delete_preparing.is_some()
+                                            || self.vpn_delete_busy
+                                            || self.vpn_delete_preview.is_some(),
+                                    )
+                                    .on_click(
+                                        move |_, window, cx| {
+                                            let id = edit_id.clone();
+                                            edit_view.update(cx, |settings, cx| {
+                                                settings.start_vpn_edit(id, window, cx)
+                                            });
+                                        },
+                                    ),
                                 )
-                                .disabled(
-                                    self.vpn_busy.is_some()
-                                        || self.vpn_refreshing
-                                        || self.vpn_import_busy
-                                        || self.vpn_import_preview.is_some()
-                                        || self.vpn_delete_preparing.is_some()
-                                        || self.vpn_delete_busy
-                                        || self.vpn_delete_preview.is_some(),
+                                .child(
+                                    Button::new(
+                                        ("vpn-delete", index),
+                                        if preparing_delete {
+                                            "Preparing…"
+                                        } else {
+                                            "Delete…"
+                                        },
+                                    )
+                                    .disabled(
+                                        self.vpn_busy.is_some()
+                                            || self.vpn_refreshing
+                                            || self.vpn_import_busy
+                                            || self.vpn_import_preview.is_some()
+                                            || self.vpn_editor_loading.is_some()
+                                            || self.vpn_editor_busy
+                                            || self.vpn_editor.is_some()
+                                            || self.vpn_delete_preparing.is_some()
+                                            || self.vpn_delete_busy
+                                            || self.vpn_delete_preview.is_some(),
+                                    )
+                                    .on_click(
+                                        move |_, _, cx| {
+                                            let id = delete_id.clone();
+                                            delete_view.update(cx, |settings, cx| {
+                                                settings.request_vpn_delete(id, cx)
+                                            });
+                                        },
+                                    ),
                                 )
-                                .on_click(move |_, _, cx| {
-                                    let id = delete_id.clone();
-                                    delete_view.update(cx, |settings, cx| {
-                                        settings.request_vpn_delete(id, cx)
-                                    });
-                                }),
-                            )
                         })
                         .child(control);
                     row_base()
@@ -12679,6 +12944,9 @@ impl Settings {
                                     self.vpn_import_busy
                                         || self.vpn_busy.is_some()
                                         || self.vpn_import_preview.is_some()
+                                        || self.vpn_editor_loading.is_some()
+                                        || self.vpn_editor_busy
+                                        || self.vpn_editor.is_some()
                                         || self.vpn_delete_preparing.is_some()
                                         || self.vpn_delete_busy
                                         || self.vpn_delete_preview.is_some(),
@@ -12702,6 +12970,108 @@ impl Settings {
             "Connections are controlled by the system network service. Authentication prompts are handled by the installed VPN plugin.",
         ));
         self.pane(cards)
+    }
+
+    fn render_vpn_editor(&self, cx: &Context<Self>) -> Vec<Div> {
+        let Some(editor) = &self.vpn_editor else {
+            return Vec::new();
+        };
+        let busy = self.vpn_editor_busy;
+        let view = cx.entity();
+        let persistent_view = view.clone();
+        let cancel_view = view.clone();
+        let save_view = view.clone();
+        let mut rows = vec![network_field_row(
+            "Name",
+            "Shown in VPN lists and connection menus",
+            &editor.name,
+            !busy,
+        )];
+        if editor.configuration.supports_vpn_options {
+            rows.extend([
+                network_field_row(
+                    "Account Name",
+                    "Optional non-secret username; passwords are not read here",
+                    &editor.username,
+                    !busy,
+                ),
+                row_base()
+                    .child(text_block(
+                        "Keep Connection".into(),
+                        Some("Ask the VPN plugin to maintain the tunnel when supported".into()),
+                    ))
+                    .child(
+                        Toggle::new("vpn-edit-persistent")
+                            .checked(editor.persistent)
+                            .disabled(busy)
+                            .on_click(move |persistent, _, cx| {
+                                persistent_view.update(cx, |settings, cx| {
+                                    settings.set_vpn_editor_persistent(*persistent, cx)
+                                });
+                            }),
+                    )
+                    .into_any_element(),
+                network_field_row(
+                    "Connection Timeout",
+                    "Seconds; 0 uses the VPN plugin default",
+                    &editor.timeout,
+                    !busy,
+                ),
+            ]);
+        }
+        rows.push(value_row(
+            "icons/key.svg",
+            secondary(),
+            "Passwords and Keys".into(),
+            "Managed by NetworkManager".into(),
+        ));
+        let mut sections = vec![
+            section_header(format!("{} · Details", editor.configuration.name)),
+            note_card(
+                "This editor changes only typed, non-secret fields. NetworkManager and the installed VPN plugin keep the complete plugin configuration, passwords, certificates, and private keys unchanged.",
+            ),
+            card(rows),
+        ];
+        if !editor.configuration.supports_vpn_options {
+            sections.push(note_card(format!(
+                "{} profiles can be renamed here. Their protocol-specific configuration remains under NetworkManager's authority.",
+                editor.configuration.service
+            )));
+        }
+        if let Some(error) = &editor.validation_error {
+            sections.push(note_card(error.clone()));
+        }
+        if busy {
+            sections.push(
+                div()
+                    .mb_2()
+                    .child(Progress::indeterminate().label("Saving VPN details…")),
+            );
+        }
+        sections.push(
+            div()
+                .flex()
+                .justify_end()
+                .items_center()
+                .gap_2()
+                .mb_3()
+                .child(
+                    Button::new("vpn-edit-cancel", "Cancel")
+                        .disabled(busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| settings.cancel_vpn_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new("vpn-edit-save", if busy { "Saving…" } else { "Save" })
+                        .primary()
+                        .disabled(busy)
+                        .on_click(move |_, _, cx| {
+                            save_view.update(cx, |settings, cx| settings.submit_vpn_edit(cx));
+                        }),
+                ),
+        );
+        sections
     }
 
     fn render_vpn_import_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -13426,6 +13796,12 @@ impl Render for Settings {
                     cx.stop_propagation();
                     this.cancel_vpn_delete(cx);
                 } else if event.keystroke.key == "escape"
+                    && this.vpn_editor.is_some()
+                    && !this.vpn_editor_busy
+                {
+                    cx.stop_propagation();
+                    this.cancel_vpn_edit(cx);
+                } else if event.keystroke.key == "escape"
                     && this.network_editor.is_some()
                     && !this.network_busy
                 {
@@ -13458,6 +13834,7 @@ impl Render for Settings {
                 if this.wifi_forgetting.is_some()
                     || this.bluetooth_forgetting.is_some()
                     || this.network_busy
+                    || this.vpn_editor_busy
                 {
                     return;
                 }

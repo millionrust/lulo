@@ -5100,6 +5100,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-locale"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-locale-linux"
+version = "0.1.0"
+dependencies = [
+ "rmac-locale",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-lock-provider"
 version = "0.1.0"
 
@@ -5366,6 +5378,8 @@ dependencies = [
  "rmac-focus-linux",
  "rmac-focus-settings",
  "rmac-input",
+ "rmac-locale",
+ "rmac-locale-linux",
  "rmac-mounts",
  "rmac-network",
  "rmac-notifications",

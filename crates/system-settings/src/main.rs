@@ -156,6 +156,12 @@ struct Settings {
     time_stream_error: Option<SharedString>,
     time: Option<rmac_time::Snapshot>,
     timezone_editor: Option<Entity<InputState>>,
+    locale_loading: bool,
+    locale_busy: bool,
+    locale_error: Option<SharedString>,
+    locale: Option<rmac_locale::Snapshot>,
+    locale_editor: Option<Entity<InputState>>,
+    locale_revert: Option<Vec<String>>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -503,6 +509,18 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
+                .spawn(async { rmac_locale_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_locale_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
                 .spawn(async { rmac_bluetooth::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -718,6 +736,12 @@ impl Settings {
             time_stream_error: None,
             time: None,
             timezone_editor: None,
+            locale_loading: true,
+            locale_busy: false,
+            locale_error: None,
+            locale: None,
+            locale_editor: None,
+            locale_revert: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -1120,6 +1144,141 @@ impl Settings {
                     this.timezone_editor = None;
                 }
                 this.finish_time_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_locale_update(
+        &mut self,
+        result: std::result::Result<rmac_locale::Snapshot, rmac_locale::Error>,
+    ) {
+        self.locale_loading = false;
+        self.locale_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.locale = Some(snapshot);
+                self.locale_error = None;
+            }
+            Err(error) => {
+                self.locale_error =
+                    Some(format!("Could not update language and region: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_locale(&mut self, cx: &mut Context<Self>) {
+        if self.locale_loading || self.locale_busy {
+            return;
+        }
+        self.locale_busy = true;
+        self.locale_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_locale_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_locale_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn start_locale_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.locale_busy || self.locale_editor.is_some() {
+            return;
+        }
+        let Some(snapshot) = &self.locale else {
+            return;
+        };
+        let language = snapshot.language().to_owned();
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(language)
+                .placeholder("en_US.UTF-8")
+        });
+        let focus = editor.read(cx).focus_handle(cx);
+        window.focus(&focus);
+        self.locale_editor = Some(editor);
+        self.locale_error = None;
+        cx.notify();
+    }
+
+    fn cancel_locale_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.locale_busy {
+            self.locale_editor = None;
+            self.locale_error = None;
+            cx.notify();
+        }
+    }
+
+    fn submit_locale(&mut self, cx: &mut Context<Self>) {
+        if self.locale_busy {
+            return;
+        }
+        let (Some(editor), Some(snapshot)) = (&self.locale_editor, &self.locale) else {
+            return;
+        };
+        let language = editor.read(cx).value().trim().to_owned();
+        let next = match snapshot.preview_language(&language) {
+            Ok(assignments) => assignments
+                .iter()
+                .map(rmac_locale::Assignment::encoded)
+                .collect::<Vec<_>>(),
+            Err(error) => {
+                self.locale_error = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        let previous = snapshot.encoded_locale();
+        self.locale_busy = true;
+        self.locale_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_locale_linux::set_locale(&next) })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.locale_editor = None;
+                    this.locale_revert = Some(previous);
+                }
+                this.finish_locale_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn revert_locale(&mut self, cx: &mut Context<Self>) {
+        if self.locale_busy {
+            return;
+        }
+        let Some(previous) = self.locale_revert.clone() else {
+            return;
+        };
+        self.locale_busy = true;
+        self.locale_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_locale_linux::set_locale(&previous) })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.locale_revert = None;
+                    this.locale_editor = None;
+                }
+                this.finish_locale_update(result);
                 cx.notify();
             });
         })
@@ -2639,6 +2798,7 @@ impl Settings {
                 "Battery" => self.render_battery(cx),
                 "Displays" => self.render_displays(cx),
                 "Date & Time" => self.render_date_time(cx),
+                "Language & Region" => self.render_language_region(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(),
@@ -3151,6 +3311,221 @@ impl Settings {
         }
         cards.push(note_card(
             "Manual clock setting is not connected yet. The hardware clock remains read-only because UTC is the recommended Linux configuration.",
+        ));
+        self.pane(cards)
+    }
+
+    // ---- Language & Region -------------------------------------------
+
+    fn render_language_region(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let refresh = Button::new("refresh-language-region", "Refresh")
+            .busy(self.locale_busy)
+            .disabled(self.locale_loading || self.locale_busy)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_locale(cx));
+            });
+        let Some(snapshot) = &self.locale else {
+            return self.pane(vec![
+                card(vec![row_base()
+                    .child(tile("icons/languages.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "System language and formats".into(),
+                        Some("systemd-localed".into()),
+                    ))
+                    .child(refresh)
+                    .into_any_element()]),
+                note_card(if self.locale_loading {
+                    "Reading authoritative locale state and installed locales…"
+                } else {
+                    "The system locale service is unavailable. No local fallback controls are shown."
+                }),
+            ]);
+        };
+
+        let language_row = if let Some(editor) = &self.locale_editor {
+            let cancel_view = view.clone();
+            let apply_view = view.clone();
+            row_base()
+                .child(tile("icons/languages.svg", accent(), 22.0))
+                .child(text_block(
+                    "Language".into(),
+                    Some("Enter an exact locale installed on this computer".into()),
+                ))
+                .child(div().w(px(180.0)).child(TextField::new(editor).small()))
+                .child(
+                    Button::new("locale-cancel", "Cancel")
+                        .disabled(self.locale_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| settings.cancel_locale_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new("locale-apply", "Apply")
+                        .primary()
+                        .busy(self.locale_busy)
+                        .disabled(self.locale_busy)
+                        .on_click(move |_, _, cx| {
+                            apply_view.update(cx, |settings, cx| settings.submit_locale(cx));
+                        }),
+                )
+                .into_any_element()
+        } else {
+            let edit_view = view.clone();
+            row_base()
+                .child(tile("icons/languages.svg", accent(), 22.0))
+                .child(text_block(
+                    "Language".into(),
+                    Some("Validated against the system's installed locales".into()),
+                ))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .text_color(secondary())
+                        .child(snapshot.language().to_owned()),
+                )
+                .child(
+                    Button::new("locale-edit", "Edit")
+                        .disabled(self.locale_busy)
+                        .on_click(move |_, window, cx| {
+                            edit_view.update(cx, |settings, cx| {
+                                settings.start_locale_edit(window, cx);
+                            });
+                        }),
+                )
+                .into_any_element()
+        };
+
+        let mut cards = vec![card(vec![language_row])];
+        if let Some(editor) = &self.locale_editor {
+            let value = editor.read(cx).value();
+            match snapshot.preview_language(value.trim()) {
+                Ok(preview) => {
+                    cards.push(section_header("Assignments applied to the system"));
+                    cards.push(card(
+                        preview
+                            .iter()
+                            .map(|assignment| {
+                                value_row(
+                                    "icons/settings.svg",
+                                    secondary(),
+                                    assignment.key.clone().into(),
+                                    assignment.value.clone().into(),
+                                )
+                            })
+                            .collect(),
+                    ));
+                    if preview
+                        .iter()
+                        .any(|assignment| assignment.key.starts_with("LC_"))
+                    {
+                        cards.push(note_card(
+                            "Existing LC_* format overrides are preserved. Applying changes LANG only.",
+                        ));
+                    }
+                }
+                Err(error) => cards.push(note_card(error.to_string())),
+            }
+        }
+
+        cards.push(section_header("Formats"));
+        cards.push(card(vec![
+            value_row(
+                "icons/clock.svg",
+                secondary(),
+                "Dates and times".into(),
+                locale_format(snapshot, "LC_TIME").into(),
+            ),
+            value_row(
+                "icons/info.svg",
+                secondary(),
+                "Numbers".into(),
+                locale_format(snapshot, "LC_NUMERIC").into(),
+            ),
+            value_row(
+                "icons/database.svg",
+                secondary(),
+                "Currency".into(),
+                locale_format(snapshot, "LC_MONETARY").into(),
+            ),
+            value_row(
+                "icons/settings.svg",
+                secondary(),
+                "Measurement".into(),
+                locale_format(snapshot, "LC_MEASUREMENT").into(),
+            ),
+        ]));
+
+        let keyboard = if snapshot.x11_layout.is_empty() {
+            "Not reported by systemd-localed".to_owned()
+        } else {
+            let mut value = snapshot.x11_layout.clone();
+            if !snapshot.x11_variant.is_empty() {
+                value.push_str(" · ");
+                value.push_str(&snapshot.x11_variant);
+            }
+            value
+        };
+        cards.push(section_header("Default keyboard metadata"));
+        cards.push(card(vec![
+            value_row(
+                "icons/keyboard.svg",
+                secondary(),
+                "X11 layout".into(),
+                keyboard.into(),
+            ),
+            value_row(
+                "icons/keyboard.svg",
+                secondary(),
+                "Console keymap".into(),
+                if snapshot.console_keymap.is_empty() {
+                    "Not configured".into()
+                } else {
+                    snapshot.console_keymap.clone().into()
+                },
+            ),
+        ]));
+        cards.push(note_card(
+            "Keyboard metadata is read-only here. The niri Wayland session uses the Keyboard pane and is not changed by this control.",
+        ));
+
+        let mut authority_rows = vec![row_base()
+            .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+            .child(text_block(
+                "Authoritative state".into(),
+                Some(format!("{} installed locales", snapshot.installed_locales.len()).into()),
+            ))
+            .child(refresh)
+            .into_any_element()];
+        if self.locale_revert.is_some() {
+            let revert_view = view.clone();
+            authority_rows.push(
+                row_base()
+                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Previous locale assignments".into(),
+                        Some("Available until the next successful change".into()),
+                    ))
+                    .child(
+                        Button::new("locale-revert", "Revert")
+                            .busy(self.locale_busy)
+                            .disabled(self.locale_busy)
+                            .on_click(move |_, _, cx| {
+                                revert_view.update(cx, |settings, cx| settings.revert_locale(cx));
+                            }),
+                    )
+                    .into_any_element(),
+            );
+        }
+        cards.push(card(authority_rows));
+        if snapshot.installed_locales_truncated {
+            cards.push(note_card(
+                "The installed locale inventory exceeded the bounded validation list.",
+            ));
+        }
+        cards.push(note_card(
+            "New applications and services use an applied locale immediately. Sign out and back in before judging the current desktop session.",
         ));
         self.pane(cards)
     }
@@ -5857,6 +6232,7 @@ impl Render for Settings {
             .or_else(|| self.storage_error.clone())
             .or_else(|| self.time_error.clone())
             .or_else(|| self.time_stream_error.clone())
+            .or_else(|| self.locale_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -5891,6 +6267,7 @@ impl Render for Settings {
                             this.storage_error = None;
                             this.time_error = None;
                             this.time_stream_error = None;
+                            this.locale_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
@@ -5971,6 +6348,15 @@ fn value_row(
                 .child(value),
         )
         .into_any_element()
+}
+
+fn locale_format(snapshot: &rmac_locale::Snapshot, key: &str) -> String {
+    snapshot
+        .locale
+        .iter()
+        .find(|assignment| assignment.key == key)
+        .map(|assignment| assignment.value.clone())
+        .unwrap_or_else(|| snapshot.language().to_owned())
 }
 
 /// An informational note card, e.g. to flag a pane as simulated/demo state
@@ -6863,6 +7249,12 @@ fn categories() -> Vec<Vec<Category>> {
                 "Adjust the time zone and network time synchronization.",
             ),
             cat(
+                "Language & Region",
+                "icons/languages.svg",
+                blue,
+                "Choose the system language and inspect regional formats.",
+            ),
+            cat(
                 "Accessibility",
                 "icons/accessibility.svg",
                 blue,
@@ -6986,6 +7378,7 @@ mod tests {
         assert!(!names.iter().any(|name| name == "Screen Time"));
 
         assert!(!names.iter().any(|name| name == "Handoff"));
+        assert!(names.iter().any(|name| name == "Language & Region"));
     }
 
     #[test]

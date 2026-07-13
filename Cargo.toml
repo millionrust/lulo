@@ -62,6 +62,8 @@ rmac-launcher-runtime = { version = "=0.1.0", path = "crates/rmac-launcher-runti
 rmac-launcher-system = { version = "=0.1.0", path = "crates/rmac-launcher-system" }
 rmac-lock-provider = { version = "=0.1.0", path = "crates/rmac-lock-provider" }
 rmac-lock-provider-linux = { version = "=0.1.0", path = "crates/rmac-lock-provider-linux" }
+rmac-locale = { version = "=0.1.0", path = "crates/rmac-locale" }
+rmac-locale-linux = { version = "=0.1.0", path = "crates/rmac-locale-linux" }
 rmac-power = { version = "=0.1.0", path = "crates/rmac-power" }
 rmac-quick-settings = { version = "=0.1.0", path = "crates/rmac-quick-settings" }
 rmac-quick-settings-system = { version = "=0.1.0", path = "crates/rmac-quick-settings-system" }

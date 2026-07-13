@@ -17,7 +17,7 @@ equivalents rather than simulated.
 | Software Update | Live bounded PackageKit update status with security/blocked classification, cached startup query, explicit freshness request, timeout, service/backend errors, and last-known-good refresh behavior | PackageKit system D-Bus over the Ubuntu APT backend | Trusted download/install transaction, progress/cancel, restart requirements, polkit outcomes, live signals, and Linux interaction evidence |
 | Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
-| Language & Region | Placeholder | locale1 D-Bus and input services | Locale, formats, keyboard/input sources |
+| Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; exact preview; one-step rollback; authoritative refresh; explicit sign-out requirement; read-only X11/console keyboard metadata | `rmac-locale`, `rmac-locale-linux`, `org.freedesktop.locale1`, `locale -a` | Live locale1 signals, niri input-source/layout editing, formatting preview, and Linux polkit/restart/scale/accessibility evidence |
 | Login Items | Placeholder | systemd user/XDG autostart | Enable/disable user startup entries |
 | Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
@@ -102,6 +102,22 @@ timedated property changes and daemon reappearance, reconnecting after bus
 failure without treating the daemon's normal idle exit as an error. Manual
 clock editing remains pending and is stated in the pane. Authority reference:
 [Ubuntu 26.04 `org.freedesktop.timedate1(5)`](https://manpages.ubuntu.com/manpages/resolute/man5/org.freedesktop.timedate1.5.html).
+
+Language & Region reads locale assignments and default keyboard metadata from
+systemd-localed, and obtains a bounded installed-locale inventory from the
+argument-separated standard `locale -a` command. The domain service validates
+locale syntax and installation before any mutation. Changing the language
+replaces only `LANG` in a full assignment preview, preserves every existing
+`LC_*` format override, requests interactive polkit authorization, and accepts
+only the fresh post-mutation service snapshot. The previous exact assignment
+set remains available for one-step rollback after success; failed, denied, and
+unavailable mutations preserve the last known-good snapshot. The pane states
+that the current session must sign out and back in, because running processes
+do not adopt the new environment. X11 and console keyboard values are shown as
+read-only metadata: niri's Wayland input configuration remains owned by the
+Keyboard pane and is not falsely changed through localed. Live locale1 signals,
+format previews, and Linux interaction evidence remain pending. Authority
+reference: [Ubuntu 26.04 `org.freedesktop.locale1(5)`](https://manpages.ubuntu.com/manpages/resolute/man5/org.freedesktop.locale1.5.html).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

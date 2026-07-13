@@ -5051,6 +5051,42 @@ impl Settings {
         .detach();
     }
 
+    fn set_charge_threshold(
+        &mut self,
+        threshold: rmac_power::ChargeThreshold,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let is_current = self.power.battery.as_ref().is_some_and(|battery| {
+            battery.charge_threshold == threshold && battery.charge_threshold.can_change()
+        });
+        if self.power_loading || self.power_busy || !is_current || threshold.enabled == enabled {
+            return;
+        }
+        self.power_generation = self.power_generation.wrapping_add(1);
+        self.power_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery) = cx
+                .background_executor()
+                .spawn(async move {
+                    match rmac_power::set_charge_threshold(&threshold, enabled) {
+                        Ok(snapshot) => (Ok(snapshot), None),
+                        Err(error) => (Err(error), rmac_power::snapshot().ok()),
+                    }
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if let Some(snapshot) = recovery {
+                    this.power = snapshot;
+                }
+                this.finish_power_update(result, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn finish_display_update(
         &mut self,
         result: std::result::Result<rmac_display::Snapshot, rmac_display::Error>,
@@ -12156,6 +12192,69 @@ impl Settings {
             }
             cards.push(section_header("Battery Health"));
             cards.push(card(health_rows));
+
+            cards.push(section_header("Charging"));
+            match battery.charge_threshold.availability {
+                rmac_power::ChargeThresholdAvailability::Available => {
+                    let threshold = battery.charge_threshold.clone();
+                    let threshold_view = view.clone();
+                    let threshold_for_action = threshold.clone();
+                    let toggle = Toggle::new("battery-charge-threshold")
+                        .checked(threshold.enabled)
+                        .disabled(self.power_busy || !threshold.can_change())
+                        .on_click(move |enabled, _, cx| {
+                            threshold_view.update(cx, |settings, cx| {
+                                settings.set_charge_threshold(
+                                    threshold_for_action.clone(),
+                                    *enabled,
+                                    cx,
+                                );
+                            });
+                        });
+                    cards.push(card(vec![row_base()
+                        .child(tile("icons/battery-charging.svg", hsl(0x34c759), 22.0))
+                        .child(text_block(
+                            "Optimized Charging".into(),
+                            Some(charge_threshold_description(&threshold).into()),
+                        ))
+                        .child(toggle)
+                        .into_any_element()]));
+                }
+                rmac_power::ChargeThresholdAvailability::MultipleBatteries => {
+                    cards.push(note_card(
+                        "Optimized charging is unavailable for multiple system batteries until each battery can be controlled separately.",
+                    ));
+                }
+                rmac_power::ChargeThresholdAvailability::Unsupported => {
+                    cards.push(note_card(
+                        "Optimized charging is unavailable because UPower reports no writable charge limit for this battery.",
+                    ));
+                }
+            }
+
+            cards.push(section_header("Battery Level"));
+            match battery.history.availability {
+                rmac_power::BatteryHistoryAvailability::Available
+                    if battery.history.points.is_empty() =>
+                {
+                    cards.push(note_card(
+                        "UPower supports battery history, but it has not recorded any charge samples in the last 24 hours.",
+                    ));
+                }
+                rmac_power::BatteryHistoryAvailability::Available => {
+                    cards.push(battery_history_card(&battery.history.points));
+                }
+                rmac_power::BatteryHistoryAvailability::TemporarilyUnavailable => {
+                    cards.push(note_card(
+                        "Recent battery history could not be read from UPower. Current battery state remains authoritative.",
+                    ));
+                }
+                rmac_power::BatteryHistoryAvailability::Unsupported => {
+                    cards.push(note_card(
+                        "Recent battery history is unavailable because UPower does not provide it for this battery.",
+                    ));
+                }
+            }
         } else {
             cards.push(note_card(
                 "No system battery was detected. This computer is using external power.",
@@ -15746,6 +15845,106 @@ fn format_power_duration(seconds: u64) -> String {
     }
 }
 
+fn charge_threshold_description(threshold: &rmac_power::ChargeThreshold) -> String {
+    match (threshold.start_percent, threshold.end_percent) {
+        (Some(start), Some(end)) => {
+            format!("Starts charging below {start}% and stops at {end}%")
+        }
+        (None, Some(end)) => format!("Stops charging at {end}%"),
+        (Some(start), None) => format!("Starts charging below {start}%"),
+        (None, None) if threshold.firmware_managed => {
+            "Uses optimized limits selected by this computer's firmware".to_owned()
+        }
+        (None, None) => "Uses the charge limits reported by UPower".to_owned(),
+    }
+}
+
+fn sample_battery_history(
+    points: &[rmac_power::BatteryHistoryPoint],
+    limit: usize,
+) -> Vec<rmac_power::BatteryHistoryPoint> {
+    if points.len() <= limit {
+        return points.to_vec();
+    }
+    if limit == 0 {
+        return Vec::new();
+    }
+    if limit == 1 {
+        return points.last().copied().into_iter().collect();
+    }
+    (0..limit)
+        .map(|index| points[index * (points.len() - 1) / (limit - 1)])
+        .collect()
+}
+
+fn battery_history_card(points: &[rmac_power::BatteryHistoryPoint]) -> Div {
+    let samples = sample_battery_history(points, 48);
+    let minimum = points
+        .iter()
+        .map(|point| point.percentage)
+        .min()
+        .unwrap_or_default();
+    let maximum = points
+        .iter()
+        .map(|point| point.percentage)
+        .max()
+        .unwrap_or_default();
+    let latest = points
+        .last()
+        .map(|point| point.percentage)
+        .unwrap_or_default();
+    let bars = samples.into_iter().map(|point| {
+        let color = if matches!(
+            point.state,
+            rmac_power::BatteryState::Charging | rmac_power::BatteryState::PendingCharge
+        ) {
+            hsl(0x34c759)
+        } else {
+            accent()
+        };
+        div()
+            .flex_1()
+            .min_w(px(2.0))
+            .h(px(4.0 + f32::from(point.percentage) * 0.72))
+            .rounded(px(2.0))
+            .bg(color)
+    });
+    div()
+        .v_flex()
+        .mb_3()
+        .gap_2()
+        .p_3()
+        .rounded(px(10.0))
+        .bg(card_bg())
+        .border_1()
+        .border_color(sep())
+        .child(
+            div()
+                .text_size(rmac_ui::text_px(12.0))
+                .text_color(secondary())
+                .child(format!(
+                    "Last 24 hours · {minimum}% minimum · {maximum}% maximum · {latest}% latest"
+                )),
+        )
+        .child(
+            div()
+                .h(px(80.0))
+                .flex()
+                .items_end()
+                .gap(px(2.0))
+                .children(bars),
+        )
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .text_size(rmac_ui::text_px(10.5))
+                .text_color(rmac_ui::mac::text_tertiary())
+                .child("24 hours ago")
+                .child("Now"),
+        )
+}
+
 fn power_degradation_label(reason: &str) -> String {
     match reason {
         "lap-detected" => "Limited while the computer is on a lap".to_string(),
@@ -16014,10 +16213,11 @@ fn main() {
 mod tests {
     use super::{
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
-        category_name_for_pane_id, category_position, composite_wallpaper_pixel,
-        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
-        power_stream_snapshot_is_current, render_wallpaper_preview, vpn_stream_snapshot_is_current,
-        wallpaper_selection, wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
+        category_name_for_pane_id, category_position, charge_threshold_description,
+        composite_wallpaper_pixel, network_stream_snapshot_is_current, notification_policy_with,
+        power_change_needs_followup, power_stream_snapshot_is_current, render_wallpaper_preview,
+        sample_battery_history, vpn_stream_snapshot_is_current, wallpaper_selection,
+        wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
         ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
         WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
@@ -16076,6 +16276,42 @@ mod tests {
         assert!(power_change_needs_followup(false, true, true));
         assert!(power_change_needs_followup(true, false, false));
         assert!(!power_change_needs_followup(false, false, true));
+    }
+
+    #[test]
+    fn battery_history_sampling_preserves_the_time_range() {
+        let points = (0..100)
+            .map(|timestamp| rmac_power::BatteryHistoryPoint {
+                timestamp,
+                percentage: timestamp as u8,
+                state: rmac_power::BatteryState::Discharging,
+            })
+            .collect::<Vec<_>>();
+        let samples = sample_battery_history(&points, 12);
+        assert_eq!(samples.len(), 12);
+        assert_eq!(samples.first().map(|point| point.timestamp), Some(0));
+        assert_eq!(samples.last().map(|point| point.timestamp), Some(99));
+        assert!(samples
+            .windows(2)
+            .all(|points| points[0].timestamp < points[1].timestamp));
+    }
+
+    #[test]
+    fn optimized_charging_explains_authoritative_limits() {
+        let mut threshold = rmac_power::ChargeThreshold::default();
+        threshold.start_percent = Some(40);
+        threshold.end_percent = Some(80);
+        assert_eq!(
+            charge_threshold_description(&threshold),
+            "Starts charging below 40% and stops at 80%"
+        );
+        threshold.start_percent = None;
+        threshold.end_percent = None;
+        threshold.firmware_managed = true;
+        assert_eq!(
+            charge_threshold_description(&threshold),
+            "Uses optimized limits selected by this computer's firmware"
+        );
     }
 
     #[test]

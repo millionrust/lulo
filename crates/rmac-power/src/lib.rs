@@ -40,6 +40,88 @@ pub struct Battery {
     pub charge_cycles: Option<u32>,
     pub energy_rate_watts: Option<f64>,
     pub model: Option<String>,
+    pub charge_threshold: ChargeThreshold,
+    pub history: BatteryHistory,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ChargeThresholdAvailability {
+    #[default]
+    Unsupported,
+    MultipleBatteries,
+    Available,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ChargeThreshold {
+    pub availability: ChargeThresholdAvailability,
+    pub enabled: bool,
+    pub start_percent: Option<u8>,
+    pub end_percent: Option<u8>,
+    pub firmware_managed: bool,
+    identity: Option<ChargeThresholdIdentity>,
+}
+
+impl Default for ChargeThreshold {
+    fn default() -> Self {
+        Self {
+            availability: ChargeThresholdAvailability::Unsupported,
+            enabled: false,
+            start_percent: None,
+            end_percent: None,
+            firmware_managed: false,
+            identity: None,
+        }
+    }
+}
+
+impl fmt::Debug for ChargeThreshold {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChargeThreshold")
+            .field("availability", &self.availability)
+            .field("enabled", &self.enabled)
+            .field("start_percent", &self.start_percent)
+            .field("end_percent", &self.end_percent)
+            .field("firmware_managed", &self.firmware_managed)
+            .field("has_identity", &self.identity.is_some())
+            .finish()
+    }
+}
+
+impl ChargeThreshold {
+    pub fn can_change(&self) -> bool {
+        self.availability == ChargeThresholdAvailability::Available && self.identity.is_some()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct ChargeThresholdIdentity {
+    service_owner: String,
+    object_path: String,
+    native_path: String,
+    serial: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BatteryHistoryPoint {
+    pub timestamp: u64,
+    pub percentage: u8,
+    pub state: BatteryState,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BatteryHistory {
+    pub availability: BatteryHistoryAvailability,
+    pub points: Vec<BatteryHistoryPoint>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BatteryHistoryAvailability {
+    #[default]
+    Unsupported,
+    Available,
+    TemporarilyUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,6 +194,10 @@ pub fn set_profile(profile: PowerProfile) -> Result<(), Error> {
     system_set_profile(profile)
 }
 
+pub fn set_charge_threshold(threshold: &ChargeThreshold, enabled: bool) -> Result<Snapshot, Error> {
+    system_set_charge_threshold(threshold, enabled)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WatchEvent {
     Changed,
@@ -126,14 +212,29 @@ pub async fn watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Erro
 const UPOWER_SERVICE: &str = "org.freedesktop.UPower";
 #[cfg(not(target_os = "macos"))]
 const WATCH_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+#[cfg(not(target_os = "macos"))]
+const HISTORY_TIMESPAN_SECONDS: u32 = 24 * 60 * 60;
+#[cfg(any(not(target_os = "macos"), test))]
+const HISTORY_POINT_LIMIT: usize = 96;
+#[cfg(not(target_os = "macos"))]
+const THRESHOLD_VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+#[cfg(not(target_os = "macos"))]
+const THRESHOLD_VERIFY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 
 #[cfg(not(target_os = "macos"))]
 fn system_snapshot() -> Result<Snapshot, Error> {
     let connection = zbus::blocking::Connection::system()
         .map_err(|error| Error::new("connect to the power service", error.to_string()))?;
+    system_snapshot_with_connection(&connection)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_snapshot_with_connection(
+    connection: &zbus::blocking::Connection,
+) -> Result<Snapshot, Error> {
     Ok(Snapshot {
-        battery: linux_battery(&connection)?,
-        profiles: linux_profiles(&connection),
+        battery: linux_battery(connection)?,
+        profiles: linux_profiles(connection),
     })
 }
 
@@ -189,11 +290,15 @@ fn linux_battery(connection: &zbus::blocking::Connection) -> Result<Option<Batte
     let energy_rate_watts =
         optional_property::<f64>(&device, "EnergyRate").filter(|rate| *rate > 0.0);
     let mut model = optional_property::<String>(&device, "Model").filter(|model| !model.is_empty());
-    if let Some(details) = physical_battery_details(connection, &upower) {
+    let physical = physical_batteries(connection, &upower).unwrap_or_default();
+    if let Some(details) = physical.first() {
         capacity = details.capacity.or(capacity);
         charge_cycles = details.charge_cycles.or(charge_cycles);
-        model = details.model.or(model);
+        model = details.model.clone().or(model);
     }
+    let service_owner = upower_service_owner(connection).ok();
+    let charge_threshold = charge_threshold_from_batteries(&physical, service_owner.as_deref());
+    let history = battery_history(connection, &device, &physical);
     Ok(Some(Battery {
         percentage: percent(percentage),
         state,
@@ -203,24 +308,35 @@ fn linux_battery(connection: &zbus::blocking::Connection) -> Result<Option<Batte
         charge_cycles,
         energy_rate_watts,
         model,
+        charge_threshold,
+        history,
     }))
 }
 
 #[cfg(not(target_os = "macos"))]
-struct BatteryDetails {
+struct PhysicalBattery {
+    object_path: String,
+    native_path: String,
+    serial: String,
     capacity: Option<u8>,
     charge_cycles: Option<u32>,
     model: Option<String>,
+    threshold_supported: bool,
+    threshold_enabled: bool,
+    threshold_start: Option<u8>,
+    threshold_end: Option<u8>,
+    threshold_firmware_managed: bool,
 }
 
 #[cfg(not(target_os = "macos"))]
-fn physical_battery_details(
+fn physical_batteries(
     connection: &zbus::blocking::Connection,
     upower: &zbus::blocking::Proxy<'_>,
-) -> Option<BatteryDetails> {
+) -> Option<Vec<PhysicalBattery>> {
     let paths = upower
         .call::<_, _, Vec<zbus::zvariant::OwnedObjectPath>>("EnumerateDevices", &())
         .ok()?;
+    let mut batteries = Vec::new();
     for path in paths {
         let Ok(device) = zbus::blocking::Proxy::new(
             connection,
@@ -236,16 +352,159 @@ fn physical_battery_details(
         {
             continue;
         }
-        return Some(BatteryDetails {
+        let threshold_settings =
+            optional_property::<u32>(&device, "ChargeThresholdSettingsSupported")
+                .unwrap_or_default();
+        batteries.push(PhysicalBattery {
+            object_path: path.to_string(),
+            native_path: optional_property::<String>(&device, "NativePath").unwrap_or_default(),
+            serial: optional_property::<String>(&device, "Serial").unwrap_or_default(),
             capacity: optional_property::<f64>(&device, "Capacity")
                 .filter(|value| *value > 0.0)
                 .map(percent),
             charge_cycles: optional_property::<i32>(&device, "ChargeCycles")
                 .and_then(|cycles| (cycles >= 0).then_some(cycles as u32)),
             model: optional_property::<String>(&device, "Model").filter(|model| !model.is_empty()),
+            threshold_supported: optional_property::<bool>(&device, "ChargeThresholdSupported")
+                .unwrap_or(false),
+            threshold_enabled: optional_property::<bool>(&device, "ChargeThresholdEnabled")
+                .unwrap_or(false),
+            threshold_start: threshold_percent(optional_property::<u32>(
+                &device,
+                "ChargeStartThreshold",
+            )),
+            threshold_end: threshold_percent(optional_property::<u32>(
+                &device,
+                "ChargeEndThreshold",
+            )),
+            threshold_firmware_managed: threshold_settings & 4 != 0,
         });
     }
-    None
+    Some(batteries)
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn threshold_percent(value: Option<u32>) -> Option<u8> {
+    value.filter(|value| *value <= 100).map(|value| value as u8)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn charge_threshold_from_batteries(
+    batteries: &[PhysicalBattery],
+    service_owner: Option<&str>,
+) -> ChargeThreshold {
+    if batteries.len() > 1 {
+        return ChargeThreshold {
+            availability: ChargeThresholdAvailability::MultipleBatteries,
+            ..ChargeThreshold::default()
+        };
+    }
+    let Some(battery) = batteries.first() else {
+        return ChargeThreshold::default();
+    };
+    let Some(service_owner) = service_owner else {
+        return ChargeThreshold::default();
+    };
+    if !battery.threshold_supported {
+        return ChargeThreshold::default();
+    }
+    ChargeThreshold {
+        availability: ChargeThresholdAvailability::Available,
+        enabled: battery.threshold_enabled,
+        start_percent: battery.threshold_start,
+        end_percent: battery.threshold_end,
+        firmware_managed: battery.threshold_firmware_managed,
+        identity: Some(ChargeThresholdIdentity {
+            service_owner: service_owner.to_owned(),
+            object_path: battery.object_path.clone(),
+            native_path: battery.native_path.clone(),
+            serial: battery.serial.clone(),
+        }),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn battery_history(
+    connection: &zbus::blocking::Connection,
+    display_device: &zbus::blocking::Proxy<'_>,
+    physical: &[PhysicalBattery],
+) -> BatteryHistory {
+    if let Some(history) = history_from_device(display_device) {
+        return history;
+    }
+    if physical.len() != 1 {
+        return BatteryHistory::default();
+    }
+    let Ok(device) = zbus::blocking::Proxy::new(
+        connection,
+        UPOWER_SERVICE,
+        physical[0].object_path.as_str(),
+        "org.freedesktop.UPower.Device",
+    ) else {
+        return BatteryHistory::default();
+    };
+    history_from_device(&device).unwrap_or_default()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn history_from_device(device: &zbus::blocking::Proxy<'_>) -> Option<BatteryHistory> {
+    if optional_property::<bool>(device, "HasHistory") != Some(true) {
+        return None;
+    }
+    let raw = match device.call::<_, _, Vec<(u32, f64, u32)>>(
+        "GetHistory",
+        &(
+            "charge",
+            HISTORY_TIMESPAN_SECONDS,
+            HISTORY_POINT_LIMIT as u32,
+        ),
+    ) {
+        Ok(raw) => raw,
+        Err(_) => {
+            return Some(BatteryHistory {
+                availability: BatteryHistoryAvailability::TemporarilyUnavailable,
+                points: Vec::new(),
+            });
+        }
+    };
+    Some(BatteryHistory {
+        availability: BatteryHistoryAvailability::Available,
+        points: normalize_history(raw),
+    })
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn normalize_history(raw: Vec<(u32, f64, u32)>) -> Vec<BatteryHistoryPoint> {
+    let mut points = raw
+        .into_iter()
+        .filter(|(timestamp, value, _)| {
+            *timestamp > 0 && value.is_finite() && (0.0..=100.0).contains(value)
+        })
+        .map(|(timestamp, value, state)| BatteryHistoryPoint {
+            timestamp: u64::from(timestamp),
+            percentage: percent(value),
+            state: battery_state_from_upower(state),
+        })
+        .collect::<Vec<_>>();
+    points.sort_by_key(|point| point.timestamp);
+    points.dedup_by_key(|point| point.timestamp);
+    if points.len() > HISTORY_POINT_LIMIT {
+        points.drain(..points.len() - HISTORY_POINT_LIMIT);
+    }
+    points
+}
+
+#[cfg(not(target_os = "macos"))]
+fn upower_service_owner(connection: &zbus::blocking::Connection) -> Result<String, Error> {
+    let dbus = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+    )
+    .map_err(|error| Error::new("identify UPower", error.to_string()))?;
+    dbus.call::<_, _, String>("GetNameOwner", &(UPOWER_SERVICE,))
+        .map_err(|error| Error::new("identify UPower", error.to_string()))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -357,6 +616,124 @@ fn system_set_profile(profile: PowerProfile) -> Result<(), Error> {
         }
     }
     Err(Error::new("change the power profile", failures.join("; ")))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_set_charge_threshold(
+    threshold: &ChargeThreshold,
+    enabled: bool,
+) -> Result<Snapshot, Error> {
+    let identity = threshold.identity.as_ref().ok_or_else(|| {
+        Error::new(
+            "change optimized charging",
+            "UPower did not advertise a writable charge threshold for this battery",
+        )
+    })?;
+    if !threshold.can_change() {
+        return Err(Error::new(
+            "change optimized charging",
+            "the captured battery capability is no longer writable",
+        ));
+    }
+
+    let connection = zbus::blocking::Connection::system()
+        .map_err(|error| Error::new("connect to UPower", error.to_string()))?;
+    let current = revalidate_threshold_battery(&connection, identity)?;
+    if current.threshold_enabled != enabled {
+        let device = zbus::blocking::Proxy::new(
+            &connection,
+            identity.service_owner.as_str(),
+            identity.object_path.as_str(),
+            "org.freedesktop.UPower.Device",
+        )
+        .map_err(|error| Error::new("open the charge-threshold device", error.to_string()))?;
+        device
+            .call::<_, _, ()>("EnableChargeThreshold", &(enabled,))
+            .map_err(|error| Error::new("change optimized charging", error.to_string()))?;
+    }
+
+    let deadline = std::time::Instant::now() + THRESHOLD_VERIFY_TIMEOUT;
+    loop {
+        let current = revalidate_threshold_battery(&connection, identity)?;
+        if current.threshold_enabled == enabled {
+            let snapshot = system_snapshot_with_connection(&connection)?;
+            let verified = snapshot.battery.as_ref().is_some_and(|battery| {
+                battery.charge_threshold.can_change()
+                    && battery.charge_threshold.enabled == enabled
+                    && battery.charge_threshold.identity.as_ref() == Some(identity)
+            });
+            if verified {
+                return Ok(snapshot);
+            }
+            return Err(Error::new(
+                "verify optimized charging",
+                "UPower returned a different battery after the change",
+            ));
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Error::new(
+                "verify optimized charging",
+                "UPower did not confirm the requested state within three seconds",
+            ));
+        }
+        std::thread::sleep(THRESHOLD_VERIFY_INTERVAL);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn revalidate_threshold_battery(
+    connection: &zbus::blocking::Connection,
+    identity: &ChargeThresholdIdentity,
+) -> Result<PhysicalBattery, Error> {
+    let owner = upower_service_owner(connection)?;
+    if owner != identity.service_owner {
+        return Err(Error::new(
+            "change optimized charging",
+            "UPower restarted; refresh Battery before trying again",
+        ));
+    }
+    let upower = zbus::blocking::Proxy::new(
+        connection,
+        UPOWER_SERVICE,
+        "/org/freedesktop/UPower",
+        "org.freedesktop.UPower",
+    )
+    .map_err(|error| Error::new("open UPower", error.to_string()))?;
+    let mut batteries = physical_batteries(connection, &upower).ok_or_else(|| {
+        Error::new(
+            "inspect the charge-threshold device",
+            "UPower did not return its physical battery inventory",
+        )
+    })?;
+    if upower_service_owner(connection)? != identity.service_owner {
+        return Err(Error::new(
+            "change optimized charging",
+            "UPower restarted during validation; refresh Battery before trying again",
+        ));
+    }
+    if batteries.len() != 1 {
+        return Err(Error::new(
+            "change optimized charging",
+            "the physical battery inventory changed; refresh Battery before trying again",
+        ));
+    }
+    let battery = batteries.remove(0);
+    if battery.object_path != identity.object_path
+        || battery.native_path != identity.native_path
+        || battery.serial != identity.serial
+    {
+        return Err(Error::new(
+            "change optimized charging",
+            "the physical battery changed; refresh Battery before trying again",
+        ));
+    }
+    if !battery.threshold_supported {
+        return Err(Error::new(
+            "change optimized charging",
+            "UPower no longer advertises writable charge thresholds for this battery",
+        ));
+    }
+    Ok(battery)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -600,6 +977,14 @@ fn system_set_profile(_: PowerProfile) -> Result<(), Error> {
 }
 
 #[cfg(target_os = "macos")]
+fn system_set_charge_threshold(_: &ChargeThreshold, _: bool) -> Result<Snapshot, Error> {
+    Err(Error::new(
+        "change optimized charging",
+        "no supported macOS charge-threshold adapter is available",
+    ))
+}
+
+#[cfg(target_os = "macos")]
 fn command(
     program: &'static str,
     arguments: &[&str],
@@ -662,6 +1047,8 @@ fn parse_macos_battery(pmset: &str, ioreg: &str) -> Option<Battery> {
         charge_cycles,
         energy_rate_watts: None,
         model: None,
+        charge_threshold: ChargeThreshold::default(),
+        history: BatteryHistory::default(),
     })
 }
 
@@ -733,6 +1120,50 @@ mod tests {
         assert_eq!(battery_state_from_upower(99), BatteryState::Unknown);
         assert_eq!(percent(101.0), 100);
         assert_eq!(percent(-1.0), 0);
+        assert_eq!(threshold_percent(Some(80)), Some(80));
+        assert_eq!(threshold_percent(Some(u32::MAX)), None);
+    }
+
+    #[test]
+    fn charge_history_is_valid_ordered_unique_and_bounded() {
+        let mut raw = (1..=110)
+            .rev()
+            .map(|timestamp| (timestamp, f64::from(timestamp % 101), 2))
+            .collect::<Vec<_>>();
+        raw.push((110, 42.0, 1));
+        raw.push((0, 50.0, 2));
+        raw.push((111, f64::NAN, 2));
+        raw.push((112, 101.0, 2));
+
+        let points = normalize_history(raw);
+        assert_eq!(points.len(), HISTORY_POINT_LIMIT);
+        assert_eq!(points.first().map(|point| point.timestamp), Some(15));
+        assert_eq!(points.last().map(|point| point.timestamp), Some(110));
+        assert!(points
+            .windows(2)
+            .all(|points| points[0].timestamp < points[1].timestamp));
+    }
+
+    #[test]
+    fn threshold_debug_output_redacts_private_identity() {
+        let threshold = ChargeThreshold {
+            availability: ChargeThresholdAvailability::Available,
+            enabled: true,
+            start_percent: Some(40),
+            end_percent: Some(80),
+            firmware_managed: false,
+            identity: Some(ChargeThresholdIdentity {
+                service_owner: ":1.42".to_owned(),
+                object_path: "/org/freedesktop/UPower/devices/battery_BAT0".to_owned(),
+                native_path: "/private/device/path".to_owned(),
+                serial: "private-serial".to_owned(),
+            }),
+        };
+        let output = format!("{threshold:?}");
+        assert!(threshold.can_change());
+        assert!(output.contains("has_identity: true"));
+        assert!(!output.contains("private"));
+        assert!(!output.contains("BAT0"));
     }
 
     #[test]

@@ -24,7 +24,7 @@ use gpui::{
     Styled, Window,
 };
 use gpui_component::StyledExt as _;
-use rmac_ui::{mac, InputState, SearchField};
+use rmac_ui::{mac, EmptyState, InputState, SearchField};
 
 const TILE_W: f32 = 116.0;
 const ICON: f32 = 60.0;
@@ -95,10 +95,13 @@ impl Category {
 struct App {
     id: String,
     name: SharedString,
+    generic_name: Option<String>,
+    keywords: Vec<String>,
     path: PathBuf,
     icon: Option<PathBuf>,
     category: Category,
     source_categories: Vec<String>,
+    search_text: String,
     launch: rmac_apps::LaunchSpec,
     actions: Vec<rmac_apps::DesktopAction>,
 }
@@ -291,12 +294,12 @@ impl AppDrawer {
 
     /// Indices into `self.apps` that pass the current category + search filter.
     fn visible_indices(&self, cx: &gpui::App) -> Vec<usize> {
-        let q = self.query.read(cx).value().to_lowercase();
+        let q = self.query.read(cx).value().trim().to_lowercase();
         self.apps
             .iter()
             .enumerate()
             .filter(|(_, a)| self.filter.is_none_or(|c| a.category == c))
-            .filter(|(_, a)| q.is_empty() || a.name.to_lowercase().contains(&q))
+            .filter(|(_, a)| q.is_empty() || a.search_text.contains(&q))
             .map(|(i, _)| i)
             .collect()
     }
@@ -304,13 +307,13 @@ impl AppDrawer {
     /// The set of categories actually present after the *search* filter — used
     /// to build the category bar so we never show an empty bucket.
     fn present_categories(&self, cx: &gpui::App) -> Vec<Category> {
-        let q = self.query.read(cx).value().to_lowercase();
+        let q = self.query.read(cx).value().trim().to_lowercase();
         Category::ORDER
             .into_iter()
             .filter(|c| {
-                self.apps.iter().any(|a| {
-                    a.category == *c && (q.is_empty() || a.name.to_lowercase().contains(&q))
-                })
+                self.apps
+                    .iter()
+                    .any(|a| a.category == *c && (q.is_empty() || a.search_text.contains(&q)))
             })
             .collect()
     }
@@ -346,6 +349,8 @@ impl AppDrawer {
         self.apps.get(idx).map(|app| rmac_apps::Application {
             id: app.id.clone(),
             name: app.name.to_string(),
+            generic_name: app.generic_name.clone(),
+            keywords: app.keywords.clone(),
             source: app.path.clone(),
             icon: app.icon.clone(),
             categories: app.source_categories.clone(),
@@ -668,7 +673,23 @@ impl Render for AppDrawer {
         };
         let context_menu = self.menu_at.map(|pos| self.app_menu(pos, cx));
 
-        let body: gpui::AnyElement = if self.view == ViewMode::Grid {
+        let body: gpui::AnyElement = if vis.is_empty() {
+            let empty = if self.apps.is_empty() {
+                EmptyState::new("No applications found").message(
+                    "Install an application or add a visible desktop entry to an XDG application directory",
+                )
+            } else {
+                EmptyState::new("No matching applications")
+                    .message("Try another name, keyword, category, or application action")
+            };
+            div()
+                .min_h(px(320.0))
+                .w_full()
+                .flex()
+                .items_center()
+                .child(empty)
+                .into_any_element()
+        } else if self.view == ViewMode::Grid {
             let tiles = vis
                 .iter()
                 .enumerate()
@@ -826,8 +847,15 @@ fn scan_apps() -> (Vec<App>, Option<SharedString>) {
         .into_iter()
         .zip(categories)
         .map(|(application, category)| App {
+            search_text: format!(
+                "{}\n{}",
+                application.searchable_text(),
+                category.label().to_lowercase()
+            ),
             id: application.id,
             name: application.name.into(),
+            generic_name: application.generic_name,
+            keywords: application.keywords,
             path: application.source,
             icon: application.icon,
             category,

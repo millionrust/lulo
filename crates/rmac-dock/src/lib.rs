@@ -525,6 +525,8 @@ mod tests {
         rmac_apps::Application {
             id: id.into(),
             name: name.into(),
+            generic_name: None,
+            keywords: Vec::new(),
             source: PathBuf::from(format!("/apps/{id}")),
             icon: Some(PathBuf::from(format!("/icons/{id}.svg"))),
             categories: Vec::new(),
@@ -534,6 +536,7 @@ mod tests {
                 working_dir: None,
                 terminal: false,
             },
+            actions: Vec::new(),
         }
     }
 

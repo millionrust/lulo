@@ -147,9 +147,11 @@ impl Provider for ApplicationProvider {
             if cancellation.is_cancelled() {
                 return Err(cancelled());
             }
-            let subtitle =
-                (!application.categories.is_empty()).then(|| application.categories.join(", "));
-            if !rmac_launcher::query_matches(query, &application.name, subtitle.as_deref()) {
+            let subtitle = application.generic_name.clone().or_else(|| {
+                (!application.categories.is_empty()).then(|| application.categories.join(", "))
+            });
+            let searchable = application.searchable_text();
+            if !rmac_launcher::query_matches(query, &application.name, Some(&searchable)) {
                 continue;
             }
             results.push(SearchResult {
@@ -837,6 +839,8 @@ mod tests {
         rmac_apps::Application {
             id: id.into(),
             name: name.into(),
+            generic_name: None,
+            keywords: Vec::new(),
             source: PathBuf::from(format!("/apps/{id}")),
             icon: None,
             categories: vec!["Utility".into()],
@@ -852,7 +856,16 @@ mod tests {
 
     #[test]
     fn application_provider_preserves_exact_launch_spec() {
-        let provider = ApplicationProvider::new(vec![application("terminal.desktop", "Terminal")]);
+        let mut terminal = application("terminal.desktop", "Terminal");
+        terminal.generic_name = Some("Console".into());
+        terminal.keywords = vec!["shell".into(), "command line".into()];
+        terminal.actions.push(rmac_apps::DesktopAction {
+            id: "New-Window".into(),
+            name: "Fresh Window".into(),
+            icon: None,
+            launch: terminal.launch.clone(),
+        });
+        let provider = ApplicationProvider::new(vec![terminal]);
         let results = provider
             .search("term", &Cancellation::default())
             .expect("search succeeds");
@@ -867,6 +880,15 @@ mod tests {
             Some(Action::RevealApplication { source })
                 if source == Path::new("/apps/terminal.desktop")
         ));
+        for metadata_query in ["console", "shell", "fresh window"] {
+            assert_eq!(
+                provider
+                    .search(metadata_query, &Cancellation::default())
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
     }
 
     #[test]

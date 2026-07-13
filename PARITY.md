@@ -54,9 +54,10 @@ evidence remains gated by the reference-PC framework work.
   bar** (live cursor Ln/Col + word/char counts).
 - **App Drawer** 🟡 — localized XDG discovery, `TryExec`, inherited icons,
   search, shell-free launch, keyboard navigation, grid/list and category views,
-  live refresh, and context actions (Open / declared desktop actions / Show in
-  Folder). Activation-token propagation, explicit no-results presentation,
-  Orca/Linux interaction evidence, and measured cold-cache behavior remain.
+  live refresh, metadata/action search, explicit empty states, and context
+  actions (Open / declared desktop actions / Show in Folder). Activation-token
+  propagation, Orca/Linux interaction evidence, and measured cold-cache
+  behavior remain.
 
 ## Shared component library (`rmac-ui`)
 Every app now shares one macOS-fidelity component layer instead of per-app

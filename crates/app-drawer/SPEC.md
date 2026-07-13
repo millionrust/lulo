@@ -25,7 +25,8 @@ software store, package manager, or imitation of Apple Launchpad.
 
 1. Open App Drawer and see a stable grid of installed, visible applications
    with their resolved icons and localized names.
-2. Type in Search and receive an immediate filtered result without moving
+2. Type a localized name, generic name, keyword, category, or desktop-action
+   label in Search and receive an immediate filtered result without moving
    focus away from the text field.
 3. Filter by a category that actually has visible matches; switch between grid
    and list without changing the selected application.
@@ -70,8 +71,8 @@ software store, package manager, or imitation of Apple Launchpad.
 ## Visual and state contract
 
 - Loading must not replace navigation or cause layout jumps.
-- Empty search results occupy the content area and must not look like an empty
-  catalog. This explicit state is still pending.
+- An empty catalog and a query with no matches use distinct centered states;
+  neither removes Search, filters, or the view control.
 - A catalog read failure retains the last known-good applications. A watcher
   failure explains that live updates are unavailable without hiding the loaded
   catalog.
@@ -82,8 +83,7 @@ software store, package manager, or imitation of Apple Launchpad.
 ## Release gates and remaining work
 
 - Add compositor activation-token propagation for startup focus correctness.
-- Add an explicit no-results state, localized search over keywords/actions,
-  and stable persisted view preference if usability evidence supports it.
+- Add stable persisted view preference if usability evidence supports it.
 - Prove keyboard focus order, context-action activation, live cache
   invalidation, cold-cache performance, icon fallback, and install/removal on
   Ubuntu 26.04 with niri.

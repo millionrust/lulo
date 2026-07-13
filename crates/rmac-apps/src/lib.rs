@@ -14,6 +14,8 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 pub struct Application {
     pub id: String,
     pub name: String,
+    pub generic_name: Option<String>,
+    pub keywords: Vec<String>,
     pub source: PathBuf,
     pub icon: Option<PathBuf>,
     pub categories: Vec<String>,
@@ -34,6 +36,9 @@ pub struct DesktopAction {
 const MAX_DESKTOP_ACTIONS: usize = 32;
 const MAX_ACTION_ID_BYTES: usize = 255;
 const MAX_ACTION_NAME_BYTES: usize = 512;
+const MAX_GENERIC_NAME_BYTES: usize = 512;
+const MAX_SEARCH_KEYWORDS: usize = 64;
+const MAX_KEYWORD_BYTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ApplicationSource {
@@ -84,6 +89,18 @@ impl SourceInventory {
 }
 
 impl Application {
+    /// Lower-cased, display-safe metadata used by application pickers. Source
+    /// paths and command lines are deliberately excluded.
+    pub fn searchable_text(&self) -> String {
+        std::iter::once(self.name.to_lowercase())
+            .chain(self.generic_name.iter().map(|value| value.to_lowercase()))
+            .chain(self.keywords.iter().map(|value| value.to_lowercase()))
+            .chain(self.categories.iter().map(|value| value.to_lowercase()))
+            .chain(self.actions.iter().map(|action| action.name.to_lowercase()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     pub fn source_kind(&self) -> ApplicationSource {
         let source = self.source.to_string_lossy();
         if source.contains("/flatpak/exports/share/applications/") {
@@ -273,6 +290,8 @@ fn discover_macos() -> io::Result<Vec<Application>> {
             applications.push(Application {
                 id: name.clone(),
                 name,
+                generic_name: None,
+                keywords: Vec::new(),
                 source: path.clone(),
                 icon: None,
                 categories: Vec::new(),
@@ -463,6 +482,12 @@ fn parse_desktop_entry(
         }
     }
     let name = localized_value(&values, "Name", &environment.locale)?.to_string();
+    let generic_name = localized_value(&values, "GenericName", &environment.locale)
+        .filter(|value| !value.trim().is_empty() && value.len() <= MAX_GENERIC_NAME_BYTES)
+        .map(str::to_string);
+    let keywords = localized_value(&values, "Keywords", &environment.locale)
+        .map(bounded_keywords)
+        .unwrap_or_default();
     let exec = values.get("Exec")?;
     let icon_name = values.get("Icon").map(String::as_str);
     let (program, args) = expand_exec(exec, &name, icon_name, path)?;
@@ -472,6 +497,8 @@ fn parse_desktop_entry(
     Some(Application {
         id: id.to_string(),
         name,
+        generic_name,
+        keywords,
         source: path.to_path_buf(),
         icon,
         categories,
@@ -569,10 +596,28 @@ fn bool_value(value: Option<&String>) -> bool {
 }
 
 fn split_list(value: Option<&String>) -> Vec<String> {
+    value.map_or_else(Vec::new, |value| split_list_value(value))
+}
+
+fn split_list_value(value: &str) -> Vec<String> {
     value
-        .into_iter()
-        .flat_map(|value| value.split(';'))
+        .split(';')
         .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn bounded_keywords(value: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    value
+        .split(';')
+        .map(str::trim)
+        .filter(|keyword| {
+            !keyword.is_empty()
+                && keyword.len() <= MAX_KEYWORD_BYTES
+                && seen.insert(keyword.to_lowercase())
+        })
+        .take(MAX_SEARCH_KEYWORDS)
         .map(str::to_string)
         .collect()
 }
@@ -1104,6 +1149,8 @@ mod tests {
         Application {
             id: id.into(),
             name: name.into(),
+            generic_name: None,
+            keywords: Vec::new(),
             source: PathBuf::from(format!("/apps/{id}")),
             icon: None,
             categories: Vec::new(),
@@ -1163,12 +1210,19 @@ mod tests {
         let entry = parse_desktop_entry(
             "demo.desktop",
             Path::new("/apps/demo.desktop"),
-            "[Desktop Entry]\nType=Application\nName=Demo\nName[en_GB]=Demonstration\nExec=demo --title %c %% %f\nIcon=demo\nCategories=Development;Utility;\nOnlyShowIn=niri;\n",
+            "[Desktop Entry]\nType=Application\nName=Demo\nName[en_GB]=Demonstration\nGenericName=Tool\nGenericName[en_GB]=Developer Tool\nKeywords=code;editor;\nKeywords[en_GB]=develop;build;\nExec=demo --title %c %% %f\nIcon=demo\nCategories=Development;Utility;\nOnlyShowIn=niri;\n",
             &environment(),
         )
         .unwrap();
 
         assert_eq!(entry.name, "Demonstration");
+        assert_eq!(entry.generic_name.as_deref(), Some("Developer Tool"));
+        assert_eq!(entry.keywords, ["develop", "build"]);
+        let searchable = entry.searchable_text();
+        assert!(searchable.contains("demonstration"));
+        assert!(searchable.contains("developer tool"));
+        assert!(searchable.contains("develop"));
+        assert!(searchable.contains("utility"));
         assert_eq!(entry.categories, ["Development", "Utility"]);
         assert_eq!(
             entry.launch,
@@ -1251,6 +1305,24 @@ mod tests {
         assert_eq!(entry.actions.len(), MAX_DESKTOP_ACTIONS);
         assert_eq!(entry.actions.first().unwrap().id, "Action0");
         assert_eq!(entry.actions.last().unwrap().id, "Action31");
+
+        let keywords = (0..70)
+            .map(|index| format!("keyword{index};"))
+            .collect::<String>();
+        let contents = format!(
+            "[Desktop Entry]\nType=Application\nName=Demo\nGenericName={}\nKeywords={keywords}\nExec=demo\n",
+            "g".repeat(MAX_GENERIC_NAME_BYTES + 1)
+        );
+        let entry = parse_desktop_entry(
+            "demo.desktop",
+            Path::new("demo.desktop"),
+            &contents,
+            &environment(),
+        )
+        .unwrap();
+        assert!(entry.generic_name.is_none());
+        assert_eq!(entry.keywords.len(), MAX_SEARCH_KEYWORDS);
+        assert_eq!(entry.keywords.last().unwrap(), "keyword63");
     }
 
     #[test]

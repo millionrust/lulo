@@ -23,10 +23,10 @@ equivalents rather than simulated.
 | Accessibility | Live rmac increased-contrast, reduced-motion, and bounded application text-size preferences with effective-state display; text size updates the shared GPUI rem base and migrated semantic/shared UI text without changing display or content-font scaling; separate confirmed GNOME/GTK text scaling; authoritative niri-backed keyboard, mouse, and trackpad controls; off-thread full-niri-session, Xwayland, and installed-Orca readiness with the documented default shortcut; explicit rmac AT-SPI limits | `rmac-theme`, `rmac-ui`, `rmac-gtk-settings`, GPUI per-window rem size, GNOME interface GSettings, Settings portal appearance values, `rmac-input`, niri configuration and accessibility bridge | Linux text/output clipping, keyboard, pointer, and AT-SPI/Orca evidence |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
 | Assistant & Intelligence | Hidden from production navigation | Optional local/provider integrations | Leave absent until a privacy design exists |
-| Desktop & Dock | Placeholder | rmac shell and niri IPC | Dock, desktop, workspaces, window behavior |
+| Desktop & Dock | Dedicated read-only readiness state naming the existing durable Dock consumer and every missing editor/capability boundary; no implied controls | rmac shell settings and niri IPC | Dock placement/output/hiding/magnification/window behavior editor with capability evidence |
 | Displays | Real layout plus transient mode, scale, and rotation controls | niri output IPC/Wayland | Persistent validated layouts, visual positioning, and live signals |
-| Spotlight | Placeholder | rmac-search | Sources, exclusions, indexing state, global shortcut |
-| Wallpaper | Placeholder | rmac shell | Per-output wallpaper selection and persistence |
+| Spotlight | Dedicated read-only readiness state separating current local search from missing provider/index/privacy/exclusion/shortcut authority; no implied controls | `rmac-search`, shell settings | Sources, exclusions, indexing state, privacy, and global shortcut editor |
+| Wallpaper | Dedicated read-only readiness state separating the active wallpaper runtime from missing safe selection/per-output/preview/hotplug/rollback authority; no implied controls | rmac wallpaper runtime and shell settings | Portal-backed selection, per-output editing, fit previews, hotplug, and rollback |
 | Notifications | Live service-backed app/policy list with desktop-entry names/icons plus allow/block, top-bar badge, and history controls with separate stream/mutation errors | `org.rmac.NotificationCenter1` plus live XDG app catalog | Banner/sound UI after presentation exists, per-app lock-preview controls after a PAM-capable provider exists, scoped GPUI build, and Linux interaction/accessibility evidence |
 | Sound | Real devices, defaults, volume, and mute; local-only alert/startup/UI-sound controls removed | PipeWire/WirePlumber | Live signals, routes, authoritative session sound policy, and per-channel balance |
 | Keyboard, Mouse & Trackpad | Real persistent input configuration with validation and atomic rollback | niri/libinput | Included-config editing, per-device overrides, and live signals |
@@ -328,8 +328,9 @@ packages, repository signatures, or whether an individual application is safe.
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.
-Required roadmap destinations that do not yet have a dedicated renderer show
-one explicit unavailable explanation; the old generic rows and clickable
+Every production category is regression-tested to have an explicit renderer.
+Required roadmap destinations that do not yet have a reviewed editor show a
+specific capability/limitation state; the old generic rows and clickable
 placeholder subpages have been removed.
 
 Sound now renders only controls backed by the system audio service. The former

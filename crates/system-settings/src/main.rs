@@ -3765,6 +3765,9 @@ impl Settings {
     // ---- detail dispatch ---------------------------------------------
 
     fn render_detail(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        debug_assert!(category_has_dedicated_renderer(
+            self.current().name.as_ref()
+        ));
         let content: Div = if let Some(sub) = self.nav.last().cloned() {
             self.render_subpage(&sub, cx)
         } else {
@@ -3790,7 +3793,10 @@ impl Settings {
                 "Privacy & Security" => self.render_privacy_security(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
-                _ => self.render_generic(),
+                "Desktop & Dock" => self.render_desktop_dock_readiness(),
+                "Spotlight" => self.render_spotlight_readiness(),
+                "Wallpaper" => self.render_wallpaper_readiness(),
+                _ => self.render_unregistered_category(),
             }
         };
 
@@ -3847,11 +3853,29 @@ impl Settings {
         div().v_flex().child(self.render_hero()).children(cards)
     }
 
-    // ---- generic unavailable panes -----------------------------------
+    // ---- explicit readiness panes ------------------------------------
 
-    fn render_generic(&self) -> Div {
+    fn render_desktop_dock_readiness(&self) -> Div {
         self.pane(vec![note_card(
-            "This pane is unavailable in the current rmac build. It does not read or change system settings.",
+            "The rmac Dock already consumes durable shell settings, but System Settings does not yet provide the reviewed editor or niri capability checks required for placement, output scope, hiding, magnification, and window behavior. This pane is read-only and changes nothing.",
+        )])
+    }
+
+    fn render_spotlight_readiness(&self) -> Div {
+        self.pane(vec![note_card(
+            "rmac Search can launch local search, but provider policy, indexing state, exclusions, privacy controls, and the global shortcut are not yet exposed through an authoritative Settings editor. This pane is read-only and changes nothing.",
+        )])
+    }
+
+    fn render_wallpaper_readiness(&self) -> Div {
+        self.pane(vec![note_card(
+            "The session wallpaper runtime can render persisted wallpaper state, but safe portal-backed selection, per-output editing, fit previews, hotplug behavior, and rollback are not yet available here. This pane is read-only and changes nothing.",
+        )])
+    }
+
+    fn render_unregistered_category(&self) -> Div {
+        self.pane(vec![note_card(
+            "This category is not registered with a System Settings renderer. It does not read or change system settings.",
         )])
     }
 
@@ -9997,7 +10021,7 @@ fn categories() -> Vec<Vec<Category>> {
                 "Desktop & Dock",
                 "icons/app-window.svg",
                 gray,
-                "Adjust the Dock, Stage Manager, and windows.",
+                "Review current Dock integration status and limitations.",
             ),
             cat(
                 "Displays",
@@ -10009,13 +10033,13 @@ fn categories() -> Vec<Vec<Category>> {
                 "Spotlight",
                 "icons/search.svg",
                 gray,
-                "Choose which categories Spotlight searches.",
+                "Review search integration status and privacy limitations.",
             ),
             cat(
                 "Wallpaper",
                 "icons/image.svg",
                 teal,
-                "Choose a wallpaper for your desktop.",
+                "Review wallpaper integration status and limitations.",
             ),
         ],
         vec![
@@ -10073,6 +10097,36 @@ fn categories() -> Vec<Vec<Category>> {
     ]
 }
 
+fn category_has_dedicated_renderer(name: &str) -> bool {
+    matches!(
+        name,
+        "Wi-Fi"
+            | "Bluetooth"
+            | "Network"
+            | "VPN"
+            | "Battery"
+            | "General"
+            | "Date & Time"
+            | "Language & Region"
+            | "Login Items"
+            | "Sharing"
+            | "Accessibility"
+            | "Appearance"
+            | "Desktop & Dock"
+            | "Displays"
+            | "Spotlight"
+            | "Wallpaper"
+            | "Notifications"
+            | "Sound"
+            | "Keyboard"
+            | "Mouse"
+            | "Trackpad"
+            | "Focus"
+            | "Lock Screen"
+            | "Privacy & Security"
+    )
+}
+
 fn main() {
     rmac_ui::boot_unified_with_assets(CombinedAssets, 1000.0, 720.0, |window, cx| {
         cx.bind_keys([KeyBinding::new("cmd-[", GoBack, Some("SystemSettings"))]);
@@ -10083,8 +10137,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        categories, notification_policy_with, NotificationPolicyChange, ScreenReaderCapability,
-        GENERAL_DESTINATIONS,
+        categories, category_has_dedicated_renderer, notification_policy_with,
+        NotificationPolicyChange, ScreenReaderCapability, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -10109,6 +10163,9 @@ mod tests {
         assert!(names.iter().any(|name| name == "Language & Region"));
         assert!(names.iter().any(|name| name == "Login Items"));
         assert!(names.iter().any(|name| name == "Sharing"));
+        assert!(names
+            .iter()
+            .all(|name| category_has_dedicated_renderer(name)));
     }
 
     #[test]

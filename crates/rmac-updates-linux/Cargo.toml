@@ -1,0 +1,15 @@
+[package]
+name = "rmac-updates-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+rmac-updates.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+async-io.workspace = true
+futures-util.workspace = true
+zbus.workspace = true

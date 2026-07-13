@@ -33,4 +33,6 @@ rmac-shortcuts.workspace = true
 rmac-system-info.workspace = true
 rmac-theme.workspace = true
 rmac-ui.workspace = true
+rmac-updates.workspace = true
+rmac-updates-linux.workspace = true
 rust-embed.workspace = true

@@ -14,7 +14,7 @@ equivalents rather than simulated.
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
 | Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
 | General/About | Typed privacy-safe OS, kernel, architecture, hardware, graphics, and session facts; validated hostname mutation with busy/error state; authoritative refresh; redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs/sysfs, display service | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname refresh, and clipboard contents |
-| Software Update | Placeholder | Ubuntu update services | Check, progress, restart requirements; privileged actions via polkit |
+| Software Update | Live bounded PackageKit update status with security/blocked classification, cached startup query, explicit freshness request, timeout, service/backend errors, and last-known-good refresh behavior | PackageKit system D-Bus over the Ubuntu APT backend | Trusted download/install transaction, progress/cancel, restart requirements, polkit outcomes, live signals, and Linux interaction evidence |
 | Storage | macOS-shaped `df` snapshot | Filesystem/mount service | Per-volume usage and safe cleanup guidance |
 | Date & Time | Placeholder | timedate1 D-Bus | Time zone, automatic time, clock settings |
 | Language & Region | Placeholder | locale1 D-Bus and input services | Locale, formats, keyboard/input sources |
@@ -67,6 +67,21 @@ addresses, machine IDs, and paths. This follows the hostname service contract
 documented by the official systemd
 [`org.freedesktop.hostname1` manual](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.hostname1.html).
 Linux reference-PC interaction evidence remains pending.
+
+Software Update now queries PackageKit directly instead of parsing `apt` output.
+The adapter creates a transaction, subscribes before starting it, sends bounded
+non-interactive cache-age hints, collects typed package/error/completion signals,
+and cancels after 45 seconds. Package identifiers and backend text are bounded
+before entering UI state. A failed refresh preserves the last successful list;
+an absent daemon is an explicit unavailable state. The current slice is status
+only: downloads, installation, restart handling, and authorization are still
+unavailable, and the pane directs people to Ubuntu Software Updater. This
+matches Ubuntu 26.04's documented updater path and PackageKit's official D-Bus
+transaction contract; applying changes will not be claimed until it has its own
+confirmation, polkit, progress, cancellation, and recovery slice.
+
+Authority references: [Ubuntu 26.04 Software Updater guidance](https://documentation.ubuntu.com/desktop/en/26.04/tutorial/install-ubuntu-desktop/)
+and the [PackageKit transaction API](https://packagekit.freedesktop.org/gtk-doc/Transaction.html).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

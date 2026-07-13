@@ -140,6 +140,15 @@ host/user identity, serials, machine IDs, network addresses, and paths. The
 System Settings renderer only holds this typed snapshot and dispatches work to
 the background executor; a deterministic `Service` fake covers consumer tests.
 
+Software updates are split between platform-neutral `rmac-updates` and the
+PackageKit adapter in `rmac-updates-linux`. The domain crate owns bounded update
+records, classification, failure kinds, transaction collection, and an
+asynchronous fakeable source. The Linux adapter opens one system-D-Bus
+transaction, subscribes before requesting results, tolerates unknown signals,
+and has a fixed timeout. System Settings retains the last successful snapshot
+when a refresh fails. Installation remains outside this read-only boundary
+until progress, cancellation, polkit, restart, and recovery states are complete.
+
 Appearance is split deliberately: `rmac-appearance` owns the platform-neutral
 snapshot, capabilities, event reducer, source trait, and deterministic fake;
 `rmac-appearance-portal` reads standardized host preferences and follows the

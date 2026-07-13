@@ -33,8 +33,10 @@ evidence remains gated by the reference-PC framework work.
   hides local-only alert/startup/UI-effect state. System Settings no longer
   reads or writes a private settings file for service-owned state. About now
   has typed privacy-safe Linux facts, interactive-polkit hostname mutation,
-  authoritative refresh, and a redacted clipboard report; Linux runtime
-  evidence and the remaining panes keep overall parity partial.
+  authoritative refresh, and a redacted clipboard report. Software Update now
+  reports a bounded live PackageKit update list with security/blocked status,
+  refresh timeout, and truthful unavailable/error states; installation and
+  Linux runtime evidence keep overall parity partial.
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).

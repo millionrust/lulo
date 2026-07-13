@@ -5374,6 +5374,8 @@ dependencies = [
  "rmac-system-info",
  "rmac-theme",
  "rmac-ui",
+ "rmac-updates",
+ "rmac-updates-linux",
  "rust-embed",
 ]
 
@@ -5436,6 +5438,20 @@ dependencies = [
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-theme",
+]
+
+[[package]]
+name = "rmac-updates"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-updates-linux"
+version = "0.1.0"
+dependencies = [
+ "async-io",
+ "futures-util",
+ "rmac-updates",
+ "zbus",
 ]
 
 [[package]]

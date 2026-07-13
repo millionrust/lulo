@@ -155,6 +155,10 @@ struct Settings {
     diagnostics_copied: bool,
     account: SharedString,
     sysinfo: rmac_system_info::Snapshot,
+    updates_loading: bool,
+    updates_busy: bool,
+    updates_error: Option<SharedString>,
+    updates: Option<rmac_updates::Snapshot>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -432,6 +436,15 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_updates_linux::snapshot(rmac_updates::Request::cached()).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_update_status(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
                 .spawn(async { rmac_bluetooth::snapshot() })
@@ -639,6 +652,10 @@ impl Settings {
                 .unwrap_or_else(|_| "User".into())
                 .into(),
             sysinfo: rmac_system_info::Snapshot::default(),
+            updates_loading: true,
+            updates_busy: false,
+            updates_error: None,
+            updates: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -853,6 +870,40 @@ impl Settings {
         cx.write_to_clipboard(ClipboardItem::new_string(report));
         self.diagnostics_copied = true;
         cx.notify();
+    }
+
+    fn finish_update_status(
+        &mut self,
+        result: std::result::Result<rmac_updates::Snapshot, rmac_updates::Error>,
+    ) {
+        self.updates_loading = false;
+        self.updates_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.updates = Some(snapshot);
+                self.updates_error = None;
+            }
+            Err(error) => {
+                self.updates_error = Some(format!("Could not check for updates: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_update_status(&mut self, cx: &mut Context<Self>) {
+        if self.updates_loading || self.updates_busy {
+            return;
+        }
+        self.updates_busy = true;
+        self.updates_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_updates_linux::snapshot(rmac_updates::Request::refresh()).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_update_status(result);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn finish_wifi_update(
@@ -5022,20 +5073,7 @@ impl Settings {
     fn render_subpage(&self, sub: &SubPage, cx: &Context<Self>) -> Div {
         let (title, body): (SharedString, Div) = match sub {
             SubPage::About => ("About".into(), self.about_body(cx)),
-            SubPage::SoftwareUpdate => (
-                "Software Update".into(),
-                div()
-                    .v_flex()
-                    .child(card(vec![value_row(
-                        "icons/refresh-cw.svg",
-                        secondary(),
-                        "Current version".into(),
-                        self.sysinfo.operating_system.clone().into(),
-                    )]))
-                    .child(note_card(
-                        "rmac reads the installed operating-system version. The Ubuntu update service is not connected yet, so available updates are not reported.",
-                    )),
-            ),
+            SubPage::SoftwareUpdate => ("Software Update".into(), self.software_update_body(cx)),
             SubPage::Storage => ("Storage".into(), self.storage_body()),
             SubPage::NotificationApp { app_id } => (
                 self.application_identity(app_id)
@@ -5056,10 +5094,9 @@ impl Settings {
                     .unwrap_or_else(|| "Focus".into());
                 (title.into(), self.focus_mode_body(mode_id, cx))
             }
-            SubPage::FocusSchedule { schedule_id } => (
-                "Schedule".into(),
-                self.focus_schedule_body(schedule_id, cx),
-            ),
+            SubPage::FocusSchedule { schedule_id } => {
+                ("Schedule".into(), self.focus_schedule_body(schedule_id, cx))
+            }
         };
 
         let header = div()
@@ -5083,6 +5120,123 @@ impl Settings {
             );
 
         div().v_flex().child(header).child(body)
+    }
+
+    fn software_update_body(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let refresh = Button::new("refresh-update-status", "Check Again")
+            .busy(self.updates_busy)
+            .disabled(self.updates_loading || self.updates_busy)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_update_status(cx));
+            });
+        let mut body = div().v_flex().child(card(vec![
+            value_row(
+                "icons/info.svg",
+                secondary(),
+                "Current version".into(),
+                self.sysinfo.operating_system.clone().into(),
+            ),
+            row_base()
+                .child(tile("icons/refresh-cw.svg", accent(), 22.0))
+                .child(text_block(
+                    "Package updates".into(),
+                    Some("PackageKit · configured repositories".into()),
+                ))
+                .child(refresh)
+                .into_any_element(),
+        ]));
+
+        if self.updates_loading && self.updates.is_none() {
+            return body.child(
+                Progress::indeterminate()
+                    .label("Reading available updates…")
+                    .mb_3(),
+            );
+        }
+
+        let Some(snapshot) = &self.updates else {
+            return body
+                .child(
+                    EmptyState::new("Update service unavailable")
+                        .message("Install and enable PackageKit, then check again")
+                        .error(true),
+                )
+                .child(note_card(
+                    "No package state is guessed from local files or command output.",
+                ));
+        };
+
+        let security = snapshot.security_count();
+        let blocked = snapshot.blocked_count();
+        let status = if snapshot.updates.is_empty() {
+            "Your system is up to date".to_string()
+        } else if security > 0 {
+            format!(
+                "{} updates available · {security} security",
+                snapshot.updates.len()
+            )
+        } else {
+            format!("{} updates available", snapshot.updates.len())
+        };
+        body = body.child(card(vec![value_row(
+            "icons/shield.svg",
+            if security > 0 {
+                hsl(0xff3b30)
+            } else {
+                hsl(0x34c759)
+            },
+            "Status".into(),
+            status.into(),
+        )]));
+
+        if !snapshot.updates.is_empty() {
+            body = body.child(section_header("Available Updates"));
+            let rows = snapshot
+                .updates
+                .iter()
+                .map(|update| {
+                    let detail = if update.summary.is_empty() {
+                        update.kind.label().to_string()
+                    } else {
+                        format!("{} · {}", update.kind.label(), update.summary)
+                    };
+                    row_base()
+                        .child(tile(
+                            "icons/refresh-cw.svg",
+                            match update.kind {
+                                rmac_updates::UpdateKind::Security => hsl(0xff3b30),
+                                rmac_updates::UpdateKind::Blocked => hsl(0xff9500),
+                                _ => accent(),
+                            },
+                            22.0,
+                        ))
+                        .child(text_block(update.name.clone().into(), Some(detail.into())))
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(secondary())
+                                .child(update.version.clone()),
+                        )
+                        .into_any_element()
+                })
+                .collect();
+            body = body.child(card(rows));
+        }
+        if snapshot.truncated {
+            body = body.child(note_card(
+                "More updates are available than this bounded view can display.",
+            ));
+        }
+        if blocked > 0 {
+            body = body.child(note_card(
+                "Some updates are blocked by package dependencies. Ubuntu Software Updater can show the dependency details.",
+            ));
+        }
+        body.child(note_card(
+            "Checking is live. Download and installation are not connected in this build; use Ubuntu Software Updater to review and apply changes.",
+        ))
     }
 
     fn about_body(&self, cx: &Context<Self>) -> Div {
@@ -5268,6 +5422,7 @@ impl Render for Settings {
         let settings_error = self
             .system_data_error
             .clone()
+            .or_else(|| self.updates_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -5298,6 +5453,7 @@ impl Render for Settings {
                         .border_r_0()
                         .on_dismiss(cx.listener(|this, _, _, cx| {
                             this.system_data_error = None;
+                            this.updates_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;

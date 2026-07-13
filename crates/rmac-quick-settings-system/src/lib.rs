@@ -275,6 +275,7 @@ mod tests {
         inputs.wifi.available = true;
         inputs.bluetooth.available = true;
         inputs.audio.available = true;
+        inputs.audio.has_output = true;
         inputs.power.profiles.available = true;
         inputs.power.profiles.supported = vec![rmac_power::PowerProfile::Balanced];
         inputs.focus_available = true;

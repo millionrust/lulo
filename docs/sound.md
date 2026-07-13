@@ -54,8 +54,13 @@ Duplicate indices, stale-profile Route records, unavailable routes, reused IDs,
 and ambiguous device identities are not writable. Selection uses the exact
 node and route index with `wpctl set-route`, then requires the same complete
 private association and active Route readback. The domain exposes this state
-without persisting any private PipeWire path or hardware identifier; visible
-Settings wiring lands in the following UI commit.
+without persisting any private PipeWire path or hardware identifier. System
+Settings renders advertised output/input ports and hardware profiles with their
+active and unavailable states, disables every choice while another mutation is
+busy, and consumes the verified service snapshot directly after selection. A
+profile may legitimately leave no default sink or source; Settings then hides
+that direction's volume/mute controls, and Quick Settings marks Sound
+unavailable instead of sending a mutation to a nonexistent default.
 
 ## Live changes and recovery
 
@@ -83,7 +88,6 @@ cannot be silently lost or overwrite newer readback.
 
 F6 remains open until rmac adds and the Ubuntu/niri reference PC proves:
 
-- visible profile/port controls and their keyboard/accessibility states;
 - per-channel balance only where a real channel map supports it;
 - PipeWire and WirePlumber stop/restart, missing tools, monitor failure,
   external changes, Bluetooth/USB/HDMI hotplug, and suspend/resume behavior;

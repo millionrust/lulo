@@ -456,7 +456,7 @@ impl State {
                 error: self.error(Control::Bluetooth),
             },
             sound: Tile {
-                available: self.inputs.audio.available,
+                available: self.inputs.audio.available && self.inputs.audio.has_output,
                 busy: self.is_busy(Control::Sound),
                 value: SoundValue {
                     volume: self.inputs.audio.output.volume,
@@ -493,7 +493,7 @@ impl State {
         let available = match command.control() {
             Control::Wifi => self.inputs.wifi.available,
             Control::Bluetooth => self.inputs.bluetooth.available,
-            Control::Sound => self.inputs.audio.available,
+            Control::Sound => self.inputs.audio.available && self.inputs.audio.has_output,
             Control::Power => self.inputs.power.profiles.available,
             Control::Focus => self.inputs.focus_available,
         };
@@ -567,6 +567,8 @@ fn bluetooth_summary(snapshot: &rmac_bluetooth::Snapshot) -> String {
 fn sound_summary(snapshot: &rmac_audio::Snapshot) -> String {
     if !snapshot.available {
         "Unavailable".into()
+    } else if !snapshot.has_output {
+        "No Output Device".into()
     } else if snapshot.output.muted {
         "Muted".into()
     } else {
@@ -614,6 +616,7 @@ mod tests {
             },
             audio: rmac_audio::Snapshot {
                 available: true,
+                has_output: true,
                 output: rmac_audio::Level {
                     volume: 42,
                     muted: false,
@@ -651,6 +654,20 @@ mod tests {
         assert_eq!(
             state.begin(Command::SetFocusEnabled(true)),
             Err(StartError::Unavailable(Control::Focus))
+        );
+    }
+
+    #[test]
+    fn sound_requires_an_authoritative_default_output() {
+        let mut inputs = available_inputs();
+        inputs.audio.has_output = false;
+        let mut state = State::new(inputs);
+        let view = state.view();
+        assert!(!view.sound.available);
+        assert_eq!(view.sound.summary, "No Output Device");
+        assert_eq!(
+            state.begin(Command::SetOutputMuted(true)),
+            Err(StartError::Unavailable(Control::Sound))
         );
     }
 

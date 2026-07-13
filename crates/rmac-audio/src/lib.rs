@@ -125,6 +125,8 @@ pub struct Level {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub available: bool,
+    pub has_output: bool,
+    pub has_input: bool,
     pub can_set_default: bool,
     pub can_mute_input: bool,
     pub configuration_available: bool,
@@ -411,6 +413,8 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     let input = read_default_level(&inputs, DeviceKind::Input)?;
     sort_devices(&mut outputs);
     sort_devices(&mut inputs);
+    let has_output = default_device_id(&outputs).is_some();
+    let has_input = default_device_id(&inputs).is_some();
     let configuration_available = graph.is_some();
     let mut hardware_devices = graph
         .map(|graph| {
@@ -429,8 +433,10 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     });
     Ok(Snapshot {
         available: true,
+        has_output,
+        has_input,
         can_set_default: true,
-        can_mute_input: default_device_id(&inputs).is_some(),
+        can_mute_input: has_input,
         configuration_available,
         configuration_error,
         output,
@@ -850,8 +856,12 @@ fn system_snapshot() -> Result<Snapshot, Error> {
         .ok_or_else(|| Error::new("read audio volume", "unexpected osascript response"))?;
     sort_devices(&mut outputs);
     sort_devices(&mut inputs);
+    let has_output = outputs.iter().any(|device| device.is_default);
+    let has_input = inputs.iter().any(|device| device.is_default);
     Ok(Snapshot {
         available: true,
+        has_output,
+        has_input,
         can_set_default: false,
         can_mute_input: false,
         configuration_available: false,

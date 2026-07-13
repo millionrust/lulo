@@ -3,7 +3,9 @@
 use std::fmt;
 
 pub const MAX_INSTALLED_LOCALES: usize = 4096;
+pub const MAX_INSTALLED_X11_LAYOUTS: usize = 512;
 const MAX_VALUE_BYTES: usize = 128;
+const MAX_X11_LAYOUTS: usize = 4;
 
 const LOCALE_KEYS: [&str; 14] = [
     "LANG",
@@ -63,12 +65,23 @@ pub struct FormatPreview {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct X11Keyboard {
+    pub layout: String,
+    pub model: String,
+    pub variant: String,
+    pub options: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub locale: Vec<Assignment>,
     pub installed_locales: Vec<String>,
     pub installed_locales_truncated: bool,
     pub format_preview: Option<FormatPreview>,
     pub format_preview_error: Option<String>,
+    pub installed_x11_layouts: Vec<String>,
+    pub installed_x11_layouts_truncated: bool,
+    pub x11_layouts_error: Option<String>,
     pub x11_layout: String,
     pub x11_model: String,
     pub x11_variant: String,
@@ -124,11 +137,48 @@ impl Snapshot {
             ))
         }
     }
+
+    pub fn x11_keyboard(&self) -> X11Keyboard {
+        X11Keyboard {
+            layout: self.x11_layout.clone(),
+            model: self.x11_model.clone(),
+            variant: self.x11_variant.clone(),
+            options: self.x11_options.clone(),
+        }
+    }
+
+    pub fn preview_x11_keyboard(
+        &self,
+        layout: &str,
+        variant: &str,
+        options: &str,
+    ) -> Result<X11Keyboard, Error> {
+        validate_x11_keyboard(layout, variant, options)?;
+        for candidate in layout.split(',') {
+            if !self
+                .installed_x11_layouts
+                .iter()
+                .any(|installed| installed == candidate)
+            {
+                return Err(Error::new(
+                    ErrorKind::InvalidKeyboard,
+                    format!("the XKB layout {candidate} is not installed"),
+                ));
+            }
+        }
+        Ok(X11Keyboard {
+            layout: layout.into(),
+            model: self.x11_model.clone(),
+            variant: variant.into(),
+            options: options.into(),
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     InvalidLocale,
+    InvalidKeyboard,
     Unavailable,
     Authorization,
     Mutation,
@@ -165,6 +215,7 @@ impl std::error::Error for Error {}
 pub trait Service {
     fn snapshot(&self) -> Result<Snapshot, Error>;
     fn set_locale(&self, assignments: &[String]) -> Result<Snapshot, Error>;
+    fn set_x11_keyboard(&self, keyboard: &X11Keyboard) -> Result<Snapshot, Error>;
 }
 
 pub fn normalize_assignments(values: Vec<String>) -> Result<Vec<Assignment>, Error> {
@@ -199,6 +250,66 @@ pub fn normalize_installed_locales(values: Vec<String>) -> (Vec<String>, bool) {
     let truncated = locales.len() > MAX_INSTALLED_LOCALES;
     locales.truncate(MAX_INSTALLED_LOCALES);
     (locales, truncated)
+}
+
+pub fn normalize_installed_x11_layouts(values: Vec<String>) -> (Vec<String>, bool) {
+    let mut layouts = values
+        .into_iter()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| valid_xkb_name(value))
+        .collect::<Vec<_>>();
+    layouts.sort_unstable();
+    layouts.dedup();
+    let truncated = layouts.len() > MAX_INSTALLED_X11_LAYOUTS;
+    layouts.truncate(MAX_INSTALLED_X11_LAYOUTS);
+    (layouts, truncated)
+}
+
+pub fn validate_x11_keyboard(layout: &str, variant: &str, options: &str) -> Result<(), Error> {
+    let layouts = layout.split(',').collect::<Vec<_>>();
+    if layouts.is_empty()
+        || layouts.len() > MAX_X11_LAYOUTS
+        || layouts.iter().any(|value| !valid_xkb_name(value))
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidKeyboard,
+            "enter one to four comma-separated XKB layouts such as us,de",
+        ));
+    }
+    let variants = if variant.is_empty() {
+        Vec::new()
+    } else {
+        variant.split(',').collect::<Vec<_>>()
+    };
+    if variants.len() > layouts.len()
+        || variants
+            .iter()
+            .any(|value| !value.is_empty() && !valid_xkb_name(value))
+        || options.len() > MAX_VALUE_BYTES
+        || options.chars().any(|character| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | ':' | ','))
+        })
+    {
+        return Err(Error::new(
+            ErrorKind::InvalidKeyboard,
+            "the XKB variant or options are invalid for this layout list",
+        ));
+    }
+    if layouts.len() > 1 && !options.split(',').any(|option| option.starts_with("grp:")) {
+        return Err(Error::new(
+            ErrorKind::InvalidKeyboard,
+            "multiple layouts require an XKB grp: switching option",
+        ));
+    }
+    Ok(())
+}
+
+fn valid_xkb_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_VALUE_BYTES
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
 }
 
 pub fn validate_locale_syntax(locale: &str) -> Result<(), Error> {
@@ -251,6 +362,19 @@ mod tests {
             *self.snapshot.borrow_mut() = next.clone();
             Ok(next)
         }
+
+        fn set_x11_keyboard(&self, keyboard: &X11Keyboard) -> Result<Snapshot, Error> {
+            if let Some(error) = &self.mutation_error {
+                return Err(error.clone());
+            }
+            let mut next = self.snapshot.borrow().clone();
+            next.x11_layout = keyboard.layout.clone();
+            next.x11_model = keyboard.model.clone();
+            next.x11_variant = keyboard.variant.clone();
+            next.x11_options = keyboard.options.clone();
+            *self.snapshot.borrow_mut() = next.clone();
+            Ok(next)
+        }
     }
 
     fn snapshot() -> Snapshot {
@@ -261,6 +385,7 @@ mod tests {
             ])
             .unwrap(),
             installed_locales: vec!["C".into(), "en_GB.utf8".into(), "fr_FR.utf8".into()],
+            installed_x11_layouts: vec!["de".into(), "us".into()],
             ..Snapshot::default()
         }
     }
@@ -325,6 +450,13 @@ mod tests {
         let changed = service.set_locale(&assignments).unwrap();
         assert_eq!(changed.language(), "fr_FR.UTF-8");
         assert_eq!(service.snapshot().unwrap(), changed);
+
+        let keyboard = changed
+            .preview_x11_keyboard("us,de", ",nodeadkeys", "grp:ctrl_space_toggle")
+            .unwrap();
+        let changed = service.set_x11_keyboard(&keyboard).unwrap();
+        assert_eq!(changed.x11_layout, "us,de");
+        assert_eq!(changed.x11_variant, ",nodeadkeys");
     }
 
     #[test]
@@ -336,5 +468,38 @@ mod tests {
         };
         assert!(service.set_locale(&["LANG=fr_FR.UTF-8".into()]).is_err());
         assert_eq!(service.snapshot().unwrap(), original);
+    }
+
+    #[test]
+    fn keyboard_preview_validates_installed_layouts_and_variant_count() {
+        let snapshot = snapshot();
+        let keyboard = snapshot
+            .preview_x11_keyboard("us,de", ",nodeadkeys", "grp:ctrl_space_toggle")
+            .unwrap();
+        assert_eq!(keyboard.layout, "us,de");
+        assert_eq!(keyboard.variant, ",nodeadkeys");
+        assert_eq!(
+            snapshot
+                .preview_x11_keyboard("us,xx", "", "")
+                .unwrap_err()
+                .kind(),
+            ErrorKind::InvalidKeyboard
+        );
+        assert!(snapshot
+            .preview_x11_keyboard("us", "basic,nodeadkeys", "")
+            .is_err());
+        assert!(snapshot.preview_x11_keyboard("us,de", "", "").is_err());
+    }
+
+    #[test]
+    fn x11_layout_inventory_is_sorted_deduplicated_and_bounded() {
+        let mut values = (0..=MAX_INSTALLED_X11_LAYOUTS)
+            .map(|index| format!("layout_{index}"))
+            .collect::<Vec<_>>();
+        values.extend(["us".into(), "us".into(), "../../bad".into()]);
+        let (values, truncated) = normalize_installed_x11_layouts(values);
+        assert_eq!(values.len(), MAX_INSTALLED_X11_LAYOUTS);
+        assert!(truncated);
+        assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
     }
 }

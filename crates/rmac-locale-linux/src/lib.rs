@@ -29,6 +29,20 @@ impl Service for SystemService {
         system_set_locale(&encoded)?;
         self.snapshot()
     }
+
+    fn set_x11_keyboard(&self, keyboard: &rmac_locale::X11Keyboard) -> Result<Snapshot, Error> {
+        let current = self.snapshot()?;
+        let validated =
+            current.preview_x11_keyboard(&keyboard.layout, &keyboard.variant, &keyboard.options)?;
+        if keyboard.model != validated.model {
+            return Err(Error::new(
+                ErrorKind::InvalidKeyboard,
+                "this control preserves the current XKB model",
+            ));
+        }
+        system_set_x11_keyboard(&validated)?;
+        self.snapshot()
+    }
 }
 
 pub fn snapshot() -> Result<Snapshot, Error> {
@@ -37,6 +51,10 @@ pub fn snapshot() -> Result<Snapshot, Error> {
 
 pub fn set_locale(assignments: &[String]) -> Result<Snapshot, Error> {
     SystemService.set_locale(assignments)
+}
+
+pub fn set_x11_keyboard(keyboard: &rmac_locale::X11Keyboard) -> Result<Snapshot, Error> {
+    SystemService.set_x11_keyboard(keyboard)
 }
 
 #[cfg(target_os = "linux")]
@@ -147,6 +165,11 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     let proxy = locale_proxy(&connection)?;
     let locale = rmac_locale::normalize_assignments(property(&proxy, "Locale")?)?;
     let (installed_locales, installed_locales_truncated) = installed_locales()?;
+    let (installed_x11_layouts, installed_x11_layouts_truncated, x11_layouts_error) =
+        match installed_x11_layouts() {
+            Ok((layouts, truncated)) => (layouts, truncated, None),
+            Err(error) => (Vec::new(), false, Some(error.to_string())),
+        };
     let (format_preview, format_preview_error) = match format_preview(&locale) {
         Ok(preview) => (Some(preview), None),
         Err(error) => (None, Some(error.to_string())),
@@ -157,6 +180,9 @@ fn system_snapshot() -> Result<Snapshot, Error> {
         installed_locales_truncated,
         format_preview,
         format_preview_error,
+        installed_x11_layouts,
+        installed_x11_layouts_truncated,
+        x11_layouts_error,
         x11_layout: property(&proxy, "X11Layout")?,
         x11_model: property(&proxy, "X11Model")?,
         x11_variant: property(&proxy, "X11Variant")?,
@@ -358,6 +384,34 @@ fn system_set_locale(assignments: &[String]) -> Result<(), Error> {
         .map_err(mutation_error)
 }
 
+#[cfg(target_os = "linux")]
+fn system_set_x11_keyboard(keyboard: &rmac_locale::X11Keyboard) -> Result<(), Error> {
+    rmac_locale::validate_x11_keyboard(&keyboard.layout, &keyboard.variant, &keyboard.options)?;
+    let connection = system_connection()?;
+    let proxy = locale_proxy(&connection)?;
+    proxy
+        .call::<_, _, ()>(
+            "SetX11Keyboard",
+            &(
+                keyboard.layout.as_str(),
+                keyboard.model.as_str(),
+                keyboard.variant.as_str(),
+                keyboard.options.as_str(),
+                false,
+                true,
+            ),
+        )
+        .map_err(mutation_error)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn system_set_x11_keyboard(_keyboard: &rmac_locale::X11Keyboard) -> Result<(), Error> {
+    Err(Error::new(
+        ErrorKind::Unavailable,
+        "keyboard layout changes are available in the supported Linux session",
+    ))
+}
+
 #[cfg(not(target_os = "linux"))]
 fn system_set_locale(_assignments: &[String]) -> Result<(), Error> {
     Err(Error::new(
@@ -382,6 +436,27 @@ fn installed_locales() -> Result<(Vec<String>, bool), Error> {
         .map_err(|_| Error::new(ErrorKind::Protocol, "installed locale list is not UTF-8"))?;
     Ok(rmac_locale::normalize_installed_locales(
         output.lines().map(str::to_string).collect(),
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn installed_x11_layouts() -> Result<(Vec<String>, bool), Error> {
+    let output = std::process::Command::new("localectl")
+        .arg("--no-pager")
+        .arg("--no-legend")
+        .arg("list-x11-keymap-layouts")
+        .output()
+        .map_err(|_| Error::new(ErrorKind::Unavailable, "could not list XKB layouts"))?;
+    if !output.status.success() {
+        return Err(Error::new(
+            ErrorKind::Unavailable,
+            "could not list XKB layouts",
+        ));
+    }
+    let output = String::from_utf8(output.stdout)
+        .map_err(|_| Error::new(ErrorKind::Protocol, "XKB layout list is not UTF-8"))?;
+    Ok(rmac_locale::normalize_installed_x11_layouts(
+        output.lines().map(str::to_owned).collect(),
     ))
 }
 

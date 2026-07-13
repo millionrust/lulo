@@ -40,6 +40,7 @@ pub struct KeyboardSettings {
     pub repeat_delay_ms: u32,
     pub repeat_rate: u32,
     pub numlock: bool,
+    pub xkb_override: Option<XkbOverride>,
 }
 
 impl Default for KeyboardSettings {
@@ -48,8 +49,26 @@ impl Default for KeyboardSettings {
             repeat_delay_ms: 600,
             repeat_rate: 25,
             numlock: false,
+            xkb_override: None,
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct XkbOverride {
+    pub layout: String,
+    pub model: String,
+    pub variant: String,
+    pub options: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum KeyboardLayoutAuthority {
+    SystemLocaled,
+    NiriConfig,
+    IncludedConfig,
+    #[default]
+    Unavailable,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -92,6 +111,7 @@ pub struct Snapshot {
     pub can_configure: bool,
     pub config_path: Option<PathBuf>,
     pub detail: Option<String>,
+    pub keyboard_layout_authority: KeyboardLayoutAuthority,
     pub settings: InputSettings,
 }
 
@@ -206,11 +226,21 @@ fn snapshot_from_source(path: PathBuf, source: &str) -> Result<Snapshot, Error> 
     } else {
         None
     };
+    let keyboard_layout_authority = if has_include {
+        KeyboardLayoutAuthority::IncludedConfig
+    } else if settings.keyboard.xkb_override.is_some() {
+        KeyboardLayoutAuthority::NiriConfig
+    } else if available {
+        KeyboardLayoutAuthority::SystemLocaled
+    } else {
+        KeyboardLayoutAuthority::Unavailable
+    };
     Ok(Snapshot {
         available,
         can_configure: available && !has_include,
         config_path: Some(path),
         detail,
+        keyboard_layout_authority,
         settings,
     })
 }
@@ -228,6 +258,16 @@ fn read_settings(document: &KdlDocument) -> InputSettings {
             .and_then(|value| u32::try_from(value).ok())
             .unwrap_or(settings.keyboard.repeat_rate);
         settings.keyboard.numlock = keyboard.get("numlock").is_some();
+        settings.keyboard.xkb_override =
+            keyboard
+                .get("xkb")
+                .and_then(KdlNode::children)
+                .map(|xkb| XkbOverride {
+                    layout: string(xkb, "layout").unwrap_or_default().to_owned(),
+                    model: string(xkb, "model").unwrap_or_default().to_owned(),
+                    variant: string(xkb, "variant").unwrap_or_default().to_owned(),
+                    options: string(xkb, "options").unwrap_or_default().to_owned(),
+                });
     }
     if let Some(mouse) = input.get("mouse").and_then(KdlNode::children) {
         read_pointer(mouse, &mut settings.mouse);
@@ -471,7 +511,35 @@ binds { Mod+T { spawn "alacritty"; } }
         )
         .unwrap();
         assert!(!snapshot.can_configure);
+        assert_eq!(
+            snapshot.keyboard_layout_authority,
+            KeyboardLayoutAuthority::IncludedConfig
+        );
         assert!(snapshot.detail.unwrap().contains("includes"));
+    }
+
+    #[test]
+    fn explicit_xkb_block_owns_keyboard_layout() {
+        let source = r#"
+input {
+    keyboard {
+        xkb {
+            layout "us,de"
+            variant ",nodeadkeys"
+            options "grp:alt_shift_toggle"
+        }
+    }
+}
+"#;
+        let snapshot = snapshot_from_source(PathBuf::from("/tmp/config.kdl"), source).unwrap();
+        assert_eq!(
+            snapshot.keyboard_layout_authority,
+            KeyboardLayoutAuthority::NiriConfig
+        );
+        let xkb = snapshot.settings.keyboard.xkb_override.unwrap();
+        assert_eq!(xkb.layout, "us,de");
+        assert_eq!(xkb.variant, ",nodeadkeys");
+        assert_eq!(xkb.options, "grp:alt_shift_toggle");
     }
 
     #[test]

@@ -163,6 +163,10 @@ struct Settings {
     locale: Option<rmac_locale::Snapshot>,
     locale_editor: Option<Entity<InputState>>,
     locale_revert: Option<Vec<String>>,
+    x11_layout_editor: Option<Entity<InputState>>,
+    x11_variant_editor: Option<Entity<InputState>>,
+    x11_options_editor: Option<Entity<InputState>>,
+    x11_keyboard_revert: Option<rmac_locale::X11Keyboard>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -790,6 +794,10 @@ impl Settings {
             locale: None,
             locale_editor: None,
             locale_revert: None,
+            x11_layout_editor: None,
+            x11_variant_editor: None,
+            x11_options_editor: None,
+            x11_keyboard_revert: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -1325,6 +1333,128 @@ impl Settings {
                 if succeeded {
                     this.locale_revert = None;
                     this.locale_editor = None;
+                }
+                this.finish_locale_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn start_x11_keyboard_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.locale_busy
+            || self.x11_layout_editor.is_some()
+            || self.input.keyboard_layout_authority
+                != rmac_input::KeyboardLayoutAuthority::SystemLocaled
+        {
+            return;
+        }
+        let Some(snapshot) = &self.locale else {
+            return;
+        };
+        let layout = snapshot.x11_layout.clone();
+        let variant = snapshot.x11_variant.clone();
+        let options = snapshot.x11_options.clone();
+        let layout_editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(layout)
+                .placeholder("us,de")
+        });
+        let variant_editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(variant)
+                .placeholder(",nodeadkeys")
+        });
+        let options_editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(options)
+                .placeholder("grp:ctrl_space_toggle")
+        });
+        let focus = layout_editor.read(cx).focus_handle(cx);
+        window.focus(&focus);
+        self.x11_layout_editor = Some(layout_editor);
+        self.x11_variant_editor = Some(variant_editor);
+        self.x11_options_editor = Some(options_editor);
+        self.locale_error = None;
+        cx.notify();
+    }
+
+    fn cancel_x11_keyboard_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.locale_busy {
+            self.x11_layout_editor = None;
+            self.x11_variant_editor = None;
+            self.x11_options_editor = None;
+            self.locale_error = None;
+            cx.notify();
+        }
+    }
+
+    fn submit_x11_keyboard(&mut self, cx: &mut Context<Self>) {
+        if self.locale_busy {
+            return;
+        }
+        let (Some(layout_editor), Some(variant_editor), Some(options_editor), Some(snapshot)) = (
+            &self.x11_layout_editor,
+            &self.x11_variant_editor,
+            &self.x11_options_editor,
+            &self.locale,
+        ) else {
+            return;
+        };
+        let layout = layout_editor.read(cx).value().trim().to_owned();
+        let variant = variant_editor.read(cx).value().trim().to_owned();
+        let options = options_editor.read(cx).value().trim().to_owned();
+        let keyboard = match snapshot.preview_x11_keyboard(&layout, &variant, &options) {
+            Ok(keyboard) => keyboard,
+            Err(error) => {
+                self.locale_error = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        let previous = snapshot.x11_keyboard();
+        self.locale_busy = true;
+        self.locale_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_locale_linux::set_x11_keyboard(&keyboard) })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.x11_layout_editor = None;
+                    this.x11_variant_editor = None;
+                    this.x11_options_editor = None;
+                    this.x11_keyboard_revert = Some(previous);
+                }
+                this.finish_locale_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn revert_x11_keyboard(&mut self, cx: &mut Context<Self>) {
+        if self.locale_busy {
+            return;
+        }
+        let Some(keyboard) = self.x11_keyboard_revert.clone() else {
+            return;
+        };
+        self.locale_busy = true;
+        self.locale_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_locale_linux::set_x11_keyboard(&keyboard) })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.x11_keyboard_revert = None;
                 }
                 this.finish_locale_update(result);
                 cx.notify();
@@ -3521,28 +3651,160 @@ impl Settings {
             }
             value
         };
-        cards.push(section_header("Default keyboard metadata"));
-        cards.push(card(vec![
-            value_row(
-                "icons/keyboard.svg",
+        let layout_authority = self.input.keyboard_layout_authority;
+        let can_edit_layout = layout_authority
+            == rmac_input::KeyboardLayoutAuthority::SystemLocaled
+            && snapshot.x11_layouts_error.is_none()
+            && !snapshot.installed_x11_layouts.is_empty();
+        cards.push(section_header("Input sources"));
+        let editing_keyboard = self.x11_layout_editor.is_some();
+        let mut keyboard_rows = if let (Some(layout), Some(variant), Some(options)) = (
+            &self.x11_layout_editor,
+            &self.x11_variant_editor,
+            &self.x11_options_editor,
+        ) {
+            let cancel_view = view.clone();
+            let apply_view = view.clone();
+            vec![
+                row_base()
+                    .child(tile("icons/keyboard.svg", accent(), 22.0))
+                    .child(text_block(
+                        "XKB layouts".into(),
+                        Some("Comma-separated installed names, in switch order".into()),
+                    ))
+                    .child(div().w(px(190.0)).child(TextField::new(layout).small()))
+                    .into_any_element(),
+                row_base()
+                    .child(tile("icons/settings.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Variants".into(),
+                        Some("One entry per layout; empty entries are allowed".into()),
+                    ))
+                    .child(div().w(px(190.0)).child(TextField::new(variant).small()))
+                    .into_any_element(),
+                row_base()
+                    .child(tile("icons/settings.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Switching options".into(),
+                        Some("For example grp:ctrl_space_toggle".into()),
+                    ))
+                    .child(div().w(px(150.0)).child(TextField::new(options).small()))
+                    .child(
+                        Button::new("x11-keyboard-cancel", "Cancel")
+                            .disabled(self.locale_busy)
+                            .on_click(move |_, _, cx| {
+                                cancel_view.update(cx, |settings, cx| {
+                                    settings.cancel_x11_keyboard_edit(cx);
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("x11-keyboard-apply", "Apply")
+                            .primary()
+                            .busy(self.locale_busy)
+                            .disabled(self.locale_busy)
+                            .on_click(move |_, _, cx| {
+                                apply_view.update(cx, |settings, cx| {
+                                    settings.submit_x11_keyboard(cx);
+                                });
+                            }),
+                    )
+                    .into_any_element(),
+            ]
+        } else {
+            let edit_view = view.clone();
+            vec![row_base()
+                .child(tile("icons/keyboard.svg", accent(), 22.0))
+                .child(text_block(
+                    "Keyboard layouts".into(),
+                    Some("systemd-localed default and switch order".into()),
+                ))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .text_color(secondary())
+                        .child(keyboard),
+                )
+                .child(
+                    Button::new("x11-keyboard-edit", "Edit")
+                        .disabled(self.locale_busy || !can_edit_layout)
+                        .on_click(move |_, window, cx| {
+                            edit_view.update(cx, |settings, cx| {
+                                settings.start_x11_keyboard_edit(window, cx);
+                            });
+                        }),
+                )
+                .into_any_element()]
+        };
+        if !editing_keyboard {
+            keyboard_rows.push(value_row(
+                "icons/settings.svg",
                 secondary(),
-                "X11 layout".into(),
-                keyboard.into(),
-            ),
-            value_row(
-                "icons/keyboard.svg",
-                secondary(),
-                "Console keymap".into(),
-                if snapshot.console_keymap.is_empty() {
+                "Switching options".into(),
+                if snapshot.x11_options.is_empty() {
                     "Not configured".into()
                 } else {
-                    snapshot.console_keymap.clone().into()
+                    snapshot.x11_options.clone().into()
                 },
-            ),
-        ]));
-        cards.push(note_card(
-            "Keyboard metadata is read-only here. The niri Wayland session uses the Keyboard pane and is not changed by this control.",
+            ));
+        }
+        keyboard_rows.push(value_row(
+            "icons/keyboard.svg",
+            secondary(),
+            "Console keymap".into(),
+            if snapshot.console_keymap.is_empty() {
+                "Not configured".into()
+            } else {
+                snapshot.console_keymap.clone().into()
+            },
         ));
+        if self.x11_keyboard_revert.is_some() {
+            let revert_view = view.clone();
+            keyboard_rows.push(
+                row_base()
+                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Previous keyboard layout".into(),
+                        Some("Exact model, layouts, variants, and options".into()),
+                    ))
+                    .child(
+                        Button::new("x11-keyboard-revert", "Revert")
+                            .busy(self.locale_busy)
+                            .disabled(self.locale_busy)
+                            .on_click(move |_, _, cx| {
+                                revert_view.update(cx, |settings, cx| {
+                                    settings.revert_x11_keyboard(cx);
+                                });
+                            }),
+                    )
+                    .into_any_element(),
+            );
+        }
+        cards.push(card(keyboard_rows));
+        cards.push(note_card(match layout_authority {
+            rmac_input::KeyboardLayoutAuthority::SystemLocaled => {
+                "niri follows this systemd-localed layout because no explicit XKB override is present. Use the configured XKB switching option to move between multiple layouts."
+            }
+            rmac_input::KeyboardLayoutAuthority::NiriConfig => {
+                "The niri config has an explicit XKB block, so it—not systemd-localed—owns this session's keyboard layout. The system default is read-only here to avoid overriding that choice."
+            }
+            rmac_input::KeyboardLayoutAuthority::IncludedConfig => {
+                "The niri config uses includes, so rmac cannot prove which file owns XKB settings. The system default remains read-only until include traversal is implemented."
+            }
+            rmac_input::KeyboardLayoutAuthority::Unavailable => {
+                "The active niri keyboard-layout authority could not be verified. The system default remains read-only."
+            }
+        }));
+        if let Some(error) = &snapshot.x11_layouts_error {
+            cards.push(note_card(format!(
+                "Keyboard layout editing is unavailable: {error}."
+            )));
+        }
+        if snapshot.installed_x11_layouts_truncated {
+            cards.push(note_card(
+                "The installed XKB layout inventory exceeded the bounded validation list.",
+            ));
+        }
 
         let mut authority_rows = vec![row_base()
             .child(tile("icons/refresh-cw.svg", secondary(), 22.0))

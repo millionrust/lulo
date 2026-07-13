@@ -85,6 +85,15 @@ rollback replaces only wallpaper policy on top of the latest unrelated shell
 settings. Local choices enter through the desktop file chooser and must pass
 the bounded wallpaper decoder before the path can be committed.
 
+The Spotlight pane follows the same full-document transaction. It changes only
+provider policy or Spotlight scope on top of the latest document, rereads the
+saved authority, and offers a one-step rollback of that search authority.
+Excluded directories enter through the desktop folder chooser, are
+canonicalized and verified as existing local directories off the UI thread,
+and are then checked again by store validation. External document replacements
+are resampled by the shared watcher; the pane never treats a toggle as proof
+that a provider runtime has applied it.
+
 Tests cover v3 round trips, v1/v2 migration/rewrite, unknown fields and versions,
 corrupt-primary recovery, validation, watcher filtering, and injected primary
 write failure with last-known-good rollback.

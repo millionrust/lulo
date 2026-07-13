@@ -136,6 +136,11 @@ outcome kind. Default error formatting does not contain a file path, copied
 text, pane ID, or backend detail; UI code may deliberately inspect typed kind
 and detail to produce a suitable private on-screen error.
 
-The GPUI rendering/focus integration, global shortcut journey, Orca runtime
-evidence, privacy Settings pane, and performance evidence remain pending. This
-slice does not mark D7/D8 complete.
+System Settings now edits the same provider enablement, private-file admission,
+removable-mount scope, and directory exclusions consumed by this domain. The
+pane reports on-demand/no-background-index behavior and reads the session
+shortcut broker's typed status without becoming a second shortcut authority.
+
+The centered GPUI rendering/focus integration, complete live session/provider
+wiring, global-shortcut journey, Orca runtime evidence, and performance evidence
+remain pending. This slice does not mark D7/D8 complete.

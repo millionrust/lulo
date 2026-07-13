@@ -2,6 +2,7 @@
 
 use async_channel::Sender;
 
+#[cfg(any(target_os = "linux", test))]
 use crate::lock::IdlePolicy;
 
 pub const BUS_NAME: &str = "org.rmac.LockScreen1";
@@ -17,6 +18,7 @@ pub enum SuspendCapability {
     Unavailable,
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn decode_suspend_capability(value: &str) -> SuspendCapability {
     match value {
         "yes" => SuspendCapability::Authorized,
@@ -33,6 +35,7 @@ pub struct Snapshot {
     pub suspend_capability: SuspendCapability,
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn encode(policy: IdlePolicy, capability: SuspendCapability) -> WirePolicy {
     (
         policy.version,
@@ -47,6 +50,7 @@ fn encode(policy: IdlePolicy, capability: SuspendCapability) -> WirePolicy {
     )
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn decode(policy: WirePolicy) -> Result<IdlePolicy, Error> {
     IdlePolicy {
         version: policy.0,
@@ -57,6 +61,7 @@ fn decode(policy: WirePolicy) -> Result<IdlePolicy, Error> {
     .map_err(|_| Error::Invalid)
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn snapshot(policy: WirePolicy) -> Result<Snapshot, Error> {
     let capability = match policy.3 {
         0 => SuspendCapability::Authorized,
@@ -478,6 +483,7 @@ pub async fn watch(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error
     }
 }
 
+#[cfg(target_os = "linux")]
 async fn publish(sender: &Sender<Result<Snapshot, String>>, value: Snapshot) -> Result<(), Error> {
     sender.send(Ok(value)).await.map_err(|_| Error::Publish)
 }

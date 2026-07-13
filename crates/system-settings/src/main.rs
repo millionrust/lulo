@@ -182,6 +182,80 @@ enum WallpaperChange {
     UseDefault,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SpotlightAuthority {
+    providers: std::collections::BTreeMap<
+        rmac_shell_settings::ProviderId,
+        rmac_shell_settings::ProviderPolicy,
+    >,
+    spotlight: rmac_shell_settings::SpotlightSettings,
+}
+
+impl SpotlightAuthority {
+    fn from_settings(settings: &rmac_shell_settings::ShellSettings) -> Self {
+        Self {
+            providers: settings.providers.clone(),
+            spotlight: settings.spotlight.clone(),
+        }
+    }
+
+    fn apply_to(self, settings: &mut rmac_shell_settings::ShellSettings) {
+        settings.providers = self.providers;
+        settings.spotlight = self.spotlight;
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SpotlightChange {
+    ProviderEnabled { id: String, enabled: bool },
+    ProviderPrivateContent { id: String, allowed: bool },
+    IncludeRemovableMounts(bool),
+    AddExclusion(String),
+    RemoveExclusion(String),
+}
+
+impl SpotlightChange {
+    fn apply(self, settings: &mut rmac_shell_settings::ShellSettings) {
+        match self {
+            Self::ProviderEnabled { id, enabled } => {
+                update_provider_policy(settings, id, |policy| policy.enabled = enabled);
+            }
+            Self::ProviderPrivateContent { id, allowed } => {
+                update_provider_policy(settings, id, |policy| {
+                    policy.allow_private_content = allowed;
+                });
+            }
+            Self::IncludeRemovableMounts(enabled) => {
+                settings.spotlight.include_removable_mounts = enabled;
+            }
+            Self::AddExclusion(path) => {
+                if !settings.spotlight.excluded_paths.contains(&path) {
+                    settings.spotlight.excluded_paths.push(path);
+                }
+            }
+            Self::RemoveExclusion(path) => {
+                settings
+                    .spotlight
+                    .excluded_paths
+                    .retain(|excluded| excluded != &path);
+            }
+        }
+    }
+}
+
+fn update_provider_policy(
+    settings: &mut rmac_shell_settings::ShellSettings,
+    id: String,
+    update: impl FnOnce(&mut rmac_shell_settings::ProviderPolicy),
+) {
+    let id = rmac_shell_settings::ProviderId(id);
+    let policy = settings.providers.entry(id.clone()).or_default();
+    update(policy);
+    if policy == &rmac_shell_settings::ProviderPolicy::default() {
+        settings.providers.remove(&id);
+    }
+}
+
 impl WallpaperChange {
     fn apply(
         self,
@@ -219,6 +293,8 @@ enum ShellSettingsMutation {
         change: WallpaperChange,
     },
     RestoreWallpaper(rmac_shell_settings::WallpaperSettings),
+    Spotlight(SpotlightChange),
+    RestoreSpotlight(SpotlightAuthority),
 }
 
 impl ShellSettingsMutation {
@@ -230,6 +306,8 @@ impl ShellSettingsMutation {
                 change.apply(&target, &mut settings.wallpaper);
             }
             Self::RestoreWallpaper(wallpaper) => settings.wallpaper = wallpaper,
+            Self::Spotlight(change) => change.apply(settings),
+            Self::RestoreSpotlight(spotlight) => spotlight.apply_to(settings),
         }
     }
 }
@@ -446,6 +524,30 @@ fn validate_wallpaper_choice(
     Ok(source)
 }
 
+fn spotlight_provider_policy(
+    settings: &rmac_shell_settings::ShellSettings,
+    id: &str,
+) -> rmac_shell_settings::ProviderPolicy {
+    settings
+        .providers
+        .get(&rmac_shell_settings::ProviderId(id.to_owned()))
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn validate_search_exclusion(path: PathBuf) -> std::result::Result<String, String> {
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "The selected search exclusion is no longer available".to_owned())?;
+    if !canonical.is_dir() {
+        return Err("Search exclusions must be folders".into());
+    }
+    canonical
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "The selected folder path cannot be represented as text".to_owned())
+}
+
 struct Settings {
     system_data_loading: bool,
     system_data_busy: bool,
@@ -562,6 +664,11 @@ struct Settings {
     wallpaper_preview_watch_error: Option<SharedString>,
     wallpaper_preview_generation: u64,
     _wallpaper_preview_watcher: Option<rmac_wallpaper_image::FileWatcher>,
+    spotlight_revert: Option<SpotlightAuthority>,
+    spotlight_error: Option<SharedString>,
+    shortcut_status_loading: bool,
+    shortcut_status: Option<rmac_shortcuts::BackendStatus>,
+    shortcut_status_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
@@ -1455,6 +1562,15 @@ impl Settings {
         })
         .detach();
 
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(rmac_shortcuts::backend_status).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_shortcut_status_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
         Self {
             system_data_loading: true,
             system_data_busy: false,
@@ -1569,6 +1685,11 @@ impl Settings {
             wallpaper_preview_watch_error: None,
             wallpaper_preview_generation: 0,
             _wallpaper_preview_watcher: None,
+            spotlight_revert: None,
+            spotlight_error: None,
+            shortcut_status_loading: true,
+            shortcut_status: None,
+            shortcut_status_error: None,
 
             network_loading: true,
             network_busy: false,
@@ -1635,6 +1756,10 @@ impl Settings {
                 let wallpaper_changed = self.shell_settings.as_ref().is_none_or(|current| {
                     current.settings.wallpaper != snapshot.settings.wallpaper
                 });
+                let spotlight_changed = self.shell_settings.as_ref().is_none_or(|current| {
+                    SpotlightAuthority::from_settings(&current.settings)
+                        != SpotlightAuthority::from_settings(&snapshot.settings)
+                });
                 if self
                     .shell_settings
                     .as_ref()
@@ -1644,6 +1769,9 @@ impl Settings {
                 }
                 if wallpaper_changed {
                     self.wallpaper_revert = None;
+                }
+                if spotlight_changed {
+                    self.spotlight_revert = None;
                 }
                 self.shell_settings = Some(*snapshot);
                 self.shell_settings_error = None;
@@ -1669,8 +1797,15 @@ impl Settings {
                 let wallpaper_changed = self.shell_settings.as_ref().is_none_or(|current| {
                     current.settings.wallpaper != snapshot.settings.wallpaper
                 });
+                let spotlight_changed = self.shell_settings.as_ref().is_none_or(|current| {
+                    SpotlightAuthority::from_settings(&current.settings)
+                        != SpotlightAuthority::from_settings(&snapshot.settings)
+                });
                 if wallpaper_changed {
                     self.wallpaper_revert = None;
+                }
+                if spotlight_changed {
+                    self.spotlight_revert = None;
                 }
                 self.shell_settings = Some(snapshot);
                 self.shell_settings_revert = previous;
@@ -1708,6 +1843,11 @@ impl Settings {
                                 this.shell_settings.as_ref().is_none_or(|current| {
                                     current.settings.wallpaper != snapshot.settings.wallpaper
                                 });
+                            let spotlight_changed =
+                                this.shell_settings.as_ref().is_none_or(|current| {
+                                    SpotlightAuthority::from_settings(&current.settings)
+                                        != SpotlightAuthority::from_settings(&snapshot.settings)
+                                });
                             if this.shell_settings.as_ref().is_some_and(|current| {
                                 current.settings.dock != snapshot.settings.dock
                             }) {
@@ -1715,6 +1855,9 @@ impl Settings {
                             }
                             if wallpaper_changed {
                                 this.wallpaper_revert = None;
+                            }
+                            if spotlight_changed {
+                                this.spotlight_revert = None;
                             }
                             this.shell_settings = Some(snapshot);
                             this.shell_settings_error = None;
@@ -1939,6 +2082,12 @@ impl Settings {
                 {
                     self.shell_settings_revert = None;
                 }
+                if self.shell_settings.as_ref().is_some_and(|current| {
+                    SpotlightAuthority::from_settings(&current.settings)
+                        != SpotlightAuthority::from_settings(&snapshot.settings)
+                }) {
+                    self.spotlight_revert = None;
+                }
                 self.shell_settings = Some(snapshot);
                 self.wallpaper_revert = previous;
                 self.wallpaper_error = None;
@@ -2015,6 +2164,164 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wallpaper_mutation(result, None);
                 this.refresh_wallpaper_preview(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn apply_spotlight_change(&mut self, change: SpotlightChange, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        let previous = SpotlightAuthority::from_settings(&snapshot.settings);
+        let mut next = snapshot.settings.clone();
+        change.clone().apply(&mut next);
+        if SpotlightAuthority::from_settings(&next) == previous {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.spotlight_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::Spotlight(change))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.finish_spotlight_mutation(result, Some(previous)) {
+                    this.refresh_wallpaper_preview(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_spotlight_mutation(
+        &mut self,
+        result: std::result::Result<rmac_shell_settings::Snapshot, rmac_shell_settings::Error>,
+        previous: Option<SpotlightAuthority>,
+    ) -> bool {
+        self.shell_settings_loading = false;
+        self.shell_settings_busy = false;
+        match result {
+            Ok(snapshot) => {
+                let wallpaper_changed = self.shell_settings.as_ref().is_none_or(|current| {
+                    current.settings.wallpaper != snapshot.settings.wallpaper
+                });
+                if self
+                    .shell_settings
+                    .as_ref()
+                    .is_some_and(|current| current.settings.dock != snapshot.settings.dock)
+                {
+                    self.shell_settings_revert = None;
+                }
+                if wallpaper_changed {
+                    self.wallpaper_revert = None;
+                }
+                self.shell_settings = Some(snapshot);
+                self.spotlight_revert = previous;
+                self.spotlight_error = None;
+                self.shell_settings_error = None;
+                self.shell_settings_stream_error = None;
+                wallpaper_changed
+            }
+            Err(error) => {
+                self.spotlight_error = Some(format!("Could not update Spotlight: {error}").into());
+                false
+            }
+        }
+    }
+
+    fn choose_search_exclusion(&mut self, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        self.shell_settings_busy = true;
+        self.spotlight_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let choice = rmac_portal::choose_search_exclusion().await;
+            let validated = match choice {
+                Ok(Some(path)) => {
+                    Some(blocking::unblock(move || validate_search_exclusion(path)).await)
+                }
+                Ok(None) => None,
+                Err(error) => Some(Err(error.to_string())),
+            };
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.shell_settings_busy = false;
+                match validated {
+                    Some(Ok(path)) => {
+                        this.apply_spotlight_change(SpotlightChange::AddExclusion(path), cx)
+                    }
+                    Some(Err(error)) => this.spotlight_error = Some(error.into()),
+                    None => this.refresh_shell_settings(false, cx),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn revert_spotlight_change(&mut self, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(previous) = self.spotlight_revert.clone() else {
+            return;
+        };
+        self.shell_settings_busy = true;
+        self.spotlight_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::RestoreSpotlight(previous))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.finish_spotlight_mutation(result, None) {
+                    this.refresh_wallpaper_preview(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_shortcut_status_update(
+        &mut self,
+        result: std::result::Result<rmac_shortcuts::BackendStatus, rmac_shortcuts::Error>,
+    ) {
+        self.shortcut_status_loading = false;
+        match result {
+            Ok(status) => {
+                self.shortcut_status = Some(status);
+                self.shortcut_status_error = None;
+            }
+            Err(_) => {
+                self.shortcut_status_error =
+                    Some("The session shortcut broker has not reported its backend".into());
+            }
+        }
+    }
+
+    fn refresh_shortcut_status(&mut self, cx: &mut Context<Self>) {
+        if self.shortcut_status_loading {
+            return;
+        }
+        self.shortcut_status_loading = true;
+        self.shortcut_status_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(rmac_shortcuts::backend_status).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_shortcut_status_update(result);
                 cx.notify();
             });
         })
@@ -4632,7 +4939,7 @@ impl Settings {
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 "Desktop & Dock" => self.render_desktop_dock(cx),
-                "Spotlight" => self.render_spotlight_readiness(),
+                "Spotlight" => self.render_spotlight(cx),
                 "Wallpaper" => self.render_wallpaper(cx),
                 _ => self.render_unregistered_category(),
             }
@@ -4955,10 +5262,321 @@ impl Settings {
         self.pane(cards)
     }
 
-    fn render_spotlight_readiness(&self) -> Div {
-        self.pane(vec![note_card(
-            "rmac Search can launch local search, but provider policy, indexing state, exclusions, privacy controls, and the global shortcut are not yet exposed through an authoritative Settings editor. This pane is read-only and changes nothing.",
-        )])
+    fn render_spotlight(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let revert_view = view.clone();
+        let choose_view = view.clone();
+        let mut cards = vec![div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child("rmac Search"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        Button::new("spotlight-revert", "Revert")
+                            .disabled(
+                                self.shell_settings_loading
+                                    || self.shell_settings_busy
+                                    || self.spotlight_revert.is_none(),
+                            )
+                            .on_click(move |_, _, cx| {
+                                revert_view.update(cx, |settings, cx| {
+                                    settings.revert_spotlight_change(cx)
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new(
+                            "spotlight-refresh",
+                            if self.shell_settings_busy {
+                                "Applying…"
+                            } else if self.shell_settings_loading || self.shortcut_status_loading {
+                                "Loading…"
+                            } else {
+                                "Refresh"
+                            },
+                        )
+                        .disabled(self.shell_settings_loading || self.shell_settings_busy)
+                        .on_click(move |_, _, cx| {
+                            refresh_view.update(cx, |settings, cx| {
+                                settings.refresh_shell_settings(false, cx);
+                                settings.refresh_shortcut_status(cx);
+                            });
+                        }),
+                    ),
+            )];
+
+        if self.shell_settings_loading && self.shell_settings.is_none() {
+            cards.push(note_card("Loading authoritative search preferences…"));
+            return self.pane(cards);
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            cards.push(note_card(
+                "The versioned rmac shell-settings authority is unavailable. Search preferences remain unchanged.",
+            ));
+            return self.pane(cards);
+        };
+        let settings = &snapshot.settings;
+        let enabled = !self.shell_settings_busy;
+        let applications =
+            spotlight_provider_policy(settings, rmac_launcher_providers::APPLICATIONS_PROVIDER);
+        let settings_provider =
+            spotlight_provider_policy(settings, rmac_launcher_providers::SETTINGS_PROVIDER);
+        let files = spotlight_provider_policy(settings, rmac_launcher_providers::FILES_PROVIDER);
+        let calculator =
+            spotlight_provider_policy(settings, rmac_launcher_providers::CALCULATOR_PROVIDER);
+
+        cards.push(section_header("Search results"));
+        cards.push(card(vec![
+            spotlight_provider_row(
+                view.clone(),
+                rmac_launcher_providers::APPLICATIONS_PROVIDER,
+                "Applications",
+                "Installed desktop applications",
+                applications.enabled,
+                enabled,
+            ),
+            spotlight_provider_row(
+                view.clone(),
+                rmac_launcher_providers::SETTINGS_PROVIDER,
+                "System Settings",
+                "Destinations and Linux-relevant setting keywords",
+                settings_provider.enabled,
+                enabled,
+            ),
+            spotlight_provider_row(
+                view.clone(),
+                rmac_launcher_providers::FILES_PROVIDER,
+                "Files",
+                if files.allow_private_content {
+                    "On-demand filenames and recent documents"
+                } else {
+                    "Private-content permission is required"
+                },
+                files.enabled,
+                enabled,
+            ),
+            spotlight_provider_row(
+                view.clone(),
+                rmac_launcher_providers::CALCULATOR_PROVIDER,
+                "Calculator",
+                "Local bounded arithmetic; no scripts or network",
+                calculator.enabled,
+                enabled,
+            ),
+        ]));
+
+        cards.push(section_header("File privacy and scope"));
+        let private_view = view.clone();
+        let removable_view = view.clone();
+        cards.push(card(vec![
+            row_base()
+                .child(text_block(
+                    "Allow private file results".into(),
+                    Some("Admit local filenames and recent-document paths to Search".into()),
+                ))
+                .child(
+                    Toggle::new("spotlight-private-files")
+                        .checked(files.allow_private_content)
+                        .disabled(!enabled)
+                        .on_click(move |value, _, cx| {
+                            private_view.update(cx, |settings, cx| {
+                                settings.apply_spotlight_change(
+                                    SpotlightChange::ProviderPrivateContent {
+                                        id: rmac_launcher_providers::FILES_PROVIDER.into(),
+                                        allowed: *value,
+                                    },
+                                    cx,
+                                )
+                            });
+                        }),
+                )
+                .into_any_element(),
+            row_base()
+                .child(text_block(
+                    "Include removable mounts".into(),
+                    Some("Allow on-demand file search to cross filesystem boundaries".into()),
+                ))
+                .child(
+                    Toggle::new("spotlight-removable-mounts")
+                        .checked(settings.spotlight.include_removable_mounts)
+                        .disabled(!enabled)
+                        .on_click(move |value, _, cx| {
+                            removable_view.update(cx, |settings, cx| {
+                                settings.apply_spotlight_change(
+                                    SpotlightChange::IncludeRemovableMounts(*value),
+                                    cx,
+                                )
+                            });
+                        }),
+                )
+                .into_any_element(),
+        ]));
+        cards.push(note_card(
+            "File search is local and on demand. rmac does not build a perpetual content index, and no built-in provider requests network access.",
+        ));
+
+        cards.push(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_1()
+                .pt_2()
+                .pb_1()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(secondary())
+                        .child("Excluded folders"),
+                )
+                .child(
+                    Button::new("spotlight-add-exclusion", "Add Folder…")
+                        .disabled(!enabled)
+                        .on_click(move |_, _, cx| {
+                            choose_view
+                                .update(cx, |settings, cx| settings.choose_search_exclusion(cx));
+                        }),
+                ),
+        );
+        if settings.spotlight.excluded_paths.is_empty() {
+            cards.push(note_card(
+                "No folders are excluded. Add a folder to prune it before filename traversal and recent-document admission.",
+            ));
+        } else {
+            let exclusion_rows = settings
+                .spotlight
+                .excluded_paths
+                .iter()
+                .enumerate()
+                .map(|(index, path)| {
+                    let remove_view = view.clone();
+                    let remove_path = path.clone();
+                    row_base()
+                        .child(text_block(
+                            PathBuf::from(path)
+                                .file_name()
+                                .map(|name| name.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| path.clone())
+                                .into(),
+                            Some(path.clone().into()),
+                        ))
+                        .child(
+                            Button::new(
+                                ElementId::from(SharedString::from(format!(
+                                    "spotlight-remove-exclusion-{index}"
+                                ))),
+                                "Remove",
+                            )
+                            .disabled(!enabled)
+                            .on_click(move |_, _, cx| {
+                                remove_view.update(cx, |settings, cx| {
+                                    settings.apply_spotlight_change(
+                                        SpotlightChange::RemoveExclusion(remove_path.clone()),
+                                        cx,
+                                    )
+                                });
+                            }),
+                        )
+                        .into_any_element()
+                })
+                .collect();
+            cards.push(card(exclusion_rows));
+        }
+
+        cards.push(section_header("Indexing"));
+        cards.push(card(vec![
+            value_row(
+                "icons/search.svg",
+                accent(),
+                "Search mode".into(),
+                "On demand".into(),
+            ),
+            value_row(
+                "icons/hard-drive.svg",
+                secondary(),
+                "Filesystem scope".into(),
+                if settings.spotlight.include_removable_mounts {
+                    "Home and removable mounts".into()
+                } else {
+                    "Home filesystem only".into()
+                },
+            ),
+            value_row(
+                "icons/info.svg",
+                secondary(),
+                "Background content index".into(),
+                "Not used".into(),
+            ),
+        ]));
+
+        let launcher_shortcut = rmac_shortcuts::default_shortcuts()
+            .into_iter()
+            .find(|shortcut| shortcut.id.0 == "launcher")
+            .expect("the stable launcher shortcut is registered");
+        let shortcut_status: SharedString = match self.shortcut_status.as_ref() {
+            Some(rmac_shortcuts::BackendStatus::Portal {
+                version,
+                can_configure,
+            }) => format!(
+                "Portal v{version}{}",
+                if *can_configure {
+                    " · configurable"
+                } else {
+                    ""
+                }
+            )
+            .into(),
+            Some(rmac_shortcuts::BackendStatus::FallbackRequired { .. }) => {
+                "niri fallback required".into()
+            }
+            None if self.shortcut_status_loading => "Loading…".into(),
+            None => "Not reported".into(),
+        };
+        cards.push(section_header("Keyboard shortcut"));
+        cards.push(card(vec![
+            value_row(
+                "icons/keyboard.svg",
+                accent(),
+                "Active backend".into(),
+                shortcut_status,
+            ),
+            value_row(
+                "icons/keyboard.svg",
+                secondary(),
+                "Portal preference".into(),
+                launcher_shortcut.preferred_trigger.into(),
+            ),
+            value_row(
+                "icons/keyboard.svg",
+                secondary(),
+                "niri fallback".into(),
+                launcher_shortcut.niri_trigger.into(),
+            ),
+        ]));
+        if let Some(error) = self.shortcut_status_error.clone() {
+            cards.push(note_card(error));
+        }
+        cards.push(note_card(
+            "The portal owns user consent and the actual trigger. The fallback is enabled only when the broker reports it is required, so one shortcut backend owns Logo/Mod+Space at a time.",
+        ));
+        cards.push(note_card(
+            "These preferences are consumed by the launcher provider/runtime foundations. The centered GPUI overlay and full live session wiring remain D7/D8 release gates.",
+        ));
+        self.pane(cards)
     }
 
     fn render_wallpaper(&self, cx: &Context<Self>) -> Div {
@@ -10184,6 +10802,7 @@ impl Render for Settings {
             .or_else(|| self.shell_settings_error.clone())
             .or_else(|| self.shell_settings_stream_error.clone())
             .or_else(|| self.wallpaper_error.clone())
+            .or_else(|| self.spotlight_error.clone())
             .or_else(|| self.gtk_text_error.clone())
             .or_else(|| self.privacy_error.clone())
             .or_else(|| self.privacy_stream_error.clone());
@@ -10230,6 +10849,7 @@ impl Render for Settings {
                             this.shell_settings_error = None;
                             this.shell_settings_stream_error = None;
                             this.wallpaper_error = None;
+                            this.spotlight_error = None;
                             this.gtk_text_error = None;
                             this.privacy_error = None;
                             this.privacy_stream_error = None;
@@ -11123,6 +11743,38 @@ fn wallpaper_fit_row(
         .into_any_element()
 }
 
+fn spotlight_provider_row(
+    view: Entity<Settings>,
+    id: &'static str,
+    title: &'static str,
+    subtitle: &'static str,
+    checked: bool,
+    enabled: bool,
+) -> AnyElement {
+    let toggle_view = view.clone();
+    row_base()
+        .child(text_block(title.into(), Some(subtitle.into())))
+        .child(
+            Toggle::new(ElementId::from(SharedString::from(format!(
+                "spotlight-provider-{id}"
+            ))))
+            .checked(checked)
+            .disabled(!enabled)
+            .on_click(move |value, _, cx| {
+                toggle_view.update(cx, |settings, cx| {
+                    settings.apply_spotlight_change(
+                        SpotlightChange::ProviderEnabled {
+                            id: id.into(),
+                            enabled: *value,
+                        },
+                        cx,
+                    )
+                });
+            }),
+        )
+        .into_any_element()
+}
+
 fn theme_segment_row(
     view: Entity<Settings>,
     id: &'static str,
@@ -11568,7 +12220,7 @@ fn categories() -> Vec<Vec<Category>> {
                 "Spotlight",
                 "icons/search.svg",
                 gray,
-                "Review search integration status and privacy limitations.",
+                "Choose search results, file privacy, and excluded folders.",
             ),
             cat(
                 "Wallpaper",
@@ -11674,8 +12326,9 @@ mod tests {
     use super::{
         categories, category_has_dedicated_renderer, composite_wallpaper_pixel,
         notification_policy_with, render_wallpaper_preview, wallpaper_selection, DockChange,
-        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation, WallpaperChange,
-        WallpaperTarget, GENERAL_DESTINATIONS,
+        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
+        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
+        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -11828,6 +12481,82 @@ mod tests {
         assert!(settings.dock.autohide);
         assert!(settings.clock.show_seconds);
         assert!(settings.spotlight.include_removable_mounts);
+    }
+
+    #[test]
+    fn spotlight_provider_changes_are_scoped_and_elide_default_policy() {
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.dock.autohide = true;
+        let original_wallpaper = settings.wallpaper.clone();
+        let provider = rmac_launcher_providers::FILES_PROVIDER.to_string();
+
+        SpotlightChange::ProviderPrivateContent {
+            id: provider.clone(),
+            allowed: true,
+        }
+        .apply(&mut settings);
+        let policy = settings
+            .providers
+            .get(&rmac_shell_settings::ProviderId(provider.clone()))
+            .unwrap();
+        assert!(policy.enabled);
+        assert!(policy.allow_private_content);
+        assert!(!policy.allow_network);
+        assert!(settings.dock.autohide);
+        assert_eq!(settings.wallpaper, original_wallpaper);
+
+        SpotlightChange::ProviderPrivateContent {
+            id: provider.clone(),
+            allowed: false,
+        }
+        .apply(&mut settings);
+        assert!(!settings
+            .providers
+            .contains_key(&rmac_shell_settings::ProviderId(provider)));
+    }
+
+    #[test]
+    fn spotlight_scope_and_rollback_preserve_unrelated_shell_settings() {
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.dock.reserve_space = false;
+        settings.wallpaper.default.source = Some("builtin:rmac-aurora".into());
+        let previous = SpotlightAuthority::from_settings(&settings);
+
+        ShellSettingsMutation::Spotlight(SpotlightChange::IncludeRemovableMounts(true))
+            .apply(&mut settings);
+        ShellSettingsMutation::Spotlight(SpotlightChange::AddExclusion(
+            "/home/test/Private".into(),
+        ))
+        .apply(&mut settings);
+        ShellSettingsMutation::Spotlight(SpotlightChange::AddExclusion(
+            "/home/test/Private".into(),
+        ))
+        .apply(&mut settings);
+        assert!(settings.spotlight.include_removable_mounts);
+        assert_eq!(settings.spotlight.excluded_paths, ["/home/test/Private"]);
+        assert!(!settings.dock.reserve_space);
+        assert_eq!(
+            settings.wallpaper.default.source.as_deref(),
+            Some("builtin:rmac-aurora")
+        );
+
+        ShellSettingsMutation::Spotlight(SpotlightChange::RemoveExclusion(
+            "/home/test/Private".into(),
+        ))
+        .apply(&mut settings);
+        assert!(settings.spotlight.excluded_paths.is_empty());
+
+        ShellSettingsMutation::RestoreSpotlight(previous).apply(&mut settings);
+        assert_eq!(
+            settings.spotlight,
+            rmac_shell_settings::SpotlightSettings::default()
+        );
+        assert!(settings.providers.is_empty());
+        assert!(!settings.dock.reserve_space);
+        assert_eq!(
+            settings.wallpaper.default.source.as_deref(),
+            Some("builtin:rmac-aurora")
+        );
     }
 
     #[test]

@@ -86,6 +86,9 @@ pub enum Operation {
     WatchPortal,
     Dispatch,
     WriteFallback,
+    ResolveStatus,
+    ReadStatus,
+    ParseStatus,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -110,6 +113,40 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// Resolve the status snapshot atomically published by the session shortcut
+/// broker. This is readable diagnostic authority, not a second binding store.
+pub fn backend_status_path() -> Result<PathBuf, Error> {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .map(|path| path.join("rmac/shortcuts-status.json"))
+        .ok_or_else(|| {
+            Error::new(
+                Operation::ResolveStatus,
+                "XDG_RUNTIME_DIR is not set to an absolute path",
+            )
+        })
+}
+
+pub fn backend_status() -> Result<BackendStatus, Error> {
+    backend_status_at(&backend_status_path()?)
+}
+
+fn backend_status_at(path: &Path) -> Result<BackendStatus, Error> {
+    let contents = std::fs::read(path).map_err(|error| {
+        Error::new(
+            Operation::ReadStatus,
+            format!("shortcut broker status is unavailable: {error}"),
+        )
+    })?;
+    serde_json::from_slice(&contents).map_err(|error| {
+        Error::new(
+            Operation::ParseStatus,
+            format!("shortcut broker status is invalid: {error}"),
+        )
+    })
+}
 
 pub fn validate_specs(shortcuts: &[ShortcutSpec]) -> Result<(), Error> {
     let mut ids = std::collections::BTreeSet::new();
@@ -493,6 +530,36 @@ mod tests {
     #[test]
     fn duration_conversion_is_bounded() {
         assert_eq!(duration_ms(std::time::Duration::from_millis(42)), 42);
+    }
+
+    #[test]
+    fn backend_status_snapshot_is_typed_and_rejects_malformed_data() {
+        let path = std::env::temp_dir().join(format!(
+            "rmac-shortcuts-status-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(
+            &path,
+            br#"{"kind":"portal","version":2,"can_configure":true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            backend_status_at(&path).unwrap(),
+            BackendStatus::Portal {
+                version: 2,
+                can_configure: true,
+            }
+        );
+        std::fs::write(&path, b"not json").unwrap();
+        assert_eq!(
+            backend_status_at(&path).unwrap_err().operation,
+            Operation::ParseStatus
+        );
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]

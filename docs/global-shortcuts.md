@@ -31,6 +31,12 @@ publishes returned human-readable trigger descriptions and reconnects when the
 portal or its backend restarts. Backend state is atomically written to
 `$XDG_RUNTIME_DIR/rmac/shortcuts-status.json`.
 
+`rmac-shortcuts` exposes a typed reader for that atomic snapshot. System
+Settings uses it to report whether the active session selected the portal or
+requires the niri fallback, while displaying both stable trigger forms. The
+snapshot is diagnostic authority only: Settings can refresh it but cannot
+invent, bind, or silently switch a shortcut backend.
+
 Activated IDs pass through `rmac-shortcut-dispatch`, which accepts only the
 compiled allowlist. Normal shell IDs become a small JSON message on
 `$XDG_RUNTIME_DIR/rmac/shortcut-events.sock`; D-phase consumers remain

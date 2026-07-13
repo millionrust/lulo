@@ -2,7 +2,7 @@
 
 use gpui::{rgb, rgba, FontWeight, Hsla};
 use rmac_appearance::{
-    AccentColor, Contrast, MotionPreference, ResolvedAppearance, ResolvedColorScheme,
+    AccentColor, Contrast, MotionPreference, ResolvedAppearance, ResolvedColorScheme, TextScale,
 };
 use std::sync::{OnceLock, RwLock};
 
@@ -177,6 +177,7 @@ pub struct ThemeTokens {
     pub focus: FocusTokens,
     pub elevation: ElevationTokens,
     pub motion: MotionTokens,
+    pub text_scale: TextScale,
 }
 
 impl ThemeTokens {
@@ -270,15 +271,16 @@ impl ThemeTokens {
                 notes_selection: RgbaColor::opaque(0x5c4b08),
             },
         };
+        let text_factor = appearance.text_scale.factor();
         Self {
             color_scheme: appearance.color_scheme,
             colors,
             typography: TypographyTokens {
-                body: 13.0,
-                callout: 12.0,
-                caption: 11.0,
-                headline: 15.0,
-                title: 22.0,
+                body: 13.0 * text_factor,
+                callout: 12.0 * text_factor,
+                caption: 11.0 * text_factor,
+                headline: 15.0 * text_factor,
+                title: 22.0 * text_factor,
                 regular: FontWeight::NORMAL,
                 medium: FontWeight::MEDIUM,
                 semibold: FontWeight::SEMIBOLD,
@@ -340,6 +342,7 @@ impl ThemeTokens {
                     spatial_motion: true,
                 }
             },
+            text_scale: appearance.text_scale,
         }
     }
 
@@ -350,6 +353,7 @@ impl ThemeTokens {
                 .expect("default accent is valid"),
             contrast: Contrast::Normal,
             motion: MotionPreference::Full,
+            text_scale: TextScale::Standard,
         })
     }
 }
@@ -389,6 +393,7 @@ mod tests {
             accent_color: AccentColor::new(accent.0, accent.1, accent.2).unwrap(),
             contrast,
             motion,
+            text_scale: TextScale::Standard,
         }
     }
 
@@ -421,6 +426,28 @@ mod tests {
             .colors;
             assert!(colors.on_accent.contrast_ratio(colors.accent) >= 4.5);
         }
+    }
+
+    #[test]
+    fn text_scale_changes_semantic_typography_without_layout_spacing() {
+        let standard = ThemeTokens::from_appearance(appearance(
+            ResolvedColorScheme::Light,
+            (0.0, 0.48, 1.0),
+            Contrast::Normal,
+            MotionPreference::Full,
+        ));
+        let mut larger_appearance = appearance(
+            ResolvedColorScheme::Light,
+            (0.0, 0.48, 1.0),
+            Contrast::Normal,
+            MotionPreference::Full,
+        );
+        larger_appearance.text_scale = TextScale::ExtraLarge;
+        let larger = ThemeTokens::from_appearance(larger_appearance);
+        assert!(larger.typography.body > standard.typography.body);
+        assert!(larger.typography.caption > standard.typography.caption);
+        assert_eq!(larger.spacing, standard.spacing);
+        assert_eq!(larger.text_scale, TextScale::ExtraLarge);
     }
 
     #[test]

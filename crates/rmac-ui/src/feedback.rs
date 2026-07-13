@@ -32,7 +32,7 @@ impl RenderOnce for Tooltip {
             .rounded(px(6.0))
             .bg(mac::text())
             .text_color(mac::window())
-            .text_size(px(11.0))
+            .text_size(crate::text_px(11.0))
             .shadow_lg()
             .child(self.text)
     }
@@ -110,7 +110,7 @@ impl RenderOnce for Progress {
             .when_some(self.label, |progress, label| {
                 progress.child(
                     div()
-                        .text_size(px(11.0))
+                        .text_size(crate::text_px(11.0))
                         .text_color(if self.status == ProgressStatus::Error {
                             mac::danger()
                         } else {
@@ -187,7 +187,7 @@ impl RenderOnce for EmptyState {
             .refine_style(&self.style)
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(crate::text_px(13.0))
                     .font_weight(mac::SEMIBOLD)
                     .text_color(if self.error {
                         mac::danger()
@@ -200,7 +200,7 @@ impl RenderOnce for EmptyState {
                 empty.child(
                     div()
                         .max_w(px(360.0))
-                        .text_size(px(11.0))
+                        .text_size(crate::text_px(11.0))
                         .text_color(mac::text_secondary())
                         .child(message),
                 )
@@ -315,7 +315,7 @@ impl RenderOnce for Toast {
                     .rounded_full()
                     .border_1()
                     .border_color(border)
-                    .text_size(px(11.0))
+                    .text_size(crate::text_px(11.0))
                     .font_weight(mac::BOLD)
                     .child(symbol),
             )
@@ -325,12 +325,12 @@ impl RenderOnce for Toast {
                     .v_flex()
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(crate::text_px(12.0))
                             .font_weight(mac::SEMIBOLD)
                             .child(self.title),
                     )
                     .when_some(self.message, |body, message| {
-                        body.child(div().text_size(px(11.0)).child(message))
+                        body.child(div().text_size(crate::text_px(11.0)).child(message))
                     }),
             )
             .when_some(self.on_dismiss, |toast, handler| {

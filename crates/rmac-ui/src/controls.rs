@@ -733,7 +733,7 @@ impl RenderOnce for List {
                         .bg(mac::warning_background())
                         .border_1()
                         .border_color(mac::warning_border())
-                        .text_size(px(11.0))
+                        .text_size(crate::text_px(11.0))
                         .text_color(mac::warning_text())
                         .child(message.clone()),
                 )
@@ -758,7 +758,7 @@ impl RenderOnce for List {
                             .items_center()
                             .justify_center()
                             .px_4()
-                            .text_size(px(12.0))
+                            .text_size(crate::text_px(12.0))
                             .text_color(if state == CollectionState::Error {
                                 mac::danger()
                             } else {

@@ -20,7 +20,7 @@ equivalents rather than simulated.
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Included niri config traversal and Linux polkit/restart/scale/accessibility evidence |
 | Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, portal-selected validated add/replace, Trash-backed user-entry removal, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, and resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Linux interaction/scale/accessibility evidence |
 | Sharing | Capability-detected OpenSSH and Samba services with separate runtime/boot state, explicit enable/disable confirmation, systemd system-manager/polkit mutation, bounded completion wait and exact rollback; effective bounded Samba share names from `testparm -s`; separate read-only UFW SSH/Samba allowance truth; live systemd, UFW, and Samba configuration refresh; no AirDrop branding | `rmac-sharing`, `rmac-sharing-linux`, `org.freedesktop.systemd1`, `ssh.service`, `smbd.service`, Samba `testparm`, UFW status/configuration | Linux polkit/network/scale/accessibility evidence and reviewed share editing if added |
-| Accessibility | Live rmac increased-contrast and reduced-motion preferences with effective-state display; direct navigation to authoritative niri-backed keyboard, mouse, and trackpad controls; explicit text-scale and Orca integration limits | `rmac-theme`, Settings portal appearance values, `rmac-input`, niri configuration | One cross-toolkit/session text-scale authority, keyboard accessibility features, pointer accessibility additions, and Linux AT-SPI/Orca evidence |
+| Accessibility | Live rmac increased-contrast, reduced-motion, and bounded application text-size preferences with effective-state display; text size updates the shared GPUI rem base and migrated semantic/shared UI text without changing display or content-font scaling; direct navigation to authoritative niri-backed keyboard, mouse, and trackpad controls; explicit external-toolkit and Orca limits | `rmac-theme`, `rmac-ui`, GPUI per-window rem size, Settings portal appearance values, `rmac-input`, niri configuration | Complete fixed-pixel app-text migration and clipping evidence, one external-toolkit/session text-scale authority, keyboard accessibility features, pointer accessibility additions, and Linux AT-SPI/Orca evidence |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
 | Assistant & Intelligence | Hidden from production navigation | Optional local/provider integrations | Leave absent until a privacy design exists |
 | Desktop & Dock | Placeholder | rmac shell and niri IPC | Dock, desktop, workspaces, window behavior |
@@ -238,10 +238,15 @@ renderer. Increased contrast and reduced motion reuse the same versioned,
 atomic, live-watched rmac theme authority as Appearance, and the pane shows the
 resolved effective values rather than only the selected preference. Motor
 shortcuts navigate directly to the existing niri-backed Keyboard, Mouse, and
-Trackpad controls. System-wide text scaling remains explicit unavailable: no
-single reviewed authority currently keeps rmac, GTK, portals, and niri from
-double-scaling or disagreeing. Orca activation is also not presented as a
-toggle until the GPUI integration has Linux AT-SPI/Orca runtime evidence.
+Trackpad controls. A bounded Standard/Large/Extra Large preference now persists
+in the same backward-compatible versioned theme document. The shared UI runtime
+applies its factor to each GPUI window's rem base on open and on live changes;
+semantic typography tokens and shared rmac components use the same factor.
+This is deliberately labeled rmac application text size: display scale,
+terminal/editor content fonts, GTK, browsers, and other toolkit applications
+remain separate, and fixed-pixel app-specific text still requires migration and
+clipping evidence. Orca activation is not presented as a toggle until the GPUI
+integration has Linux AT-SPI/Orca runtime evidence.
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

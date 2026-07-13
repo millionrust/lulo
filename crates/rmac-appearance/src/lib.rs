@@ -52,6 +52,37 @@ pub enum MotionPreference {
     Reduced,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TextScale {
+    #[default]
+    Standard,
+    Large,
+    ExtraLarge,
+}
+
+impl TextScale {
+    pub const fn factor(self) -> f32 {
+        match self {
+            Self::Standard => 1.0,
+            Self::Large => 1.15,
+            Self::ExtraLarge => 1.3,
+        }
+    }
+}
+
+#[cfg(test)]
+mod text_scale_tests {
+    use super::TextScale;
+
+    #[test]
+    fn text_scales_are_ordered_and_bounded() {
+        assert_eq!(TextScale::Standard.factor(), 1.0);
+        assert!(TextScale::Large.factor() > TextScale::Standard.factor());
+        assert!(TextScale::ExtraLarge.factor() > TextScale::Large.factor());
+        assert!(TextScale::ExtraLarge.factor() <= 1.3);
+    }
+}
+
 /// An sRGB accent color normalized to the inclusive 0–1 range.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AccentColor {
@@ -116,6 +147,7 @@ pub struct ResolvedAppearance {
     pub accent_color: AccentColor,
     pub contrast: Contrast,
     pub motion: MotionPreference,
+    pub text_scale: TextScale,
 }
 
 impl Snapshot {

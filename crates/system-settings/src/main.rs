@@ -315,6 +315,7 @@ enum ThemeChange {
     Accent(rmac_theme::AccentPreference),
     Contrast(rmac_theme::ContrastPreference),
     Motion(rmac_theme::MotionPreferenceSetting),
+    TextScale(rmac_theme::TextScalePreference),
 }
 
 #[derive(Clone, Copy)]
@@ -2848,6 +2849,7 @@ impl Settings {
             ThemeChange::Accent(value) => preferences.accent_color = value,
             ThemeChange::Contrast(value) => preferences.contrast = value,
             ThemeChange::Motion(value) => preferences.motion = value,
+            ThemeChange::TextScale(value) => preferences.text_scale = value,
         }
         let host = self.host_appearance.clone();
         self.theme_busy = true;
@@ -3491,7 +3493,7 @@ impl Settings {
             .child(tile(cat.icon, cat.color, 64.0))
             .child(
                 div()
-                    .text_size(px(22.0))
+                    .text_size(rmac_ui::text_px(22.0))
                     .font_weight(rmac_ui::mac::BOLD)
                     .text_color(label())
                     .child(cat.name.clone()),
@@ -3500,7 +3502,7 @@ impl Settings {
                 div()
                     .max_w(px(440.0))
                     .text_center()
-                    .text_size(px(13.0))
+                    .text_size(rmac_ui::text_px(13.0))
                     .text_color(secondary())
                     .child(cat.desc.clone()),
             )
@@ -4991,12 +4993,24 @@ impl Settings {
                     },
                     !self.theme_busy,
                 ),
+                theme_segment_row(
+                    view.clone(),
+                    "accessibility-text-scale",
+                    "Text size",
+                    &THEME_TEXT_SCALE_OPTIONS,
+                    match preferences.text_scale {
+                        rmac_theme::TextScalePreference::Standard => 0,
+                        rmac_theme::TextScalePreference::Large => 1,
+                        rmac_theme::TextScalePreference::ExtraLarge => 2,
+                    },
+                    !self.theme_busy,
+                ),
                 value_row(
                     "icons/info.svg",
                     secondary(),
                     "Effective visual mode".into(),
                     format!(
-                        "{} contrast · {} motion",
+                        "{} contrast · {} motion · {}% text",
                         match theme.effective.contrast {
                             rmac_appearance::Contrast::Normal => "Normal",
                             rmac_appearance::Contrast::Higher => "Higher",
@@ -5004,7 +5018,8 @@ impl Settings {
                         match theme.effective.motion {
                             rmac_appearance::MotionPreference::Full => "Full",
                             rmac_appearance::MotionPreference::Reduced => "Reduced",
-                        }
+                        },
+                        (theme.effective.text_scale.factor() * 100.0).round() as u16,
                     )
                     .into(),
                 ),
@@ -5055,7 +5070,7 @@ impl Settings {
 
         cards.push(section_header("Text & Screen Reader"));
         cards.push(note_card(
-            "System-wide text scaling is not exposed until rmac, GTK, portals, and the niri session can agree on one effective scale without double-scaling applications.",
+            "Text size applies live to shared rmac controls and semantic text through the common UI runtime. App-specific fixed text is still being migrated. It does not change GTK, browser, terminal content-font, display, or compositor scaling.",
         ));
         cards.push(note_card(
             "Orca activation is not controlled here yet. The current GPUI integration still requires Linux AT-SPI and Orca runtime evidence before rmac can claim screen-reader-facing controls.",
@@ -7849,12 +7864,19 @@ fn row_base() -> Div {
 }
 
 fn text_block(title: SharedString, sub: Option<SharedString>) -> Div {
-    let mut b = div()
-        .v_flex()
-        .flex_1()
-        .child(div().text_size(px(13.0)).text_color(label()).child(title));
+    let mut b = div().v_flex().flex_1().child(
+        div()
+            .text_size(rmac_ui::text_px(13.0))
+            .text_color(label())
+            .child(title),
+    );
     if let Some(s) = sub {
-        b = b.child(div().text_size(px(11.0)).text_color(secondary()).child(s));
+        b = b.child(
+            div()
+                .text_size(rmac_ui::text_px(11.0))
+                .text_color(secondary())
+                .child(s),
+        );
     }
     b
 }
@@ -7864,12 +7886,17 @@ fn label_row(title: &'static str, value: Option<SharedString>) -> Div {
     let mut r = row_base().child(
         div()
             .flex_1()
-            .text_size(px(13.0))
+            .text_size(rmac_ui::text_px(13.0))
             .text_color(label())
             .child(title),
     );
     if let Some(v) = value {
-        r = r.child(div().text_size(px(13.0)).text_color(secondary()).child(v));
+        r = r.child(
+            div()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(secondary())
+                .child(v),
+        );
     }
     r
 }
@@ -7886,7 +7913,7 @@ fn value_row(
         .child(text_block(title, None))
         .child(
             div()
-                .text_size(px(13.0))
+                .text_size(rmac_ui::text_px(13.0))
                 .text_color(secondary())
                 .child(value),
         )
@@ -7942,7 +7969,7 @@ fn note_card(text: impl Into<SharedString>) -> Div {
         .child(
             div()
                 .flex_1()
-                .text_size(px(11.5))
+                .text_size(rmac_ui::text_px(11.5))
                 .text_color(rmac_ui::mac::warning_text())
                 .child(text.into()),
         )
@@ -7954,7 +7981,7 @@ fn section_header(title: impl Into<SharedString>) -> Div {
         .px_1()
         .pt_2()
         .pb_1()
-        .text_size(px(12.0))
+        .text_size(rmac_ui::text_px(12.0))
         .font_weight(rmac_ui::mac::SEMIBOLD)
         .text_color(secondary())
         .child(title.into())
@@ -8440,6 +8467,20 @@ const THEME_MOTION_OPTIONS: [ThemeOption; 3] = [
         ThemeChange::Motion(rmac_theme::MotionPreferenceSetting::Reduced),
     ),
 ];
+const THEME_TEXT_SCALE_OPTIONS: [ThemeOption; 3] = [
+    (
+        "Standard",
+        ThemeChange::TextScale(rmac_theme::TextScalePreference::Standard),
+    ),
+    (
+        "Large",
+        ThemeChange::TextScale(rmac_theme::TextScalePreference::Large),
+    ),
+    (
+        "Extra Large",
+        ThemeChange::TextScale(rmac_theme::TextScalePreference::ExtraLarge),
+    ),
+];
 
 const KEYBOARD_DELAYS: [InputOption; 5] = [
     ("Short", InputChange::KeyboardRepeatDelay(200)),
@@ -8527,7 +8568,7 @@ fn theme_segment_row(
                 .justify_center()
                 .h(px(26.0))
                 .rounded(px(6.0))
-                .text_size(px(11.0))
+                .text_size(rmac_ui::text_px(11.0))
                 .when(index == selected, |element| {
                     element.bg(accent()).text_color(on_accent())
                 })
@@ -8551,7 +8592,7 @@ fn theme_segment_row(
         .child(
             div()
                 .flex_1()
-                .text_size(px(13.0))
+                .text_size(rmac_ui::text_px(13.0))
                 .text_color(label())
                 .child(title),
         )
@@ -8579,7 +8620,7 @@ fn input_segment_row(
                 .justify_center()
                 .h(px(26.0))
                 .rounded(px(6.0))
-                .text_size(px(11.0))
+                .text_size(rmac_ui::text_px(11.0))
                 .when(index == selected, |element| {
                     element.bg(accent()).text_color(on_accent())
                 })

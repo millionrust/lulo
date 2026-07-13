@@ -6,7 +6,7 @@
 
 use rmac_appearance::{
     AccentColor, ColorScheme, Contrast, MotionPreference, ResolvedAppearance, ResolvedColorScheme,
-    Snapshot as HostSnapshot,
+    Snapshot as HostSnapshot, TextScale,
 };
 use rmac_storage::{Backend, Failure, FileSystem};
 use serde::{Deserialize, Serialize};
@@ -52,6 +52,15 @@ pub enum MotionPreferenceSetting {
     Reduced,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TextScalePreference {
+    #[default]
+    Standard,
+    Large,
+    ExtraLarge,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
@@ -59,6 +68,7 @@ pub struct Preferences {
     pub accent_color: AccentPreference,
     pub contrast: ContrastPreference,
     pub motion: MotionPreferenceSetting,
+    pub text_scale: TextScalePreference,
 }
 
 impl Preferences {
@@ -87,11 +97,17 @@ impl Preferences {
             MotionPreferenceSetting::Full => MotionPreference::Full,
             MotionPreferenceSetting::Reduced => MotionPreference::Reduced,
         };
+        let text_scale = match self.text_scale {
+            TextScalePreference::Standard => TextScale::Standard,
+            TextScalePreference::Large => TextScale::Large,
+            TextScalePreference::ExtraLarge => TextScale::ExtraLarge,
+        };
         Ok(ResolvedAppearance {
             color_scheme,
             accent_color,
             contrast,
             motion,
+            text_scale,
         })
     }
 }
@@ -483,6 +499,7 @@ mod tests {
         assert_eq!(resolved.accent_color.components(), (0.8, 0.2, 0.4));
         assert_eq!(resolved.contrast, Contrast::Higher);
         assert_eq!(resolved.motion, MotionPreference::Reduced);
+        assert_eq!(resolved.text_scale, TextScale::Standard);
     }
 
     #[test]
@@ -492,12 +509,14 @@ mod tests {
             accent_color: AccentPreference::Custom([0.1, 0.2, 0.3]),
             contrast: ContrastPreference::Normal,
             motion: MotionPreferenceSetting::Full,
+            text_scale: TextScalePreference::ExtraLarge,
         };
         let resolved = preferences.resolve(&host()).unwrap();
         assert_eq!(resolved.color_scheme, ResolvedColorScheme::Light);
         assert_eq!(resolved.accent_color.components(), (0.1, 0.2, 0.3));
         assert_eq!(resolved.contrast, Contrast::Normal);
         assert_eq!(resolved.motion, MotionPreference::Full);
+        assert_eq!(resolved.text_scale, TextScale::ExtraLarge);
     }
 
     #[test]
@@ -508,12 +527,20 @@ mod tests {
             accent_color: AccentPreference::Custom([0.2, 0.4, 0.6]),
             contrast: ContrastPreference::Higher,
             motion: MotionPreferenceSetting::Reduced,
+            text_scale: TextScalePreference::Large,
         };
         store.save(&preferences, &host()).unwrap();
         let loaded = store.load(&host()).unwrap();
         assert_eq!(loaded.preferences, preferences);
         assert!(!loaded.recovered_from_last_good);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn version_one_documents_without_text_scale_keep_standard_size() {
+        let stored: StoredPreferences =
+            serde_json::from_str(r#"{"version":1,"preferences":{"color_scheme":"dark"}}"#).unwrap();
+        assert_eq!(stored.preferences.text_scale, TextScalePreference::Standard);
     }
 
     #[test]

@@ -44,6 +44,17 @@ pub const UI_FONT: &str = "Inter";
 pub const MONO_FONT: &str = "JetBrains Mono";
 
 const BENCHMARK_READY_FILE_ENV: &str = "RMAC_BENCHMARK_READY_FILE";
+const BASE_REM_SIZE: f32 = 16.0;
+
+fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScale) {
+    window.set_rem_size(px(BASE_REM_SIZE * scale.factor()));
+}
+
+/// Scales an application-owned text size with the live rmac accessibility
+/// preference. Layout dimensions remain independent logical pixels.
+pub fn text_px(base: f32) -> gpui::Pixels {
+    px(base * theme::current().text_scale.factor())
+}
 
 /// Writes an opt-in marker after the window completes its first frame.
 ///
@@ -114,6 +125,7 @@ where
             components::init(cx);
             start_theme_runtime(cx);
             cx.open_window(window_options_unified(width, height), move |window, cx| {
+                apply_window_text_scale(window, theme::current().text_scale);
                 gpui_component::theme::Theme::change(
                     current_component_theme_mode(),
                     Some(window),
@@ -146,7 +158,7 @@ fn traffic_light(
         .flex()
         .items_center()
         .justify_center()
-        .text_size(px(9.0))
+        .text_size(text_px(9.0))
         .font_weight(mac::BOLD)
         .text_color(rgba(0x00000000))
         .hover(|s| s.text_color(rgba(0x00000088)))
@@ -256,6 +268,7 @@ pub fn boot_with_assets<A, V, F>(
             start_theme_runtime(cx);
 
             cx.open_window(window_options(width, height), move |window, cx| {
+                apply_window_text_scale(window, theme::current().text_scale);
                 gpui_component::theme::Theme::change(
                     current_component_theme_mode(),
                     Some(window),
@@ -369,6 +382,12 @@ fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
     }
     let mode = component_theme_mode(tokens.color_scheme);
     let _ = cx.update(|app| {
+        let windows = app.windows();
+        for handle in windows {
+            let _ = app.update_window(handle, |_, window, _| {
+                apply_window_text_scale(window, tokens.text_scale);
+            });
+        }
         gpui_component::theme::Theme::change(mode, None, app);
         app.refresh_windows();
     });

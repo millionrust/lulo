@@ -104,7 +104,7 @@ pub fn alert(
         .when(!title.is_empty(), |el| {
             el.child(
                 div()
-                    .text_size(px(15.0))
+                    .text_size(crate::text_px(15.0))
                     .font_weight(mac::BOLD)
                     .text_color(mac::text())
                     .child(title),
@@ -113,7 +113,7 @@ pub fn alert(
         .when(!message.is_empty(), |el| {
             el.child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(crate::text_px(13.0))
                     .text_color(mac::text_secondary())
                     .child(message),
             )
@@ -253,7 +253,7 @@ impl ContextMenu {
                         .when_some(shortcut, |el, sc| {
                             el.child(
                                 div()
-                                    .text_size(px(12.0))
+                                    .text_size(crate::text_px(12.0))
                                     .text_color(mac::text_tertiary())
                                     .child(sc),
                             )

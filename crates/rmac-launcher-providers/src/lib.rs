@@ -846,6 +846,7 @@ mod tests {
                 working_dir: None,
                 terminal: false,
             },
+            actions: Vec::new(),
         }
     }
 

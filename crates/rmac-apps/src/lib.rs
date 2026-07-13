@@ -18,7 +18,22 @@ pub struct Application {
     pub icon: Option<PathBuf>,
     pub categories: Vec<String>,
     pub launch: LaunchSpec,
+    /// Additional launcher actions declared by the desktop entry, in the
+    /// author's `Actions=` order. macOS catalog entries currently omit these.
+    pub actions: Vec<DesktopAction>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DesktopAction {
+    pub id: String,
+    pub name: String,
+    pub icon: Option<PathBuf>,
+    pub launch: LaunchSpec,
+}
+
+const MAX_DESKTOP_ACTIONS: usize = 32;
+const MAX_ACTION_ID_BYTES: usize = 255;
+const MAX_ACTION_NAME_BYTES: usize = 512;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ApplicationSource {
@@ -262,6 +277,7 @@ fn discover_macos() -> io::Result<Vec<Application>> {
                 icon: None,
                 categories: Vec::new(),
                 launch: LaunchSpec::OpenPath(path),
+                actions: Vec::new(),
             });
         }
     }
@@ -452,6 +468,7 @@ fn parse_desktop_entry(
     let (program, args) = expand_exec(exec, &name, icon_name, path)?;
     let icon = icon_name.and_then(|icon| resolve_icon(icon, environment));
     let categories = split_list(values.get("Categories"));
+    let actions = desktop_actions(contents, &values, &name, path, environment);
     Some(Application {
         id: id.to_string(),
         name,
@@ -467,16 +484,72 @@ fn parse_desktop_entry(
                 .map(PathBuf::from),
             terminal: bool_value(values.get("Terminal")),
         },
+        actions,
     })
 }
 
+fn desktop_actions(
+    contents: &str,
+    entry: &HashMap<String, String>,
+    application_name: &str,
+    source: &Path,
+    environment: &Environment,
+) -> Vec<DesktopAction> {
+    let working_dir = entry
+        .get("Path")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let terminal = bool_value(entry.get("Terminal"));
+    let mut seen = HashSet::new();
+    split_list(entry.get("Actions"))
+        .into_iter()
+        .filter(|id| valid_action_id(id) && seen.insert(id.clone()))
+        .filter_map(|id| {
+            let values = desktop_group_named(contents, &format!("Desktop Action {id}"));
+            let name = localized_value(&values, "Name", &environment.locale)?;
+            if name.trim().is_empty() || name.len() > MAX_ACTION_NAME_BYTES {
+                return None;
+            }
+            // rmac does not yet advertise desktop-entry D-Bus activation, so
+            // an action without the compatibility Exec key is not actionable.
+            let exec = values.get("Exec")?;
+            let icon_name = values.get("Icon").map(String::as_str);
+            let (program, args) = expand_exec(exec, application_name, icon_name, source)?;
+            Some(DesktopAction {
+                id,
+                name: name.to_string(),
+                icon: icon_name.and_then(|icon| resolve_icon(icon, environment)),
+                launch: LaunchSpec::Command {
+                    program,
+                    args,
+                    working_dir: working_dir.clone(),
+                    terminal,
+                },
+            })
+        })
+        .take(MAX_DESKTOP_ACTIONS)
+        .collect()
+}
+
+fn valid_action_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_ACTION_ID_BYTES
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
 fn desktop_group(contents: &str) -> HashMap<String, String> {
+    desktop_group_named(contents, "Desktop Entry")
+}
+
+fn desktop_group_named(contents: &str, group: &str) -> HashMap<String, String> {
     let mut values = HashMap::new();
     let mut active = false;
     for raw in contents.lines() {
         let line = raw.trim();
         if line.starts_with('[') && line.ends_with(']') {
-            active = line == "[Desktop Entry]";
+            active = &line[1..line.len() - 1] == group;
             continue;
         }
         if !active || line.is_empty() || line.starts_with('#') {
@@ -557,6 +630,9 @@ fn expand_exec(
     icon: Option<&str>,
     source: &Path,
 ) -> Option<(String, Vec<String>)> {
+    if exec.len() > 32 * 1024 {
+        return None;
+    }
     let tokens = tokenize_exec(exec)?;
     let mut expanded = Vec::new();
     for token in tokens {
@@ -1032,6 +1108,7 @@ mod tests {
             icon: None,
             categories: Vec::new(),
             launch: LaunchSpec::OpenPath(PathBuf::from(format!("/apps/{id}"))),
+            actions: Vec::new(),
         }
     }
 
@@ -1102,6 +1179,78 @@ mod tests {
                 terminal: false,
             }
         );
+    }
+
+    #[test]
+    fn parses_bounded_localized_desktop_actions_in_declared_order() {
+        let entry = parse_desktop_entry(
+            "demo.desktop",
+            Path::new("/apps/demo.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Demo\nName[en_GB]=Demonstration\nExec=demo\nPath=/work\nTerminal=true\nActions=New-Window;Duplicate;Missing;New-Window;bad_id;\n\
+             [Desktop Action New-Window]\nName=New Window\nName[en_GB]=Fresh Window\nExec=demo --new-window --title %c\n\
+             [Desktop Action Duplicate]\nName=Duplicate\nExec=demo --duplicate\n\
+             [Desktop Action Missing]\nName=Missing Exec\n\
+             [Desktop Action bad_id]\nName=Invalid identifier\nExec=demo --invalid\n",
+            &environment(),
+        )
+        .unwrap();
+
+        assert_eq!(entry.actions.len(), 2);
+        assert_eq!(entry.actions[0].id, "New-Window");
+        assert_eq!(entry.actions[0].name, "Fresh Window");
+        assert_eq!(
+            entry.actions[0].launch,
+            LaunchSpec::Command {
+                program: "demo".into(),
+                args: vec![
+                    "--new-window".into(),
+                    "--title".into(),
+                    "Demonstration".into()
+                ],
+                working_dir: Some("/work".into()),
+                terminal: true,
+            }
+        );
+        assert_eq!(entry.actions[1].id, "Duplicate");
+    }
+
+    #[test]
+    fn desktop_actions_reject_invalid_or_excessive_metadata() {
+        assert!(valid_action_id("New-Window"));
+        assert!(!valid_action_id("new_window"));
+        assert!(!valid_action_id(""));
+        assert!(!valid_action_id(&"a".repeat(MAX_ACTION_ID_BYTES + 1)));
+        assert!(expand_exec(
+            &"x".repeat(32 * 1024 + 1),
+            "Demo",
+            None,
+            Path::new("demo.desktop")
+        )
+        .is_none());
+
+        let action_ids = (0..40)
+            .map(|index| format!("Action{index};"))
+            .collect::<String>();
+        let action_groups = (0..40)
+            .map(|index| {
+                format!(
+                    "[Desktop Action Action{index}]\nName=Action {index}\nExec=demo --action {index}\n"
+                )
+            })
+            .collect::<String>();
+        let contents = format!(
+            "[Desktop Entry]\nType=Application\nName=Demo\nExec=demo\nActions={action_ids}\n{action_groups}"
+        );
+        let entry = parse_desktop_entry(
+            "demo.desktop",
+            Path::new("demo.desktop"),
+            &contents,
+            &environment(),
+        )
+        .unwrap();
+        assert_eq!(entry.actions.len(), MAX_DESKTOP_ACTIONS);
+        assert_eq!(entry.actions.first().unwrap().id, "Action0");
+        assert_eq!(entry.actions.last().unwrap().id, "Action31");
     }
 
     #[test]

@@ -93,10 +93,19 @@ impl Category {
 
 #[derive(Clone)]
 struct App {
+    id: String,
     name: SharedString,
     path: PathBuf,
     icon: Option<PathBuf>,
     category: Category,
+    source_categories: Vec<String>,
+    launch: rmac_apps::LaunchSpec,
+    actions: Vec<rmac_apps::DesktopAction>,
+}
+
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = app_drawer, no_json)]
+struct LaunchDesktopAction {
     launch: rmac_apps::LaunchSpec,
 }
 
@@ -114,6 +123,8 @@ struct AppDrawer {
     /// Columns in the grid as last laid out — used for up/down navigation.
     cols: usize,
     catalog_error: Option<SharedString>,
+    action_error: Option<SharedString>,
+    launching: bool,
     _catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 }
 
@@ -234,6 +245,8 @@ impl AppDrawer {
             menu_at: None,
             cols: 6,
             catalog_error,
+            action_error: None,
+            launching: false,
             _catalog_watcher: catalog_watcher,
         }
     }
@@ -323,7 +336,7 @@ impl AppDrawer {
         let vis = self.visible_indices(cx);
         if let Some(&idx) = vis.get(self.selected.min(vis.len().saturating_sub(1))) {
             let launch = self.apps[idx].launch.clone();
-            self.launch_application(&launch, cx);
+            self.launch_application(launch, cx);
         }
     }
 
@@ -331,20 +344,37 @@ impl AppDrawer {
         let vis = self.visible_indices(cx);
         let &idx = vis.get(self.selected.min(vis.len().saturating_sub(1)))?;
         self.apps.get(idx).map(|app| rmac_apps::Application {
-            id: app.path.to_string_lossy().into_owned(),
+            id: app.id.clone(),
             name: app.name.to_string(),
             source: app.path.clone(),
             icon: app.icon.clone(),
-            categories: Vec::new(),
+            categories: app.source_categories.clone(),
             launch: app.launch.clone(),
+            actions: app.actions.clone(),
         })
     }
 
-    fn launch_application(&mut self, launch: &rmac_apps::LaunchSpec, cx: &mut Context<Self>) {
-        self.catalog_error = rmac_apps::launch(launch)
-            .err()
-            .map(|error| format!("Could not launch application: {error}").into());
+    fn launch_application(&mut self, launch: rmac_apps::LaunchSpec, cx: &mut Context<Self>) {
+        if self.launching {
+            return;
+        }
+        self.launching = true;
+        self.action_error = None;
         cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_apps::launch(&launch).map(drop) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.launching = false;
+                this.action_error = result
+                    .err()
+                    .map(|error| format!("Could not open application: {error}").into());
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Reveal the selected app in the real Finder. GPUI can't initiate a native
@@ -367,14 +397,25 @@ impl AppDrawer {
 
     fn open_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(application) = self.selected_app(cx) {
-            self.launch_application(&application.launch, cx);
+            self.launch_application(application.launch, cx);
         }
     }
 
-    /// The right-click menu shared by grid tiles and list rows.
-    fn app_menu(pos: Point<Pixels>) -> rmac_ui::ContextMenu {
-        rmac_ui::ContextMenu::new(pos)
-            .item("Open", Box::new(OpenApp))
+    /// The right-click menu shared by grid tiles and list rows. Desktop-entry
+    /// actions keep their declared order and exact localized labels.
+    fn app_menu(&self, pos: Point<Pixels>, cx: &gpui::App) -> rmac_ui::ContextMenu {
+        let mut menu = rmac_ui::ContextMenu::new(pos).item("Open", Box::new(OpenApp));
+        if let Some(application) = self.selected_app(cx) {
+            for action in application.actions {
+                menu = menu.item(
+                    action.name,
+                    Box::new(LaunchDesktopAction {
+                        launch: action.launch,
+                    }),
+                );
+            }
+        }
+        menu.separator()
             .item("Show in Folder", Box::new(RevealInFinder))
     }
 
@@ -453,7 +494,7 @@ impl AppDrawer {
             )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = pos;
-                this.launch_application(&launch, cx);
+                this.launch_application(launch.clone(), cx);
             }))
             // Right-click selects this tile so the menu acts on it.
             .on_mouse_down(
@@ -500,7 +541,7 @@ impl AppDrawer {
             )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = pos;
-                this.launch_application(&launch, cx);
+                this.launch_application(launch.clone(), cx);
             }))
             .on_mouse_down(
                 MouseButton::Right,
@@ -617,7 +658,15 @@ impl Render for AppDrawer {
 
         let vis = self.visible_indices(cx);
         let sel = self.selected.min(vis.len().saturating_sub(1));
-        let catalog_error = self.catalog_error.clone();
+        let notice = if self.launching {
+            Some((SharedString::from("Opening application…"), false))
+        } else {
+            self.action_error
+                .clone()
+                .or_else(|| self.catalog_error.clone())
+                .map(|message| (message, true))
+        };
+        let context_menu = self.menu_at.map(|pos| self.app_menu(pos, cx));
 
         let body: gpui::AnyElement = if self.view == ViewMode::Grid {
             let tiles = vis
@@ -657,6 +706,9 @@ impl Render for AppDrawer {
             .on_action(cx.listener(|this, _: &MoveDown, _, cx| this.move_by(0, 1, cx)))
             .on_action(cx.listener(|this, _: &Launch, _, cx| this.launch_selected(cx)))
             .on_action(cx.listener(|this, _: &OpenApp, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, action: &LaunchDesktopAction, _, cx| {
+                this.launch_application(action.launch.clone(), cx)
+            }))
             .on_action(cx.listener(|this, _: &RevealInFinder, _, cx| this.reveal_selected(cx)))
             .on_action(
                 cx.listener(|this, _: &ClearSearch, window, cx| this.clear_search(window, cx)),
@@ -673,27 +725,42 @@ impl Render for AppDrawer {
             .bg(mac::window())
             .text_color(mac::text())
             .child(rmac_ui::title_bar("Applications"))
-            .when_some(catalog_error, |drawer, message| {
+            .when_some(notice, |drawer, (message, is_error)| {
                 drawer.child(
                     div()
-                        .id("catalog-error")
+                        .id("app-drawer-notice")
                         .h(px(34.0))
                         .flex_none()
                         .flex()
                         .items_center()
                         .gap_2()
                         .px_3()
-                        .bg(mac::error_background())
+                        .bg(if is_error {
+                            mac::error_background()
+                        } else {
+                            mac::control_fill()
+                        })
                         .border_b_1()
-                        .border_color(mac::error_border())
+                        .border_color(if is_error {
+                            mac::error_border()
+                        } else {
+                            mac::separator()
+                        })
                         .text_size(rmac_ui::text_px(12.0))
-                        .text_color(mac::danger())
-                        .cursor_pointer()
+                        .text_color(if is_error {
+                            mac::danger()
+                        } else {
+                            mac::text_secondary()
+                        })
+                        .when(is_error, |notice| notice.cursor_pointer())
                         .child(div().flex_1().child(message))
-                        .child("Dismiss")
+                        .when(is_error, |notice| notice.child("Dismiss"))
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.catalog_error = None;
-                            cx.notify();
+                            if !this.launching {
+                                this.catalog_error = None;
+                                this.action_error = None;
+                                cx.notify();
+                            }
                         })),
                 )
             })
@@ -724,9 +791,7 @@ impl Render for AppDrawer {
                     .pb_8()
                     .child(body),
             )
-            .when_some(self.menu_at, |el: Div, pos| {
-                el.child(Self::app_menu(pos).render())
-            })
+            .when_some(context_menu, |el: Div, menu| el.child(menu.render()))
     }
 }
 
@@ -761,11 +826,14 @@ fn scan_apps() -> (Vec<App>, Option<SharedString>) {
         .into_iter()
         .zip(categories)
         .map(|(application, category)| App {
+            id: application.id,
             name: application.name.into(),
             path: application.source,
             icon: application.icon,
             category,
+            source_categories: application.categories,
             launch: application.launch,
+            actions: application.actions,
         })
         .collect();
     (apps, None)

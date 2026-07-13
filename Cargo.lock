@@ -4904,7 +4904,11 @@ version = "0.1.0"
 name = "rmac-bluetooth"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "futures-util",
  "zbus",
+ "zeroize",
 ]
 
 [[package]]

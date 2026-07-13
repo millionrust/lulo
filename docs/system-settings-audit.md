@@ -9,7 +9,7 @@ equivalents rather than simulated.
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|
 | Wi-Fi | Real state, radio mutation, access-point scan, typed security, exact saved/open/Enhanced Open activation, masked WPA Personal/SAE password sheet, one-shot Secret Agent, cancellation, complete Known Networks inventory, confirmed exact-profile forgetting with active disconnect, coalesced live signals, owner-loss/restart recovery, bounded completion, and authoritative readback | NetworkManager D-Bus | Enterprise setup plus Linux signal/restart/permission/cancellation/wrong-secret/partial-delete evidence |
-| Bluetooth | Real adapter, discovery, and known-device connections | BlueZ D-Bus | Confirmation agent for new-device pairing and live signals |
+| Bluetooth | Real adapter and discovery state; exact-device connect/disconnect; one-transaction KeyboardDisplay agent for numeric comparison, PIN/passkey entry, just-works and service authorization; explicit reject/cancel and 60-second prompt timeout; post-pair trust plus authoritative `Paired`/`Trusted` verification; confirmed adapter-owned removal; coalesced live signals and BlueZ owner-loss/restart recovery | BlueZ ObjectManager, AgentManager1, Agent1, Device1, and Adapter1 D-Bus APIs | Ubuntu pairing matrix, timeout/rejection/cancel, remove/partial-failure, daemon-restart, keyboard, scale, and accessibility evidence |
 | Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
 | Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
@@ -65,6 +65,22 @@ owner loss preserves the last known-good state with a separate stream error,
 and reappearance guarantees a recovery read. The complete transaction and
 remaining F1 gates are recorded in
 [`wifi.md`](wifi.md).
+
+Bluetooth device rows retain BlueZ object paths only as opaque service
+identities. Before connect, cancel, pair, or remove, `rmac-bluetooth` re-reads
+ObjectManager and requires that the exact path still exposes `Device1` under a
+live `Adapter1`. New-device pairing registers a transaction-scoped
+`KeyboardDisplay` agent on the same system-bus connection used for `Pair`, and
+the agent refuses callbacks for any device other than the selected one. The
+sheet handles numeric comparison, legacy PIN, passkey entry, just-works
+authorization, service authorization, explicit rejection, cancellation, and a
+60-second user-response timeout. Success is shown only after BlueZ completes
+pairing, accepts `Trusted=true`, and a fresh snapshot reports both `Paired` and
+`Trusted`. Forgetting is confirmed and delegates disconnect plus pairing-data
+removal to the owning adapter's `RemoveDevice`; failures trigger a recovery
+snapshot. BlueZ signals are coalesced into full reads, while owner loss keeps
+last-known-good state and owner recovery forces a refresh. The exact contract
+and remaining F2 evidence are recorded in [`bluetooth.md`](bluetooth.md).
 
 General now exposes only About, the explicitly read-only Software Update status,
 and measured Storage. Device-continuity and media-receiver controls are hidden

@@ -557,6 +557,15 @@ fn wifi_stream_snapshot_is_current(
     !busy && !loading && captured_generation == current_generation
 }
 
+fn bluetooth_stream_snapshot_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    busy: bool,
+    loading: bool,
+) -> bool {
+    !busy && !loading && captured_generation == current_generation
+}
+
 struct WifiPasswordPrompt {
     network: rmac_network::WifiNetworkId,
     ssid: SharedString,
@@ -567,6 +576,27 @@ struct WifiPasswordPrompt {
 struct WifiForgetPrompt {
     network: rmac_network::WifiNetworkId,
     ssid: SharedString,
+}
+
+enum BluetoothPairingDisplay {
+    PinCode(String),
+    Passkey { passkey: u32, entered: u16 },
+}
+
+struct BluetoothPairingState {
+    device_id: String,
+    name: SharedString,
+    session: rmac_bluetooth::PairingSession,
+    prompt: Option<rmac_bluetooth::PairingPrompt>,
+    display: Option<BluetoothPairingDisplay>,
+    editor: Entity<InputState>,
+    validation_error: Option<SharedString>,
+    stopping: bool,
+}
+
+struct BluetoothForgetPrompt {
+    device_id: String,
+    name: SharedString,
 }
 
 struct Settings {
@@ -634,6 +664,7 @@ struct Settings {
     wifi_error: Option<SharedString>,
     wifi_stream_error: Option<SharedString>,
     bluetooth_error: Option<SharedString>,
+    bluetooth_stream_error: Option<SharedString>,
     network_error: Option<SharedString>,
     vpn_error: Option<SharedString>,
     audio_error: Option<SharedString>,
@@ -720,11 +751,15 @@ struct Settings {
     bluetooth_available: bool,
     bluetooth_loading: bool,
     bluetooth_busy: bool,
+    bluetooth_generation: u64,
     bluetooth_discovering: bool,
     bluetooth_adapter_name: Option<String>,
     bluetooth_on: bool,
     bt_discoverable: bool,
     bt_devices: Vec<rmac_bluetooth::Device>,
+    bluetooth_pairing: Option<BluetoothPairingState>,
+    bluetooth_forget_confirmation: Option<BluetoothForgetPrompt>,
+    bluetooth_forgetting: Option<String>,
 
     // Appearance
     host_appearance: rmac_appearance::Snapshot,
@@ -1310,6 +1345,68 @@ impl Settings {
         })
         .detach();
 
+        let (bluetooth_updates, bluetooth_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_bluetooth::watch(bluetooth_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = bluetooth_update_rx.recv().await {
+                match event {
+                    rmac_bluetooth::WatchEvent::Changed => {
+                        let generation = match this.update(cx, |this: &mut Settings, cx| {
+                            this.bluetooth_stream_error = None;
+                            cx.notify();
+                            (!this.bluetooth_busy && !this.bluetooth_loading)
+                                .then_some(this.bluetooth_generation)
+                        }) {
+                            Ok(generation) => generation,
+                            Err(_) => break,
+                        };
+                        let Some(generation) = generation else {
+                            continue;
+                        };
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_bluetooth::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if bluetooth_stream_snapshot_is_current(
+                                    generation,
+                                    this.bluetooth_generation,
+                                    this.bluetooth_busy,
+                                    this.bluetooth_loading,
+                                ) {
+                                    this.finish_bluetooth_stream_update(result);
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_bluetooth::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.bluetooth_stream_error = Some(
+                                    "Live Bluetooth updates are temporarily unavailable while BlueZ reconnects"
+                                        .into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+
         let (wifi_updates, wifi_update_rx) = async_channel::bounded(1);
         cx.background_executor()
             .spawn(async move {
@@ -1741,6 +1838,7 @@ impl Settings {
             wifi_error: None,
             wifi_stream_error: None,
             bluetooth_error: None,
+            bluetooth_stream_error: None,
             network_error: None,
             vpn_error: None,
             audio_error: None,
@@ -1819,11 +1917,15 @@ impl Settings {
             bluetooth_available: false,
             bluetooth_loading: true,
             bluetooth_busy: false,
+            bluetooth_generation: 0,
             bluetooth_discovering: false,
             bluetooth_adapter_name: None,
             bluetooth_on: false,
             bt_discoverable: false,
             bt_devices: Vec::new(),
+            bluetooth_pairing: None,
+            bluetooth_forget_confirmation: None,
+            bluetooth_forgetting: None,
 
             host_appearance: rmac_appearance::Snapshot::default(),
             theme: None,
@@ -4868,12 +4970,7 @@ impl Settings {
         self.bluetooth_busy = false;
         match result {
             Ok(snapshot) => {
-                self.bluetooth_available = snapshot.available;
-                self.bluetooth_on = snapshot.powered;
-                self.bt_discoverable = snapshot.discoverable;
-                self.bluetooth_discovering = snapshot.discovering;
-                self.bluetooth_adapter_name = snapshot.adapter_name;
-                self.bt_devices = snapshot.devices;
+                self.apply_bluetooth_snapshot(snapshot);
                 self.bluetooth_error = None;
             }
             Err(error) => {
@@ -4882,11 +4979,41 @@ impl Settings {
         }
     }
 
+    fn finish_bluetooth_stream_update(
+        &mut self,
+        result: std::result::Result<rmac_bluetooth::Snapshot, rmac_bluetooth::Error>,
+    ) {
+        match result {
+            Ok(snapshot) => {
+                self.apply_bluetooth_snapshot(snapshot);
+                self.bluetooth_stream_error = None;
+            }
+            Err(error) => {
+                self.bluetooth_stream_error =
+                    Some(format!("Could not refresh live Bluetooth state: {error}").into());
+            }
+        }
+    }
+
+    fn apply_bluetooth_snapshot(&mut self, snapshot: rmac_bluetooth::Snapshot) {
+        self.bluetooth_available = snapshot.available;
+        self.bluetooth_on = snapshot.powered;
+        self.bt_discoverable = snapshot.discoverable;
+        self.bluetooth_discovering = snapshot.discovering;
+        self.bluetooth_adapter_name = snapshot.adapter_name;
+        self.bt_devices = snapshot.devices;
+    }
+
+    fn begin_bluetooth_mutation(&mut self) {
+        self.bluetooth_generation = self.bluetooth_generation.wrapping_add(1);
+        self.bluetooth_busy = true;
+    }
+
     fn set_bluetooth_powered(&mut self, powered: bool, cx: &mut Context<Self>) {
         if self.bluetooth_busy || self.bluetooth_loading || !self.bluetooth_available {
             return;
         }
-        self.bluetooth_busy = true;
+        self.begin_bluetooth_mutation();
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -4908,7 +5035,7 @@ impl Settings {
         if self.bluetooth_busy || !self.bluetooth_available || !self.bluetooth_on {
             return;
         }
-        self.bluetooth_busy = true;
+        self.begin_bluetooth_mutation();
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -4930,7 +5057,7 @@ impl Settings {
         if self.bluetooth_busy || !self.bluetooth_available || !self.bluetooth_on {
             return;
         }
-        self.bluetooth_busy = true;
+        self.begin_bluetooth_mutation();
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -4965,7 +5092,7 @@ impl Settings {
         if self.bluetooth_busy {
             return;
         }
-        self.bluetooth_busy = true;
+        self.begin_bluetooth_mutation();
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -4977,6 +5104,331 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_bluetooth_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn begin_bluetooth_pairing(
+        &mut self,
+        device_id: String,
+        name: SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.bluetooth_busy
+            || self.bluetooth_loading
+            || !self.bluetooth_available
+            || !self.bluetooth_on
+            || !self
+                .bt_devices
+                .iter()
+                .any(|device| device.id == device_id && !device.paired)
+        {
+            return;
+        }
+
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .clean_on_escape()
+                .placeholder("PIN or passkey")
+        });
+        let editor_focus = editor.read(cx).focus_handle(cx);
+        let (session, events) = rmac_bluetooth::PairingSession::new();
+        self.begin_bluetooth_mutation();
+        let pairing_generation = self.bluetooth_generation;
+        self.bluetooth_pairing = Some(BluetoothPairingState {
+            device_id: device_id.clone(),
+            name,
+            session: session.clone(),
+            prompt: None,
+            display: None,
+            editor,
+            validation_error: None,
+            stopping: false,
+        });
+        self.bluetooth_error = None;
+        window.focus(&editor_focus);
+        cx.notify();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = events.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        if !this.bluetooth_busy || this.bluetooth_generation != pairing_generation {
+                            return;
+                        }
+                        let Some(pairing) = &mut this.bluetooth_pairing else {
+                            return;
+                        };
+                        match event {
+                            rmac_bluetooth::PairingEvent::Prompt(prompt) => {
+                                pairing.prompt = Some(prompt);
+                                pairing.display = None;
+                                pairing.validation_error = None;
+                            }
+                            rmac_bluetooth::PairingEvent::DisplayPinCode { pin_code } => {
+                                pairing.prompt = None;
+                                pairing.display = Some(BluetoothPairingDisplay::PinCode(pin_code));
+                                pairing.validation_error = None;
+                            }
+                            rmac_bluetooth::PairingEvent::DisplayPasskey { passkey, entered } => {
+                                pairing.prompt = None;
+                                pairing.display =
+                                    Some(BluetoothPairingDisplay::Passkey { passkey, entered });
+                                pairing.validation_error = None;
+                            }
+                            rmac_bluetooth::PairingEvent::TimedOut => {
+                                pairing.prompt = None;
+                                pairing.display = None;
+                                pairing.validation_error =
+                                    Some("Pairing confirmation timed out.".into());
+                                pairing.stopping = true;
+                            }
+                            rmac_bluetooth::PairingEvent::Canceled => {
+                                pairing.prompt = None;
+                                pairing.display = None;
+                                pairing.validation_error = None;
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery_snapshot) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result = rmac_bluetooth::pair(&device_id, &session);
+                    let recovery_snapshot = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_bluetooth::snapshot().ok());
+                    (result, recovery_snapshot)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_bluetooth_pairing(result, recovery_snapshot);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_bluetooth_pairing(
+        &mut self,
+        result: std::result::Result<rmac_bluetooth::Snapshot, rmac_bluetooth::Error>,
+        recovery_snapshot: Option<rmac_bluetooth::Snapshot>,
+    ) {
+        self.bluetooth_loading = false;
+        self.bluetooth_busy = false;
+        self.bluetooth_pairing = None;
+        match result {
+            Ok(snapshot) => {
+                self.apply_bluetooth_snapshot(snapshot);
+                self.bluetooth_error = None;
+            }
+            Err(error) => {
+                if let Some(snapshot) = recovery_snapshot {
+                    self.apply_bluetooth_snapshot(snapshot);
+                }
+                if error.is_canceled() || error.is_rejected() {
+                    self.bluetooth_error = None;
+                } else {
+                    self.bluetooth_error =
+                        Some(format!("Could not pair Bluetooth device: {error}").into());
+                }
+            }
+        }
+    }
+
+    fn submit_bluetooth_pairing_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pairing) = &self.bluetooth_pairing else {
+            return;
+        };
+        let Some(prompt) = pairing.prompt.clone() else {
+            return;
+        };
+        let submitted = match prompt.kind {
+            rmac_bluetooth::PairingPromptKind::EnterPinCode => {
+                let value = pairing.editor.read(cx).value().to_string();
+                match rmac_bluetooth::PairingPinCode::new(value) {
+                    Ok(value) => pairing.session.submit_pin_code(prompt.id, value),
+                    Err(error) => {
+                        if let Some(pairing) = &mut self.bluetooth_pairing {
+                            pairing.validation_error = Some(error.to_string().into());
+                        }
+                        cx.notify();
+                        return;
+                    }
+                }
+            }
+            rmac_bluetooth::PairingPromptKind::EnterPasskey => {
+                let value = pairing.editor.read(cx).value().to_string();
+                match rmac_bluetooth::PairingPasskey::new(value) {
+                    Ok(value) => pairing.session.submit_passkey(prompt.id, value),
+                    Err(error) => {
+                        if let Some(pairing) = &mut self.bluetooth_pairing {
+                            pairing.validation_error = Some(error.to_string().into());
+                        }
+                        cx.notify();
+                        return;
+                    }
+                }
+            }
+            _ => pairing.session.accept(prompt.id),
+        };
+
+        if let Some(pairing) = &mut self.bluetooth_pairing {
+            if submitted {
+                let empty_editor = cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .clean_on_escape()
+                        .placeholder("PIN or passkey")
+                });
+                let focus = empty_editor.read(cx).focus_handle(cx);
+                pairing.editor = empty_editor;
+                pairing.prompt = None;
+                pairing.display = None;
+                pairing.validation_error = None;
+                window.focus(&focus);
+            } else {
+                pairing.validation_error = Some("This pairing request has expired.".into());
+            }
+        }
+        cx.notify();
+    }
+
+    fn reject_bluetooth_pairing_prompt(&mut self, cx: &mut Context<Self>) {
+        let Some(pairing) = &mut self.bluetooth_pairing else {
+            return;
+        };
+        let Some(prompt) = pairing.prompt.take() else {
+            return;
+        };
+        if pairing.session.reject(prompt.id) {
+            pairing.display = None;
+            pairing.validation_error = None;
+            pairing.stopping = true;
+        } else {
+            pairing.validation_error = Some("This pairing request has expired.".into());
+        }
+        cx.notify();
+    }
+
+    fn cancel_bluetooth_pairing(&mut self, cx: &mut Context<Self>) {
+        let Some(pairing) = &self.bluetooth_pairing else {
+            return;
+        };
+        if pairing.stopping {
+            return;
+        }
+        pairing.session.cancel();
+        let device_id = pairing.device_id.clone();
+        if let Some(pairing) = &mut self.bluetooth_pairing {
+            pairing.prompt = None;
+            pairing.display = None;
+            pairing.validation_error = None;
+            pairing.stopping = true;
+        }
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_bluetooth::cancel_pairing(&device_id);
+            })
+            .detach();
+        cx.notify();
+    }
+
+    fn request_bluetooth_forget(
+        &mut self,
+        device_id: String,
+        name: SharedString,
+        cx: &mut Context<Self>,
+    ) {
+        if self.bluetooth_busy
+            || self.bluetooth_loading
+            || !self
+                .bt_devices
+                .iter()
+                .any(|device| device.id == device_id && device.paired)
+        {
+            return;
+        }
+        self.bluetooth_forget_confirmation = Some(BluetoothForgetPrompt { device_id, name });
+        self.bluetooth_error = None;
+        cx.notify();
+    }
+
+    fn cancel_bluetooth_forget(&mut self, cx: &mut Context<Self>) {
+        if !self.bluetooth_busy {
+            self.bluetooth_forget_confirmation = None;
+            cx.notify();
+        }
+    }
+
+    fn confirm_bluetooth_forget(&mut self, cx: &mut Context<Self>) {
+        if self.bluetooth_busy || self.bluetooth_loading {
+            return;
+        }
+        let Some(device_id) = self
+            .bluetooth_forget_confirmation
+            .as_ref()
+            .map(|prompt| prompt.device_id.clone())
+        else {
+            return;
+        };
+        if !self
+            .bt_devices
+            .iter()
+            .any(|device| device.id == device_id && device.paired)
+        {
+            self.bluetooth_forget_confirmation = None;
+            self.bluetooth_error = Some("The Bluetooth device is no longer paired.".into());
+            cx.notify();
+            return;
+        }
+
+        self.begin_bluetooth_mutation();
+        self.bluetooth_forgetting = Some(device_id.clone());
+        self.bluetooth_forget_confirmation = None;
+        self.bluetooth_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery_snapshot) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result = rmac_bluetooth::remove_device(&device_id);
+                    let recovery_snapshot = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_bluetooth::snapshot().ok());
+                    (result, recovery_snapshot)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.bluetooth_loading = false;
+                this.bluetooth_busy = false;
+                this.bluetooth_forgetting = None;
+                match result {
+                    Ok(snapshot) => {
+                        this.apply_bluetooth_snapshot(snapshot);
+                        this.bluetooth_error = None;
+                    }
+                    Err(error) => {
+                        if let Some(snapshot) = recovery_snapshot {
+                            this.apply_bluetooth_snapshot(snapshot);
+                        }
+                        this.bluetooth_error =
+                            Some(format!("Could not forget Bluetooth device: {error}").into());
+                    }
+                }
                 cx.notify();
             });
         })
@@ -6733,7 +7185,14 @@ impl Settings {
                 .bt_devices
                 .iter()
                 .filter(|device| device.connected)
-                .map(|device| bluetooth_device_row(&view, device))
+                .map(|device| {
+                    bluetooth_device_row(
+                        &view,
+                        device,
+                        self.bluetooth_busy,
+                        self.bluetooth_forgetting.as_deref() == Some(device.id.as_str()),
+                    )
+                })
                 .collect();
             if !connected.is_empty() {
                 cards.push(section_header("Connected"));
@@ -6744,7 +7203,14 @@ impl Settings {
                 .bt_devices
                 .iter()
                 .filter(|device| device.paired && !device.connected)
-                .map(|device| bluetooth_device_row(&view, device))
+                .map(|device| {
+                    bluetooth_device_row(
+                        &view,
+                        device,
+                        self.bluetooth_busy,
+                        self.bluetooth_forgetting.as_deref() == Some(device.id.as_str()),
+                    )
+                })
                 .collect();
             if !known.is_empty() {
                 cards.push(section_header("Known Devices"));
@@ -6755,7 +7221,7 @@ impl Settings {
                 .bt_devices
                 .iter()
                 .filter(|device| !device.paired && !device.connected)
-                .map(|device| bluetooth_device_row(&view, device))
+                .map(|device| bluetooth_device_row(&view, device, self.bluetooth_busy, false))
                 .collect();
             if !nearby.is_empty() {
                 cards.push(section_header("Nearby Devices"));
@@ -6767,10 +7233,221 @@ impl Settings {
                 ));
             }
             cards.push(note_card(
-                "Power, discovery, and known-device connections are live. Pairing a new device requires the confirmation-agent flow and is not enabled yet.",
+                "Pairing uses a one-transaction confirmation agent. Confirm that displayed codes match; paired devices become trusted only after BlueZ reports success.",
             ));
         }
         self.pane(cards)
+    }
+
+    fn render_bluetooth_pairing_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let pairing = self.bluetooth_pairing.as_ref()?;
+        let prompt = pairing.prompt.as_ref();
+        let requires_input = prompt.is_some_and(|prompt| {
+            matches!(
+                prompt.kind,
+                rmac_bluetooth::PairingPromptKind::EnterPinCode
+                    | rmac_bluetooth::PairingPromptKind::EnterPasskey
+            )
+        });
+        let (instruction, code, primary_label) = if let Some(prompt) = prompt {
+            match &prompt.kind {
+                rmac_bluetooth::PairingPromptKind::ConfirmPasskey { passkey } => (
+                    "Make sure this code is also shown on the Bluetooth device.",
+                    Some(format!("{passkey:06}")),
+                    "Pair",
+                ),
+                rmac_bluetooth::PairingPromptKind::EnterPinCode => (
+                    "Enter the 1–16 character PIN supplied by the device.",
+                    None,
+                    "Continue",
+                ),
+                rmac_bluetooth::PairingPromptKind::EnterPasskey => (
+                    "Enter the six-digit passkey shown on the device.",
+                    None,
+                    "Continue",
+                ),
+                rmac_bluetooth::PairingPromptKind::AuthorizePairing => (
+                    "Allow this device to pair with this computer?",
+                    None,
+                    "Pair",
+                ),
+                rmac_bluetooth::PairingPromptKind::AuthorizeService { .. } => (
+                    "Allow this paired device to use its requested Bluetooth service?",
+                    None,
+                    "Allow",
+                ),
+            }
+        } else if let Some(display) = &pairing.display {
+            match display {
+                BluetoothPairingDisplay::PinCode(pin_code) => (
+                    "Type this code on the Bluetooth device, then finish there.",
+                    Some(pin_code.clone()),
+                    "",
+                ),
+                BluetoothPairingDisplay::Passkey { passkey, entered } => (
+                    "Type this code on the Bluetooth device, then finish there.",
+                    Some(format!("{passkey:06} · {entered}/6 entered")),
+                    "",
+                ),
+            }
+        } else {
+            ("Keep the device nearby and ready to pair.", None, "")
+        };
+
+        let content = div()
+            .w(px(400.0))
+            .v_flex()
+            .gap_4()
+            .p_5()
+            .rounded(px(14.0))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(format!("Connect to “{}”?", pairing.name)),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child(instruction),
+                    ),
+            )
+            .when_some(code, |dialog, code| {
+                dialog.child(
+                    div()
+                        .w_full()
+                        .text_center()
+                        .text_size(rmac_ui::text_px(25.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(label())
+                        .child(code),
+                )
+            })
+            .when(requires_input, |dialog| {
+                dialog.child(TextField::new(&pairing.editor).w_full())
+            })
+            .when_some(pairing.validation_error.clone(), |dialog, error| {
+                dialog.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::danger())
+                        .child(error),
+                )
+            })
+            .when(prompt.is_none(), |dialog| {
+                dialog.child(Progress::indeterminate().label(if pairing.stopping {
+                    "Ending pairing…"
+                } else {
+                    "Pairing securely…"
+                }))
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "bluetooth-pairing-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .disabled(pairing.stopping)
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_bluetooth_pairing(cx))),
+                    )
+                    .when(prompt.is_some(), |buttons| {
+                        buttons
+                            .child(
+                                rmac_ui::dialog_button(
+                                    "bluetooth-pairing-reject",
+                                    "Don’t Pair",
+                                    rmac_ui::DialogButtonKind::Normal,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| this.reject_bluetooth_pairing_prompt(cx),
+                                )),
+                            )
+                            .child(
+                                rmac_ui::dialog_button(
+                                    "bluetooth-pairing-submit",
+                                    primary_label,
+                                    rmac_ui::DialogButtonKind::Primary,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
+                                        this.submit_bluetooth_pairing_prompt(window, cx)
+                                    },
+                                )),
+                            )
+                    }),
+            );
+
+        Some(
+            rmac_ui::dialog("bluetooth-pairing-dialog", content)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.cancel_bluetooth_pairing(cx);
+                        }
+                        "enter"
+                            if this
+                                .bluetooth_pairing
+                                .as_ref()
+                                .is_some_and(|pairing| pairing.prompt.is_some()) =>
+                        {
+                            cx.stop_propagation();
+                            this.submit_bluetooth_pairing_prompt(window, cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn render_bluetooth_forget_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let prompt = self.bluetooth_forget_confirmation.as_ref()?;
+        Some(
+            rmac_ui::alert(
+                "Forget This Device?",
+                format!(
+                    "This computer will remove pairing information for “{}” and disconnect it. You will need to pair it again to reconnect.",
+                    prompt.name
+                ),
+                vec![
+                    rmac_ui::dialog_button(
+                        "bluetooth-forget-cancel",
+                        "Cancel",
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.cancel_bluetooth_forget(cx)
+                    }))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "bluetooth-forget-confirm",
+                        "Forget",
+                        rmac_ui::DialogButtonKind::Destructive,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.confirm_bluetooth_forget(cx)
+                    }))
+                    .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
     }
 
     // ---- General ------------------------------------------------------
@@ -11418,6 +12095,7 @@ impl Render for Settings {
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.wifi_stream_error.clone())
             .or_else(|| self.bluetooth_error.clone())
+            .or_else(|| self.bluetooth_stream_error.clone())
             .or_else(|| self.network_error.clone())
             .or_else(|| self.vpn_error.clone())
             .or_else(|| self.audio_error.clone())
@@ -11434,6 +12112,8 @@ impl Render for Settings {
             .or_else(|| self.privacy_stream_error.clone());
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
+        let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
+        let bluetooth_forget_dialog = self.render_bluetooth_forget_dialog(cx);
         div()
             .size_full()
             .v_flex()
@@ -11443,15 +12123,23 @@ impl Render for Settings {
                 if event.keystroke.key == "escape" && this.wifi_forget_confirmation.is_some() {
                     cx.stop_propagation();
                     this.cancel_wifi_forget(cx);
+                } else if event.keystroke.key == "escape"
+                    && this.bluetooth_forget_confirmation.is_some()
+                {
+                    cx.stop_propagation();
+                    this.cancel_bluetooth_forget(cx);
                 }
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, _| {
-                if this.wifi_forgetting.is_some() {
+                if this.wifi_forgetting.is_some() || this.bluetooth_forgetting.is_some() {
                     return;
                 }
                 if let Some(cancellation) = &this.wifi_cancellation {
                     cancellation.cancel();
+                }
+                if let Some(pairing) = &this.bluetooth_pairing {
+                    pairing.session.cancel();
                 }
                 window.remove_window();
             }))
@@ -11480,6 +12168,7 @@ impl Render for Settings {
                             this.wifi_error = None;
                             this.wifi_stream_error = None;
                             this.bluetooth_error = None;
+                            this.bluetooth_stream_error = None;
                             this.network_error = None;
                             this.vpn_error = None;
                             this.audio_error = None;
@@ -11507,6 +12196,8 @@ impl Render for Settings {
             )
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))
+            .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))
+            .when_some(bluetooth_forget_dialog, |root, dialog| root.child(dialog))
     }
 }
 
@@ -12019,23 +12710,43 @@ fn focus_time(minute: u16) -> String {
     format!("{hour}:{minute:02} {suffix}")
 }
 
-fn bluetooth_device_row(view: &Entity<Settings>, device: &rmac_bluetooth::Device) -> AnyElement {
-    let subtitle = match (device.kind.is_empty(), device.address.is_empty()) {
-        (false, false) => Some(format!("{} · {}", device.kind, device.address).into()),
-        (false, true) => Some(device.kind.clone().into()),
-        (true, false) => Some(device.address.clone().into()),
-        (true, true) => None,
-    };
+fn bluetooth_device_row(
+    view: &Entity<Settings>,
+    device: &rmac_bluetooth::Device,
+    busy: bool,
+    forgetting: bool,
+) -> AnyElement {
+    let mut details = Vec::new();
+    if !device.kind.is_empty() {
+        details.push(device.kind.clone());
+    }
+    if !device.address.is_empty() {
+        details.push(device.address.clone());
+    }
+    if device.paired {
+        details.push(if device.trusted {
+            "Trusted".into()
+        } else {
+            "Not trusted".into()
+        });
+    }
+    let subtitle = (!details.is_empty()).then(|| details.join(" · ").into());
+    let connect_id = device.id.clone();
+    let pair_id = device.id.clone();
+    let pair_name = SharedString::from(device.name.clone());
+    let connect = !device.connected;
+    let connect_view = view.clone();
+    let pair_view = view.clone();
+    let forget_id = device.id.clone();
+    let forget_name = SharedString::from(device.name.clone());
+    let forget_view = view.clone();
     let action = if device.connected {
         "Disconnect"
     } else if device.paired {
         "Connect"
     } else {
-        "Not Paired"
+        "Pair"
     };
-    let device_id = device.id.clone();
-    let connect = !device.connected;
-    let action_view = view.clone();
     row_base()
         .child(tile(
             "icons/bluetooth.svg",
@@ -12049,27 +12760,60 @@ fn bluetooth_device_row(view: &Entity<Settings>, device: &rmac_bluetooth::Device
         .child(text_block(device.name.clone().into(), subtitle))
         .child(
             div()
-                .id(SharedString::from(format!("bluetooth-device-{device_id}")))
-                .px_2()
-                .py_1()
-                .rounded(px(6.0))
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(if device.paired { accent() } else { secondary() })
-                .when(device.paired, |element| {
-                    element
-                        .cursor_pointer()
-                        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                        .on_click(move |_, _, cx| {
-                            action_view.update(cx, |settings, cx| {
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Button::new(
+                        SharedString::from(format!("bluetooth-device-action-{connect_id}")),
+                        action,
+                    )
+                    .xsmall()
+                    .disabled(busy)
+                    .when(device.paired, |button| {
+                        button.on_click(move |_, _, cx| {
+                            connect_view.update(cx, |settings, cx| {
                                 settings.set_bluetooth_device_connected(
-                                    device_id.clone(),
+                                    connect_id.clone(),
                                     connect,
                                     cx,
                                 );
                             });
                         })
-                })
-                .child(action),
+                    })
+                    .when(!device.paired, |button| {
+                        button.on_click(move |_, window, cx| {
+                            pair_view.update(cx, |settings, cx| {
+                                settings.begin_bluetooth_pairing(
+                                    pair_id.clone(),
+                                    pair_name.clone(),
+                                    window,
+                                    cx,
+                                );
+                            });
+                        })
+                    }),
+                )
+                .when(device.paired, |actions| {
+                    actions.child(
+                        Button::new(
+                            SharedString::from(format!("bluetooth-device-forget-{forget_id}")),
+                            "Forget…",
+                        )
+                        .xsmall()
+                        .busy(forgetting)
+                        .disabled(busy)
+                        .on_click(move |_, _, cx| {
+                            forget_view.update(cx, |settings, cx| {
+                                settings.request_bluetooth_forget(
+                                    forget_id.clone(),
+                                    forget_name.clone(),
+                                    cx,
+                                );
+                            });
+                        }),
+                    )
+                }),
         )
         .into_any_element()
 }
@@ -13009,9 +13753,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        categories, category_has_dedicated_renderer, category_name_for_pane_id, category_position,
-        composite_wallpaper_pixel, notification_policy_with, render_wallpaper_preview,
-        wallpaper_selection, wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
+        bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
+        category_name_for_pane_id, category_position, composite_wallpaper_pixel,
+        notification_policy_with, render_wallpaper_preview, wallpaper_selection,
+        wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
         ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
         WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
@@ -13030,6 +13775,14 @@ mod tests {
         assert!(!wifi_stream_snapshot_is_current(6, 7, false, false));
         assert!(!wifi_stream_snapshot_is_current(7, 7, true, false));
         assert!(!wifi_stream_snapshot_is_current(7, 7, false, true));
+    }
+
+    #[test]
+    fn bluetooth_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(bluetooth_stream_snapshot_is_current(11, 11, false, false));
+        assert!(!bluetooth_stream_snapshot_is_current(10, 11, false, false));
+        assert!(!bluetooth_stream_snapshot_is_current(11, 11, true, false));
+        assert!(!bluetooth_stream_snapshot_is_current(11, 11, false, true));
     }
 
     #[test]

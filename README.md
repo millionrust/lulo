@@ -48,7 +48,8 @@ Shared crates:
 - `rmac-dock` — pinned/running app grouping, output scope, and activation policy.
 - `rmac-dock-runtime` — coherent live catalog, settings, niri, and hotplug state.
 - `rmac-dock-system` — safe launch, niri window actions, and durable Dock pins.
-- `rmac-bluetooth` — BlueZ/macOS Bluetooth state, discovery, and device control.
+- `rmac-bluetooth` — BlueZ/macOS Bluetooth state, live discovery, secure pairing,
+  trust, and device control.
 - `rmac-portal` — Linux desktop-portal open/reveal operations with platform fallbacks.
 - `rmac-places` — safe XDG Downloads resolution and typed Trash state.
 - `rmac-places-system` — filesystem/portal places and confirmed multi-trash operations.

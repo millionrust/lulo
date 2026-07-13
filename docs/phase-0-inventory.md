@@ -122,10 +122,12 @@ separately. The complete pane-to-service contract is tracked in
 `docs/system-settings-audit.md` and `docs/wifi.md`.
 
 `rmac-bluetooth` backs the Bluetooth pane through BlueZ's D-Bus ObjectManager
-on Linux. Adapter power/discoverability, bounded discovery, and known-device
-connect/disconnect are real asynchronous operations with independent errors;
-macOS keeps its read-only `system_profiler` development adapter. New-device
-pairing remains gated on a confirmation-capable BlueZ agent.
+on Linux. Adapter power/discoverability, bounded discovery, exact-device
+connect/disconnect, secure transaction-scoped pairing, trust readback, confirmed
+device removal, and coalesced live/restart updates are real asynchronous
+operations with independent errors; macOS keeps its read-only `system_profiler`
+development adapter. Reference-PC pairing and accessibility evidence remains
+pending.
 
 ### Text Editor
 

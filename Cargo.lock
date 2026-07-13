@@ -5428,6 +5428,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "image",
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-apps",
@@ -5465,6 +5466,9 @@ dependencies = [
  "rmac-ui",
  "rmac-updates",
  "rmac-updates-linux",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-system",
  "rust-embed",
 ]
 

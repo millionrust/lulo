@@ -90,6 +90,15 @@ then atomically import and apply one whole-desktop Fill choice. Remote fetching
 and lock-screen/both requests fail until their real authorities exist. The
 backend and installer integration remain pending.
 
-The Wayland background layer surface and executable, portal backend, System
-Settings previews, and Linux hotplug/frame-time evidence remain pending. D9 is
-therefore not complete.
+System Settings now reads this authority, offers default and stable-output
+overrides, and follows the direct niri output stream so unplugged choices remain
+explicit and reappear by ID. Its local-file chooser is portal-mediated, and a
+choice must pass the same bounded magic-byte, size, dimension, and decode gates
+before persistence. The preview uses the runtime layout contract for Fill, Fit,
+Stretch, Center, and Tile, and mutations reread authority plus retain one-step
+wallpaper rollback. It keeps one exact selected-file watcher alive, invalidates
+stale generations on target/settings changes, and regenerates through the same
+bounded decoder when the file is replaced or edited.
+
+The Wayland background layer surface and executable, portal backend, and Linux
+hotplug/frame-time evidence remain pending. D9 is therefore not complete.

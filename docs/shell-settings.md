@@ -78,6 +78,12 @@ then rereads the authority before updating the UI. A one-step rollback restores
 only the previous Dock policy on top of the latest unrelated shell settings.
 The pane consumes the direct niri event stream separately for live enabled-
 output capability; it never infers output availability from the settings file.
+The Wallpaper pane shares that transaction and stream rather than introducing
+a second settings file. Output edits clone the current default only when an
+override is first changed, removing an override restores inheritance, and a
+rollback replaces only wallpaper policy on top of the latest unrelated shell
+settings. Local choices enter through the desktop file chooser and must pass
+the bounded wallpaper decoder before the path can be committed.
 
 Tests cover v3 round trips, v1/v2 migration/rewrite, unknown fields and versions,
 corrupt-primary recovery, validation, watcher filtering, and injected primary

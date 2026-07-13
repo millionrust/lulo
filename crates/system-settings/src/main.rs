@@ -15,8 +15,9 @@ use std::time::Duration;
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
     AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result,
-    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Window,
+    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ObjectFit, ParentElement,
+    Render, Result, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
+    StyledImage as _, Svg, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_ui::{
@@ -168,16 +169,67 @@ enum ShellSettingsStreamUpdate {
     Unavailable(String),
 }
 
-enum DockMutation {
-    Change(DockChange),
-    Restore(rmac_shell_settings::DockSettings),
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum WallpaperTarget {
+    Default,
+    Output(String),
 }
 
-impl DockMutation {
+#[derive(Clone, Debug, PartialEq)]
+enum WallpaperChange {
+    Source(Option<String>),
+    Fit(rmac_shell_settings::WallpaperFit),
+    UseDefault,
+}
+
+impl WallpaperChange {
+    fn apply(
+        self,
+        target: &WallpaperTarget,
+        wallpaper: &mut rmac_shell_settings::WallpaperSettings,
+    ) {
+        if matches!(self, Self::UseDefault) {
+            if let WallpaperTarget::Output(output) = target {
+                wallpaper.per_output.remove(output);
+            }
+            return;
+        }
+
+        let default = wallpaper.default.clone();
+        let selection = match target {
+            WallpaperTarget::Default => &mut wallpaper.default,
+            WallpaperTarget::Output(output) => wallpaper
+                .per_output
+                .entry(output.clone())
+                .or_insert(default),
+        };
+        match self {
+            Self::Source(source) => selection.source = source,
+            Self::Fit(fit) => selection.fit = fit,
+            Self::UseDefault => unreachable!("handled before selecting a wallpaper target"),
+        }
+    }
+}
+
+enum ShellSettingsMutation {
+    Change(DockChange),
+    Restore(rmac_shell_settings::DockSettings),
+    Wallpaper {
+        target: WallpaperTarget,
+        change: WallpaperChange,
+    },
+    RestoreWallpaper(rmac_shell_settings::WallpaperSettings),
+}
+
+impl ShellSettingsMutation {
     fn apply(self, settings: &mut rmac_shell_settings::ShellSettings) {
         match self {
             Self::Change(change) => change.apply(&mut settings.dock),
             Self::Restore(dock) => settings.dock = dock,
+            Self::Wallpaper { target, change } => {
+                change.apply(&target, &mut settings.wallpaper);
+            }
+            Self::RestoreWallpaper(wallpaper) => settings.wallpaper = wallpaper,
         }
     }
 }
@@ -246,8 +298,8 @@ async fn watch_shell_settings(sender: async_channel::Sender<ShellSettingsStreamU
     }
 }
 
-fn persist_dock_mutation(
-    mutation: DockMutation,
+fn persist_shell_settings_mutation(
+    mutation: ShellSettingsMutation,
 ) -> std::result::Result<rmac_shell_settings::Snapshot, rmac_shell_settings::Error> {
     let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
     let mut settings = store.load()?.settings;
@@ -256,6 +308,142 @@ fn persist_dock_mutation(
     // Read the complete document back so UI state is accepted only from the
     // same authority every shell process consumes.
     store.load()
+}
+
+const WALLPAPER_PREVIEW_WIDTH: u32 = 480;
+const WALLPAPER_PREVIEW_HEIGHT: u32 = 270;
+
+fn wallpaper_selection(
+    wallpaper: &rmac_shell_settings::WallpaperSettings,
+    target: &WallpaperTarget,
+) -> (rmac_shell_settings::WallpaperSelection, bool) {
+    match target {
+        WallpaperTarget::Default => (wallpaper.default.clone(), true),
+        WallpaperTarget::Output(output) => wallpaper.per_output.get(output).cloned().map_or_else(
+            || (wallpaper.default.clone(), false),
+            |selection| (selection, true),
+        ),
+    }
+}
+
+fn wallpaper_source_name(selection: &rmac_shell_settings::WallpaperSelection) -> SharedString {
+    match rmac_wallpaper::parse_source(selection.source.as_deref()) {
+        Ok(rmac_wallpaper::Source::BuiltIn(id)) => id.metadata().title.into(),
+        Ok(rmac_wallpaper::Source::File(path)) => path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Local image".into())
+            .into(),
+        Err(_) => "Invalid saved source".into(),
+    }
+}
+
+fn composite_wallpaper_pixel(source: [u8; 4], background: [u8; 4]) -> [u8; 4] {
+    let alpha = u32::from(source[3]);
+    let blend = |channel: usize| {
+        ((u32::from(source[channel]) * alpha + u32::from(background[channel]) * (255 - alpha))
+            / 255) as u8
+    };
+    [blend(0), blend(1), blend(2), 255]
+}
+
+fn render_wallpaper_preview(
+    selection: &rmac_shell_settings::WallpaperSelection,
+) -> std::result::Result<std::sync::Arc<gpui::RenderImage>, String> {
+    let source = rmac_wallpaper::parse_source(selection.source.as_deref())
+        .map_err(|_| "the saved wallpaper source is invalid".to_owned())?;
+    let resolved = rmac_wallpaper_system::resolve(&source).map_err(|error| error.to_string())?;
+    let decoded = rmac_wallpaper_image::Cache::new(0)
+        .get_or_decode(
+            resolved,
+            rmac_compositor::PhysicalSize {
+                width: WALLPAPER_PREVIEW_WIDTH,
+                height: WALLPAPER_PREVIEW_HEIGHT,
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    let layout = rmac_wallpaper::layout(
+        selection.fit,
+        decoded.physical_size(),
+        rmac_compositor::LogicalSize {
+            width: f64::from(WALLPAPER_PREVIEW_WIDTH),
+            height: f64::from(WALLPAPER_PREVIEW_HEIGHT),
+        },
+        1.0,
+    )
+    .map_err(|_| "the wallpaper fit could not be previewed".to_owned())?;
+
+    let mut bgra = Vec::with_capacity(
+        usize::try_from(WALLPAPER_PREVIEW_WIDTH * WALLPAPER_PREVIEW_HEIGHT * 4)
+            .expect("fixed wallpaper preview size fits usize"),
+    );
+    let destination = layout.destination;
+    for y in 0..WALLPAPER_PREVIEW_HEIGHT {
+        for x in 0..WALLPAPER_PREVIEW_WIDTH {
+            let sample = if layout.tiled {
+                Some((x % decoded.width, y % decoded.height))
+            } else {
+                let px = f64::from(x) + 0.5;
+                let py = f64::from(y) + 0.5;
+                let inside = px >= destination.x
+                    && py >= destination.y
+                    && px < destination.x + destination.width
+                    && py < destination.y + destination.height;
+                inside.then(|| {
+                    let source_x = ((px - destination.x) / destination.width
+                        * f64::from(decoded.width))
+                    .floor()
+                    .clamp(0.0, f64::from(decoded.width - 1))
+                        as u32;
+                    let source_y = ((py - destination.y) / destination.height
+                        * f64::from(decoded.height))
+                    .floor()
+                    .clamp(0.0, f64::from(decoded.height - 1))
+                        as u32;
+                    (source_x, source_y)
+                })
+            };
+            let background = [30_u8, 30, 32, 255];
+            let rgba = sample.map_or(background, |(source_x, source_y)| {
+                let index = usize::try_from(
+                    (u64::from(source_y) * u64::from(decoded.width) + u64::from(source_x)) * 4,
+                )
+                .expect("bounded decoded image index fits usize");
+                composite_wallpaper_pixel(
+                    decoded.rgba[index..index + 4]
+                        .try_into()
+                        .expect("decoded wallpaper pixel has four channels"),
+                    background,
+                )
+            });
+            // GPUI's RenderImage upload path consumes BGRA pixels.
+            bgra.extend_from_slice(&[rgba[2], rgba[1], rgba[0], rgba[3]]);
+        }
+    }
+    let buffer =
+        image::RgbaImage::from_raw(WALLPAPER_PREVIEW_WIDTH, WALLPAPER_PREVIEW_HEIGHT, bgra)
+            .ok_or_else(|| "the wallpaper preview buffer was invalid".to_owned())?;
+    Ok(std::sync::Arc::new(gpui::RenderImage::new(vec![
+        image::Frame::new(buffer),
+    ])))
+}
+
+fn validate_wallpaper_choice(
+    path: PathBuf,
+    fit: rmac_shell_settings::WallpaperFit,
+) -> std::result::Result<String, String> {
+    let source = path
+        .to_str()
+        .ok_or_else(|| "The selected wallpaper path cannot be represented as text".to_owned())?
+        .to_owned();
+    let selection = rmac_shell_settings::WallpaperSelection {
+        source: Some(source.clone()),
+        fit,
+    };
+    render_wallpaper_preview(&selection).map_err(|error| {
+        format!("The selected file is not a usable PNG, JPEG, or WebP image: {error}")
+    })?;
+    Ok(source)
 }
 
 struct Settings {
@@ -365,6 +553,15 @@ struct Settings {
     shell_settings: Option<rmac_shell_settings::Snapshot>,
     shell_settings_revert: Option<rmac_shell_settings::DockSettings>,
     dock_compositor: rmac_compositor::State,
+    wallpaper_target: WallpaperTarget,
+    wallpaper_revert: Option<rmac_shell_settings::WallpaperSettings>,
+    wallpaper_error: Option<SharedString>,
+    wallpaper_preview: Option<std::sync::Arc<gpui::RenderImage>>,
+    wallpaper_preview_loading: bool,
+    wallpaper_preview_error: Option<SharedString>,
+    wallpaper_preview_watch_error: Option<SharedString>,
+    wallpaper_preview_generation: u64,
+    _wallpaper_preview_watcher: Option<rmac_wallpaper_image::FileWatcher>,
 
     // Network
     network_loading: bool,
@@ -611,6 +808,14 @@ const DOCK_REPEATED_CLICK_OPTIONS: [DockOption; 2] = [
         "Do Nothing",
         DockChange::RepeatedClick(rmac_shell_settings::RepeatedClickBehavior::DoNothing),
     ),
+];
+
+const WALLPAPER_FIT_OPTIONS: [(&str, rmac_shell_settings::WallpaperFit); 5] = [
+    ("Fill", rmac_shell_settings::WallpaperFit::Fill),
+    ("Fit", rmac_shell_settings::WallpaperFit::Fit),
+    ("Stretch", rmac_shell_settings::WallpaperFit::Stretch),
+    ("Center", rmac_shell_settings::WallpaperFit::Center),
+    ("Tile", rmac_shell_settings::WallpaperFit::Tile),
 ];
 
 const FOCUS_DAYS: [(rmac_focus::Weekday, &str); 7] = [
@@ -1200,7 +1405,9 @@ impl Settings {
             while let Ok(update) = shell_settings_update_rx.recv().await {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
-                        this.apply_shell_settings_stream_update(update);
+                        if this.apply_shell_settings_stream_update(update) {
+                            this.refresh_wallpaper_preview(cx);
+                        }
                         cx.notify();
                     })
                     .is_err()
@@ -1353,6 +1560,15 @@ impl Settings {
             shell_settings: None,
             shell_settings_revert: None,
             dock_compositor: rmac_compositor::State::default(),
+            wallpaper_target: WallpaperTarget::Default,
+            wallpaper_revert: None,
+            wallpaper_error: None,
+            wallpaper_preview: None,
+            wallpaper_preview_loading: true,
+            wallpaper_preview_error: None,
+            wallpaper_preview_watch_error: None,
+            wallpaper_preview_generation: 0,
+            _wallpaper_preview_watcher: None,
 
             network_loading: true,
             network_busy: false,
@@ -1408,14 +1624,17 @@ impl Settings {
         }
     }
 
-    fn apply_shell_settings_stream_update(&mut self, update: ShellSettingsStreamUpdate) {
+    fn apply_shell_settings_stream_update(&mut self, update: ShellSettingsStreamUpdate) -> bool {
         self.shell_settings_loading = false;
         match update {
             ShellSettingsStreamUpdate::Snapshot(snapshot) => {
                 self.shell_settings_stream_error = None;
                 if self.shell_settings_busy {
-                    return;
+                    return false;
                 }
+                let wallpaper_changed = self.shell_settings.as_ref().is_none_or(|current| {
+                    current.settings.wallpaper != snapshot.settings.wallpaper
+                });
                 if self
                     .shell_settings
                     .as_ref()
@@ -1423,12 +1642,17 @@ impl Settings {
                 {
                     self.shell_settings_revert = None;
                 }
+                if wallpaper_changed {
+                    self.wallpaper_revert = None;
+                }
                 self.shell_settings = Some(*snapshot);
                 self.shell_settings_error = None;
+                wallpaper_changed
             }
             ShellSettingsStreamUpdate::Unavailable(error) => {
                 self.shell_settings_stream_error =
-                    Some(format!("Live Desktop & Dock updates are unavailable: {error}").into());
+                    Some(format!("Live shell settings updates are unavailable: {error}").into());
+                false
             }
         }
     }
@@ -1437,29 +1661,38 @@ impl Settings {
         &mut self,
         result: std::result::Result<rmac_shell_settings::Snapshot, rmac_shell_settings::Error>,
         previous: Option<rmac_shell_settings::DockSettings>,
-    ) {
+    ) -> bool {
         self.shell_settings_loading = false;
         self.shell_settings_busy = false;
         match result {
             Ok(snapshot) => {
+                let wallpaper_changed = self.shell_settings.as_ref().is_none_or(|current| {
+                    current.settings.wallpaper != snapshot.settings.wallpaper
+                });
+                if wallpaper_changed {
+                    self.wallpaper_revert = None;
+                }
                 self.shell_settings = Some(snapshot);
                 self.shell_settings_revert = previous;
                 self.shell_settings_error = None;
                 self.shell_settings_stream_error = None;
+                wallpaper_changed
             }
             Err(error) => {
                 self.shell_settings_error =
                     Some(format!("Could not update Desktop & Dock: {error}").into());
+                false
             }
         }
     }
 
-    fn refresh_shell_settings(&mut self, cx: &mut Context<Self>) {
+    fn refresh_shell_settings(&mut self, refresh_wallpaper_preview: bool, cx: &mut Context<Self>) {
         if self.shell_settings_loading || self.shell_settings_busy {
             return;
         }
         self.shell_settings_loading = true;
         self.shell_settings_error = None;
+        self.wallpaper_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = blocking::unblock(|| {
@@ -1471,18 +1704,28 @@ impl Settings {
                     this.shell_settings_loading = false;
                     match result {
                         Ok(snapshot) => {
+                            let wallpaper_changed =
+                                this.shell_settings.as_ref().is_none_or(|current| {
+                                    current.settings.wallpaper != snapshot.settings.wallpaper
+                                });
                             if this.shell_settings.as_ref().is_some_and(|current| {
                                 current.settings.dock != snapshot.settings.dock
                             }) {
                                 this.shell_settings_revert = None;
                             }
+                            if wallpaper_changed {
+                                this.wallpaper_revert = None;
+                            }
                             this.shell_settings = Some(snapshot);
                             this.shell_settings_error = None;
                             this.shell_settings_stream_error = None;
+                            if wallpaper_changed || refresh_wallpaper_preview {
+                                this.refresh_wallpaper_preview(cx);
+                            }
                         }
                         Err(error) => {
                             this.shell_settings_error =
-                                Some(format!("Could not refresh Desktop & Dock: {error}").into());
+                                Some(format!("Could not refresh shell settings: {error}").into());
                         }
                     }
                     cx.notify();
@@ -1509,11 +1752,14 @@ impl Settings {
         self.shell_settings_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result =
-                blocking::unblock(move || persist_dock_mutation(DockMutation::Change(change)))
-                    .await;
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::Change(change))
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_shell_settings_mutation(result, Some(previous));
+                if this.finish_shell_settings_mutation(result, Some(previous)) {
+                    this.refresh_wallpaper_preview(cx);
+                }
                 cx.notify();
             });
         })
@@ -1531,11 +1777,244 @@ impl Settings {
         self.shell_settings_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result =
-                blocking::unblock(move || persist_dock_mutation(DockMutation::Restore(previous)))
-                    .await;
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::Restore(previous))
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_shell_settings_mutation(result, None);
+                if this.finish_shell_settings_mutation(result, None) {
+                    this.refresh_wallpaper_preview(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_wallpaper_preview(&mut self, cx: &mut Context<Self>) {
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            self.wallpaper_preview_loading = false;
+            self.wallpaper_preview_error = Some("Wallpaper settings are unavailable".into());
+            return;
+        };
+        let (selection, _) =
+            wallpaper_selection(&snapshot.settings.wallpaper, &self.wallpaper_target);
+        let watched_paths = rmac_wallpaper::parse_source(selection.source.as_deref())
+            .ok()
+            .and_then(|source| rmac_wallpaper::file_path(&source).map(PathBuf::from))
+            .into_iter()
+            .collect::<Vec<_>>();
+        self.wallpaper_preview_generation = self.wallpaper_preview_generation.wrapping_add(1);
+        let generation = self.wallpaper_preview_generation;
+        self.wallpaper_preview_loading = true;
+        self.wallpaper_preview_error = None;
+        self.wallpaper_preview_watch_error = None;
+        self._wallpaper_preview_watcher = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (events_tx, events_rx) = async_channel::bounded(1);
+            let (result, watcher) = blocking::unblock(move || {
+                let watcher = rmac_wallpaper_image::watch_files(&watched_paths, events_tx);
+                (render_wallpaper_preview(&selection), watcher)
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.wallpaper_preview_generation != generation {
+                    return;
+                }
+                this.wallpaper_preview_loading = false;
+                match result {
+                    Ok(preview) => {
+                        this.wallpaper_preview = Some(preview);
+                        this.wallpaper_preview_error = None;
+                    }
+                    Err(error) => {
+                        this.wallpaper_preview_error =
+                            Some(format!("Could not preview this wallpaper: {error}").into());
+                    }
+                }
+                let watching = match watcher {
+                    Ok(watcher) => {
+                        let watching = watcher.is_some();
+                        this._wallpaper_preview_watcher = watcher;
+                        this.wallpaper_preview_watch_error = None;
+                        watching
+                    }
+                    Err(_) => {
+                        this.wallpaper_preview_watch_error = Some(
+                            "Live updates for the selected wallpaper file are unavailable".into(),
+                        );
+                        false
+                    }
+                };
+                if watching {
+                    cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                        let event = events_rx.recv().await;
+                        let _ = this.update(cx, |this: &mut Settings, cx| {
+                            if this.wallpaper_preview_generation != generation {
+                                return;
+                            }
+                            match event {
+                                Ok(rmac_wallpaper_image::FileWatchEvent::Changed) => {
+                                    this.refresh_wallpaper_preview(cx);
+                                }
+                                Ok(rmac_wallpaper_image::FileWatchEvent::Failed { .. })
+                                | Err(_) => {
+                                    this._wallpaper_preview_watcher = None;
+                                    this.wallpaper_preview_watch_error = Some(
+                                        "Live updates for the selected wallpaper file stopped"
+                                            .into(),
+                                    );
+                                    cx.notify();
+                                }
+                            }
+                        });
+                    })
+                    .detach();
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn select_wallpaper_target(&mut self, target: WallpaperTarget, cx: &mut Context<Self>) {
+        if self.shell_settings_busy || self.wallpaper_target == target {
+            return;
+        }
+        self.wallpaper_target = target;
+        self.wallpaper_error = None;
+        self.refresh_wallpaper_preview(cx);
+    }
+
+    fn apply_wallpaper_change(
+        &mut self,
+        target: WallpaperTarget,
+        change: WallpaperChange,
+        cx: &mut Context<Self>,
+    ) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        let previous = snapshot.settings.wallpaper.clone();
+        let mut next = previous.clone();
+        change.clone().apply(&target, &mut next);
+        if next == previous {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.wallpaper_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::Wallpaper { target, change })
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wallpaper_mutation(result, Some(previous));
+                this.refresh_wallpaper_preview(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_wallpaper_mutation(
+        &mut self,
+        result: std::result::Result<rmac_shell_settings::Snapshot, rmac_shell_settings::Error>,
+        previous: Option<rmac_shell_settings::WallpaperSettings>,
+    ) {
+        self.shell_settings_loading = false;
+        self.shell_settings_busy = false;
+        match result {
+            Ok(snapshot) => {
+                if self
+                    .shell_settings
+                    .as_ref()
+                    .is_some_and(|current| current.settings.dock != snapshot.settings.dock)
+                {
+                    self.shell_settings_revert = None;
+                }
+                self.shell_settings = Some(snapshot);
+                self.wallpaper_revert = previous;
+                self.wallpaper_error = None;
+                self.shell_settings_error = None;
+                self.shell_settings_stream_error = None;
+            }
+            Err(error) => {
+                self.wallpaper_error = Some(format!("Could not update Wallpaper: {error}").into());
+            }
+        }
+    }
+
+    fn choose_wallpaper_file(&mut self, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        let target = self.wallpaper_target.clone();
+        let fit = wallpaper_selection(&snapshot.settings.wallpaper, &target)
+            .0
+            .fit;
+        self.shell_settings_busy = true;
+        self.wallpaper_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let choice = rmac_portal::choose_wallpaper_file().await;
+            let validated = match choice {
+                Ok(Some(path)) => Some(
+                    cx.background_executor()
+                        .spawn(async move {
+                            blocking::unblock(move || validate_wallpaper_choice(path, fit)).await
+                        })
+                        .await,
+                ),
+                Ok(None) => None,
+                Err(error) => Some(Err(error.to_string())),
+            };
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.shell_settings_busy = false;
+                match validated {
+                    Some(Ok(source)) => this.apply_wallpaper_change(
+                        target,
+                        WallpaperChange::Source(Some(source)),
+                        cx,
+                    ),
+                    Some(Err(error)) => {
+                        this.wallpaper_error = Some(error.into());
+                    }
+                    None => this.refresh_shell_settings(true, cx),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn revert_wallpaper_change(&mut self, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(previous) = self.wallpaper_revert.clone() else {
+            return;
+        };
+        self.shell_settings_busy = true;
+        self.wallpaper_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::RestoreWallpaper(previous))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wallpaper_mutation(result, None);
+                this.refresh_wallpaper_preview(cx);
                 cx.notify();
             });
         })
@@ -4154,7 +4633,7 @@ impl Settings {
                 "VPN" => self.render_vpn(cx),
                 "Desktop & Dock" => self.render_desktop_dock(cx),
                 "Spotlight" => self.render_spotlight_readiness(),
-                "Wallpaper" => self.render_wallpaper_readiness(),
+                "Wallpaper" => self.render_wallpaper(cx),
                 _ => self.render_unregistered_category(),
             }
         };
@@ -4260,8 +4739,9 @@ impl Settings {
                         )
                         .disabled(self.shell_settings_loading || self.shell_settings_busy)
                         .on_click(move |_, _, cx| {
-                            refresh_view
-                                .update(cx, |settings, cx| settings.refresh_shell_settings(cx));
+                            refresh_view.update(cx, |settings, cx| {
+                                settings.refresh_shell_settings(false, cx)
+                            });
                         }),
                     ),
             )];
@@ -4481,10 +4961,317 @@ impl Settings {
         )])
     }
 
-    fn render_wallpaper_readiness(&self) -> Div {
-        self.pane(vec![note_card(
-            "The session wallpaper runtime can render persisted wallpaper state, but safe portal-backed selection, per-output editing, fit previews, hotplug behavior, and rollback are not yet available here. This pane is read-only and changes nothing.",
-        )])
+    fn render_wallpaper(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let revert_view = view.clone();
+        let choose_view = view.clone();
+        let mut cards = vec![div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_1()
+            .pb_1()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary())
+                    .child("Desktop wallpaper"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        Button::new("wallpaper-revert", "Revert")
+                            .disabled(
+                                self.shell_settings_loading
+                                    || self.shell_settings_busy
+                                    || self.wallpaper_revert.is_none(),
+                            )
+                            .on_click(move |_, _, cx| {
+                                revert_view.update(cx, |settings, cx| {
+                                    settings.revert_wallpaper_change(cx)
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("wallpaper-choose", "Choose Image…")
+                            .disabled(self.shell_settings_loading || self.shell_settings_busy)
+                            .on_click(move |_, _, cx| {
+                                choose_view
+                                    .update(cx, |settings, cx| settings.choose_wallpaper_file(cx));
+                            }),
+                    )
+                    .child(
+                        Button::new(
+                            "wallpaper-refresh",
+                            if self.shell_settings_busy {
+                                "Applying…"
+                            } else if self.shell_settings_loading {
+                                "Loading…"
+                            } else {
+                                "Refresh"
+                            },
+                        )
+                        .disabled(self.shell_settings_loading || self.shell_settings_busy)
+                        .on_click(move |_, _, cx| {
+                            refresh_view.update(cx, |settings, cx| {
+                                settings.refresh_shell_settings(true, cx)
+                            });
+                        }),
+                    ),
+            )];
+
+        if self.shell_settings_loading && self.shell_settings.is_none() {
+            cards.push(note_card("Loading the authoritative wallpaper settings…"));
+            return self.pane(cards);
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            cards.push(note_card(
+                "The versioned rmac shell-settings authority is unavailable. Wallpaper choices remain unchanged.",
+            ));
+            return self.pane(cards);
+        };
+        let wallpaper = &snapshot.settings.wallpaper;
+        let (selection, owns_selection) = wallpaper_selection(wallpaper, &self.wallpaper_target);
+        let enabled = !self.shell_settings_busy;
+
+        cards.push(section_header("Apply to"));
+        let mut targets = div().flex().flex_wrap().gap_2().mb_3();
+        let default_view = view.clone();
+        targets = targets.child(
+            Button::new("wallpaper-target-default", "All displays (default)")
+                .selected(self.wallpaper_target == WallpaperTarget::Default)
+                .disabled(!enabled)
+                .on_click(move |_, _, cx| {
+                    default_view.update(cx, |settings, cx| {
+                        settings.select_wallpaper_target(WallpaperTarget::Default, cx)
+                    });
+                }),
+        );
+        let mut output_ids = std::collections::BTreeSet::new();
+        output_ids.extend(wallpaper.per_output.keys().cloned());
+        if let WallpaperTarget::Output(output) = &self.wallpaper_target {
+            output_ids.insert(output.clone());
+        }
+        output_ids.extend(
+            self.dock_compositor
+                .outputs
+                .values()
+                .filter(|output| output.enabled())
+                .map(|output| output.id.0.clone()),
+        );
+        for output_id in output_ids {
+            let target = WallpaperTarget::Output(output_id.clone());
+            let selected = self.wallpaper_target == target;
+            let live = self
+                .dock_compositor
+                .outputs
+                .values()
+                .any(|output| output.enabled() && output.id.0 == output_id);
+            let label = self
+                .dock_compositor
+                .outputs
+                .get(&rmac_compositor::OutputId(output_id.clone()))
+                .map(|output| {
+                    format!("{} {}", output.make, output.model)
+                        .trim()
+                        .to_owned()
+                })
+                .filter(|label| !label.is_empty())
+                .unwrap_or_else(|| output_id.clone());
+            let target_view = view.clone();
+            targets = targets.child(
+                Button::new(
+                    ElementId::from(SharedString::from(format!("wallpaper-target-{output_id}"))),
+                    if live {
+                        label
+                    } else {
+                        format!("{label} · offline")
+                    },
+                )
+                .selected(selected)
+                .disabled(!enabled)
+                .on_click(move |_, _, cx| {
+                    target_view.update(cx, |settings, cx| {
+                        settings.select_wallpaper_target(target.clone(), cx)
+                    });
+                }),
+            );
+        }
+        cards.push(targets);
+
+        cards.push(section_header("Preview"));
+        let preview = div()
+            .w(px(480.0))
+            .h(px(270.0))
+            .mx_auto()
+            .mb_3()
+            .rounded(px(12.0))
+            .overflow_hidden()
+            .bg(hsl(0x1e1e20))
+            .border_1()
+            .border_color(sep())
+            .when_some(self.wallpaper_preview.clone(), |element, preview| {
+                element.child(img(preview).w_full().h_full().object_fit(ObjectFit::Fill))
+            })
+            .when(self.wallpaper_preview.is_none(), |element| {
+                element.flex().items_center().justify_center().child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(white())
+                        .child(if self.wallpaper_preview_loading {
+                            "Preparing preview…"
+                        } else {
+                            "Preview unavailable"
+                        }),
+                )
+            });
+        cards.push(preview);
+        if self.wallpaper_preview_loading && self.wallpaper_preview.is_some() {
+            cards.push(note_card(
+                "Refreshing the preview from the selected source…",
+            ));
+        }
+        if let Some(error) = self.wallpaper_preview_error.clone() {
+            cards.push(note_card(error));
+        }
+        if let Some(error) = self.wallpaper_preview_watch_error.clone() {
+            cards.push(note_card(error));
+        }
+
+        cards.push(section_header("Image"));
+        let aurora_view = view.clone();
+        let use_default_view = view.clone();
+        let source_name = wallpaper_source_name(&selection);
+        let using_aurora = matches!(
+            rmac_wallpaper::parse_source(selection.source.as_deref()),
+            Ok(rmac_wallpaper::Source::BuiltIn(_))
+        );
+        let mut source_rows = vec![row_base()
+            .child(text_block(
+                "Current image".into(),
+                Some(match &self.wallpaper_target {
+                    WallpaperTarget::Default => "Default for every display".into(),
+                    WallpaperTarget::Output(_) if owns_selection => {
+                        "Custom choice for this output".into()
+                    }
+                    WallpaperTarget::Output(_) => "Inherited from the default".into(),
+                }),
+            ))
+            .child(
+                div()
+                    .max_w(px(190.0))
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(secondary())
+                    .child(source_name),
+            )
+            .into_any_element()];
+        source_rows.push(
+            row_base()
+                .child(text_block(
+                    "Original Aurora".into(),
+                    Some("Procedural rmac artwork; no third-party file".into()),
+                ))
+                .child(
+                    Button::new("wallpaper-use-aurora", "Use")
+                        .disabled(!enabled || using_aurora)
+                        .on_click(move |_, _, cx| {
+                            aurora_view.update(cx, |settings, cx| {
+                                let target = settings.wallpaper_target.clone();
+                                settings.apply_wallpaper_change(
+                                    target,
+                                    WallpaperChange::Source(None),
+                                    cx,
+                                )
+                            });
+                        }),
+                )
+                .into_any_element(),
+        );
+        if matches!(self.wallpaper_target, WallpaperTarget::Output(_)) {
+            source_rows.push(
+                row_base()
+                    .child(text_block(
+                        "Use default wallpaper".into(),
+                        Some("Remove this output's saved override".into()),
+                    ))
+                    .child(
+                        Button::new("wallpaper-use-default", "Use Default")
+                            .disabled(!enabled || !owns_selection)
+                            .on_click(move |_, _, cx| {
+                                use_default_view.update(cx, |settings, cx| {
+                                    let target = settings.wallpaper_target.clone();
+                                    settings.apply_wallpaper_change(
+                                        target,
+                                        WallpaperChange::UseDefault,
+                                        cx,
+                                    )
+                                });
+                            }),
+                    )
+                    .into_any_element(),
+            );
+        }
+        cards.push(card(source_rows));
+
+        cards.push(section_header("Fit"));
+        cards.push(card(vec![wallpaper_fit_row(
+            view.clone(),
+            selection.fit,
+            enabled,
+        )]));
+
+        let connection = match self.dock_compositor.connection {
+            rmac_compositor::ConnectionState::Connected => "Connected",
+            rmac_compositor::ConnectionState::Connecting => "Connecting",
+            rmac_compositor::ConnectionState::Reconnecting => "Reconnecting",
+            rmac_compositor::ConnectionState::Disconnected => "Unavailable",
+        };
+        cards.push(section_header("Authority"));
+        cards.push(card(vec![
+            value_row(
+                "icons/settings.svg",
+                accent(),
+                "Saved preferences".into(),
+                "C4 shell settings".into(),
+            ),
+            value_row(
+                "icons/monitor.svg",
+                secondary(),
+                "niri output stream".into(),
+                connection.into(),
+            ),
+            value_row(
+                "icons/image.svg",
+                secondary(),
+                "Accepted image types".into(),
+                "PNG, JPEG, WebP".into(),
+            ),
+        ]));
+        if let WallpaperTarget::Output(output) = &self.wallpaper_target {
+            let live = self
+                .dock_compositor
+                .outputs
+                .values()
+                .any(|candidate| candidate.enabled() && candidate.id.0 == *output);
+            if !live {
+                cards.push(note_card(
+                    "This output is currently unplugged or disabled. Its override remains authoritative and will return when the same stable niri output ID reappears.",
+                ));
+            }
+        }
+        if self.dock_compositor.connection != rmac_compositor::ConnectionState::Connected {
+            cards.push(note_card(
+                "niri is not connected in this process. Saved per-output choices remain editable, but live output availability cannot be confirmed.",
+            ));
+        }
+        cards.push(note_card(
+            "The preview uses the same bounded PNG/JPEG/WebP decoder and exact Fill, Fit, Stretch, Center, or Tile geometry as the wallpaper runtime. The Wayland background surface itself remains a separate D9 release gate.",
+        ));
+        self.pane(cards)
     }
 
     fn render_unregistered_category(&self) -> Div {
@@ -9396,6 +10183,7 @@ impl Render for Settings {
             .or_else(|| self.theme_error.clone())
             .or_else(|| self.shell_settings_error.clone())
             .or_else(|| self.shell_settings_stream_error.clone())
+            .or_else(|| self.wallpaper_error.clone())
             .or_else(|| self.gtk_text_error.clone())
             .or_else(|| self.privacy_error.clone())
             .or_else(|| self.privacy_stream_error.clone());
@@ -9441,6 +10229,7 @@ impl Render for Settings {
                             this.theme_error = None;
                             this.shell_settings_error = None;
                             this.shell_settings_stream_error = None;
+                            this.wallpaper_error = None;
                             this.gtk_text_error = None;
                             this.privacy_error = None;
                             this.privacy_stream_error = None;
@@ -10298,6 +11087,42 @@ fn dock_output_row(
         .into_any_element()
 }
 
+fn wallpaper_fit_row(
+    view: Entity<Settings>,
+    selected: rmac_shell_settings::WallpaperFit,
+    enabled: bool,
+) -> AnyElement {
+    let mut control = div().flex().gap_1().w(px(380.0));
+    for (index, (label, fit)) in WALLPAPER_FIT_OPTIONS.iter().copied().enumerate() {
+        let fit_view = view.clone();
+        control = control.child(
+            Button::new(
+                ElementId::from(SharedString::from(format!("wallpaper-fit-{index}"))),
+                label,
+            )
+            .flex_1()
+            .selected(selected == fit)
+            .disabled(!enabled)
+            .on_click(move |_, _, cx| {
+                fit_view.update(cx, |settings, cx| {
+                    let target = settings.wallpaper_target.clone();
+                    settings.apply_wallpaper_change(target, WallpaperChange::Fit(fit), cx);
+                });
+            }),
+        );
+    }
+    row_base()
+        .child(
+            div()
+                .flex_1()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(label())
+                .child("Display mode"),
+        )
+        .child(control)
+        .into_any_element()
+}
+
 fn theme_segment_row(
     view: Entity<Settings>,
     id: &'static str,
@@ -10749,7 +11574,7 @@ fn categories() -> Vec<Vec<Category>> {
                 "Wallpaper",
                 "icons/image.svg",
                 teal,
-                "Review wallpaper integration status and limitations.",
+                "Choose original or local images for every niri display.",
             ),
         ],
         vec![
@@ -10847,8 +11672,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        categories, category_has_dedicated_renderer, notification_policy_with, DockChange,
-        DockMutation, NotificationPolicyChange, ScreenReaderCapability, GENERAL_DESTINATIONS,
+        categories, category_has_dedicated_renderer, composite_wallpaper_pixel,
+        notification_policy_with, render_wallpaper_preview, wallpaper_selection, DockChange,
+        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation, WallpaperChange,
+        WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -10996,10 +11823,72 @@ mod tests {
         settings.clock.show_seconds = true;
         settings.spotlight.include_removable_mounts = true;
 
-        DockMutation::Change(DockChange::Autohide(true)).apply(&mut settings);
+        ShellSettingsMutation::Change(DockChange::Autohide(true)).apply(&mut settings);
 
         assert!(settings.dock.autohide);
         assert!(settings.clock.show_seconds);
         assert!(settings.spotlight.include_removable_mounts);
+    }
+
+    #[test]
+    fn wallpaper_output_changes_clone_the_default_and_preserve_other_settings() {
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.dock.autohide = true;
+        settings.wallpaper.default.source = Some("builtin:rmac-aurora".into());
+        let original_default = settings.wallpaper.default.clone();
+
+        ShellSettingsMutation::Wallpaper {
+            target: WallpaperTarget::Output("DP-1".into()),
+            change: WallpaperChange::Fit(rmac_shell_settings::WallpaperFit::Center),
+        }
+        .apply(&mut settings);
+
+        assert_eq!(settings.wallpaper.default, original_default);
+        assert_eq!(
+            settings.wallpaper.per_output.get("DP-1"),
+            Some(&rmac_shell_settings::WallpaperSelection {
+                source: Some("builtin:rmac-aurora".into()),
+                fit: rmac_shell_settings::WallpaperFit::Center,
+            })
+        );
+        assert!(settings.dock.autohide);
+
+        ShellSettingsMutation::Wallpaper {
+            target: WallpaperTarget::Output("DP-1".into()),
+            change: WallpaperChange::UseDefault,
+        }
+        .apply(&mut settings);
+        assert!(!settings.wallpaper.per_output.contains_key("DP-1"));
+    }
+
+    #[test]
+    fn wallpaper_selection_reports_inheritance_without_inventing_an_override() {
+        let wallpaper = rmac_shell_settings::WallpaperSettings::default();
+        let (selection, owns_selection) =
+            wallpaper_selection(&wallpaper, &WallpaperTarget::Output("HDMI-A-1".into()));
+        assert_eq!(selection, wallpaper.default);
+        assert!(!owns_selection);
+        assert!(wallpaper.per_output.is_empty());
+    }
+
+    #[test]
+    fn original_wallpaper_preview_uses_the_bounded_renderer() {
+        let preview =
+            render_wallpaper_preview(&rmac_shell_settings::WallpaperSelection::default()).unwrap();
+        assert_eq!(preview.size(0).width.0, 480);
+        assert_eq!(preview.size(0).height.0, 270);
+        assert_eq!(preview.as_bytes(0).unwrap().len(), 480 * 270 * 4);
+    }
+
+    #[test]
+    fn wallpaper_preview_alpha_compositing_does_not_overflow() {
+        assert_eq!(
+            composite_wallpaper_pixel([255, 64, 0, 128], [0, 0, 32, 255]),
+            [128, 32, 15, 255]
+        );
+        assert_eq!(
+            composite_wallpaper_pixel([1, 2, 3, 0], [20, 30, 40, 255]),
+            [20, 30, 40, 255]
+        );
     }
 }

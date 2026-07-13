@@ -76,6 +76,57 @@ pub async fn choose_desktop_entry() -> Result<Option<PathBuf>, Error> {
     }
 }
 
+/// Ask the desktop portal for one local PNG, JPEG, or WebP wallpaper file.
+///
+/// The filter is only chooser guidance. Callers must still validate the file
+/// contents through their typed image authority before persisting a choice.
+pub async fn choose_wallpaper_file() -> Result<Option<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let request = OpenFileRequest::default()
+            .title("Choose Wallpaper")
+            .accept_label("Choose")
+            .modal(true)
+            .filter(
+                FileFilter::new("Wallpaper images")
+                    .mimetype("image/png")
+                    .mimetype("image/jpeg")
+                    .mimetype("image/webp")
+                    .glob("*.png")
+                    .glob("*.jpg")
+                    .glob("*.jpeg")
+                    .glob("*.webp"),
+            )
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(None),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        let Some(uri) = response.uris().first() else {
+            return Ok(None);
+        };
+        uri.to_file_path().map(Some).map_err(|()| Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the portal returned a non-local wallpaper file".into(),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the wallpaper chooser is available in the supported Linux session".into(),
+        })
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn choose_failure(error: ashpd::Error) -> Error {
     Error {

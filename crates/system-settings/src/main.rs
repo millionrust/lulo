@@ -555,6 +555,11 @@ struct WifiPasswordPrompt {
     validation_error: Option<SharedString>,
 }
 
+struct WifiForgetPrompt {
+    network: rmac_network::WifiNetworkId,
+    ssid: SharedString,
+}
+
 struct Settings {
     system_data_loading: bool,
     system_data_busy: bool,
@@ -691,11 +696,14 @@ struct Settings {
     wifi_loading: bool,
     wifi_busy: bool,
     wifi_connecting: Option<rmac_network::WifiNetworkId>,
+    wifi_forgetting: Option<rmac_network::WifiNetworkId>,
+    wifi_forget_confirmation: Option<WifiForgetPrompt>,
     wifi_password_prompt: Option<WifiPasswordPrompt>,
     wifi_cancellation: Option<rmac_network::WifiCancellation>,
     wifi_on: bool,
     wifi_interface: Option<String>,
     wifi_networks: Vec<rmac_network::WifiNetwork>,
+    wifi_saved_networks: Vec<rmac_network::WifiSavedNetwork>,
 
     // Bluetooth
     bluetooth_available: bool,
@@ -1724,11 +1732,14 @@ impl Settings {
             wifi_loading: true,
             wifi_busy: false,
             wifi_connecting: None,
+            wifi_forgetting: None,
+            wifi_forget_confirmation: None,
             wifi_password_prompt: None,
             wifi_cancellation: None,
             wifi_on: false,
             wifi_interface: None,
             wifi_networks: Vec::new(),
+            wifi_saved_networks: Vec::new(),
 
             bluetooth_available: false,
             bluetooth_loading: true,
@@ -3244,6 +3255,14 @@ impl Settings {
         .detach();
     }
 
+    fn apply_wifi_snapshot(&mut self, snapshot: rmac_network::WifiSnapshot) {
+        self.wifi_available = snapshot.available;
+        self.wifi_on = snapshot.enabled;
+        self.wifi_interface = snapshot.interface;
+        self.wifi_networks = snapshot.networks;
+        self.wifi_saved_networks = snapshot.saved_networks;
+    }
+
     fn finish_wifi_update(
         &mut self,
         result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
@@ -3254,10 +3273,7 @@ impl Settings {
         self.wifi_cancellation = None;
         match result {
             Ok(snapshot) => {
-                self.wifi_available = snapshot.available;
-                self.wifi_on = snapshot.enabled;
-                self.wifi_interface = snapshot.interface;
-                self.wifi_networks = snapshot.networks;
+                self.apply_wifi_snapshot(snapshot);
                 self.wifi_error = None;
             }
             Err(error) => {
@@ -3276,10 +3292,7 @@ impl Settings {
         self.wifi_cancellation = None;
         match result {
             Ok(snapshot) => {
-                self.wifi_available = snapshot.available;
-                self.wifi_on = snapshot.enabled;
-                self.wifi_interface = snapshot.interface;
-                self.wifi_networks = snapshot.networks;
+                self.apply_wifi_snapshot(snapshot);
                 self.wifi_password_prompt = None;
                 self.wifi_error = None;
             }
@@ -3294,6 +3307,29 @@ impl Settings {
                 } else {
                     self.wifi_error = Some(format!("Could not join Wi-Fi: {error}").into());
                 }
+            }
+        }
+    }
+
+    fn finish_wifi_forget_update(
+        &mut self,
+        result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
+        recovery_snapshot: Option<rmac_network::WifiSnapshot>,
+    ) {
+        self.wifi_loading = false;
+        self.wifi_busy = false;
+        self.wifi_forgetting = None;
+        self.wifi_forget_confirmation = None;
+        match result {
+            Ok(snapshot) => {
+                self.apply_wifi_snapshot(snapshot);
+                self.wifi_error = None;
+            }
+            Err(error) => {
+                if let Some(snapshot) = recovery_snapshot {
+                    self.apply_wifi_snapshot(snapshot);
+                }
+                self.wifi_error = Some(format!("Could not forget Wi-Fi network: {error}").into());
             }
         }
     }
@@ -4541,6 +4577,80 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn request_wifi_forget(
+        &mut self,
+        network: rmac_network::WifiNetworkId,
+        ssid: SharedString,
+        cx: &mut Context<Self>,
+    ) {
+        if self.wifi_busy
+            || self.wifi_loading
+            || !self
+                .wifi_saved_networks
+                .iter()
+                .any(|candidate| candidate.id == network)
+        {
+            return;
+        }
+        self.wifi_forget_confirmation = Some(WifiForgetPrompt { network, ssid });
+        self.wifi_error = None;
+        cx.notify();
+    }
+
+    fn cancel_wifi_forget(&mut self, cx: &mut Context<Self>) {
+        if !self.wifi_busy {
+            self.wifi_forget_confirmation = None;
+            cx.notify();
+        }
+    }
+
+    fn confirm_wifi_forget(&mut self, cx: &mut Context<Self>) {
+        if self.wifi_busy || self.wifi_loading {
+            return;
+        }
+        let Some(network) = self
+            .wifi_forget_confirmation
+            .as_ref()
+            .map(|prompt| prompt.network.clone())
+        else {
+            return;
+        };
+        if !self
+            .wifi_saved_networks
+            .iter()
+            .any(|candidate| candidate.id == network)
+        {
+            self.wifi_forget_confirmation = None;
+            self.wifi_error = Some("The saved Wi-Fi network is no longer available.".into());
+            cx.notify();
+            return;
+        }
+
+        self.wifi_busy = true;
+        self.wifi_forgetting = Some(network.clone());
+        self.wifi_forget_confirmation = None;
+        self.wifi_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery_snapshot) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result = rmac_network::forget(&network);
+                    let recovery_snapshot = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_network::snapshot().ok());
+                    (result, recovery_snapshot)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_forget_update(result, recovery_snapshot);
                 cx.notify();
             });
         })
@@ -6101,6 +6211,8 @@ impl Settings {
         let view = cx.entity();
         let power_subtitle = if self.wifi_loading {
             Some("Reading system state…".into())
+        } else if self.wifi_forgetting.is_some() {
+            Some("Forgetting saved network…".into())
         } else if self.wifi_connecting.is_some() {
             Some("Connecting to network…".into())
         } else if self.wifi_busy {
@@ -6172,7 +6284,10 @@ impl Settings {
                     .enumerate()
                     .map(|(index, network)| {
                         let connecting = self.wifi_connecting.as_ref() == Some(&network.id);
-                        let status = if connecting {
+                        let forgetting = self.wifi_forgetting.as_ref() == Some(&network.id);
+                        let status = if forgetting {
+                            "Forgetting…".to_string()
+                        } else if connecting {
                             "Connecting…".to_string()
                         } else if network.connected {
                             format!("Connected · {}%", network.strength)
@@ -6203,7 +6318,7 @@ impl Settings {
                                 .gap_3()
                                 .child(tile(
                                     "icons/wifi.svg",
-                                    if network.connected || connecting {
+                                    if network.connected || connecting || forgetting {
                                         accent()
                                     } else {
                                         secondary()
@@ -6233,6 +6348,70 @@ impl Settings {
             cards.push(card(rows));
             cards.push(note_card(
                 "Select a network to connect. New WPA Personal and SAE networks ask for their password; enterprise and legacy security remain unavailable until their dedicated setup flows exist.",
+            ));
+        }
+
+        if !self.wifi_saved_networks.is_empty() {
+            cards.push(section_header("Known Networks"));
+            let rows = self
+                .wifi_saved_networks
+                .iter()
+                .enumerate()
+                .map(|(index, network)| {
+                    let forgetting = self.wifi_forgetting.as_ref() == Some(&network.id);
+                    let security = match network.id.security() {
+                        rmac_network::WifiSecurity::Open => "Saved Open Network",
+                        rmac_network::WifiSecurity::EnhancedOpen => "Saved Enhanced Open Network",
+                        rmac_network::WifiSecurity::Personal(
+                            rmac_network::WifiPersonalMode::Psk,
+                        ) => "Saved WPA Personal Network",
+                        rmac_network::WifiSecurity::Personal(
+                            rmac_network::WifiPersonalMode::Sae,
+                        ) => "Saved SAE Network",
+                        rmac_network::WifiSecurity::Personal(
+                            rmac_network::WifiPersonalMode::Transition,
+                        ) => "Saved WPA/SAE Network",
+                        rmac_network::WifiSecurity::Enterprise => "Saved Enterprise Network",
+                        rmac_network::WifiSecurity::Legacy => "Saved Legacy Network",
+                        rmac_network::WifiSecurity::Protected => "Saved Protected Network",
+                    };
+                    let forget_network = network.id.clone();
+                    let forget_ssid = SharedString::from(network.ssid.clone());
+                    let forget_view = view.clone();
+                    row_base()
+                        .child(tile(
+                            "icons/wifi.svg",
+                            if forgetting { accent() } else { secondary() },
+                            22.0,
+                        ))
+                        .child(text_block(
+                            network.ssid.clone().into(),
+                            Some(security.into()),
+                        ))
+                        .child(
+                            Button::new(
+                                SharedString::from(format!("wifi-saved-forget-{index}")),
+                                "Forget…",
+                            )
+                            .xsmall()
+                            .busy(forgetting)
+                            .disabled(self.wifi_busy)
+                            .on_click(move |_, _, cx| {
+                                forget_view.update(cx, |settings, cx| {
+                                    settings.request_wifi_forget(
+                                        forget_network.clone(),
+                                        forget_ssid.clone(),
+                                        cx,
+                                    )
+                                });
+                            }),
+                        )
+                        .into_any_element()
+                })
+                .collect();
+            cards.push(card(rows));
+            cards.push(note_card(
+                "Forgetting removes every accessible saved profile with the exact network identity. If it is active, this computer disconnects first.",
             ));
         }
 
@@ -6327,6 +6506,37 @@ impl Settings {
                     }
                 }))
                 .into_any_element(),
+        )
+    }
+
+    fn render_wifi_forget_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let prompt = self.wifi_forget_confirmation.as_ref()?;
+        let message = format!(
+            "This computer will remove every accessible saved profile for “{}”. If the network is active, it will disconnect. You will need its password to join again.",
+            prompt.ssid
+        );
+        Some(
+            rmac_ui::alert(
+                "Forget This Network?",
+                message,
+                vec![
+                    rmac_ui::dialog_button(
+                        "wifi-forget-cancel",
+                        "Cancel",
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.cancel_wifi_forget(cx)))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "wifi-forget-confirm",
+                        "Forget",
+                        rmac_ui::DialogButtonKind::Destructive,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.confirm_wifi_forget(cx)))
+                    .into_any_element(),
+                ],
+            )
+            .into_any_element(),
         )
     }
 
@@ -11126,13 +11336,23 @@ impl Render for Settings {
             .or_else(|| self.privacy_error.clone())
             .or_else(|| self.privacy_stream_error.clone());
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
+        let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
         div()
             .size_full()
             .v_flex()
             .track_focus(&self.focus)
             .key_context("SystemSettings")
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" && this.wifi_forget_confirmation.is_some() {
+                    cx.stop_propagation();
+                    this.cancel_wifi_forget(cx);
+                }
+            }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, _| {
+                if this.wifi_forgetting.is_some() {
+                    return;
+                }
                 if let Some(cancellation) = &this.wifi_cancellation {
                     cancellation.cancel();
                 }
@@ -11188,6 +11408,7 @@ impl Render for Settings {
                     .child(self.render_detail(cx)),
             )
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
+            .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))
     }
 }
 

@@ -12,14 +12,14 @@ use zeroize::Zeroize as _;
 #[cfg(any(not(target_os = "macos"), test))]
 mod secret_agent;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WifiPersonalMode {
     Psk,
     Sae,
     Transition,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WifiSecurity {
     Open,
     EnhancedOpen,
@@ -100,6 +100,12 @@ pub struct WifiNetwork {
     pub security: WifiSecurity,
     pub known: bool,
     pub connected: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WifiSavedNetwork {
+    pub id: WifiNetworkId,
+    pub ssid: String,
 }
 
 impl WifiNetwork {
@@ -206,6 +212,7 @@ pub struct WifiSnapshot {
     pub interface: Option<String>,
     pub current_ssid: Option<String>,
     pub networks: Vec<WifiNetwork>,
+    pub saved_networks: Vec<WifiSavedNetwork>,
 }
 
 /// NetworkManager's view of the host's overall reachability.
@@ -384,6 +391,7 @@ pub trait WifiService {
     fn set_enabled(&self, enabled: bool) -> Result<(), Error>;
     fn request_scan(&self) -> Result<(), Error>;
     fn connect(&self, network: &WifiNetworkId) -> Result<WifiSnapshot, Error>;
+    fn forget(&self, network: &WifiNetworkId) -> Result<WifiSnapshot, Error>;
     fn connect_with_password(
         &self,
         network: &WifiNetworkId,
@@ -408,6 +416,10 @@ pub fn request_scan() -> Result<(), Error> {
 
 pub fn connect(network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
     SystemWifiService.connect(network)
+}
+
+pub fn forget(network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+    SystemWifiService.forget(network)
 }
 
 pub fn connect_with_password(
@@ -499,6 +511,10 @@ impl WifiService for SystemWifiService {
         linux_connect_wifi(network)
     }
 
+    fn forget(&self, network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+        linux_forget_wifi(network)
+    }
+
     fn connect_with_password(
         &self,
         network: &WifiNetworkId,
@@ -534,6 +550,11 @@ fn linux_snapshot() -> Result<WifiSnapshot, Error> {
         .get_property::<String>("Interface")
         .map_err(|error| Error::new("read Wi-Fi interface", error.to_string()))?;
     let profiles = linux_wifi_profiles(&connection)?;
+    let saved_networks = normalize_saved_networks(
+        profiles
+            .iter()
+            .map(|profile| (profile.id.clone(), profile.timestamp)),
+    );
     let raw = linux_wifi_access_points(&connection, &device)?
         .into_iter()
         .map(|access_point| RawNetwork {
@@ -556,6 +577,7 @@ fn linux_snapshot() -> Result<WifiSnapshot, Error> {
         interface: Some(interface),
         current_ssid,
         networks,
+        saved_networks,
     })
 }
 
@@ -875,6 +897,131 @@ fn linux_connect_wifi_with_password(
         network,
         Some(cancellation),
     )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_forget_wifi(network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+    use zbus::zvariant::OwnedObjectPath;
+
+    let connection = system_connection("connect to NetworkManager")?;
+    let manager = manager_proxy(&connection)?;
+    let matching_profiles = linux_wifi_profiles(&connection)?
+        .into_iter()
+        .filter(|profile| network.matches_profile(&profile.id))
+        .collect::<Vec<_>>();
+    if matching_profiles.is_empty() {
+        return Err(Error::new(
+            "forget Wi-Fi network",
+            "the saved network is no longer available",
+        ));
+    }
+
+    let device = wifi_device_path(&connection)?;
+    let active = if let Some(device) = &device {
+        if let Some(active_path) = device_active_connection(&connection, device)? {
+            let proxy = zbus::blocking::Proxy::new(
+                &connection,
+                "org.freedesktop.NetworkManager",
+                active_path.as_str(),
+                "org.freedesktop.NetworkManager.Connection.Active",
+            )
+            .map_err(|error| Error::new("open active Wi-Fi connection", error.to_string()))?;
+            let profile_path = proxy
+                .get_property::<OwnedObjectPath>("Connection")
+                .map_err(|error| Error::new("read active Wi-Fi profile", error.to_string()))?;
+            matching_profiles
+                .iter()
+                .any(|profile| profile.connection_path == profile_path)
+                .then_some(active_path.clone())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut mutation_errors = Vec::new();
+    if let Some(active_path) = &active {
+        if let Err(error) =
+            manager.call::<_, _, ()>("DeactivateConnection", &(active_path.clone(),))
+        {
+            mutation_errors.push(format!("could not disconnect the active profile: {error}"));
+        }
+    }
+
+    for profile in &matching_profiles {
+        let result = zbus::blocking::Proxy::new(
+            &connection,
+            "org.freedesktop.NetworkManager",
+            profile.connection_path.as_str(),
+            "org.freedesktop.NetworkManager.Settings.Connection",
+        )
+        .and_then(|proxy| proxy.call::<_, _, ()>("Delete", &()));
+        if let Err(error) = result {
+            mutation_errors.push(format!(
+                "could not delete a matching saved profile: {error}"
+            ));
+        }
+    }
+
+    let mut profiles_removed = false;
+    for _ in 0..40 {
+        let remaining = linux_wifi_profiles(&connection)?
+            .into_iter()
+            .any(|profile| network.matches_profile(&profile.id));
+        if !remaining {
+            profiles_removed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if !profiles_removed {
+        let detail = mutation_errors
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "NetworkManager did not remove every matching profile".to_string());
+        return Err(Error::new("forget Wi-Fi network", detail));
+    }
+
+    if let (Some(device), Some(active_path)) = (device.as_ref(), active.as_ref()) {
+        let mut disconnected = false;
+        for _ in 0..40 {
+            if device_active_connection(&connection, device)?.as_ref() != Some(active_path) {
+                disconnected = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        if !disconnected {
+            return Err(Error::new(
+                "forget Wi-Fi network",
+                mutation_errors.first().cloned().unwrap_or_else(|| {
+                    "the saved profile was removed, but its active connection did not stop"
+                        .to_string()
+                }),
+            ));
+        }
+    }
+
+    linux_snapshot()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn device_active_connection(
+    connection: &zbus::blocking::Connection,
+    device: &zbus::zvariant::OwnedObjectPath,
+) -> Result<Option<zbus::zvariant::OwnedObjectPath>, Error> {
+    let proxy = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        device.as_str(),
+        "org.freedesktop.NetworkManager.Device",
+    )
+    .map_err(|error| Error::new("open Wi-Fi device", error.to_string()))?;
+    let active = proxy
+        .get_property::<zbus::zvariant::OwnedObjectPath>("ActiveConnection")
+        .map_err(|error| Error::new("read active Wi-Fi connection", error.to_string()))?;
+    Ok((active.as_str() != "/").then_some(active))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1385,7 +1532,7 @@ impl WifiService for SystemWifiService {
         } else {
             None
         };
-        let networks = current_ssid
+        let networks: Vec<WifiNetwork> = current_ssid
             .iter()
             .filter_map(|ssid| {
                 let id = WifiNetworkId::from_bytes(
@@ -1402,12 +1549,20 @@ impl WifiService for SystemWifiService {
                 })
             })
             .collect();
+        let saved_networks = networks
+            .iter()
+            .map(|network| WifiSavedNetwork {
+                id: network.id.clone(),
+                ssid: network.ssid.clone(),
+            })
+            .collect();
         Ok(WifiSnapshot {
             available: true,
             enabled,
             interface: Some(device),
             current_ssid,
             networks,
+            saved_networks,
         })
     }
 
@@ -1441,6 +1596,13 @@ impl WifiService for SystemWifiService {
         Err(Error::new(
             "connect Wi-Fi",
             "network activation is provided by the Linux NetworkManager session",
+        ))
+    }
+
+    fn forget(&self, _network: &WifiNetworkId) -> Result<WifiSnapshot, Error> {
+        Err(Error::new(
+            "forget Wi-Fi network",
+            "saved-network removal is provided by the Linux NetworkManager session",
         ))
     }
 
@@ -1657,6 +1819,38 @@ fn normalize_networks(network_data: Vec<RawNetwork>) -> Vec<WifiNetwork> {
             .then_with(|| right.security.is_secure().cmp(&left.security.is_secure()))
     });
     networks
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn normalize_saved_networks(
+    profiles: impl IntoIterator<Item = (WifiNetworkId, u64)>,
+) -> Vec<WifiSavedNetwork> {
+    let mut latest = HashMap::<WifiNetworkId, u64>::new();
+    for (id, timestamp) in profiles {
+        latest
+            .entry(id)
+            .and_modify(|current| *current = (*current).max(timestamp))
+            .or_insert(timestamp);
+    }
+    let mut saved = latest
+        .into_iter()
+        .map(|(id, timestamp)| {
+            (
+                WifiSavedNetwork {
+                    ssid: display_ssid(&id.ssid),
+                    id,
+                },
+                timestamp,
+            )
+        })
+        .collect::<Vec<_>>();
+    saved.sort_by(|(left, left_timestamp), (right, right_timestamp)| {
+        right_timestamp
+            .cmp(left_timestamp)
+            .then_with(|| left.ssid.to_lowercase().cmp(&right.ssid.to_lowercase()))
+            .then_with(|| left.id.security.cmp(&right.id.security))
+    });
+    saved.into_iter().map(|(network, _)| network).collect()
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -2000,6 +2194,49 @@ mod tests {
         .unwrap();
         assert!(transition.matches_profile(&psk));
         assert!(transition.matches_profile(&sae));
+    }
+
+    #[test]
+    fn saved_networks_are_deduplicated_by_exact_identity_and_sorted_by_recency() {
+        let studio_psk = WifiNetworkId::from_bytes(
+            b"Studio".to_vec(),
+            WifiSecurity::Personal(WifiPersonalMode::Psk),
+        )
+        .unwrap();
+        let studio_open =
+            WifiNetworkId::from_bytes(b"Studio".to_vec(), WifiSecurity::Open).unwrap();
+        let cafe = WifiNetworkId::from_bytes(b"Cafe".to_vec(), WifiSecurity::Open).unwrap();
+        let saved = normalize_saved_networks([
+            (studio_psk.clone(), 2),
+            (studio_open.clone(), 1),
+            (cafe.clone(), 5),
+            (studio_psk.clone(), 9),
+        ]);
+
+        assert_eq!(saved.len(), 3);
+        assert_eq!(saved[0].id, studio_psk);
+        assert_eq!(saved[1].id, cafe);
+        assert_eq!(saved[2].id, studio_open);
+        assert_eq!(saved[0].ssid, "Studio");
+    }
+
+    #[test]
+    fn saved_profile_matching_never_crosses_ssid_or_security_identity() {
+        let selected = WifiNetworkId::from_bytes(
+            b"Studio".to_vec(),
+            WifiSecurity::Personal(WifiPersonalMode::Psk),
+        )
+        .unwrap();
+        let other_ssid = WifiNetworkId::from_bytes(
+            b"Visitor".to_vec(),
+            WifiSecurity::Personal(WifiPersonalMode::Psk),
+        )
+        .unwrap();
+        let open = WifiNetworkId::from_bytes(b"Studio".to_vec(), WifiSecurity::Open).unwrap();
+
+        assert!(selected.matches_profile(&selected));
+        assert!(!selected.matches_profile(&other_ssid));
+        assert!(!selected.matches_profile(&open));
     }
 
     #[test]

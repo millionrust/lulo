@@ -110,10 +110,13 @@ and activates open or Enhanced Open profiles, and requires bounded
 ActiveConnection plus fresh snapshot confirmation. First-time WPA Personal and
 SAE connections use a masked sheet, validated zeroizing password value,
 one-shot exact-match Secret Agent, and explicit cancellation; NetworkManager
-owns persisted system secrets. macOS retains `networksetup`. System Settings
-keeps all calls off the UI thread and surfaces service failures. The complete
-pane-to-service contract is tracked in `docs/system-settings-audit.md` and
-`docs/wifi.md`.
+owns persisted system secrets. Accessible saved profiles also populate a
+deduplicated Known Networks list even while out of range; confirmed forgetting
+disconnects an active matching profile, deletes every exact compatible profile,
+and refreshes authoritative state after success or possible partial failure.
+macOS retains `networksetup`. System Settings keeps all calls off the UI thread
+and surfaces service failures. The complete pane-to-service contract is tracked
+in `docs/system-settings-audit.md` and `docs/wifi.md`.
 
 `rmac-bluetooth` backs the Bluetooth pane through BlueZ's D-Bus ObjectManager
 on Linux. Adapter power/discoverability, bounded discovery, and known-device

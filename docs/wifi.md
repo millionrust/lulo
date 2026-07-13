@@ -17,7 +17,9 @@ Each snapshot reads visible access points and the saved connection profiles the
 current user may access. A network is `known` only when a saved
 `802-11-wireless` profile has the exact SSID bytes and matching security class.
 When more than one compatible profile exists, the most recently used profile
-is selected deterministically.
+is selected deterministically. A separate Known Networks collection deduplicates
+profiles by exact identity, keeps the most recent ordering, and remains
+available for management when a network is out of range or the radio is off.
 
 ## Activation transaction
 
@@ -51,6 +53,23 @@ cancellation token, deactivates the in-flight ActiveConnection, and closes the
 sheet only after the bounded worker acknowledges cancellation. A timeout also
 deactivates the attempt before reporting failure.
 
+## Forget transaction
+
+Known Networks exposes a destructive `Forget…` action behind a macOS-style
+confirmation alert. The background transaction re-reads accessible profiles,
+selects every profile with the exact SSID bytes and compatible security, and
+never uses the display label as an identifier. If one of those profiles is
+active, NetworkManager is asked to deactivate that exact ActiveConnection
+before each matching `Settings.Connection` object receives `Delete`.
+
+The operation waits up to four seconds for the authoritative profile list to
+contain no compatible profile and, when applicable, for the device to stop
+using the old ActiveConnection. Only a fresh Wi-Fi snapshot is published on
+success. If a failure might follow a partial deletion, System Settings performs
+a separate authoritative recovery read before showing the error, so it does
+not keep presenting a profile that NetworkManager already removed. Window close
+is suppressed during this short irreversible transaction.
+
 ## Password lifetime
 
 The sheet uses GPUI's masked editor. A submitted value moves immediately into a
@@ -63,11 +82,11 @@ the requested secret is system-owned by NetworkManager.
 
 ## Explicitly remaining
 
-F1 stays open until saved-network forgetting is implemented, service and
-property signals replace manual refresh, NetworkManager restart recovery is
-proven, and permission, cancellation, and wrong-secret behavior has Linux
-interaction evidence. Enterprise authentication needs a separate certificate
-and identity design; legacy security remains intentionally unavailable.
+F1 stays open until service and property signals replace manual refresh,
+NetworkManager restart recovery is proven, and permission, cancellation,
+wrong-secret, active-forget, and partial-delete behavior has Linux interaction
+evidence. Enterprise authentication needs a separate certificate and identity
+design; legacy security remains intentionally unavailable.
 
 The adapter follows NetworkManager's official
 [`ActivateConnection` and `AddAndActivateConnection` contract](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.html)

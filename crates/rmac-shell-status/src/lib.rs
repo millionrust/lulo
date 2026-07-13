@@ -406,6 +406,7 @@ mod tests {
                 known: true,
                 connected: true,
             }],
+            saved_networks: Vec::new(),
         }));
         state.apply(Event::Vpn(rmac_network::VpnSnapshot {
             available: true,

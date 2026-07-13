@@ -19,7 +19,7 @@ equivalents rather than simulated.
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Included niri config traversal and Linux polkit/restart/scale/accessibility evidence |
 | Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, portal-selected validated add/replace, Trash-backed user-entry removal, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, and resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Linux interaction/scale/accessibility evidence |
-| Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
+| Sharing | Capability-detected OpenSSH service with separate runtime/boot state, explicit enable/disable confirmation, systemd system-manager/polkit mutation, bounded completion wait, read-only UFW allowance truth, authoritative refresh, and no AirDrop branding; file sharing explicitly unavailable | `rmac-sharing`, `rmac-sharing-linux`, `org.freedesktop.systemd1`, `ssh.service`, UFW status | reviewed SMB authority, live service/firewall signals, and Linux polkit/network/scale/accessibility evidence |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
 | Assistant & Intelligence | Hidden from production navigation | Optional local/provider integrations | Leave absent until a privacy design exists |
@@ -188,6 +188,29 @@ stream error, and the watcher reconnects without allowing event bursts to grow
 memory. Every event causes a complete off-thread authority resample; event
 payloads never mutate UI state directly.
 Authority reference: [Ubuntu 26.04 `org.freedesktop.systemd1(5)`](https://manpages.ubuntu.com/manpages/resolute/en/man5/org.freedesktop.systemd1.5.html).
+
+Sharing now exposes Remote Login only when the installed system unit inventory
+contains Ubuntu's canonical `ssh.service` (or its `sshd.service` alias). Runtime
+state and persistent boot enablement are read separately, and a toggle requires
+an explicit warning confirmation before systemd's system manager requests
+polkit authorization. Enabling creates persistent unit links, reloads the
+manager, starts SSH, and rolls enablement back if start submission fails.
+Disabling stops SSH first, then disables it; a failed disable attempts to
+restart the service. Any submission or bounded convergence failure attempts to
+restore the exact previous runtime and boot combination. The adapter waits for
+both authorities to confirm the requested state before replacing the UI
+snapshot. It never edits SSH authentication configuration.
+
+Firewall reachability is a separate read-only fact. A fixed, argument-separated
+`ufw status` query reports an explicit OpenSSH/TCP 22 allow rule, inactive UFW,
+active-but-unverified policy, or unavailable/authorization-required inspection.
+The pane does not change firewall rules and states that daemon activity cannot
+prove reachability through host, network, or router firewalls. File Sharing is
+shown as unavailable until an SMB authority and permission model are reviewed;
+AirDrop is not presented. Authority references: Ubuntu's
+[OpenSSH server guidance](https://documentation.ubuntu.com/server/how-to/security/openssh-server/),
+[firewall guidance](https://documentation.ubuntu.com/server/how-to/security/firewalls/),
+and [`org.freedesktop.systemd1(5)`](https://manpages.ubuntu.com/manpages/resolute/en/man5/org.freedesktop.systemd1.5.html).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

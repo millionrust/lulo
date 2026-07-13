@@ -174,6 +174,11 @@ struct Settings {
     login_items: Option<rmac_login_items::Snapshot>,
     login_item_add: Option<rmac_login_items::AddPreview>,
     login_item_remove: Option<(String, String)>,
+    sharing_loading: bool,
+    sharing_busy: bool,
+    sharing_error: Option<SharedString>,
+    sharing: Option<rmac_sharing::Snapshot>,
+    sharing_confirmation: Option<bool>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -447,6 +452,18 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.apply_system_snapshot(snapshot);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_sharing_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_sharing_update(result);
                 cx.notify();
             });
         })
@@ -869,6 +886,11 @@ impl Settings {
             login_items: None,
             login_item_add: None,
             login_item_remove: None,
+            sharing_loading: true,
+            sharing_busy: false,
+            sharing_error: None,
+            sharing: None,
+            sharing_confirmation: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -1749,6 +1771,70 @@ impl Settings {
                     this.login_item_remove = None;
                 }
                 this.finish_login_items_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_sharing_update(
+        &mut self,
+        result: std::result::Result<rmac_sharing::Snapshot, rmac_sharing::Error>,
+    ) {
+        self.sharing_loading = false;
+        self.sharing_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.sharing = Some(snapshot);
+                self.sharing_error = None;
+            }
+            Err(error) => {
+                self.sharing_error = Some(format!("Could not update Sharing: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_sharing(&mut self, cx: &mut Context<Self>) {
+        if self.sharing_loading || self.sharing_busy {
+            return;
+        }
+        self.sharing_busy = true;
+        self.sharing_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_sharing_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_sharing_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn confirm_remote_login(&mut self, cx: &mut Context<Self>) {
+        if self.sharing_busy {
+            return;
+        }
+        let Some(enabled) = self.sharing_confirmation else {
+            return;
+        };
+        self.sharing_busy = true;
+        self.sharing_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_sharing_linux::set_remote_login(enabled) })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.sharing_confirmation = None;
+                }
+                this.finish_sharing_update(result);
                 cx.notify();
             });
         })
@@ -3270,6 +3356,7 @@ impl Settings {
                 "Date & Time" => self.render_date_time(cx),
                 "Language & Region" => self.render_language_region(cx),
                 "Login Items" => self.render_login_items(cx),
+                "Sharing" => self.render_sharing(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(),
@@ -4485,6 +4572,148 @@ impl Settings {
         }
         cards.push(note_card(
             "Changes to systemd user services take effect at the next sign-in; this pane does not start or stop running services. Adding or removing systemd unit files remains an administrator workflow.",
+        ));
+        self.pane(cards)
+    }
+
+    // ---- Sharing -----------------------------------------------------
+
+    fn render_sharing(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let refresh = Button::new("refresh-sharing", "Refresh")
+            .busy(self.sharing_busy)
+            .disabled(self.sharing_loading || self.sharing_busy)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_sharing(cx));
+            });
+        let Some(snapshot) = &self.sharing else {
+            return self.pane(vec![
+                card(vec![row_base()
+                    .child(tile("icons/globe.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Host sharing services".into(),
+                        Some("systemd and firewall authority".into()),
+                    ))
+                    .child(refresh)
+                    .into_any_element()]),
+                note_card(if self.sharing_loading {
+                    "Reading authoritative sharing capabilities…"
+                } else {
+                    "Sharing services are unavailable. No local fallback toggles are shown."
+                }),
+            ]);
+        };
+
+        let remote = &snapshot.remote_login;
+        let toggle_view = view.clone();
+        let remote_toggle = Toggle::new("remote-login")
+            .checked(remote.active && remote.enabled_at_boot)
+            .disabled(self.sharing_busy || !remote.available)
+            .on_click(move |enabled, _, cx| {
+                toggle_view.update(cx, |settings, cx| {
+                    settings.sharing_confirmation = Some(*enabled);
+                    cx.notify();
+                });
+            });
+        let mut cards = vec![
+            section_header("Remote Login"),
+            card(vec![
+                row_base()
+                    .child(tile("icons/key.svg", accent(), 22.0))
+                    .child(text_block(
+                        "Remote Login (SSH)".into(),
+                        Some(if remote.available {
+                            format!(
+                                "{} · {}",
+                                remote.service_state.as_deref().unwrap_or("unknown"),
+                                if remote.enabled_at_boot {
+                                    "starts at boot"
+                                } else {
+                                    "disabled at boot"
+                                }
+                            )
+                            .into()
+                        } else {
+                            "OpenSSH server is not installed".into()
+                        }),
+                    ))
+                    .child(remote_toggle)
+                    .into_any_element(),
+                value_row(
+                    "icons/shield.svg",
+                    if remote.firewall == rmac_sharing::FirewallState::AllowsSsh {
+                        hsl(0x34c759)
+                    } else {
+                        secondary()
+                    },
+                    "Firewall".into(),
+                    remote.firewall.label().into(),
+                ),
+                row_base()
+                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Authoritative state".into(),
+                        Some("ssh.service · systemd system manager".into()),
+                    ))
+                    .child(refresh)
+                    .into_any_element(),
+            ]),
+        ];
+
+        if let Some(enabled) = self.sharing_confirmation {
+            let cancel_view = view.clone();
+            let confirm_view = view.clone();
+            cards.push(note_card(if enabled {
+                "Turn on Remote Login? This enables and starts the system SSH service after administrator authorization. It does not change firewall rules or authentication policy."
+            } else {
+                "Turn off Remote Login? Existing SSH sessions may be disconnected, and remote access can be lost. This stops and disables the system SSH service after administrator authorization."
+            }));
+            cards.push(card(vec![row_base()
+                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(text_block(
+                    if enabled {
+                        "Confirm enabling Remote Login"
+                    } else {
+                        "Confirm disabling Remote Login"
+                    }
+                    .into(),
+                    Some("Administrator authorization may be requested".into()),
+                ))
+                .child(
+                    Button::new("cancel-remote-login", "Cancel")
+                        .disabled(self.sharing_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| {
+                                settings.sharing_confirmation = None;
+                                cx.notify();
+                            });
+                        }),
+                )
+                .child(
+                    Button::new(
+                        "confirm-remote-login",
+                        if enabled { "Turn On" } else { "Turn Off" },
+                    )
+                    .primary()
+                    .busy(self.sharing_busy)
+                    .disabled(self.sharing_busy)
+                    .on_click(move |_, _, cx| {
+                        confirm_view.update(cx, |settings, cx| settings.confirm_remote_login(cx));
+                    }),
+                )
+                .into_any_element()]));
+        }
+        if remote.firewall != rmac_sharing::FirewallState::AllowsSsh {
+            cards.push(note_card(
+                remote.firewall_detail.clone().unwrap_or_else(|| {
+                    "A running SSH service does not prove that other computers can reach it. Network and router firewalls remain separate authorities.".into()
+                }),
+            ));
+        }
+        cards.push(section_header("File Sharing"));
+        cards.push(note_card(
+            "No reviewed SMB file-sharing authority is connected yet. rmac does not present AirDrop or a local toggle that would imply file sharing exists.",
         ));
         self.pane(cards)
     }
@@ -7195,6 +7424,7 @@ impl Render for Settings {
             .or_else(|| self.locale_stream_error.clone())
             .or_else(|| self.login_items_error.clone())
             .or_else(|| self.login_items_stream_error.clone())
+            .or_else(|| self.sharing_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -7233,6 +7463,7 @@ impl Render for Settings {
                             this.locale_stream_error = None;
                             this.login_items_error = None;
                             this.login_items_stream_error = None;
+                            this.sharing_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
@@ -8248,6 +8479,12 @@ fn categories() -> Vec<Vec<Category>> {
                 "Choose applications and services that start when you sign in.",
             ),
             cat(
+                "Sharing",
+                "icons/globe.svg",
+                blue,
+                "Control reviewed remote access and file-sharing services.",
+            ),
+            cat(
                 "Accessibility",
                 "icons/accessibility.svg",
                 blue,
@@ -8373,6 +8610,7 @@ mod tests {
         assert!(!names.iter().any(|name| name == "Handoff"));
         assert!(names.iter().any(|name| name == "Language & Region"));
         assert!(names.iter().any(|name| name == "Login Items"));
+        assert!(names.iter().any(|name| name == "Sharing"));
     }
 
     #[test]

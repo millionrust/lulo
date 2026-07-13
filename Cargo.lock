@@ -5297,6 +5297,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-sharing"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-sharing-linux"
+version = "0.1.0"
+dependencies = [
+ "rmac-sharing",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-shell-runtime"
 version = "0.1.0"
 dependencies = [
@@ -5411,6 +5423,8 @@ dependencies = [
  "rmac-notifications-store",
  "rmac-portal",
  "rmac-power",
+ "rmac-sharing",
+ "rmac-sharing-linux",
  "rmac-shortcuts",
  "rmac-system-info",
  "rmac-theme",

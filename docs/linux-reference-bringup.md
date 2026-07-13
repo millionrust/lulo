@@ -180,6 +180,18 @@ Keep at least 15 GiB free throughout this pass. Before any Cargo command, record
 1 GiB. Reuse the repository's normal `target` directory and run one scoped Cargo
 pipeline at a time.
 
+Start the dedicated collector. Add the optional code checks only with at least
+25 GiB free; they are package-scoped and reuse the normal target directory:
+
+```sh
+bash scripts/linux/run-accessibility-evidence.sh
+bash scripts/linux/run-accessibility-evidence.sh --with-code-checks
+```
+
+The command writes authoritative environment values and a manual checklist
+under ignored `target/linux-evidence/<UTC timestamp>/accessibility/`. Complete
+every checklist row; its creation alone is not evidence that a test passed.
+
 In System Settings → Accessibility, exercise Standard, Large, and Extra Large
 application text. At each value, inspect all seven apps at 100% output scale,
 then repeat the Extra Large pass at every supported niri output scale from 100%

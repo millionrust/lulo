@@ -12,6 +12,12 @@ if [[ "$(uname -s)" != "Linux" ]]; then
   echo "this evidence collector must run on Linux" >&2
   exit 2
 fi
+available_kib=$(df -Pk "$repo_root" | awk 'NR == 2 { print $4 }')
+minimum_kib=$((15 * 1024 * 1024))
+if (( available_kib < minimum_kib )); then
+  echo "evidence collection stopped: ${available_kib} KiB free; ${minimum_kib} KiB required" >&2
+  exit 3
+fi
 mkdir -p "$output_dir"
 
 command_version() {

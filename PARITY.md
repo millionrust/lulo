@@ -37,8 +37,10 @@ evidence remains gated by the reference-PC framework work.
   reports a bounded live PackageKit update list with security/blocked status,
   refresh timeout, and truthful unavailable/error states. Storage directly
   measures system/removable/network volumes, isolates per-volume failures, and
-  warns conservatively when space is low; installation, cleanup actions, and
-  Linux runtime evidence keep overall parity partial.
+  warns conservatively when space is low. Date & Time now exposes timedated
+  clock/timezone/NTP state plus validated polkit-backed timezone and automatic
+  time changes; installation, cleanup actions, live time signals, and Linux
+  runtime evidence keep overall parity partial.
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).

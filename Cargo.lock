@@ -5375,6 +5375,8 @@ dependencies = [
  "rmac-shortcuts",
  "rmac-system-info",
  "rmac-theme",
+ "rmac-time",
+ "rmac-time-linux",
  "rmac-ui",
  "rmac-updates",
  "rmac-updates-linux",
@@ -5427,6 +5429,21 @@ version = "0.1.0"
 dependencies = [
  "image",
  "rmac-storage",
+]
+
+[[package]]
+name = "rmac-time"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+]
+
+[[package]]
+name = "rmac-time-linux"
+version = "0.1.0"
+dependencies = [
+ "rmac-time",
+ "zbus",
 ]
 
 [[package]]

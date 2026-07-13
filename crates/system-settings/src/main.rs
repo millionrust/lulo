@@ -150,6 +150,11 @@ struct Settings {
     updates_busy: bool,
     updates_error: Option<SharedString>,
     updates: Option<rmac_updates::Snapshot>,
+    time_loading: bool,
+    time_busy: bool,
+    time_error: Option<SharedString>,
+    time: Option<rmac_time::Snapshot>,
+    timezone_editor: Option<Entity<InputState>>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -440,6 +445,18 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
+                .spawn(async { rmac_time_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_time_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
                 .spawn(async { rmac_bluetooth::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -649,6 +666,11 @@ impl Settings {
             updates_busy: false,
             updates_error: None,
             updates: None,
+            time_loading: true,
+            time_busy: false,
+            time_error: None,
+            time: None,
+            timezone_editor: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -934,6 +956,123 @@ impl Settings {
                             Some(format!("Could not refresh storage volumes: {error}").into());
                     }
                 }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn finish_time_update(
+        &mut self,
+        result: std::result::Result<rmac_time::Snapshot, rmac_time::Error>,
+    ) {
+        self.time_loading = false;
+        self.time_busy = false;
+        match result {
+            Ok(snapshot) => {
+                self.time = Some(snapshot);
+                self.time_error = None;
+            }
+            Err(error) => {
+                self.time_error = Some(format!("Could not update date and time: {error}").into());
+            }
+        }
+    }
+
+    fn refresh_time(&mut self, cx: &mut Context<Self>) {
+        if self.time_loading || self.time_busy {
+            return;
+        }
+        self.time_busy = true;
+        self.time_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_time_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_time_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_automatic_time(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.time_busy {
+            return;
+        }
+        self.time_busy = true;
+        self.time_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_time_linux::set_ntp(enabled) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_time_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn start_timezone_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.time_busy || self.timezone_editor.is_some() {
+            return;
+        }
+        let Some(snapshot) = &self.time else {
+            return;
+        };
+        let timezone = snapshot.timezone.clone();
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(timezone)
+                .placeholder("Asia/Kolkata")
+        });
+        let focus = editor.read(cx).focus_handle(cx);
+        window.focus(&focus);
+        self.timezone_editor = Some(editor);
+        self.time_error = None;
+        cx.notify();
+    }
+
+    fn cancel_timezone_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.time_busy {
+            self.timezone_editor = None;
+            self.time_error = None;
+            cx.notify();
+        }
+    }
+
+    fn submit_timezone(&mut self, cx: &mut Context<Self>) {
+        if self.time_busy {
+            return;
+        }
+        let (Some(editor), Some(snapshot)) = (&self.timezone_editor, &self.time) else {
+            return;
+        };
+        let timezone = editor.read(cx).value().trim().to_string();
+        if let Err(error) = snapshot.validate_timezone(&timezone) {
+            self.time_error = Some(error.to_string().into());
+            cx.notify();
+            return;
+        }
+        self.time_busy = true;
+        self.time_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_time_linux::set_timezone(&timezone) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if result.is_ok() {
+                    this.timezone_editor = None;
+                }
+                this.finish_time_update(result);
                 cx.notify();
             });
         })
@@ -2452,6 +2591,7 @@ impl Settings {
                 "Trackpad" => self.render_trackpad(cx),
                 "Battery" => self.render_battery(cx),
                 "Displays" => self.render_displays(cx),
+                "Date & Time" => self.render_date_time(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(),
@@ -2804,6 +2944,167 @@ impl Settings {
                 "Device continuity and media-receiver controls are hidden until rmac has reviewed Linux service authorities for them.",
             ),
         ];
+        self.pane(cards)
+    }
+
+    // ---- Date & Time -------------------------------------------------
+
+    fn render_date_time(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let refresh = Button::new("refresh-date-time", "Refresh")
+            .busy(self.time_busy)
+            .disabled(self.time_loading || self.time_busy)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_time(cx));
+            });
+        let Some(snapshot) = &self.time else {
+            return self.pane(vec![
+                card(vec![row_base()
+                    .child(tile("icons/clock.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "System date and time".into(),
+                        Some("systemd-timedated".into()),
+                    ))
+                    .child(refresh)
+                    .into_any_element()]),
+                note_card(if self.time_loading {
+                    "Reading authoritative date and time state from systemd-timedated…"
+                } else {
+                    "The system date and time service is unavailable. No local fallback controls are shown."
+                }),
+            ]);
+        };
+
+        let timezone_row = if let Some(editor) = &self.timezone_editor {
+            let save_view = view.clone();
+            let cancel_view = view.clone();
+            row_base()
+                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(text_block(
+                    "Time zone".into(),
+                    Some("Enter an exact system zone such as Asia/Kolkata".into()),
+                ))
+                .child(div().w(px(180.0)).child(TextField::new(editor).small()))
+                .child(
+                    Button::new("timezone-cancel", "Cancel")
+                        .disabled(self.time_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view
+                                .update(cx, |settings, cx| settings.cancel_timezone_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new("timezone-save", "Save")
+                        .primary()
+                        .busy(self.time_busy)
+                        .disabled(self.time_busy)
+                        .on_click(move |_, _, cx| {
+                            save_view.update(cx, |settings, cx| settings.submit_timezone(cx));
+                        }),
+                )
+                .into_any_element()
+        } else {
+            let edit_view = view.clone();
+            row_base()
+                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(text_block(
+                    "Time zone".into(),
+                    Some("Validated against zones installed on this system".into()),
+                ))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .text_color(secondary())
+                        .child(snapshot.timezone.clone()),
+                )
+                .child(
+                    Button::new("timezone-edit", "Edit").on_click(move |_, window, cx| {
+                        edit_view
+                            .update(cx, |settings, cx| settings.start_timezone_edit(window, cx));
+                    }),
+                )
+                .into_any_element()
+        };
+
+        let ntp_view = view.clone();
+        let automatic = Toggle::new("automatic-time")
+            .checked(snapshot.ntp_enabled)
+            .disabled(self.time_busy || !snapshot.can_ntp)
+            .on_click(move |enabled, _, cx| {
+                ntp_view.update(cx, |settings, cx| settings.set_automatic_time(*enabled, cx));
+            });
+        let synchronization = if !snapshot.can_ntp {
+            "No synchronization service"
+        } else if snapshot.synchronized {
+            "Synchronized"
+        } else if snapshot.ntp_enabled {
+            "Synchronizing"
+        } else {
+            "Off"
+        };
+        let mut cards = vec![
+            card(vec![
+                value_row(
+                    "icons/clock.svg",
+                    secondary(),
+                    "Current time".into(),
+                    snapshot.formatted_local_time().into(),
+                ),
+                value_row(
+                    "icons/refresh-cw.svg",
+                    if snapshot.synchronized {
+                        hsl(0x34c759)
+                    } else {
+                        secondary()
+                    },
+                    "Synchronization".into(),
+                    synchronization.into(),
+                ),
+                row_base()
+                    .child(tile("icons/refresh-cw.svg", accent(), 22.0))
+                    .child(text_block(
+                        "Set time automatically".into(),
+                        Some(if snapshot.can_ntp {
+                            "Use the system network time service".into()
+                        } else {
+                            "No compatible network time service is installed".into()
+                        }),
+                    ))
+                    .child(automatic)
+                    .into_any_element(),
+            ]),
+            card(vec![timezone_row]),
+            card(vec![
+                value_row(
+                    "icons/settings.svg",
+                    secondary(),
+                    "Hardware clock".into(),
+                    if snapshot.local_rtc {
+                        "Local time"
+                    } else {
+                        "UTC"
+                    }
+                    .into(),
+                ),
+                row_base()
+                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Authoritative state".into(),
+                        Some("Refresh after changes made outside rmac".into()),
+                    ))
+                    .child(refresh)
+                    .into_any_element(),
+            ]),
+        ];
+        if snapshot.timezones_truncated {
+            cards.push(note_card(
+                "The installed time-zone inventory exceeded the bounded validation list.",
+            ));
+        }
+        cards.push(note_card(
+            "Manual clock setting and live external-change signals are not connected yet. The hardware clock remains read-only because UTC is the recommended Linux configuration.",
+        ));
         self.pane(cards)
     }
 
@@ -5507,6 +5808,7 @@ impl Render for Settings {
             .clone()
             .or_else(|| self.updates_error.clone())
             .or_else(|| self.storage_error.clone())
+            .or_else(|| self.time_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -5539,6 +5841,7 @@ impl Render for Settings {
                             this.system_data_error = None;
                             this.updates_error = None;
                             this.storage_error = None;
+                            this.time_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
@@ -6503,6 +6806,12 @@ fn categories() -> Vec<Vec<Category>> {
                 "icons/settings.svg",
                 gray,
                 "View system information, update status, and storage.",
+            ),
+            cat(
+                "Date & Time",
+                "icons/clock.svg",
+                blue,
+                "Adjust the time zone and network time synchronization.",
             ),
             cat(
                 "Accessibility",

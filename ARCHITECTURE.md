@@ -156,6 +156,13 @@ failing the entire snapshot. System Settings performs discovery off the UI
 thread, preserves the last good list on refresh failure, and does not infer
 categories or safe-to-delete files from raw filesystem totals.
 
+Date and time follow the same split boundary: `rmac-time` owns snapshots,
+timezone validation, bounded inventory handling, typed failures, and a fake
+service; `rmac-time-linux` owns systemd-timedated D-Bus and interactive polkit
+calls. Mutations return a newly sampled snapshot rather than optimistic local
+state. System Settings dispatches blocking D-Bus work to its background
+executor and retains the previous snapshot when authorization or mutation fails.
+
 Appearance is split deliberately: `rmac-appearance` owns the platform-neutral
 snapshot, capabilities, event reducer, source trait, and deterministic fake;
 `rmac-appearance-portal` reads standardized host preferences and follows the

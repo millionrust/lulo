@@ -16,7 +16,7 @@ equivalents rather than simulated.
 | General/About | Typed privacy-safe OS, kernel, architecture, hardware, graphics, and session facts; validated hostname mutation with busy/error state; authoritative refresh; redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs/sysfs, display service | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname refresh, and clipboard contents |
 | Software Update | Live bounded PackageKit update status with security/blocked classification, cached startup query, explicit freshness request, timeout, service/backend errors, and last-known-good refresh behavior | PackageKit system D-Bus over the Ubuntu APT backend | Trusted download/install transaction, progress/cancel, restart requirements, polkit outcomes, live signals, and Linux interaction evidence |
 | Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
-| Date & Time | Placeholder | timedate1 D-Bus | Time zone, automatic time, clock settings |
+| Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Property-change/reconnect stream, manual clock editing with confirmation, Linux polkit/scale/accessibility evidence |
 | Language & Region | Placeholder | locale1 D-Bus and input services | Locale, formats, keyboard/input sources |
 | Login Items | Placeholder | systemd user/XDG autostart | Enable/disable user startup entries |
 | Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
@@ -90,6 +90,16 @@ disconnected volume reports its own failure without hiding healthy volumes.
 The pane flags low space, refreshes off the UI thread, and offers conservative
 guidance. It does not fabricate storage categories or expose cleanup buttons
 until category measurement and reversible deletion plans exist.
+
+Date & Time reads typed properties and the bounded `ListTimezones()` inventory
+from systemd-timedated. Time-zone and automatic-time changes validate locally,
+request interactive polkit authorization, and replace UI state only with a
+fresh service snapshot. Unsupported NTP, unavailable service, invalid zone,
+denied authorization, and mutation failure preserve the last known-good state.
+The hardware clock is deliberately read-only and identifies UTC as the normal
+Linux configuration. Manual clock editing and the timedated property/reconnect
+stream remain pending and are stated in the pane. Authority reference:
+[Ubuntu 26.04 `org.freedesktop.timedate1(5)`](https://manpages.ubuntu.com/manpages/resolute/man5/org.freedesktop.timedate1.5.html).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

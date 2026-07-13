@@ -251,13 +251,21 @@ at the bounded 130% maximum. Every app-owned label and chrome surface in
 Activity Monitor, Finder, App Drawer, Notes, Terminal, and Text Editor follows
 the live factor, while independently controlled editor and terminal content
 fonts remain separate. Linux clipping evidence is still required.
-The pane also discovers screen-reader readiness off the UI thread: a full niri desktop session,
-non-empty Xwayland `DISPLAY`, and an Orca
+The Motor section also exposes three atomic keyboard-response presets backed by
+niri's real repeat delay and rate. It always shows the exact effective values,
+leaves custom combinations visibly unselected, validates the complete candidate
+configuration before replacement, and relies on niri live reload. Sticky Keys,
+Slow Keys, and Bounce Keys remain explicitly unavailable because niri currently
+provides no compositor authority for them. Authority reference:
+[niri Input](https://github.com/niri-wm/niri/wiki/Configuration%3A-Input).
+The pane also discovers screen-reader readiness off the UI thread: a full niri
+desktop session, non-empty Xwayland `DISPLAY`, and an Orca
 executable found within a bounded PATH search are reported independently. It
 shows niri's documented default `Super`–`Alt`–`S` shortcut but does not claim
 that a user-customized binding exists. An explicit off-thread refresh resamples
-all three prerequisites after session or package changes. This readiness describes niri and Orca,
-not rmac: application roles, names, states, actions, focus, and announcements
+all three prerequisites after session or package changes. This readiness
+describes niri and Orca, not rmac: application roles, names, states, actions,
+focus, and announcements
 remain gated on Linux AT-SPI/Orca runtime evidence. Authority reference:
 [niri Accessibility](https://github.com/niri-wm/niri/wiki/Accessibility).
 

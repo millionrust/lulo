@@ -296,6 +296,7 @@ enum AudioChange {
 enum InputChange {
     KeyboardRepeatDelay(u32),
     KeyboardRepeatRate(u32),
+    KeyboardRepeatPreset { delay_ms: u32, rate: u32 },
     KeyboardNumlock(bool),
     MouseNaturalScroll(bool),
     MouseLeftHanded(bool),
@@ -2936,6 +2937,10 @@ impl Settings {
         match change {
             InputChange::KeyboardRepeatDelay(value) => settings.keyboard.repeat_delay_ms = value,
             InputChange::KeyboardRepeatRate(value) => settings.keyboard.repeat_rate = value,
+            InputChange::KeyboardRepeatPreset { delay_ms, rate } => {
+                settings.keyboard.repeat_delay_ms = delay_ms;
+                settings.keyboard.repeat_rate = rate;
+            }
             InputChange::KeyboardNumlock(value) => settings.keyboard.numlock = value,
             InputChange::MouseNaturalScroll(value) => settings.mouse.natural_scroll = value,
             InputChange::MouseLeftHanded(value) => settings.mouse.left_handed = value,
@@ -5104,9 +5109,55 @@ impl Settings {
                 .into_any_element(),
         ]));
 
+        if !self.input_loading {
+            let keyboard = &self.input.settings.keyboard;
+            let selected_preset = KEYBOARD_RESPONSE_PRESETS.iter().position(|(_, change)| {
+                matches!(
+                    change,
+                    InputChange::KeyboardRepeatPreset { delay_ms, rate }
+                        if *delay_ms == keyboard.repeat_delay_ms && *rate == keyboard.repeat_rate
+                )
+            });
+            cards.push(card(vec![
+                input_segment_row(
+                    cx.entity(),
+                    "accessibility-key-response",
+                    "Key repeat preset",
+                    &KEYBOARD_RESPONSE_PRESETS,
+                    selected_preset,
+                    self.input.can_configure && !self.input_busy,
+                ),
+                value_row(
+                    "icons/keyboard.svg",
+                    secondary(),
+                    "Effective key repeat".into(),
+                    format!(
+                        "{} ms delay · {} characters/s",
+                        keyboard.repeat_delay_ms, keyboard.repeat_rate
+                    )
+                    .into(),
+                ),
+            ]));
+            if let Some(detail) = self
+                .input
+                .detail
+                .clone()
+                .filter(|_| !self.input.can_configure)
+            {
+                cards.push(note_card(detail));
+            }
+        } else {
+            cards.push(note_card(
+                "Loading keyboard accessibility settings from niri…",
+            ));
+        }
+        cards.push(note_card(
+            "Niri currently provides repeat timing but no compositor authority for Sticky Keys, Slow Keys, or Bounce Keys. Those controls remain unavailable instead of being simulated inside individual apps.",
+        ));
+
         cards.push(section_header("Text & Screen Reader"));
         cards.push(note_card(
-            "Text size applies live to shared rmac controls and semantic text through the common UI runtime. App-specific fixed text is still being migrated. It does not change GTK, browser, terminal content-font, display, or compositor scaling.",
+            "Text size applies live to shared controls and app-owned interface text across the current rmac apps. It does not change GTK, browser, editor or terminal content fonts, display scaling, or compositor scaling.",
         ));
         let screen_reader = &self.screen_reader;
         cards.push(card(vec![
@@ -6440,6 +6491,12 @@ impl Settings {
             cards.push(note);
         }
         let settings = &self.input.settings.keyboard;
+        let selected_delay = KEYBOARD_DELAYS.iter().position(|(_, change)| {
+            matches!(change, InputChange::KeyboardRepeatDelay(value) if *value == settings.repeat_delay_ms)
+        });
+        let selected_rate = KEYBOARD_RATES.iter().position(|(_, change)| {
+            matches!(change, InputChange::KeyboardRepeatRate(value) if *value == settings.repeat_rate)
+        });
         cards.push(section_header("Key Repeat"));
         cards.push(card(vec![
             input_segment_row(
@@ -6447,10 +6504,7 @@ impl Settings {
                 "keyboard-repeat-delay",
                 "Delay until repeat",
                 &KEYBOARD_DELAYS,
-                KEYBOARD_DELAYS
-                    .iter()
-                    .position(|(_, change)| matches!(change, InputChange::KeyboardRepeatDelay(value) if *value == settings.repeat_delay_ms))
-                    .unwrap_or(2),
+                selected_delay,
                 self.input.can_configure && !self.input_busy,
             ),
             input_segment_row(
@@ -6458,10 +6512,7 @@ impl Settings {
                 "keyboard-repeat-rate",
                 "Key repeat rate",
                 &KEYBOARD_RATES,
-                KEYBOARD_RATES
-                    .iter()
-                    .position(|(_, change)| matches!(change, InputChange::KeyboardRepeatRate(value) if *value == settings.repeat_rate))
-                    .unwrap_or(2),
+                selected_rate,
                 self.input.can_configure && !self.input_busy,
             ),
             input_switch_row(
@@ -6493,7 +6544,7 @@ impl Settings {
                 "mouse-tracking",
                 "Tracking speed",
                 &MOUSE_SPEEDS,
-                speed_index(settings.accel_speed),
+                Some(speed_index(settings.accel_speed)),
                 self.input.can_configure && !self.input_busy,
             ),
             input_segment_row(
@@ -6501,7 +6552,9 @@ impl Settings {
                 "mouse-acceleration",
                 "Acceleration",
                 &MOUSE_PROFILES,
-                usize::from(settings.accel_profile == rmac_input::AccelProfile::Flat),
+                Some(usize::from(
+                    settings.accel_profile == rmac_input::AccelProfile::Flat,
+                )),
                 self.input.can_configure && !self.input_busy,
             ),
             input_switch_row(
@@ -6540,7 +6593,7 @@ impl Settings {
                 "touchpad-tracking",
                 "Tracking speed",
                 &TOUCHPAD_SPEEDS,
-                speed_index(settings.pointer.accel_speed),
+                Some(speed_index(settings.pointer.accel_speed)),
                 self.input.can_configure && !self.input_busy,
             ),
             input_segment_row(
@@ -6548,7 +6601,9 @@ impl Settings {
                 "touchpad-acceleration",
                 "Acceleration",
                 &TOUCHPAD_PROFILES,
-                usize::from(settings.pointer.accel_profile == rmac_input::AccelProfile::Flat),
+                Some(usize::from(
+                    settings.pointer.accel_profile == rmac_input::AccelProfile::Flat,
+                )),
                 self.input.can_configure && !self.input_busy,
             ),
             input_switch_row(
@@ -8609,6 +8664,29 @@ const KEYBOARD_RATES: [InputOption; 5] = [
     ("40", InputChange::KeyboardRepeatRate(40)),
     ("Fast", InputChange::KeyboardRepeatRate(60)),
 ];
+const KEYBOARD_RESPONSE_PRESETS: [InputOption; 3] = [
+    (
+        "Standard",
+        InputChange::KeyboardRepeatPreset {
+            delay_ms: 600,
+            rate: 25,
+        },
+    ),
+    (
+        "Deliberate",
+        InputChange::KeyboardRepeatPreset {
+            delay_ms: 1_000,
+            rate: 15,
+        },
+    ),
+    (
+        "Minimal",
+        InputChange::KeyboardRepeatPreset {
+            delay_ms: 1_500,
+            rate: 10,
+        },
+    ),
+];
 const MOUSE_SPEEDS: [InputOption; 5] = [
     ("Slow", InputChange::MouseAccelSpeed(-1.0)),
     ("−0.5", InputChange::MouseAccelSpeed(-0.5)),
@@ -8718,7 +8796,7 @@ fn input_segment_row(
     id: &'static str,
     title: &'static str,
     options: &'static [InputOption],
-    selected: usize,
+    selected: Option<usize>,
     enabled: bool,
 ) -> AnyElement {
     let mut control = div().flex().gap_1().w(px(290.0));
@@ -8734,10 +8812,10 @@ fn input_segment_row(
                 .h(px(26.0))
                 .rounded(px(6.0))
                 .text_size(rmac_ui::text_px(11.0))
-                .when(index == selected, |element| {
+                .when(selected == Some(index), |element| {
                     element.bg(accent()).text_color(on_accent())
                 })
-                .when(index != selected, |element| {
+                .when(selected != Some(index), |element| {
                     element.bg(rmac_ui::mac::control_fill()).text_color(label())
                 })
                 .when(enabled, |element| {

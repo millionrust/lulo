@@ -5149,6 +5149,7 @@ dependencies = [
  "notify",
  "rmac-login-items",
  "rmac-storage",
+ "trash",
  "zbus",
 ]
 

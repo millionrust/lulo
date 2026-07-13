@@ -18,7 +18,7 @@ equivalents rather than simulated.
 | Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Included niri config traversal and Linux polkit/restart/scale/accessibility evidence |
-| Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, `org.freedesktop.systemd1` user manager | reviewed add/remove and Linux scale/accessibility evidence |
+| Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, portal-selected validated add/replace, Trash-backed user-entry removal, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, and resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Linux interaction/scale/accessibility evidence |
 | Sharing | Placeholder | Explicit service adapters | Capability-detected SSH/file sharing controls |
 | Accessibility | Placeholder | Settings portal and accessibility stack | Contrast, motion, text scale, Orca-facing controls |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
@@ -148,11 +148,21 @@ entry creates a full user copy marked as an rmac-managed hidden override;
 re-enabling removes only that marked override and reveals the original system
 entry. Every mutation re-enumerates authority, and failures retain the last
 known-good snapshot. Reveal resolves the effective entry again immediately
-before passing its path to the desktop portal. Add/remove remains pending.
+before passing its path to the desktop portal. Adding starts with the portal
+file chooser restricted to local `.desktop` files, validates the chosen entry,
+and shows an inline Add or Replace confirmation. A target that appears after
+preview is never overwritten without a new replacement confirmation. The
+installed copy is normalized to enabled state. Remove is offered only for
+user-owned, non-managed entries and requires a second confirmation before the
+file moves to the desktop Trash. If removing a user override reveals a lower
+system entry, rmac immediately creates a managed disabled override rather than
+silently starting that system item at the next login. Applications themselves
+and systemd unit files are never deleted from this pane.
 Authority references: the freedesktop.org
 [Desktop Application Autostart Specification](https://specifications.freedesktop.org/autostart/0.5/),
 [Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry/latest-single/),
-and [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/).
+the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/),
+and the [freedesktop Trash Specification](https://specifications.freedesktop.org/trash/latest/).
 
 The same Login Items snapshot now includes systemd user services from the
 session-bus `org.freedesktop.systemd1.Manager.ListUnitFiles()` authority. It

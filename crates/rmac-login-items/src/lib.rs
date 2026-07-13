@@ -33,6 +33,14 @@ pub struct Issue {
     pub detail: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AddPreview {
+    pub source: PathBuf,
+    pub id: String,
+    pub name: String,
+    pub replacing: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnitFileState {
     Enabled,
@@ -144,6 +152,9 @@ pub trait Service {
     fn snapshot(&self) -> Result<Snapshot, Error>;
     fn set_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error>;
     fn set_background_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error>;
+    fn prepare_add(&self, source: &std::path::Path) -> Result<AddPreview, Error>;
+    fn add(&self, source: &std::path::Path, replace: bool) -> Result<Snapshot, Error>;
+    fn remove(&self, id: &str) -> Result<Snapshot, Error>;
 }
 
 pub fn validate_id(id: &str) -> Result<(), Error> {

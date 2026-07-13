@@ -172,6 +172,8 @@ struct Settings {
     login_items_error: Option<SharedString>,
     login_items_stream_error: Option<SharedString>,
     login_items: Option<rmac_login_items::Snapshot>,
+    login_item_add: Option<rmac_login_items::AddPreview>,
+    login_item_remove: Option<(String, String)>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -865,6 +867,8 @@ impl Settings {
             login_items_error: None,
             login_items_stream_error: None,
             login_items: None,
+            login_item_add: None,
+            login_item_remove: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -1642,6 +1646,109 @@ impl Settings {
                 this.login_items_error = result
                     .err()
                     .map(|error| format!("Could not reveal login item: {error}").into());
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn choose_login_item(&mut self, cx: &mut Context<Self>) {
+        if self.login_item_busy.is_some() {
+            return;
+        }
+        self.login_item_busy = Some("choose".into());
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let choice = rmac_portal::choose_desktop_entry().await;
+            let preview = match choice {
+                Ok(Some(path)) => Some(
+                    cx.background_executor()
+                        .spawn(async move { rmac_login_items_linux::prepare_add_source(&path) })
+                        .await,
+                ),
+                Ok(None) => None,
+                Err(error) => Some(Err(rmac_login_items::Error::new(
+                    rmac_login_items::ErrorKind::Unavailable,
+                    error.to_string(),
+                ))),
+            };
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.login_item_busy = None;
+                match preview {
+                    Some(Ok(preview)) => {
+                        this.login_item_add = Some(preview);
+                        this.login_items_error = None;
+                    }
+                    Some(Err(error)) => {
+                        this.login_items_error =
+                            Some(format!("Could not add login item: {error}").into());
+                    }
+                    None => {}
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn confirm_add_login_item(&mut self, cx: &mut Context<Self>) {
+        if self.login_item_busy.is_some() {
+            return;
+        }
+        let Some(preview) = self.login_item_add.clone() else {
+            return;
+        };
+        self.login_item_busy = Some("add".into());
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_login_items_linux::add_source(&preview.source, preview.replacing)
+                })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.login_item_add = None;
+                }
+                this.finish_login_items_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn request_remove_login_item(&mut self, id: String, name: String, cx: &mut Context<Self>) {
+        if self.login_item_busy.is_none() {
+            self.login_item_remove = Some((id, name));
+            cx.notify();
+        }
+    }
+
+    fn confirm_remove_login_item(&mut self, cx: &mut Context<Self>) {
+        if self.login_item_busy.is_some() {
+            return;
+        }
+        let Some((id, _)) = self.login_item_remove.clone() else {
+            return;
+        };
+        self.login_item_busy = Some("remove".into());
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_login_items_linux::remove_autostart(&id) })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.login_item_remove = None;
+                }
+                this.finish_login_items_update(result);
                 cx.notify();
             });
         })
@@ -4067,7 +4174,71 @@ impl Settings {
             ]);
         };
 
+        let choose_view = view.clone();
         let mut cards = vec![section_header("Open at login")];
+        cards.push(card(vec![row_base()
+            .child(tile("icons/app-window.svg", accent(), 22.0))
+            .child(text_block(
+                "Add application entry".into(),
+                Some("Choose a local .desktop file to review".into()),
+            ))
+            .child(
+                Button::new("choose-login-item", "Add…")
+                    .busy(self.login_item_busy.as_deref() == Some("choose"))
+                    .disabled(self.login_item_busy.is_some())
+                    .on_click(move |_, _, cx| {
+                        choose_view.update(cx, |settings, cx| settings.choose_login_item(cx));
+                    }),
+            )
+            .into_any_element()]));
+        if let Some(preview) = &self.login_item_add {
+            let cancel_view = view.clone();
+            let confirm_view = view.clone();
+            cards.push(note_card(format!(
+                "Review “{}” ({}). {}",
+                preview.name,
+                preview.id,
+                if preview.replacing {
+                    "A user entry with this filename exists and will be replaced only after confirmation."
+                } else {
+                    "The validated entry will be copied into your user autostart directory."
+                }
+            )));
+            cards.push(card(vec![row_base()
+                .child(tile("icons/info.svg", secondary(), 22.0))
+                .child(text_block(
+                    if preview.replacing {
+                        "Replace existing login item"
+                    } else {
+                        "Add login item"
+                    }
+                    .into(),
+                    Some("The installed copy will start enabled".into()),
+                ))
+                .child(
+                    Button::new("cancel-add-login-item", "Cancel")
+                        .disabled(self.login_item_busy.is_some())
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| {
+                                settings.login_item_add = None;
+                                cx.notify();
+                            });
+                        }),
+                )
+                .child(
+                    Button::new(
+                        "confirm-add-login-item",
+                        if preview.replacing { "Replace" } else { "Add" },
+                    )
+                    .primary()
+                    .busy(self.login_item_busy.as_deref() == Some("add"))
+                    .disabled(self.login_item_busy.is_some())
+                    .on_click(move |_, _, cx| {
+                        confirm_view.update(cx, |settings, cx| settings.confirm_add_login_item(cx));
+                    }),
+                )
+                .into_any_element()]));
+        }
         if snapshot.items.is_empty() {
             cards.push(note_card("No effective XDG autostart entries were found."));
         } else {
@@ -4079,6 +4250,9 @@ impl Settings {
                     let reveal_id = item.id.clone();
                     let toggle_view = view.clone();
                     let reveal_view = view.clone();
+                    let remove_view = view.clone();
+                    let remove_id = item.id.clone();
+                    let remove_name = item.name.clone();
                     let busy = self.login_item_busy.as_deref() == Some(item.id.as_str());
                     let reveal_key = format!("reveal:{}", item.id);
                     let revealing = self.login_item_busy.as_deref() == Some(reveal_key.as_str());
@@ -4092,6 +4266,27 @@ impl Settings {
                     row_base()
                         .child(tile("icons/app-window.svg", accent(), 22.0))
                         .child(text_block(item.name.clone().into(), Some(subtitle.into())))
+                        .when(item.user_owned && !item.managed_override, |row| {
+                            row.child(
+                                Button::new(
+                                    ElementId::from(SharedString::from(format!(
+                                        "remove-login-item-{}",
+                                        item.id
+                                    ))),
+                                    "Remove…",
+                                )
+                                .disabled(self.login_item_busy.is_some())
+                                .on_click(move |_, _, cx| {
+                                    remove_view.update(cx, |settings, cx| {
+                                        settings.request_remove_login_item(
+                                            remove_id.clone(),
+                                            remove_name.clone(),
+                                            cx,
+                                        );
+                                    });
+                                }),
+                            )
+                        })
                         .child(
                             Button::new(
                                 ElementId::from(SharedString::from(format!(
@@ -4133,6 +4328,41 @@ impl Settings {
                 })
                 .collect();
             cards.push(card(rows));
+        }
+        if let Some((_, name)) = &self.login_item_remove {
+            let cancel_view = view.clone();
+            let confirm_view = view.clone();
+            cards.push(note_card(format!(
+                "Remove “{name}”? Its user-owned desktop entry will be moved to Trash. If a system entry with the same filename exists, it will remain visible but disabled."
+            )));
+            cards.push(card(vec![row_base()
+                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(text_block(
+                    "Confirm removal".into(),
+                    Some("This does not delete the application itself".into()),
+                ))
+                .child(
+                    Button::new("cancel-remove-login-item", "Cancel")
+                        .disabled(self.login_item_busy.is_some())
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| {
+                                settings.login_item_remove = None;
+                                cx.notify();
+                            });
+                        }),
+                )
+                .child(
+                    Button::new("confirm-remove-login-item", "Move to Trash")
+                        .primary()
+                        .busy(self.login_item_busy.as_deref() == Some("remove"))
+                        .disabled(self.login_item_busy.is_some())
+                        .on_click(move |_, _, cx| {
+                            confirm_view.update(cx, |settings, cx| {
+                                settings.confirm_remove_login_item(cx);
+                            });
+                        }),
+                )
+                .into_any_element()]));
         }
 
         cards.push(section_header("Allow in background"));
@@ -4254,7 +4484,7 @@ impl Settings {
             ));
         }
         cards.push(note_card(
-            "Changes to systemd user services take effect at the next sign-in; this pane does not start or stop running services. Reviewed add/remove flows are not connected yet.",
+            "Changes to systemd user services take effect at the next sign-in; this pane does not start or stop running services. Adding or removing systemd unit files remains an administrator workflow.",
         ));
         self.pane(cards)
     }

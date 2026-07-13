@@ -1,6 +1,8 @@
 //! XDG autostart adapter for the supported Linux session.
 
-use rmac_login_items::{BackgroundService, Error, ErrorKind, Issue, Item, Service, Snapshot};
+use rmac_login_items::{
+    AddPreview, BackgroundService, Error, ErrorKind, Issue, Item, Service, Snapshot,
+};
 #[cfg(target_os = "linux")]
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -106,6 +108,61 @@ impl Service for SystemService {
             ))
         }
     }
+
+    fn prepare_add(&self, source: &Path) -> Result<AddPreview, Error> {
+        prepare_add(&self.environment, source)
+    }
+
+    fn add(&self, source: &Path, replace: bool) -> Result<Snapshot, Error> {
+        let preview = self.prepare_add(source)?;
+        if preview.replacing && !replace {
+            return Err(Error::new(
+                ErrorKind::Mutation,
+                "an entry with this filename already exists; replacement was not confirmed",
+            ));
+        }
+        let contents = std::fs::read_to_string(&preview.source).map_err(mutation_error)?;
+        let contents = rmac_login_items::with_hidden(&contents, false, false)?;
+        let target = self
+            .environment
+            .config_home
+            .join("autostart")
+            .join(&preview.id);
+        std::fs::create_dir_all(target.parent().expect("autostart target has a parent"))
+            .map_err(mutation_error)?;
+        rmac_storage::atomic_write(&target, contents.as_bytes()).map_err(mutation_error)?;
+        self.snapshot()
+    }
+
+    fn remove(&self, id: &str) -> Result<Snapshot, Error> {
+        rmac_login_items::validate_id(id)?;
+        let current = self.snapshot()?;
+        let item = current
+            .items
+            .iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| {
+                Error::new(ErrorKind::InvalidEntry, "autostart entry no longer exists")
+            })?;
+        if !item.user_owned || item.managed_override {
+            return Err(Error::new(
+                ErrorKind::Mutation,
+                "only user-owned application entries can be moved to Trash",
+            ));
+        }
+        trash::delete(&item.source)
+            .map_err(|error| Error::new(ErrorKind::Mutation, error.to_string()))?;
+        let refreshed = self.snapshot()?;
+        if refreshed
+            .items
+            .iter()
+            .any(|candidate| candidate.id == id && candidate.enabled)
+        {
+            self.set_enabled(id, false)
+        } else {
+            Ok(refreshed)
+        }
+    }
 }
 
 pub fn snapshot() -> Result<Snapshot, Error> {
@@ -118,6 +175,18 @@ pub fn set_enabled(id: &str, enabled: bool) -> Result<Snapshot, Error> {
 
 pub fn set_background_enabled(id: &str, enabled: bool) -> Result<Snapshot, Error> {
     SystemService::default().set_background_enabled(id, enabled)
+}
+
+pub fn prepare_add_source(source: &Path) -> Result<AddPreview, Error> {
+    SystemService::default().prepare_add(source)
+}
+
+pub fn add_source(source: &Path, replace: bool) -> Result<Snapshot, Error> {
+    SystemService::default().add(source, replace)
+}
+
+pub fn remove_autostart(id: &str) -> Result<Snapshot, Error> {
+    SystemService::default().remove(id)
 }
 
 pub fn autostart_source(id: &str) -> Result<PathBuf, Error> {
@@ -388,6 +457,35 @@ impl Environment {
             self.data_home.join("systemd/user"),
         ]
     }
+}
+
+fn prepare_add(environment: &Environment, source: &Path) -> Result<AddPreview, Error> {
+    if !source.is_absolute() || !source.is_file() {
+        return Err(Error::new(
+            ErrorKind::InvalidEntry,
+            "choose a local desktop-entry file",
+        ));
+    }
+    let id = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "entry filename is not UTF-8"))?;
+    rmac_login_items::validate_id(id)?;
+    let contents = std::fs::read_to_string(source).map_err(mutation_error)?;
+    let parsed = rmac_login_items::parse_entry(&contents)?;
+    let target = environment.config_home.join("autostart").join(id);
+    if source == target {
+        return Err(Error::new(
+            ErrorKind::InvalidEntry,
+            "this entry is already installed in the user autostart directory",
+        ));
+    }
+    Ok(AddPreview {
+        source: source.to_path_buf(),
+        id: id.into(),
+        name: parsed.name,
+        replacing: target.exists(),
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -728,5 +826,25 @@ mod tests {
         assert!(!owner_change_reappeared("org.freedesktop.systemd1", ""));
         assert!(owner_change_reappeared("org.freedesktop.systemd1", ":1.42"));
         assert!(!owner_change_reappeared("org.example.Other", ":1.42"));
+    }
+
+    #[test]
+    fn add_requires_explicit_replacement_and_installs_enabled_entry() {
+        let (root, environment) = environment();
+        let source = root.join("demo.desktop");
+        std::fs::write(
+            &source,
+            "[Desktop Entry]\nType=Application\nName=Demo\nHidden=true\nExec=demo\n",
+        )
+        .unwrap();
+        let service = SystemService { environment };
+        let preview = service.prepare_add(&source).unwrap();
+        assert!(!preview.replacing);
+        let snapshot = service.add(&source, false).unwrap();
+        assert!(snapshot.items[0].enabled);
+        assert!(service.prepare_add(&source).unwrap().replacing);
+        assert!(service.add(&source, false).is_err());
+        assert!(service.add(&source, true).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

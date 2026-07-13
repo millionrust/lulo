@@ -146,6 +146,7 @@ struct Settings {
     diagnostics_copied: bool,
     account: SharedString,
     sysinfo: rmac_system_info::Snapshot,
+    screen_reader: ScreenReaderCapability,
     updates_loading: bool,
     updates_busy: bool,
     updates_error: Option<SharedString>,
@@ -368,6 +369,32 @@ struct SystemSnapshot {
     account: String,
     sysinfo: std::result::Result<rmac_system_info::Snapshot, rmac_system_info::Error>,
     storage: std::result::Result<Vec<rmac_mounts::Volume>, rmac_mounts::Error>,
+    screen_reader: ScreenReaderCapability,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ScreenReaderCapability {
+    niri_session: bool,
+    xwayland: bool,
+    orca_path: Option<PathBuf>,
+}
+
+impl ScreenReaderCapability {
+    fn ready(&self) -> bool {
+        self.niri_session && self.xwayland && self.orca_path.is_some()
+    }
+
+    fn limitation(&self) -> Option<&'static str> {
+        if !self.niri_session {
+            Some("Start the desktop through a full niri-session")
+        } else if !self.xwayland {
+            Some("Xwayland is required by Orca in the current niri integration")
+        } else if self.orca_path.is_none() {
+            Some("Install Orca to enable screen-reader support")
+        } else {
+            None
+        }
+    }
 }
 
 struct ThemeLoad {
@@ -905,6 +932,7 @@ impl Settings {
                 .unwrap_or_else(|_| "User".into())
                 .into(),
             sysinfo: rmac_system_info::Snapshot::default(),
+            screen_reader: ScreenReaderCapability::default(),
             updates_loading: true,
             updates_busy: false,
             updates_error: None,
@@ -1035,6 +1063,7 @@ impl Settings {
 
     fn apply_system_snapshot(&mut self, snapshot: SystemSnapshot) {
         self.account = snapshot.account.into();
+        self.screen_reader = snapshot.screen_reader;
         match snapshot.sysinfo {
             Ok(sysinfo) => {
                 self.sysinfo = sysinfo;
@@ -1135,12 +1164,18 @@ impl Settings {
         self.system_data_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
+            let (result, screen_reader) = cx
                 .background_executor()
-                .spawn(async { rmac_system_info::snapshot() })
+                .spawn(async {
+                    (
+                        rmac_system_info::snapshot(),
+                        gather_screen_reader_capability(),
+                    )
+                })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.system_data_busy = false;
+                this.screen_reader = screen_reader;
                 match result {
                     Ok(snapshot) => {
                         this.sysinfo = snapshot;
@@ -5032,6 +5067,7 @@ impl Settings {
 
         let keyboard_view = view.clone();
         let mouse_view = view.clone();
+        let screen_reader_refresh_view = view.clone();
         let trackpad_view = view;
         cards.push(section_header("Motor"));
         cards.push(card(vec![
@@ -5072,8 +5108,82 @@ impl Settings {
         cards.push(note_card(
             "Text size applies live to shared rmac controls and semantic text through the common UI runtime. App-specific fixed text is still being migrated. It does not change GTK, browser, terminal content-font, display, or compositor scaling.",
         ));
+        let screen_reader = &self.screen_reader;
+        cards.push(card(vec![
+            row_base()
+                .child(tile(
+                    "icons/accessibility.svg",
+                    if screen_reader.ready() {
+                        hsl(0x34c759)
+                    } else {
+                        secondary()
+                    },
+                    22.0,
+                ))
+                .child(text_block(
+                    "Niri/Orca prerequisites".into(),
+                    Some(if screen_reader.ready() {
+                        "Detected".into()
+                    } else {
+                        "Incomplete".into()
+                    }),
+                ))
+                .child(
+                    Button::new("refresh-screen-reader", "Refresh")
+                        .busy(self.system_data_busy)
+                        .disabled(self.system_data_busy)
+                        .on_click(move |_, _, cx| {
+                            screen_reader_refresh_view
+                                .update(cx, |settings, cx| settings.refresh_system_info(cx));
+                        }),
+                )
+                .into_any_element(),
+            value_row(
+                "icons/app-window.svg",
+                secondary(),
+                "Desktop session".into(),
+                if screen_reader.niri_session {
+                    "Full niri session".into()
+                } else {
+                    "Not a full niri session".into()
+                },
+            ),
+            value_row(
+                "icons/monitor.svg",
+                secondary(),
+                "Xwayland".into(),
+                if screen_reader.xwayland {
+                    "Available".into()
+                } else {
+                    "Unavailable".into()
+                },
+            ),
+            value_row(
+                "icons/accessibility.svg",
+                secondary(),
+                "Orca".into(),
+                if screen_reader.orca_path.is_some() {
+                    "Installed".into()
+                } else {
+                    "Not found in PATH".into()
+                },
+            ),
+            value_row(
+                "icons/keyboard.svg",
+                accent(),
+                "Niri default shortcut".into(),
+                "Super–Alt–S".into(),
+            ),
+        ]));
+        if let Some(limitation) = screen_reader.limitation() {
+            cards.push(note_card(limitation));
+        } else {
+            cards.push(note_card(
+                "The session prerequisites are present, but environment detection cannot prove that Xwayland and Orca will operate correctly. Use the niri default shortcut to test speech on the Linux PC.",
+            ));
+        }
         cards.push(note_card(
-            "Orca activation is not controlled here yet. The current GPUI integration still requires Linux AT-SPI and Orca runtime evidence before rmac can claim screen-reader-facing controls.",
+            "This readiness check covers niri and Orca only. rmac application roles, names, states, actions, focus, and announcements still require Linux AT-SPI/Orca runtime evidence before accessibility can be claimed.",
         ));
         self.pane(cards)
     }
@@ -8750,7 +8860,44 @@ fn gather_system_snapshot() -> SystemSnapshot {
         account: account_name(),
         sysinfo: rmac_system_info::snapshot(),
         storage: rmac_mounts::volumes(),
+        screen_reader: gather_screen_reader_capability(),
     }
+}
+
+fn gather_screen_reader_capability() -> ScreenReaderCapability {
+    let niri_session = ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
+        .into_iter()
+        .filter_map(|key| std::env::var(key).ok())
+        .any(|value| {
+            value
+                .split([':', ';'])
+                .any(|desktop| desktop.eq_ignore_ascii_case("niri"))
+        });
+    let xwayland = std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty());
+    let orca_path = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .take(128)
+            .map(|directory| directory.join("orca"))
+            .find(|candidate| is_executable_file(candidate))
+    });
+    ScreenReaderCapability {
+        niri_session,
+        xwayland,
+        orca_path,
+    }
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    path.metadata()
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &std::path::Path) -> bool {
+    path.is_file()
 }
 
 async fn load_theme_state() -> std::result::Result<ThemeLoad, String> {
@@ -8974,7 +9121,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        categories, notification_policy_with, NotificationPolicyChange, GENERAL_DESTINATIONS,
+        categories, notification_policy_with, NotificationPolicyChange, ScreenReaderCapability,
+        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -8999,6 +9147,28 @@ mod tests {
         assert!(names.iter().any(|name| name == "Language & Region"));
         assert!(names.iter().any(|name| name == "Login Items"));
         assert!(names.iter().any(|name| name == "Sharing"));
+    }
+
+    #[test]
+    fn screen_reader_readiness_requires_every_niri_orca_authority() {
+        let mut capability = ScreenReaderCapability::default();
+        assert_eq!(
+            capability.limitation(),
+            Some("Start the desktop through a full niri-session")
+        );
+        capability.niri_session = true;
+        assert_eq!(
+            capability.limitation(),
+            Some("Xwayland is required by Orca in the current niri integration")
+        );
+        capability.xwayland = true;
+        assert_eq!(
+            capability.limitation(),
+            Some("Install Orca to enable screen-reader support")
+        );
+        capability.orca_path = Some("/usr/bin/orca".into());
+        assert!(capability.ready());
+        assert_eq!(capability.limitation(), None);
     }
 
     #[test]

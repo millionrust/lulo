@@ -411,7 +411,7 @@ impl AppDrawer {
                     .rounded(px(size * 0.23))
                     .bg(mac::control_fill())
                     .text_color(mac::text_secondary())
-                    .text_size(px(size * 0.43))
+                    .text_size(rmac_ui::text_px(size * 0.43))
                     .child(initial)
                     .into_any_element()
             }
@@ -445,7 +445,7 @@ impl AppDrawer {
             .child(
                 div()
                     .max_w(px(TILE_W - 8.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::text())
                     .text_center()
                     .truncate()
@@ -487,14 +487,14 @@ impl AppDrawer {
             .child(
                 div()
                     .flex_1()
-                    .text_size(px(13.0))
+                    .text_size(rmac_ui::text_px(13.0))
                     .text_color(mac::text())
                     .truncate()
                     .child(app.name.clone()),
             )
             .child(
                 div()
-                    .text_size(px(11.0))
+                    .text_size(rmac_ui::text_px(11.0))
                     .text_color(mac::text_secondary())
                     .child(app.category.label()),
             )
@@ -569,7 +569,7 @@ impl AppDrawer {
                     .px_3()
                     .py_1()
                     .rounded(px(13.0))
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .when(active, |d: Stateful<Div>| {
                         d.bg(mac::accent()).text_color(mac::on_accent())
                     })
@@ -686,7 +686,7 @@ impl Render for AppDrawer {
                         .bg(mac::error_background())
                         .border_b_1()
                         .border_color(mac::error_border())
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))

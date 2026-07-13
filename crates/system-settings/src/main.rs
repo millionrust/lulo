@@ -900,7 +900,9 @@ struct Settings {
     // Displays
     display_loading: bool,
     display_busy: bool,
-    display_revert: Option<DisplayChange>,
+    display_generation: u64,
+    display_refresh_pending: bool,
+    display_confirmation: Option<DisplayConfirmation>,
 
     // Keyboard, mouse, and trackpad
     input_loading: bool,
@@ -979,27 +981,99 @@ fn notification_policy_with(
 #[derive(Clone)]
 enum DisplayChange {
     Mode {
-        output: String,
+        output: rmac_display::Output,
         mode: rmac_display::Mode,
     },
     Scale {
-        output: String,
+        output: rmac_display::Output,
         scale: f64,
     },
     Transform {
-        output: String,
+        output: rmac_display::Output,
         transform: rmac_display::Transform,
+    },
+    Position {
+        output: rmac_display::Output,
+        x: i32,
+        y: i32,
     },
 }
 
 impl DisplayChange {
-    fn apply(&self) -> std::result::Result<(), rmac_display::Error> {
+    fn apply(&self) -> std::result::Result<rmac_display::AppliedChange, rmac_display::Error> {
         match self {
             Self::Mode { output, mode } => rmac_display::set_mode(output, *mode),
             Self::Scale { output, scale } => rmac_display::set_scale(output, *scale),
             Self::Transform { output, transform } => rmac_display::set_transform(output, transform),
+            Self::Position { output, x, y } => rmac_display::set_position(output, *x, *y),
         }
     }
+}
+
+#[derive(Clone)]
+struct DisplayConfirmation {
+    baseline: rmac_display::Snapshot,
+    applied: rmac_display::Snapshot,
+    generation: u64,
+    seconds_remaining: u8,
+}
+
+const DISPLAY_CONFIRMATION_SECONDS: u8 = 15;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DisplayPlacement {
+    Left,
+    Right,
+    Above,
+    Below,
+}
+
+impl DisplayPlacement {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Left => "Left of Main",
+            Self::Right => "Right of Main",
+            Self::Above => "Above Main",
+            Self::Below => "Below Main",
+        }
+    }
+}
+
+fn relative_display_position(
+    moving: &rmac_display::LogicalOutput,
+    anchor: &rmac_display::LogicalOutput,
+    placement: DisplayPlacement,
+) -> Option<(i32, i32)> {
+    match placement {
+        DisplayPlacement::Left => Some((
+            anchor.x.checked_sub(i32::try_from(moving.width).ok()?)?,
+            anchor.y,
+        )),
+        DisplayPlacement::Right => Some((
+            anchor.x.checked_add(i32::try_from(anchor.width).ok()?)?,
+            anchor.y,
+        )),
+        DisplayPlacement::Above => Some((
+            anchor.x,
+            anchor.y.checked_sub(i32::try_from(moving.height).ok()?)?,
+        )),
+        DisplayPlacement::Below => Some((
+            anchor.x,
+            anchor.y.checked_add(i32::try_from(anchor.height).ok()?)?,
+        )),
+    }
+}
+
+fn compositor_event_affects_displays(event: &rmac_compositor::Event) -> bool {
+    matches!(
+        event,
+        rmac_compositor::Event::Snapshot { .. }
+            | rmac_compositor::Event::OutputsReplaced { .. }
+            | rmac_compositor::Event::WorkspacesReplaced { .. }
+    ) || matches!(
+        event,
+        rmac_compositor::Event::Unknown { source_kind, .. } if source_kind == "ConfigLoaded"
+    )
 }
 
 /// Read-only system data that is slow enough to keep off the first-frame path.
@@ -1898,6 +1972,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
+                this.flush_display_stream_refresh(cx);
                 cx.notify();
             });
         })
@@ -2101,7 +2176,11 @@ impl Settings {
             while let Ok(event) = dock_compositor_event_rx.recv().await {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
+                        let refresh_displays = compositor_event_affects_displays(&event);
                         this.dock_compositor.apply(event);
+                        if refresh_displays {
+                            this.request_display_stream_refresh(cx);
+                        }
                         cx.notify();
                     })
                     .is_err()
@@ -2341,7 +2420,9 @@ impl Settings {
 
             display_loading: true,
             display_busy: false,
-            display_revert: None,
+            display_generation: 0,
+            display_refresh_pending: false,
+            display_confirmation: None,
 
             input_loading: true,
             input_busy: false,
@@ -5332,10 +5413,50 @@ impl Settings {
         }
     }
 
-    fn refresh_displays(&mut self, cx: &mut Context<Self>) {
-        if self.display_loading || self.display_busy {
+    fn request_display_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.display_loading || self.display_busy || self.display_confirmation.is_some() {
+            self.display_refresh_pending = true;
             return;
         }
+        self.display_refresh_pending = false;
+        self.display_generation = self.display_generation.wrapping_add(1);
+        let generation = self.display_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_display::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.display_generation == generation
+                    && !this.display_loading
+                    && !this.display_busy
+                    && this.display_confirmation.is_none()
+                {
+                    this.finish_display_update(result);
+                    cx.notify();
+                } else {
+                    this.display_refresh_pending = true;
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn flush_display_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.display_refresh_pending
+            && !self.display_loading
+            && !self.display_busy
+            && self.display_confirmation.is_none()
+        {
+            self.request_display_stream_refresh(cx);
+        }
+    }
+
+    fn refresh_displays(&mut self, cx: &mut Context<Self>) {
+        if self.display_loading || self.display_busy || self.display_confirmation.is_some() {
+            return;
+        }
+        self.display_refresh_pending = false;
         self.display_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -5347,21 +5468,22 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
                 if succeeded {
-                    this.display_revert = None;
+                    this.display_generation = this.display_generation.wrapping_add(1);
+                    this.display_confirmation = None;
                 }
+                this.flush_display_stream_refresh(cx);
                 cx.notify();
             });
         })
         .detach();
     }
 
-    fn apply_display_change(
-        &mut self,
-        change: DisplayChange,
-        revert: DisplayChange,
-        cx: &mut Context<Self>,
-    ) {
-        if self.display_loading || self.display_busy || !self.display.can_configure {
+    fn apply_display_change(&mut self, change: DisplayChange, cx: &mut Context<Self>) {
+        if self.display_loading
+            || self.display_busy
+            || self.display_confirmation.is_some()
+            || !self.display.can_configure
+        {
             return;
         }
         self.display_busy = true;
@@ -5369,17 +5491,155 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    change.apply()?;
-                    rmac_display::snapshot()
-                })
+                .spawn(async move { change.apply() })
                 .await;
-            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                match result {
+                    Ok(applied) => {
+                        let confirmed = applied.snapshot.clone();
+                        this.finish_display_update(Ok(applied.snapshot));
+                        this.begin_display_confirmation(applied.baseline, confirmed, cx);
+                    }
+                    Err(error) => {
+                        this.finish_display_update(Err(error));
+                        this.flush_display_stream_refresh(cx);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn begin_display_confirmation(
+        &mut self,
+        baseline: rmac_display::Snapshot,
+        applied: rmac_display::Snapshot,
+        cx: &mut Context<Self>,
+    ) {
+        self.display_generation = self.display_generation.wrapping_add(1);
+        let generation = self.display_generation;
+        self.display_confirmation = Some(DisplayConfirmation {
+            baseline,
+            applied,
+            generation,
+            seconds_remaining: DISPLAY_CONFIRMATION_SECONDS,
+        });
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            for remaining in (0..DISPLAY_CONFIRMATION_SECONDS).rev() {
+                cx.background_executor().timer(Duration::from_secs(1)).await;
+                let update = this.update(cx, |this: &mut Settings, cx| {
+                    let current = this.display_confirmation.as_ref().is_some_and(|pending| {
+                        pending.generation == generation && this.display_generation == generation
+                    });
+                    if !current {
+                        return false;
+                    }
+                    if remaining == 0 {
+                        this.revert_display_change(cx);
+                    } else if let Some(pending) = &mut this.display_confirmation {
+                        pending.seconds_remaining = remaining;
+                        cx.notify();
+                    }
+                    true
+                });
+                if !matches!(update, Ok(true)) || remaining == 0 {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn keep_display_change(&mut self, cx: &mut Context<Self>) {
+        if self.display_loading || self.display_busy || !self.display.can_persist {
+            return;
+        }
+        let Some(pending) = self.display_confirmation.clone() else {
+            return;
+        };
+        let Some(primary) = self
+            .display
+            .outputs
+            .iter()
+            .find(|output| output.primary && output.logical.is_some())
+            .or_else(|| {
+                self.display
+                    .outputs
+                    .iter()
+                    .find(|output| output.logical.is_some())
+            })
+            .map(|output| output.id.clone())
+        else {
+            self.display_error = Some("No enabled display can be saved as Main".into());
+            cx.notify();
+            return;
+        };
+        let layout = match rmac_display::current_layout(&self.display, &primary) {
+            Ok(layout) => layout,
+            Err(error) => {
+                self.display_error =
+                    Some(format!("Could not prepare display layout: {error}").into());
+                cx.notify();
+                return;
+            }
+        };
+        self.display_generation = self.display_generation.wrapping_add(1);
+        self.display_confirmation = None;
+        self.display_busy = true;
+        self.display_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_display::persist_layout(&layout) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                match result {
+                    Ok(snapshot) => {
+                        this.finish_display_update(Ok(snapshot));
+                        this.flush_display_stream_refresh(cx);
+                    }
+                    Err(error) => {
+                        this.display_busy = false;
+                        this.display_error =
+                            Some(format!("Could not save display layout: {error}").into());
+                        this.begin_display_confirmation(pending.baseline, pending.applied, cx);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_primary_display(&mut self, output: String, cx: &mut Context<Self>) {
+        if self.display_loading
+            || self.display_busy
+            || self.display_confirmation.is_some()
+            || !self.display.can_persist
+        {
+            return;
+        }
+        let layout = match rmac_display::current_layout(&self.display, &output) {
+            Ok(layout) => layout,
+            Err(error) => {
+                self.display_error = Some(format!("Could not select Main display: {error}").into());
+                cx.notify();
+                return;
+            }
+        };
+        self.display_busy = true;
+        self.display_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_display::persist_layout(&layout) })
+                .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
-                if succeeded {
-                    this.display_revert = Some(revert);
-                }
+                this.flush_display_stream_refresh(cx);
                 cx.notify();
             });
         })
@@ -5390,25 +5650,22 @@ impl Settings {
         if self.display_loading || self.display_busy || !self.display.can_configure {
             return;
         }
-        let Some(revert) = self.display_revert.clone() else {
+        let Some(pending) = self.display_confirmation.take() else {
             return;
         };
+        self.display_generation = self.display_generation.wrapping_add(1);
         self.display_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    revert.apply()?;
-                    rmac_display::snapshot()
+                    rmac_display::restore_snapshot(&pending.baseline, &pending.applied)
                 })
                 .await;
-            let succeeded = result.is_ok();
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
-                if succeeded {
-                    this.display_revert = None;
-                }
+                this.flush_display_stream_refresh(cx);
                 cx.notify();
             });
         })
@@ -12718,6 +12975,11 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let revert_view = view.clone();
+        let keep_view = view.clone();
+        let confirmation_seconds = self
+            .display_confirmation
+            .as_ref()
+            .map(|pending| pending.seconds_remaining);
         let mut cards = vec![div()
             .flex()
             .items_center()
@@ -12740,24 +13002,42 @@ impl Settings {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .when(self.display_revert.is_some(), |actions| {
-                        actions.child(
-                            div()
-                                .id("display-revert")
-                                .px_2()
-                                .py_1()
-                                .rounded(px(6.0))
-                                .text_size(rmac_ui::text_px(12.0))
-                                .text_color(hsl(0xff3b30))
-                                .cursor_pointer()
-                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                .child("Revert")
-                                .on_click(move |_, _, cx| {
-                                    revert_view.update(cx, |settings, cx| {
-                                        settings.revert_display_change(cx)
-                                    });
-                                }),
-                        )
+                    .when_some(confirmation_seconds, |actions, seconds| {
+                        actions
+                            .child(
+                                div()
+                                    .id("display-keep")
+                                    .px_2()
+                                    .py_1()
+                                    .rounded(px(6.0))
+                                    .text_size(rmac_ui::text_px(12.0))
+                                    .text_color(accent())
+                                    .cursor_pointer()
+                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                                    .child(format!("Keep Changes ({seconds}s)"))
+                                    .on_click(move |_, _, cx| {
+                                        keep_view.update(cx, |settings, cx| {
+                                            settings.keep_display_change(cx)
+                                        });
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("display-revert")
+                                    .px_2()
+                                    .py_1()
+                                    .rounded(px(6.0))
+                                    .text_size(rmac_ui::text_px(12.0))
+                                    .text_color(hsl(0xff3b30))
+                                    .cursor_pointer()
+                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                                    .child("Revert")
+                                    .on_click(move |_, _, cx| {
+                                        revert_view.update(cx, |settings, cx| {
+                                            settings.revert_display_change(cx)
+                                        });
+                                    }),
+                            )
                     })
                     .child(
                         div()
@@ -12793,6 +13073,28 @@ impl Settings {
         if self.display.outputs.is_empty() {
             cards.push(note_card("No displays were detected."));
         }
+
+        let enabled_outputs = self
+            .display
+            .outputs
+            .iter()
+            .filter(|output| output.logical.is_some())
+            .count();
+        if enabled_outputs > 1 {
+            cards.push(section_header("Arrange"));
+            cards.push(display_layout_preview(&self.display.outputs));
+            if !self.display.mirror_supported {
+                cards.push(note_card(
+                    "niri does not provide native display mirroring. Displays remain extended; wl-mirror can mirror content without pretending it is a compositor layout mode.",
+                ));
+            }
+        }
+        let main_output = self
+            .display
+            .outputs
+            .iter()
+            .find(|output| output.primary && output.logical.is_some())
+            .cloned();
 
         for output in &self.display.outputs {
             let title = if output.primary {
@@ -12874,6 +13176,39 @@ impl Settings {
                     format!("{width} × {height} mm").into(),
                 ));
             }
+            if output.primary {
+                rows.push(value_row(
+                    "icons/monitor.svg",
+                    accent(),
+                    "Main Display".into(),
+                    "This display".into(),
+                ));
+            } else if output.logical.is_some() && self.display.can_persist {
+                let output_id = output.id.clone();
+                let primary_view = view.clone();
+                rows.push(
+                    row_base()
+                        .id(SharedString::from(format!("display-primary-{output_id}")))
+                        .child(text_block(
+                            "Use as Main Display".into(),
+                            Some("Anchors rmac shell surfaces and niri startup focus".into()),
+                        ))
+                        .child(glyph("icons/chevron-right.svg", 14.0, secondary()))
+                        .when(
+                            !self.display_busy && self.display_confirmation.is_none(),
+                            |row| {
+                                row.cursor_pointer()
+                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                                    .on_click(move |_, _, cx| {
+                                        primary_view.update(cx, |settings, cx| {
+                                            settings.set_primary_display(output_id.clone(), cx)
+                                        });
+                                    })
+                            },
+                        )
+                        .into_any_element(),
+                );
+            }
             cards.push(card(rows));
 
             let Some(logical) = output.logical.as_ref() else {
@@ -12883,6 +13218,57 @@ impl Settings {
                 continue;
             }
 
+            if !output.primary {
+                if let (Some(main), Some(moving)) = (main_output.as_ref(), output.logical.as_ref())
+                {
+                    if let Some(anchor) = main.logical.as_ref() {
+                        cards.push(section_header("Arrange relative to Main"));
+                        let placement_rows = [
+                            DisplayPlacement::Left,
+                            DisplayPlacement::Right,
+                            DisplayPlacement::Above,
+                            DisplayPlacement::Below,
+                        ]
+                        .into_iter()
+                        .filter_map(|placement| {
+                            let (x, y) = relative_display_position(moving, anchor, placement)?;
+                            let selected = moving.x == x && moving.y == y;
+                            let output_id = output.id.clone();
+                            let expected_output = output.clone();
+                            let placement_view = view.clone();
+                            Some(
+                                row_base()
+                                    .id(SharedString::from(format!(
+                                        "display-position-{output_id}-{}",
+                                        placement.label()
+                                    )))
+                                    .child(text_block(placement.label().into(), None))
+                                    .when(selected, |row| {
+                                        row.child(glyph("icons/check.svg", 14.0, accent()))
+                                    })
+                                    .when(!selected, |row| {
+                                        row.cursor_pointer()
+                                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                                            .on_click(move |_, _, cx| {
+                                                let change = DisplayChange::Position {
+                                                    output: expected_output.clone(),
+                                                    x,
+                                                    y,
+                                                };
+                                                placement_view.update(cx, |settings, cx| {
+                                                    settings.apply_display_change(change, cx)
+                                                });
+                                            })
+                                    })
+                                    .into_any_element(),
+                            )
+                        })
+                        .collect();
+                        cards.push(card(placement_rows));
+                    }
+                }
+            }
+
             if (0.5..=4.0).contains(&logical.scale) {
                 cards.push(section_header("Scale"));
                 let scale_rows = [1.0, 1.25, 1.5, 1.75, 2.0]
@@ -12890,7 +13276,7 @@ impl Settings {
                     .map(|scale| {
                         let selected = (logical.scale - scale).abs() < 0.001;
                         let output_id = output.id.clone();
-                        let current = logical.scale;
+                        let expected_output = output.clone();
                         let scale_view = view.clone();
                         row_base()
                             .id(SharedString::from(format!(
@@ -12908,15 +13294,11 @@ impl Settings {
                                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                     .on_click(move |_, _, cx| {
                                         let change = DisplayChange::Scale {
-                                            output: output_id.clone(),
+                                            output: expected_output.clone(),
                                             scale,
                                         };
-                                        let revert = DisplayChange::Scale {
-                                            output: output_id.clone(),
-                                            scale: current,
-                                        };
                                         scale_view.update(cx, |settings, cx| {
-                                            settings.apply_display_change(change, revert, cx)
+                                            settings.apply_display_change(change, cx)
                                         });
                                     })
                             })
@@ -12940,7 +13322,7 @@ impl Settings {
                         let selected = logical.transform == transform;
                         let label = transform.label();
                         let output_id = output.id.clone();
-                        let current = logical.transform.clone();
+                        let expected_output = output.clone();
                         let rotation_view = view.clone();
                         row_base()
                             .id(SharedString::from(format!(
@@ -12955,15 +13337,11 @@ impl Settings {
                                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                     .on_click(move |_, _, cx| {
                                         let change = DisplayChange::Transform {
-                                            output: output_id.clone(),
+                                            output: expected_output.clone(),
                                             transform: transform.clone(),
                                         };
-                                        let revert = DisplayChange::Transform {
-                                            output: output_id.clone(),
-                                            transform: current.clone(),
-                                        };
                                         rotation_view.update(cx, |settings, cx| {
-                                            settings.apply_display_change(change, revert, cx)
+                                            settings.apply_display_change(change, cx)
                                         });
                                     })
                             })
@@ -12973,7 +13351,7 @@ impl Settings {
                 cards.push(card(rotation_rows));
             }
 
-            if let Some(current_mode) = output.current_mode() {
+            if output.current_mode().is_some() {
                 cards.push(section_header("Resolution"));
                 let mode_rows = output
                     .modes
@@ -12983,6 +13361,7 @@ impl Settings {
                         let mode = *mode;
                         let selected = output.current_mode == Some(index);
                         let output_id = output.id.clone();
+                        let expected_output = output.clone();
                         let mode_view = view.clone();
                         let subtitle = mode.preferred.then(|| "Preferred".into());
                         row_base()
@@ -12998,15 +13377,11 @@ impl Settings {
                                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                                     .on_click(move |_, _, cx| {
                                         let change = DisplayChange::Mode {
-                                            output: output_id.clone(),
+                                            output: expected_output.clone(),
                                             mode,
                                         };
-                                        let revert = DisplayChange::Mode {
-                                            output: output_id.clone(),
-                                            mode: current_mode,
-                                        };
                                         mode_view.update(cx, |settings, cx| {
-                                            settings.apply_display_change(change, revert, cx)
+                                            settings.apply_display_change(change, cx)
                                         });
                                     })
                             })
@@ -13027,9 +13402,13 @@ impl Settings {
             )]));
         }
         if self.display.can_configure {
-            cards.push(note_card(
-                "Display changes are temporary in niri. Revert restores the previous value; persistent layout editing will write a validated niri configuration later.",
-            ));
+            if self.display.can_persist {
+                cards.push(note_card(
+                    "Mode, scale, rotation, and arrangement changes remain temporary until you choose Keep Changes. rmac then validates an owned niri include with the complete live layout before saving it.",
+                ));
+            } else if let Some(detail) = &self.display.persistence_detail {
+                cards.push(note_card(detail.clone()));
+            }
         }
         self.pane(cards)
     }
@@ -15580,6 +15959,85 @@ fn bluetooth_device_row(
         .into_any_element()
 }
 
+fn display_layout_preview(outputs: &[rmac_display::Output]) -> Div {
+    let enabled = outputs
+        .iter()
+        .filter_map(|output| Some((output, output.logical.as_ref()?)))
+        .collect::<Vec<_>>();
+    let Some(min_x) = enabled.iter().map(|(_, logical)| logical.x).min() else {
+        return note_card("No enabled display layout is available.");
+    };
+    let min_y = enabled
+        .iter()
+        .map(|(_, logical)| logical.y)
+        .min()
+        .unwrap_or_default();
+    let max_x = enabled
+        .iter()
+        .map(|(_, logical)| i64::from(logical.x) + i64::from(logical.width))
+        .max()
+        .unwrap_or(1);
+    let max_y = enabled
+        .iter()
+        .map(|(_, logical)| i64::from(logical.y) + i64::from(logical.height))
+        .max()
+        .unwrap_or(1);
+    let span_x = (max_x - i64::from(min_x)).max(1) as f32;
+    let span_y = (max_y - i64::from(min_y)).max(1) as f32;
+    let scale = (440.0 / span_x).min(130.0 / span_y);
+    let mut canvas = div()
+        .relative()
+        .w_full()
+        .h(px(150.0))
+        .rounded(px(9.0))
+        .bg(rmac_ui::mac::control_fill())
+        .border_1()
+        .border_color(sep())
+        .overflow_hidden();
+    for (index, (output, logical)) in enabled.into_iter().enumerate() {
+        let left = 10.0 + (logical.x - min_x) as f32 * scale;
+        let top = 10.0 + (logical.y - min_y) as f32 * scale;
+        let width = (logical.width as f32 * scale).max(24.0);
+        let height = (logical.height as f32 * scale).max(18.0);
+        let title = if output.primary {
+            format!("{} · Main", index + 1)
+        } else {
+            format!("{} · {}", index + 1, output.name)
+        };
+        canvas = canvas.child(
+            div()
+                .absolute()
+                .left(px(left))
+                .top(px(top))
+                .w(px(width))
+                .h(px(height))
+                .flex()
+                .items_center()
+                .justify_center()
+                .px_1()
+                .rounded(px(5.0))
+                .border_2()
+                .border_color(if output.primary { accent() } else { sep() })
+                .bg(if output.primary { accent() } else { card_bg() })
+                .text_size(rmac_ui::text_px(11.0))
+                .text_color(if output.primary {
+                    hsl(0xffffff)
+                } else {
+                    label()
+                })
+                .overflow_hidden()
+                .child(title),
+        );
+    }
+    div()
+        .p_2()
+        .rounded(px(10.0))
+        .bg(card_bg())
+        .border_1()
+        .border_color(sep())
+        .child(canvas)
+}
+
 /// A slider row (state held in its own SliderState entity).
 fn slider_row(title: &'static str, state: &Entity<SliderState>, value: SharedString) -> Div {
     row_base()
@@ -16651,13 +17109,71 @@ mod tests {
         audio_change_needs_followup, audio_choice_is_actionable, audio_stream_snapshot_is_current,
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, charge_threshold_description,
-        composite_wallpaper_pixel, network_stream_snapshot_is_current, notification_policy_with,
-        power_change_needs_followup, power_stream_snapshot_is_current, render_wallpaper_preview,
+        composite_wallpaper_pixel, compositor_event_affects_displays,
+        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
+        power_stream_snapshot_is_current, relative_display_position, render_wallpaper_preview,
         sample_battery_history, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
+        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
         ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
         WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
+
+    #[test]
+    fn display_arrangement_places_edges_without_overlap() {
+        let moving = rmac_display::LogicalOutput {
+            x: 0,
+            y: 0,
+            width: 1440,
+            height: 900,
+            scale: 2.0,
+            transform: rmac_display::Transform::Normal,
+        };
+        let anchor = rmac_display::LogicalOutput {
+            x: 100,
+            y: 200,
+            width: 1920,
+            height: 1080,
+            scale: 1.0,
+            transform: rmac_display::Transform::Normal,
+        };
+
+        assert_eq!(
+            relative_display_position(&moving, &anchor, DisplayPlacement::Left),
+            Some((-1340, 200))
+        );
+        assert_eq!(
+            relative_display_position(&moving, &anchor, DisplayPlacement::Right),
+            Some((2020, 200))
+        );
+        assert_eq!(
+            relative_display_position(&moving, &anchor, DisplayPlacement::Above),
+            Some((100, -700))
+        );
+        assert_eq!(
+            relative_display_position(&moving, &anchor, DisplayPlacement::Below),
+            Some((100, 1280))
+        );
+    }
+
+    #[test]
+    fn display_refresh_hints_ignore_unrelated_compositor_churn() {
+        assert!(compositor_event_affects_displays(
+            &rmac_compositor::Event::OutputsReplaced {
+                outputs: Vec::new(),
+            }
+        ));
+        assert!(compositor_event_affects_displays(
+            &rmac_compositor::Event::Unknown {
+                source_kind: "ConfigLoaded".into(),
+                payload: Default::default(),
+            }
+        ));
+        assert!(!compositor_event_affects_displays(
+            &rmac_compositor::Event::WindowsReplaced {
+                windows: Vec::new(),
+            }
+        ));
+    }
 
     #[test]
     fn general_navigation_contains_only_truthful_destinations() {

@@ -20,6 +20,7 @@ pub struct HealthSnapshot {
     pub compositor: SourceHealth,
     pub settings: SourceHealth,
     pub catalog: SourceHealth,
+    pub displays: SourceHealth,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -90,6 +91,10 @@ impl Coordinator {
         !matches!(self.health.compositor, SourceHealth::Starting)
             && !matches!(self.health.settings, SourceHealth::Starting)
             && !matches!(self.health.catalog, SourceHealth::Starting)
+            && (!matches!(
+                self.settings.dock.outputs,
+                rmac_shell_settings::OutputScope::Primary
+            ) || !matches!(self.health.displays, SourceHealth::Starting))
     }
 
     pub fn apply_compositor(&mut self, event: rmac_compositor::Event) -> bool {
@@ -143,6 +148,21 @@ impl Coordinator {
     pub fn set_primary_output(&mut self, output: Option<rmac_compositor::OutputId>) -> bool {
         let before = self.snapshot();
         self.primary_output = output;
+        before != self.snapshot()
+    }
+
+    pub fn apply_primary_output(
+        &mut self,
+        result: Result<Option<rmac_compositor::OutputId>, String>,
+    ) -> bool {
+        let before = self.snapshot();
+        match result {
+            Ok(output) => {
+                self.primary_output = output;
+                self.health.displays = SourceHealth::Healthy;
+            }
+            Err(detail) => self.health.displays = SourceHealth::Unavailable { detail },
+        }
         before != self.snapshot()
     }
 }
@@ -321,7 +341,12 @@ async fn consume(
         futures_util::select! {
             event = compositor_event => {
                 let event = event.map_err(|_| Error::new("receive Dock compositor state", "watcher stopped"))?;
+                let refresh_displays = compositor_event_affects_displays(&event);
                 coordinator.apply_compositor(event);
+                if refresh_displays {
+                    let primary = blocking::unblock(primary_output).await;
+                    coordinator.apply_primary_output(primary);
+                }
             },
             event = settings_event => {
                 let event = event.map_err(|_| Error::new("receive Dock settings", "watcher stopped"))?;
@@ -348,6 +373,30 @@ async fn consume(
         }
         published = Some(next);
     }
+}
+
+fn compositor_event_affects_displays(event: &rmac_compositor::Event) -> bool {
+    matches!(
+        event,
+        rmac_compositor::Event::Snapshot { .. }
+            | rmac_compositor::Event::OutputsReplaced { .. }
+            | rmac_compositor::Event::WorkspacesReplaced { .. }
+    ) || matches!(
+        event,
+        rmac_compositor::Event::Unknown { source_kind, .. } if source_kind == "ConfigLoaded"
+    )
+}
+
+fn primary_output() -> Result<Option<rmac_compositor::OutputId>, String> {
+    rmac_display::snapshot()
+        .map(|snapshot| {
+            snapshot
+                .outputs
+                .into_iter()
+                .find(|output| output.primary && output.logical.is_some())
+                .map(|output| rmac_compositor::OutputId(output.id))
+        })
+        .map_err(|error| error.to_string())
 }
 
 fn publication(previous: Option<&Snapshot>, next: Snapshot) -> Update {
@@ -395,6 +444,50 @@ mod tests {
             state: rmac_compositor::ConnectionState::Disconnected,
         });
         assert!(coordinator.ready());
+    }
+
+    #[test]
+    fn primary_scope_waits_for_display_authority() {
+        let mut coordinator = Coordinator::default();
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.dock.outputs = rmac_shell_settings::OutputScope::Primary;
+        coordinator.apply_settings(Ok(settings));
+        coordinator.apply_catalog(Ok(Vec::new()));
+        coordinator.apply_compositor(rmac_compositor::Event::OutputsReplaced {
+            outputs: vec![output("eDP-1"), output("DP-1")],
+        });
+
+        assert!(!coordinator.ready());
+        coordinator.apply_primary_output(Ok(Some(rmac_compositor::OutputId::from("DP-1"))));
+
+        assert!(coordinator.ready());
+        assert_eq!(
+            coordinator.snapshot().outputs,
+            [rmac_compositor::OutputId::from("DP-1")]
+        );
+    }
+
+    #[test]
+    fn display_failure_retains_last_known_primary_output() {
+        let mut coordinator = Coordinator::default();
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.dock.outputs = rmac_shell_settings::OutputScope::Primary;
+        coordinator.apply_settings(Ok(settings));
+        coordinator.apply_compositor(rmac_compositor::Event::OutputsReplaced {
+            outputs: vec![output("eDP-1"), output("DP-1")],
+        });
+        coordinator.apply_primary_output(Ok(Some(rmac_compositor::OutputId::from("eDP-1"))));
+
+        coordinator.apply_primary_output(Err("display service unavailable".into()));
+
+        assert_eq!(
+            coordinator.snapshot().outputs,
+            [rmac_compositor::OutputId::from("eDP-1")]
+        );
+        assert!(matches!(
+            coordinator.snapshot().health.displays,
+            SourceHealth::Unavailable { .. }
+        ));
     }
 
     #[test]
@@ -502,5 +595,25 @@ mod tests {
         };
         let update = publication(Some(&previous), next);
         assert!(!update.visible);
+    }
+
+    #[test]
+    fn display_refresh_hints_are_narrow_and_forward_compatible() {
+        assert!(compositor_event_affects_displays(
+            &rmac_compositor::Event::OutputsReplaced {
+                outputs: Vec::new(),
+            }
+        ));
+        assert!(compositor_event_affects_displays(
+            &rmac_compositor::Event::Unknown {
+                source_kind: "ConfigLoaded".into(),
+                payload: Default::default(),
+            }
+        ));
+        assert!(!compositor_event_affects_displays(
+            &rmac_compositor::Event::WindowsReplaced {
+                windows: Vec::new(),
+            }
+        ));
     }
 }

@@ -15,4 +15,5 @@ rmac-apps.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-dock.workspace = true
+rmac-display.workspace = true
 rmac-shell-settings.workspace = true

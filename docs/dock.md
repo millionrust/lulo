@@ -83,15 +83,18 @@ authority is complete.
 ## Live runtime
 
 `rmac-dock-runtime` watches the installed-application catalog, the versioned
-shell settings, and the direct niri event stream. The catalog watcher is
+shell settings, the direct niri event stream, and the persisted Main Display
+authority exposed by `rmac-display`. The catalog watcher is
 established before initial discovery, and its bounded signal channel coalesces
 filesystem bursts. Failed setup/discovery and settings watchers retry without
 discarding their last-known-good values; niri reconnect remains owned by the
 compositor adapter.
 
-The first Dock snapshot is withheld until all three sources are either healthy
-or explicitly unavailable. This prevents a flash of default pins or an empty
-running-app shelf during ordinary startup. Later health-only changes remain
+The first Dock snapshot is withheld until the three always-required sources are
+either healthy or explicitly unavailable. Primary-output scope additionally
+waits until display authority has resolved. This prevents a flash of default
+pins, an empty running-app shelf, or a surface on a guessed output during
+ordinary startup. Later health-only changes remain
 available to diagnostics but do not request a Dock frame. Catalog, settings,
 focus/urgency/window, and output-hotplug changes rebuild the authoritative
 model and enabled-output candidates without polling.
@@ -100,10 +103,12 @@ model and enabled-output candidates without polling.
 
 The model creates candidates only for enabled compositor outputs. `all` returns
 every enabled stable output ID, `named` requires that exact enabled output, and
-`primary` requires a separate authoritative primary ID. Missing authority
-produces no primary surface instead of guessing from connector order.
+`primary` uses the single persisted `focus-at-startup` owner from the validated
+rmac display include. Output/configuration refresh hints resample that authority
+off-thread. A failed resample retains the last-known Main ID, reports separate
+display-source health, and never guesses from connector order.
 
-The current slice is not D4 completion. The primary-output authority,
-layer-shell view, icons/assets, pointer/keyboard semantics, surface hotplug
+The current slice is not D4 completion. The layer-shell view, icons/assets,
+pointer/keyboard semantics, surface hotplug
 execution, persistence UI, niri/reference-PC evidence, and performance gates
 remain pending.

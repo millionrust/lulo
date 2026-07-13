@@ -14,14 +14,14 @@ use std::time::Duration;
 
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
-    AssetSource, Context, Div, ElementId, Entity, FocusHandle, Hsla, InteractiveElement as _,
-    IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Svg, Window,
+    AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
+    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement, Render, Result,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_ui::{
-    EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent, SliderState,
-    Toast, ToastKind, Toggle,
+    Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
+    SliderState, TextField, Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]
@@ -116,20 +116,14 @@ fn tile(path: &'static str, bg: Hsla, size: f32) -> impl IntoElement {
 }
 
 #[derive(Clone)]
-struct Row {
-    icon: &'static str,
-    color: Hsla,
-    label: SharedString,
-}
-
-#[derive(Clone)]
 struct Category {
     name: SharedString,
     icon: &'static str,
     color: Hsla,
     desc: SharedString,
-    cards: Vec<Vec<Row>>,
 }
+
+const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
 
 // ---- interactive state enums --------------------------------------------
 
@@ -144,17 +138,6 @@ enum SubPage {
     FocusSchedule { schedule_id: String },
 }
 
-/// Real, read-only macOS facts gathered after the first frame.
-#[derive(Default)]
-struct SysInfo {
-    computer_name: String,
-    os: String,
-    chip: String,
-    memory: String,
-    model: String,
-    serial: String,
-}
-
 /// Boot-volume storage usage (read once after launch via `df`).
 #[derive(Default)]
 struct StorageInfo {
@@ -166,8 +149,12 @@ struct StorageInfo {
 
 struct Settings {
     system_data_loading: bool,
+    system_data_busy: bool,
+    system_data_error: Option<SharedString>,
+    hostname_editor: Option<Entity<InputState>>,
+    diagnostics_copied: bool,
     account: SharedString,
-    sysinfo: SysInfo,
+    sysinfo: rmac_system_info::Snapshot,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -350,7 +337,7 @@ impl DisplayChange {
 /// Read-only system data that is slow enough to keep off the first-frame path.
 struct SystemSnapshot {
     account: String,
-    sysinfo: SysInfo,
+    sysinfo: std::result::Result<rmac_system_info::Snapshot, rmac_system_info::Error>,
     storage: StorageInfo,
 }
 
@@ -644,10 +631,14 @@ impl Settings {
 
         Self {
             system_data_loading: true,
+            system_data_busy: false,
+            system_data_error: None,
+            hostname_editor: None,
+            diagnostics_copied: false,
             account: std::env::var("USER")
                 .unwrap_or_else(|_| "User".into())
                 .into(),
-            sysinfo: SysInfo::default(),
+            sysinfo: rmac_system_info::Snapshot::default(),
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -741,9 +732,127 @@ impl Settings {
 
     fn apply_system_snapshot(&mut self, snapshot: SystemSnapshot) {
         self.account = snapshot.account.into();
-        self.sysinfo = snapshot.sysinfo;
+        match snapshot.sysinfo {
+            Ok(sysinfo) => {
+                self.sysinfo = sysinfo;
+                self.system_data_error = None;
+            }
+            Err(error) => {
+                self.system_data_error =
+                    Some(format!("Could not read system information: {error}").into());
+            }
+        }
         self.storage = snapshot.storage;
         self.system_data_loading = false;
+    }
+
+    fn start_hostname_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.system_data_busy || !self.sysinfo.hostname_mutable {
+            return;
+        }
+        let hostname = self
+            .sysinfo
+            .static_hostname
+            .clone()
+            .unwrap_or_else(|| self.sysinfo.hostname.clone());
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(hostname)
+                .placeholder("studio-pc")
+        });
+        let focus = editor.read(cx).focus_handle(cx);
+        window.focus(&focus);
+        self.hostname_editor = Some(editor);
+        self.system_data_error = None;
+        cx.notify();
+    }
+
+    fn cancel_hostname_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.system_data_busy {
+            self.hostname_editor = None;
+            self.system_data_error = None;
+            cx.notify();
+        }
+    }
+
+    fn submit_hostname(&mut self, cx: &mut Context<Self>) {
+        if self.system_data_busy {
+            return;
+        }
+        let Some(editor) = self.hostname_editor.as_ref() else {
+            return;
+        };
+        let hostname = editor.read(cx).value().trim().to_string();
+        if let Err(error) = rmac_system_info::validate_static_hostname(&hostname) {
+            self.system_data_error = Some(error.to_string().into());
+            cx.notify();
+            return;
+        }
+        self.system_data_busy = true;
+        self.system_data_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_system_info::set_static_hostname(&hostname) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.system_data_busy = false;
+                match result {
+                    Ok(snapshot) => {
+                        this.sysinfo = snapshot;
+                        this.hostname_editor = None;
+                        this.system_data_error = None;
+                        this.diagnostics_copied = false;
+                    }
+                    Err(error) => {
+                        this.system_data_error = Some(error.to_string().into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_system_info(&mut self, cx: &mut Context<Self>) {
+        if self.system_data_busy {
+            return;
+        }
+        self.system_data_busy = true;
+        self.system_data_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_system_info::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.system_data_busy = false;
+                match result {
+                    Ok(snapshot) => {
+                        this.sysinfo = snapshot;
+                        this.system_data_error = None;
+                        this.diagnostics_copied = false;
+                    }
+                    Err(error) => {
+                        this.system_data_error =
+                            Some(format!("Could not refresh system information: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn copy_diagnostics(&mut self, cx: &mut Context<Self>) {
+        let report = self
+            .sysinfo
+            .diagnostic_report(self.display.graphics.as_deref());
+        cx.write_to_clipboard(ClipboardItem::new_string(report));
+        self.diagnostics_copied = true;
+        cx.notify();
     }
 
     fn finish_wifi_update(
@@ -2585,23 +2694,23 @@ impl Settings {
                     view.clone(),
                     "icons/info.svg",
                     hsl(0x8e8e93),
-                    "About".into(),
-                    Some(self.sysinfo.model.clone().into()),
+                    GENERAL_DESTINATIONS[0].into(),
+                    self.sysinfo.hardware_model.clone().map(Into::into),
                     SubPage::About,
                 ),
                 nav_row(
                     view.clone(),
                     "icons/refresh-cw.svg",
                     hsl(0x8e8e93),
-                    "Software Update".into(),
-                    Some(self.sysinfo.os.clone().into()),
+                    GENERAL_DESTINATIONS[1].into(),
+                    Some(self.sysinfo.operating_system.clone().into()),
                     SubPage::SoftwareUpdate,
                 ),
                 nav_row(
                     view.clone(),
                     "icons/database.svg",
                     hsl(0x8e8e93),
-                    "Storage".into(),
+                    GENERAL_DESTINATIONS[2].into(),
                     None,
                     SubPage::Storage,
                 ),
@@ -4912,7 +5021,7 @@ impl Settings {
 
     fn render_subpage(&self, sub: &SubPage, cx: &Context<Self>) -> Div {
         let (title, body): (SharedString, Div) = match sub {
-            SubPage::About => ("About".into(), self.about_body()),
+            SubPage::About => ("About".into(), self.about_body(cx)),
             SubPage::SoftwareUpdate => (
                 "Software Update".into(),
                 div()
@@ -4921,7 +5030,7 @@ impl Settings {
                         "icons/refresh-cw.svg",
                         secondary(),
                         "Current version".into(),
-                        self.sysinfo.os.clone().into(),
+                        self.sysinfo.operating_system.clone().into(),
                     )]))
                     .child(note_card(
                         "rmac reads the installed operating-system version. The Ubuntu update service is not connected yet, so available updates are not reported.",
@@ -4976,46 +5085,177 @@ impl Settings {
         div().v_flex().child(header).child(body)
     }
 
-    fn about_body(&self) -> Div {
+    fn about_body(&self, cx: &Context<Self>) -> Div {
         let si = &self.sysinfo;
-        card(vec![
-            value_row(
-                "icons/info.svg",
-                secondary(),
-                "Name".into(),
-                si.computer_name.clone().into(),
-            ),
+        let view = cx.entity();
+        let hostname_row = if let Some(editor) = &self.hostname_editor {
+            let save_view = view.clone();
+            let cancel_view = view.clone();
+            row_base()
+                .child(tile("icons/info.svg", secondary(), 22.0))
+                .child(text_block(
+                    "Hostname".into(),
+                    Some("Letters, numbers, and hyphens · 63 bytes maximum".into()),
+                ))
+                .child(div().w(px(190.0)).child(TextField::new(editor).small()))
+                .child(
+                    Button::new("hostname-cancel", "Cancel")
+                        .disabled(self.system_data_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view
+                                .update(cx, |settings, cx| settings.cancel_hostname_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new("hostname-save", "Save")
+                        .primary()
+                        .busy(self.system_data_busy)
+                        .disabled(self.system_data_busy)
+                        .on_click(move |_, _, cx| {
+                            save_view.update(cx, |settings, cx| settings.submit_hostname(cx));
+                        }),
+                )
+                .into_any_element()
+        } else {
+            let edit_view = view.clone();
+            row_base()
+                .child(tile("icons/info.svg", secondary(), 22.0))
+                .child(text_block(
+                    "Hostname".into(),
+                    si.hostname_unavailable_reason.clone().map(Into::into),
+                ))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .text_color(secondary())
+                        .child(si.display_hostname().to_owned()),
+                )
+                .when(si.hostname_mutable, |row| {
+                    row.child(Button::new("hostname-edit", "Edit").on_click(
+                        move |_, window, cx| {
+                            edit_view.update(cx, |settings, cx| {
+                                settings.start_hostname_edit(window, cx)
+                            });
+                        },
+                    ))
+                })
+                .into_any_element()
+        };
+
+        let mut facts = vec![
             value_row(
                 "icons/monitor.svg",
                 secondary(),
                 "Model".into(),
-                si.model.clone().into(),
+                si.hardware_model
+                    .clone()
+                    .unwrap_or_else(|| "—".into())
+                    .into(),
             ),
             value_row(
                 "icons/settings.svg",
                 secondary(),
-                "Chip".into(),
-                si.chip.clone().into(),
+                "Processor".into(),
+                si.processor.clone().unwrap_or_else(|| "—".into()).into(),
             ),
             value_row(
                 "icons/database.svg",
                 secondary(),
                 "Memory".into(),
-                si.memory.clone().into(),
+                si.memory.clone().unwrap_or_else(|| "—".into()).into(),
             ),
             value_row(
                 "icons/refresh-cw.svg",
                 secondary(),
                 "Operating System".into(),
-                si.os.clone().into(),
+                si.operating_system.clone().into(),
             ),
             value_row(
                 "icons/info.svg",
                 secondary(),
-                "Serial Number".into(),
-                si.serial.clone().into(),
+                "Kernel".into(),
+                si.kernel.clone().into(),
             ),
-        ])
+            value_row(
+                "icons/settings.svg",
+                secondary(),
+                "Architecture".into(),
+                si.architecture.clone().into(),
+            ),
+        ];
+        if let Some(graphics) = &self.display.graphics {
+            facts.push(value_row(
+                "icons/monitor.svg",
+                secondary(),
+                "Graphics".into(),
+                graphics.clone().into(),
+            ));
+        }
+        if let Some(session) = &si.session {
+            facts.push(value_row(
+                "icons/panel-top.svg",
+                secondary(),
+                "Session".into(),
+                session.clone().into(),
+            ));
+        }
+        if let Some(desktop) = &si.desktop {
+            facts.push(value_row(
+                "icons/panel-top.svg",
+                secondary(),
+                "Desktop".into(),
+                desktop.clone().into(),
+            ));
+        }
+
+        let refresh_view = view.clone();
+        let diagnostics_view = view.clone();
+        let diagnostics = card(vec![
+            row_base()
+                .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                .child(text_block(
+                    "System information".into(),
+                    Some("Refresh facts changed outside rmac".into()),
+                ))
+                .child(
+                    Button::new("refresh-system-information", "Refresh")
+                        .busy(self.system_data_busy)
+                        .disabled(self.system_data_busy)
+                        .on_click(move |_, _, cx| {
+                            refresh_view
+                                .update(cx, |settings, cx| settings.refresh_system_info(cx));
+                        }),
+                )
+                .into_any_element(),
+            row_base()
+                .child(tile("icons/info.svg", accent(), 22.0))
+                .child(text_block(
+                    "System report".into(),
+                    Some(
+                        "Excludes hostname, username, serial numbers, addresses, and paths".into(),
+                    ),
+                ))
+                .child(
+                    Button::new(
+                        "copy-system-report",
+                        if self.diagnostics_copied {
+                            "Copied"
+                        } else {
+                            "Copy"
+                        },
+                    )
+                    .on_click(move |_, _, cx| {
+                        diagnostics_view.update(cx, |settings, cx| settings.copy_diagnostics(cx));
+                    }),
+                )
+                .into_any_element(),
+        ]);
+
+        div()
+            .v_flex()
+            .child(card(vec![hostname_row]))
+            .child(card(facts))
+            .child(diagnostics)
     }
 }
 
@@ -5026,8 +5266,9 @@ impl Render for Settings {
             window.focus(&self.focus);
         }
         let settings_error = self
-            .wifi_error
+            .system_data_error
             .clone()
+            .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
             .or_else(|| self.vpn_error.clone())
@@ -5056,6 +5297,7 @@ impl Render for Settings {
                         .border_l_0()
                         .border_r_0()
                         .on_dismiss(cx.listener(|this, _, _, cx| {
+                            this.system_data_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
@@ -5345,7 +5587,7 @@ fn focus_day_button(
     day_label: &'static str,
     selected: bool,
     disabled: bool,
-) -> Div {
+) -> Stateful<Div> {
     let control_view = view.clone();
     let schedule_id = schedule_id.to_owned();
     div()
@@ -5905,7 +6147,7 @@ fn card(rows: Vec<AnyElement>) -> Div {
     c
 }
 
-// ---- real macOS reads (best-effort, read-only) ---------------------------
+// ---- platform reads kept off the UI thread -------------------------------
 
 fn cmd(program: &str, args: &[&str]) -> Option<String> {
     Command::new(program)
@@ -5921,7 +6163,7 @@ fn cmd(program: &str, args: &[&str]) -> Option<String> {
 fn gather_system_snapshot() -> SystemSnapshot {
     SystemSnapshot {
         account: account_name(),
-        sysinfo: gather_sysinfo(),
+        sysinfo: rmac_system_info::snapshot(),
         storage: gather_storage(),
     }
 }
@@ -5940,105 +6182,6 @@ fn account_name() -> String {
     cmd("id", &["-F"])
         .or_else(|| std::env::var("USER").ok())
         .unwrap_or_else(|| "User".into())
-}
-
-#[cfg(target_os = "macos")]
-fn gather_sysinfo() -> SysInfo {
-    let computer_name = cmd("scutil", &["--get", "ComputerName"])
-        .or_else(|| cmd("hostname", &[]))
-        .unwrap_or_else(|| "Mac".into());
-
-    let os = {
-        let name = cmd("sw_vers", &["-productName"]).unwrap_or_else(|| "macOS".into());
-        let ver = cmd("sw_vers", &["-productVersion"]).unwrap_or_default();
-        format!("{name} {ver}").trim().to_string()
-    };
-
-    let chip = cmd("sysctl", &["-n", "machdep.cpu.brand_string"]).unwrap_or_else(|| "—".into());
-
-    let memory = cmd("sysctl", &["-n", "hw.memsize"])
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(|bytes| format!("{} GB", bytes / 1024 / 1024 / 1024))
-        .unwrap_or_else(|| "—".into());
-
-    let model = cmd("sysctl", &["-n", "hw.model"]).unwrap_or_else(|| "Mac".into());
-
-    // Serial number from the IOPlatformExpertDevice registry node.
-    let serial = cmd("ioreg", &["-rd1", "-c", "IOPlatformExpertDevice"])
-        .and_then(|out| {
-            out.lines()
-                .find(|l| l.contains("IOPlatformSerialNumber"))
-                .and_then(|l| l.split('=').nth(1))
-                .map(|v| v.trim().trim_matches('"').to_string())
-        })
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "—".into());
-
-    SysInfo {
-        computer_name,
-        os,
-        chip,
-        memory,
-        model,
-        serial,
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn gather_sysinfo() -> SysInfo {
-    let computer_name = cmd("hostname", &[]).unwrap_or_else(|| "Linux computer".into());
-    let os = std::fs::read_to_string("/etc/os-release")
-        .ok()
-        .and_then(|contents| os_release_value(&contents, "PRETTY_NAME"))
-        .unwrap_or_else(|| "Linux".into());
-    let chip = std::fs::read_to_string("/proc/cpuinfo")
-        .ok()
-        .and_then(|contents| {
-            ["model name", "Hardware", "Processor"]
-                .into_iter()
-                .find_map(|key| colon_value(&contents, key))
-        })
-        .unwrap_or_else(|| "—".into());
-    let memory = std::fs::read_to_string("/proc/meminfo")
-        .ok()
-        .and_then(|contents| colon_value(&contents, "MemTotal"))
-        .and_then(|value| value.split_whitespace().next()?.parse::<u64>().ok())
-        .map(|kibibytes| format!("{:.1} GB", kibibytes as f64 / 1024.0 / 1024.0))
-        .unwrap_or_else(|| "—".into());
-    let model = read_trimmed("/sys/class/dmi/id/product_name").unwrap_or_else(|| "Computer".into());
-    let serial = read_trimmed("/sys/class/dmi/id/product_serial").unwrap_or_else(|| "—".into());
-    SysInfo {
-        computer_name,
-        os,
-        chip,
-        memory,
-        model,
-        serial,
-    }
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
-fn os_release_value(contents: &str, key: &str) -> Option<String> {
-    contents.lines().find_map(|line| {
-        let (candidate, value) = line.split_once('=')?;
-        (candidate == key).then(|| value.trim().trim_matches(['\'', '"']).to_string())
-    })
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
-fn colon_value(contents: &str, key: &str) -> Option<String> {
-    contents.lines().find_map(|line| {
-        let (candidate, value) = line.split_once(':')?;
-        (candidate.trim() == key).then(|| value.trim().to_string())
-    })
-}
-
-#[cfg(not(target_os = "macos"))]
-fn read_trimmed(path: &str) -> Option<String> {
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 fn format_power_duration(seconds: u64) -> String {
@@ -6107,19 +6250,12 @@ fn categories() -> Vec<Vec<Category>> {
     let indigo = hsl(0x5e5ce6);
     let teal = hsl(0x30b0c7);
 
-    let row = |icon: &'static str, color: Hsla, label: &str| Row {
+    let cat = |name: &str, icon: &'static str, color: Hsla, desc: &str| Category {
+        name: name.to_string().into(),
         icon,
         color,
-        label: label.to_string().into(),
+        desc: desc.to_string().into(),
     };
-    let cat =
-        |name: &str, icon: &'static str, color: Hsla, desc: &str, cards: Vec<Vec<Row>>| Category {
-            name: name.to_string().into(),
-            icon,
-            color,
-            desc: desc.to_string().into(),
-            cards,
-        };
 
     vec![
         vec![
@@ -6128,35 +6264,30 @@ fn categories() -> Vec<Vec<Category>> {
                 "icons/wifi.svg",
                 blue,
                 "Connect to Wi-Fi networks and manage known networks.",
-                vec![],
             ),
             cat(
                 "Bluetooth",
                 "icons/bluetooth.svg",
                 blue,
                 "Pair and manage Bluetooth devices.",
-                vec![],
             ),
             cat(
                 "Network",
                 "icons/globe.svg",
                 blue,
                 "Configure network services and connections.",
-                vec![],
             ),
             cat(
                 "VPN",
                 "icons/key.svg",
                 blue,
                 "Set up and manage VPN configurations.",
-                vec![],
             ),
             cat(
                 "Battery",
                 "icons/battery-charging.svg",
                 green,
                 "Monitor battery usage and energy settings.",
-                vec![],
             ),
         ],
         vec![
@@ -6165,53 +6296,42 @@ fn categories() -> Vec<Vec<Category>> {
                 "icons/settings.svg",
                 gray,
                 "View system information, update status, and storage.",
-                vec![vec![
-                    row("icons/info.svg", gray, "About"),
-                    row("icons/refresh-cw.svg", gray, "Software Update"),
-                    row("icons/database.svg", gray, "Storage"),
-                ]],
             ),
             cat(
                 "Accessibility",
                 "icons/accessibility.svg",
                 blue,
                 "Customize the computer for the way you work.",
-                vec![],
             ),
             cat(
                 "Appearance",
                 "icons/palette.svg",
                 hsl(0x1d1d1f),
                 "Change how windows, buttons, and menus look.",
-                vec![],
             ),
             cat(
                 "Desktop & Dock",
                 "icons/app-window.svg",
                 gray,
                 "Adjust the Dock, Stage Manager, and windows.",
-                vec![],
             ),
             cat(
                 "Displays",
                 "icons/monitor.svg",
                 blue,
                 "Arrange displays and adjust resolution.",
-                vec![],
             ),
             cat(
                 "Spotlight",
                 "icons/search.svg",
                 gray,
                 "Choose which categories Spotlight searches.",
-                vec![],
             ),
             cat(
                 "Wallpaper",
                 "icons/image.svg",
                 teal,
                 "Choose a wallpaper for your desktop.",
-                vec![],
             ),
         ],
         vec![
@@ -6220,42 +6340,36 @@ fn categories() -> Vec<Vec<Category>> {
                 "icons/bell.svg",
                 red,
                 "Choose how you receive notifications.",
-                vec![],
             ),
             cat(
                 "Sound",
                 "icons/volume-2.svg",
                 pink,
                 "Adjust sound effects and output.",
-                vec![],
             ),
             cat(
                 "Keyboard",
                 "icons/keyboard.svg",
                 gray,
                 "Adjust key repeat behavior and keyboard startup options.",
-                vec![],
             ),
             cat(
                 "Mouse",
                 "icons/mouse.svg",
                 gray,
                 "Adjust tracking, scrolling, acceleration, and buttons.",
-                vec![],
             ),
             cat(
                 "Trackpad",
                 "icons/touchpad.svg",
                 gray,
                 "Adjust tracking, tapping, scrolling, and gestures.",
-                vec![],
             ),
             cat(
                 "Focus",
                 "icons/moon.svg",
                 indigo,
                 "Stay focused by silencing notifications.",
-                vec![],
             ),
         ],
         vec![
@@ -6264,14 +6378,12 @@ fn categories() -> Vec<Vec<Category>> {
                 "icons/lock.svg",
                 gray,
                 "Adjust your lock screen and login.",
-                vec![],
             ),
             cat(
                 "Privacy & Security",
                 "icons/shield.svg",
                 blue,
                 "Control what the system and applications can access.",
-                vec![],
             ),
         ],
     ]
@@ -6287,24 +6399,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        categories, colon_value, notification_policy_with, os_release_value,
-        NotificationPolicyChange,
+        categories, notification_policy_with, NotificationPolicyChange, GENERAL_DESTINATIONS,
     };
 
     #[test]
     fn general_navigation_contains_only_truthful_destinations() {
-        let general = categories()
-            .into_iter()
-            .flatten()
-            .find(|category| category.name.to_string() == "General")
-            .unwrap();
-        let labels = general
-            .cards
-            .into_iter()
-            .flatten()
-            .map(|row| row.label.to_string())
-            .collect::<Vec<_>>();
-        assert_eq!(labels, ["About", "Software Update", "Storage"]);
+        assert_eq!(
+            GENERAL_DESTINATIONS,
+            ["About", "Software Update", "Storage"]
+        );
     }
 
     #[test]
@@ -6317,27 +6420,7 @@ mod tests {
         assert!(!names.iter().any(|name| name == "Assistant & Intelligence"));
         assert!(!names.iter().any(|name| name == "Screen Time"));
 
-        let categories_with_rows = categories
-            .iter()
-            .filter(|category| !category.cards.is_empty())
-            .map(|category| category.name.to_string())
-            .collect::<Vec<_>>();
-        assert_eq!(categories_with_rows, ["General"]);
-    }
-
-    #[test]
-    fn linux_system_information_parsers_handle_standard_files() {
-        let release = "NAME=Ubuntu\nPRETTY_NAME=\"Ubuntu 26.04 LTS\"\n";
-        let cpu = "processor : 0\nmodel name : Example CPU\n";
-
-        assert_eq!(
-            os_release_value(release, "PRETTY_NAME").as_deref(),
-            Some("Ubuntu 26.04 LTS")
-        );
-        assert_eq!(
-            colon_value(cpu, "model name").as_deref(),
-            Some("Example CPU")
-        );
+        assert!(!names.iter().any(|name| name == "Handoff"));
     }
 
     #[test]

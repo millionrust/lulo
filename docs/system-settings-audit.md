@@ -13,7 +13,7 @@ equivalents rather than simulated.
 | Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
 | Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
-| General/About | Platform identity snapshot plus truthful read-only Update and Storage destinations; local-only Handoff/AirDrop/AirPlay state and Apple-only rows removed | os-release, sysinfo, DMI | Kernel detail, privacy-safe diagnostics, and live hostname mutation |
+| General/About | Typed privacy-safe OS, kernel, architecture, hardware, graphics, and session facts; validated hostname mutation with busy/error state; authoritative refresh; redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs/sysfs, display service | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname refresh, and clipboard contents |
 | Software Update | Placeholder | Ubuntu update services | Check, progress, restart requirements; privileged actions via polkit |
 | Storage | macOS-shaped `df` snapshot | Filesystem/mount service | Per-volume usage and safe cleanup guidance |
 | Date & Time | Placeholder | timedate1 D-Bus | Time zone, automatic time, clock settings |
@@ -56,6 +56,17 @@ and the other typed services seed their own authoritative state. A stale file
 from an older installation is ignored and can be removed by packaging or
 uninstall cleanup. AppleCare, AutoFill, Startup Disk, and Time Machine rows are
 absent rather than mapped to generic clickable placeholders.
+
+About delegates platform identity to `rmac-system-info`; the GPUI view performs
+no host reads or D-Bus work. On Linux, static-hostname changes call
+`org.freedesktop.hostname1.SetStaticHostname` with interactive authorization,
+then replace the UI snapshot only with the service response. Invalid,
+unavailable, denied, and failed mutations preserve the last known-good facts.
+The copied report deliberately omits hostname, username, serial numbers,
+addresses, machine IDs, and paths. This follows the hostname service contract
+documented by the official systemd
+[`org.freedesktop.hostname1` manual](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.hostname1.html).
+Linux reference-PC interaction evidence remains pending.
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

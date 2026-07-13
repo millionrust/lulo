@@ -5341,6 +5341,13 @@ name = "rmac-storage"
 version = "0.1.0"
 
 [[package]]
+name = "rmac-system-info"
+version = "0.1.0"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "rmac-system-settings"
 version = "0.1.0"
 dependencies = [
@@ -5364,7 +5371,7 @@ dependencies = [
  "rmac-notifications-store",
  "rmac-power",
  "rmac-shortcuts",
- "rmac-storage",
+ "rmac-system-info",
  "rmac-theme",
  "rmac-ui",
  "rust-embed",

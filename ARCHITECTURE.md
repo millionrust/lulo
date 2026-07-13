@@ -132,6 +132,14 @@ NetworkManager, BlueZ, UPower, PipeWire/WirePlumber, and niri IPC.
 macOS implementations remain optional development adapters. Platform commands
 and FFI cannot leak into application state or render modules.
 
+`rmac-system-info` owns the privacy-safe About snapshot and hostname service
+boundary. Linux reads systemd-hostnamed over the system D-Bus, validates static
+hostnames before mutation, requests interactive polkit authorization, and
+returns a refreshed authoritative snapshot. Its diagnostic projection excludes
+host/user identity, serials, machine IDs, network addresses, and paths. The
+System Settings renderer only holds this typed snapshot and dispatches work to
+the background executor; a deterministic `Service` fake covers consumer tests.
+
 Appearance is split deliberately: `rmac-appearance` owns the platform-neutral
 snapshot, capabilities, event reducer, source trait, and deterministic fake;
 `rmac-appearance-portal` reads standardized host preferences and follows the

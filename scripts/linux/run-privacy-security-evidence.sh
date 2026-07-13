@@ -124,6 +124,8 @@ item. The generated files and unchecked items are not passing evidence.
 - [ ] PermissionStore version 1 is read-only; version 2 enables per-app reset
 - [ ] Reset requires explicit confirmation and deletes only the selected app/resource pair
 - [ ] Reset completion resamples both resources and the next portal request may ask again
+- [ ] An external portal decision appears without pressing Refresh
+- [ ] PermissionStore restart preserves last-known-good state, reports disruption, and reconnects
 - [ ] Active capture and native application access are never presented as revoked
 - [ ] Missing session bus, portal service, and resource each have truthful distinct states
 

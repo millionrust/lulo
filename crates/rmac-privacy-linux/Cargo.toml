@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+async-channel.workspace = true
+async-io.workspace = true
+futures-util.workspace = true
 rmac-privacy.workspace = true
 serde_json.workspace = true
 zbus.workspace = true

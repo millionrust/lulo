@@ -21,6 +21,8 @@ const NOT_FOUND: &str = "org.freedesktop.portal.Error.NotFound";
 const RESOURCES: [PortalResource; 2] = [PortalResource::Camera, PortalResource::Microphone];
 const MAX_HELPER_OUTPUT_BYTES: usize = 1024 * 1024;
 const HELPER_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(target_os = "linux")]
+const RECONNECT_DELAY: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error {
@@ -117,6 +119,107 @@ pub fn reset_decision(resource: PortalResource, app_id: &str) -> Result<Snapshot
     let proxy = Proxy::new(&connection, DESTINATION, PATH, INTERFACE)
         .map_err(|error| Error::new("open the portal PermissionStore", error.to_string()))?;
     reset_with(&proxy, resource, app_id)
+}
+
+#[cfg(target_os = "linux")]
+pub async fn watch(sender: async_channel::Sender<rmac_privacy::WatchEvent>) -> Result<(), Error> {
+    loop {
+        match watch_once(&sender).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => {}
+            Err(_) if sender.is_closed() => return Ok(()),
+            Err(_) => {
+                let _ = sender.try_send(rmac_privacy::WatchEvent::Unavailable);
+            }
+        }
+        async_io::Timer::after(RECONNECT_DELAY).await;
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub async fn watch(sender: async_channel::Sender<rmac_privacy::WatchEvent>) -> Result<(), Error> {
+    sender
+        .send(rmac_privacy::WatchEvent::Unavailable)
+        .await
+        .map_err(|_| Error::new("watch portal permissions", "the watcher closed"))
+}
+
+#[cfg(target_os = "linux")]
+async fn watch_once(sender: &async_channel::Sender<rmac_privacy::WatchEvent>) -> Result<(), Error> {
+    use futures_util::{FutureExt as _, StreamExt as _};
+    use zbus::{message::Type, MatchRule, MessageStream};
+
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?;
+    let changed_rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .path(PATH)
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .interface(INTERFACE)
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .member("Changed")
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .build();
+    let owner_rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .sender("org.freedesktop.DBus")
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .interface("org.freedesktop.DBus")
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .member("NameOwnerChanged")
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .add_arg(DESTINATION)
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .build();
+    let mut changes = MessageStream::for_match_rule(changed_rule, &connection, Some(16))
+        .await
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .fuse();
+    let mut owners = MessageStream::for_match_rule(owner_rule, &connection, Some(4))
+        .await
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
+        .fuse();
+
+    loop {
+        let closed = sender.closed().fuse();
+        futures_util::pin_mut!(closed);
+        let event = futures_util::select! {
+            message = changes.next() => {
+                message
+                    .ok_or_else(|| Error::new("watch portal permissions", "the change stream ended"))?
+                    .map_err(|error| Error::new("watch portal permissions", error.to_string()))?;
+                rmac_privacy::WatchEvent::Changed
+            },
+            message = owners.next() => owner_event_from_message(message)?,
+            _ = closed => return Ok(()),
+        };
+        let _ = sender.try_send(event);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn owner_event_from_message(
+    message: Option<Result<zbus::Message, zbus::Error>>,
+) -> Result<rmac_privacy::WatchEvent, Error> {
+    let message = message
+        .ok_or_else(|| Error::new("watch portal permissions", "the owner stream ended"))?
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?;
+    let (name, _old_owner, new_owner): (String, String, String) = message
+        .body()
+        .deserialize()
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?;
+    permission_store_owner_event(&name, &new_owner)
+        .ok_or_else(|| Error::new("watch portal permissions", "an unrelated owner changed"))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn permission_store_owner_event(name: &str, new_owner: &str) -> Option<rmac_privacy::WatchEvent> {
+    (name == DESTINATION).then_some(if new_owner.is_empty() {
+        rmac_privacy::WatchEvent::Unavailable
+    } else {
+        rmac_privacy::WatchEvent::Changed
+    })
 }
 
 trait SecurityRunner {
@@ -727,5 +830,21 @@ mod tests {
             .issues
             .iter()
             .any(|issue| issue.starts_with("Ubuntu release lifecycle:")));
+    }
+
+    #[test]
+    fn permission_store_owner_changes_distinguish_loss_and_reappearance() {
+        assert_eq!(
+            permission_store_owner_event(DESTINATION, ""),
+            Some(rmac_privacy::WatchEvent::Unavailable)
+        );
+        assert_eq!(
+            permission_store_owner_event(DESTINATION, ":1.42"),
+            Some(rmac_privacy::WatchEvent::Changed)
+        );
+        assert_eq!(
+            permission_store_owner_event("org.example.Other", ":1.7"),
+            None
+        );
     }
 }

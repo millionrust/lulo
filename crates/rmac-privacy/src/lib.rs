@@ -6,6 +6,12 @@ pub enum PortalResource {
     Microphone,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
 impl PortalResource {
     pub fn id(self) -> &'static str {
         match self {

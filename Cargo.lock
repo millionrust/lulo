@@ -5265,6 +5265,9 @@ version = "0.1.0"
 name = "rmac-privacy-linux"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "futures-util",
  "rmac-privacy",
  "serde_json",
  "zbus",

@@ -33,7 +33,7 @@ equivalents rather than simulated.
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Hidden from production navigation | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Real live lock and capability-gated automatic-suspend choices; truthful Hidden preview state; secure manual/logind/pre-sleep and idle paths | `org.rmac.LockScreen1`, provider security state machine, bounded action-free notification projection, logind `CanSuspend`/`Suspend(false)`, niri `ext-session-lock-v1`, PAM-enabled swaylock, and delay inhibitor | Reviewed Wayland/PAM adapter and rmac presentation, preview controls, scoped build, and Linux security/accessibility evidence |
-| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens and version-gated reset; PackageKit security-update summary; Ubuntu release lifecycle plus Pro package-origin/contract/service/unattended-upgrades authorities; live Flatpak/Snap/AppImage desktop source inventory; explicit provenance limits | `rmac-privacy`, `rmac-privacy-linux`, `rmac-apps`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit, `ubuntu-distro-info`, Ubuntu Pro Client offline API | Package ownership/trust drill-down, supported automatic-update mutation, live PermissionStore changes, and Linux revoke/access evidence |
+| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens, version-gated reset, external-change and service-restart watching; PackageKit security-update summary; Ubuntu lifecycle plus Pro package-origin/contract/service/unattended-upgrades authorities; live Flatpak/Snap/AppImage desktop source inventory; explicit provenance limits | `rmac-privacy`, `rmac-privacy-linux`, `rmac-apps`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit, `ubuntu-distro-info`, Ubuntu Pro Client offline API | Package ownership/trust drill-down, supported automatic-update mutation, and Linux revoke/access/restart evidence |
 
 ## Delivery order
 
@@ -294,6 +294,11 @@ next portal request may ask again, never as terminating active capture or
 revoking native-application access. The pane also reuses the cached PackageKit
 security-update count and opens the full Software Update destination, while
 keeping Ubuntu security coverage and repository trust explicitly separate.
+PermissionStore `Changed` signals now trigger a complete resample, and
+well-known-name loss/reappearance reports a temporary live-update failure then
+resamples without discarding the last known good decisions. Signal storms are
+coalesced through a bounded channel, while explicit mutation completion remains
+the authority during a reset.
 Authority reference: [XDG PermissionStore](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.PermissionStore.html).
 
 The Ubuntu security subsection now reads three independent, offline Ubuntu Pro

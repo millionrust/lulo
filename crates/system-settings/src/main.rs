@@ -211,6 +211,7 @@ struct Settings {
     theme_error: Option<SharedString>,
     gtk_text_error: Option<SharedString>,
     privacy_error: Option<SharedString>,
+    privacy_stream_error: Option<SharedString>,
     notification_error: Option<SharedString>,
     notification_stream_error: Option<SharedString>,
 
@@ -521,6 +522,52 @@ impl Settings {
                 this.finish_sharing_update(result);
                 cx.notify();
             });
+        })
+        .detach();
+
+        let (privacy_updates, privacy_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_privacy_linux::watch(privacy_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = privacy_update_rx.recv().await {
+                match event {
+                    rmac_privacy::WatchEvent::Changed => {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_privacy_linux::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if this.privacy_busy.is_none() && !this.privacy_loading {
+                                    this.finish_privacy_update(result);
+                                    this.privacy_stream_error = None;
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_privacy::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.privacy_stream_error = Some(
+                                    "Live portal permission updates are temporarily unavailable"
+                                        .into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
         })
         .detach();
 
@@ -1059,6 +1106,7 @@ impl Settings {
             theme_error: None,
             gtk_text_error: None,
             privacy_error: None,
+            privacy_stream_error: None,
             notification_error: None,
             notification_stream_error: None,
 
@@ -8709,7 +8757,8 @@ impl Render for Settings {
             .or_else(|| self.input_error.clone())
             .or_else(|| self.theme_error.clone())
             .or_else(|| self.gtk_text_error.clone())
-            .or_else(|| self.privacy_error.clone());
+            .or_else(|| self.privacy_error.clone())
+            .or_else(|| self.privacy_stream_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -8752,6 +8801,7 @@ impl Render for Settings {
                             this.theme_error = None;
                             this.gtk_text_error = None;
                             this.privacy_error = None;
+                            this.privacy_stream_error = None;
                             cx.notify();
                         })),
                 )

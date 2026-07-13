@@ -5770,6 +5770,31 @@ impl Settings {
                 "Reading package origins, Ubuntu Pro services, and unattended-upgrades status…",
             ));
         } else if let Some(coverage) = &self.security_coverage {
+            if let Some(release) = &coverage.release_support {
+                let status = if release.days_remaining > 0 {
+                    format!(
+                        "Standard support · {} days remaining",
+                        release.days_remaining
+                    )
+                } else if release.days_remaining == 0 {
+                    "Standard support ends today".to_string()
+                } else {
+                    format!(
+                        "Standard support ended {} days ago",
+                        release.days_remaining.unsigned_abs()
+                    )
+                };
+                cards.push(card(vec![value_row(
+                    "icons/shield.svg",
+                    if release.supported() {
+                        accent()
+                    } else {
+                        secondary()
+                    },
+                    format!("Ubuntu {} lifecycle", release.series).into(),
+                    status.into(),
+                )]));
+            }
             if let Some(sources) = &coverage.package_sources {
                 cards.push(card(vec![
                     value_row(

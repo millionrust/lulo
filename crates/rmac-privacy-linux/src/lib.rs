@@ -1,7 +1,7 @@
 //! Linux portal privacy decisions backed by the XDG PermissionStore.
 
 use rmac_privacy::{
-    AutomaticUpdates, PackageSources, PortalDecision, PortalResource, ProStatus,
+    AutomaticUpdates, PackageSources, PortalDecision, PortalResource, ProStatus, ReleaseSupport,
     SecurityCoverageSnapshot, Snapshot,
 };
 use serde_json::Value;
@@ -19,8 +19,8 @@ const INTERFACE: &str = "org.freedesktop.impl.portal.PermissionStore";
 const DEVICE_TABLE: &str = "devices";
 const NOT_FOUND: &str = "org.freedesktop.portal.Error.NotFound";
 const RESOURCES: [PortalResource; 2] = [PortalResource::Camera, PortalResource::Microphone];
-const MAX_PRO_OUTPUT_BYTES: usize = 1024 * 1024;
-const PRO_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_HELPER_OUTPUT_BYTES: usize = 1024 * 1024;
+const HELPER_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error {
@@ -119,82 +119,145 @@ pub fn reset_decision(resource: PortalResource, app_id: &str) -> Result<Snapshot
     reset_with(&proxy, resource, app_id)
 }
 
-trait ProRunner {
+trait SecurityRunner {
     fn api(&self, endpoint: &'static str) -> Result<Vec<u8>, String>;
+    fn release_days(&self, series: &str) -> Result<i64, String>;
 }
 
-struct SystemProRunner;
+struct SystemSecurityRunner;
 
-impl ProRunner for SystemProRunner {
+impl SecurityRunner for SystemSecurityRunner {
     fn api(&self, endpoint: &'static str) -> Result<Vec<u8>, String> {
-        let mut child = Command::new("pro")
-            .args(["api", endpoint])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| format!("could not run Ubuntu Pro Client: {error}"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "could not capture Ubuntu Pro Client output".to_string())?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| "could not capture Ubuntu Pro Client errors".to_string())?;
-        let stdout_reader = std::thread::spawn(move || read_bounded(stdout));
-        let stderr_reader = std::thread::spawn(move || read_bounded(stderr));
-        let deadline = Instant::now() + PRO_TIMEOUT;
-        let status = loop {
-            if let Some(status) = child
-                .try_wait()
-                .map_err(|error| format!("could not wait for Ubuntu Pro Client: {error}"))?
-            {
-                break status;
-            }
-            if Instant::now() >= deadline {
+        run_bounded("pro", &["api", endpoint], "Ubuntu Pro Client")
+    }
+
+    fn release_days(&self, series: &str) -> Result<i64, String> {
+        let output = run_bounded(
+            "ubuntu-distro-info",
+            &["--series", series, "--days=eol"],
+            "ubuntu-distro-info",
+        )?;
+        let days = String::from_utf8(output)
+            .map_err(|_| "ubuntu-distro-info returned non-UTF-8 output".to_string())?;
+        days.trim()
+            .parse()
+            .map_err(|_| "ubuntu-distro-info returned an invalid EOL day count".to_string())
+    }
+}
+
+fn run_bounded(program: &str, arguments: &[&str], label: &str) -> Result<Vec<u8>, String> {
+    let mut child = Command::new(program)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("could not run {label}: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("could not capture {label} output"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("could not capture {label} errors"))?;
+    let stdout_reader = std::thread::spawn(move || read_bounded(stdout));
+    let stderr_reader = std::thread::spawn(move || read_bounded(stderr));
+    let deadline = Instant::now() + HELPER_TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err("Ubuntu Pro Client timed out after 15 seconds".into());
+                return Err(format!("could not wait for {label}: {error}"));
             }
-            std::thread::sleep(Duration::from_millis(25));
-        };
-        let stdout = stdout_reader
-            .join()
-            .map_err(|_| "Ubuntu Pro Client output reader failed".to_string())??;
-        let stderr = stderr_reader
-            .join()
-            .map_err(|_| "Ubuntu Pro Client error reader failed".to_string())??;
-        if stdout.len() > MAX_PRO_OUTPUT_BYTES || stderr.len() > MAX_PRO_OUTPUT_BYTES {
-            return Err("Ubuntu Pro Client output exceeded the 1 MiB safety limit".into());
         }
-        if !status.success() {
-            let detail = String::from_utf8_lossy(&stderr).trim().to_string();
-            return Err(if detail.is_empty() {
-                format!("Ubuntu Pro Client exited with {status}")
-            } else {
-                detail
-            });
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("{label} timed out after 15 seconds"));
         }
-        Ok(stdout)
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| format!("{label} output reader failed"))??;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| format!("{label} error reader failed"))??;
+    if stdout.len() > MAX_HELPER_OUTPUT_BYTES || stderr.len() > MAX_HELPER_OUTPUT_BYTES {
+        return Err(format!("{label} output exceeded the 1 MiB safety limit"));
     }
+    if !status.success() {
+        let detail = String::from_utf8_lossy(&stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            format!("{label} exited with {status}")
+        } else {
+            detail
+        });
+    }
+    Ok(stdout)
 }
 
 fn read_bounded(reader: impl Read) -> Result<Vec<u8>, String> {
     let mut output = Vec::new();
     reader
-        .take((MAX_PRO_OUTPUT_BYTES + 1) as u64)
+        .take((MAX_HELPER_OUTPUT_BYTES + 1) as u64)
         .read_to_end(&mut output)
-        .map_err(|error| format!("could not read Ubuntu Pro Client output: {error}"))?;
+        .map_err(|error| format!("could not read helper output: {error}"))?;
     Ok(output)
 }
 
-pub fn security_coverage_snapshot() -> SecurityCoverageSnapshot {
-    security_coverage_with(&SystemProRunner)
+fn ubuntu_series() -> Result<String, String> {
+    let os_release = std::fs::read_to_string("/etc/os-release")
+        .map_err(|error| format!("could not read /etc/os-release: {error}"))?;
+    let fields = os_release
+        .lines()
+        .filter_map(|line| line.split_once('='))
+        .map(|(key, value)| (key, value.trim_matches(['\'', '"'])))
+        .collect::<HashMap<_, _>>();
+    if fields.get("ID").copied() != Some("ubuntu") {
+        return Err("the installed operating system is not identified as Ubuntu".into());
+    }
+    let series = fields
+        .get("VERSION_CODENAME")
+        .copied()
+        .filter(|series| {
+            !series.is_empty()
+                && series.len() <= 32
+                && series
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        })
+        .ok_or_else(|| "/etc/os-release omitted a valid VERSION_CODENAME".to_string())?;
+    Ok(series.to_string())
 }
 
-fn security_coverage_with(runner: &impl ProRunner) -> SecurityCoverageSnapshot {
+pub fn security_coverage_snapshot() -> SecurityCoverageSnapshot {
+    security_coverage_with(&SystemSecurityRunner, ubuntu_series())
+}
+
+fn security_coverage_with(
+    runner: &impl SecurityRunner,
+    series: Result<String, String>,
+) -> SecurityCoverageSnapshot {
     let mut snapshot = SecurityCoverageSnapshot::default();
+
+    match series.and_then(|series| {
+        runner
+            .release_days(&series)
+            .map(|days_remaining| ReleaseSupport {
+                series,
+                days_remaining,
+            })
+    }) {
+        Ok(release_support) => snapshot.release_support = Some(release_support),
+        Err(error) => snapshot
+            .issues
+            .push(format!("Ubuntu release lifecycle: {error}")),
+    }
 
     match api_attributes(runner, "u.pro.packages.summary.v1").and_then(parse_package_sources) {
         Ok(sources) => {
@@ -246,7 +309,7 @@ fn security_coverage_with(runner: &impl ProRunner) -> SecurityCoverageSnapshot {
     snapshot
 }
 
-fn api_attributes(runner: &impl ProRunner, endpoint: &'static str) -> Result<Value, String> {
+fn api_attributes(runner: &impl SecurityRunner, endpoint: &'static str) -> Result<Value, String> {
     let output = runner.api(endpoint)?;
     let envelope: Value = serde_json::from_slice(&output)
         .map_err(|error| format!("invalid JSON from Ubuntu Pro Client: {error}"))?;
@@ -529,11 +592,12 @@ mod tests {
         assert!(validate_app_id("org.example\nBad").is_err());
     }
 
-    struct FakeProRunner {
+    struct FakeSecurityRunner {
         responses: HashMap<&'static str, Result<Value, String>>,
+        release_days: Result<i64, String>,
     }
 
-    impl ProRunner for FakeProRunner {
+    impl SecurityRunner for FakeSecurityRunner {
         fn api(&self, endpoint: &'static str) -> Result<Vec<u8>, String> {
             let attributes = self
                 .responses
@@ -547,10 +611,14 @@ mod tests {
             }))
             .map_err(|error| error.to_string())
         }
+
+        fn release_days(&self, _series: &str) -> Result<i64, String> {
+            self.release_days.clone()
+        }
     }
 
-    fn complete_pro_runner() -> FakeProRunner {
-        FakeProRunner {
+    fn complete_pro_runner() -> FakeSecurityRunner {
+        FakeSecurityRunner {
             responses: HashMap::from([
                 (
                     "u.pro.packages.summary.v1",
@@ -600,14 +668,16 @@ mod tests {
                     })),
                 ),
             ]),
+            release_days: Ok(1_750),
         }
     }
 
     #[test]
     fn security_coverage_keeps_authorities_separate() {
-        let snapshot = security_coverage_with(&complete_pro_runner());
+        let snapshot = security_coverage_with(&complete_pro_runner(), Ok("resolute".into()));
         assert!(snapshot.pro_client_available);
         assert!(snapshot.issues.is_empty());
+        assert_eq!(snapshot.release_support.unwrap().series, "resolute");
         assert_eq!(snapshot.package_sources.unwrap().third_party, 7);
         let pro = snapshot.pro.unwrap();
         assert!(pro.contract_valid);
@@ -622,7 +692,7 @@ mod tests {
             "u.pro.packages.summary.v1",
             Err("endpoint unavailable".into()),
         );
-        let snapshot = security_coverage_with(&runner);
+        let snapshot = security_coverage_with(&runner, Ok("resolute".into()));
         assert!(snapshot.package_sources.is_none());
         assert!(snapshot.pro.is_some());
         assert!(snapshot.automatic_updates.is_some());
@@ -636,11 +706,26 @@ mod tests {
             "u.pro.status.enabled_services.v1",
             Err("endpoint unavailable".into()),
         );
-        let snapshot = security_coverage_with(&runner);
+        let snapshot = security_coverage_with(&runner, Ok("resolute".into()));
         assert!(snapshot.pro.unwrap().contract_valid);
         assert!(snapshot
             .issues
             .iter()
             .any(|issue| issue.starts_with("Ubuntu Pro services:")));
+    }
+
+    #[test]
+    fn unavailable_release_lifecycle_keeps_package_and_update_status() {
+        let snapshot = security_coverage_with(
+            &complete_pro_runner(),
+            Err("not an Ubuntu installation".into()),
+        );
+        assert!(snapshot.release_support.is_none());
+        assert!(snapshot.package_sources.is_some());
+        assert!(snapshot.automatic_updates.is_some());
+        assert!(snapshot
+            .issues
+            .iter()
+            .any(|issue| issue.starts_with("Ubuntu release lifecycle:")));
     }
 }

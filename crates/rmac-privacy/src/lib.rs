@@ -82,6 +82,18 @@ pub struct AutomaticUpdates {
     pub disabled_reason: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReleaseSupport {
+    pub series: String,
+    pub days_remaining: i64,
+}
+
+impl ReleaseSupport {
+    pub fn supported(&self) -> bool {
+        self.days_remaining >= 0
+    }
+}
+
 impl AutomaticUpdates {
     pub fn fully_enabled(&self) -> bool {
         self.running
@@ -94,6 +106,7 @@ impl AutomaticUpdates {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SecurityCoverageSnapshot {
     pub pro_client_available: bool,
+    pub release_support: Option<ReleaseSupport>,
     pub package_sources: Option<PackageSources>,
     pub pro: Option<ProStatus>,
     pub automatic_updates: Option<AutomaticUpdates>,
@@ -128,5 +141,19 @@ mod tests {
         let mut disabled = enabled;
         disabled.periodic_job_enabled = false;
         assert!(!disabled.fully_enabled());
+    }
+
+    #[test]
+    fn release_support_includes_the_final_supported_day() {
+        assert!(ReleaseSupport {
+            series: "resolute".into(),
+            days_remaining: 0,
+        }
+        .supported());
+        assert!(!ReleaseSupport {
+            series: "plucky".into(),
+            days_remaining: -1,
+        }
+        .supported());
     }
 }

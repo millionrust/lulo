@@ -77,6 +77,7 @@ pub struct PointerSettings {
     pub accel_speed: f64,
     pub accel_profile: AccelProfile,
     pub left_handed: bool,
+    pub middle_emulation: bool,
 }
 
 impl Default for PointerSettings {
@@ -86,6 +87,7 @@ impl Default for PointerSettings {
             accel_speed: 0.0,
             accel_profile: AccelProfile::Adaptive,
             left_handed: false,
+            middle_emulation: false,
         }
     }
 }
@@ -284,6 +286,7 @@ fn read_settings(document: &KdlDocument) -> InputSettings {
 fn read_pointer(document: &KdlDocument, pointer: &mut PointerSettings) {
     pointer.natural_scroll = document.get("natural-scroll").is_some();
     pointer.left_handed = document.get("left-handed").is_some();
+    pointer.middle_emulation = document.get("middle-emulation").is_some();
     pointer.accel_speed = number(document, "accel-speed").unwrap_or(pointer.accel_speed);
     pointer.accel_profile = match string(document, "accel-profile") {
         Some("flat") => AccelProfile::Flat,
@@ -378,6 +381,7 @@ fn write_pointer(document: &mut KdlDocument, pointer: &PointerSettings) {
     replace_value(document, "accel-speed", pointer.accel_speed);
     replace_value(document, "accel-profile", pointer.accel_profile.id());
     replace_flag(document, "left-handed", pointer.left_handed);
+    replace_flag(document, "middle-emulation", pointer.middle_emulation);
 }
 
 fn remove_named(document: &mut KdlDocument, name: &str) {
@@ -450,11 +454,13 @@ input {
         natural-scroll
         accel-speed -0.25
         accel-profile "flat"
+        middle-emulation
     }
     touchpad {
         tap
         dwt
         accel-speed 0.2
+        middle-emulation
     }
     warp-mouse-to-focus
 }
@@ -471,8 +477,10 @@ binds { Mod+T { spawn "alacritty"; } }
         assert!(settings.mouse.natural_scroll);
         assert_eq!(settings.mouse.accel_profile, AccelProfile::Flat);
         assert_eq!(settings.mouse.accel_speed, -0.25);
+        assert!(settings.mouse.middle_emulation);
         assert!(settings.touchpad.tap_to_click);
         assert!(settings.touchpad.disable_while_typing);
+        assert!(settings.touchpad.pointer.middle_emulation);
         assert_eq!(settings.touchpad.pointer.accel_speed, 0.2);
     }
 
@@ -482,7 +490,9 @@ binds { Mod+T { spawn "alacritty"; } }
         settings.keyboard.repeat_rate = 40;
         settings.keyboard.numlock = false;
         settings.mouse.natural_scroll = false;
+        settings.mouse.middle_emulation = false;
         settings.touchpad.drag_lock = true;
+        settings.touchpad.pointer.middle_emulation = false;
         let updated = update_source(CONFIG, &settings).unwrap();
         assert!(updated.contains("// keep this comment"));
         assert!(updated.contains("track-layout \"global\""));

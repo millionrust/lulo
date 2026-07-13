@@ -296,14 +296,23 @@ enum AudioChange {
 enum InputChange {
     KeyboardRepeatDelay(u32),
     KeyboardRepeatRate(u32),
-    KeyboardRepeatPreset { delay_ms: u32, rate: u32 },
+    KeyboardRepeatPreset {
+        delay_ms: u32,
+        rate: u32,
+    },
     KeyboardNumlock(bool),
     MouseNaturalScroll(bool),
     MouseLeftHanded(bool),
+    MouseMiddleEmulation(bool),
     MouseAccelSpeed(f64),
     MouseAccelProfile(rmac_input::AccelProfile),
+    MousePrecisionPreset {
+        speed: f64,
+        profile: rmac_input::AccelProfile,
+    },
     TouchpadNaturalScroll(bool),
     TouchpadLeftHanded(bool),
+    TouchpadMiddleEmulation(bool),
     TouchpadAccelSpeed(f64),
     TouchpadAccelProfile(rmac_input::AccelProfile),
     TouchpadTap(bool),
@@ -2944,12 +2953,20 @@ impl Settings {
             InputChange::KeyboardNumlock(value) => settings.keyboard.numlock = value,
             InputChange::MouseNaturalScroll(value) => settings.mouse.natural_scroll = value,
             InputChange::MouseLeftHanded(value) => settings.mouse.left_handed = value,
+            InputChange::MouseMiddleEmulation(value) => settings.mouse.middle_emulation = value,
             InputChange::MouseAccelSpeed(value) => settings.mouse.accel_speed = value,
             InputChange::MouseAccelProfile(value) => settings.mouse.accel_profile = value,
+            InputChange::MousePrecisionPreset { speed, profile } => {
+                settings.mouse.accel_speed = speed;
+                settings.mouse.accel_profile = profile;
+            }
             InputChange::TouchpadNaturalScroll(value) => {
                 settings.touchpad.pointer.natural_scroll = value
             }
             InputChange::TouchpadLeftHanded(value) => settings.touchpad.pointer.left_handed = value,
+            InputChange::TouchpadMiddleEmulation(value) => {
+                settings.touchpad.pointer.middle_emulation = value
+            }
             InputChange::TouchpadAccelSpeed(value) => settings.touchpad.pointer.accel_speed = value,
             InputChange::TouchpadAccelProfile(value) => {
                 settings.touchpad.pointer.accel_profile = value
@@ -5138,6 +5155,45 @@ impl Settings {
                     .into(),
                 ),
             ]));
+            let mouse = &self.input.settings.mouse;
+            let selected_pointer_preset = MOUSE_PRECISION_PRESETS.iter().position(|(_, change)| {
+                matches!(
+                    change,
+                    InputChange::MousePrecisionPreset { speed, profile }
+                        if *speed == mouse.accel_speed && *profile == mouse.accel_profile
+                )
+            });
+            cards.push(card(vec![
+                input_segment_row(
+                    cx.entity(),
+                    "accessibility-pointer-precision",
+                    "Mouse precision",
+                    &MOUSE_PRECISION_PRESETS,
+                    selected_pointer_preset,
+                    self.input.can_configure && !self.input_busy,
+                ),
+                input_switch_row(
+                    cx.entity(),
+                    "accessibility-middle-emulation",
+                    "icons/mouse.svg",
+                    "Middle-button emulation",
+                    Some("Press the left and right mouse buttons together"),
+                    mouse.middle_emulation,
+                    self.input.can_configure && !self.input_busy,
+                    InputChange::MouseMiddleEmulation,
+                ),
+                value_row(
+                    "icons/mouse.svg",
+                    secondary(),
+                    "Effective mouse response".into(),
+                    format!(
+                        "{} acceleration · speed {}",
+                        mouse.accel_profile.label(),
+                        mouse.accel_speed
+                    )
+                    .into(),
+                ),
+            ]));
             if let Some(detail) = self
                 .input
                 .detail
@@ -5153,6 +5209,9 @@ impl Settings {
         }
         cards.push(note_card(
             "Niri currently provides repeat timing but no compositor authority for Sticky Keys, Slow Keys, or Bounce Keys. Those controls remain unavailable instead of being simulated inside individual apps.",
+        ));
+        cards.push(note_card(
+            "Mouse precision and middle-button emulation are applied by niri through libinput. Niri does not currently provide Mouse Keys, dwell click, or a session-wide double-click timing authority, so those controls remain unavailable.",
         ));
 
         cards.push(section_header("Text & Screen Reader"));
@@ -6577,6 +6636,16 @@ impl Settings {
                 self.input.can_configure && !self.input_busy,
                 InputChange::MouseLeftHanded,
             ),
+            input_switch_row(
+                cx.entity(),
+                "mouse-middle-emulation",
+                "icons/mouse.svg",
+                "Middle-button emulation",
+                Some("Press the left and right buttons together for middle click"),
+                settings.middle_emulation,
+                self.input.can_configure && !self.input_busy,
+                InputChange::MouseMiddleEmulation,
+            ),
         ]));
         self.pane(cards)
     }
@@ -6655,6 +6724,16 @@ impl Settings {
                 settings.pointer.left_handed,
                 self.input.can_configure && !self.input_busy,
                 InputChange::TouchpadLeftHanded,
+            ),
+            input_switch_row(
+                cx.entity(),
+                "touchpad-middle-emulation",
+                "icons/touchpad.svg",
+                "Middle-click emulation",
+                Some("Press the left and right click areas together"),
+                settings.pointer.middle_emulation,
+                self.input.can_configure && !self.input_busy,
+                InputChange::TouchpadMiddleEmulation,
             ),
         ]));
         self.pane(cards)
@@ -8709,6 +8788,29 @@ const MOUSE_PROFILES: [InputOption; 2] = [
     (
         "Flat",
         InputChange::MouseAccelProfile(rmac_input::AccelProfile::Flat),
+    ),
+];
+const MOUSE_PRECISION_PRESETS: [InputOption; 3] = [
+    (
+        "Standard",
+        InputChange::MousePrecisionPreset {
+            speed: 0.0,
+            profile: rmac_input::AccelProfile::Adaptive,
+        },
+    ),
+    (
+        "Steady",
+        InputChange::MousePrecisionPreset {
+            speed: -0.5,
+            profile: rmac_input::AccelProfile::Adaptive,
+        },
+    ),
+    (
+        "Precise",
+        InputChange::MousePrecisionPreset {
+            speed: -0.5,
+            profile: rmac_input::AccelProfile::Flat,
+        },
     ),
 ];
 const TOUCHPAD_PROFILES: [InputOption; 2] = [

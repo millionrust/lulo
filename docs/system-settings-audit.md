@@ -258,6 +258,12 @@ configuration before replacement, and relies on niri live reload. Sticky Keys,
 Slow Keys, and Bounce Keys remain explicitly unavailable because niri currently
 provides no compositor authority for them. Authority reference:
 [niri Input](https://github.com/niri-wm/niri/wiki/Configuration%3A-Input).
+The same Motor section provides atomic mouse precision presets and real
+libinput middle-button emulation, with exact effective acceleration and speed.
+Mouse Keys, dwell click, and session-wide double-click timing remain explicitly
+unavailable because niri exposes no authority for them. Mouse and Trackpad also
+show middle-emulation controls beside their existing niri-backed speed,
+acceleration, handedness, scrolling, typing suppression, and drag-lock controls.
 The pane also discovers screen-reader readiness off the UI thread: a full niri
 desktop session, non-empty Xwayland `DISPLAY`, and an Orca
 executable found within a bounded PATH search are reported independently. It

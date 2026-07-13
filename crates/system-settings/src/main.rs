@@ -159,6 +159,7 @@ struct Settings {
     locale_loading: bool,
     locale_busy: bool,
     locale_error: Option<SharedString>,
+    locale_stream_error: Option<SharedString>,
     locale: Option<rmac_locale::Snapshot>,
     locale_editor: Option<Entity<InputState>>,
     locale_revert: Option<Vec<String>>,
@@ -518,6 +519,52 @@ impl Settings {
         })
         .detach();
 
+        let (locale_updates, locale_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_locale_linux::watch(locale_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = locale_update_rx.recv().await {
+                match event {
+                    rmac_locale::WatchEvent::Changed => {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_locale_linux::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if !this.locale_busy {
+                                    this.finish_locale_update(result);
+                                    this.locale_stream_error = None;
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_locale::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.locale_stream_error = Some(
+                                    "Live language and region updates are temporarily unavailable"
+                                        .into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
@@ -739,6 +786,7 @@ impl Settings {
             locale_loading: true,
             locale_busy: false,
             locale_error: None,
+            locale_stream_error: None,
             locale: None,
             locale_editor: None,
             locale_revert: None,
@@ -3494,7 +3542,13 @@ impl Settings {
             .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
             .child(text_block(
                 "Authoritative state".into(),
-                Some(format!("{} installed locales", snapshot.installed_locales.len()).into()),
+                Some(
+                    format!(
+                        "Live localed changes · {} installed locales",
+                        snapshot.installed_locales.len()
+                    )
+                    .into(),
+                ),
             ))
             .child(refresh)
             .into_any_element()];
@@ -6233,6 +6287,7 @@ impl Render for Settings {
             .or_else(|| self.time_error.clone())
             .or_else(|| self.time_stream_error.clone())
             .or_else(|| self.locale_error.clone())
+            .or_else(|| self.locale_stream_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -6268,6 +6323,7 @@ impl Render for Settings {
                             this.time_error = None;
                             this.time_stream_error = None;
                             this.locale_error = None;
+                            this.locale_stream_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;

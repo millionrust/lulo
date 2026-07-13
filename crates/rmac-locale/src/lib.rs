@@ -22,6 +22,12 @@ const LOCALE_KEYS: [&str; 14] = [
     "LANGUAGE",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Assignment {
     pub key: String,

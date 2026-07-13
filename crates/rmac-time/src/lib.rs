@@ -5,6 +5,12 @@ use std::fmt;
 pub const MAX_TIMEZONES: usize = 1024;
 const MAX_TIMEZONE_BYTES: usize = 128;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub timezone: String,

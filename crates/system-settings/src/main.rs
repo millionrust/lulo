@@ -153,6 +153,7 @@ struct Settings {
     time_loading: bool,
     time_busy: bool,
     time_error: Option<SharedString>,
+    time_stream_error: Option<SharedString>,
     time: Option<rmac_time::Snapshot>,
     timezone_editor: Option<Entity<InputState>>,
     power: rmac_power::Snapshot,
@@ -433,6 +434,51 @@ impl Settings {
         })
         .detach();
 
+        let (time_updates, time_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_time_linux::watch(time_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = time_update_rx.recv().await {
+                match event {
+                    rmac_time::WatchEvent::Changed => {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_time_linux::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if !this.time_busy {
+                                    this.finish_time_update(result);
+                                    this.time_stream_error = None;
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_time::WatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.time_stream_error = Some(
+                                    "Live date and time updates are temporarily unavailable".into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = rmac_updates_linux::snapshot(rmac_updates::Request::cached()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -669,6 +715,7 @@ impl Settings {
             time_loading: true,
             time_busy: false,
             time_error: None,
+            time_stream_error: None,
             time: None,
             timezone_editor: None,
             power: rmac_power::Snapshot::default(),
@@ -3091,7 +3138,7 @@ impl Settings {
                     .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
                     .child(text_block(
                         "Authoritative state".into(),
-                        Some("Refresh after changes made outside rmac".into()),
+                        Some("Live timedated changes · refresh on demand".into()),
                     ))
                     .child(refresh)
                     .into_any_element(),
@@ -3103,7 +3150,7 @@ impl Settings {
             ));
         }
         cards.push(note_card(
-            "Manual clock setting and live external-change signals are not connected yet. The hardware clock remains read-only because UTC is the recommended Linux configuration.",
+            "Manual clock setting is not connected yet. The hardware clock remains read-only because UTC is the recommended Linux configuration.",
         ));
         self.pane(cards)
     }
@@ -5809,6 +5856,7 @@ impl Render for Settings {
             .or_else(|| self.updates_error.clone())
             .or_else(|| self.storage_error.clone())
             .or_else(|| self.time_error.clone())
+            .or_else(|| self.time_stream_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -5842,6 +5890,7 @@ impl Render for Settings {
                             this.updates_error = None;
                             this.storage_error = None;
                             this.time_error = None;
+                            this.time_stream_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;

@@ -39,8 +39,8 @@ evidence remains gated by the reference-PC framework work.
   measures system/removable/network volumes, isolates per-volume failures, and
   warns conservatively when space is low. Date & Time now exposes timedated
   clock/timezone/NTP state plus validated polkit-backed timezone and automatic
-  time changes; installation, cleanup actions, live time signals, and Linux
-  runtime evidence keep overall parity partial.
+  time changes with live service refresh; installation, cleanup actions, manual
+  clock editing, and Linux runtime evidence keep overall parity partial.
 - **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
   image attachments, a word/character-count footer, and **pinned notes**
   (Pinned/Notes sections, persisted).

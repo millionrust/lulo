@@ -161,7 +161,10 @@ timezone validation, bounded inventory handling, typed failures, and a fake
 service; `rmac-time-linux` owns systemd-timedated D-Bus and interactive polkit
 calls. Mutations return a newly sampled snapshot rather than optimistic local
 state. System Settings dispatches blocking D-Bus work to its background
-executor and retains the previous snapshot when authorization or mutation fails.
+executor and retains the previous snapshot when authorization or mutation
+fails. A bounded event adapter coalesces property changes, refreshes after
+timedated reappearance, reconnects after bus loss, and ignores the daemon's
+expected idle shutdown.
 
 Appearance is split deliberately: `rmac-appearance` owns the platform-neutral
 snapshot, capabilities, event reducer, source trait, and deterministic fake;

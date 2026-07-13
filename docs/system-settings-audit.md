@@ -247,10 +247,10 @@ terminal/editor content fonts, GTK, browsers, and other toolkit applications
 remain separate. All System Settings-owned labels, values, section headings,
 buttons, segmented controls, sidebar text, and pane chrome now use the live
 factor; fixed-height segmented/accent controls retain sufficient logical height
-at the bounded 130% maximum. Finder, App Drawer, Notes, Terminal, and Text
-Editor-owned labels and chrome also follow the live factor, while the
-applications' independently controlled content fonts remain separate; the
-remaining apps still require fixed-text migration and Linux clipping evidence.
+at the bounded 130% maximum. Every app-owned label and chrome surface in
+Activity Monitor, Finder, App Drawer, Notes, Terminal, and Text Editor follows
+the live factor, while independently controlled editor and terminal content
+fonts remain separate. Linux clipping evidence is still required.
 The pane also discovers screen-reader readiness off the UI thread: a full niri desktop session,
 non-empty Xwayland `DISPLAY`, and an Orca
 executable found within a bounded PATH search are reported independently. It

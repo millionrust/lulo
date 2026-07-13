@@ -1093,7 +1093,7 @@ impl MonitorView {
                 div()
                     .px_3()
                     .py_1()
-                    .text_size(px(11.0))
+                    .text_size(rmac_ui::text_px(11.0))
                     .font_weight(mac::SEMIBOLD)
                     .text_color(mac::text_tertiary())
                     .child("COLUMNS"),
@@ -1108,7 +1108,7 @@ impl MonitorView {
                     .gap_2()
                     .h(px(26.0))
                     .px_3()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(if disabled {
                         mac::text_tertiary()
                     } else {
@@ -1143,14 +1143,14 @@ impl MonitorView {
             .border_color(mac::separator())
             .child(
                 div()
-                    .text_size(px(11.0))
+                    .text_size(rmac_ui::text_px(11.0))
                     .font_weight(mac::SEMIBOLD)
                     .text_color(mac::text_tertiary())
                     .child(label.to_uppercase()),
             )
             .child(
                 div()
-                    .text_size(px(24.0))
+                    .text_size(rmac_ui::text_px(24.0))
                     .font_weight(mac::SEMIBOLD)
                     .text_color(accent)
                     .child(value),
@@ -1199,7 +1199,7 @@ impl MonitorView {
             .pt_3()
             .child(
                 div()
-                    .text_size(px(11.0))
+                    .text_size(rmac_ui::text_px(11.0))
                     .font_weight(mac::SEMIBOLD)
                     .text_color(mac::text_tertiary())
                     .child("CPU CORES"),
@@ -1215,7 +1215,7 @@ impl MonitorView {
                         .child(
                             div()
                                 .w(px(48.0))
-                                .text_size(px(11.0))
+                                .text_size(rmac_ui::text_px(11.0))
                                 .text_color(mac::text_secondary())
                                 .child(format!("Core {}", i + 1)),
                         )
@@ -1236,7 +1236,7 @@ impl MonitorView {
                         .child(
                             div()
                                 .w(px(34.0))
-                                .text_size(px(11.0))
+                                .text_size(rmac_ui::text_px(11.0))
                                 .text_color(mac::text())
                                 .child(format!("{:.0}%", usage)),
                         )
@@ -1252,7 +1252,7 @@ impl MonitorView {
         let figure = |s: String, color: gpui::Hsla| {
             div()
                 .w(px(110.0))
-                .text_size(px(12.0))
+                .text_size(rmac_ui::text_px(12.0))
                 .text_color(color)
                 .text_right()
                 .child(s)
@@ -1268,7 +1268,7 @@ impl MonitorView {
             .child(
                 div()
                     .flex_1()
-                    .text_size(px(11.0))
+                    .text_size(rmac_ui::text_px(11.0))
                     .font_weight(mac::SEMIBOLD)
                     .text_color(mac::text_tertiary())
                     .child("INTERFACE"),
@@ -1276,7 +1276,7 @@ impl MonitorView {
             .children(["RCVD", "SENT", "↓ RATE", "↑ RATE"].into_iter().map(|h| {
                 div()
                     .w(px(110.0))
-                    .text_size(px(11.0))
+                    .text_size(rmac_ui::text_px(11.0))
                     .font_weight(mac::SEMIBOLD)
                     .text_color(mac::text_tertiary())
                     .text_right()
@@ -1308,7 +1308,7 @@ impl MonitorView {
                             }))
                             .child(
                                 div()
-                                    .text_size(px(13.0))
+                                    .text_size(rmac_ui::text_px(13.0))
                                     .text_color(mac::text())
                                     .child(iface.name.clone()),
                             ),
@@ -1495,14 +1495,14 @@ impl MonitorView {
                     .justify_between()
                     .child(
                         div()
-                            .text_size(px(11.0))
+                            .text_size(rmac_ui::text_px(11.0))
                             .font_weight(mac::SEMIBOLD)
                             .text_color(mac::text_tertiary())
                             .child("MEMORY PRESSURE"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.0))
+                            .text_size(rmac_ui::text_px(11.0))
                             .font_weight(mac::SEMIBOLD)
                             .text_color(color)
                             .child(label),
@@ -1631,13 +1631,13 @@ impl MonitorView {
                 .border_color(mac::separator())
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::text_secondary())
                         .child(label.to_string()),
                 )
                 .child(
                     div()
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .font_weight(mac::MEDIUM)
                         .text_color(mac::text())
                         .child(value),
@@ -1662,7 +1662,7 @@ impl MonitorView {
                     .pb_2()
                     .child(
                         div()
-                            .text_size(px(16.0))
+                            .text_size(rmac_ui::text_px(16.0))
                             .font_weight(mac::SEMIBOLD)
                             .text_color(mac::text())
                             .child(row.name.clone()),
@@ -1695,13 +1695,13 @@ impl MonitorView {
                     .pt_2()
                     .child(
                         div()
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(mac::text_secondary())
                             .child("Path"),
                     )
                     .child(
                         div()
-                            .text_size(px(11.0))
+                            .text_size(rmac_ui::text_px(11.0))
                             .text_color(mac::text())
                             .child(path),
                     ),
@@ -1757,7 +1757,7 @@ impl Render for MonitorView {
                         .bg(mac::error_background())
                         .border_b_1()
                         .border_color(mac::error_border())
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))

@@ -9,10 +9,13 @@ installer.
 ## Startup and environment
 
 Run `scripts/linux/install-session-units.sh` once from the repository. It
-builds the release supervisor, installs it under
+builds the release supervisor, launcher, and launcher-routed System Settings,
+installs them under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
 directory, and installs `~/.local/bin/rmac-session-start`.
-It also builds the notification and Focus services, installs the notification
+The launcher binds its action-scoped runtime socket before the shortcut broker
+starts, so the first consented activation has an owner. The installer also
+builds the notification and Focus services, installs the notification
 portal descriptor and desktop-specific backend selection, and installs D-Bus
 activation files for both authorities.
 

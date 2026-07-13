@@ -1,8 +1,8 @@
 # rmac
 
 rmac is a native Rust desktop suite that explores macOS-like ergonomics for a
-Linux/Wayland desktop. The repository currently contains seven functional GPUI
-applications developed on macOS. Linux product work follows the gated roadmap
+Linux/Wayland desktop. The repository contains the original seven GPUI
+applications plus the session-owned launcher surface. Linux product work follows the gated roadmap
 in [`PLAN_V2.md`](PLAN_V2.md).
 
 ## Status
@@ -10,8 +10,9 @@ in [`PLAN_V2.md`](PLAN_V2.md).
 - The macOS prototypes build and run.
 - CI is configured to check both Ubuntu and macOS builds.
 - Ubuntu 26.04 runtime behavior is not yet validated; that is Phase 1.
-- The dock, top bar, launcher, and full desktop session are planned after the
-  Linux foundations and three vertical-slice applications pass their gates.
+- The launcher now has a real centered GPUI surface and supervised session
+  binary; the Dock, top bar, and complete Linux session still require their
+  presentation and reference-PC gates.
 
 ## Applications
 
@@ -19,6 +20,7 @@ in [`PLAN_V2.md`](PLAN_V2.md).
 |---|---|---|
 | Activity Monitor | `rmac-activity-monitor` | `cargo run -p rmac-activity-monitor` |
 | App Drawer | `rmac-app-drawer` | `cargo run -p rmac-app-drawer` |
+| Launcher / Spotlight | `rmac-launcher-app` | `cargo run -p rmac-launcher-app -- --show` |
 | Finder | `rmac-finder` | `cargo run -p rmac-finder` |
 | Notes | `rmac-notes` | `cargo run -p rmac-notes` |
 | System Settings | `rmac-system-settings` | `cargo run -p rmac-system-settings` |

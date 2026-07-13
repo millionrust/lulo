@@ -107,6 +107,9 @@ pub struct SearchResult {
     pub category: Category,
     pub title: String,
     pub subtitle: Option<String>,
+    /// Optional host-resolved icon for presentation. Providers may omit it;
+    /// the surface then uses an original category fallback.
+    pub icon: Option<PathBuf>,
     pub primary: Action,
     pub alternate: Option<Action>,
     /// Provider-normalized 0–100 recency/frequency signal, never wall time.
@@ -373,6 +376,17 @@ impl Session {
         self.selected.as_ref()
     }
 
+    pub fn select(&mut self, id: &ResultId) -> bool {
+        if self.ranked.iter().any(|ranked| &ranked.result.id == id)
+            && self.selected.as_ref() != Some(id)
+        {
+            self.selected = Some(id.clone());
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn activation(&self, mode: ActivationMode) -> Option<Action> {
         let selected = self.selected.as_ref()?;
         let result = self
@@ -600,6 +614,7 @@ mod tests {
             category,
             title: title.into(),
             subtitle: None,
+            icon: None,
             primary,
             alternate: None,
             recency_rank: 0,
@@ -828,6 +843,27 @@ mod tests {
         );
         session.move_selection(MoveSelection::Next);
         assert_eq!(session.selected(), selected.as_ref());
+    }
+
+    #[test]
+    fn pointer_selection_accepts_only_a_visible_result() {
+        let mut session = Session::default();
+        let request = session.begin(
+            "",
+            vec![provider("apps", Category::Applications, Privacy::default())],
+        );
+        let visible = result("apps", "terminal", Category::Applications, "Terminal");
+        session.apply(
+            request.generation,
+            rmac_shell_settings::ProviderId("apps".into()),
+            Ok(vec![visible.clone()]),
+        );
+        assert!(!session.select(&visible.id));
+        assert!(!session.select(&ResultId {
+            provider: rmac_shell_settings::ProviderId("apps".into()),
+            local: "not-visible".into(),
+        }));
+        assert_eq!(session.selected(), Some(&visible.id));
     }
 
     #[test]

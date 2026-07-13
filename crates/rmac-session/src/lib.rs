@@ -492,6 +492,10 @@ mod tests {
         let focus = include_str!("../units/rmac-focus.service");
         assert!(focus.contains("Type=dbus"));
         assert!(focus.contains("BusName=org.rmac.Focus1"));
+        let launcher = include_str!("../units/rmac-launcher.service");
+        let shortcut_broker = include_str!("../units/rmac-shortcut-broker.service");
+        assert!(launcher.contains("Before=rmac-shortcut-broker.service"));
+        assert!(shortcut_broker.contains("After=rmac-session-supervisor.service xdg-desktop-portal.service rmac-launcher.service"));
 
         let lock = include_str!("../units/rmac-lock.service");
         assert!(lock.contains("Type=notify"));

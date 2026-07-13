@@ -37,6 +37,8 @@ esac
 
 (cd "${repo_root}" && cargo build --locked --release \
     -p rmac-session --bin rmac-session-supervisor \
+    -p rmac-launcher-app --bin rmac-launcher \
+    -p rmac-system-settings --bin rmac-system-settings \
     -p rmac-notifications-linux --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker)
@@ -45,6 +47,8 @@ install -d -m 0755 "${unit_dir}"
 install -d -m 0755 "${libexec_dir}"
 install -d -m 0755 "${bin_dir}"
 install -m 0755 "${target_dir}/release/rmac-session-supervisor" "${libexec_dir}/rmac-session-supervisor"
+install -m 0755 "${target_dir}/release/rmac-launcher" "${libexec_dir}/rmac-launcher"
+install -m 0755 "${target_dir}/release/rmac-system-settings" "${libexec_dir}/rmac-system-settings"
 install -m 0755 "${target_dir}/release/rmac-notification-center" "${libexec_dir}/rmac-notification-center"
 install -m 0755 "${target_dir}/release/rmac-focus-service" "${libexec_dir}/rmac-focus-service"
 install -m 0755 "${target_dir}/release/rmac-shortcut-broker" "${libexec_dir}/rmac-shortcut-broker"

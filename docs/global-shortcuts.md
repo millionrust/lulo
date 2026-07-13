@@ -38,9 +38,14 @@ snapshot is diagnostic authority only: Settings can refresh it but cannot
 invent, bind, or silently switch a shortcut backend.
 
 Activated IDs pass through `rmac-shortcut-dispatch`, which accepts only the
-compiled allowlist. Normal shell IDs become a small JSON message on
-`$XDG_RUNTIME_DIR/rmac/shortcut-events.sock`; D-phase consumers remain
-responsible for those actions. Lock is the deliberate exception: it starts the
+compiled allowlist. A normal shell ID becomes a small JSON message on its own
+`$XDG_RUNTIME_DIR/rmac/shortcut-<allowlisted-id>.sock`. Each separately
+supervised surface binds only its compiled action, validates the message again,
+and turns accepted datagrams into monotonically sequenced typed activations.
+This prevents one surface from consuming another surface's shortcut and keeps
+crash domains independent. Runtime directories are mode 0700; non-socket path
+collisions and a second live owner fail closed, while a stale socket is removed
+before binding. Lock is the deliberate exception: it starts the
 fixed `rmac-lock.service` directly and waits for the lock readiness transaction,
 so shell availability cannot turn a security action into a dropped event. No
 shortcut is converted into a shell command.
@@ -64,7 +69,8 @@ path; ordinary shell actions remain unavailable while locked.
 ## Verification
 
 Tests prove the default IDs and both trigger forms are unique and valid,
-reject malformed input and relative dispatchers, and inspect the generated KDL
+reject malformed input and relative dispatchers, prove action-scoped endpoints,
+and inspect the generated KDL
 for one shell-free dispatch per shortcut. The real portal implementation is
 cross-compiled through the Linux Rust target on the development host. Final
 evidence still requires the Linux PC to record portal version/consent, each

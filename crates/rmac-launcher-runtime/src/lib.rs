@@ -154,6 +154,97 @@ async fn wait_or_closed<T>(sender: &async_channel::Sender<T>, duration: Duration
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum SettingsUpdate {
+    Snapshot(Box<rmac_shell_settings::ShellSettings>),
+    Unavailable(String),
+}
+
+/// Watch the complete C4 authority without a load/watch race. Consumers retain
+/// their last-good settings across failures and rebuild provider scope only
+/// from complete snapshots.
+pub async fn watch_shell_settings(sender: async_channel::Sender<SettingsUpdate>) {
+    loop {
+        let setup = blocking::unblock(|| {
+            let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
+            let watcher = store.watch()?;
+            let snapshot = store.load()?;
+            Ok::<_, rmac_shell_settings::Error>((store, watcher, snapshot.settings))
+        })
+        .await;
+        let (mut store, watcher, initial) = match setup {
+            Ok(setup) => setup,
+            Err(error) => {
+                if sender
+                    .send(SettingsUpdate::Unavailable(error.to_string()))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                wait_or_closed(&sender, Duration::from_secs(1)).await;
+                if sender.is_closed() {
+                    return;
+                }
+                continue;
+            }
+        };
+        if sender
+            .send(SettingsUpdate::Snapshot(Box::new(initial)))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        loop {
+            let changed = futures_util::FutureExt::fuse(watcher.recv());
+            let closed = futures_util::FutureExt::fuse(sender.closed());
+            futures_util::pin_mut!(changed, closed);
+            let event = futures_util::select! {
+                event = changed => event,
+                _ = closed => return,
+            };
+            match event {
+                Ok(rmac_shell_settings::StoreEvent::Changed) => {
+                    let (returned_store, loaded) = blocking::unblock(move || {
+                        let loaded = store.load().map(|snapshot| snapshot.settings);
+                        (store, loaded)
+                    })
+                    .await;
+                    store = returned_store;
+                    let update = loaded.map_or_else(
+                        |error| SettingsUpdate::Unavailable(error.to_string()),
+                        |settings| SettingsUpdate::Snapshot(Box::new(settings)),
+                    );
+                    if sender.send(update).await.is_err() {
+                        return;
+                    }
+                }
+                Ok(rmac_shell_settings::StoreEvent::WatchError(error)) => {
+                    if sender
+                        .send(SettingsUpdate::Unavailable(error.to_string()))
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    break;
+                }
+                Err(error) => {
+                    if sender
+                        .send(SettingsUpdate::Unavailable(error.to_string()))
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegistryError {
     detail: String,
@@ -338,6 +429,7 @@ pub struct Row {
     pub category_label: &'static str,
     pub title: String,
     pub subtitle: Option<String>,
+    pub icon: Option<std::path::PathBuf>,
     pub selected: bool,
     pub has_alternate: bool,
 }
@@ -422,6 +514,39 @@ impl Coordinator {
                 .set_query(query, &self.descriptors, &self.policies)
         } else {
             None
+        }
+    }
+
+    /// Replace the complete provider environment after an authoritative
+    /// settings/scope reload. An open query is cancelled and reissued once.
+    pub fn set_environment(
+        &mut self,
+        descriptors: Vec<ProviderDescriptor>,
+        policies: BTreeMap<rmac_shell_settings::ProviderId, rmac_shell_settings::ProviderPolicy>,
+    ) -> Option<Request> {
+        if self.descriptors == descriptors && self.policies == policies {
+            return None;
+        }
+        self.descriptors = descriptors;
+        self.policies = policies;
+        if self.launcher.is_open() {
+            let query = self.launcher.session().query().to_owned();
+            self.launcher
+                .set_query(query, &self.descriptors, &self.policies)
+        } else {
+            None
+        }
+    }
+
+    pub fn select(&mut self, id: &ResultId) -> bool {
+        self.launcher.is_open() && self.launcher.session_mut().select(id)
+    }
+
+    pub fn activate_selected(&mut self, mode: ActivationMode) -> KeyEffect {
+        if !self.launcher.is_open() {
+            KeyEffect::None
+        } else {
+            self.activation(mode)
         }
     }
 
@@ -568,6 +693,7 @@ impl Coordinator {
                 category_label: ranked.result.category.label(),
                 title: ranked.result.title.clone(),
                 subtitle: ranked.result.subtitle.clone(),
+                icon: ranked.result.icon.clone(),
                 selected: selected == Some(&ranked.result.id),
                 has_alternate: ranked.result.alternate.is_some(),
             })
@@ -734,6 +860,7 @@ mod tests {
             category,
             title: title.into(),
             subtitle: None,
+            icon: None,
             primary,
             alternate: (category == Category::Files)
                 .then(|| Action::RevealFile {
@@ -1163,6 +1290,22 @@ mod tests {
             }))
         );
         assert_eq!(coordinator.snapshot().phase, Phase::Closed);
+    }
+
+    #[test]
+    fn environment_change_reissues_open_query_with_new_descriptors() {
+        let apps = descriptor("apps", Category::Applications, false);
+        let mut coordinator = Coordinator::new(vec![apps], BTreeMap::new());
+        let original = coordinator.open().request;
+        let settings = descriptor("settings", Category::Settings, false);
+        let replacement = coordinator
+            .set_environment(vec![settings.clone()], BTreeMap::new())
+            .expect("changed provider environment restarts the open query");
+        assert!(original.cancellation.is_cancelled());
+        assert_eq!(replacement.providers, [settings]);
+        assert!(coordinator
+            .set_environment(replacement.providers.clone(), BTreeMap::new())
+            .is_none());
     }
 
     struct RejectingBackend(rmac_launcher_system::BackendError);

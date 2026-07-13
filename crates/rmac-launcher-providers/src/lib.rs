@@ -160,6 +160,7 @@ impl Provider for ApplicationProvider {
                 category: Category::Applications,
                 title: application.name.clone(),
                 subtitle,
+                icon: application.icon.clone(),
                 primary: Action::LaunchApplication {
                     app_id: application.id.clone(),
                     spec: application.launch.clone(),
@@ -235,11 +236,32 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
         (
             "general",
             "General",
-            "System information and common preferences",
-            &[
-                "about", "update", "storage", "date", "time", "language", "sharing", "startup",
-                "login", "backup",
-            ],
+            "System information, updates, and storage",
+            &["about", "update", "storage", "system information", "backup"],
+        ),
+        (
+            "date-time",
+            "Date & Time",
+            "Time zone and automatic clock settings",
+            &["clock", "timezone", "ntp", "automatic time"],
+        ),
+        (
+            "language-region",
+            "Language & Region",
+            "Language, formats, and keyboard layouts",
+            &["locale", "formats", "region", "xkb", "input source"],
+        ),
+        (
+            "login-items",
+            "Login Items",
+            "Applications and services that start at sign in",
+            &["startup", "autostart", "systemd user"],
+        ),
+        (
+            "sharing",
+            "Sharing",
+            "Remote login and file sharing",
+            &["ssh", "samba", "remote access", "shared folders"],
         ),
         (
             "accessibility",
@@ -258,12 +280,6 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
             "Appearance",
             "Light, dark, accent, and interface style",
             &["theme", "dark mode", "light mode", "accent", "color"],
-        ),
-        (
-            "assistant",
-            "Assistant & Intelligence",
-            "Local and connected assistant services",
-            &["assistant", "ai", "voice"],
         ),
         (
             "desktop-dock",
@@ -328,12 +344,6 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
             &["do not disturb", "quiet", "notifications"],
         ),
         (
-            "screen-time",
-            "Screen Time",
-            "Usage reports and application limits",
-            &["usage", "limits", "downtime"],
-        ),
-        (
             "lock-screen",
             "Lock Screen",
             "Lock, login, and idle timeout behavior",
@@ -396,6 +406,7 @@ impl Provider for SettingsProvider {
                 category: Category::Settings,
                 title: entry.title.clone(),
                 subtitle: entry.subtitle.clone(),
+                icon: None,
                 primary: Action::OpenSetting {
                     pane_id: entry.pane_id.clone(),
                 },
@@ -621,6 +632,7 @@ fn file_result(path: PathBuf, query: &str) -> Option<SearchResult> {
         category: Category::Files,
         title,
         subtitle,
+        icon: None,
         primary: Action::OpenFile { path: path.clone() },
         alternate: Some(Action::RevealFile { path }),
         recency_rank: 0,
@@ -659,6 +671,7 @@ impl Provider for CalculatorProvider {
             category: Category::Calculator,
             title: text.clone(),
             subtitle: Some(query.trim().into()),
+            icon: None,
             primary: Action::CopyText { text },
             alternate: None,
             recency_rank: 0,
@@ -904,7 +917,7 @@ mod tests {
     #[test]
     fn system_settings_catalog_has_stable_unique_panes_and_linux_synonyms() {
         let entries = system_settings_entries();
-        assert_eq!(entries.len(), 22);
+        assert_eq!(entries.len(), 24);
         let unique: BTreeSet<_> = entries.iter().map(|entry| &entry.pane_id).collect();
         assert_eq!(unique.len(), entries.len());
         let provider = SettingsProvider::system_settings();
@@ -916,6 +929,8 @@ mod tests {
             .search("firewall", &Cancellation::default())
             .expect("settings search succeeds");
         assert_eq!(firewall[0].id.local, "privacy-security");
+        assert!(entries.iter().all(|entry| entry.pane_id != "assistant"));
+        assert!(entries.iter().all(|entry| entry.pane_id != "screen-time"));
         assert!(entries.iter().all(|entry| !entry.pane_id.contains(' ')));
     }
 

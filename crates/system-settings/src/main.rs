@@ -1571,6 +1571,18 @@ impl Settings {
         })
         .detach();
 
+        let sections = categories();
+        let selected = std::env::args()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .find_map(|arguments| {
+                (arguments[0] == "--pane")
+                    .then(|| category_name_for_pane_id(&arguments[1]))
+                    .flatten()
+            })
+            .and_then(|category| category_position(&sections, category))
+            .unwrap_or((1, 0));
+
         Self {
             system_data_loading: true,
             system_data_busy: false,
@@ -1628,8 +1640,8 @@ impl Settings {
             gtk_text: None,
             privacy: None,
             security_coverage: None,
-            sections: categories(),
-            selected: (1, 0), // General
+            sections,
+            selected,
             nav: Vec::new(),
             search,
             focus: cx.focus_handle(),
@@ -12284,6 +12296,48 @@ fn categories() -> Vec<Vec<Category>> {
     ]
 }
 
+fn category_name_for_pane_id(pane_id: &str) -> Option<&'static str> {
+    Some(match pane_id {
+        "wifi" => "Wi-Fi",
+        "bluetooth" => "Bluetooth",
+        "network" => "Network",
+        "vpn" => "VPN",
+        "battery" => "Battery",
+        "general" => "General",
+        "date-time" => "Date & Time",
+        "language-region" => "Language & Region",
+        "login-items" => "Login Items",
+        "sharing" => "Sharing",
+        "accessibility" => "Accessibility",
+        "appearance" => "Appearance",
+        "desktop-dock" => "Desktop & Dock",
+        "displays" => "Displays",
+        "spotlight" => "Spotlight",
+        "wallpaper" => "Wallpaper",
+        "notifications" => "Notifications",
+        "sound" => "Sound",
+        "keyboard" => "Keyboard",
+        "mouse" => "Mouse",
+        "trackpad" => "Trackpad",
+        "focus" => "Focus",
+        "lock-screen" => "Lock Screen",
+        "privacy-security" => "Privacy & Security",
+        _ => return None,
+    })
+}
+
+fn category_position(sections: &[Vec<Category>], name: &str) -> Option<(usize, usize)> {
+    sections
+        .iter()
+        .enumerate()
+        .find_map(|(section, categories)| {
+            categories
+                .iter()
+                .position(|category| category.name == name)
+                .map(|row| (section, row))
+        })
+}
+
 fn category_has_dedicated_renderer(name: &str) -> bool {
     matches!(
         name,
@@ -12324,11 +12378,11 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        categories, category_has_dedicated_renderer, composite_wallpaper_pixel,
-        notification_policy_with, render_wallpaper_preview, wallpaper_selection, DockChange,
-        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
-        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
-        GENERAL_DESTINATIONS,
+        categories, category_has_dedicated_renderer, category_name_for_pane_id, category_position,
+        composite_wallpaper_pixel, notification_policy_with, render_wallpaper_preview,
+        wallpaper_selection, DockChange, NotificationPolicyChange, ScreenReaderCapability,
+        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+        WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -12356,6 +12410,18 @@ mod tests {
         assert!(names
             .iter()
             .all(|name| category_has_dedicated_renderer(name)));
+    }
+
+    #[test]
+    fn every_launcher_setting_destination_routes_to_a_visible_category() {
+        let sections = categories();
+        for entry in rmac_launcher_providers::system_settings_entries() {
+            let category = category_name_for_pane_id(&entry.pane_id)
+                .unwrap_or_else(|| panic!("missing category route for {}", entry.pane_id));
+            assert!(category_position(&sections, category).is_some());
+        }
+        assert!(category_name_for_pane_id("assistant").is_none());
+        assert!(category_name_for_pane_id("screen-time").is_none());
     }
 
     #[test]

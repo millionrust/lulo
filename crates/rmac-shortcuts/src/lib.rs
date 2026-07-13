@@ -89,6 +89,8 @@ pub enum Operation {
     ResolveStatus,
     ReadStatus,
     ParseStatus,
+    BindDispatch,
+    ReadDispatch,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -294,17 +296,30 @@ pub fn write_niri_fallback(path: &Path, dispatcher: &Path) -> Result<(), Error> 
         .map_err(|error| Error::new(Operation::WriteFallback, error.to_string()))
 }
 
-pub fn shortcut_socket_path() -> Result<PathBuf, Error> {
-    std::env::var_os("XDG_RUNTIME_DIR")
+pub fn shortcut_socket_path(id: &ShortcutId) -> Result<PathBuf, Error> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .map(|path| path.join("rmac/shortcut-events.sock"))
         .ok_or_else(|| {
             Error::new(
                 Operation::Dispatch,
                 "XDG_RUNTIME_DIR is not set to an absolute path",
             )
-        })
+        })?;
+    shortcut_socket_path_in(&runtime, id)
+}
+
+fn shortcut_socket_path_in(runtime: &Path, id: &ShortcutId) -> Result<PathBuf, Error> {
+    if !default_shortcuts()
+        .iter()
+        .any(|shortcut| shortcut.id == *id)
+    {
+        return Err(Error::new(
+            Operation::Dispatch,
+            format!("unknown shortcut {}", id.0),
+        ));
+    }
+    Ok(runtime.join(format!("rmac/shortcut-{}.sock", id.0)))
 }
 
 pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
@@ -319,7 +334,7 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
     if id.0 == "lock" {
         return lock::request().map_err(|error| Error::new(Operation::Dispatch, error.to_string()));
     }
-    let path = shortcut_socket_path()?;
+    let path = shortcut_socket_path(id)?;
     let socket = std::os::unix::net::UnixDatagram::unbound()
         .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
     let bytes = serde_json::to_vec(id)
@@ -328,6 +343,137 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
         .send_to(&bytes, &path)
         .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
     Ok(())
+}
+
+/// Receive dispatcher events for one compiled shell action. Each independently
+/// supervised surface owns its own endpoint, so a launcher crash cannot consume
+/// or drop Notification Center or Quick Settings activations.
+pub async fn watch_dispatches(id: ShortcutId, sender: Sender<Event>) -> Result<(), Error> {
+    if !default_shortcuts().iter().any(|shortcut| shortcut.id == id) {
+        return Err(Error::new(
+            Operation::BindDispatch,
+            format!("unknown shortcut {}", id.0),
+        ));
+    }
+    let path = shortcut_socket_path(&id)?;
+    watch_dispatches_at(path, id, sender).await
+}
+
+async fn watch_dispatches_at(
+    path: PathBuf,
+    id: ShortcutId,
+    sender: Sender<Event>,
+) -> Result<(), Error> {
+    let parent = path.parent().ok_or_else(|| {
+        Error::new(
+            Operation::BindDispatch,
+            "shortcut socket has no runtime directory",
+        )
+    })?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| Error::new(Operation::BindDispatch, error.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
+
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+            .map_err(|error| Error::new(Operation::BindDispatch, error.to_string()))?;
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_socket() => {
+                let probe = std::os::unix::net::UnixDatagram::unbound()
+                    .map_err(|error| Error::new(Operation::BindDispatch, error.to_string()))?;
+                match probe.send_to(b"probe", &path) {
+                    Ok(_) => {
+                        return Err(Error::new(
+                            Operation::BindDispatch,
+                            "another shortcut consumer already owns this action",
+                        ));
+                    }
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+                        ) =>
+                    {
+                        std::fs::remove_file(&path).map_err(|error| {
+                            Error::new(Operation::BindDispatch, error.to_string())
+                        })?;
+                    }
+                    Err(error) => {
+                        return Err(Error::new(Operation::BindDispatch, error.to_string()));
+                    }
+                }
+            }
+            Ok(_) => {
+                return Err(Error::new(
+                    Operation::BindDispatch,
+                    "shortcut endpoint is not a socket",
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(Error::new(Operation::BindDispatch, error.to_string())),
+        }
+    }
+
+    let socket = async_io::Async::<std::os::unix::net::UnixDatagram>::bind(&path)
+        .map_err(|error| Error::new(Operation::BindDispatch, error.to_string()))?;
+    #[cfg(unix)]
+    let socket_identity = {
+        use std::os::unix::fs::MetadataExt as _;
+        let metadata = std::fs::symlink_metadata(&path)
+            .map_err(|error| Error::new(Operation::BindDispatch, error.to_string()))?;
+        (metadata.dev(), metadata.ino())
+    };
+    let _cleanup = DispatchSocketCleanup {
+        path: path.clone(),
+        #[cfg(unix)]
+        socket_identity,
+    };
+    let mut sequence = 0u64;
+    let mut buffer = [0u8; 512];
+    loop {
+        let length = socket
+            .recv(&mut buffer)
+            .await
+            .map_err(|error| Error::new(Operation::ReadDispatch, error.to_string()))?;
+        let Ok(received) = serde_json::from_slice::<ShortcutId>(&buffer[..length]) else {
+            continue;
+        };
+        if received != id {
+            continue;
+        }
+        sequence = sequence.wrapping_add(1).max(1);
+        if sender
+            .send(Event::Activated {
+                id: received,
+                timestamp_ms: sequence,
+            })
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+    }
+}
+
+struct DispatchSocketCleanup {
+    path: PathBuf,
+    #[cfg(unix)]
+    socket_identity: (u64, u64),
+}
+
+impl Drop for DispatchSocketCleanup {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            let same_socket = std::fs::symlink_metadata(&self.path)
+                .is_ok_and(|metadata| (metadata.dev(), metadata.ino()) == self.socket_identity);
+            if same_socket {
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+    }
 }
 
 pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
@@ -567,5 +713,56 @@ mod tests {
         let error = dispatch(&ShortcutId("not-an-rmac-action".into())).unwrap_err();
         assert_eq!(error.operation, Operation::Dispatch);
         assert!(error.detail.contains("unknown shortcut"));
+    }
+
+    #[test]
+    fn dispatcher_endpoints_are_action_scoped() {
+        let runtime = Path::new("/tmp/rmac-shortcuts-test");
+        let launcher = shortcut_socket_path_in(runtime, &ShortcutId("launcher".into())).unwrap();
+        let drawer = shortcut_socket_path_in(runtime, &ShortcutId("app-drawer".into())).unwrap();
+        assert_ne!(launcher, drawer);
+        assert!(launcher.ends_with("shortcut-launcher.sock"));
+        assert!(shortcut_socket_path_in(runtime, &ShortcutId("unknown".into())).is_err());
+    }
+
+    #[test]
+    fn action_listener_accepts_only_its_typed_dispatch_and_cleans_up() {
+        let root = PathBuf::from("/tmp").join(format!(
+            "rmac-shortcut-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let path = root.join("shortcut-launcher.sock");
+        let id = ShortcutId("launcher".into());
+        let (sender, receiver) = async_channel::bounded(2);
+        async_io::block_on(async {
+            let listener = watch_dispatches_at(path.clone(), id.clone(), sender);
+            let client = async {
+                async_io::Timer::after(std::time::Duration::from_millis(10)).await;
+                let socket = std::os::unix::net::UnixDatagram::unbound().unwrap();
+                socket.send_to(br#""not-a-shortcut""#, &path).unwrap();
+                socket
+                    .send_to(&serde_json::to_vec(&id).unwrap(), &path)
+                    .unwrap();
+                assert_eq!(
+                    receiver.recv().await.unwrap(),
+                    Event::Activated {
+                        id: id.clone(),
+                        timestamp_ms: 1,
+                    }
+                );
+                receiver.close();
+                socket
+                    .send_to(&serde_json::to_vec(&id).unwrap(), &path)
+                    .unwrap();
+            };
+            let (result, ()) = futures_util::join!(listener, client);
+            result.unwrap();
+        });
+        assert!(!path.exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

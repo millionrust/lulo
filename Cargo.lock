@@ -5066,6 +5066,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-launcher-app"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "blocking",
+ "futures-util",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "rmac-launcher",
+ "rmac-launcher-providers",
+ "rmac-launcher-runtime",
+ "rmac-launcher-system",
+ "rmac-shell-settings",
+ "rmac-shortcuts",
+ "rmac-ui",
+]
+
+[[package]]
 name = "rmac-launcher-providers"
 version = "0.1.0"
 dependencies = [

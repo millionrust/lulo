@@ -1,7 +1,7 @@
 # Launcher and Spotlight domain
 
 `rmac-launcher` is the framework-neutral contract for D7/D8. It is shared by
-the future centered launcher overlay and provider adapters; providers supply
+the centered `rmac-launcher-app` overlay and provider adapters; providers supply
 typed candidates but cannot decide privacy admission, cross-category order,
 selection, or activation fallback.
 
@@ -96,7 +96,7 @@ calculator text; default logs must not print action payloads.
   Application is a distinct alternate that reveals the desktop-entry or bundle
   source through the file-manager portal.
 - Settings match titles, subtitles, and synonyms but return stable pane IDs,
-  with duplicate and empty IDs excluded. The built-in catalog covers all 22
+  with duplicate and empty IDs excluded. The built-in catalog covers all 24
   top-level Settings destinations and includes Linux-relevant terms such as
   WLAN, DNS, touchpad, firewall, dark mode, and screen reader without changing
   the stable pane identity.
@@ -129,9 +129,9 @@ different portal-backed operations, preserving the alternate-action contract.
 Application reveal uses the same portal authority but has its own validated
 action, operation label, and payload-free success outcome.
 
-Clipboard writes and Settings navigation are surface operations: the future
-GPUI overlay supplies them from its live application context instead of a
-detached subprocess. Successful receipts expose only the activation ID and
+Clipboard writes and Settings navigation are surface operations: the GPUI
+overlay supplies them from its live application context and installed sibling
+binary instead of a shell command. Successful receipts expose only the activation ID and
 outcome kind. Default error formatting does not contain a file path, copied
 text, pane ID, or backend detail; UI code may deliberately inspect typed kind
 and detail to produce a suitable private on-screen error.
@@ -141,6 +141,40 @@ removable-mount scope, and directory exclusions consumed by this domain. The
 pane reports on-demand/no-background-index behavior and reads the session
 shortcut broker's typed status without becoming a second shortcut authority.
 
-The centered GPUI rendering/focus integration, complete live session/provider
-wiring, global-shortcut journey, Orca runtime evidence, and performance evidence
-remain pending. This slice does not mark D7/D8 complete.
+## GPUI session surface
+
+`rmac-launcher-app` is the executable consumed by `rmac-launcher.service`. It
+creates no idle hidden window: a typed launcher dispatch creates one centered,
+non-resizable popup on demand, applies shared appearance/text-scale state, and
+focuses the query synchronously before any provider job is scheduled. A second
+fresh dispatch, Escape, outside-window deactivation, or successful activation
+cancels work and removes the window.
+
+An empty query presents installed applications as an icon grid plus other
+suggestions. Typed queries use ranked category sections. Application icons come
+from the parsed desktop catalog; every other result has an original category
+fallback. Arrow keys wrap selection, Return performs the exact primary action,
+the semantic secondary-Return modifier and visible ellipsis perform only an
+available alternate, and pointer activation first selects the stable result ID.
+Loading, partial degradation, empty, unavailable, opening, and private-safe
+failure states are visible. The footer mirrors the runtime's bounded live
+announcement while detailed provider errors remain out of the UI.
+
+Application discovery and C4 settings are watched for the lifetime of the
+service. A complete settings replacement rebuilds file scope and provider
+privacy, cancels the old generation, and reissues an open query once. Invalid
+or temporarily unavailable settings retain the last-good registry and disable
+no privacy boundary. Settings actions start the installed sibling
+`rmac-system-settings --pane <stable-id>` executable; that binary maps every
+provider destination to a visible production category. Calculator results use
+the live GPUI clipboard, while files and application reveal use the portal.
+
+The installer now builds and installs both the launcher and System Settings
+siblings before enabling the session units. `--show` is a deliberate
+development-only direct-open path; the normal session accepts only the
+allowlisted launcher shortcut endpoint.
+
+Linux/niri placement and focus evidence, the real portal-consent shortcut
+journey, Orca runtime evidence, context-menu polish beyond the explicit
+alternate action, and performance/idle measurements remain pending. D7/D8
+therefore remain open release gates.

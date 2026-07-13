@@ -50,6 +50,22 @@ fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScal
     window.set_rem_size(px(BASE_REM_SIZE * scale.factor()));
 }
 
+/// Initialize the shared component, theme, and accessibility runtimes for a
+/// long-lived shell process that creates windows on demand.
+pub fn init_application(cx: &mut App) {
+    gpui_component::init(cx);
+    components::init(cx);
+    start_theme_runtime(cx);
+}
+
+/// Apply the current shared theme and text scale before an on-demand shell
+/// surface renders its first frame.
+pub fn prepare_surface_window(window: &mut Window, cx: &mut App) {
+    apply_window_text_scale(window, theme::current().text_scale);
+    gpui_component::theme::Theme::change(current_component_theme_mode(), Some(window), cx);
+    mark_benchmark_first_frame(window);
+}
+
 /// Scales an application-owned text size with the live rmac accessibility
 /// preference. Layout dimensions remain independent logical pixels.
 pub fn text_px(base: f32) -> gpui::Pixels {
@@ -121,20 +137,11 @@ where
     Application::new()
         .with_assets(assets)
         .run(move |cx: &mut App| {
-            gpui_component::init(cx);
-            components::init(cx);
-            start_theme_runtime(cx);
+            init_application(cx);
             cx.open_window(window_options_unified(width, height), move |window, cx| {
-                apply_window_text_scale(window, theme::current().text_scale);
-                gpui_component::theme::Theme::change(
-                    current_component_theme_mode(),
-                    Some(window),
-                    cx,
-                );
+                prepare_surface_window(window, cx);
                 let view = cx.new(|cx| build(window, cx));
-                let root = cx.new(|cx| Root::new(view, window, cx));
-                mark_benchmark_first_frame(window);
-                root
+                cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("failed to open window");
             cx.activate(true);
@@ -263,21 +270,12 @@ pub fn boot_with_assets<A, V, F>(
     Application::new()
         .with_assets(assets)
         .run(move |cx: &mut App| {
-            gpui_component::init(cx);
-            components::init(cx);
-            start_theme_runtime(cx);
+            init_application(cx);
 
             cx.open_window(window_options(width, height), move |window, cx| {
-                apply_window_text_scale(window, theme::current().text_scale);
-                gpui_component::theme::Theme::change(
-                    current_component_theme_mode(),
-                    Some(window),
-                    cx,
-                );
+                prepare_surface_window(window, cx);
                 let view = cx.new(|cx| build(window, cx));
-                let root = cx.new(|cx| Root::new(view, window, cx));
-                mark_benchmark_first_frame(window);
-                root
+                cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("failed to open window");
 

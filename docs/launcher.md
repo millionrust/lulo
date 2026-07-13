@@ -124,7 +124,10 @@ provider error. Providers never execute their returned action.
 `rmac-launcher-system` executes the selected typed action once. It validates
 nonempty application and pane IDs, absolute file paths, and nonempty copied
 text before calling a backend. Application launch remains off the UI executor
-and consumes the exact parsed launch specification. Open and Reveal use
+and consumes the exact parsed launch specification through `rmac-app-launch`.
+In the niri session, direct IPC spawn supplies XDG activation; transport loss
+falls back to direct spawn, while rejection/protocol failures remain visible.
+Open and Reveal use
 different portal-backed operations, preserving the alternate-action contract.
 Application reveal uses the same portal authority but has its own validated
 action, operation label, and payload-free success outcome.

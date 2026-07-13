@@ -251,6 +251,60 @@ pub fn launch(spec: &LaunchSpec) -> io::Result<Child> {
     }
 }
 
+/// Produce the exact argv that niri can spawn with an XDG activation token.
+/// A working directory is represented by GNU `env --chdir`, which preserves
+/// the token while directly execing the real application without a shell.
+pub fn activation_spawn_argv(spec: &LaunchSpec) -> Option<Vec<String>> {
+    activation_spawn_argv_with_terminal(
+        spec,
+        std::env::var_os("TERMINAL")
+            .filter(|value| !value.is_empty())
+            .and_then(|value| value.into_string().ok()),
+    )
+}
+
+fn activation_spawn_argv_with_terminal(
+    spec: &LaunchSpec,
+    terminal: Option<String>,
+) -> Option<Vec<String>> {
+    let LaunchSpec::Command {
+        program,
+        args,
+        working_dir,
+        terminal: needs_terminal,
+    } = spec
+    else {
+        return None;
+    };
+    let mut command = if *needs_terminal {
+        let mut command = vec![
+            terminal.unwrap_or_else(|| "x-terminal-emulator".into()),
+            "-e".into(),
+            program.clone(),
+        ];
+        command.extend(args.iter().cloned());
+        command
+    } else {
+        let mut command = Vec::with_capacity(args.len() + 1);
+        command.push(program.clone());
+        command.extend(args.iter().cloned());
+        command
+    };
+    if let Some(directory) = working_dir {
+        let directory = directory.to_str()?.to_string();
+        command.splice(
+            0..0,
+            [
+                "/usr/bin/env".into(),
+                "--chdir".into(),
+                directory,
+                "--".into(),
+            ],
+        );
+    }
+    Some(command)
+}
+
 pub async fn reveal(application: &Application) -> Result<(), rmac_portal::Error> {
     rmac_portal::show_item(&application.source).await
 }
@@ -1177,6 +1231,35 @@ mod tests {
         );
         assert!(find_desktop_entry(&catalog, "Chat").is_none());
         assert!(find_desktop_entry(&catalog, "org.example").is_none());
+    }
+
+    #[test]
+    fn activation_spawn_argv_preserves_arguments_terminal_and_working_directory() {
+        let command = LaunchSpec::Command {
+            program: "demo".into(),
+            args: vec!["--title".into(), "Private document".into()],
+            working_dir: Some("/home/user/Documents".into()),
+            terminal: true,
+        };
+        assert_eq!(
+            activation_spawn_argv_with_terminal(&command, Some("rmac-terminal".into())).unwrap(),
+            [
+                "/usr/bin/env",
+                "--chdir",
+                "/home/user/Documents",
+                "--",
+                "rmac-terminal",
+                "-e",
+                "demo",
+                "--title",
+                "Private document",
+            ]
+        );
+        assert!(activation_spawn_argv_with_terminal(
+            &LaunchSpec::OpenPath("/Applications/Demo.app".into()),
+            None
+        )
+        .is_none());
     }
 
     #[test]

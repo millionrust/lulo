@@ -79,7 +79,7 @@ impl std::error::Error for Error {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Outcome {
-    ApplicationLaunched { process_id: u32 },
+    ApplicationLaunched { launch: rmac_app_launch::Outcome },
     ApplicationRevealed,
     SettingOpened,
     FileOpened,
@@ -97,7 +97,7 @@ pub trait Backend: Send + Sync + 'static {
     fn launch<'a>(
         &'a self,
         spec: &'a rmac_apps::LaunchSpec,
-    ) -> BackendFuture<'a, Result<u32, BackendError>>;
+    ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>>;
 
     fn open_setting<'a>(&'a self, pane_id: &'a str) -> BackendFuture<'a, Result<(), BackendError>>;
 
@@ -129,17 +129,19 @@ impl<S: Surface> Backend for SystemBackend<S> {
     fn launch<'a>(
         &'a self,
         spec: &'a rmac_apps::LaunchSpec,
-    ) -> BackendFuture<'a, Result<u32, BackendError>> {
+    ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>> {
         let spec = spec.clone();
         Box::pin(async move {
-            blocking::unblock(move || {
-                rmac_apps::launch(&spec)
-                    .map(|child| child.id())
-                    .map_err(|error| {
-                        BackendError::new(FailureKind::Io(error.kind()), error.to_string())
-                    })
+            rmac_app_launch::launch(spec).await.map_err(|error| {
+                BackendError::new(
+                    match error.kind {
+                        rmac_app_launch::ErrorKind::Io(kind) => FailureKind::Io(kind),
+                        rmac_app_launch::ErrorKind::Rejected => FailureKind::Rejected,
+                        rmac_app_launch::ErrorKind::Protocol => FailureKind::Other,
+                    },
+                    error.to_string(),
+                )
             })
-            .await
         })
     }
 
@@ -177,7 +179,7 @@ pub async fn execute(
             backend
                 .launch(spec)
                 .await
-                .map(|process_id| Outcome::ApplicationLaunched { process_id })
+                .map(|launch| Outcome::ApplicationLaunched { launch })
         }
         rmac_launcher::Action::RevealApplication { source } => {
             require_absolute(source).map_err(|error| failure(activation, operation, error))?;
@@ -278,10 +280,13 @@ mod tests {
         fn launch<'a>(
             &'a self,
             spec: &'a rmac_apps::LaunchSpec,
-        ) -> BackendFuture<'a, Result<u32, BackendError>> {
+        ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>> {
             Box::pin(async move {
                 self.complete(format!("launch {spec:?}"))?;
-                Ok(42)
+                Ok(rmac_app_launch::Outcome {
+                    process_id: Some(42),
+                    delivery: rmac_app_launch::Delivery::DirectFallback,
+                })
             })
         }
 
@@ -340,7 +345,12 @@ mod tests {
             rmac_launcher::Action::CopyText { text: "42".into() },
         ];
         let expected = [
-            Outcome::ApplicationLaunched { process_id: 42 },
+            Outcome::ApplicationLaunched {
+                launch: rmac_app_launch::Outcome {
+                    process_id: Some(42),
+                    delivery: rmac_app_launch::Delivery::DirectFallback,
+                },
+            },
             Outcome::ApplicationRevealed,
             Outcome::SettingOpened,
             Outcome::FileOpened,

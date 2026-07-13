@@ -136,6 +136,7 @@ pub async fn watch_with_policy(
 pub fn action_capabilities() -> domain::ActionCapabilities {
     domain::ActionCapabilities {
         supported: vec![
+            domain::ActionKind::Spawn,
             domain::ActionKind::FocusWindow,
             domain::ActionKind::FocusWorkspace,
             domain::ActionKind::FocusOutput,
@@ -186,6 +187,9 @@ pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), doma
 
 fn convert_action(action: &domain::Action) -> wire::Action {
     match action {
+        domain::Action::Spawn { command } => wire::Action::Spawn {
+            command: command.arguments().to_vec(),
+        },
         domain::Action::FocusWindow { window } => wire::Action::FocusWindow { id: window.0 },
         domain::Action::FocusWorkspace { workspace } => wire::Action::FocusWorkspace {
             reference: wire::WorkspaceReference::Id(workspace.0),
@@ -782,6 +786,9 @@ mod wire {
 
     #[derive(Debug, Serialize)]
     pub enum Action {
+        Spawn {
+            command: Vec<String>,
+        },
         CloseWindow {
             id: Option<u64>,
         },
@@ -998,6 +1005,13 @@ mod tests {
     #[test]
     fn action_wire_format_uses_stable_ids_and_explicit_targets() {
         let cases = [
+            (
+                domain::Action::Spawn {
+                    command: domain::SpawnCommand::new(vec!["demo".into(), "--new-window".into()])
+                        .unwrap(),
+                },
+                r#"{"Action":{"Spawn":{"command":["demo","--new-window"]}}}"#,
+            ),
             (
                 domain::Action::FocusWindow {
                     window: domain::WindowId(7),

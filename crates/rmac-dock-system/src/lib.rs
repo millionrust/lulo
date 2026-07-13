@@ -97,7 +97,7 @@ impl std::error::Error for Error {}
 pub enum Outcome {
     Launched {
         app_id: String,
-        process_id: u32,
+        launch: rmac_app_launch::Outcome,
     },
     FocusRequested {
         window: rmac_compositor::WindowId,
@@ -115,7 +115,7 @@ pub trait Backend: Send + Sync + 'static {
     fn launch<'a>(
         &'a self,
         spec: &'a rmac_apps::LaunchSpec,
-    ) -> BackendFuture<'a, Result<u32, BackendError>>;
+    ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>>;
 
     fn focus_window(
         &self,
@@ -142,17 +142,19 @@ impl Backend for SystemBackend {
     fn launch<'a>(
         &'a self,
         spec: &'a rmac_apps::LaunchSpec,
-    ) -> BackendFuture<'a, Result<u32, BackendError>> {
+    ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>> {
         let spec = spec.clone();
         Box::pin(async move {
-            blocking::unblock(move || {
-                rmac_apps::launch(&spec)
-                    .map(|child| child.id())
-                    .map_err(|error| {
-                        BackendError::new(FailureKind::Io(error.kind()), error.to_string())
-                    })
+            rmac_app_launch::launch(spec).await.map_err(|error| {
+                BackendError::new(
+                    match error.kind {
+                        rmac_app_launch::ErrorKind::Io(kind) => FailureKind::Io(kind),
+                        rmac_app_launch::ErrorKind::Rejected => FailureKind::Rejected,
+                        rmac_app_launch::ErrorKind::Protocol => FailureKind::Protocol,
+                    },
+                    error.to_string(),
+                )
             })
-            .await
         })
     }
 
@@ -246,9 +248,9 @@ pub async fn execute(
         rmac_dock::Activation::Launch { app_id, spec } => backend
             .launch(spec)
             .await
-            .map(|process_id| Outcome::Launched {
+            .map(|launch| Outcome::Launched {
                 app_id: app_id.clone(),
-                process_id,
+                launch,
             })
             .map_err(|error| Error::new(Operation::Launch, error.kind, app_id, error.detail)),
         rmac_dock::Activation::FocusWindow(window) => backend
@@ -284,9 +286,9 @@ pub async fn execute_context(
         rmac_dock::ContextAction::LaunchNew { app_id, spec } => backend
             .launch(spec)
             .await
-            .map(|process_id| Outcome::Launched {
+            .map(|launch| Outcome::Launched {
                 app_id: app_id.clone(),
-                process_id,
+                launch,
             })
             .map_err(|error| Error::new(Operation::Launch, error.kind, app_id, error.detail)),
         rmac_dock::ContextAction::FocusWindow { app_id, window } => backend
@@ -340,13 +342,16 @@ mod tests {
         fn launch<'a>(
             &'a self,
             spec: &'a rmac_apps::LaunchSpec,
-        ) -> BackendFuture<'a, Result<u32, BackendError>> {
+        ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>> {
             Box::pin(async move {
                 self.calls
                     .lock()
                     .expect("calls lock")
                     .push(format!("launch {spec:?}"));
-                self.result(4242)
+                self.result(rmac_app_launch::Outcome {
+                    process_id: Some(4242),
+                    delivery: rmac_app_launch::Delivery::DirectFallback,
+                })
             })
         }
 
@@ -420,7 +425,10 @@ mod tests {
             outcome,
             Outcome::Launched {
                 app_id: "dev.rmac.Terminal.desktop".into(),
-                process_id: 4242,
+                launch: rmac_app_launch::Outcome {
+                    process_id: Some(4242),
+                    delivery: rmac_app_launch::Delivery::DirectFallback,
+                },
             }
         );
         let calls = backend.calls.into_inner().expect("calls");

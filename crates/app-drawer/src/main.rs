@@ -367,10 +367,7 @@ impl AppDrawer {
         self.action_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_apps::launch(&launch).map(drop) })
-                .await;
+            let result = rmac_app_launch::launch(launch).await;
             let _ = this.update(cx, |this, cx| {
                 this.launching = false;
                 this.action_error = result

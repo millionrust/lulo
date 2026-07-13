@@ -50,6 +50,9 @@ software store, package manager, or imitation of Apple Launchpad.
 - Only one application spawn is in flight. The drawer displays “Opening
   application…” while the spawn is pending and keeps a failed launch visible
   until dismissal or retry.
+- In the supported niri session, Open and declared actions use direct niri IPC
+  spawn so the child receives an XDG activation token. A compositor rejection
+  is never bypassed by direct spawning.
 - Context menus close on activation, Escape, or outside press through the
   shared `rmac-ui` menu contract.
 
@@ -82,11 +85,12 @@ software store, package manager, or imitation of Apple Launchpad.
 
 ## Release gates and remaining work
 
-- Add compositor activation-token propagation for startup focus correctness.
 - Add stable persisted view preference if usability evidence supports it.
 - Prove keyboard focus order, context-action activation, live cache
   invalidation, cold-cache performance, icon fallback, and install/removal on
   Ubuntu 26.04 with niri.
+- Prove strict-focus activation for native Wayland, XWayland, terminal,
+  working-directory, and declared-action launches from real hardware.
 - Prove roles, names, selected state, menu actions, announcements, and 200%
   scaling with Orca after the GPUI accessibility gate passes.
 - Native drag-out remains framework-gated; Show in Folder is the honest bridge.

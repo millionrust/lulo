@@ -31,8 +31,9 @@ collection that may be updated by the next event.
 ## Actions
 
 `ActionRequest` gives every operation an `ActivationId` for correlation. The
-neutral action set covers window/workspace/output focus, window close, moving a
-window to a workspace or output, and explicit overview visibility. Stable
+neutral action set covers bounded shell-free process spawn, window/workspace/
+output focus, window close, moving a window to a workspace or output, and
+explicit overview visibility. Spawn diagnostics redact argv content. Stable
 object IDs are always sent with destructive or movement operations; clients do
 not issue a focus request followed by an implicit “current window” action.
 
@@ -47,6 +48,7 @@ stream remains authoritative for the resulting visible focus/topology state.
 The model was checked against the official niri IPC 26.4 documentation:
 
 - <https://docs.rs/niri-ipc/latest/niri_ipc/>
+- <https://docs.rs/niri-ipc/latest/niri_ipc/enum.Action.html>
 - <https://docs.rs/niri-ipc/latest/niri_ipc/enum.Event.html>
 - <https://docs.rs/niri-ipc/latest/niri_ipc/struct.Output.html>
 - <https://docs.rs/niri-ipc/latest/niri_ipc/struct.Workspace.html>

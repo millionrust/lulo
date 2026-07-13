@@ -42,15 +42,18 @@ niri events to change the item state. It must never optimistically mark an app
 running or focused.
 
 `rmac-dock-system` now provides that adapter. Application launches use the
-exact parsed `LaunchSpec` on a blocking executor, preserving program and
-argument boundaries without a shell. Window activation sends the exact stable
-window ID and caller-owned activation ID directly through
+shared `rmac-app-launch` route, preserving exact program/argument boundaries
+without a shell and using niri IPC spawn for XDG activation. Window activation
+sends the exact stable window ID and caller-owned activation ID directly through
 `rmac-compositor-niri`. A successful result is only a launch/focus receipt;
 visible running and active state still waits for authoritative events.
 
-Launch I/O and niri unavailable/transport/protocol/rejected/unsupported errors
-remain typed with the operation and application/window identity. Unavailable
-and explicit no-op model outcomes never touch either platform service.
+Receipts distinguish compositor activation from direct fallback without
+inventing a child process ID for compositor-owned spawn. Launch I/O and
+non-fallback niri protocol/rejected errors remain typed with the operation and
+application/window identity. Unavailable, transport, and unsupported spawn
+errors use the documented direct fallback. Explicit no-op model outcomes never
+touch either platform service.
 
 ## Context actions and pins
 

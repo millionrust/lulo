@@ -4851,8 +4851,19 @@ dependencies = [
  "async-channel 2.5.0",
  "gpui",
  "gpui-component",
+ "rmac-app-launch",
  "rmac-apps",
  "rmac-ui",
+]
+
+[[package]]
+name = "rmac-app-launch"
+version = "0.1.0"
+dependencies = [
+ "blocking",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
 ]
 
 [[package]]
@@ -4959,6 +4970,7 @@ version = "0.1.0"
 dependencies = [
  "blocking",
  "futures-lite 2.6.1",
+ "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -5115,8 +5127,8 @@ dependencies = [
 name = "rmac-launcher-system"
 version = "0.1.0"
 dependencies = [
- "blocking",
  "futures-lite 2.6.1",
+ "rmac-app-launch",
  "rmac-apps",
  "rmac-launcher",
  "rmac-portal",

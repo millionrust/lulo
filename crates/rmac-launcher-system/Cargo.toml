@@ -7,7 +7,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-blocking.workspace = true
+rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-launcher.workspace = true
 rmac-portal.workspace = true

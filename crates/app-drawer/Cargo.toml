@@ -14,4 +14,5 @@ async-channel.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 rmac-apps.workspace = true
+rmac-app-launch.workspace = true
 rmac-ui.workspace = true

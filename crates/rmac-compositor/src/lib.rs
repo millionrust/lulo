@@ -7,6 +7,7 @@
 //! separate messages.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -223,6 +224,7 @@ pub struct Activation {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ActionKind {
+    Spawn,
     FocusWindow,
     FocusWorkspace,
     FocusOutput,
@@ -232,9 +234,111 @@ pub enum ActionKind {
     SetOverview,
 }
 
+const MAX_SPAWN_ARGUMENTS: usize = 256;
+const MAX_SPAWN_ARGUMENT_BYTES: usize = 32 * 1024;
+const MAX_SPAWN_COMMAND_BYTES: usize = 128 * 1024;
+
+/// Shell-free argv accepted by the compositor launch boundary. Debug output is
+/// intentionally redacted because desktop-entry arguments can contain private
+/// paths or application-defined values.
+#[derive(Clone, Eq, PartialEq)]
+pub struct SpawnCommand(Vec<String>);
+
+impl SpawnCommand {
+    pub fn new(arguments: Vec<String>) -> Result<Self, SpawnCommandError> {
+        if arguments.is_empty() {
+            return Err(SpawnCommandError::Empty);
+        }
+        if arguments[0].is_empty() {
+            return Err(SpawnCommandError::EmptyProgram);
+        }
+        if arguments.len() > MAX_SPAWN_ARGUMENTS {
+            return Err(SpawnCommandError::TooManyArguments);
+        }
+        let mut total = 0usize;
+        for argument in &arguments {
+            if argument.contains('\0') {
+                return Err(SpawnCommandError::InteriorNul);
+            }
+            if argument.len() > MAX_SPAWN_ARGUMENT_BYTES {
+                return Err(SpawnCommandError::ArgumentTooLong);
+            }
+            total = total.saturating_add(argument.len());
+            if total > MAX_SPAWN_COMMAND_BYTES {
+                return Err(SpawnCommandError::CommandTooLong);
+            }
+        }
+        Ok(Self(arguments))
+    }
+
+    pub fn arguments(&self) -> &[String] {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SpawnCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SpawnCommand")
+            .field("argument_count", &self.0.len())
+            .field(
+                "total_bytes",
+                &self.0.iter().map(String::len).sum::<usize>(),
+            )
+            .finish()
+    }
+}
+
+impl Serialize for SpawnCommand {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SpawnCommand {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let arguments = Vec::<String>::deserialize(deserializer)?;
+        Self::new(arguments).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpawnCommandError {
+    Empty,
+    EmptyProgram,
+    TooManyArguments,
+    ArgumentTooLong,
+    CommandTooLong,
+    InteriorNul,
+}
+
+impl fmt::Display for SpawnCommandError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Empty => "spawn command is empty",
+            Self::EmptyProgram => "spawn program is empty",
+            Self::TooManyArguments => "spawn command has too many arguments",
+            Self::ArgumentTooLong => "spawn argument is too long",
+            Self::CommandTooLong => "spawn command is too long",
+            Self::InteriorNul => "spawn argument contains an invalid byte",
+        })
+    }
+}
+
+impl std::error::Error for SpawnCommandError {}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Action {
+    Spawn {
+        command: SpawnCommand,
+    },
     FocusWindow {
         window: WindowId,
     },
@@ -264,6 +368,7 @@ pub enum Action {
 impl Action {
     pub fn kind(&self) -> ActionKind {
         match self {
+            Self::Spawn { .. } => ActionKind::Spawn,
             Self::FocusWindow { .. } => ActionKind::FocusWindow,
             Self::FocusWorkspace { .. } => ActionKind::FocusWorkspace,
             Self::FocusOutput { .. } => ActionKind::FocusOutput,
@@ -797,6 +902,38 @@ mod tests {
         assert_eq!(action.kind(), ActionKind::MoveWindowToWorkspace);
         assert!(capabilities.supports(action.kind()));
         assert!(!capabilities.supports(ActionKind::SetOverview));
+    }
+
+    #[test]
+    fn spawn_commands_are_bounded_round_trippable_and_debug_redacted() {
+        let command = SpawnCommand::new(vec![
+            "demo".into(),
+            "--open".into(),
+            "/home/user/private.txt".into(),
+        ])
+        .unwrap();
+        let debug = format!("{command:?}");
+        assert!(debug.contains("argument_count: 3"));
+        assert!(!debug.contains("private.txt"));
+        let json = serde_json::to_string(&command).unwrap();
+        assert_eq!(
+            serde_json::from_str::<SpawnCommand>(&json).unwrap(),
+            command
+        );
+
+        assert_eq!(SpawnCommand::new(Vec::new()), Err(SpawnCommandError::Empty));
+        assert_eq!(
+            SpawnCommand::new(vec![String::new()]),
+            Err(SpawnCommandError::EmptyProgram)
+        );
+        assert_eq!(
+            SpawnCommand::new(vec!["demo".into(), "bad\0argument".into()]),
+            Err(SpawnCommandError::InteriorNul)
+        );
+        assert_eq!(
+            SpawnCommand::new(vec!["demo".into(); MAX_SPAWN_ARGUMENTS + 1]),
+            Err(SpawnCommandError::TooManyArguments)
+        );
     }
 
     #[test]

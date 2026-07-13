@@ -276,8 +276,10 @@ Output-scope resolution requires an explicit primary-output authority and never
 invents a surface on a disabled or missing display. Layer-shell rendering,
 pointer dynamics, and process execution remain adapters above this model.
 `rmac-dock-system` executes those typed outcomes: desktop-entry `LaunchSpec`
-values go through the argument-separated application launcher off the render
-thread, and window focus goes directly to the niri socket with a request ID.
+values go through shared `rmac-app-launch` off the render thread. App Drawer,
+Spotlight, and Dock therefore use the same direct niri `Spawn` action and XDG
+activation-token path, with redacted bounded argv and a typed direct fallback.
+Window focus goes directly to the niri socket with a request ID.
 Receipts never update the Dock model; only later catalog/compositor events do.
 Its context boundary exposes per-window focus/close and current-settings-based
 pin mutations. Pin writes preserve unrelated shell settings and reread the

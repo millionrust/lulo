@@ -106,11 +106,13 @@ replace the all-at-once snapshot with service-specific updates where useful.
 access-point state from NetworkManager D-Bus, requests scans, and changes the
 real `WirelessEnabled` property. It also correlates exact SSID bytes and
 security class with accessible saved profiles, activates known profiles, adds
-and activates open profiles, and requires bounded ActiveConnection plus fresh
-snapshot confirmation. macOS retains `networksetup`. System Settings keeps all
-calls off the UI thread and surfaces service failures. Protected first-time
-connections remain gated on a reviewed Secret Agent. The complete pane-to-
-service contract is tracked in `docs/system-settings-audit.md` and
+and activates open or Enhanced Open profiles, and requires bounded
+ActiveConnection plus fresh snapshot confirmation. First-time WPA Personal and
+SAE connections use a masked sheet, validated zeroizing password value,
+one-shot exact-match Secret Agent, and explicit cancellation; NetworkManager
+owns persisted system secrets. macOS retains `networksetup`. System Settings
+keeps all calls off the UI thread and surfaces service failures. The complete
+pane-to-service contract is tracked in `docs/system-settings-audit.md` and
 `docs/wifi.md`.
 
 `rmac-bluetooth` backs the Bluetooth pane through BlueZ's D-Bus ObjectManager

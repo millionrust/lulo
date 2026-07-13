@@ -8,7 +8,7 @@ equivalents rather than simulated.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|
-| Wi-Fi | Real state, radio mutation, access-point scan, exact saved/open activation, bounded ActiveConnection completion, authoritative readback, and honest protected-network gating | NetworkManager D-Bus | Secret agent/password sheet, forget, live signals, restart recovery, and Linux permission/wrong-secret evidence |
+| Wi-Fi | Real state, radio mutation, access-point scan, typed security, exact saved/open/Enhanced Open activation, masked WPA Personal/SAE password sheet, one-shot Secret Agent, cancellation, bounded ActiveConnection completion, and authoritative readback | NetworkManager D-Bus | Forget, live signals, restart recovery, enterprise setup, and Linux permission/cancellation/wrong-secret evidence |
 | Bluetooth | Real adapter, discovery, and known-device connections | BlueZ D-Bus | Confirmation agent for new-device pairing and live signals |
 | Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
@@ -53,9 +53,12 @@ their lossy display labels as command identifiers. Selecting a known network
 activates its most recent compatible saved profile; selecting an open network
 asks NetworkManager to complete and persist a profile from the live device and
 access point. A bounded ActiveConnection state watch and fresh snapshot are
-required before Settings reports success. New protected networks are visibly
-disabled until the Secret Agent/password boundary exists. The complete
-transaction and remaining F1 gates are recorded in [`wifi.md`](wifi.md).
+required before Settings reports success. New WPA Personal and SAE networks use
+a masked sheet and an exact-match one-shot NetworkManager Secret Agent; the
+password is redacted, zeroized, and delegated to NetworkManager for system-owned
+persistence. Enterprise and legacy networks remain honestly unavailable. The
+complete transaction and remaining F1 gates are recorded in
+[`wifi.md`](wifi.md).
 
 General now exposes only About, the explicitly read-only Software Update status,
 and measured Storage. Device-continuity and media-receiver controls are hidden

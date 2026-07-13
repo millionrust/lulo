@@ -54,7 +54,7 @@ Shared crates:
 - `rmac-places-system` — filesystem/portal places and confirmed multi-trash operations.
 - `rmac-search` — cancellable, exclusion-aware Spotlight/filesystem/recent-document search.
 - `rmac-mounts` — macOS and Linux mounted-volume discovery and unmounting.
-- `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, radio control, and exact saved/open activation.
+- `rmac-network` — NetworkManager/macOS Wi-Fi state, scanning, radio control, exact activation, and one-shot WPA Personal/SAE secret delivery.
 - `rmac-notifications` — bounded notification validation, replacement, policy, actions, and history.
 - `rmac-notifications-linux` — shared notification service, Focus-aware admission, history runtime, and wire decoder.
 - `rmac-notifications-runtime` — live banner placement, motion, focus, and service-command orchestration.

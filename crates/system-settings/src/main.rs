@@ -15,8 +15,8 @@ use std::time::Duration;
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
     AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ObjectFit, ParentElement,
-    Render, Result, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, ObjectFit,
+    ParentElement, Render, Result, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
     StyledImage as _, Svg, Window,
 };
 use gpui_component::StyledExt as _;
@@ -548,6 +548,13 @@ fn validate_search_exclusion(path: PathBuf) -> std::result::Result<String, Strin
         .ok_or_else(|| "The selected folder path cannot be represented as text".to_owned())
 }
 
+struct WifiPasswordPrompt {
+    network: rmac_network::WifiNetworkId,
+    ssid: SharedString,
+    editor: Entity<InputState>,
+    validation_error: Option<SharedString>,
+}
+
 struct Settings {
     system_data_loading: bool,
     system_data_busy: bool,
@@ -684,6 +691,8 @@ struct Settings {
     wifi_loading: bool,
     wifi_busy: bool,
     wifi_connecting: Option<rmac_network::WifiNetworkId>,
+    wifi_password_prompt: Option<WifiPasswordPrompt>,
+    wifi_cancellation: Option<rmac_network::WifiCancellation>,
     wifi_on: bool,
     wifi_interface: Option<String>,
     wifi_networks: Vec<rmac_network::WifiNetwork>,
@@ -1715,6 +1724,8 @@ impl Settings {
             wifi_loading: true,
             wifi_busy: false,
             wifi_connecting: None,
+            wifi_password_prompt: None,
+            wifi_cancellation: None,
             wifi_on: false,
             wifi_interface: None,
             wifi_networks: Vec::new(),
@@ -3240,6 +3251,7 @@ impl Settings {
         self.wifi_loading = false;
         self.wifi_busy = false;
         self.wifi_connecting = None;
+        self.wifi_cancellation = None;
         match result {
             Ok(snapshot) => {
                 self.wifi_available = snapshot.available;
@@ -3250,6 +3262,38 @@ impl Settings {
             }
             Err(error) => {
                 self.wifi_error = Some(format!("Could not update Wi-Fi: {error}").into());
+            }
+        }
+    }
+
+    fn finish_wifi_password_update(
+        &mut self,
+        result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
+    ) {
+        self.wifi_loading = false;
+        self.wifi_busy = false;
+        self.wifi_connecting = None;
+        self.wifi_cancellation = None;
+        match result {
+            Ok(snapshot) => {
+                self.wifi_available = snapshot.available;
+                self.wifi_on = snapshot.enabled;
+                self.wifi_interface = snapshot.interface;
+                self.wifi_networks = snapshot.networks;
+                self.wifi_password_prompt = None;
+                self.wifi_error = None;
+            }
+            Err(error) if error.is_cancelled() => {
+                self.wifi_password_prompt = None;
+                self.wifi_error = None;
+            }
+            Err(error) => {
+                if let Some(prompt) = &mut self.wifi_password_prompt {
+                    prompt.validation_error =
+                        Some(format!("Could not join this network: {error}").into());
+                } else {
+                    self.wifi_error = Some(format!("Could not join Wi-Fi: {error}").into());
+                }
             }
         }
     }
@@ -4497,6 +4541,113 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn select_wifi_network(
+        &mut self,
+        network: rmac_network::WifiNetwork,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.wifi_busy
+            || self.wifi_loading
+            || !self.wifi_available
+            || !self.wifi_on
+            || !network.can_connect()
+            || !self
+                .wifi_networks
+                .iter()
+                .any(|candidate| candidate.id == network.id)
+        {
+            return;
+        }
+        if !network.needs_password() {
+            self.connect_wifi(network.id, cx);
+            return;
+        }
+
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .clean_on_escape()
+                .placeholder("Password")
+        });
+        let focus = editor.read(cx).focus_handle(cx);
+        self.wifi_password_prompt = Some(WifiPasswordPrompt {
+            network: network.id,
+            ssid: network.ssid.into(),
+            editor,
+            validation_error: None,
+        });
+        self.wifi_error = None;
+        window.focus(&focus);
+        cx.notify();
+    }
+
+    fn cancel_wifi_password(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancellation) = &self.wifi_cancellation {
+            cancellation.cancel();
+        } else {
+            self.wifi_password_prompt = None;
+            self.wifi_connecting = None;
+        }
+        cx.notify();
+    }
+
+    fn submit_wifi_password(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.wifi_busy || !self.wifi_available || !self.wifi_on {
+            return;
+        }
+        let Some(prompt) = &self.wifi_password_prompt else {
+            return;
+        };
+        let network = prompt.network.clone();
+        let value = prompt.editor.read(cx).value().to_string();
+        let password = match rmac_network::WifiPassword::new(value, &network) {
+            Ok(password) => password,
+            Err(error) => {
+                if let Some(prompt) = &mut self.wifi_password_prompt {
+                    prompt.validation_error = Some(error.to_string().into());
+                }
+                cx.notify();
+                return;
+            }
+        };
+
+        // Drop the editor entity that contained the secret, including its undo
+        // history, as soon as ownership moves into the zeroizing password type.
+        let empty_editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .clean_on_escape()
+                .placeholder("Password")
+        });
+        let focus = empty_editor.read(cx).focus_handle(cx);
+        if let Some(prompt) = &mut self.wifi_password_prompt {
+            prompt.editor = empty_editor;
+            prompt.validation_error = None;
+        }
+        window.focus(&focus);
+
+        let cancellation = rmac_network::WifiCancellation::new();
+        self.wifi_busy = true;
+        self.wifi_connecting = Some(network.clone());
+        self.wifi_cancellation = Some(cancellation.clone());
+        self.wifi_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    rmac_network::connect_with_password(&network, password, &cancellation)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_password_update(result);
                 cx.notify();
             });
         })
@@ -6027,13 +6178,21 @@ impl Settings {
                             format!("Connected · {}%", network.strength)
                         } else if network.known {
                             format!("Known Network · {}%", network.strength)
-                        } else if network.secure {
-                            format!("Password Required · {}%", network.strength)
                         } else {
-                            format!("Open Network · {}%", network.strength)
+                            let security = match network.security {
+                                rmac_network::WifiSecurity::Open => "Open Network",
+                                rmac_network::WifiSecurity::EnhancedOpen => "Enhanced Open",
+                                rmac_network::WifiSecurity::Personal(_) => "Password Required",
+                                rmac_network::WifiSecurity::Enterprise => {
+                                    "Enterprise Setup Required"
+                                }
+                                rmac_network::WifiSecurity::Legacy => "Unsupported Legacy Security",
+                                rmac_network::WifiSecurity::Protected => "Unsupported Security",
+                            };
+                            format!("{security} · {}%", network.strength)
                         };
                         let can_connect = !self.wifi_busy && network.can_connect();
-                        let network_id = network.id.clone();
+                        let selected_network = network.clone();
                         let network_view = view.clone();
                         ListRow::new(
                             SharedString::from(format!("wifi-network-{index}")),
@@ -6062,9 +6221,9 @@ impl Settings {
                         .h(px(50.0))
                         .px_3()
                         .disabled(!can_connect)
-                        .on_activate(move |_, _, cx| {
+                        .on_activate(move |_, window, cx| {
                             network_view.update(cx, |settings, cx| {
-                                settings.connect_wifi(network_id.clone(), cx)
+                                settings.select_wifi_network(selected_network.clone(), window, cx)
                             });
                         })
                         .into_any_element()
@@ -6073,11 +6232,102 @@ impl Settings {
             };
             cards.push(card(rows));
             cards.push(note_card(
-                "Select a known or open network to connect. A new protected network remains unavailable until the NetworkManager password flow is present.",
+                "Select a network to connect. New WPA Personal and SAE networks ask for their password; enterprise and legacy security remain unavailable until their dedicated setup flows exist.",
             ));
         }
 
         self.pane(cards)
+    }
+
+    fn render_wifi_password_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let prompt = self.wifi_password_prompt.as_ref()?;
+        let busy = self.wifi_busy;
+        let cancel_label = if busy { "Stop" } else { "Cancel" };
+
+        let content = div()
+            .w(px(380.0))
+            .v_flex()
+            .gap_4()
+            .p_5()
+            .rounded(px(14.0))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(format!("Join “{}”", prompt.ssid)),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child("Enter the password for this Wi-Fi network."),
+                    ),
+            )
+            .child(TextField::new(&prompt.editor).disabled(busy).w_full())
+            .when_some(prompt.validation_error.clone(), |dialog, error| {
+                dialog.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::danger())
+                        .child(error),
+                )
+            })
+            .when(busy, |dialog| {
+                dialog.child(Progress::indeterminate().label("Connecting securely…"))
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "wifi-password-cancel",
+                            cancel_label,
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_wifi_password(cx))),
+                    )
+                    .when(!busy, |buttons| {
+                        buttons.child(
+                            rmac_ui::dialog_button(
+                                "wifi-password-submit",
+                                "Join",
+                                rmac_ui::DialogButtonKind::Primary,
+                            )
+                            .on_click(cx.listener(
+                                |this, _, window, cx| this.submit_wifi_password(window, cx),
+                            )),
+                        )
+                    }),
+            );
+
+        Some(
+            rmac_ui::dialog("wifi-password-dialog", content)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.cancel_wifi_password(cx);
+                        }
+                        "enter" if !this.wifi_busy => {
+                            cx.stop_propagation();
+                            this.submit_wifi_password(window, cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
     }
 
     // ---- Bluetooth ----------------------------------------------------
@@ -10875,15 +11125,19 @@ impl Render for Settings {
             .or_else(|| self.gtk_text_error.clone())
             .or_else(|| self.privacy_error.clone())
             .or_else(|| self.privacy_stream_error.clone());
+        let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         div()
             .size_full()
             .v_flex()
             .track_focus(&self.focus)
             .key_context("SystemSettings")
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
-            .on_action(
-                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
-            )
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, _| {
+                if let Some(cancellation) = &this.wifi_cancellation {
+                    cancellation.cancel();
+                }
+                window.remove_window();
+            }))
             .bg(pane_bg())
             .text_color(label())
             .child(self.render_topbar(cx))
@@ -10933,6 +11187,7 @@ impl Render for Settings {
                     .child(self.render_sidebar(cx))
                     .child(self.render_detail(cx)),
             )
+            .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
     }
 }
 

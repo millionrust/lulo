@@ -34,6 +34,7 @@ rmac-notifications-linux.workspace = true
 rmac-notifications.workspace = true
 rmac-notifications-store.workspace = true
 rmac-power.workspace = true
+rmac-portal.workspace = true
 rmac-shortcuts.workspace = true
 rmac-system-info.workspace = true
 rmac-theme.workspace = true

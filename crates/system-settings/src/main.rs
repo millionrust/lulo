@@ -1566,6 +1566,41 @@ impl Settings {
         .detach();
     }
 
+    fn reveal_login_item(&mut self, id: String, background: bool, cx: &mut Context<Self>) {
+        if self.login_item_busy.is_some() {
+            return;
+        }
+        self.login_item_busy = Some(format!("reveal:{id}"));
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let path = cx
+                .background_executor()
+                .spawn(async move {
+                    if background {
+                        rmac_login_items_linux::background_service_source(&id)
+                    } else {
+                        rmac_login_items_linux::autostart_source(&id)
+                    }
+                })
+                .await;
+            let result = match path {
+                Ok(path) => rmac_portal::show_item(&path)
+                    .await
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(error.to_string()),
+            };
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.login_item_busy = None;
+                this.login_items_error = result
+                    .err()
+                    .map(|error| format!("Could not reveal login item: {error}").into());
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn finish_wifi_update(
         &mut self,
         result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
@@ -3994,8 +4029,12 @@ impl Settings {
                 .iter()
                 .map(|item| {
                     let id = item.id.clone();
+                    let reveal_id = item.id.clone();
                     let toggle_view = view.clone();
+                    let reveal_view = view.clone();
                     let busy = self.login_item_busy.as_deref() == Some(item.id.as_str());
+                    let reveal_key = format!("reveal:{}", item.id);
+                    let revealing = self.login_item_busy.as_deref() == Some(reveal_key.as_str());
                     let subtitle = item.session_detail.clone().unwrap_or_else(|| {
                         if item.user_owned {
                             "User autostart entry".into()
@@ -4006,6 +4045,22 @@ impl Settings {
                     row_base()
                         .child(tile("icons/app-window.svg", accent(), 22.0))
                         .child(text_block(item.name.clone().into(), Some(subtitle.into())))
+                        .child(
+                            Button::new(
+                                ElementId::from(SharedString::from(format!(
+                                    "reveal-login-item-{}",
+                                    item.id
+                                ))),
+                                "Show in Files",
+                            )
+                            .busy(revealing)
+                            .disabled(self.login_item_busy.is_some())
+                            .on_click(move |_, _, cx| {
+                                reveal_view.update(cx, |settings, cx| {
+                                    settings.reveal_login_item(reveal_id.clone(), false, cx);
+                                });
+                            }),
+                        )
                         .child(
                             Toggle::new(ElementId::from(SharedString::from(format!(
                                 "login-item-{}",
@@ -4046,9 +4101,13 @@ impl Settings {
                 .iter()
                 .map(|service| {
                     let id = service.id.clone();
+                    let reveal_id = service.id.clone();
                     let toggle_view = view.clone();
+                    let reveal_view = view.clone();
                     let busy_key = format!("systemd:{}", service.id);
                     let busy = self.login_item_busy.as_deref() == Some(busy_key.as_str());
+                    let reveal_key = format!("reveal:{}", service.id);
+                    let revealing = self.login_item_busy.as_deref() == Some(reveal_key.as_str());
                     let subtitle = format!("{} · {}", service.detail, service.state.label());
                     row_base()
                         .child(tile("icons/settings.svg", secondary(), 22.0))
@@ -4056,6 +4115,24 @@ impl Settings {
                             service.name.clone().into(),
                             Some(subtitle.into()),
                         ))
+                        .when(service.source.is_some(), |row| {
+                            row.child(
+                                Button::new(
+                                    ElementId::from(SharedString::from(format!(
+                                        "reveal-background-service-{}",
+                                        service.id
+                                    ))),
+                                    "Show in Files",
+                                )
+                                .busy(revealing)
+                                .disabled(self.login_item_busy.is_some())
+                                .on_click(move |_, _, cx| {
+                                    reveal_view.update(cx, |settings, cx| {
+                                        settings.reveal_login_item(reveal_id.clone(), true, cx);
+                                    });
+                                }),
+                            )
+                        })
                         .child(
                             Toggle::new(ElementId::from(SharedString::from(format!(
                                 "background-service-{}",
@@ -4130,7 +4207,7 @@ impl Settings {
             ));
         }
         cards.push(note_card(
-            "Changes to systemd user services take effect at the next sign-in; this pane does not start or stop running services. Reveal and reviewed add/remove flows are not connected yet.",
+            "Changes to systemd user services take effect at the next sign-in; this pane does not start or stop running services. Reviewed add/remove flows are not connected yet.",
         ));
         self.pane(cards)
     }

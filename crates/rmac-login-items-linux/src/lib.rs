@@ -117,6 +117,33 @@ pub fn set_background_enabled(id: &str, enabled: bool) -> Result<Snapshot, Error
     SystemService::default().set_background_enabled(id, enabled)
 }
 
+pub fn autostart_source(id: &str) -> Result<PathBuf, Error> {
+    rmac_login_items::validate_id(id)?;
+    SystemService::default()
+        .snapshot()?
+        .items
+        .into_iter()
+        .find(|item| item.id == id)
+        .map(|item| item.source)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "autostart entry no longer exists"))
+}
+
+pub fn background_service_source(id: &str) -> Result<PathBuf, Error> {
+    rmac_login_items::validate_service_id(id)?;
+    SystemService::default()
+        .snapshot()?
+        .background_services
+        .into_iter()
+        .find(|item| item.id == id)
+        .and_then(|item| item.source)
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unavailable,
+                "the user service file is unavailable",
+            )
+        })
+}
+
 #[derive(Clone, Debug)]
 struct Environment {
     config_home: PathBuf,
@@ -187,6 +214,13 @@ fn systemd_background_services(
     let files = proxy
         .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
         .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
+    let unit_paths = proxy
+        .get_property::<Vec<String>>("UnitPath")
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .collect::<Vec<_>>();
     let user_dirs = environment.user_unit_dirs();
     let user_names = user_unit_names(&user_dirs);
     let mut services = HashMap::new();
@@ -203,7 +237,16 @@ fn systemd_background_services(
                 && user_dirs
                     .iter()
                     .any(|directory| path.starts_with(directory));
-        if let Some(service) = rmac_login_items::background_service(id, &state, user_owned)? {
+        let source = if path.is_absolute() && std::fs::symlink_metadata(path).is_ok() {
+            Some(path.to_path_buf())
+        } else {
+            unit_paths
+                .iter()
+                .map(|directory| directory.join(id))
+                .find(|candidate| std::fs::symlink_metadata(candidate).is_ok())
+        };
+        if let Some(service) = rmac_login_items::background_service(id, &state, user_owned, source)?
+        {
             services.insert(id.to_owned(), service);
         }
     }

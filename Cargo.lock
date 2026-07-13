@@ -5404,6 +5404,7 @@ dependencies = [
  "rmac-notifications",
  "rmac-notifications-linux",
  "rmac-notifications-store",
+ "rmac-portal",
  "rmac-power",
  "rmac-shortcuts",
  "rmac-system-info",

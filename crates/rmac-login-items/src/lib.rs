@@ -77,6 +77,7 @@ pub struct BackgroundService {
     pub can_toggle: bool,
     pub detail: String,
     pub user_owned: bool,
+    pub source: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -181,6 +182,7 @@ pub fn background_service(
     id: &str,
     raw_state: &str,
     user_owned: bool,
+    source: Option<PathBuf>,
 ) -> Result<Option<BackgroundService>, Error> {
     validate_service_id(id)?;
     let state = UnitFileState::from_systemd(raw_state);
@@ -226,6 +228,7 @@ pub fn background_service(
         can_toggle,
         detail,
         user_owned,
+        source,
     }))
 }
 
@@ -391,28 +394,30 @@ mod tests {
 
     #[test]
     fn systemd_states_expose_only_safe_persistent_transitions() {
-        let enabled = background_service("example.service", "enabled", false)
+        let enabled = background_service("example.service", "enabled", false, None)
             .unwrap()
             .unwrap();
         assert!(enabled.enabled);
         assert!(enabled.can_toggle);
-        assert!(background_service("unused.service", "disabled", false)
-            .unwrap()
-            .is_none());
         assert!(
-            background_service("custom.service", "disabled", true)
+            background_service("unused.service", "disabled", false, None)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            background_service("custom.service", "disabled", true, None)
                 .unwrap()
                 .unwrap()
                 .can_toggle
         );
         assert!(
-            !background_service("rmac-dock.service", "enabled", true)
+            !background_service("rmac-dock.service", "enabled", true, None)
                 .unwrap()
                 .unwrap()
                 .can_toggle
         );
         assert!(
-            !background_service("temporary.service", "enabled-runtime", true)
+            !background_service("temporary.service", "enabled-runtime", true, None)
                 .unwrap()
                 .unwrap()
                 .can_toggle

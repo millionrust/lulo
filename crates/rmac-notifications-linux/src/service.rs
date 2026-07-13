@@ -6,8 +6,8 @@ use std::time::Instant;
 
 use async_channel::{Receiver, Sender};
 use rmac_notifications::{
-    ActionInvocation, AppId, CloseReason, Closed, DeliveryPolicy, Notification, NotificationId,
-    PostOutcome, Server, ServerError, Source, Time, TimeoutPolicy,
+    Action, ActionInvocation, AppId, CloseReason, Closed, DeliveryPolicy, Notification,
+    NotificationId, PostOutcome, Server, ServerError, Source, Time, TimeoutPolicy,
 };
 use zbus::connection::Builder;
 use zbus::fdo;
@@ -133,17 +133,25 @@ impl HistoryAuthority {
             .collect()
     }
 
-    fn snapshot(&self) -> crate::center::WireSnapshot {
+    fn snapshot(&self, active: &[Notification]) -> crate::center::WireSnapshot {
         let center = self
             .center
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let active: HashMap<_, _> = active
+            .iter()
+            .map(|notification| (notification.id, notification))
+            .collect();
         let history = center
             .groups()
             .into_iter()
             .flat_map(|group| {
+                let active = &active;
                 let app_id = group.app_id.as_str().to_owned();
                 group.records.into_iter().map(move |record| {
+                    let actionable = active
+                        .get(&record.id)
+                        .is_some_and(|candidate| same_action_record(candidate, record));
                     (
                         record.id.get(),
                         app_id.clone(),
@@ -151,6 +159,27 @@ impl HistoryAuthority {
                         record.content.body().to_owned(),
                         crate::center::encode_priority(record.priority),
                         record.unread,
+                        if actionable {
+                            record
+                                .default_action
+                                .as_ref()
+                                .and_then(visible_action_label)
+                                .unwrap_or_default()
+                        } else {
+                            String::new()
+                        },
+                        if actionable {
+                            record
+                                .actions
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(index, action)| {
+                                    Some((u8::try_from(index).ok()?, visible_action_label(action)?))
+                                })
+                                .collect()
+                        } else {
+                            Vec::new()
+                        },
                     )
                 })
             })
@@ -219,11 +248,76 @@ impl HistoryAuthority {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .indicator()
     }
+
+    fn ids(&self) -> Vec<NotificationId> {
+        self.center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .history()
+            .iter()
+            .map(|notification| notification.id)
+            .collect()
+    }
+
+    fn action_is_visible(&self, active: &Notification, selection: &ActionSelection) -> bool {
+        let center = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(record) = center
+            .history()
+            .iter()
+            .find(|record| same_action_record(active, record))
+        else {
+            return false;
+        };
+        match selection {
+            ActionSelection::Default => record
+                .default_action
+                .as_ref()
+                .and_then(visible_action_label)
+                .is_some(),
+            ActionSelection::Button(index) => record
+                .actions
+                .get(*index)
+                .and_then(visible_action_label)
+                .is_some(),
+            ActionSelection::Named(_) => false,
+        }
+    }
+}
+
+fn same_action_record(active: &Notification, record: &Notification) -> bool {
+    active.id == record.id
+        && active.source == record.source
+        && active.updated_at == record.updated_at
+        && active.default_action == record.default_action
+        && active.actions == record.actions
+}
+
+fn visible_action_label(action: &Action) -> Option<String> {
+    if !action.label().trim().is_empty() {
+        return Some(action.label().to_owned());
+    }
+    let label = match action.purpose()? {
+        "im.reply-with-text" => "Reply",
+        "call.accept" => "Accept",
+        "call.decline" => "Decline",
+        "call.hang-up" => "Hang Up",
+        "call.enable-speakerphone" => "Speaker On",
+        "call.disable-speakerphone" => "Speaker Off",
+        // A custom alert has no safe generic verb. Unknown purposes are
+        // extensible protocol values and must not become guessed controls.
+        _ => return None,
+    };
+    Some(label.to_owned())
 }
 
 #[derive(Clone, Debug)]
 struct CenterInterface {
     history: HistoryAuthority,
+    core: SharedCore,
+    events: Sender<RuntimeEvent>,
 }
 
 #[interface(name = "org.rmac.NotificationCenter1")]
@@ -248,7 +342,37 @@ impl CenterInterface {
     ) -> fdo::Result<crate::center::WireSnapshot> {
         authenticated_sender(&header)?;
         let history = self.history.clone();
-        Ok(blocking::unblock(move || history.snapshot()).await)
+        let active = self.core.snapshot();
+        Ok(blocking::unblock(move || history.snapshot(&active)).await)
+    }
+
+    async fn invoke(
+        &self,
+        id: u32,
+        selection: u8,
+        index: u8,
+        activation_token: &str,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
+    ) -> fdo::Result<()> {
+        authenticated_sender(&header)?;
+        let id = NotificationId::from_protocol(id).ok_or_else(center_action_unavailable)?;
+        let selection = match (selection, index) {
+            (0, 0) => ActionSelection::Default,
+            (1, index @ 0..=7) => ActionSelection::Button(index.into()),
+            _ => return Err(center_invalid()),
+        };
+        let activation_token = validate_activation_token(activation_token)?;
+        ServiceHandle {
+            connection: connection.clone(),
+            core: self.core.clone(),
+            events: self.events.clone(),
+            history: self.history.clone(),
+        }
+        .invoke_from_center(id, selection, activation_token)
+        .await
+        .map(drop)
+        .map_err(center_action_error)
     }
 
     async fn mark_read(
@@ -344,6 +468,36 @@ fn center_invalid() -> fdo::Error {
     fdo::Error::InvalidArgs("Notification Center request is invalid".into())
 }
 
+fn center_action_unavailable() -> fdo::Error {
+    fdo::Error::InvalidArgs("Notification Center action is unavailable".into())
+}
+
+fn center_action_error(error: ActionError) -> fdo::Error {
+    match error {
+        ActionError::UnknownNotification | ActionError::UnknownAction => {
+            center_action_unavailable()
+        }
+        ActionError::InvalidTarget | ActionError::InvalidApplication => {
+            fdo::Error::Failed("Notification Center action is invalid".into())
+        }
+        ActionError::PersistentNotification
+        | ActionError::Transport
+        | ActionError::RuntimeUnavailable => {
+            fdo::Error::Failed("Notification Center action could not be delivered".into())
+        }
+    }
+}
+
+fn validate_activation_token(value: &str) -> fdo::Result<Option<&str>> {
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.len() > 4_096 || value.chars().any(char::is_control) {
+        return Err(center_invalid());
+    }
+    Ok(Some(value))
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceError {
     History,
@@ -435,6 +589,10 @@ impl SharedCore {
         self.lock().server.active().cloned().collect()
     }
 
+    pub fn reserve_ids(&self, ids: impl IntoIterator<Item = NotificationId>) {
+        self.lock().server.reserve_ids(ids);
+    }
+
     pub fn post(
         &self,
         request: rmac_notifications::Request,
@@ -499,6 +657,30 @@ impl SharedCore {
             ActionSelection::Button(index) => core.server.invoke_button(id, *index),
             ActionSelection::Named(action) => core.server.invoke(id, action),
         }
+    }
+
+    fn invoke_from_center(
+        &self,
+        history: &HistoryAuthority,
+        id: NotificationId,
+        selection: &ActionSelection,
+    ) -> Result<(Source, ActionInvocation, Option<Closed>), ServerError> {
+        let mut core = self.lock();
+        let active = core
+            .server
+            .active()
+            .find(|notification| notification.id == id)
+            .cloned()
+            .ok_or(ServerError::UnknownNotification)?;
+        if !history.action_is_visible(&active, selection) {
+            return Err(ServerError::UnknownAction);
+        }
+        let result = match selection {
+            ActionSelection::Default => core.server.invoke_default(id),
+            ActionSelection::Button(index) => core.server.invoke_button(id, *index),
+            ActionSelection::Named(_) => Err(ServerError::UnknownAction),
+        }?;
+        Ok((active.source, result.0, result.1))
     }
 
     fn lock(&self) -> MutexGuard<'_, Core> {
@@ -774,6 +956,31 @@ impl ServiceHandle {
             .core
             .invoke(id, &selection)
             .map_err(action_domain_error)?;
+        self.finish_invocation(source, invocation, closed, activation_token)
+            .await
+    }
+
+    async fn invoke_from_center(
+        &self,
+        id: NotificationId,
+        selection: ActionSelection,
+        activation_token: Option<&str>,
+    ) -> Result<ActionInvocation, ActionError> {
+        let (source, invocation, closed) = self
+            .core
+            .invoke_from_center(&self.history, id, &selection)
+            .map_err(action_domain_error)?;
+        self.finish_invocation(source, invocation, closed, activation_token)
+            .await
+    }
+
+    async fn finish_invocation(
+        &self,
+        source: Source,
+        invocation: ActionInvocation,
+        closed: Option<Closed>,
+        activation_token: Option<&str>,
+    ) -> Result<ActionInvocation, ActionError> {
         self.dispatch_invocation(&source, &invocation, activation_token)
             .await?;
         publish_action(
@@ -784,7 +991,8 @@ impl ServiceHandle {
         if let Some(closed) = closed {
             publish_action(&self.events, RuntimeEvent::Closed(closed)).await?;
             if matches!(source, Source::Freedesktop { .. }) {
-                self.emit_legacy_closed(id, 2).await?;
+                self.emit_legacy_closed(invocation.notification_id, 2)
+                    .await?;
             }
         }
         Ok(invocation)
@@ -893,8 +1101,9 @@ impl ServiceHandle {
 }
 
 pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceError> {
-    let core = SharedCore::new(500, TimeoutPolicy::default());
     let history = HistoryAuthority::load().await?;
+    let core = SharedCore::new(500, TimeoutPolicy::default());
+    core.reserve_ids(history.ids());
     let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
     let legacy = LegacyInterface {
         core: core.clone(),
@@ -908,6 +1117,8 @@ pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceE
     };
     let center = CenterInterface {
         history: history.clone(),
+        core: core.clone(),
+        events: events.clone(),
     };
     let connection = Builder::session()
         .map_err(|_| ServiceError::Bus)?
@@ -1090,7 +1301,9 @@ fn protocol_button_purposes() -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmac_notifications::protocol::{self, PortalInput};
+    use rmac_notifications::protocol::{
+        self, FreedesktopHints, FreedesktopInput, PortalButton, PortalInput,
+    };
     use rmac_notifications::ActionTarget;
     use std::sync::atomic::{AtomicU64, Ordering};
     use zbus::object_server::Interface;
@@ -1232,7 +1445,7 @@ mod tests {
         let applications = history.applications();
         assert_eq!(applications.len(), 1);
         assert_ne!(applications[0].0, "");
-        let (records, snapshot_applications) = history.snapshot();
+        let (records, snapshot_applications) = history.snapshot(&core.snapshot());
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].0, outcome.id.get());
         assert_eq!(snapshot_applications, applications);
@@ -1268,6 +1481,146 @@ mod tests {
     }
 
     #[test]
+    fn center_projects_actions_only_for_the_exact_live_record() {
+        let path = history_path("live-actions");
+        let history = HistoryAuthority::empty_at(path.clone());
+        let core = SharedCore::new(10, TimeoutPolicy::default());
+        let request = protocol::freedesktop(FreedesktopInput {
+            authenticated_app_id: "org.example.Chat".into(),
+            summary: "Private title".into(),
+            actions: vec![
+                "default".into(),
+                "Open".into(),
+                "archive".into(),
+                "Archive".into(),
+            ],
+            hints: FreedesktopHints {
+                resident: true,
+                ..FreedesktopHints::default()
+            },
+            expire_timeout: 0,
+            ..FreedesktopInput::default()
+        })
+        .unwrap();
+        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        history
+            .record(&RuntimeEvent::Posted {
+                outcome,
+                notification,
+            })
+            .unwrap();
+
+        let (live, _) = history.snapshot(&core.snapshot());
+        assert_eq!(live[0].6, "Open");
+        assert_eq!(live[0].7, vec![(0, "Archive".to_owned())]);
+
+        let mut same_time_replacement = core.snapshot();
+        same_time_replacement[0].actions[0] = Action::new("archive", "Archive", None)
+            .unwrap()
+            .with_purpose("call.accept")
+            .unwrap();
+        let (mismatched, _) = history.snapshot(&same_time_replacement);
+        assert!(mismatched[0].6.is_empty());
+        assert!(mismatched[0].7.is_empty());
+
+        let (_, default, default_closed) = core
+            .invoke_from_center(&history, outcome.id, &ActionSelection::Default)
+            .unwrap();
+        assert_eq!(default.action_id, "default");
+        assert_eq!(default_closed, None);
+        let (_, archive, archive_closed) = core
+            .invoke_from_center(&history, outcome.id, &ActionSelection::Button(0))
+            .unwrap();
+        assert_eq!(archive.action_id, "archive");
+        assert_eq!(archive_closed, None);
+        assert_eq!(
+            core.invoke_from_center(
+                &history,
+                outcome.id,
+                &ActionSelection::Named("archive".into())
+            ),
+            Err(ServerError::UnknownAction)
+        );
+
+        let (after_restart, _) = history.snapshot(&[]);
+        assert!(after_restart[0].6.is_empty());
+        assert!(after_restart[0].7.is_empty());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn center_keeps_original_positions_when_hidden_actions_are_filtered() {
+        let path = history_path("action-position");
+        let history = HistoryAuthority::empty_at(path.clone());
+        let core = SharedCore::new(10, TimeoutPolicy::default());
+        let request = protocol::portal(PortalInput {
+            app_id: "org.example.Chat".into(),
+            id: "message-1".into(),
+            title: Some("Private title".into()),
+            buttons: vec![
+                PortalButton {
+                    action: "app.custom".into(),
+                    purpose: Some("system.custom-alert".into()),
+                    ..PortalButton::default()
+                },
+                PortalButton {
+                    action: "app.reply".into(),
+                    purpose: Some("im.reply-with-text".into()),
+                    ..PortalButton::default()
+                },
+            ],
+            ..PortalInput::default()
+        })
+        .unwrap();
+        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        history
+            .record(&RuntimeEvent::Posted {
+                outcome,
+                notification,
+            })
+            .unwrap();
+
+        let (records, _) = history.snapshot(&core.snapshot());
+        assert_eq!(records[0].7, vec![(1, "Reply".to_owned())]);
+        assert_eq!(
+            core.invoke_from_center(&history, outcome.id, &ActionSelection::Button(0)),
+            Err(ServerError::UnknownAction)
+        );
+        let (_, reply, _) = core
+            .invoke_from_center(&history, outcome.id, &ActionSelection::Button(1))
+            .unwrap();
+        assert_eq!(reply.action_id, "app.reply");
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn center_uses_only_explicit_or_standardized_action_labels() {
+        let reply = Action::new("reply", "", None)
+            .unwrap()
+            .with_purpose("im.reply-with-text")
+            .unwrap();
+        let custom = Action::new("custom", "", None)
+            .unwrap()
+            .with_purpose("system.custom-alert")
+            .unwrap();
+        let explicit = Action::new("archive", "Archive", None).unwrap();
+        assert_eq!(visible_action_label(&reply).as_deref(), Some("Reply"));
+        assert_eq!(visible_action_label(&custom), None);
+        assert_eq!(visible_action_label(&explicit).as_deref(), Some("Archive"));
+    }
+
+    #[test]
+    fn center_activation_tokens_are_bounded_opaque_values() {
+        assert_eq!(validate_activation_token("").unwrap(), None);
+        assert_eq!(
+            validate_activation_token("wayland:seat-7:opaque").unwrap(),
+            Some("wayland:seat-7:opaque")
+        );
+        assert!(validate_activation_token("contains\ncontrol").is_err());
+        assert!(validate_activation_token(&"x".repeat(4_097)).is_err());
+    }
+
+    #[test]
     fn public_protocol_metadata_is_truthful() {
         assert_eq!(protocol_categories().len(), 14);
         assert_eq!(protocol_button_purposes().len(), 7);
@@ -1288,11 +1641,15 @@ mod tests {
             history: history.clone(),
         };
         let portal = PortalInterface {
-            core,
-            events,
+            core: core.clone(),
+            events: events.clone(),
             history: history.clone(),
         };
-        let center = CenterInterface { history };
+        let center = CenterInterface {
+            history,
+            core,
+            events,
+        };
         let mut legacy_xml = String::new();
         legacy.introspect_to_writer(&mut legacy_xml, 0);
         assert!(legacy_xml.contains("org.freedesktop.Notifications"));
@@ -1315,6 +1672,7 @@ mod tests {
         assert!(center_xml.contains("method name=\"State\""));
         assert!(center_xml.contains("method name=\"Applications\""));
         assert!(center_xml.contains("method name=\"Snapshot\""));
+        assert!(center_xml.contains("method name=\"Invoke\""));
         assert!(center_xml.contains("method name=\"MarkRead\""));
         assert!(center_xml.contains("method name=\"Clear\""));
         assert!(center_xml.contains("method name=\"SetPolicy\""));

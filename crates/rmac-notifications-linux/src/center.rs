@@ -2,12 +2,21 @@
 
 use async_channel::Sender;
 use futures_util::StreamExt as _;
-use rmac_notifications::{AppId, Content, Indicator, NotificationId, Priority};
+use rmac_notifications::{Action, AppId, Content, Indicator, NotificationId, Priority};
 use rmac_notifications_store::{AppPolicy, LockPreview};
 use std::collections::BTreeSet;
 
 pub type WireAppPolicy = (bool, bool, bool, bool, bool, bool, u8);
-pub type WireHistoryRecord = (u32, String, String, String, u8, bool);
+pub type WireHistoryRecord = (
+    u32,
+    String,
+    String,
+    String,
+    u8,
+    bool,
+    String,
+    Vec<(u8, String)>,
+);
 pub type WireSnapshot = (Vec<WireHistoryRecord>, Vec<(String, WireAppPolicy)>);
 const MAX_WIRE_APPLICATIONS: usize = 1_012;
 const MAX_WIRE_HISTORY: usize = 500;
@@ -76,6 +85,8 @@ trait Center {
     fn state(&self) -> zbus::Result<(u32, bool)>;
     fn applications(&self) -> zbus::Result<Vec<(String, WireAppPolicy)>>;
     fn snapshot(&self) -> zbus::Result<WireSnapshot>;
+    fn invoke(&self, id: u32, selection: u8, index: u8, activation_token: &str)
+        -> zbus::Result<()>;
     fn mark_read(&self, app_id: &str) -> zbus::Result<(u32, bool)>;
     fn clear(&self, app_id: &str) -> zbus::Result<(u32, bool)>;
     fn set_policy(&self, app_id: &str, policy: WireAppPolicy) -> zbus::Result<(u32, bool)>;
@@ -100,6 +111,29 @@ pub struct HistoryRecord {
     pub content: Content,
     pub priority: Priority,
     pub unread: bool,
+    pub actions: Vec<HistoryAction>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ActionSelection {
+    Default,
+    Button(u8),
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct HistoryAction {
+    pub selection: ActionSelection,
+    pub label: String,
+}
+
+impl std::fmt::Debug for HistoryAction {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HistoryAction")
+            .field("selection", &self.selection)
+            .field("label", &"<redacted>")
+            .finish()
+    }
 }
 
 impl std::fmt::Debug for HistoryRecord {
@@ -111,6 +145,7 @@ impl std::fmt::Debug for HistoryRecord {
             .field("content", &"<redacted>")
             .field("priority", &self.priority)
             .field("unread", &self.unread)
+            .field("action_count", &self.actions.len())
             .finish()
     }
 }
@@ -177,22 +212,57 @@ fn decode_history(history: Vec<WireHistoryRecord>) -> Result<Vec<HistoryRecord>,
     let mut seen = BTreeSet::new();
     history
         .into_iter()
-        .map(|(id, app_id, title, body, priority, unread)| {
-            let id = NotificationId::from_protocol(id).ok_or(Error::Protocol)?;
-            if !seen.insert(id) {
-                return Err(Error::Protocol);
-            }
-            let app_id = AppId::parse(app_id).map_err(|_| Error::Protocol)?;
-            let content = Content::new(title, body).map_err(|_| Error::Protocol)?;
-            Ok(HistoryRecord {
-                id,
-                app_id: app_id.as_str().to_owned(),
-                content,
-                priority: decode_priority(priority)?,
-                unread,
-            })
-        })
+        .map(
+            |(id, app_id, title, body, priority, unread, default_action, actions)| {
+                let id = NotificationId::from_protocol(id).ok_or(Error::Protocol)?;
+                if !seen.insert(id) {
+                    return Err(Error::Protocol);
+                }
+                let app_id = AppId::parse(app_id).map_err(|_| Error::Protocol)?;
+                let content = Content::new(title, body).map_err(|_| Error::Protocol)?;
+                if actions.len() > 8 {
+                    return Err(Error::Protocol);
+                }
+                let mut decoded_actions =
+                    Vec::with_capacity(actions.len() + usize::from(!default_action.is_empty()));
+                if !default_action.is_empty() {
+                    validate_action_label(&default_action)?;
+                    decoded_actions.push(HistoryAction {
+                        selection: ActionSelection::Default,
+                        label: default_action,
+                    });
+                }
+                let mut seen_actions = BTreeSet::new();
+                for (index, label) in actions {
+                    if index >= 8 || !seen_actions.insert(index) {
+                        return Err(Error::Protocol);
+                    }
+                    validate_action_label(&label)?;
+                    decoded_actions.push(HistoryAction {
+                        selection: ActionSelection::Button(index),
+                        label,
+                    });
+                }
+                Ok(HistoryRecord {
+                    id,
+                    app_id: app_id.as_str().to_owned(),
+                    content,
+                    priority: decode_priority(priority)?,
+                    unread,
+                    actions: decoded_actions,
+                })
+            },
+        )
         .collect()
+}
+
+fn validate_action_label(label: &str) -> Result<(), Error> {
+    if label.trim().is_empty() {
+        return Err(Error::Protocol);
+    }
+    Action::new("center-action", label, None)
+        .map(drop)
+        .map_err(|_| Error::Protocol)
 }
 
 fn decode_applications(
@@ -229,6 +299,22 @@ pub fn clear(app_id: Option<&str>) -> Result<Indicator, Error> {
 
 pub fn set_policy(app_id: &str, policy: AppPolicy) -> Result<Indicator, Error> {
     mutate(|proxy| proxy.set_policy(app_id, encode_policy(policy)))
+}
+
+pub fn invoke(
+    id: NotificationId,
+    selection: ActionSelection,
+    activation_token: Option<&str>,
+) -> Result<(), Error> {
+    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
+    let (kind, index) = match selection {
+        ActionSelection::Default => (0, 0),
+        ActionSelection::Button(index) => (1, index),
+    };
+    proxy
+        .invoke(id.get(), kind, index, activation_token.unwrap_or_default())
+        .map_err(call_error)
 }
 
 fn mutate(
@@ -553,11 +639,16 @@ mod tests {
             "Private body".into(),
             encode_priority(Priority::Urgent),
             true,
+            "Open private item".into(),
+            vec![(3, "Reply privately".into())],
         )])
         .unwrap();
         assert_eq!(records[0].id.get(), 7);
         assert_eq!(records[0].priority, Priority::Urgent);
         assert!(records[0].unread);
+        assert_eq!(records[0].actions.len(), 2);
+        assert_eq!(records[0].actions[0].selection, ActionSelection::Default);
+        assert_eq!(records[0].actions[1].selection, ActionSelection::Button(3));
         let debug = format!("{:?}", records[0]);
         assert!(!debug.contains("Private"));
         assert!(!debug.contains("org.example"));
@@ -569,6 +660,8 @@ mod tests {
             String::new(),
             1,
             false,
+            String::new(),
+            Vec::new(),
         )])
         .is_err());
         assert!(decode_history(vec![(
@@ -578,6 +671,8 @@ mod tests {
             String::new(),
             9,
             false,
+            String::new(),
+            Vec::new(),
         )])
         .is_err());
         assert!(decode_history(vec![
@@ -587,7 +682,9 @@ mod tests {
                 "One".into(),
                 String::new(),
                 1,
-                false
+                false,
+                String::new(),
+                Vec::new()
             ),
             (
                 1,
@@ -595,9 +692,44 @@ mod tests {
                 "Two".into(),
                 String::new(),
                 1,
-                false
+                false,
+                String::new(),
+                Vec::new()
             ),
         ])
+        .is_err());
+        assert!(decode_history(vec![(
+            2,
+            "org.example.Invalid".into(),
+            "Title".into(),
+            String::new(),
+            1,
+            false,
+            String::new(),
+            vec![(8, "Too far".into())],
+        )])
+        .is_err());
+        assert!(decode_history(vec![(
+            3,
+            "org.example.Invalid".into(),
+            "Title".into(),
+            String::new(),
+            1,
+            false,
+            String::new(),
+            vec![(1, "One".into()), (1, "Duplicate".into())],
+        )])
+        .is_err());
+        assert!(decode_history(vec![(
+            4,
+            "org.example.Invalid".into(),
+            "Title".into(),
+            String::new(),
+            1,
+            false,
+            String::new(),
+            vec![(0, "   ".into())],
+        )])
         .is_err());
     }
 }

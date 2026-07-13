@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::process::Command;
 
 use gpui::{Context, SharedString, Window};
-use rmac_notifications_linux::center::Snapshot;
+use rmac_notifications::NotificationId;
+use rmac_notifications_linux::center::{ActionSelection, Snapshot};
 
 use crate::model::{
     application_identities, fallback_app_name, ApplicationIdentity, Busy, RecordGroup,
@@ -175,6 +176,40 @@ impl NotificationCenterView {
                 if result.is_err() {
                     this.operation_error =
                         Some("Could not turn off notifications for that application".into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn invoke_action(
+        &mut self,
+        id: NotificationId,
+        selection: ActionSelection,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy.is_some() {
+            return;
+        }
+        self.busy = Some(Busy::Invoke(id, selection));
+        self.operation_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // GPUI 0.2.2 does not expose the initiating Wayland seat/serial,
+            // so the Linux gate must prove focus behavior without a fabricated
+            // activation token.
+            let result = blocking::unblock(move || {
+                rmac_notifications_linux::center::invoke(id, selection, None)
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                this.busy = None;
+                if result.is_err() {
+                    this.operation_error = Some(
+                        "That notification action is no longer available or could not be delivered"
+                            .into(),
+                    );
                 }
                 cx.notify();
             });

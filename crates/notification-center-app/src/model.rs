@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use gpui::SharedString;
-use rmac_notifications_linux::center::HistoryRecord;
+use rmac_notifications::NotificationId;
+use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
 
 #[derive(Clone)]
 pub(crate) struct ApplicationIdentity {
@@ -15,6 +16,7 @@ pub(crate) enum Busy {
     ClearAll,
     ClearApp(String),
     DisableApp(String),
+    Invoke(NotificationId, ActionSelection),
 }
 
 pub(crate) struct RecordGroup<'a> {

@@ -4,7 +4,7 @@
 //! The reducer intentionally owns no bus connection, timer, persistence file,
 //! sound player, or UI so every presentation surface observes one authority.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 
 pub mod banner;
@@ -563,6 +563,7 @@ pub struct Indicator {
 #[derive(Debug)]
 pub struct Server {
     next_id: u32,
+    reserved_ids: BTreeSet<NotificationId>,
     timeout_policy: TimeoutPolicy,
     history_limit: usize,
     active: BTreeMap<NotificationId, Notification>,
@@ -573,11 +574,18 @@ impl Server {
     pub fn new(history_limit: usize, timeout_policy: TimeoutPolicy) -> Self {
         Self {
             next_id: 1,
+            reserved_ids: BTreeSet::new(),
             timeout_policy,
             history_limit,
             active: BTreeMap::new(),
             history: VecDeque::new(),
         }
+    }
+
+    /// Prevent allocation from reusing identifiers retained by an external
+    /// crash-safe history authority after this in-memory server restarts.
+    pub fn reserve_ids(&mut self, ids: impl IntoIterator<Item = NotificationId>) {
+        self.reserved_ids.extend(ids);
     }
 
     pub fn post(
@@ -881,7 +889,7 @@ impl Server {
             let candidate = self.next_id.max(1);
             self.next_id = candidate.wrapping_add(1).max(1);
             let id = NotificationId(candidate);
-            if !self.active.contains_key(&id) {
+            if !self.active.contains_key(&id) && !self.reserved_ids.contains(&id) {
                 return Ok(id);
             }
         }
@@ -1300,6 +1308,40 @@ mod tests {
             .unwrap();
         let (invocation, _) = server.invoke_button(posted.id, 1).unwrap();
         assert_eq!(invocation.target.unwrap().bytes(), b"second");
+    }
+
+    #[test]
+    fn externally_retained_ids_are_never_reallocated_after_restart() {
+        let mut server = Server::new(10, TimeoutPolicy::default());
+        server.reserve_ids([
+            NotificationId::from_protocol(1).unwrap(),
+            NotificationId::from_protocol(u32::MAX).unwrap(),
+        ]);
+        assert_eq!(
+            server
+                .post(
+                    portal_request("org.example.Chat", "one", "Message"),
+                    Time(0),
+                    DeliveryPolicy::default(),
+                )
+                .unwrap()
+                .id
+                .get(),
+            2
+        );
+        server.next_id = u32::MAX;
+        assert_eq!(
+            server
+                .post(
+                    portal_request("org.example.Chat", "two", "Message"),
+                    Time(1),
+                    DeliveryPolicy::default(),
+                )
+                .unwrap()
+                .id
+                .get(),
+            3
+        );
     }
 
     #[test]

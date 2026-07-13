@@ -6,7 +6,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_notifications::Priority;
-use rmac_notifications_linux::center::HistoryRecord;
+use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
 use rmac_ui::{mac, Button, ButtonRole, EmptyState, Progress};
 
 use crate::model::{ApplicationIdentity, Busy, RecordGroup};
@@ -41,8 +41,42 @@ impl NotificationCenterView {
             .into_any_element()
     }
 
-    fn record(record: &HistoryRecord, index: usize) -> AnyElement {
+    fn record(&self, record: &HistoryRecord, index: usize, cx: &Context<Self>) -> AnyElement {
         let urgent = record.priority == Priority::Urgent;
+        let action_buttons = record
+            .actions
+            .iter()
+            .enumerate()
+            .map(|(action_index, action)| {
+                let id = record.id;
+                let selection = action.selection;
+                let view = cx.entity();
+                let action_busy = matches!(
+                    &self.busy,
+                    Some(Busy::Invoke(candidate, candidate_selection))
+                        if *candidate == id && *candidate_selection == selection
+                );
+                Button::new(
+                    SharedString::from(format!(
+                        "notification-{}-action-{}",
+                        record.id.get(),
+                        action_index
+                    )),
+                    action.label.clone(),
+                )
+                .xsmall()
+                .role(if selection == ActionSelection::Default {
+                    ButtonRole::Primary
+                } else {
+                    ButtonRole::Secondary
+                })
+                .disabled(self.busy.is_some())
+                .busy(action_busy)
+                .on_click(move |_, _, cx| {
+                    view.update(cx, |this, cx| this.invoke_action(id, selection, cx));
+                })
+            })
+            .collect::<Vec<_>>();
         div()
             .id(SharedString::from(format!(
                 "notification-{}-{}",
@@ -115,6 +149,16 @@ impl NotificationCenterView {
                                 .text_color(mac::text_secondary())
                                 .child(record.content.body().to_owned()),
                         )
+                    })
+                    .when(!action_buttons.is_empty(), |content| {
+                        content.child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_1()
+                                .pt_1()
+                                .children(action_buttons),
+                        )
                     }),
             )
             .into_any_element()
@@ -134,7 +178,7 @@ impl NotificationCenterView {
             .records
             .iter()
             .enumerate()
-            .map(|(index, record)| Self::record(record, index))
+            .map(|(index, record)| self.record(record, index, cx))
             .collect::<Vec<_>>();
 
         div()

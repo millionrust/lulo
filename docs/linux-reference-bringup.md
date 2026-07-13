@@ -165,10 +165,16 @@ With retained history present, open the installed Center surface directly:
 
 Verify newest-app-first grouping, exact localized identity/icon fallback,
 automatic unread acknowledgement without deletion, per-app and all-history
-clear, Turn Off, Notification Settings routing, Escape and outside dismissal,
-and last-known-good content during a controlled notification-service restart.
-Repeat at 100%, 125%, 150%, and 200% scale and with Orca. Capture placement and
-focus evidence under niri; a correct macOS-side window is not Linux proof.
+clear, Turn Off, Notification Settings routing, default and nonzero-position
+button actions, Escape and outside dismissal, and last-known-good content during
+a controlled notification-service restart. Before restarting, invoke each live
+action and verify the exact matching protocol signal/target. During the restart,
+confirm retained records remain readable but expose no stale action buttons;
+after a new notification arrives, confirm its ID does not collide with retained
+history and only its own actions appear. Repeat at 100%, 125%, 150%, and 200%
+scale and with Orca. Capture placement and focus evidence under niri; a correct
+macOS-side window is not Linux proof. Record strict-focus behavior explicitly:
+the current GPUI surface does not fabricate a Wayland activation token.
 
 The D-phase component units are condition-gated until their binaries are
 installed, so they remain skipped rather than entering false crash loops. The

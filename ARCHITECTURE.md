@@ -246,7 +246,12 @@ revalidates wire content and keeps payloads out of diagnostics. The panel groups
 records, acknowledges read state, and routes clear and per-app policy changes
 back to the same single-writer interface rather than touching storage. That
 interface also owns app-policy projection, and callers receive refreshed state
-plus explicit persistence errors.
+plus explicit persistence errors. Action disclosure is joined against the exact
+live reducer record by ID, source, update time, and complete action set; the wire
+carries only a validated visible label and original button position, never the
+private action ID or target. Persisted-only records expose no actions, their IDs
+are reserved across service restart, and invocation returns through the
+existing `ServiceHandle` transport transaction.
 
 Quick Settings consumes the same typed service snapshots through
 `rmac-quick-settings`. Its framework-neutral transaction model validates

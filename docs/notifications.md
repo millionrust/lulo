@@ -211,9 +211,15 @@ the authority restarts. A D-Bus activation entry routes the internal name to
 the already supervised notification-center process.
 
 The private interface also provides authenticated `Snapshot`, `Applications`,
-`MarkRead`, `Clear`, and `SetPolicy` methods. `Snapshot` atomically supplies the
-on-demand Center with at most 500 already-validated records in
-newest-group-first order plus their per-app policies.
+`Invoke`, `MarkRead`, `Clear`, and `SetPolicy` methods. `Snapshot` atomically
+supplies the on-demand Center with at most 500 already-validated records in
+newest-group-first order plus their per-app policies. For an exact record that
+also remains in the live reducer, it may include a validated visible default
+label and visible button labels paired with their original positions. It never
+projects action IDs or targets. Persisted-only records and records whose source,
+update time, or complete action set no longer match expose no actions. Retained
+history IDs are reserved when the reducer starts so a new sender cannot inherit
+an old ID.
 The client revalidates every ID, app ID, title, body, and priority; diagnostics
 expose only counts and classifications. Empty mutation scope means “all”;
 non-empty IDs are validated by the notification domain. Application projection
@@ -226,15 +232,25 @@ indicator/policy signals, and return refreshed state. If saving fails, live
 state and signals remain truthful while the caller receives an actionable
 persistence error.
 
+`Invoke` accepts only the projected default or bounded button selection plus an
+optional bounded opaque activation token, then uses the same `ServiceHandle`
+transaction as banners. Unknown/stale records and actions fail visibly. The
+Center client revalidates unique button positions and labels before rendering;
+its diagnostics redact every label. GPUI 0.2.2 cannot recover the initiating
+Wayland seat/serial, so the current panel passes no invented token and leaves
+strict focus behavior to the Linux evidence gate.
+
 `rmac-notification-center-panel` is the on-demand E3 presentation. It opens as
 a trailing translucent panel with date/time, localized application identity
 and icons from the live XDG catalog, grouped cards, unread and urgent state,
 Clear/Clear All, per-app Turn Off, authoritative empty/loading/error states,
 and a direct route to Notification Settings. Opening an unread snapshot marks
 it read through the service, while content remains visible until the user or
-policy clears it. The panel subscribes before its first read, keeps the last
-received snapshot across service loss, and exits when dismissed or focus moves
-away. It never reads or writes the private history file.
+policy clears it. Live records also show the service-projected default/button
+actions with one bounded busy state and explicit delivery failure; stale
+retained records show none. The panel subscribes before its first read, keeps
+the last received snapshot across service loss, and exits when dismissed or
+focus moves away. It never reads or writes the private history file.
 
 ## Next adapters and surfaces
 
@@ -243,9 +259,9 @@ away. It never reads or writes the private history file.
 2. E2 layer-surface renderer: render the runtime snapshot with real hover,
    keyboard, action, activation-token, and multi-output evidence on Linux.
 3. E3 Notification Center evidence and completion: prove trailing placement,
-   outside/Escape dismissal, keyboard focus order, scaling, and Orca semantics
-   on Linux; add safe history-action disclosure after the invocation adapter is
-   available. System Settings exposes only already-observable allow/block,
+   outside/Escape dismissal, live and restart-stale action behavior, keyboard
+   focus order, scaling, and Orca semantics on Linux. System Settings exposes
+   only already-observable allow/block,
    badge, and history controls; banner, sound, Focus-bypass, and lock-preview
    rows remain hidden until their presentation/security adapters are active.
    Its application rows

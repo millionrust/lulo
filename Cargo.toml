@@ -68,6 +68,8 @@ rmac-login-items-linux = { version = "=0.1.0", path = "crates/rmac-login-items-l
 rmac-locale = { version = "=0.1.0", path = "crates/rmac-locale" }
 rmac-locale-linux = { version = "=0.1.0", path = "crates/rmac-locale-linux" }
 rmac-power = { version = "=0.1.0", path = "crates/rmac-power" }
+rmac-privacy = { version = "=0.1.0", path = "crates/rmac-privacy" }
+rmac-privacy-linux = { version = "=0.1.0", path = "crates/rmac-privacy-linux" }
 rmac-quick-settings = { version = "=0.1.0", path = "crates/rmac-quick-settings" }
 rmac-quick-settings-system = { version = "=0.1.0", path = "crates/rmac-quick-settings-system" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }

@@ -191,6 +191,7 @@ struct Settings {
     audio: rmac_audio::Snapshot,
     input: rmac_input::Snapshot,
     gtk_text: Option<rmac_gtk_settings::Snapshot>,
+    privacy: Option<rmac_privacy::Snapshot>,
     sections: Vec<Vec<Category>>,
     selected: (usize, usize),
     nav: Vec<SubPage>,
@@ -208,6 +209,7 @@ struct Settings {
     input_error: Option<SharedString>,
     theme_error: Option<SharedString>,
     gtk_text_error: Option<SharedString>,
+    privacy_error: Option<SharedString>,
     notification_error: Option<SharedString>,
     notification_stream_error: Option<SharedString>,
 
@@ -269,6 +271,11 @@ struct Settings {
     // External GTK application text
     gtk_text_loading: bool,
     gtk_text_busy: bool,
+
+    // Privacy & Security
+    privacy_loading: bool,
+    privacy_busy: Option<(rmac_privacy::PortalResource, String)>,
+    privacy_reset_confirmation: Option<rmac_privacy::PortalDecision>,
 
     // Sound
     audio_loading: bool,
@@ -851,6 +858,18 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
+                .spawn(async { rmac_privacy_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_privacy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
                 .spawn(async { load_theme_state().await })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -1005,6 +1024,7 @@ impl Settings {
             audio: rmac_audio::Snapshot::default(),
             input: rmac_input::Snapshot::default(),
             gtk_text: None,
+            privacy: None,
             sections: categories(),
             selected: (1, 0), // General
             nav: Vec::new(),
@@ -1022,6 +1042,7 @@ impl Settings {
             input_error: None,
             theme_error: None,
             gtk_text_error: None,
+            privacy_error: None,
             notification_error: None,
             notification_stream_error: None,
 
@@ -1073,6 +1094,10 @@ impl Settings {
             theme_busy: false,
             gtk_text_loading: true,
             gtk_text_busy: false,
+
+            privacy_loading: true,
+            privacy_busy: None,
+            privacy_reset_confirmation: None,
 
             audio_loading: true,
             audio_busy: false,
@@ -2435,6 +2460,24 @@ impl Settings {
         }
     }
 
+    fn finish_privacy_update(
+        &mut self,
+        result: std::result::Result<rmac_privacy::Snapshot, rmac_privacy_linux::Error>,
+    ) {
+        self.privacy_loading = false;
+        self.privacy_busy = None;
+        match result {
+            Ok(snapshot) => {
+                self.privacy = Some(snapshot);
+                self.privacy_error = None;
+            }
+            Err(error) => {
+                self.privacy_error =
+                    Some(format!("Could not update portal permissions: {error}").into());
+            }
+        }
+    }
+
     fn finish_theme_update(&mut self, result: std::result::Result<ThemeLoad, String>) {
         self.theme_loading = false;
         self.theme_busy = false;
@@ -3022,6 +3065,71 @@ impl Settings {
         .detach();
     }
 
+    fn refresh_privacy(&mut self, cx: &mut Context<Self>) {
+        if self.privacy_loading || self.privacy_busy.is_some() {
+            return;
+        }
+        self.privacy_loading = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_privacy_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_privacy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn request_privacy_reset(
+        &mut self,
+        decision: rmac_privacy::PortalDecision,
+        cx: &mut Context<Self>,
+    ) {
+        if self.privacy_busy.is_none()
+            && self
+                .privacy
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.can_reset)
+        {
+            self.privacy_reset_confirmation = Some(decision);
+            cx.notify();
+        }
+    }
+
+    fn cancel_privacy_reset(&mut self, cx: &mut Context<Self>) {
+        if self.privacy_reset_confirmation.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    fn confirm_privacy_reset(&mut self, cx: &mut Context<Self>) {
+        let Some(decision) = self.privacy_reset_confirmation.take() else {
+            return;
+        };
+        if self.privacy_busy.is_some() {
+            return;
+        }
+        let resource = decision.resource;
+        let app_id = decision.app_id;
+        self.privacy_busy = Some((resource, app_id.clone()));
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_privacy_linux::reset_decision(resource, &app_id) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_privacy_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn apply_input_change(&mut self, change: InputChange, cx: &mut Context<Self>) {
         if self.input_loading || self.input_busy || !self.input.can_configure {
             return;
@@ -3594,6 +3702,7 @@ impl Settings {
                 "Login Items" => self.render_login_items(cx),
                 "Sharing" => self.render_sharing(cx),
                 "Accessibility" => self.render_accessibility(cx),
+                "Privacy & Security" => self.render_privacy_security(cx),
                 "Network" => self.render_network(cx),
                 "VPN" => self.render_vpn(cx),
                 _ => self.render_generic(),
@@ -5425,6 +5534,182 @@ impl Settings {
         }
         cards.push(note_card(
             "This readiness check covers niri and Orca only. rmac application roles, names, states, actions, focus, and announcements still require Linux AT-SPI/Orca runtime evidence before accessibility can be claimed.",
+        ));
+        self.pane(cards)
+    }
+
+    // ---- Privacy & Security -----------------------------------------
+
+    fn render_privacy_security(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let refresh_view = view.clone();
+        let updates_view = view.clone();
+        let mut cards = vec![card(vec![row_base()
+            .child(tile("icons/shield.svg", accent(), 22.0))
+            .child(text_block(
+                "Portal permission decisions".into(),
+                Some("Camera and microphone decisions stored by XDG portals".into()),
+            ))
+            .child(
+                Button::new("privacy-refresh", "Refresh")
+                    .busy(self.privacy_loading)
+                    .disabled(self.privacy_loading || self.privacy_busy.is_some())
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_privacy(cx));
+                    }),
+            )
+            .into_any_element()])];
+
+        if self.privacy_loading {
+            cards.push(note_card(
+                "Loading decisions from the portal PermissionStore…",
+            ));
+        } else if let Some(snapshot) = &self.privacy {
+            if snapshot.available {
+                cards.push(card(vec![value_row(
+                    "icons/info.svg",
+                    secondary(),
+                    "PermissionStore interface".into(),
+                    format!("Version {}", snapshot.version).into(),
+                )]));
+                for resource in [
+                    rmac_privacy::PortalResource::Camera,
+                    rmac_privacy::PortalResource::Microphone,
+                ] {
+                    cards.push(section_header(resource.label()));
+                    let decisions = snapshot
+                        .decisions
+                        .iter()
+                        .filter(|decision| decision.resource == resource)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    if decisions.is_empty() {
+                        cards.push(note_card(format!(
+                            "No stored {} decisions. This does not prove that native or already-running applications lack access.",
+                            resource.label().to_lowercase()
+                        )));
+                        continue;
+                    }
+                    let rows = decisions
+                        .into_iter()
+                        .map(|decision| {
+                            let identity = self.application_identity(&decision.app_id);
+                            let display_name = identity
+                                .map(|application| application.name.as_str())
+                                .unwrap_or(&decision.app_id)
+                                .to_owned();
+                            let detail = format!(
+                                "{} · Stored tokens: {}",
+                                decision.app_id,
+                                decision.summary()
+                            );
+                            let reset_view = view.clone();
+                            let reset_decision = decision.clone();
+                            let busy = self.privacy_busy.as_ref().is_some_and(
+                                |(busy_resource, busy_app)| {
+                                    *busy_resource == decision.resource
+                                        && busy_app == &decision.app_id
+                                },
+                            );
+                            row_base()
+                                .child(tile("icons/app-window.svg", secondary(), 22.0))
+                                .child(text_block(display_name.into(), Some(detail.into())))
+                                .child(
+                                    Button::new(
+                                        SharedString::from(format!(
+                                            "privacy-reset-{}-{}",
+                                            decision.resource.id(),
+                                            decision.app_id
+                                        )),
+                                        "Reset",
+                                    )
+                                    .busy(busy)
+                                    .disabled(!snapshot.can_reset || self.privacy_busy.is_some())
+                                    .on_click(
+                                        move |_, _, cx| {
+                                            reset_view.update(cx, |settings, cx| {
+                                                settings.request_privacy_reset(
+                                                    reset_decision.clone(),
+                                                    cx,
+                                                );
+                                            });
+                                        },
+                                    ),
+                                )
+                                .into_any_element()
+                        })
+                        .collect();
+                    cards.push(card(rows));
+                }
+                if let Some(detail) = &snapshot.detail {
+                    cards.push(note_card(detail.clone()));
+                }
+            } else {
+                cards.push(note_card(snapshot.detail.clone().unwrap_or_else(|| {
+                    "The portal PermissionStore is unavailable in this session.".into()
+                })));
+            }
+        }
+
+        if let Some(decision) = &self.privacy_reset_confirmation {
+            let cancel_view = view.clone();
+            let confirm_view = view.clone();
+            cards.push(note_card(format!(
+                "Reset the stored {} decision for {}? The next portal request may ask again. This does not terminate active access or change permissions for native applications.",
+                decision.resource.label().to_lowercase(),
+                decision.app_id
+            )));
+            cards.push(card(vec![row_base()
+                .child(div().flex_1())
+                .child(
+                    Button::new("privacy-reset-cancel", "Cancel").on_click(move |_, _, cx| {
+                        cancel_view.update(cx, |settings, cx| settings.cancel_privacy_reset(cx));
+                    }),
+                )
+                .child(
+                    rmac_ui::dialog_button(
+                        "privacy-reset-confirm",
+                        "Reset Decision",
+                        rmac_ui::DialogButtonKind::Destructive,
+                    )
+                    .on_click(move |_, _, cx| {
+                        confirm_view.update(cx, |settings, cx| settings.confirm_privacy_reset(cx));
+                    }),
+                )
+                .into_any_element()]));
+        }
+
+        cards.push(section_header("Security Updates"));
+        let security_status = if self.updates_loading && self.updates.is_none() {
+            "Loading cached PackageKit status…".to_string()
+        } else if let Some(snapshot) = &self.updates {
+            let count = snapshot.security_count();
+            if count == 0 {
+                "No cached security updates".to_string()
+            } else if count == 1 {
+                "1 security update available".to_string()
+            } else {
+                format!("{count} security updates available")
+            }
+        } else {
+            "PackageKit security status unavailable".to_string()
+        };
+        cards.push(card(vec![row_base()
+            .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+            .child(text_block(
+                "Available security updates".into(),
+                Some(security_status.into()),
+            ))
+            .child(
+                Button::new("privacy-open-updates", "Open").on_click(move |_, _, cx| {
+                    updates_view.update(cx, |settings, cx| {
+                        settings.push(SubPage::SoftwareUpdate, cx);
+                    });
+                }),
+            )
+            .into_any_element()]));
+        cards.push(note_card(
+            "Reset removes only the selected stored portal decision through PermissionStore version 2. Permission tokens are displayed verbatim because the store does not interpret them. Native application access, active capture, sandbox declarations, Ubuntu security coverage, and repository trust have separate authorities.",
         ));
         self.pane(cards)
     }
@@ -8173,7 +8458,8 @@ impl Render for Settings {
             .or_else(|| self.display_error.clone())
             .or_else(|| self.input_error.clone())
             .or_else(|| self.theme_error.clone())
-            .or_else(|| self.gtk_text_error.clone());
+            .or_else(|| self.gtk_text_error.clone())
+            .or_else(|| self.privacy_error.clone());
         div()
             .size_full()
             .v_flex()
@@ -8215,6 +8501,7 @@ impl Render for Settings {
                             this.input_error = None;
                             this.theme_error = None;
                             this.gtk_text_error = None;
+                            this.privacy_error = None;
                             cx.notify();
                         })),
                 )

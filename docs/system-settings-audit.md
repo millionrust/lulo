@@ -33,7 +33,7 @@ equivalents rather than simulated.
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Hidden from production navigation | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Real live lock and capability-gated automatic-suspend choices; truthful Hidden preview state; secure manual/logind/pre-sleep and idle paths | `org.rmac.LockScreen1`, provider security state machine, bounded action-free notification projection, logind `CanSuspend`/`Suspend(false)`, niri `ext-session-lock-v1`, PAM-enabled swaylock, and delay inhibitor | Reviewed Wayland/PAM adapter and rmac presentation, preview controls, scoped build, and Linux security/accessibility evidence |
-| Privacy & Security | Placeholder | Portals, polkit, package security sources | Permission visibility and supported security controls |
+| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens, version-gated per-app reset confirmation and authoritative resample; cached PackageKit security-update summary and direct update navigation; explicit native/active-access and coverage limits | `rmac-privacy`, `rmac-privacy-linux`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit | Additional portal tables only with documented semantics, Ubuntu security coverage/automatic-update authority, application source inventory, live PermissionStore changes, and Linux revoke/access evidence |
 
 ## Delivery order
 
@@ -281,6 +281,20 @@ describes niri and Orca, not rmac: application roles, names, states, actions,
 focus, and announcements
 remain gated on Linux AT-SPI/Orca runtime evidence. Authority reference:
 [niri Accessibility](https://github.com/niri-wm/niri/wiki/Accessibility).
+
+Privacy & Security no longer uses the generic unavailable renderer. Its first
+permission slice reads only the PermissionStore `devices` table's `camera` and
+`microphone` resources, preserving the store's uninterpreted permission strings
+instead of translating them into invented policy. Missing resources are empty
+states, store/interface failures remain visible, and interface version 1 stays
+read-only. Version 2 decisions can be reset per application only after explicit
+confirmation through `DeletePermission`; completion is followed by a complete
+authoritative resample. Reset is described as removing a stored decision so the
+next portal request may ask again, never as terminating active capture or
+revoking native-application access. The pane also reuses the cached PackageKit
+security-update count and opens the full Software Update destination, while
+keeping Ubuntu security coverage and repository trust explicitly separate.
+Authority reference: [XDG PermissionStore](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.impl.portal.PermissionStore.html).
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

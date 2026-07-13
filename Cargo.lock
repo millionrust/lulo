@@ -5258,6 +5258,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-privacy"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-privacy-linux"
+version = "0.1.0"
+dependencies = [
+ "rmac-privacy",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-quick-settings"
 version = "0.1.0"
 dependencies = [
@@ -5432,6 +5444,8 @@ dependencies = [
  "rmac-notifications-store",
  "rmac-portal",
  "rmac-power",
+ "rmac-privacy",
+ "rmac-privacy-linux",
  "rmac-sharing",
  "rmac-sharing-linux",
  "rmac-shortcuts",

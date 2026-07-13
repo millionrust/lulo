@@ -810,13 +810,13 @@ impl NotesView {
             .child(
                 div()
                     .flex_1()
-                    .text_size(px(13.0))
+                    .text_size(rmac_ui::text_px(13.0))
                     .text_color(mac::text())
                     .child("All Notes"),
             )
             .child(
                 div()
-                    .text_size(px(13.0))
+                    .text_size(rmac_ui::text_px(13.0))
                     .text_color(mac::text_tertiary())
                     .child(all_count.to_string()),
             )
@@ -843,7 +843,7 @@ impl NotesView {
                     .pb_1()
                     .child(
                         div()
-                            .text_size(px(11.0))
+                            .text_size(rmac_ui::text_px(11.0))
                             .font_weight(mac::SEMIBOLD)
                             .text_color(mac::text_tertiary())
                             .child("ON MY MAC"),
@@ -917,14 +917,14 @@ impl NotesView {
                 .child(
                     div()
                         .flex_1()
-                        .text_size(px(13.0))
+                        .text_size(rmac_ui::text_px(13.0))
                         .text_color(mac::text())
                         .truncate()
                         .child(folder.name.clone()),
                 )
                 .child(
                     div()
-                        .text_size(px(13.0))
+                        .text_size(rmac_ui::text_px(13.0))
                         .text_color(mac::text_tertiary())
                         .child(folder.count.to_string()),
                 )
@@ -1017,7 +1017,7 @@ impl NotesView {
                                     .child(
                                         div()
                                             .flex_1()
-                                            .text_size(px(14.0))
+                                            .text_size(rmac_ui::text_px(14.0))
                                             .font_weight(mac::SEMIBOLD)
                                             .text_color(mac::text())
                                             .truncate()
@@ -1031,7 +1031,7 @@ impl NotesView {
                                     .gap_1p5()
                                     .child(
                                         div()
-                                            .text_size(px(12.0))
+                                            .text_size(rmac_ui::text_px(12.0))
                                             .font_weight(mac::MEDIUM)
                                             .text_color(mac::text())
                                             .child(note.date.clone()),
@@ -1039,7 +1039,7 @@ impl NotesView {
                                     .child(
                                         div()
                                             .flex_1()
-                                            .text_size(px(12.0))
+                                            .text_size(rmac_ui::text_px(12.0))
                                             .text_color(mac::text_secondary())
                                             .truncate()
                                             .child(note.snippet.clone()),
@@ -1134,7 +1134,7 @@ impl NotesView {
             .border_t_1()
             .border_color(mac::separator())
             .bg(mac::window())
-            .text_size(px(11.0))
+            .text_size(rmac_ui::text_px(11.0))
             .text_color(mac::text_tertiary())
             .child(format!("{words} word{}", if words == 1 { "" } else { "s" }))
             .child(div().text_color(mac::text_tertiary()).child("•"))
@@ -1319,7 +1319,7 @@ impl NotesView {
                         .pb_1()
                         .flex()
                         .justify_center()
-                        .text_size(px(11.0))
+                        .text_size(rmac_ui::text_px(11.0))
                         .text_color(mac::text_secondary())
                         .child(meta),
                 )
@@ -1360,7 +1360,7 @@ impl NotesView {
                 .items_center()
                 .justify_center()
                 .bg(mac::window())
-                .text_size(px(15.0))
+                .text_size(rmac_ui::text_px(15.0))
                 .text_color(mac::text_tertiary())
                 .child("No Note Selected")
                 .into_any_element()
@@ -1424,7 +1424,7 @@ impl Render for NotesView {
                         .bg(mac::error_background())
                         .border_b_1()
                         .border_color(mac::error_border())
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::danger())
                         .cursor_pointer()
                         .child(div().flex_1().child(message))
@@ -1497,7 +1497,7 @@ fn tag_pill(tag: String) -> impl IntoElement {
         .py_0p5()
         .rounded(px(5.0))
         .bg(mac::notes_selection())
-        .text_size(px(11.0))
+        .text_size(rmac_ui::text_px(11.0))
         .font_weight(mac::MEDIUM)
         .text_color(mac::text())
         .child(format!("#{tag}"))
@@ -1718,7 +1718,7 @@ fn list_section_header(title: &'static str) -> AnyElement {
         .px_4()
         .pt_2()
         .pb_1()
-        .text_size(px(11.0))
+        .text_size(rmac_ui::text_px(11.0))
         .font_weight(mac::SEMIBOLD)
         .text_color(mac::text_tertiary())
         .child(title)

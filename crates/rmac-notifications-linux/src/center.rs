@@ -2,12 +2,15 @@
 
 use async_channel::Sender;
 use futures_util::StreamExt as _;
-use rmac_notifications::{AppId, Indicator};
+use rmac_notifications::{AppId, Content, Indicator, NotificationId, Priority};
 use rmac_notifications_store::{AppPolicy, LockPreview};
 use std::collections::BTreeSet;
 
 pub type WireAppPolicy = (bool, bool, bool, bool, bool, bool, u8);
+pub type WireHistoryRecord = (u32, String, String, String, u8, bool);
+pub type WireSnapshot = (Vec<WireHistoryRecord>, Vec<(String, WireAppPolicy)>);
 const MAX_WIRE_APPLICATIONS: usize = 1_012;
+const MAX_WIRE_HISTORY: usize = 500;
 
 pub fn encode_policy(policy: AppPolicy) -> WireAppPolicy {
     (
@@ -42,6 +45,25 @@ pub fn decode_policy(policy: WireAppPolicy) -> Result<AppPolicy, Error> {
     })
 }
 
+pub(crate) fn encode_priority(priority: Priority) -> u8 {
+    match priority {
+        Priority::Low => 0,
+        Priority::Normal => 1,
+        Priority::High => 2,
+        Priority::Urgent => 3,
+    }
+}
+
+fn decode_priority(priority: u8) -> Result<Priority, Error> {
+    match priority {
+        0 => Ok(Priority::Low),
+        1 => Ok(Priority::Normal),
+        2 => Ok(Priority::High),
+        3 => Ok(Priority::Urgent),
+        _ => Err(Error::Protocol),
+    }
+}
+
 #[cfg(test)]
 use crate::service::{CENTER_BUS_NAME, CENTER_PATH};
 
@@ -53,6 +75,7 @@ use crate::service::{CENTER_BUS_NAME, CENTER_PATH};
 trait Center {
     fn state(&self) -> zbus::Result<(u32, bool)>;
     fn applications(&self) -> zbus::Result<Vec<(String, WireAppPolicy)>>;
+    fn snapshot(&self) -> zbus::Result<WireSnapshot>;
     fn mark_read(&self, app_id: &str) -> zbus::Result<(u32, bool)>;
     fn clear(&self, app_id: &str) -> zbus::Result<(u32, bool)>;
     fn set_policy(&self, app_id: &str, policy: WireAppPolicy) -> zbus::Result<(u32, bool)>;
@@ -70,6 +93,50 @@ pub struct ApplicationPolicy {
     pub policy: AppPolicy,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct HistoryRecord {
+    pub id: NotificationId,
+    pub app_id: String,
+    pub content: Content,
+    pub priority: Priority,
+    pub unread: bool,
+}
+
+impl std::fmt::Debug for HistoryRecord {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HistoryRecord")
+            .field("id", &self.id)
+            .field("app_id", &"<redacted>")
+            .field("content", &"<redacted>")
+            .field("priority", &self.priority)
+            .field("unread", &self.unread)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct Snapshot {
+    pub records: Vec<HistoryRecord>,
+    pub applications: Vec<ApplicationPolicy>,
+}
+
+impl std::fmt::Debug for Snapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Snapshot")
+            .field(
+                "records",
+                &format_args!("<{} redacted records>", self.records.len()),
+            )
+            .field(
+                "applications",
+                &format_args!("<{} redacted apps>", self.applications.len()),
+            )
+            .finish()
+    }
+}
+
 impl std::fmt::Debug for ApplicationPolicy {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -84,6 +151,48 @@ pub fn applications() -> Result<Vec<ApplicationPolicy>, Error> {
     let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode_applications(proxy.applications().map_err(call_error)?)
+}
+
+pub fn snapshot() -> Result<Snapshot, Error> {
+    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
+    let (history, applications) = proxy.snapshot().map_err(call_error)?;
+    decode_snapshot(history, applications)
+}
+
+fn decode_snapshot(
+    history: Vec<WireHistoryRecord>,
+    applications: Vec<(String, WireAppPolicy)>,
+) -> Result<Snapshot, Error> {
+    Ok(Snapshot {
+        records: decode_history(history)?,
+        applications: decode_applications(applications)?,
+    })
+}
+
+fn decode_history(history: Vec<WireHistoryRecord>) -> Result<Vec<HistoryRecord>, Error> {
+    if history.len() > MAX_WIRE_HISTORY {
+        return Err(Error::Protocol);
+    }
+    let mut seen = BTreeSet::new();
+    history
+        .into_iter()
+        .map(|(id, app_id, title, body, priority, unread)| {
+            let id = NotificationId::from_protocol(id).ok_or(Error::Protocol)?;
+            if !seen.insert(id) {
+                return Err(Error::Protocol);
+            }
+            let app_id = AppId::parse(app_id).map_err(|_| Error::Protocol)?;
+            let content = Content::new(title, body).map_err(|_| Error::Protocol)?;
+            Ok(HistoryRecord {
+                id,
+                app_id: app_id.as_str().to_owned(),
+                content,
+                priority: decode_priority(priority)?,
+                unread,
+            })
+        })
+        .collect()
 }
 
 fn decode_applications(
@@ -188,6 +297,65 @@ pub async fn watch_applications(
             _ = closed => return Ok(()),
         }
     }
+}
+
+pub async fn watch_snapshot(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error> {
+    loop {
+        match watch_snapshot_once(&sender).await {
+            Ok(()) if sender.is_closed() => return Ok(()),
+            Ok(()) => publish_snapshot_error(&sender, Error::Stopped).await?,
+            Err(error) => publish_snapshot_error(&sender, error).await?,
+        }
+        let timer = futures_util::FutureExt::fuse(async_io::Timer::after(
+            std::time::Duration::from_secs(1),
+        ));
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(timer, closed);
+        futures_util::select! {
+            _ = timer => {},
+            _ = closed => return Ok(()),
+        }
+    }
+}
+
+async fn watch_snapshot_once(sender: &Sender<Result<Snapshot, String>>) -> Result<(), Error> {
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|_| Error::Connect)?;
+    let proxy = CenterProxy::new(&connection)
+        .await
+        .map_err(|_| Error::Connect)?;
+    let center_changes = proxy
+        .receive_changed()
+        .await
+        .map_err(|_| Error::Subscribe)?;
+    publish_snapshot(&proxy, sender).await?;
+    futures_util::pin_mut!(center_changes);
+    loop {
+        if center_changes.next().await.is_none() {
+            return Ok(());
+        }
+        publish_snapshot(&proxy, sender).await?;
+    }
+}
+
+async fn publish_snapshot(
+    proxy: &CenterProxy<'_>,
+    sender: &Sender<Result<Snapshot, String>>,
+) -> Result<(), Error> {
+    let (history, applications) = proxy.snapshot().await.map_err(call_error)?;
+    let snapshot = decode_snapshot(history, applications)?;
+    sender.send(Ok(snapshot)).await.map_err(|_| Error::Publish)
+}
+
+async fn publish_snapshot_error(
+    sender: &Sender<Result<Snapshot, String>>,
+    error: Error,
+) -> Result<(), Error> {
+    sender
+        .send(Err(error.to_string()))
+        .await
+        .map_err(|_| Error::Publish)
 }
 
 async fn watch_applications_once(
@@ -372,6 +540,63 @@ mod tests {
         assert!(decode_applications(vec![
             ("org.example.TooMany".into(), policy);
             MAX_WIRE_APPLICATIONS + 1
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn history_decoder_revalidates_content_and_redacts_debug_output() {
+        let records = decode_history(vec![(
+            7,
+            "org.example.Private".into(),
+            "Private title".into(),
+            "Private body".into(),
+            encode_priority(Priority::Urgent),
+            true,
+        )])
+        .unwrap();
+        assert_eq!(records[0].id.get(), 7);
+        assert_eq!(records[0].priority, Priority::Urgent);
+        assert!(records[0].unread);
+        let debug = format!("{:?}", records[0]);
+        assert!(!debug.contains("Private"));
+        assert!(!debug.contains("org.example"));
+
+        assert!(decode_history(vec![(
+            0,
+            "org.example.Invalid".into(),
+            "Title".into(),
+            String::new(),
+            1,
+            false,
+        )])
+        .is_err());
+        assert!(decode_history(vec![(
+            1,
+            "org.example.Invalid".into(),
+            "Title".into(),
+            String::new(),
+            9,
+            false,
+        )])
+        .is_err());
+        assert!(decode_history(vec![
+            (
+                1,
+                "org.example.App".into(),
+                "One".into(),
+                String::new(),
+                1,
+                false
+            ),
+            (
+                1,
+                "org.example.App".into(),
+                "Two".into(),
+                String::new(),
+                1,
+                false
+            ),
         ])
         .is_err());
     }

@@ -1,0 +1,25 @@
+[package]
+name = "rmac-notification-center-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "rmac-notification-center-panel"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+blocking.workspace = true
+chrono.workspace = true
+futures-lite.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
+rmac-apps.workspace = true
+rmac-notifications.workspace = true
+rmac-notifications-linux.workspace = true
+rmac-notifications-store.workspace = true
+rmac-ui.workspace = true

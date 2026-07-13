@@ -240,10 +240,13 @@ removing dismissed, withdrawn, or action-closed records without a lookup race.
 Its private `org.rmac.NotificationCenter1` interface publishes only unread and
 urgent indicator state. The shell subscribes before reading, retains
 last-known-good state through reconnects, and never receives notification
-content through this status boundary. The same single-writer interface owns
-bounded app-policy projection plus clear, mark-read, and complete per-app
-policy mutations; callers receive refreshed state and explicit persistence
-failure rather than editing the history file directly.
+content through this status boundary. A separate bounded, authenticated history
+projection feeds only the on-demand Notification Center panel; its client
+revalidates wire content and keeps payloads out of diagnostics. The panel groups
+records, acknowledges read state, and routes clear and per-app policy changes
+back to the same single-writer interface rather than touching storage. That
+interface also owns app-policy projection, and callers receive refreshed state
+plus explicit persistence errors.
 
 Quick Settings consumes the same typed service snapshots through
 `rmac-quick-settings`. Its framework-neutral transaction model validates

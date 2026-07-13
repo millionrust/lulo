@@ -157,6 +157,19 @@ action with an activation token, close each, and record the matching signal and
 absence of duplicate banners. This is reference-PC evidence; do not substitute
 the macOS compile-time introspection test.
 
+With retained history present, open the installed Center surface directly:
+
+```sh
+~/.local/libexec/rmac/rmac-notification-center-panel
+```
+
+Verify newest-app-first grouping, exact localized identity/icon fallback,
+automatic unread acknowledgement without deletion, per-app and all-history
+clear, Turn Off, Notification Settings routing, Escape and outside dismissal,
+and last-known-good content during a controlled notification-service restart.
+Repeat at 100%, 125%, 150%, and 200% scale and with Orca. Capture placement and
+focus evidence under niri; a correct macOS-side window is not Linux proof.
+
 The D-phase component units are condition-gated until their binaries are
 installed, so they remain skipped rather than entering false crash loops. The
 supervisor must be active and its JSON health output must identify every unit.

@@ -133,6 +133,41 @@ impl HistoryAuthority {
             .collect()
     }
 
+    fn snapshot(&self) -> crate::center::WireSnapshot {
+        let center = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let history = center
+            .groups()
+            .into_iter()
+            .flat_map(|group| {
+                let app_id = group.app_id.as_str().to_owned();
+                group.records.into_iter().map(move |record| {
+                    (
+                        record.id.get(),
+                        app_id.clone(),
+                        record.content.title().to_owned(),
+                        record.content.body().to_owned(),
+                        crate::center::encode_priority(record.priority),
+                        record.unread,
+                    )
+                })
+            })
+            .collect();
+        let applications = center
+            .applications()
+            .into_iter()
+            .map(|(app_id, policy)| {
+                (
+                    app_id.as_str().to_owned(),
+                    crate::center::encode_policy(policy),
+                )
+            })
+            .collect();
+        (history, applications)
+    }
+
     fn mark_read(&self, app_id: Option<&AppId>) -> RecordOutcome {
         let changed = self
             .center
@@ -205,6 +240,15 @@ impl CenterInterface {
     ) -> fdo::Result<Vec<(String, crate::center::WireAppPolicy)>> {
         authenticated_sender(&header)?;
         Ok(self.history.applications())
+    }
+
+    async fn snapshot(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<crate::center::WireSnapshot> {
+        authenticated_sender(&header)?;
+        let history = self.history.clone();
+        Ok(blocking::unblock(move || history.snapshot()).await)
     }
 
     async fn mark_read(
@@ -1188,6 +1232,10 @@ mod tests {
         let applications = history.applications();
         assert_eq!(applications.len(), 1);
         assert_ne!(applications[0].0, "");
+        let (records, snapshot_applications) = history.snapshot();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, outcome.id.get());
+        assert_eq!(snapshot_applications, applications);
 
         let app_id = AppId::parse("org.example.App").unwrap();
         let read = history.mark_read(Some(&app_id));
@@ -1266,6 +1314,7 @@ mod tests {
         assert!(center_xml.contains("org.rmac.NotificationCenter1"));
         assert!(center_xml.contains("method name=\"State\""));
         assert!(center_xml.contains("method name=\"Applications\""));
+        assert!(center_xml.contains("method name=\"Snapshot\""));
         assert!(center_xml.contains("method name=\"MarkRead\""));
         assert!(center_xml.contains("method name=\"Clear\""));
         assert!(center_xml.contains("method name=\"SetPolicy\""));

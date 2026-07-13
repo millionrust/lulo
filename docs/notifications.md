@@ -110,8 +110,8 @@ buttons to export the same action with distinct targets. Named activation is
 retained for the freedesktop protocol.
 
 History is bounded in memory and exposes an unread/urgent projection for the
-top bar. E3 will add the crash-safe on-disk store and its retention settings;
-only records whose computed delivery permits history may enter that store.
+top bar. The E3 store and live Center surface consume only records whose
+computed delivery permits history.
 Clearing, expiration, withdrawal, and action closure are distinct typed events
 so adapters can emit truthful protocol results and UI can animate without
 inventing state.
@@ -210,16 +210,31 @@ reconnect with bounded delay, and retain last-known-good indicator state while
 the authority restarts. A D-Bus activation entry routes the internal name to
 the already supervised notification-center process.
 
-The private interface also provides authenticated `Applications`, `MarkRead`,
-`Clear`, and `SetPolicy` methods. Empty app scope means “all”; non-empty IDs are
-validated by the notification domain. Application projection is bounded and
-combines explicit policies with apps that currently have history, applying
-truthful defaults where no override exists. Policy wire values cover enabled,
-banners, sounds, badges, history, urgent Focus bypass, and lock-screen preview;
-unknown preview values fail closed. Mutations execute off the D-Bus dispatch
-thread, atomically save the refreshed Center, emit indicator/policy signals,
-and return refreshed state. If saving fails, live state and signals remain
-truthful while the caller receives an actionable persistence error.
+The private interface also provides authenticated `Snapshot`, `Applications`,
+`MarkRead`, `Clear`, and `SetPolicy` methods. `Snapshot` atomically supplies the
+on-demand Center with at most 500 already-validated records in
+newest-group-first order plus their per-app policies.
+The client revalidates every ID, app ID, title, body, and priority; diagnostics
+expose only counts and classifications. Empty mutation scope means “all”;
+non-empty IDs are validated by the notification domain. Application projection
+is bounded and combines explicit policies with apps that currently have
+history, applying truthful defaults where no override exists. Policy wire
+values cover enabled, banners, sounds, badges, history, urgent Focus bypass,
+and lock-screen preview; unknown preview values fail closed. Mutations execute
+off the D-Bus dispatch thread, atomically save the refreshed Center, emit
+indicator/policy signals, and return refreshed state. If saving fails, live
+state and signals remain truthful while the caller receives an actionable
+persistence error.
+
+`rmac-notification-center-panel` is the on-demand E3 presentation. It opens as
+a trailing translucent panel with date/time, localized application identity
+and icons from the live XDG catalog, grouped cards, unread and urgent state,
+Clear/Clear All, per-app Turn Off, authoritative empty/loading/error states,
+and a direct route to Notification Settings. Opening an unread snapshot marks
+it read through the service, while content remains visible until the user or
+policy clears it. The panel subscribes before its first read, keeps the last
+received snapshot across service loss, and exits when dismissed or focus moves
+away. It never reads or writes the private history file.
 
 ## Next adapters and surfaces
 
@@ -227,11 +242,13 @@ truthful while the caller receives an actionable persistence error.
    prove both interfaces on the Linux reference PC.
 2. E2 layer-surface renderer: render the runtime snapshot with real hover,
    keyboard, action, activation-token, and multi-output evidence on Linux.
-3. E3 Notification Center UI: render persisted groups and connect its existing
-   clear/read authority with keyboard, focus, and Linux evidence. System
-   Settings now exposes only already-observable allow/block, badge, and history
-   controls; banner, sound, Focus-bypass, and lock-preview rows remain hidden
-   until their presentation/security adapters are active. Its application rows
+3. E3 Notification Center evidence and completion: prove trailing placement,
+   outside/Escape dismissal, keyboard focus order, scaling, and Orca semantics
+   on Linux; add safe history-action disclosure after the invocation adapter is
+   available. System Settings exposes only already-observable allow/block,
+   badge, and history controls; banner, sound, Focus-bypass, and lock-preview
+   rows remain hidden until their presentation/security adapters are active.
+   Its application rows
    use the live XDG catalog for localized names and original theme icons when
    the authenticated application ID exactly matches a desktop-entry ID (with
    only the standard `.desktop` suffix alias). Unresolved IDs keep a generic

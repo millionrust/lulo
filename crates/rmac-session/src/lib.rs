@@ -9,12 +9,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rmac_storage::{atomic_write, Failure};
 use serde::{Deserialize, Serialize};
 
-pub const COMPONENT_UNITS: [&str; 8] = [
+pub const COMPONENT_UNITS: [&str; 9] = [
     "rmac-top-bar.service",
     "rmac-dock.service",
     "rmac-launcher.service",
     "rmac-quick-settings.service",
     "rmac-notification-center.service",
+    "rmac-notification-center-panel.service",
     "rmac-focus.service",
     "rmac-wallpaper.service",
     "rmac-shortcut-broker.service",
@@ -474,6 +475,7 @@ mod tests {
             include_str!("../units/rmac-launcher.service"),
             include_str!("../units/rmac-quick-settings.service"),
             include_str!("../units/rmac-notification-center.service"),
+            include_str!("../units/rmac-notification-center-panel.service"),
             include_str!("../units/rmac-focus.service"),
             include_str!("../units/rmac-wallpaper.service"),
             include_str!("../units/rmac-shortcut-broker.service"),
@@ -496,6 +498,7 @@ mod tests {
         assert!(focus.contains("BusName=org.rmac.Focus1"));
         let launcher = include_str!("../units/rmac-launcher.service");
         let quick_settings = include_str!("../units/rmac-quick-settings.service");
+        let notification_panel = include_str!("../units/rmac-notification-center-panel.service");
         let shortcut_broker = include_str!("../units/rmac-shortcut-broker.service");
         assert!(launcher.contains("Before=rmac-shortcut-broker.service"));
         assert!(launcher.contains("Type=notify"));
@@ -503,7 +506,13 @@ mod tests {
         assert!(quick_settings.contains("Before=rmac-shortcut-broker.service"));
         assert!(quick_settings.contains("Type=notify"));
         assert!(quick_settings.contains("NotifyAccess=all"));
+        assert!(notification_panel
+            .contains("After=rmac-session-supervisor.service rmac-notification-center.service"));
+        assert!(notification_panel.contains("Before=rmac-shortcut-broker.service"));
+        assert!(notification_panel.contains("Type=notify"));
+        assert!(notification_panel.contains("NotifyAccess=all"));
         assert!(shortcut_broker.contains("rmac-quick-settings.service"));
+        assert!(shortcut_broker.contains("rmac-notification-center-panel.service"));
 
         let lock = include_str!("../units/rmac-lock.service");
         assert!(lock.contains("Type=notify"));
@@ -533,6 +542,7 @@ mod tests {
         let safe_target = include_str!("../units/rmac-safe-mode.target");
         assert!(normal_target
             .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
+        assert!(normal_target.contains("rmac-notification-center-panel.service"));
         assert!(safe_target
             .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
 

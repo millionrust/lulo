@@ -23,10 +23,16 @@ store, daemon, banner stack, or lock-screen renderer.
    newly allocated notification after a service restart.
 7. Dismiss with Escape or an outside focus change. Keyboard focus must traverse
    every visible action in reading order.
+8. Repeating the Notification Center shortcut closes the current panel; a third
+   activation opens a fresh panel without restarting the supervised endpoint or
+   notification authority.
 
 ## Authorities and privacy
 
 - `org.rmac.NotificationCenter1` is the only history/read/policy/clear authority.
+- `rmac-notification-center-panel.service` owns only the action-scoped shortcut
+  endpoint and GPUI window lifecycle. It must report ready after binding and
+  must remain alive with no hidden window after dismissal.
 - The panel subscribes before its first snapshot, revalidates the bounded wire
   projection, and retains last-known-good content during a transient restart.
 - `rmac-apps` supplies exact desktop-entry identity and inherited icons. Only the
@@ -58,6 +64,8 @@ store, daemon, banner stack, or lock-screen renderer.
 ## Remaining release evidence
 
 - Wire the real top-bar indicator to launch or focus the panel once D1/D2 lands.
+- Prove service readiness, first-dispatch delivery, repeated-invocation toggle,
+  independent panel/authority restart behavior, and no idle content watchers.
 - Prove trailing placement, focus restoration, outside dismissal, hotplug,
   live action focus/activation, 100/125/150/200% scaling, keyboard order, and
   idle behavior on niri. GPUI 0.2.2 supplies no initiating Wayland seat/serial,

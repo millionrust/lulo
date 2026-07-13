@@ -240,17 +240,23 @@ its diagnostics redact every label. GPUI 0.2.2 cannot recover the initiating
 Wayland seat/serial, so the current panel passes no invented token and leaves
 strict focus behavior to the Linux evidence gate.
 
-`rmac-notification-center-panel` is the on-demand E3 presentation. It opens as
-a trailing translucent panel with date/time, localized application identity
-and icons from the live XDG catalog, grouped cards, unread and urgent state,
+`rmac-notification-center-panel` is the supervised on-demand E3 presentation.
+Its idle process owns only the action-scoped `notification-center` shortcut
+socket and reports systemd readiness after that socket is bound. A validated
+activation creates at most one trailing translucent panel with date/time,
+localized application identity and icons from the live XDG catalog, grouped
+cards, unread and urgent state,
 Clear/Clear All, per-app Turn Off, authoritative empty/loading/error states,
 and a direct route to Notification Settings. Opening an unread snapshot marks
 it read through the service, while content remains visible until the user or
 policy clears it. Live records also show the service-projected default/button
 actions with one bounded busy state and explicit delivery failure; stale
-retained records show none. The panel subscribes before its first read, keeps
-the last received snapshot across service loss, and exits when dismissed or
-focus moves away. It never reads or writes the private history file.
+retained records show none. The panel subscribes before its first read and keeps
+the last received snapshot across service loss. Escape, focus loss, and a
+repeated activation remove only the current window and its bounded watchers;
+the idle shortcut endpoint remains alive. The distinct notification daemon
+remains the only history/action authority. The panel never reads or writes the
+private history file.
 
 ## Next adapters and surfaces
 

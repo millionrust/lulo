@@ -9,14 +9,18 @@ installer.
 ## Startup and environment
 
 Run `scripts/linux/install-session-units.sh` once from the repository. It
-builds the release supervisor, launcher, on-demand Quick Settings service, and
-launcher-routed System Settings,
+builds the release supervisor, launcher, on-demand Quick Settings and
+Notification Center panel services, and launcher-routed System Settings,
 installs them under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
 directory, and installs `~/.local/bin/rmac-session-start`.
-The launcher and Quick Settings services bind their separate action-scoped
-runtime sockets before the shortcut broker starts, so the first consented
-activation has an owner and one surface crash cannot consume another action.
+The launcher, Quick Settings, and Notification Center panel services bind their
+separate action-scoped runtime sockets before the shortcut broker starts, so
+the first consented activation has an owner and one surface crash cannot
+consume another action. The panel service is distinct from the D-Bus
+notification authority: closing its window leaves its shortcut endpoint alive,
+while restarting it cannot take down notification admission or retained
+history.
 The installer also
 builds the notification and Focus services, installs the notification
 portal descriptor and desktop-specific backend selection, and installs D-Bus
@@ -42,8 +46,9 @@ need to be imported before these services start.
 
 ## Crash and restart policy
 
-Top bar, Dock, launcher, Quick Settings, notification center, Focus authority,
-wallpaper, and the global shortcut broker each have their own service. They use
+Top bar, Dock, launcher, Quick Settings, the notification authority,
+Notification Center panel, Focus authority, wallpaper, and the global shortcut
+broker each have their own service. They use
 `Restart=on-failure`, a
 one-second restart delay, and at most four starts in a 60-second interval. They
 are `PartOf` the normal rmac target; one component is not `RequiredBy` another.

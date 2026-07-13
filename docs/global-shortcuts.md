@@ -50,12 +50,14 @@ fixed `rmac-lock.service` directly and waits for the lock readiness transaction,
 so shell availability cannot turn a security action into a dropped event. No
 shortcut is converted into a shell command.
 
-The supervised launcher and Quick Settings processes now bind their own
-endpoints, signal systemd readiness only after the socket exists, and order the
-broker after both ready units. Each keeps at most one on-demand GPUI surface and
-treats a repeated activation as dismissal. Notification Center and the
-application drawer still require their final supervised endpoint wiring; their
-compiled shortcut IDs do not by themselves prove a live consumer.
+The supervised launcher, Quick Settings, and Notification Center panel
+processes bind their own endpoints, signal systemd readiness only after the
+socket exists, and order the broker after all three ready units. Each keeps at
+most one on-demand GPUI surface and treats a repeated activation as dismissal.
+The notification daemon remains a separate D-Bus authority and cannot consume
+the panel shortcut. The application drawer still requires its final supervised
+endpoint wiring; its compiled shortcut ID does not by itself prove a live
+consumer.
 
 ## Explicit niri fallback
 

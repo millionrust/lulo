@@ -1,0 +1,18 @@
+[Unit]
+Description=rmac Notification Center panel
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service rmac-notification-center.service
+Before=rmac-shortcut-broker.service
+OnFailure=rmac-component-failure@%N.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionPathIsExecutable=%h/.local/libexec/rmac/rmac-notification-center-panel
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=%h/.local/libexec/rmac/rmac-notification-center-panel
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

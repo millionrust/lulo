@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 use std::process::Command;
 
-use gpui::{Context, SharedString, Window};
+use gpui::{BorrowAppContext as _, Context, SharedString, Window};
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, Snapshot};
 
 use crate::model::{
     application_identities, fallback_app_name, ApplicationIdentity, Busy, RecordGroup,
 };
+use crate::NotificationCenterService;
 
 pub(crate) struct NotificationCenterView {
+    token: u64,
     pub(crate) snapshot: Option<Snapshot>,
     pub(crate) applications: BTreeMap<String, ApplicationIdentity>,
     pub(crate) stream_error: Option<SharedString>,
@@ -20,13 +22,26 @@ pub(crate) struct NotificationCenterView {
 }
 
 impl NotificationCenterView {
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.was_active = true;
             } else if this.was_active {
-                window.remove_window();
-                cx.quit();
+                this.dismiss(window, cx);
+            }
+        })
+        .detach();
+        cx.on_release(move |_, cx| {
+            if cx.has_global::<NotificationCenterService>() {
+                cx.update_global::<NotificationCenterService, _>(|service, _| {
+                    if service
+                        .active
+                        .as_ref()
+                        .is_some_and(|active| active.token == token)
+                    {
+                        service.active = None;
+                    }
+                });
             }
         })
         .detach();
@@ -60,6 +75,7 @@ impl NotificationCenterView {
         .detach();
 
         Self {
+            token,
             snapshot: None,
             applications: BTreeMap::new(),
             stream_error: None,
@@ -227,8 +243,19 @@ impl NotificationCenterView {
     }
 
     pub(crate) fn dismiss(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if cx.has_global::<NotificationCenterService>() {
+            let token = self.token;
+            cx.update_global::<NotificationCenterService, _>(|service, _| {
+                if service
+                    .active
+                    .as_ref()
+                    .is_some_and(|active| active.token == token)
+                {
+                    service.active = None;
+                }
+            });
+        }
         window.remove_window();
-        cx.quit();
     }
 
     pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {

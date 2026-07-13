@@ -60,9 +60,10 @@ acceptance, while the event stream remains the authority for visible state.
 
 `rmac-session` defines typed health snapshots and the persistent safe-mode
 marker for systemd user-supervised shell processes. Top bar, Dock, launcher,
-notification center, and wallpaper are independent service units with bounded
-restart rates. A small supervisor publishes runtime health, records restart
-budget exhaustion, and moves the session to a supervisor-only diagnostic target
+the notification authority, Notification Center panel, and wallpaper are
+independent service units with bounded restart rates. A small supervisor
+publishes runtime health, records restart budget exhaustion, and moves the
+session to a supervisor-only diagnostic target
 until the user explicitly clears safe mode. Session startup imports only a
 fixed allowlist of Wayland/D-Bus routing variables before starting the target;
 the complete login environment is never copied into the user manager.
@@ -252,6 +253,13 @@ carries only a validated visible label and original button position, never the
 private action ID or target. Persisted-only records expose no actions, their IDs
 are reserved across service restart, and invocation returns through the
 existing `ServiceHandle` transport transaction.
+The independently supervised panel process owns the action-scoped
+`notification-center` shortcut endpoint, reports readiness only after its Unix
+socket is bound, and creates at most one GPUI window. Dismissal drops the window
+and its bounded content watchers without terminating the endpoint; repeated
+activation toggles that same surface. The panel unit is deliberately separate
+from the D-Bus notification authority so presentation failure cannot interrupt
+admission, actions, or retained history.
 
 Quick Settings consumes the same typed service snapshots through
 `rmac-quick-settings`. Its framework-neutral transaction model validates

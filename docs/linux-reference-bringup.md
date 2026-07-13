@@ -157,12 +157,17 @@ action with an activation token, close each, and record the matching signal and
 absence of duplicate banners. This is reference-PC evidence; do not substitute
 the macOS compile-time introspection test.
 
-With retained history present, open the installed Center surface directly:
+With retained history present, confirm the independently supervised Center
+surface has bound its shortcut endpoint, then open it through the same typed
+dispatcher used by the portal and niri backends:
 
 ```sh
-~/.local/libexec/rmac/rmac-notification-center-panel
+systemctl --user --no-pager status rmac-notification-center-panel.service
+~/.local/libexec/rmac/rmac-shortcut-dispatch notification-center
 ```
 
+Verify a second invocation closes the same panel and a third reopens it without
+restarting either the panel service or `rmac-notification-center.service`.
 Verify newest-app-first grouping, exact localized identity/icon fallback,
 automatic unread acknowledgement without deletion, per-app and all-history
 clear, Turn Off, Notification Settings routing, default and nonzero-position
@@ -175,6 +180,9 @@ history and only its own actions appear. Repeat at 100%, 125%, 150%, and 200%
 scale and with Orca. Capture placement and focus evidence under niri; a correct
 macOS-side window is not Linux proof. Record strict-focus behavior explicitly:
 the current GPUI surface does not fabricate a Wayland activation token.
+Restart the panel service and prove the first post-readiness dispatch is
+accepted; separately restart the notification authority while the panel is
+open and prove last-known-good presentation and reconnect behavior.
 
 Confirm the supervised Quick Settings endpoint is ready, then open it through
 the same typed dispatcher used by the portal and niri shortcut backends:

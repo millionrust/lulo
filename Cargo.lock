@@ -5223,6 +5223,7 @@ dependencies = [
  "blocking",
  "chrono",
  "futures-lite 2.6.1",
+ "futures-util",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
@@ -5230,6 +5231,7 @@ dependencies = [
  "rmac-notifications",
  "rmac-notifications-linux",
  "rmac-notifications-store",
+ "rmac-shortcuts",
  "rmac-ui",
 ]
 

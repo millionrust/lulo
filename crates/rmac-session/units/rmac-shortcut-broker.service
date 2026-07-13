@@ -2,7 +2,7 @@
 Description=rmac global shortcut broker
 PartOf=rmac-session.target
 Wants=xdg-desktop-portal.service
-After=rmac-session-supervisor.service xdg-desktop-portal.service rmac-launcher.service rmac-quick-settings.service
+After=rmac-session-supervisor.service xdg-desktop-portal.service rmac-launcher.service rmac-quick-settings.service rmac-notification-center-panel.service
 OnFailure=rmac-component-failure@%N.service
 StartLimitIntervalSec=60s
 StartLimitBurst=4

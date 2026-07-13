@@ -90,7 +90,7 @@ impl Render for DragPreview {
             .rounded(px(6.0))
             .bg(rmac_ui::mac::accent())
             .text_color(rmac_ui::mac::on_accent())
-            .text_size(px(12.0))
+            .text_size(rmac_ui::text_px(12.0))
             .child(if n == 1 {
                 "1 item".to_string()
             } else {
@@ -1344,7 +1344,7 @@ impl FinderView {
             .child(
                 div()
                     .pl_1()
-                    .text_size(px(15.0))
+                    .text_size(rmac_ui::text_px(15.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(label())
                     .child(self.title()),
@@ -1419,7 +1419,7 @@ impl FinderView {
             .child(
                 div()
                     .flex_1()
-                    .text_size(px(13.0))
+                    .text_size(rmac_ui::text_px(13.0))
                     .text_color(label())
                     .truncate()
                     .child(p.name.clone()),
@@ -1486,7 +1486,7 @@ impl FinderView {
                     .px_2()
                     .pt(px(if si == 0 { 2.0 } else { 12.0 }))
                     .pb_1()
-                    .text_size(px(11.0))
+                    .text_size(rmac_ui::text_px(11.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(secondary())
                     .child(section.title.clone()),
@@ -1570,7 +1570,7 @@ impl FinderView {
             .px_2()
             .border_b_1()
             .border_color(sep())
-            .text_size(px(12.0))
+            .text_size(rmac_ui::text_px(12.0))
             .text_color(secondary())
             .child(head(None, "Name", SortKey::Name, true))
             .child(head(Some(DATE_W), "Date Modified", SortKey::Date, false))
@@ -1628,7 +1628,7 @@ impl FinderView {
                     .items_center()
                     .h(px(24.0))
                     .px_2()
-                    .text_size(px(13.0))
+                    .text_size(rmac_ui::text_px(13.0))
                     .when(selected, |el: Stateful<Div>| el.bg(sel()))
                     .when(!selected && ix % 2 == 1, |el: Stateful<Div>| {
                         el.bg(alt_row())
@@ -1759,7 +1759,7 @@ impl FinderView {
                                 .py_0p5()
                                 .rounded(px(4.0))
                                 .when(selected, |el: Div| el.bg(sel()))
-                                .text_size(px(12.0))
+                                .text_size(rmac_ui::text_px(12.0))
                                 .text_center()
                                 .truncate()
                                 .text_color(if selected { white() } else { label() })
@@ -1920,7 +1920,7 @@ impl FinderView {
                     .child(
                         div()
                             .id(SharedString::from(format!("tabname-{i}")))
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(label())
                             .child(name)
                             .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
@@ -1928,13 +1928,13 @@ impl FinderView {
                     .child(
                         div()
                             .id(SharedString::from(format!("tabclose-{i}")))
-                            .w(px(14.0))
-                            .h(px(14.0))
+                            .w(px(18.0))
+                            .h(px(18.0))
                             .flex()
                             .items_center()
                             .justify_center()
                             .rounded(px(3.0))
-                            .text_size(px(12.0))
+                            .text_size(rmac_ui::text_px(12.0))
                             .text_color(secondary())
                             .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
                             .child("×")
@@ -1945,13 +1945,13 @@ impl FinderView {
         bar.child(div().flex_1()).child(
             div()
                 .id("newtab")
-                .w(px(22.0))
-                .h(px(22.0))
+                .w(px(26.0))
+                .h(px(26.0))
                 .flex()
                 .items_center()
                 .justify_center()
                 .rounded(px(5.0))
-                .text_size(px(16.0))
+                .text_size(rmac_ui::text_px(16.0))
                 .text_color(secondary())
                 .hover(|h| h.bg(rmac_ui::mac::hover()))
                 .child("+")
@@ -2014,7 +2014,7 @@ impl FinderView {
                         .child(
                             div()
                                 .flex_1()
-                                .text_size(px(13.0))
+                                .text_size(rmac_ui::text_px(13.0))
                                 .truncate()
                                 .text_color(if is_sel { white() } else { label() })
                                 .child(e.name.clone()),
@@ -2065,7 +2065,7 @@ impl FinderView {
             .bg(toolbar_bg())
             .border_t_1()
             .border_color(sep())
-            .text_size(px(11.0))
+            .text_size(rmac_ui::text_px(11.0))
             .text_color(secondary())
             .child(count)
             .when(!free.is_empty(), |el| {
@@ -2097,7 +2097,7 @@ impl FinderView {
             .bg(toolbar_bg())
             .border_t_1()
             .border_color(sep())
-            .text_size(px(11.0))
+            .text_size(rmac_ui::text_px(11.0))
             .text_color(secondary());
         for (i, (name, path)) in comps.into_iter().enumerate() {
             bar = bar.child(
@@ -2344,7 +2344,7 @@ impl FinderView {
                     .child(icon(glyph, 56.0, glyph_color))
                     .child(
                         div()
-                            .text_size(px(15.0))
+                            .text_size(rmac_ui::text_px(15.0))
                             .font_weight(rmac_ui::mac::SEMIBOLD)
                             .text_color(label())
                             .text_center()
@@ -2360,7 +2360,7 @@ impl FinderView {
                     .gap_2()
                     .px_4()
                     .py_1()
-                    .text_size(px(12.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .child(
                         div()
                             .w(px(96.0))
@@ -2420,7 +2420,7 @@ impl Render for FinderView {
                         .bg(rmac_ui::mac::error_background())
                         .border_b_1()
                         .border_color(rmac_ui::mac::error_border())
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(rmac_ui::mac::danger())
                         .cursor_pointer()
                         .child(
@@ -2460,7 +2460,7 @@ impl Render for FinderView {
                         .bg(rmac_ui::mac::accent_subtle())
                         .border_b_1()
                         .border_color(rmac_ui::mac::accent_border())
-                        .text_size(px(12.0))
+                        .text_size(rmac_ui::text_px(12.0))
                         .text_color(label())
                         .child(div().flex_1().child(format!(
                             "{} — {} of {} items",

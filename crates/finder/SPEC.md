@@ -46,3 +46,8 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
 ## Toolbar controls
 - Left: back/forward chevrons. Title (left, 13 pt semibold) after nav.
 - Right: view segmented control (grid/list[active]/columns/gallery), share, tag, more, Search field.
+
+## Accessibility text size
+- Finder-owned labels and chrome follow rmac's bounded 100%, 115%, and 130% text preference.
+- Standard row and toolbar metrics stay faithful to the values above; their existing vertical room fits 130% glyphs.
+- Tab-close and new-tab hit boxes are enlarged to avoid clipping their scaled symbols.

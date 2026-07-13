@@ -12,12 +12,14 @@ use zeroize::Zeroize as _;
 mod network_editor;
 #[cfg(any(not(target_os = "macos"), test))]
 mod secret_agent;
+mod vpn_delete;
 mod vpn_import;
 
 pub use network_editor::{
     IpAddress, IpConfiguration, IpFamily, IpMethod, NetworkConfiguration, NetworkConnectionId,
     NetworkEdit, NetworkValidationError, ProxyConfiguration, ProxyMethod,
 };
+pub use vpn_delete::{VpnDeletePreview, VpnDeletePreviewId};
 pub use vpn_import::{
     VpnImportCapabilities, VpnImportCapability, VpnImportCapabilityId, VpnImportPreview,
     VpnImportPreviewId,
@@ -513,6 +515,14 @@ pub fn preview_vpn_import(
 
 pub fn finish_vpn_import(preview: &VpnImportPreviewId, keep: bool) -> Result<VpnSnapshot, Error> {
     vpn_import::finish(preview, keep)
+}
+
+pub fn prepare_vpn_delete(id: &VpnProfileId) -> Result<VpnDeletePreview, Error> {
+    vpn_delete::prepare(id)
+}
+
+pub fn delete_vpn_profile(preview: &VpnDeletePreviewId) -> Result<VpnSnapshot, Error> {
+    vpn_delete::delete(preview)
 }
 
 pub fn set_vpn_enabled(

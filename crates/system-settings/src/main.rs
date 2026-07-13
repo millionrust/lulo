@@ -779,6 +779,9 @@ struct Settings {
     vpn_import_loading: bool,
     vpn_import_busy: bool,
     vpn_import_preview: Option<rmac_network::VpnImportPreview>,
+    vpn_delete_preparing: Option<rmac_network::VpnProfileId>,
+    vpn_delete_busy: bool,
+    vpn_delete_preview: Option<rmac_network::VpnDeletePreview>,
 
     // Wi-Fi
     wifi_available: bool,
@@ -1479,7 +1482,10 @@ impl Settings {
                                     && !this.vpn_loading
                                     && !this.vpn_refreshing
                                     && !this.vpn_import_busy
-                                    && this.vpn_import_preview.is_none())
+                                    && this.vpn_import_preview.is_none()
+                                    && this.vpn_delete_preparing.is_none()
+                                    && !this.vpn_delete_busy
+                                    && this.vpn_delete_preview.is_none())
                                     .then_some(this.vpn_generation),
                             )
                         }) {
@@ -1537,7 +1543,10 @@ impl Settings {
                                         this.vpn_busy.is_some()
                                             || this.vpn_refreshing
                                             || this.vpn_import_busy
-                                            || this.vpn_import_preview.is_some(),
+                                            || this.vpn_import_preview.is_some()
+                                            || this.vpn_delete_preparing.is_some()
+                                            || this.vpn_delete_busy
+                                            || this.vpn_delete_preview.is_some(),
                                         this.vpn_loading,
                                     ) {
                                         this.finish_vpn_stream_update(result);
@@ -2031,6 +2040,9 @@ impl Settings {
             vpn_import_loading: true,
             vpn_import_busy: false,
             vpn_import_preview: None,
+            vpn_delete_preparing: None,
+            vpn_delete_busy: false,
+            vpn_delete_preview: None,
 
             wifi_available: false,
             wifi_loading: true,
@@ -4083,6 +4095,9 @@ impl Settings {
             || self.vpn_busy.is_some()
             || self.vpn_import_busy
             || self.vpn_import_preview.is_some()
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy
+            || self.vpn_delete_preview.is_some()
         {
             return;
         }
@@ -4113,6 +4128,9 @@ impl Settings {
             || self.vpn_busy.is_some()
             || self.vpn_import_busy
             || self.vpn_import_preview.is_some()
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy
+            || self.vpn_delete_preview.is_some()
         {
             return;
         }
@@ -4184,6 +4202,9 @@ impl Settings {
             || self.vpn_busy.is_some()
             || self.vpn_import_busy
             || self.vpn_import_preview.is_some()
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy
+            || self.vpn_delete_preview.is_some()
         {
             return;
         }
@@ -4225,7 +4246,12 @@ impl Settings {
     }
 
     fn finish_vpn_import(&mut self, keep: bool, cx: &mut Context<Self>) {
-        if self.vpn_import_busy || self.vpn_busy.is_some() {
+        if self.vpn_import_busy
+            || self.vpn_busy.is_some()
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy
+            || self.vpn_delete_preview.is_some()
+        {
             return;
         }
         let Some(preview) = self
@@ -4261,6 +4287,104 @@ impl Settings {
                             )
                             .into(),
                         );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn request_vpn_delete(&mut self, id: rmac_network::VpnProfileId, cx: &mut Context<Self>) {
+        if self.vpn_loading
+            || self.vpn_refreshing
+            || self.vpn_busy.is_some()
+            || self.vpn_import_busy
+            || self.vpn_import_preview.is_some()
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy
+            || self.vpn_delete_preview.is_some()
+        {
+            return;
+        }
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_delete_preparing = Some(id.clone());
+        self.vpn_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_network::prepare_vpn_delete(&id) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_delete_preparing = None;
+                match result {
+                    Ok(preview) => {
+                        this.vpn_delete_preview = Some(preview);
+                        this.vpn_error = None;
+                    }
+                    Err(error) => {
+                        this.vpn_error =
+                            Some(format!("Could not prepare VPN deletion: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn cancel_vpn_delete(&mut self, cx: &mut Context<Self>) {
+        if self.vpn_delete_busy || self.vpn_delete_preparing.is_some() {
+            return;
+        }
+        if self.vpn_delete_preview.take().is_some() {
+            self.refresh_vpn(cx);
+        }
+    }
+
+    fn confirm_vpn_delete(&mut self, cx: &mut Context<Self>) {
+        if self.vpn_delete_busy || self.vpn_delete_preparing.is_some() {
+            return;
+        }
+        let Some(preview) = self
+            .vpn_delete_preview
+            .as_ref()
+            .map(|preview| preview.id.clone())
+        else {
+            return;
+        };
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_delete_busy = true;
+        self.vpn_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result = rmac_network::delete_vpn_profile(&preview);
+                    let recovery = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_network::vpn_snapshot().ok());
+                    (result, recovery)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_delete_busy = false;
+                this.vpn_delete_preview = None;
+                if let Some(snapshot) = recovery {
+                    this.vpn = snapshot;
+                }
+                match result {
+                    Ok(snapshot) => {
+                        this.vpn = snapshot;
+                        this.vpn_error = None;
+                        this.vpn_stream_error = None;
+                    }
+                    Err(error) => {
+                        this.vpn_error =
+                            Some(format!("Could not delete VPN profile: {error}").into());
                     }
                 }
                 cx.notify();
@@ -12351,7 +12475,9 @@ impl Settings {
             count => format!("{count} VPNs Connected"),
         };
         let refresh_view = view.clone();
-        let refresh_label = if self.vpn_import_busy {
+        let refresh_label = if self.vpn_delete_busy || self.vpn_delete_preparing.is_some() {
+            "Deleting…"
+        } else if self.vpn_import_busy {
             "Importing…"
         } else if self.vpn_busy.is_some() {
             "Updating…"
@@ -12425,8 +12551,11 @@ impl Settings {
                     let id = profile.id.clone();
                     let switch_id = id.clone();
                     let profile_view = view.clone();
+                    let delete_id = id.clone();
+                    let delete_view = view.clone();
                     let applying = self.vpn_busy.as_ref() == Some(&id);
                     let connecting = applying && self.vpn_cancellation.is_some();
+                    let preparing_delete = self.vpn_delete_preparing.as_ref() == Some(&id);
                     let subtitle = if connecting {
                         format!("{} · Connecting…", profile.service)
                     } else if applying {
@@ -12450,7 +12579,10 @@ impl Settings {
                             self.vpn_busy.is_some()
                                 || self.vpn_refreshing
                                 || self.vpn_import_busy
-                                || self.vpn_import_preview.is_some(),
+                                || self.vpn_import_preview.is_some()
+                                || self.vpn_delete_preparing.is_some()
+                                || self.vpn_delete_busy
+                                || self.vpn_delete_preview.is_some(),
                         )
                         .on_click(move |enabled, _, cx| {
                             let id = switch_id.clone();
@@ -12460,6 +12592,38 @@ impl Settings {
                         })
                         .into_any_element()
                     };
+                    let controls = div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .when(cfg!(target_os = "linux"), |controls| {
+                            controls.child(
+                                Button::new(
+                                    ("vpn-delete", index),
+                                    if preparing_delete {
+                                        "Preparing…"
+                                    } else {
+                                        "Delete…"
+                                    },
+                                )
+                                .disabled(
+                                    self.vpn_busy.is_some()
+                                        || self.vpn_refreshing
+                                        || self.vpn_import_busy
+                                        || self.vpn_import_preview.is_some()
+                                        || self.vpn_delete_preparing.is_some()
+                                        || self.vpn_delete_busy
+                                        || self.vpn_delete_preview.is_some(),
+                                )
+                                .on_click(move |_, _, cx| {
+                                    let id = delete_id.clone();
+                                    delete_view.update(cx, |settings, cx| {
+                                        settings.request_vpn_delete(id, cx)
+                                    });
+                                }),
+                            )
+                        })
+                        .child(control);
                     row_base()
                         .child(tile(
                             "icons/key.svg",
@@ -12474,7 +12638,7 @@ impl Settings {
                             profile.name.clone().into(),
                             Some(subtitle.into()),
                         ))
-                        .child(control)
+                        .child(controls)
                         .into_any_element()
                 })
                 .collect();
@@ -12514,7 +12678,10 @@ impl Settings {
                                 .disabled(
                                     self.vpn_import_busy
                                         || self.vpn_busy.is_some()
-                                        || self.vpn_import_preview.is_some(),
+                                        || self.vpn_import_preview.is_some()
+                                        || self.vpn_delete_preparing.is_some()
+                                        || self.vpn_delete_busy
+                                        || self.vpn_delete_preview.is_some(),
                                 )
                                 .on_click(move |_, _, cx| {
                                     let capability = capability_id.clone();
@@ -12616,6 +12783,89 @@ impl Settings {
                         "enter" if !this.vpn_import_busy => {
                             cx.stop_propagation();
                             this.finish_vpn_import(true, cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn render_vpn_delete_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let preview = self.vpn_delete_preview.as_ref()?;
+        let busy = self.vpn_delete_busy;
+        let consequence = if preview.will_disconnect {
+            "The active connection will disconnect first. The saved profile and its NetworkManager-managed secrets will then be removed. This cannot be undone."
+        } else {
+            "The saved profile and its NetworkManager-managed secrets will be removed. This cannot be undone."
+        };
+        let content = div()
+            .w(px(420.0))
+            .v_flex()
+            .gap_4()
+            .p_5()
+            .rounded(px(14.0))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(format!("Delete “{}”?", preview.name)),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child(preview.service.clone()),
+                    ),
+            )
+            .child(note_card(consequence))
+            .when(busy, |dialog| {
+                dialog.child(Progress::indeterminate().label("Deleting VPN profile…"))
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "vpn-delete-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .disabled(busy)
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_vpn_delete(cx))),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "vpn-delete-confirm",
+                            "Delete",
+                            rmac_ui::DialogButtonKind::Destructive,
+                        )
+                        .disabled(busy)
+                        .on_click(cx.listener(|this, _, _, cx| this.confirm_vpn_delete(cx))),
+                    ),
+            );
+        Some(
+            rmac_ui::dialog("vpn-delete-dialog", content)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" if !this.vpn_delete_busy => {
+                            cx.stop_propagation();
+                            this.cancel_vpn_delete(cx);
+                        }
+                        "enter" if !this.vpn_delete_busy => {
+                            cx.stop_propagation();
+                            this.confirm_vpn_delete(cx);
                         }
                         _ => {}
                     }
@@ -13145,6 +13395,7 @@ impl Render for Settings {
         let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
         let bluetooth_forget_dialog = self.render_bluetooth_forget_dialog(cx);
         let vpn_import_dialog = self.render_vpn_import_dialog(cx);
+        let vpn_delete_dialog = self.render_vpn_delete_dialog(cx);
         div()
             .size_full()
             .v_flex()
@@ -13169,6 +13420,12 @@ impl Render for Settings {
                     cx.stop_propagation();
                     this.finish_vpn_import(false, cx);
                 } else if event.keystroke.key == "escape"
+                    && this.vpn_delete_preview.is_some()
+                    && !this.vpn_delete_busy
+                {
+                    cx.stop_propagation();
+                    this.cancel_vpn_delete(cx);
+                } else if event.keystroke.key == "escape"
                     && this.network_editor.is_some()
                     && !this.network_busy
                 {
@@ -13189,6 +13446,13 @@ impl Render for Settings {
                     return;
                 }
                 if this.vpn_import_busy {
+                    return;
+                }
+                if this.vpn_delete_preparing.is_some() || this.vpn_delete_busy {
+                    return;
+                }
+                if this.vpn_delete_preview.take().is_some() {
+                    window.remove_window();
                     return;
                 }
                 if this.wifi_forgetting.is_some()
@@ -13266,6 +13530,7 @@ impl Render for Settings {
             .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_forget_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_import_dialog, |root, dialog| root.child(dialog))
+            .when_some(vpn_delete_dialog, |root, dialog| root.child(dialog))
     }
 }
 

@@ -4,8 +4,8 @@ System Settings treats NetworkManager as the sole Linux authority for VPN
 profiles, imported configuration, secrets, and connection state. It lists and
 connects profiles with bounded completion and live refresh, and can stage a
 reviewed installed plugin's configuration for confirmation before anything is
-written to disk. General plugin-specific editing and deletion of existing
-profiles remain open F4 work.
+written to disk. Existing profiles can be deleted through a separate exact,
+confirmed transaction. General plugin-specific editing remains open F4 work.
 
 ## Scope and private identity
 
@@ -75,6 +75,32 @@ profile is left untouched rather than destructively guessed. A process crash
 can leave an unsaved profile in NetworkManager memory, but `--temporary`
 guarantees that it is not present after NetworkManager restarts.
 
+## Existing-profile deletion
+
+Delete is offered only on Linux and starts with an off-thread preparation read;
+it never operates on the row's display name. NetworkManager's global
+`Settings.VersionId` must remain stable around the full `GetSettings` read, and
+the exact Settings path, UUID, complete visible map, persistent `Unsaved=false`
+state, display name, service, and current activation consequence become the
+private confirmation identity. Temporary profiles owned by another editor are
+rejected.
+
+Confirmation warns explicitly when the selected profile must disconnect and
+that its NetworkManager-managed secrets will be removed. Immediately before any
+mutation, rmac requires another stable full-map read equal to the preview. If an
+exact ActiveConnection exists, it is revalidated by profile path, UUID, and VPN
+type, deactivated, and given ten seconds to disappear. The profile is then
+enumerated again: a replacement activation aborts deletion, and the stable full
+settings map must still equal the preview.
+
+Only then does rmac call `Settings.Connection.Delete` on the exact object and
+wait until both `ListConnections` and a fresh VPN snapshot prove that identity
+absent. NetworkManager provides no conditional/versioned Delete call, so the
+last stable read and exact object identity form the narrowest available race
+boundary; names are never accepted as authority. Failure after disconnection
+leaves the profile installed and triggers an independent recovery snapshot.
+Failure after Delete never claims success without authoritative absence.
+
 ## Activation and deactivation
 
 Connecting calls NetworkManager's `ActivateConnection` with the exact saved
@@ -122,10 +148,9 @@ F4 remains open. The next slices must:
 - define supported typed editors without lossy rewriting of plugin-owned data,
   and delegate any new secrets to NetworkManager's appropriate secret flags or
   agent rather than rmac preferences;
-- confirm deletion of existing profiles, revalidate exact identity, disconnect
-  an active target safely, and recover after partial failure;
 - prove capability discovery, each supported import format, secret handling,
-  authentication, connect, cancel, failure, save/cancel preview, deletion,
+  authentication, connect, cancel, failure, save/cancel preview, active/inactive
+  deletion and concurrent-edit preservation,
   daemon/plugin restart, suspend/resume, keyboard, scaling, and accessibility
   behavior on the Ubuntu/niri reference PC.
 

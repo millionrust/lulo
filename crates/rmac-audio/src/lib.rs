@@ -9,13 +9,94 @@ pub enum DeviceKind {
     Input,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Availability {
+    Available,
+    Unavailable,
+    Unknown,
+}
+
+impl Availability {
+    pub fn can_select(self) -> bool {
+        self != Self::Unavailable
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct Route {
+    pub index: i32,
+    pub name: String,
+    pub availability: Availability,
+    pub is_active: bool,
+    authority_name: String,
+}
+
+impl fmt::Debug for Route {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Route")
+            .field("index", &self.index)
+            .field("name", &self.name)
+            .field("availability", &self.availability)
+            .field("is_active", &self.is_active)
+            .field("has_authority_name", &(!self.authority_name.is_empty()))
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct Profile {
+    pub index: i32,
+    pub name: String,
+    pub availability: Availability,
+    pub is_active: bool,
+    authority_name: String,
+}
+
+impl fmt::Debug for Profile {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Profile")
+            .field("index", &self.index)
+            .field("name", &self.name)
+            .field("availability", &self.availability)
+            .field("is_active", &self.is_active)
+            .field("has_authority_name", &(!self.authority_name.is_empty()))
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct HardwareDevice {
+    /// Opaque identifier for this device in the currently sampled audio graph.
+    pub id: String,
+    pub name: String,
+    pub profiles: Vec<Profile>,
+    authority_name: String,
+}
+
+impl fmt::Debug for HardwareDevice {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HardwareDevice")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("profiles", &self.profiles)
+            .field("has_authority_name", &(!self.authority_name.is_empty()))
+            .finish()
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Device {
     /// Opaque identifier for this node in the currently sampled audio graph.
     pub id: String,
     pub name: String,
     pub is_default: bool,
+    pub routes: Vec<Route>,
     authority_name: String,
+    authority_device_id: Option<String>,
+    authority_route_device: Option<i32>,
 }
 
 impl fmt::Debug for Device {
@@ -25,7 +106,12 @@ impl fmt::Debug for Device {
             .field("id", &self.id)
             .field("name", &self.name)
             .field("is_default", &self.is_default)
+            .field("routes", &self.routes)
             .field("has_authority_name", &(!self.authority_name.is_empty()))
+            .field(
+                "has_route_authority",
+                &(self.authority_device_id.is_some() && self.authority_route_device.is_some()),
+            )
             .finish()
     }
 }
@@ -41,10 +127,13 @@ pub struct Snapshot {
     pub available: bool,
     pub can_set_default: bool,
     pub can_mute_input: bool,
+    pub configuration_available: bool,
+    pub configuration_error: Option<String>,
     pub output: Level,
     pub input: Level,
     pub outputs: Vec<Device>,
     pub inputs: Vec<Device>,
+    pub hardware_devices: Vec<HardwareDevice>,
 }
 
 #[derive(Debug)]
@@ -84,6 +173,14 @@ pub fn set_muted(kind: DeviceKind, muted: bool) -> Result<(), Error> {
 
 pub fn set_default_device(kind: DeviceKind, device: &Device) -> Result<Snapshot, Error> {
     system_set_default_device(kind, device)
+}
+
+pub fn set_profile(device: &HardwareDevice, profile: &Profile) -> Result<Snapshot, Error> {
+    system_set_profile(device, profile)
+}
+
+pub fn set_route(kind: DeviceKind, device: &Device, route: &Route) -> Result<Snapshot, Error> {
+    system_set_route(kind, device, route)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,55 +335,123 @@ async fn publish_unavailable(
     Ok(())
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum RouteDirection {
+    Output,
+    Input,
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+type ActiveRoutes = std::collections::HashMap<(RouteDirection, i32), i32>;
+
+#[cfg(any(not(target_os = "macos"), test))]
+#[derive(Clone, Debug)]
+struct GraphNode {
+    authority_name: String,
+    description: String,
+    kind: DeviceKind,
+    device_id: Option<String>,
+    route_device: Option<i32>,
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+#[derive(Clone, Debug)]
+struct GraphRoute {
+    route: Route,
+    direction: RouteDirection,
+    device_indexes: Vec<i32>,
+    profile_indexes: Vec<i32>,
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+#[derive(Clone, Debug)]
+struct GraphHardwareDevice {
+    device: HardwareDevice,
+    active_profile: i32,
+    routes: Vec<GraphRoute>,
+    active_routes: ActiveRoutes,
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+#[derive(Clone, Debug, Default)]
+struct GraphMetadata {
+    nodes: std::collections::HashMap<String, GraphNode>,
+    hardware: Vec<GraphHardwareDevice>,
+    capabilities_rejected: bool,
+}
+
 #[cfg(not(target_os = "macos"))]
 fn system_snapshot() -> Result<Snapshot, Error> {
     let mut outputs = machine_devices(DeviceKind::Output)?;
     let mut inputs = machine_devices(DeviceKind::Input)?;
-    let descriptions = command(
-        "pw-dump",
-        &["--no-colors"],
-        "read PipeWire device descriptions",
-    )
-    .ok()
-    .map(|dump| parse_pw_dump_descriptions(&dump))
-    .unwrap_or_default();
-    apply_device_descriptions(&mut outputs, &descriptions);
-    apply_device_descriptions(&mut inputs, &descriptions);
-    let output_id = default_device_id(&outputs).ok_or_else(|| {
-        Error::new(
-            "read output volume",
-            "WirePlumber did not advertise a default output device",
-        )
-    })?;
-    let input_id = default_device_id(&inputs).ok_or_else(|| {
-        Error::new(
-            "read input volume",
-            "WirePlumber did not advertise a default input device",
-        )
-    })?;
-    let output = parse_wpctl_level(&command(
-        "wpctl",
-        &["get-volume", output_id],
-        "read output volume",
-    )?)
-    .ok_or_else(|| Error::new("read output volume", "unexpected wpctl response"))?;
-    let input = parse_wpctl_level(&command(
-        "wpctl",
-        &["get-volume", input_id],
-        "read input volume",
-    )?)
-    .ok_or_else(|| Error::new("read input volume", "unexpected wpctl response"))?;
+    let graph = command("pw-dump", &["--no-colors"], "read PipeWire capabilities")
+        .and_then(|dump| parse_pw_dump_metadata(&dump));
+    let (graph, mut configuration_error) = match graph {
+        Ok(graph) => (Some(graph), None),
+        Err(_) => (
+            None,
+            Some("Audio ports and device profiles could not be read from PipeWire.".into()),
+        ),
+    };
+    if graph
+        .as_ref()
+        .is_some_and(|graph| graph.capabilities_rejected)
+    {
+        configuration_error = Some(
+            "Some audio port or device profile data was rejected because PipeWire returned an ambiguous response."
+                .into(),
+        );
+    }
+    if let Some(graph) = &graph {
+        apply_graph_metadata(&mut outputs, graph, DeviceKind::Output);
+        apply_graph_metadata(&mut inputs, graph, DeviceKind::Input);
+    }
+    let output = read_default_level(&outputs, DeviceKind::Output)?;
+    let input = read_default_level(&inputs, DeviceKind::Input)?;
     sort_devices(&mut outputs);
     sort_devices(&mut inputs);
+    let configuration_available = graph.is_some();
+    let mut hardware_devices = graph
+        .map(|graph| {
+            graph
+                .hardware
+                .into_iter()
+                .map(|hardware| hardware.device)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    hardware_devices.sort_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.id.cmp(&right.id))
+    });
     Ok(Snapshot {
         available: true,
         can_set_default: true,
-        can_mute_input: true,
+        can_mute_input: default_device_id(&inputs).is_some(),
+        configuration_available,
+        configuration_error,
         output,
         input,
         outputs,
         inputs,
+        hardware_devices,
     })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_default_level(devices: &[Device], kind: DeviceKind) -> Result<Level, Error> {
+    let Some(id) = default_device_id(devices) else {
+        return Ok(Level::default());
+    };
+    let operation = match kind {
+        DeviceKind::Output => "read output volume",
+        DeviceKind::Input => "read input volume",
+    };
+    parse_wpctl_level(&command("wpctl", &["get-volume", id], operation)?)
+        .ok_or_else(|| Error::new(operation, "unexpected wpctl response"))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -412,6 +577,255 @@ fn system_set_default_device(kind: DeviceKind, expected: &Device) -> Result<Snap
 }
 
 #[cfg(not(target_os = "macos"))]
+fn system_set_profile(
+    expected_device: &HardwareDevice,
+    expected_profile: &Profile,
+) -> Result<Snapshot, Error> {
+    if expected_device
+        .id
+        .parse::<u32>()
+        .ok()
+        .filter(|id| *id > 0)
+        .is_none()
+        || expected_profile.index < 0
+    {
+        return Err(Error::new(
+            "change audio profile",
+            "invalid PipeWire device or profile identity",
+        ));
+    }
+    let graph = read_graph_metadata("read audio profiles")?;
+    let current_device = exact_hardware_device(&graph, expected_device, "change audio profile")?;
+    let current_profile = current_device
+        .device
+        .profiles
+        .iter()
+        .find(|profile| {
+            profile.index == expected_profile.index
+                && profile.authority_name == expected_profile.authority_name
+        })
+        .ok_or_else(|| {
+            Error::new(
+                "change audio profile",
+                "the selected profile is no longer advertised",
+            )
+        })?;
+    if !current_profile.availability.can_select() {
+        return Err(Error::new(
+            "change audio profile",
+            "the selected profile is currently unavailable",
+        ));
+    }
+    if current_profile.is_active {
+        return system_snapshot();
+    }
+    let index = expected_profile.index.to_string();
+    command(
+        "wpctl",
+        &["set-profile", &expected_device.id, &index],
+        "change audio profile",
+    )?;
+
+    let deadline = std::time::Instant::now() + MUTATION_VERIFY_TIMEOUT;
+    loop {
+        let graph = match read_graph_metadata("verify the audio profile") {
+            Ok(graph) => graph,
+            Err(error) if std::time::Instant::now() >= deadline => return Err(error),
+            Err(_) => {
+                std::thread::sleep(MUTATION_VERIFY_INTERVAL);
+                continue;
+            }
+        };
+        match graph
+            .hardware
+            .iter()
+            .find(|device| device.device.id == expected_device.id)
+        {
+            Some(device) if device.device.authority_name != expected_device.authority_name => {
+                return Err(Error::new(
+                    "verify the audio profile",
+                    "the PipeWire device identity changed after the request",
+                ));
+            }
+            Some(device)
+                if device.device.profiles.iter().any(|profile| {
+                    profile.index == expected_profile.index
+                        && profile.authority_name == expected_profile.authority_name
+                        && profile.is_active
+                }) =>
+            {
+                let snapshot = system_snapshot()?;
+                if snapshot.hardware_devices.iter().any(|device| {
+                    device.id == expected_device.id
+                        && device.authority_name == expected_device.authority_name
+                        && device.profiles.iter().any(|profile| {
+                            profile.index == expected_profile.index
+                                && profile.authority_name == expected_profile.authority_name
+                                && profile.is_active
+                        })
+                }) {
+                    return Ok(snapshot);
+                }
+            }
+            _ => {}
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Error::new(
+                "verify the audio profile",
+                "PipeWire did not confirm the requested profile within three seconds",
+            ));
+        }
+        std::thread::sleep(MUTATION_VERIFY_INTERVAL);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_set_route(
+    kind: DeviceKind,
+    expected_device: &Device,
+    expected_route: &Route,
+) -> Result<Snapshot, Error> {
+    if expected_device
+        .id
+        .parse::<u32>()
+        .ok()
+        .filter(|id| *id > 0)
+        .is_none()
+        || expected_route.index < 0
+    {
+        return Err(Error::new(
+            "change audio route",
+            "invalid PipeWire node or route identity",
+        ));
+    }
+    let current = exact_routed_device(kind, expected_device, "change audio route")?;
+    let route = exact_route(&current, expected_route, "change audio route")?;
+    if !route.availability.can_select() {
+        return Err(Error::new(
+            "change audio route",
+            "the selected route is currently unavailable",
+        ));
+    }
+    if route.is_active {
+        return system_snapshot();
+    }
+    let index = expected_route.index.to_string();
+    command(
+        "wpctl",
+        &["set-route", &expected_device.id, &index],
+        "change audio route",
+    )?;
+
+    let deadline = std::time::Instant::now() + MUTATION_VERIFY_TIMEOUT;
+    loop {
+        match exact_routed_device(kind, expected_device, "verify the audio route") {
+            Ok(device) => match exact_route(&device, expected_route, "verify the audio route") {
+                Ok(route) if route.is_active => {
+                    let snapshot = system_snapshot()?;
+                    let devices = match kind {
+                        DeviceKind::Output => &snapshot.outputs,
+                        DeviceKind::Input => &snapshot.inputs,
+                    };
+                    if devices.iter().any(|device| {
+                        device.id == expected_device.id
+                            && device.authority_name == expected_device.authority_name
+                            && device.authority_device_id == expected_device.authority_device_id
+                            && device.authority_route_device
+                                == expected_device.authority_route_device
+                            && device.routes.iter().any(|route| {
+                                route.index == expected_route.index
+                                    && route.authority_name == expected_route.authority_name
+                                    && route.is_active
+                            })
+                    }) {
+                        return Ok(snapshot);
+                    }
+                }
+                Ok(_) | Err(_) => {}
+            },
+            Err(error) => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(error);
+                }
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Error::new(
+                "verify the audio route",
+                "PipeWire did not confirm the requested route within three seconds",
+            ));
+        }
+        std::thread::sleep(MUTATION_VERIFY_INTERVAL);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_graph_metadata(operation: &'static str) -> Result<GraphMetadata, Error> {
+    let dump = command("pw-dump", &["--no-colors"], operation)?;
+    parse_pw_dump_metadata(&dump).map_err(|error| Error::new(operation, error.detail))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exact_hardware_device<'a>(
+    graph: &'a GraphMetadata,
+    expected: &HardwareDevice,
+    operation: &'static str,
+) -> Result<&'a GraphHardwareDevice, Error> {
+    let current = graph
+        .hardware
+        .iter()
+        .find(|device| device.device.id == expected.id)
+        .ok_or_else(|| Error::new(operation, "the selected PipeWire device disappeared"))?;
+    if current.device.authority_name != expected.authority_name {
+        return Err(Error::new(
+            operation,
+            "the selected PipeWire device identity changed; refresh Sound before trying again",
+        ));
+    }
+    Ok(current)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exact_routed_device(
+    kind: DeviceKind,
+    expected: &Device,
+    operation: &'static str,
+) -> Result<Device, Error> {
+    let mut devices = machine_devices(kind)?;
+    let graph = read_graph_metadata(operation)?;
+    apply_graph_metadata(&mut devices, &graph, kind);
+    let current = devices
+        .into_iter()
+        .find(|device| device.id == expected.id)
+        .ok_or_else(|| Error::new(operation, "the selected audio node disappeared"))?;
+    if current.authority_name != expected.authority_name
+        || current.authority_device_id != expected.authority_device_id
+        || current.authority_route_device != expected.authority_route_device
+    {
+        return Err(Error::new(
+            operation,
+            "the selected audio route identity changed; refresh Sound before trying again",
+        ));
+    }
+    Ok(current)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exact_route<'a>(
+    device: &'a Device,
+    expected: &Route,
+    operation: &'static str,
+) -> Result<&'a Route, Error> {
+    device
+        .routes
+        .iter()
+        .find(|route| {
+            route.index == expected.index && route.authority_name == expected.authority_name
+        })
+        .ok_or_else(|| Error::new(operation, "the selected route is no longer advertised"))
+}
+
+#[cfg(not(target_os = "macos"))]
 fn wpctl_default_target(kind: DeviceKind) -> &'static str {
     match kind {
         DeviceKind::Output => "@DEFAULT_AUDIO_SINK@",
@@ -440,10 +854,13 @@ fn system_snapshot() -> Result<Snapshot, Error> {
         available: true,
         can_set_default: false,
         can_mute_input: false,
+        configuration_available: false,
+        configuration_error: None,
         output,
         input,
         outputs,
         inputs,
+        hardware_devices: Vec::new(),
     })
 }
 
@@ -475,6 +892,22 @@ fn system_set_default_device(_: DeviceKind, _: &Device) -> Result<Snapshot, Erro
     Err(Error::new(
         "change default audio device",
         "macOS does not expose device selection through the scripting adapter",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn system_set_profile(_: &HardwareDevice, _: &Profile) -> Result<Snapshot, Error> {
+    Err(Error::new(
+        "change audio profile",
+        "macOS does not expose profiles through the scripting adapter",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn system_set_route(_: DeviceKind, _: &Device, _: &Route) -> Result<Snapshot, Error> {
+    Err(Error::new(
+        "change audio route",
+        "macOS does not expose routes through the scripting adapter",
     ))
 }
 
@@ -566,6 +999,10 @@ const MAX_AUDIO_DEVICES: usize = 256;
 const MAX_AUTHORITY_NAME_BYTES: usize = 512;
 #[cfg(any(not(target_os = "macos"), test))]
 const MAX_DEVICE_LABEL_CHARS: usize = 256;
+#[cfg(any(not(target_os = "macos"), test))]
+const MAX_GRAPH_OBJECTS: usize = 4096;
+#[cfg(any(not(target_os = "macos"), test))]
+const MAX_DEVICE_CAPABILITIES: usize = 128;
 
 #[cfg(any(not(target_os = "macos"), test))]
 fn parse_wpctl_list(output: &str, kind: DeviceKind) -> Result<Vec<Device>, Error> {
@@ -640,43 +1077,122 @@ fn parse_wpctl_list(output: &str, kind: DeviceKind) -> Result<Vec<Device>, Error
             id: id.to_owned(),
             name: bounded_label(authority_name),
             is_default,
+            routes: Vec::new(),
             authority_name: authority_name.to_owned(),
+            authority_device_id: None,
+            authority_route_device: None,
         });
     }
     Ok(devices)
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
-fn parse_pw_dump_descriptions(output: &str) -> std::collections::HashMap<String, String> {
+fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Error> {
     use serde_json::Value;
 
-    let Ok(Value::Array(objects)) = serde_json::from_str::<Value>(output) else {
-        return std::collections::HashMap::new();
+    let Value::Array(objects) = serde_json::from_str::<Value>(output).map_err(|_| {
+        Error::new(
+            "read PipeWire capabilities",
+            "pw-dump returned invalid JSON",
+        )
+    })?
+    else {
+        return Err(Error::new(
+            "read PipeWire capabilities",
+            "pw-dump did not return a JSON array",
+        ));
     };
-    objects
-        .into_iter()
-        .filter_map(|object| {
-            let id = object.get("id")?.as_u64()?;
-            if id == 0 || id > u64::from(u32::MAX) {
-                return None;
+    if objects.len() > MAX_GRAPH_OBJECTS {
+        return Err(Error::new(
+            "read PipeWire capabilities",
+            "the PipeWire graph exceeded 4096 objects",
+        ));
+    }
+
+    let mut graph = GraphMetadata::default();
+    let mut ambiguous_nodes = std::collections::HashSet::new();
+    for object in &objects {
+        let Some(id) = json_u32(object.get("id")) else {
+            continue;
+        };
+        let Some(props) = object.get("info").and_then(|info| info.get("props")) else {
+            continue;
+        };
+        match object.get("type").and_then(Value::as_str) {
+            Some("PipeWire:Interface:Node") => {
+                let kind = match props.get("media.class").and_then(Value::as_str) {
+                    Some("Audio/Sink") => DeviceKind::Output,
+                    Some("Audio/Source") => DeviceKind::Input,
+                    _ => continue,
+                };
+                let Some(authority_name) = props
+                    .get("node.name")
+                    .and_then(Value::as_str)
+                    .and_then(bounded_authority_name)
+                else {
+                    continue;
+                };
+                let description = ["node.description", "node.nick", "node.name"]
+                    .into_iter()
+                    .find_map(|key| props.get(key).and_then(Value::as_str))
+                    .map(bounded_label)
+                    .filter(|label| !label.is_empty())
+                    .unwrap_or_else(|| bounded_label(&authority_name));
+                let node = GraphNode {
+                    authority_name,
+                    description,
+                    kind,
+                    device_id: json_u32(props.get("device.id")).map(|id| id.to_string()),
+                    route_device: json_i32(props.get("card.profile.device")),
+                };
+                let id = id.to_string();
+                if graph.nodes.insert(id.clone(), node).is_some() {
+                    ambiguous_nodes.insert(id);
+                }
             }
-            let object_type = object.get("type")?.as_str()?;
-            if object_type != "PipeWire:Interface:Node" {
-                return None;
+            Some("PipeWire:Interface:Device")
+                if props.get("media.class").and_then(Value::as_str) == Some("Audio/Device") =>
+            {
+                if graph.hardware.len() == MAX_AUDIO_DEVICES {
+                    graph.capabilities_rejected = true;
+                    continue;
+                }
+                let has_profiles = object
+                    .get("info")
+                    .and_then(|info| info.get("params"))
+                    .and_then(|params| params.get("EnumProfile"))
+                    .is_some();
+                if has_profiles {
+                    if let Some(device) = parse_graph_hardware_device(id, props, object) {
+                        graph.hardware.push(device);
+                    } else {
+                        graph.capabilities_rejected = true;
+                    }
+                }
             }
-            let props = object.get("info")?.get("props")?;
-            let media_class = props.get("media.class")?.as_str()?;
-            if media_class != "Audio/Sink" && media_class != "Audio/Source" {
-                return None;
-            }
-            let description = ["node.description", "node.nick", "node.name"]
-                .into_iter()
-                .find_map(|key| props.get(key).and_then(Value::as_str))?;
-            let description = bounded_label(description);
-            (!description.is_empty()).then(|| (id.to_string(), description))
-        })
-        .take(MAX_AUDIO_DEVICES * 2)
-        .collect()
+            _ => {}
+        }
+    }
+    for id in ambiguous_nodes {
+        graph.nodes.remove(&id);
+    }
+    let mut id_counts = std::collections::HashMap::new();
+    let mut name_counts = std::collections::HashMap::new();
+    for hardware in &graph.hardware {
+        *id_counts
+            .entry(hardware.device.id.clone())
+            .or_insert(0_usize) += 1;
+        *name_counts
+            .entry(hardware.device.authority_name.clone())
+            .or_insert(0_usize) += 1;
+    }
+    let before = graph.hardware.len();
+    graph.hardware.retain(|hardware| {
+        id_counts.get(&hardware.device.id) == Some(&1)
+            && name_counts.get(&hardware.device.authority_name) == Some(&1)
+    });
+    graph.capabilities_rejected |= graph.hardware.len() != before;
+    Ok(graph)
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -689,15 +1205,279 @@ fn bounded_label(value: &str) -> String {
         .collect()
 }
 
-#[cfg(not(target_os = "macos"))]
-fn apply_device_descriptions(
-    devices: &mut [Device],
-    descriptions: &std::collections::HashMap<String, String>,
-) {
-    for device in devices {
-        if let Some(description) = descriptions.get(&device.id) {
-            device.name.clone_from(description);
+#[cfg(any(not(target_os = "macos"), test))]
+fn bounded_authority_name(value: &str) -> Option<String> {
+    (!value.is_empty()
+        && value.len() <= MAX_AUTHORITY_NAME_BYTES
+        && !value.chars().any(char::is_control))
+    .then(|| value.to_owned())
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn json_u32(value: Option<&serde_json::Value>) -> Option<u32> {
+    let value = value?;
+    let parsed = value
+        .as_u64()
+        .or_else(|| value.as_str()?.parse::<u64>().ok())?;
+    (parsed > 0 && parsed <= u64::from(u32::MAX)).then_some(parsed as u32)
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn json_i32(value: Option<&serde_json::Value>) -> Option<i32> {
+    let value = value?;
+    let parsed = value
+        .as_i64()
+        .or_else(|| value.as_str()?.parse::<i64>().ok())?;
+    (0..=i64::from(i32::MAX))
+        .contains(&parsed)
+        .then_some(parsed as i32)
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn parse_availability(value: Option<&serde_json::Value>) -> Option<Availability> {
+    match value.and_then(serde_json::Value::as_str) {
+        Some("yes") => Some(Availability::Available),
+        Some("no") => Some(Availability::Unavailable),
+        Some("unknown") | None => Some(Availability::Unknown),
+        _ => None,
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn parse_i32_array(value: Option<&serde_json::Value>) -> Option<Vec<i32>> {
+    let values = value?.as_array()?;
+    if values.len() > MAX_DEVICE_CAPABILITIES {
+        return None;
+    }
+    values.iter().map(|value| json_i32(Some(value))).collect()
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn parse_graph_hardware_device(
+    id: u32,
+    props: &serde_json::Value,
+    object: &serde_json::Value,
+) -> Option<GraphHardwareDevice> {
+    let authority_name = props
+        .get("device.name")
+        .and_then(serde_json::Value::as_str)
+        .and_then(bounded_authority_name)?;
+    let name = ["device.description", "device.nick", "device.name"]
+        .into_iter()
+        .find_map(|key| props.get(key).and_then(serde_json::Value::as_str))
+        .map(bounded_label)
+        .filter(|label| !label.is_empty())?;
+    let params = object.get("info")?.get("params")?;
+    let (mut profiles, active_profile) = parse_profiles(params)?;
+    let (routes, active_routes) = parse_routes(params, active_profile)?;
+    profiles.sort_by(|left, right| {
+        right
+            .is_active
+            .cmp(&left.is_active)
+            .then_with(|| {
+                right
+                    .availability
+                    .can_select()
+                    .cmp(&left.availability.can_select())
+            })
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            .then_with(|| left.index.cmp(&right.index))
+    });
+    Some(GraphHardwareDevice {
+        device: HardwareDevice {
+            id: id.to_string(),
+            name,
+            profiles,
+            authority_name,
+        },
+        active_profile,
+        routes,
+        active_routes,
+    })
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn parse_profiles(params: &serde_json::Value) -> Option<(Vec<Profile>, i32)> {
+    let enumerated = params.get("EnumProfile")?.as_array()?;
+    let active = params.get("Profile")?.as_array()?;
+    if enumerated.is_empty() || enumerated.len() > MAX_DEVICE_CAPABILITIES || active.len() != 1 {
+        return None;
+    }
+    let active_index = json_i32(active[0].get("index"))?;
+    let active_name = active[0]
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .and_then(bounded_authority_name)?;
+    let mut seen_indexes = std::collections::HashSet::new();
+    let mut seen_names = std::collections::HashSet::new();
+    let mut profiles = Vec::with_capacity(enumerated.len());
+    for value in enumerated {
+        let index = json_i32(value.get("index"))?;
+        let authority_name = value
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .and_then(bounded_authority_name)?;
+        if !seen_indexes.insert(index) || !seen_names.insert(authority_name.clone()) {
+            return None;
         }
+        let name = value
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .map(bounded_label)
+            .filter(|label| !label.is_empty())
+            .unwrap_or_else(|| bounded_label(&authority_name));
+        profiles.push(Profile {
+            index,
+            name,
+            availability: parse_availability(value.get("available"))?,
+            is_active: index == active_index && authority_name == active_name,
+            authority_name,
+        });
+    }
+    profiles
+        .iter()
+        .any(|profile| profile.is_active)
+        .then_some((profiles, active_index))
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn parse_routes(
+    params: &serde_json::Value,
+    active_profile: i32,
+) -> Option<(Vec<GraphRoute>, ActiveRoutes)> {
+    let Some(enumerated) = params.get("EnumRoute") else {
+        return Some((Vec::new(), std::collections::HashMap::new()));
+    };
+    let enumerated = enumerated.as_array()?;
+    if enumerated.len() > MAX_DEVICE_CAPABILITIES {
+        return None;
+    }
+    let mut routes = Vec::with_capacity(enumerated.len());
+    let mut identities = std::collections::HashSet::new();
+    for value in enumerated {
+        let index = json_i32(value.get("index"))?;
+        let direction = parse_route_direction(value.get("direction"))?;
+        let authority_name = value
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .and_then(bounded_authority_name)?;
+        if !identities.insert((direction, index)) {
+            return None;
+        }
+        let name = value
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .map(bounded_label)
+            .filter(|label| !label.is_empty())
+            .unwrap_or_else(|| bounded_label(&authority_name));
+        routes.push(GraphRoute {
+            route: Route {
+                index,
+                name,
+                availability: parse_availability(value.get("available"))?,
+                is_active: false,
+                authority_name,
+            },
+            direction,
+            device_indexes: parse_i32_array(value.get("devices"))?,
+            profile_indexes: parse_i32_array(value.get("profiles"))?,
+        });
+    }
+
+    let mut active_routes = std::collections::HashMap::new();
+    let active = match params.get("Route") {
+        Some(value) => value.as_array()?.clone(),
+        None => Vec::new(),
+    };
+    if active.len() > MAX_DEVICE_CAPABILITIES {
+        return None;
+    }
+    for value in active {
+        let index = json_i32(value.get("index"))?;
+        let direction = parse_route_direction(value.get("direction"))?;
+        let device = json_i32(value.get("device"))?;
+        if json_i32(value.get("profile"))? != active_profile {
+            return None;
+        }
+        if active_routes.insert((direction, device), index).is_some()
+            || !routes.iter().any(|route| {
+                route.direction == direction
+                    && route.route.index == index
+                    && route.device_indexes.contains(&device)
+            })
+        {
+            return None;
+        }
+    }
+    Some((routes, active_routes))
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn parse_route_direction(value: Option<&serde_json::Value>) -> Option<RouteDirection> {
+    match value.and_then(serde_json::Value::as_str) {
+        Some("Output") => Some(RouteDirection::Output),
+        Some("Input") => Some(RouteDirection::Input),
+        _ => None,
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn apply_graph_metadata(devices: &mut [Device], graph: &GraphMetadata, kind: DeviceKind) {
+    for device in devices {
+        let Some(node) = graph
+            .nodes
+            .get(&device.id)
+            .filter(|node| node.kind == kind && node.authority_name == device.authority_name)
+        else {
+            continue;
+        };
+        device.name.clone_from(&node.description);
+        let (Some(device_id), Some(route_device)) = (&node.device_id, node.route_device) else {
+            continue;
+        };
+        let Some(hardware) = graph
+            .hardware
+            .iter()
+            .find(|hardware| hardware.device.id == *device_id)
+        else {
+            continue;
+        };
+        let direction = match kind {
+            DeviceKind::Output => RouteDirection::Output,
+            DeviceKind::Input => RouteDirection::Input,
+        };
+        device.routes = hardware
+            .routes
+            .iter()
+            .filter(|route| {
+                route.direction == direction
+                    && route.device_indexes.contains(&route_device)
+                    && route.profile_indexes.contains(&hardware.active_profile)
+            })
+            .map(|route| {
+                let mut route = route.route.clone();
+                route.is_active = hardware
+                    .active_routes
+                    .get(&(direction, route_device))
+                    .is_some_and(|active| *active == route.index);
+                route
+            })
+            .collect();
+        device.routes.sort_by(|left, right| {
+            right
+                .is_active
+                .cmp(&left.is_active)
+                .then_with(|| {
+                    right
+                        .availability
+                        .can_select()
+                        .cmp(&left.availability.can_select())
+                })
+                .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+                .then_with(|| left.index.cmp(&right.index))
+        });
+        device.authority_device_id = Some(device_id.clone());
+        device.authority_route_device = Some(route_device);
     }
 }
 
@@ -731,7 +1511,10 @@ fn parse_macos_audio_devices(output: &str) -> (Vec<Device>, Vec<Device>) {
                     id: name.clone(),
                     name: name.clone(),
                     is_default: default_output,
+                    routes: Vec::new(),
                     authority_name: name.clone(),
+                    authority_device_id: None,
+                    authority_route_device: None,
                 });
             }
             if has_input {
@@ -739,7 +1522,10 @@ fn parse_macos_audio_devices(output: &str) -> (Vec<Device>, Vec<Device>) {
                     id: name.clone(),
                     name: name.clone(),
                     is_default: default_input,
+                    routes: Vec::new(),
                     authority_name: name,
+                    authority_device_id: None,
+                    authority_route_device: None,
                 });
             }
         }
@@ -882,7 +1668,10 @@ mod tests {
             id: "52".into(),
             name: "Built-in Audio".into(),
             is_default: true,
+            routes: Vec::new(),
             authority_name: "alsa_output.private-hardware-identity".into(),
+            authority_device_id: Some("41".into()),
+            authority_route_device: Some(0),
         };
         let output = format!("{device:?}");
         assert!(output.contains("Built-in Audio"));
@@ -891,22 +1680,92 @@ mod tests {
     }
 
     #[test]
-    fn pipewire_json_adds_only_bounded_friendly_node_descriptions() {
-        let descriptions = parse_pw_dump_descriptions(
+    fn pipewire_json_correlates_exact_profiles_routes_and_node_identity() {
+        let graph = parse_pw_dump_metadata(
             r#"[
                 {"id":52,"type":"PipeWire:Interface:Node","info":{"props":{
                     "media.class":"Audio/Sink","node.name":"alsa_output.analog",
-                    "node.description":"Built-in Audio Analog Stereo"}}},
+                    "node.description":"Built-in Audio Analog Stereo",
+                    "device.id":41,"card.profile.device":4}}},
                 {"id":53,"type":"PipeWire:Interface:Node","info":{"props":{
-                    "media.class":"Stream/Output/Audio","node.description":"Private Stream"}}}
+                    "media.class":"Stream/Output/Audio","node.description":"Private Stream"}}},
+                {"id":41,"type":"PipeWire:Interface:Device","info":{"props":{
+                    "media.class":"Audio/Device","device.name":"alsa_card.private",
+                    "device.description":"Built-in Audio"},"params":{
+                    "EnumProfile":[
+                        {"index":0,"name":"off","description":"Off","available":"yes"},
+                        {"index":1,"name":"duplex","description":"Analog Stereo Duplex","available":"yes"},
+                        {"index":2,"name":"unplugged","description":"Unplugged","available":"no"}
+                    ],
+                    "Profile":[{"index":1,"name":"duplex"}],
+                    "EnumRoute":[
+                        {"index":0,"direction":"Output","name":"speaker","description":"Speakers","available":"yes","profiles":[1],"devices":[4]},
+                        {"index":1,"direction":"Output","name":"headphones","description":"Headphones","available":"unknown","profiles":[1],"devices":[4]}
+                    ],
+                    "Route":[{"index":0,"direction":"Output","device":4,"profile":1}]
+                }}}
             ]"#,
-        );
-        assert_eq!(
-            descriptions.get("52").map(String::as_str),
-            Some("Built-in Audio Analog Stereo")
-        );
-        assert!(!descriptions.contains_key("53"));
-        assert!(parse_pw_dump_descriptions("not json").is_empty());
+        )
+        .unwrap();
+        assert_eq!(graph.hardware.len(), 1);
+        assert_eq!(graph.hardware[0].device.name, "Built-in Audio");
+        assert_eq!(graph.hardware[0].device.profiles.len(), 3);
+        assert!(graph.hardware[0].device.profiles[0].is_active);
+
+        let mut outputs =
+            parse_wpctl_list("52\talsa_output.analog\taudio/sink\t*", DeviceKind::Output).unwrap();
+        apply_graph_metadata(&mut outputs, &graph, DeviceKind::Output);
+        assert_eq!(outputs[0].name, "Built-in Audio Analog Stereo");
+        assert_eq!(outputs[0].routes.len(), 2);
+        assert!(outputs[0].routes[0].is_active);
+        assert_eq!(outputs[0].routes[0].name, "Speakers");
+        assert_eq!(outputs[0].authority_device_id.as_deref(), Some("41"));
+        assert_eq!(outputs[0].authority_route_device, Some(4));
+        assert!(!graph.nodes.contains_key("53"));
+        assert!(parse_pw_dump_metadata("not json").is_err());
+    }
+
+    #[test]
+    fn route_capabilities_reject_duplicate_indices_and_stale_profiles() {
+        let duplicate = serde_json::json!({
+            "EnumRoute": [
+                {"index": 2, "direction": "Output", "name": "speaker", "devices": [4], "profiles": [1]},
+                {"index": 2, "direction": "Output", "name": "headphones", "devices": [4], "profiles": [1]}
+            ],
+            "Route": []
+        });
+        assert!(parse_routes(&duplicate, 1).is_none());
+
+        let stale = serde_json::json!({
+            "EnumRoute": [
+                {"index": 2, "direction": "Output", "name": "speaker", "devices": [4], "profiles": [1]}
+            ],
+            "Route": [
+                {"index": 2, "direction": "Output", "device": 4, "profile": 3}
+            ]
+        });
+        assert!(parse_routes(&stale, 1).is_none());
+    }
+
+    #[test]
+    fn graph_labels_require_the_exact_machine_list_node_name() {
+        let graph = parse_pw_dump_metadata(
+            r#"[{
+                "id":52,"type":"PipeWire:Interface:Node","info":{"props":{
+                    "media.class":"Audio/Sink","node.name":"reused.private.node",
+                    "node.description":"Wrong Hardware"
+                }}
+            }]"#,
+        )
+        .unwrap();
+        let mut outputs = parse_wpctl_list(
+            "52\tcurrent.private.node\taudio/sink\t*",
+            DeviceKind::Output,
+        )
+        .unwrap();
+        apply_graph_metadata(&mut outputs, &graph, DeviceKind::Output);
+        assert_eq!(outputs[0].name, "current.private.node");
+        assert!(outputs[0].routes.is_empty());
     }
 
     #[test]

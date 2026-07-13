@@ -1,9 +1,10 @@
 # Sound authority
 
 System Settings treats the user's PipeWire graph and WirePlumber policy as the
-Linux authority for audio devices, defaults, volume, and mute. It does not keep
-a private audio preference document or present alert sounds, interface effects,
-or balance controls that have no reviewed session authority.
+Linux authority for audio devices, defaults, volume, mute, ports, and device
+profiles. It does not keep a private audio preference document or present alert
+sounds, interface effects, or balance controls that have no reviewed session
+authority.
 
 ## Current snapshot and mutations
 
@@ -16,13 +17,16 @@ The private node name is retained only to revalidate a selected node against a
 fresh graph; it is omitted from `Debug` output and never persisted. The numeric
 ID is treated as current-graph identity rather than a stable hardware ID.
 
-`pw-dump --no-colors` supplies best-effort friendly descriptions only. rmac
-accepts descriptions solely from PipeWire Node objects whose media class is
-`Audio/Sink` or `Audio/Source`; an invalid or unavailable dump cannot replace
-the authoritative `wpctl list` inventory. Both standard output and standard
-error are drained to process completion while retaining at most 4 MiB each, so
-a large graph cannot deadlock the child or grow memory without bound. The dump
-is held in memory only long enough to extract bounded labels.
+`pw-dump --no-colors` supplies friendly descriptions and advertised capability
+metadata. rmac correlates a Node only when its object ID, exact private
+`node.name`, and media class agree with the machine list; an invalid or
+unavailable dump cannot replace that authoritative inventory. Both standard
+output and standard error are drained to process completion while retaining at
+most 4 MiB each, so a large graph cannot deadlock the child or grow memory
+without bound. The dump is held in memory only long enough to extract bounded
+typed state. If it is missing, invalid, oversized, or ambiguous, base audio
+state remains available while profile and port configuration reports a separate
+temporary failure.
 
 Volume reads target the exact advertised default node IDs. Default-device
 mutation re-reads the selected ID and private node name before issuing
@@ -31,6 +35,27 @@ seconds, and returns a complete snapshot only after the same identity is
 advertised as default. Settings consumes that verified snapshot directly;
 command completion alone is never presented as success. Volume and mute
 mutations likewise end in a complete readback.
+
+## Device profiles and ports
+
+`rmac-audio` accepts profiles only from `Audio/Device` `EnumProfile` parameters
+with one exact current `Profile`. It bounds and deduplicates indices and private
+names, preserves PipeWire's available/unavailable/unknown state, and redacts
+private device and profile names from `Debug`. A selection retains the current
+device ID plus private `device.name`, revalidates both with a fresh graph,
+rejects unavailable or stale profiles, calls the official argument-separated
+`wpctl set-profile`, and requires the same profile to become current within
+three seconds plus a complete snapshot readback.
+
+Ports come from the device's `EnumRoute` and current `Route` parameters. A route
+is attached to a sink or source only when its direction, active profile,
+`device.id`, `card.profile.device`, node ID, and private node name all agree.
+Duplicate indices, stale-profile Route records, unavailable routes, reused IDs,
+and ambiguous device identities are not writable. Selection uses the exact
+node and route index with `wpctl set-route`, then requires the same complete
+private association and active Route readback. The domain exposes this state
+without persisting any private PipeWire path or hardware identifier; visible
+Settings wiring lands in the following UI commit.
 
 ## Live changes and recovery
 
@@ -58,8 +83,7 @@ cannot be silently lost or overwrite newer readback.
 
 F6 remains open until rmac adds and the Ubuntu/niri reference PC proves:
 
-- advertised device profiles and routes with exact identity, availability,
-  mutation, authoritative readback, hotplug, and rollback-safe failure states;
+- visible profile/port controls and their keyboard/accessibility states;
 - per-channel balance only where a real channel map supports it;
 - PipeWire and WirePlumber stop/restart, missing tools, monitor failure,
   external changes, Bluetooth/USB/HDMI hotplug, and suspend/resume behavior;

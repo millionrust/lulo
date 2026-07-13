@@ -349,6 +349,25 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
 /// supervised surface owns its own endpoint, so a launcher crash cannot consume
 /// or drop Notification Center or Quick Settings activations.
 pub async fn watch_dispatches(id: ShortcutId, sender: Sender<Event>) -> Result<(), Error> {
+    watch_dispatches_inner(id, sender, None).await
+}
+
+/// Receive one surface's dispatches and announce after its socket is bound.
+/// Supervised surfaces use this to delay systemd readiness until the first
+/// shortcut activation has a live owner.
+pub async fn watch_dispatches_ready(
+    id: ShortcutId,
+    sender: Sender<Event>,
+    ready: Sender<()>,
+) -> Result<(), Error> {
+    watch_dispatches_inner(id, sender, Some(ready)).await
+}
+
+async fn watch_dispatches_inner(
+    id: ShortcutId,
+    sender: Sender<Event>,
+    ready: Option<Sender<()>>,
+) -> Result<(), Error> {
     if !default_shortcuts().iter().any(|shortcut| shortcut.id == id) {
         return Err(Error::new(
             Operation::BindDispatch,
@@ -356,13 +375,14 @@ pub async fn watch_dispatches(id: ShortcutId, sender: Sender<Event>) -> Result<(
         ));
     }
     let path = shortcut_socket_path(&id)?;
-    watch_dispatches_at(path, id, sender).await
+    watch_dispatches_at(path, id, sender, ready).await
 }
 
 async fn watch_dispatches_at(
     path: PathBuf,
     id: ShortcutId,
     sender: Sender<Event>,
+    ready: Option<Sender<()>>,
 ) -> Result<(), Error> {
     let parent = path.parent().ok_or_else(|| {
         Error::new(
@@ -429,6 +449,12 @@ async fn watch_dispatches_at(
         #[cfg(unix)]
         socket_identity,
     };
+    if let Some(ready) = ready {
+        ready
+            .send(())
+            .await
+            .map_err(|_| Error::new(Operation::BindDispatch, "readiness receiver stopped"))?;
+    }
     let mut sequence = 0u64;
     let mut buffer = [0u8; 512];
     loop {
@@ -738,10 +764,12 @@ mod tests {
         let path = root.join("shortcut-launcher.sock");
         let id = ShortcutId("launcher".into());
         let (sender, receiver) = async_channel::bounded(2);
+        let (ready_sender, ready_receiver) = async_channel::bounded(1);
         async_io::block_on(async {
-            let listener = watch_dispatches_at(path.clone(), id.clone(), sender);
+            let listener =
+                watch_dispatches_at(path.clone(), id.clone(), sender, Some(ready_sender));
             let client = async {
-                async_io::Timer::after(std::time::Duration::from_millis(10)).await;
+                ready_receiver.recv().await.unwrap();
                 let socket = std::os::unix::net::UnixDatagram::unbound().unwrap();
                 socket.send_to(br#""not-a-shortcut""#, &path).unwrap();
                 socket

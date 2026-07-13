@@ -703,6 +703,21 @@ fn overlay_options(cx: &App) -> WindowOptions {
     }
 }
 
+fn notify_ready() -> Result<(), String> {
+    if std::env::var_os("NOTIFY_SOCKET").is_none() {
+        return Ok(());
+    }
+    let status = Command::new("/usr/bin/systemd-notify")
+        .arg("--ready")
+        .arg("--status=Launcher shortcut endpoint ready")
+        .status()
+        .map_err(|error| error.to_string())?;
+    status
+        .success()
+        .then_some(())
+        .ok_or_else(|| "systemd rejected Launcher readiness".to_owned())
+}
+
 fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
     let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
     if let Some(active) = active {
@@ -845,10 +860,12 @@ fn main() {
             .detach();
 
             let (shortcut_tx, shortcut_rx) = async_channel::bounded(16);
+            let (ready_tx, ready_rx) = async_channel::bounded(1);
             let shortcut_done = cx.background_executor().spawn(async move {
-                rmac_shortcuts::watch_dispatches(
+                rmac_shortcuts::watch_dispatches_ready(
                     rmac_shortcuts::ShortcutId("launcher".into()),
                     shortcut_tx,
+                    ready_tx,
                 )
                 .await
             });
@@ -856,14 +873,22 @@ fn main() {
                 let consume = async {
                     while let Ok(event) = shortcut_rx.recv().await {
                         if cx.update(|cx| route_shortcut(event, cx)).is_err() {
-                            return;
+                            return Err("Launcher application context stopped".to_owned());
                         }
                     }
+                    Ok::<(), String>(())
                 };
-                let (result, ()) = futures_util::join!(shortcut_done, consume);
-                if let Err(error) = result {
+                let watcher = async { shortcut_done.await.map_err(|error| error.to_string()) };
+                let readiness = async {
+                    ready_rx
+                        .recv()
+                        .await
+                        .map_err(|_| "Launcher endpoint stopped before readiness".to_owned())?;
+                    blocking::unblock(notify_ready).await
+                };
+                if let Err(error) = futures_util::try_join!(watcher, consume, readiness) {
                     eprintln!("{error}");
-                    let _ = cx.update(|cx| cx.quit());
+                    std::process::exit(1);
                 }
             })
             .detach();

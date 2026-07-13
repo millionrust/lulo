@@ -9,10 +9,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rmac_storage::{atomic_write, Failure};
 use serde::{Deserialize, Serialize};
 
-pub const COMPONENT_UNITS: [&str; 7] = [
+pub const COMPONENT_UNITS: [&str; 8] = [
     "rmac-top-bar.service",
     "rmac-dock.service",
     "rmac-launcher.service",
+    "rmac-quick-settings.service",
     "rmac-notification-center.service",
     "rmac-focus.service",
     "rmac-wallpaper.service",
@@ -471,6 +472,7 @@ mod tests {
             include_str!("../units/rmac-top-bar.service"),
             include_str!("../units/rmac-dock.service"),
             include_str!("../units/rmac-launcher.service"),
+            include_str!("../units/rmac-quick-settings.service"),
             include_str!("../units/rmac-notification-center.service"),
             include_str!("../units/rmac-focus.service"),
             include_str!("../units/rmac-wallpaper.service"),
@@ -493,9 +495,15 @@ mod tests {
         assert!(focus.contains("Type=dbus"));
         assert!(focus.contains("BusName=org.rmac.Focus1"));
         let launcher = include_str!("../units/rmac-launcher.service");
+        let quick_settings = include_str!("../units/rmac-quick-settings.service");
         let shortcut_broker = include_str!("../units/rmac-shortcut-broker.service");
         assert!(launcher.contains("Before=rmac-shortcut-broker.service"));
-        assert!(shortcut_broker.contains("After=rmac-session-supervisor.service xdg-desktop-portal.service rmac-launcher.service"));
+        assert!(launcher.contains("Type=notify"));
+        assert!(launcher.contains("NotifyAccess=all"));
+        assert!(quick_settings.contains("Before=rmac-shortcut-broker.service"));
+        assert!(quick_settings.contains("Type=notify"));
+        assert!(quick_settings.contains("NotifyAccess=all"));
+        assert!(shortcut_broker.contains("rmac-quick-settings.service"));
 
         let lock = include_str!("../units/rmac-lock.service");
         assert!(lock.contains("Type=notify"));

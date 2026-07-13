@@ -266,8 +266,12 @@ it does not import GPUI or Wayland input types.
 maps validated commands to NetworkManager, BlueZ, PipeWire/WirePlumber, and
 power-profiles, then rereads only the affected authority. Focus explicitly
 uses the session-owned `org.rmac.Focus1` command authority and never writes
-legacy shell preferences. The GPUI popover must run this adapter off its render
-executor.
+legacy shell preferences. The supervised `rmac-quick-settings-app` owns the
+action-scoped shortcut endpoint and creates at most one GPUI popover. Each open
+surface starts a bounded `rmac-shell-runtime` subscription, runs the system
+adapter off its render executor, and drops all hardware watchers when dismissed.
+The stable GPUI line cannot map the popup to a proven niri output/seat, so final
+layer-shell placement and invoker focus restoration remain adapter gates.
 
 `org.rmac.Focus1` is also the single writer for the full Focus configuration.
 Its bounded whole-config wire contract preserves modes, app allow lists,

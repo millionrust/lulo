@@ -176,6 +176,25 @@ scale and with Orca. Capture placement and focus evidence under niri; a correct
 macOS-side window is not Linux proof. Record strict-focus behavior explicitly:
 the current GPUI surface does not fabricate a Wayland activation token.
 
+Confirm the supervised Quick Settings endpoint is ready, then open it through
+the same typed dispatcher used by the portal and niri shortcut backends:
+
+```sh
+systemctl --user --no-pager status rmac-quick-settings.service
+~/.local/libexec/rmac/rmac-shortcut-dispatch quick-settings
+```
+
+Verify that a second invocation closes the same popover and a third reopens it.
+Exercise Wi-Fi and Bluetooth power, output mute and volume, every advertised
+power profile, and Focus. During each request, the old authoritative value must
+remain visible with a bounded busy state; success must reflect a fresh service
+read and rejection must remain dismissible. Restart NetworkManager, BlueZ,
+PipeWire/WirePlumber, power-profiles-daemon, and the Focus service one at a time;
+only the affected control may become unavailable. Verify Escape and outside
+dismissal, System Settings routing, keyboard-only order, and no hardware watcher
+remaining after close. Repeat at 100%, 125%, 150%, and 200% with Orca and record
+primary/trailing placement as candidate evidence, not final layer-shell proof.
+
 The D-phase component units are condition-gated until their binaries are
 installed, so they remain skipped rather than entering false crash loops. The
 supervisor must be active and its JSON health output must identify every unit.

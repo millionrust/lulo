@@ -9,12 +9,15 @@ installer.
 ## Startup and environment
 
 Run `scripts/linux/install-session-units.sh` once from the repository. It
-builds the release supervisor, launcher, and launcher-routed System Settings,
+builds the release supervisor, launcher, on-demand Quick Settings service, and
+launcher-routed System Settings,
 installs them under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
 directory, and installs `~/.local/bin/rmac-session-start`.
-The launcher binds its action-scoped runtime socket before the shortcut broker
-starts, so the first consented activation has an owner. The installer also
+The launcher and Quick Settings services bind their separate action-scoped
+runtime sockets before the shortcut broker starts, so the first consented
+activation has an owner and one surface crash cannot consume another action.
+The installer also
 builds the notification and Focus services, installs the notification
 portal descriptor and desktop-specific backend selection, and installs D-Bus
 activation files for both authorities.
@@ -39,8 +42,8 @@ need to be imported before these services start.
 
 ## Crash and restart policy
 
-Top bar, Dock, launcher, notification center, Focus authority, wallpaper, and
-the global shortcut broker each have their own service. They use
+Top bar, Dock, launcher, Quick Settings, notification center, Focus authority,
+wallpaper, and the global shortcut broker each have their own service. They use
 `Restart=on-failure`, a
 one-second restart delay, and at most four starts in a 60-second interval. They
 are `PartOf` the normal rmac target; one component is not `RequiredBy` another.

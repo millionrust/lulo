@@ -75,13 +75,30 @@ authority. The returned aggregate contains only that owned field, matching the
 model's per-control merge rule and preventing an older Wi-Fi task from rolling
 back newer sound state.
 
-The layer-shell rendering, real focus restoration, semantic GPUI controls, and
-Orca/niri evidence remain pending. The Focus service evaluates persisted policy
-at startup and exact wake boundaries and resamples local time after time-zone,
-clock, and resume changes. `rmac-shell-runtime` subscribes to that authority,
-supplies full inputs, disables mutation during reconnect, and emits a
-popover-specific redraw flag without waking the compact bar for
-device-list-only changes. Scheduled Focus cannot be deceptively switched off
-by a compact toggle; the user receives an actionable Settings instruction.
-D3/E4 still require the real layer-shell UI, Settings pane, notification
-enforcement connection, and Linux evidence.
+`rmac-quick-settings-app` is the supervised on-demand presentation. It owns the
+action-scoped `quick-settings` shortcut socket, keeps at most one trailing GPUI
+popover, and starts the live shell-runtime subscription only while that popover
+is open. Shared toggles, buttons, and the output-volume slider render the model;
+all operations run on a blocking executor and return through `complete` or
+`fail`. Escape, focus loss, and a repeated shortcut close the surface without
+terminating its shortcut endpoint. A direct System Settings route remains
+available for deeper controls.
+
+Its systemd unit is `Type=notify`: readiness is sent only after the shortcut
+socket is bound, and the broker is ordered after that handshake. A process that
+cannot establish its endpoint therefore fails before it can silently drop the
+first activation.
+
+The Focus service evaluates persisted policy at startup and exact wake
+boundaries and resamples local time after time-zone, clock, and resume changes.
+`rmac-shell-runtime` subscribes to that authority, supplies full inputs,
+disables mutation during reconnect, and emits a popover-specific redraw flag
+without waking the compact bar for device-list-only changes. Scheduled Focus
+cannot be deceptively switched off by a compact toggle; the service rejection
+remains visible and points the user toward Settings.
+
+D3 is still gated on the real D1/D2 layer-shell invoker, niri output/seat
+placement and focus restoration, scaling, Orca semantics, service-restart
+interaction, and performance evidence. GPUI 0.2.2 supplies no proven stable
+niri output identity to this popup, so the candidate uses the primary display
+and does not fabricate multi-output correctness.

@@ -153,6 +153,11 @@ focuses the query synchronously before any provider job is scheduled. A second
 fresh dispatch, Escape, outside-window deactivation, or successful activation
 cancels work and removes the window.
 
+The service uses `Type=notify` and reports readiness only after its action-
+scoped Unix socket is bound. The shortcut broker starts after that handshake,
+so the first consented activation cannot race an endpoint that merely has a
+started process.
+
 An empty query presents installed applications as an icon grid plus other
 suggestions. Typed queries use ranked category sections. Application icons come
 from the parsed desktop catalog; every other result has an original category

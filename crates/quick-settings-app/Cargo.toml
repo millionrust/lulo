@@ -1,0 +1,25 @@
+[package]
+name = "rmac-quick-settings-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "rmac-quick-settings"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+blocking.workspace = true
+futures-util.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
+rmac-quick-settings.workspace = true
+rmac-quick-settings-system.workspace = true
+rmac-shell-runtime.workspace = true
+rmac-shortcuts.workspace = true
+rmac-ui.workspace = true
+rust-embed.workspace = true

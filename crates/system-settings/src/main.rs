@@ -575,6 +575,15 @@ fn network_stream_snapshot_is_current(
     !busy && !loading && captured_generation == current_generation
 }
 
+fn vpn_stream_snapshot_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    busy: bool,
+    loading: bool,
+) -> bool {
+    !busy && !loading && captured_generation == current_generation
+}
+
 struct WifiPasswordPrompt {
     network: rmac_network::WifiNetworkId,
     ssid: SharedString,
@@ -696,6 +705,7 @@ struct Settings {
     network_error: Option<SharedString>,
     network_stream_error: Option<SharedString>,
     vpn_error: Option<SharedString>,
+    vpn_stream_error: Option<SharedString>,
     audio_error: Option<SharedString>,
     power_error: Option<SharedString>,
     display_error: Option<SharedString>,
@@ -761,7 +771,10 @@ struct Settings {
     // VPN
     vpn: rmac_network::VpnSnapshot,
     vpn_loading: bool,
-    vpn_busy: Option<String>,
+    vpn_refreshing: bool,
+    vpn_busy: Option<rmac_network::VpnProfileId>,
+    vpn_cancellation: Option<rmac_network::VpnCancellation>,
+    vpn_generation: u64,
 
     // Wi-Fi
     wifi_available: bool,
@@ -1451,18 +1464,26 @@ impl Settings {
                         let generations = match this.update(cx, |this: &mut Settings, cx| {
                             this.wifi_stream_error = None;
                             this.network_stream_error = None;
+                            this.vpn_stream_error = None;
                             cx.notify();
                             (
                                 (!this.wifi_busy && !this.wifi_loading)
                                     .then_some(this.wifi_generation),
                                 (!this.network_busy && !this.network_loading)
                                     .then_some(this.network_generation),
+                                (this.vpn_busy.is_none()
+                                    && !this.vpn_loading
+                                    && !this.vpn_refreshing)
+                                    .then_some(this.vpn_generation),
                             )
                         }) {
                             Ok(generations) => generations,
                             Err(_) => break,
                         };
-                        if generations.0.is_none() && generations.1.is_none() {
+                        if generations.0.is_none()
+                            && generations.1.is_none()
+                            && generations.2.is_none()
+                        {
                             continue;
                         }
                         let results = cx
@@ -1471,6 +1492,7 @@ impl Settings {
                                 (
                                     generations.0.map(|_| rmac_network::snapshot()),
                                     generations.1.map(|_| rmac_network::network_snapshot()),
+                                    generations.2.map(|_| rmac_network::vpn_snapshot()),
                                 )
                             })
                             .await;
@@ -1500,6 +1522,18 @@ impl Settings {
                                         this.finish_network_stream_update(result);
                                     }
                                 }
+                                if let (Some(generation), Some(result)) =
+                                    (generations.2, results.2)
+                                {
+                                    if vpn_stream_snapshot_is_current(
+                                        generation,
+                                        this.vpn_generation,
+                                        this.vpn_busy.is_some() || this.vpn_refreshing,
+                                        this.vpn_loading,
+                                    ) {
+                                        this.finish_vpn_stream_update(result);
+                                    }
+                                }
                                 cx.notify();
                             })
                             .is_err()
@@ -1516,6 +1550,10 @@ impl Settings {
                                 );
                                 this.network_stream_error = Some(
                                     "Live Network updates are temporarily unavailable while NetworkManager reconnects"
+                                        .into(),
+                                );
+                                this.vpn_stream_error = Some(
+                                    "Live VPN updates are temporarily unavailable while NetworkManager reconnects"
                                         .into(),
                                 );
                                 cx.notify();
@@ -1903,6 +1941,7 @@ impl Settings {
             network_error: None,
             network_stream_error: None,
             vpn_error: None,
+            vpn_stream_error: None,
             audio_error: None,
             power_error: None,
             display_error: None,
@@ -1962,7 +2001,10 @@ impl Settings {
 
             vpn: rmac_network::VpnSnapshot::default(),
             vpn_loading: true,
+            vpn_refreshing: false,
             vpn_busy: None,
+            vpn_cancellation: None,
+            vpn_generation: 0,
 
             wifi_available: false,
             wifi_loading: true,
@@ -3978,11 +4020,14 @@ impl Settings {
         result: std::result::Result<rmac_network::VpnSnapshot, rmac_network::Error>,
     ) {
         self.vpn_loading = false;
+        self.vpn_refreshing = false;
         self.vpn_busy = None;
+        self.vpn_cancellation = None;
         match result {
             Ok(snapshot) => {
                 self.vpn = snapshot;
                 self.vpn_error = None;
+                self.vpn_stream_error = None;
             }
             Err(error) => {
                 self.vpn_error = Some(format!("Could not update VPN: {error}").into());
@@ -3990,11 +4035,28 @@ impl Settings {
         }
     }
 
+    fn finish_vpn_stream_update(
+        &mut self,
+        result: std::result::Result<rmac_network::VpnSnapshot, rmac_network::Error>,
+    ) {
+        match result {
+            Ok(snapshot) => {
+                self.vpn = snapshot;
+                self.vpn_stream_error = None;
+            }
+            Err(_) => {
+                self.vpn_stream_error =
+                    Some("Live VPN state could not be refreshed from NetworkManager".into());
+            }
+        }
+    }
+
     fn refresh_vpn(&mut self, cx: &mut Context<Self>) {
-        if self.vpn_loading || self.vpn_busy.is_some() {
+        if self.vpn_loading || self.vpn_refreshing || self.vpn_busy.is_some() {
             return;
         }
-        self.vpn_busy = Some(String::new());
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_refreshing = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -4009,27 +4071,71 @@ impl Settings {
         .detach();
     }
 
-    fn set_vpn_enabled(&mut self, identifier: String, enabled: bool, cx: &mut Context<Self>) {
-        if self.vpn_loading || self.vpn_busy.is_some() {
+    fn set_vpn_enabled(
+        &mut self,
+        id: rmac_network::VpnProfileId,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.vpn_loading || self.vpn_refreshing || self.vpn_busy.is_some() {
             return;
         }
-        self.vpn_busy = Some(identifier.clone());
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_busy = Some(id.clone());
+        self.vpn_error = None;
+        let cancellation = rmac_network::VpnCancellation::new();
+        self.vpn_cancellation = enabled.then_some(cancellation.clone());
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
+            let (result, recovery) = cx
                 .background_executor()
                 .spawn(async move {
-                    rmac_network::set_vpn_enabled(&identifier, enabled)?;
-                    std::thread::sleep(Duration::from_millis(500));
-                    rmac_network::vpn_snapshot()
+                    let result = rmac_network::set_vpn_enabled(&id, enabled, &cancellation);
+                    let recovery = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_network::vpn_snapshot().ok());
+                    (result, recovery)
                 })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_vpn_update(result);
+                this.finish_vpn_mutation_update(result, recovery);
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    fn cancel_vpn_activation(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancellation) = &self.vpn_cancellation {
+            cancellation.cancel();
+            cx.notify();
+        }
+    }
+
+    fn finish_vpn_mutation_update(
+        &mut self,
+        result: std::result::Result<rmac_network::VpnSnapshot, rmac_network::Error>,
+        recovery: Option<rmac_network::VpnSnapshot>,
+    ) {
+        self.vpn_busy = None;
+        self.vpn_cancellation = None;
+        if let Some(snapshot) = recovery {
+            self.vpn = snapshot;
+        }
+        match result {
+            Ok(snapshot) => {
+                self.vpn = snapshot;
+                self.vpn_error = None;
+                self.vpn_stream_error = None;
+            }
+            Err(error) if error.is_cancelled() => {
+                self.vpn_error = None;
+            }
+            Err(error) => {
+                self.vpn_error = Some(format!("Could not update VPN: {error}").into());
+            }
+        }
     }
 
     fn finish_audio_update(
@@ -12115,6 +12221,8 @@ impl Settings {
         };
         let refresh_view = view.clone();
         let refresh_label = if self.vpn_busy.is_some() {
+            "Updating…"
+        } else if self.vpn_refreshing {
             "Refreshing…"
         } else {
             "Refresh"
@@ -12181,26 +12289,41 @@ impl Settings {
             .vpn
             .profiles
             .iter()
-            .map(|profile| {
-                let identifier = profile.identifier.clone();
-                let switch_identifier = identifier.clone();
+            .enumerate()
+            .map(|(index, profile)| {
+                let id = profile.id.clone();
+                let switch_id = id.clone();
                 let profile_view = view.clone();
-                let applying = self.vpn_busy.as_deref() == Some(identifier.as_str());
-                let subtitle = if applying {
-                    format!("{} · Applying change…", profile.service)
+                let applying = self.vpn_busy.as_ref() == Some(&id);
+                let connecting = applying && self.vpn_cancellation.is_some();
+                let subtitle = if connecting {
+                    format!("{} · Connecting…", profile.service)
+                } else if applying {
+                    format!("{} · Disconnecting…", profile.service)
                 } else {
                     format!("{} · {}", profile.service, profile.state.label())
                 };
-                let control = Toggle::new(ElementId::from(SharedString::from(format!(
-                    "vpn-{identifier}"
-                ))))
-                .checked(profile.state.is_enabled())
-                .on_click(move |enabled, _, cx| {
-                    let identifier = switch_identifier.clone();
-                    profile_view.update(cx, |settings, cx| {
-                        settings.set_vpn_enabled(identifier, *enabled, cx)
-                    });
-                });
+                let control = if connecting {
+                    Button::new(("vpn-stop", index), "Stop")
+                        .on_click(move |_, _, cx| {
+                            profile_view
+                                .update(cx, |settings, cx| settings.cancel_vpn_activation(cx));
+                        })
+                        .into_any_element()
+                } else {
+                    Toggle::new(ElementId::from(SharedString::from(format!(
+                        "vpn-profile-{index}"
+                    ))))
+                    .checked(profile.state.is_enabled())
+                    .disabled(self.vpn_busy.is_some() || self.vpn_refreshing)
+                    .on_click(move |enabled, _, cx| {
+                        let id = switch_id.clone();
+                        profile_view.update(cx, |settings, cx| {
+                            settings.set_vpn_enabled(id, *enabled, cx)
+                        });
+                    })
+                    .into_any_element()
+                };
                 row_base()
                     .child(tile(
                         "icons/key.svg",
@@ -12729,6 +12852,7 @@ impl Render for Settings {
             .or_else(|| self.network_error.clone())
             .or_else(|| self.network_stream_error.clone())
             .or_else(|| self.vpn_error.clone())
+            .or_else(|| self.vpn_stream_error.clone())
             .or_else(|| self.audio_error.clone())
             .or_else(|| self.power_error.clone())
             .or_else(|| self.display_error.clone())
@@ -12759,6 +12883,9 @@ impl Render for Settings {
                 {
                     cx.stop_propagation();
                     this.cancel_bluetooth_forget(cx);
+                } else if event.keystroke.key == "escape" && this.vpn_cancellation.is_some() {
+                    cx.stop_propagation();
+                    this.cancel_vpn_activation(cx);
                 } else if event.keystroke.key == "escape"
                     && this.network_editor.is_some()
                     && !this.network_busy
@@ -12769,10 +12896,17 @@ impl Render for Settings {
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, _| {
+                if let Some(cancellation) = &this.vpn_cancellation {
+                    cancellation.cancel();
+                    return;
+                }
                 if this.wifi_forgetting.is_some()
                     || this.bluetooth_forgetting.is_some()
                     || this.network_busy
                 {
+                    return;
+                }
+                if this.vpn_busy.is_some() {
                     return;
                 }
                 if let Some(cancellation) = &this.wifi_cancellation {
@@ -12812,6 +12946,7 @@ impl Render for Settings {
                             this.network_error = None;
                             this.network_stream_error = None;
                             this.vpn_error = None;
+                            this.vpn_stream_error = None;
                             this.audio_error = None;
                             this.power_error = None;
                             this.display_error = None;
@@ -14553,9 +14688,10 @@ mod tests {
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, composite_wallpaper_pixel,
         network_stream_snapshot_is_current, notification_policy_with, render_wallpaper_preview,
-        wallpaper_selection, wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
-        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
-        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
+        DockChange, NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
+        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
+        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -14588,6 +14724,14 @@ mod tests {
         assert!(!network_stream_snapshot_is_current(4, 5, false, false));
         assert!(!network_stream_snapshot_is_current(5, 5, true, false));
         assert!(!network_stream_snapshot_is_current(5, 5, false, true));
+    }
+
+    #[test]
+    fn vpn_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(vpn_stream_snapshot_is_current(3, 3, false, false));
+        assert!(!vpn_stream_snapshot_is_current(2, 3, false, false));
+        assert!(!vpn_stream_snapshot_is_current(3, 3, true, false));
+        assert!(!vpn_stream_snapshot_is_current(3, 3, false, true));
     }
 
     #[test]

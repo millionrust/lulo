@@ -11,7 +11,7 @@ equivalents rather than simulated.
 | Wi-Fi | Real state, radio mutation, access-point scan, typed security, exact saved/open/Enhanced Open activation, masked WPA Personal/SAE password sheet, one-shot Secret Agent, cancellation, complete Known Networks inventory, confirmed exact-profile forgetting with active disconnect, coalesced live signals, owner-loss/restart recovery, bounded completion, and authoritative readback | NetworkManager D-Bus | Enterprise setup plus Linux signal/restart/permission/cancellation/wrong-secret/partial-delete evidence |
 | Bluetooth | Real adapter and discovery state; exact-device connect/disconnect; one-transaction KeyboardDisplay agent for numeric comparison, PIN/passkey entry, just-works and service authorization; explicit reject/cancel and 60-second prompt timeout; post-pair trust plus authoritative `Paired`/`Trusted` verification; confirmed adapter-owned removal; coalesced live signals and BlueZ owner-loss/restart recovery | BlueZ ObjectManager, AgentManager1, Agent1, Device1, and Adapter1 D-Bus APIs | Ubuntu pairing matrix, timeout/rejection/cancel, remove/partial-failure, daemon-restart, keyboard, scale, and accessibility evidence |
 | Network | Real interfaces, route, IP, gateway, and DNS state; active-profile IPv4/IPv6/DNS/PAC editor with strict typed validation, exact opaque identity, stable full-map reads, version-checked in-memory staging and disk persistence, applied-state verification, ownership-aware rollback, coalesced live signals, and owner-loss/restart recovery | NetworkManager Settings, Settings.Connection, Device, ActiveConnection, and IP configuration D-Bus APIs | Ubuntu mutation/polkit/failure/concurrency/rollback matrix plus keyboard, scale, and accessibility evidence |
-| VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
+| VPN | Exact opaque profile identity; plugin-aware state; bounded activation/deactivation; ownership-safe Stop/timeout cleanup; authoritative recovery; coalesced live signals and NetworkManager owner-loss/restart recovery | NetworkManager Settings, ActiveConnection, VPN.Connection, native WireGuard, and installed VPN plugins | Plugin discovery, portal import, supported typed editing, NetworkManager-owned secret storage, confirmed deletion, and Ubuntu interaction/accessibility evidence |
 | Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
 | General/About | Typed privacy-safe OS, kernel, architecture, hardware, graphics, and session facts; validated hostname mutation with busy/error state; authoritative refresh; redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs/sysfs, display service | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname refresh, and clipboard contents |
 | Software Update | Live bounded PackageKit update status with security/blocked classification, cached startup query, explicit freshness request, timeout, service/backend errors, and last-known-good refresh behavior | PackageKit system D-Bus over the Ubuntu APT backend | Trusted download/install transaction, progress/cancel, restart requirements, polkit outcomes, live signals, and Linux interaction evidence |
@@ -99,6 +99,20 @@ exactly matches rmac's staged candidate; a newer external edit is never
 overwritten. The shared coalesced NetworkManager stream refreshes both Network
 and Wi-Fi with independent mutation generations. The complete contract and F3
 reference-PC matrix are recorded in [`network.md`](network.md).
+
+VPN profiles retain the exact private NetworkManager Settings object path and
+UUID rather than using their display name as a mutation target. Connecting and
+disconnecting wait for the exact ActiveConnection authority with bounded
+timeouts and fresh readback; plugin VPN state distinguishes authentication,
+activation, failure, and disconnection. A pending activation exposes Stop and
+Escape cancellation. Cleanup first proves the exact profile path, UUID, and
+VPN type and only deactivates an activation created by rmac, so a pre-existing
+or replacement connection is never torn down by an ownership guess. Every
+failure takes an independent recovery snapshot. The shared coalesced
+NetworkManager stream now refreshes VPN alongside Wi-Fi and Network with an
+independent generation and explicit daemon outage/recovery state. Import,
+editing, secrets, and deletion remain pending; the exact boundary and remaining
+F4 matrix are recorded in [`vpn.md`](vpn.md).
 
 General now exposes only About, the explicitly read-only Software Update status,
 and measured Storage. Device-continuity and media-receiver controls are hidden

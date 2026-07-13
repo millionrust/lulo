@@ -326,6 +326,7 @@ pub enum VpnState {
     Connecting,
     Connected,
     Disconnecting,
+    Failed,
     Unknown,
 }
 
@@ -336,6 +337,7 @@ impl VpnState {
             Self::Connecting => "Connecting…",
             Self::Connected => "Connected",
             Self::Disconnecting => "Disconnecting…",
+            Self::Failed => "Connection Failed",
             Self::Unknown => "Unknown",
         }
     }
@@ -348,10 +350,43 @@ impl VpnState {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct VpnProfileId {
+    object_path: String,
+    uuid: String,
+}
+
+impl fmt::Debug for VpnProfileId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VpnProfileId")
+            .field("object", &"<redacted>")
+            .field("uuid", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct VpnCancellation(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl VpnCancellation {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VpnProfile {
     /// Stable, platform-owned identifier. Treat as opaque outside this crate.
-    pub identifier: String,
+    pub id: VpnProfileId,
     pub name: String,
     pub service: String,
     pub state: VpnState,
@@ -460,8 +495,12 @@ pub fn vpn_snapshot() -> Result<VpnSnapshot, Error> {
     system_vpn_snapshot()
 }
 
-pub fn set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
-    system_set_vpn_enabled(identifier, enabled)
+pub fn set_vpn_enabled(
+    id: &VpnProfileId,
+    enabled: bool,
+    cancellation: &VpnCancellation,
+) -> Result<VpnSnapshot, Error> {
+    system_set_vpn_enabled(id, enabled, cancellation)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -485,13 +524,24 @@ fn system_vpn_snapshot() -> Result<VpnSnapshot, Error> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn system_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
-    linux_set_vpn_enabled(identifier, enabled)
+fn system_set_vpn_enabled(
+    id: &VpnProfileId,
+    enabled: bool,
+    cancellation: &VpnCancellation,
+) -> Result<VpnSnapshot, Error> {
+    linux_set_vpn_enabled(id, enabled, cancellation)
 }
 
 #[cfg(target_os = "macos")]
-fn system_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
-    macos_set_vpn_enabled(identifier, enabled)
+fn system_set_vpn_enabled(
+    id: &VpnProfileId,
+    enabled: bool,
+    cancellation: &VpnCancellation,
+) -> Result<VpnSnapshot, Error> {
+    if enabled && cancellation.is_cancelled() {
+        return Err(Error::cancelled("connect VPN"));
+    }
+    macos_set_vpn_enabled(id, enabled)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1466,6 +1516,13 @@ struct VpnRecord {
 }
 
 #[cfg(not(target_os = "macos"))]
+const VPN_ACTIVATION_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(not(target_os = "macos"))]
+const VPN_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(not(target_os = "macos"))]
+const VPN_STATE_INTERVAL: Duration = Duration::from_millis(250);
+
+#[cfg(not(target_os = "macos"))]
 fn linux_vpn_snapshot() -> Result<VpnSnapshot, Error> {
     let connection = system_connection("connect to NetworkManager")?;
     let mut records = linux_vpn_records(&connection)?;
@@ -1481,33 +1538,195 @@ fn linux_vpn_snapshot() -> Result<VpnSnapshot, Error> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn linux_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
+fn linux_set_vpn_enabled(
+    id: &VpnProfileId,
+    enabled: bool,
+    cancellation: &VpnCancellation,
+) -> Result<VpnSnapshot, Error> {
     use zbus::zvariant::OwnedObjectPath;
 
+    if enabled && cancellation.is_cancelled() {
+        return Err(Error::cancelled("connect VPN"));
+    }
     let connection = system_connection("connect to NetworkManager")?;
     let record = linux_vpn_records(&connection)?
         .into_iter()
-        .find(|record| record.profile.identifier == identifier)
+        .find(|record| record.profile.id == *id)
         .ok_or_else(|| Error::new("find VPN profile", "the profile no longer exists"))?;
     let manager = manager_proxy(&connection)?;
     if enabled {
-        if record.active_path.is_some() {
-            return Ok(());
+        if record.profile.state == VpnState::Connected {
+            return linux_vpn_snapshot();
+        }
+        if let Some(active_path) = record.active_path {
+            return wait_for_vpn_activation(&connection, id, &active_path, false, cancellation);
         }
         let root = OwnedObjectPath::try_from("/")
             .map_err(|error| Error::new("prepare VPN activation", error.to_string()))?;
-        manager
+        let active_path = manager
             .call::<_, _, OwnedObjectPath>(
                 "ActivateConnection",
                 &(record.connection_path, root.clone(), root),
             )
             .map_err(|error| Error::new("connect VPN", error.to_string()))?;
+        wait_for_vpn_activation(&connection, id, &active_path, true, cancellation)
     } else if let Some(active_path) = record.active_path {
         manager
-            .call::<_, _, ()>("DeactivateConnection", &(active_path,))
+            .call::<_, _, ()>("DeactivateConnection", &(active_path.clone(),))
             .map_err(|error| Error::new("disconnect VPN", error.to_string()))?;
+        wait_for_vpn_deactivation(&connection, id, &active_path)
+    } else {
+        linux_vpn_snapshot()
     }
-    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wait_for_vpn_activation(
+    connection: &zbus::blocking::Connection,
+    id: &VpnProfileId,
+    active_path: &zbus::zvariant::OwnedObjectPath,
+    owns_activation: bool,
+    cancellation: &VpnCancellation,
+) -> Result<VpnSnapshot, Error> {
+    let deadline = std::time::Instant::now() + VPN_ACTIVATION_TIMEOUT;
+    loop {
+        if cancellation.is_cancelled() {
+            if owns_activation {
+                stop_exact_vpn_activation(connection, id, active_path, "cancel VPN activation")?;
+            }
+            return Err(Error::cancelled("connect VPN"));
+        }
+        let records = linux_vpn_records(connection)?;
+        let record = records
+            .iter()
+            .find(|record| record.profile.id == *id)
+            .ok_or_else(|| Error::new("connect VPN", "the profile disappeared"))?;
+        match record.active_path.as_ref() {
+            Some(current) if current != active_path => {
+                return Err(Error::new(
+                    "connect VPN",
+                    "a different activation replaced this request",
+                ));
+            }
+            None => {
+                return Err(Error::new(
+                    "connect VPN",
+                    "NetworkManager ended the connection attempt",
+                ));
+            }
+            Some(_) => {}
+        }
+        match record.profile.state {
+            VpnState::Connected => return linux_vpn_snapshot(),
+            VpnState::Failed | VpnState::Disconnected => {
+                if owns_activation {
+                    stop_exact_vpn_activation(
+                        connection,
+                        id,
+                        active_path,
+                        "clean up failed VPN activation",
+                    )?;
+                }
+                return Err(Error::new(
+                    "connect VPN",
+                    "the VPN plugin rejected the connection",
+                ));
+            }
+            _ => {}
+        }
+        if std::time::Instant::now() >= deadline {
+            if owns_activation {
+                stop_exact_vpn_activation(
+                    connection,
+                    id,
+                    active_path,
+                    "clean up timed-out VPN activation",
+                )?;
+            }
+            return Err(Error::new(
+                "connect VPN",
+                "the connection did not finish within 60 seconds",
+            ));
+        }
+        std::thread::sleep(VPN_STATE_INTERVAL);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn stop_exact_vpn_activation(
+    connection: &zbus::blocking::Connection,
+    id: &VpnProfileId,
+    active_path: &zbus::zvariant::OwnedObjectPath,
+    operation: &'static str,
+) -> Result<(), Error> {
+    let still_active = linux_vpn_records(connection)?
+        .into_iter()
+        .any(|record| record.profile.id == *id && record.active_path.as_ref() == Some(active_path));
+    if !still_active {
+        return Ok(());
+    }
+    if !exact_active_vpn(connection, id, active_path)? {
+        return Ok(());
+    }
+    manager_proxy(connection)?
+        .call::<_, _, ()>("DeactivateConnection", &(active_path.clone(),))
+        .map_err(|error| Error::new(operation, error.to_string()))?;
+    wait_for_vpn_deactivation(connection, id, active_path)
+        .map(|_| ())
+        .map_err(|error| Error::new(operation, error.to_string()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wait_for_vpn_deactivation(
+    connection: &zbus::blocking::Connection,
+    id: &VpnProfileId,
+    active_path: &zbus::zvariant::OwnedObjectPath,
+) -> Result<VpnSnapshot, Error> {
+    let deadline = std::time::Instant::now() + VPN_DEACTIVATION_TIMEOUT;
+    loop {
+        let records = linux_vpn_records(connection)?;
+        let Some(record) = records.iter().find(|record| record.profile.id == *id) else {
+            return linux_vpn_snapshot();
+        };
+        if record.active_path.as_ref() != Some(active_path) {
+            return linux_vpn_snapshot();
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Error::new(
+                "disconnect VPN",
+                "the connection did not stop within 10 seconds",
+            ));
+        }
+        std::thread::sleep(VPN_STATE_INTERVAL);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exact_active_vpn(
+    connection: &zbus::blocking::Connection,
+    id: &VpnProfileId,
+    active_path: &zbus::zvariant::OwnedObjectPath,
+) -> Result<bool, Error> {
+    let active = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        active_path.as_str(),
+        "org.freedesktop.NetworkManager.Connection.Active",
+    )
+    .map_err(|error| Error::new("open active VPN connection", error.to_string()))?;
+    let profile_path = active
+        .get_property::<zbus::zvariant::OwnedObjectPath>("Connection")
+        .map_err(|error| Error::new("identify active VPN profile", error.to_string()))?;
+    let uuid = active
+        .get_property::<String>("Uuid")
+        .map_err(|error| Error::new("identify active VPN profile", error.to_string()))?;
+    let vpn = active
+        .get_property::<bool>("Vpn")
+        .map_err(|error| Error::new("identify active VPN connection", error.to_string()))?;
+    let connection_type = active.get_property::<String>("Type").unwrap_or_default();
+    Ok((vpn || is_vpn_connection_type(&connection_type))
+        && profile_path.as_str() == id.object_path
+        && uuid == id.uuid)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1541,10 +1760,22 @@ fn linux_vpn_records(connection: &zbus::blocking::Connection) -> Result<Vec<VpnR
         else {
             continue;
         };
-        let state = proxy
-            .get_property::<u32>("State")
-            .map(vpn_state_from_network_manager)
-            .unwrap_or(VpnState::Connecting);
+        let state = zbus::blocking::Proxy::new(
+            connection,
+            "org.freedesktop.NetworkManager",
+            path.as_str(),
+            "org.freedesktop.NetworkManager.VPN.Connection",
+        )
+        .ok()
+        .and_then(|vpn| vpn.get_property::<u32>("VpnState").ok())
+        .map(vpn_state_from_vpn_connection)
+        .or_else(|| {
+            proxy
+                .get_property::<u32>("State")
+                .ok()
+                .map(vpn_state_from_network_manager)
+        })
+        .unwrap_or(VpnState::Connecting);
         drop(proxy);
         active.insert(identifier, (state, path));
     }
@@ -1596,7 +1827,10 @@ fn linux_vpn_records(connection: &zbus::blocking::Connection) -> Result<Vec<VpnR
             });
         records.push(VpnRecord {
             profile: VpnProfile {
-                identifier,
+                id: VpnProfileId {
+                    object_path: path.to_string(),
+                    uuid: identifier,
+                },
                 name,
                 service: vpn_service_label(&connection_type, service_type.as_deref()),
                 state,
@@ -1958,12 +2192,12 @@ fn macos_vpn_snapshot() -> Result<VpnSnapshot, Error> {
 }
 
 #[cfg(target_os = "macos")]
-fn macos_set_vpn_enabled(identifier: &str, enabled: bool) -> Result<(), Error> {
+fn macos_set_vpn_enabled(id: &VpnProfileId, enabled: bool) -> Result<VpnSnapshot, Error> {
     network_command(
         "scutil",
-        &["--nc", if enabled { "start" } else { "stop" }, identifier],
+        &["--nc", if enabled { "start" } else { "stop" }, &id.uuid],
     )?;
-    Ok(())
+    macos_vpn_snapshot()
 }
 
 #[cfg(target_os = "macos")]
@@ -2180,6 +2414,17 @@ fn vpn_state_from_network_manager(value: u32) -> VpnState {
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
+fn vpn_state_from_vpn_connection(value: u32) -> VpnState {
+    match value {
+        1..=4 => VpnState::Connecting,
+        5 => VpnState::Connected,
+        6 => VpnState::Failed,
+        7 => VpnState::Disconnected,
+        _ => VpnState::Unknown,
+    }
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
 fn vpn_service_label(connection_type: &str, service_type: Option<&str>) -> String {
     if connection_type == "wireguard" {
         return "WireGuard".to_string();
@@ -2202,7 +2447,7 @@ fn sort_vpn_profiles(profiles: &mut [VpnProfile]) {
             .is_enabled()
             .cmp(&left.state.is_enabled())
             .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-            .then_with(|| left.identifier.cmp(&right.identifier))
+            .then_with(|| left.id.uuid.cmp(&right.id.uuid))
     });
 }
 
@@ -2230,7 +2475,10 @@ fn parse_macos_vpn_profiles(output: &str) -> Vec<VpnProfile> {
                 _ => VpnState::Unknown,
             };
             Some(VpnProfile {
-                identifier: name.to_string(),
+                id: VpnProfileId {
+                    object_path: name.to_string(),
+                    uuid: name.to_string(),
+                },
                 name: name.to_string(),
                 service: service.to_string(),
                 state,
@@ -2603,11 +2851,37 @@ mod tests {
         assert!(!is_vpn_connection_type("802-3-ethernet"));
         assert_eq!(vpn_state_from_network_manager(1), VpnState::Connecting);
         assert_eq!(vpn_state_from_network_manager(2), VpnState::Connected);
+        assert_eq!(vpn_state_from_vpn_connection(2), VpnState::Connecting);
+        assert_eq!(vpn_state_from_vpn_connection(5), VpnState::Connected);
+        assert_eq!(vpn_state_from_vpn_connection(6), VpnState::Failed);
+        assert_eq!(vpn_state_from_vpn_connection(7), VpnState::Disconnected);
+        assert_eq!(vpn_state_from_vpn_connection(99), VpnState::Unknown);
         assert_eq!(
             vpn_service_label("vpn", Some("org.freedesktop.NetworkManager.openvpn")),
             "OpenVPN"
         );
         assert_eq!(vpn_service_label("wireguard", None), "WireGuard");
+    }
+
+    #[test]
+    fn vpn_profile_identity_is_opaque_and_cancellation_is_shared() {
+        let id = VpnProfileId {
+            object_path: "/org/freedesktop/NetworkManager/Settings/42".to_string(),
+            uuid: "12345678-1234-1234-1234-123456789abc".to_string(),
+        };
+        let debug = format!("{id:?}");
+        assert_eq!(
+            debug,
+            "VpnProfileId { object: \"<redacted>\", uuid: \"<redacted>\" }"
+        );
+        assert!(!debug.contains("Settings/42"));
+        assert!(!debug.contains("12345678"));
+
+        let cancellation = VpnCancellation::new();
+        let observer = cancellation.clone();
+        assert!(!observer.is_cancelled());
+        cancellation.cancel();
+        assert!(observer.is_cancelled());
     }
 
     #[test]

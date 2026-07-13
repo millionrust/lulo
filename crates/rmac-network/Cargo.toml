@@ -6,9 +6,12 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+async-channel.workspace = true
 zeroize.workspace = true
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
+async-io.workspace = true
+futures-util.workspace = true
 zbus.workspace = true
 
 [dev-dependencies]

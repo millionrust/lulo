@@ -70,6 +70,25 @@ a separate authoritative recovery read before showing the error, so it does
 not keep presenting a profile that NetworkManager already removed. Window close
 is suppressed during this short irreversible transaction.
 
+## Live state and service recovery
+
+The Linux adapter subscribes to the complete NetworkManager object-path
+namespace, covering manager properties, device and ActiveConnection state,
+access-point changes, and saved-profile additions, updates, and removals.
+Signal payloads are refresh hints only: after a 75 ms quiet period, System
+Settings re-reads the complete authoritative Wi-Fi snapshot. A bounded channel
+and source-side coalescing prevent scan and activation bursts from queueing
+unbounded work.
+
+A separate `org.freedesktop.DBus.NameOwnerChanged` subscription tracks the
+NetworkManager well-known name. Initial ownership is queried only after both
+subscriptions are installed. Owner loss produces a separate live-stream error
+without discarding the last known-good snapshot; owner recovery guarantees a
+fresh read even if an earlier refresh hint already filled the channel. System
+Settings suppresses stream reads during mutations and rejects any stream
+snapshot whose captured generation predates a mutation, so mutation readback
+remains authoritative.
+
 ## Password lifetime
 
 The sheet uses GPUI's masked editor. A submitted value moves immediately into a
@@ -82,11 +101,10 @@ the requested secret is system-owned by NetworkManager.
 
 ## Explicitly remaining
 
-F1 stays open until service and property signals replace manual refresh,
-NetworkManager restart recovery is proven, and permission, cancellation,
-wrong-secret, active-forget, and partial-delete behavior has Linux interaction
-evidence. Enterprise authentication needs a separate certificate and identity
-design; legacy security remains intentionally unavailable.
+F1 stays open until NetworkManager signal/restart behavior, permission,
+cancellation, wrong-secret, active-forget, and partial-delete behavior has Linux
+interaction evidence. Enterprise authentication needs a separate certificate
+and identity design; legacy security remains intentionally unavailable.
 
 The adapter follows NetworkManager's official
 [`ActivateConnection` and `AddAndActivateConnection` contract](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.html)

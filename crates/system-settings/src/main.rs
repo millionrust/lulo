@@ -548,6 +548,15 @@ fn validate_search_exclusion(path: PathBuf) -> std::result::Result<String, Strin
         .ok_or_else(|| "The selected folder path cannot be represented as text".to_owned())
 }
 
+fn wifi_stream_snapshot_is_current(
+    captured_generation: u64,
+    current_generation: u64,
+    busy: bool,
+    loading: bool,
+) -> bool {
+    !busy && !loading && captured_generation == current_generation
+}
+
 struct WifiPasswordPrompt {
     network: rmac_network::WifiNetworkId,
     ssid: SharedString,
@@ -623,6 +632,7 @@ struct Settings {
     focused_once: bool,
     dragging: bool,
     wifi_error: Option<SharedString>,
+    wifi_stream_error: Option<SharedString>,
     bluetooth_error: Option<SharedString>,
     network_error: Option<SharedString>,
     vpn_error: Option<SharedString>,
@@ -695,6 +705,7 @@ struct Settings {
     wifi_available: bool,
     wifi_loading: bool,
     wifi_busy: bool,
+    wifi_generation: u64,
     wifi_connecting: Option<rmac_network::WifiNetworkId>,
     wifi_forgetting: Option<rmac_network::WifiNetworkId>,
     wifi_forget_confirmation: Option<WifiForgetPrompt>,
@@ -1299,6 +1310,68 @@ impl Settings {
         })
         .detach();
 
+        let (wifi_updates, wifi_update_rx) = async_channel::bounded(1);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_network::watch(wifi_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = wifi_update_rx.recv().await {
+                match event {
+                    rmac_network::WifiWatchEvent::Changed => {
+                        let generation = match this.update(cx, |this: &mut Settings, cx| {
+                            this.wifi_stream_error = None;
+                            cx.notify();
+                            (!this.wifi_busy && !this.wifi_loading)
+                                .then_some(this.wifi_generation)
+                        }) {
+                            Ok(generation) => generation,
+                            Err(_) => break,
+                        };
+                        let Some(generation) = generation else {
+                            continue;
+                        };
+                        let result = cx
+                            .background_executor()
+                            .spawn(async { rmac_network::snapshot() })
+                            .await;
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                if wifi_stream_snapshot_is_current(
+                                    generation,
+                                    this.wifi_generation,
+                                    this.wifi_busy,
+                                    this.wifi_loading,
+                                ) {
+                                    this.finish_wifi_stream_update(result);
+                                    cx.notify();
+                                }
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    rmac_network::WifiWatchEvent::Unavailable => {
+                        if this
+                            .update(cx, |this: &mut Settings, cx| {
+                                this.wifi_stream_error = Some(
+                                    "Live Wi-Fi updates are temporarily unavailable while NetworkManager reconnects"
+                                        .into(),
+                                );
+                                cx.notify();
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
+
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
@@ -1666,6 +1739,7 @@ impl Settings {
             focused_once: false,
             dragging: false,
             wifi_error: None,
+            wifi_stream_error: None,
             bluetooth_error: None,
             network_error: None,
             vpn_error: None,
@@ -1731,6 +1805,7 @@ impl Settings {
             wifi_available: false,
             wifi_loading: true,
             wifi_busy: false,
+            wifi_generation: 0,
             wifi_connecting: None,
             wifi_forgetting: None,
             wifi_forget_confirmation: None,
@@ -3263,6 +3338,27 @@ impl Settings {
         self.wifi_saved_networks = snapshot.saved_networks;
     }
 
+    fn begin_wifi_mutation(&mut self) {
+        self.wifi_generation = self.wifi_generation.wrapping_add(1);
+        self.wifi_busy = true;
+    }
+
+    fn finish_wifi_stream_update(
+        &mut self,
+        result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
+    ) {
+        match result {
+            Ok(snapshot) => {
+                self.apply_wifi_snapshot(snapshot);
+                self.wifi_stream_error = None;
+            }
+            Err(_) => {
+                self.wifi_stream_error =
+                    Some("Live Wi-Fi state could not be refreshed from NetworkManager".into());
+            }
+        }
+    }
+
     fn finish_wifi_update(
         &mut self,
         result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
@@ -4511,7 +4607,7 @@ impl Settings {
         if self.wifi_busy || self.wifi_loading || !self.wifi_available {
             return;
         }
-        self.wifi_busy = true;
+        self.begin_wifi_mutation();
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -4533,7 +4629,7 @@ impl Settings {
         if self.wifi_busy || !self.wifi_available || !self.wifi_on {
             return;
         }
-        self.wifi_busy = true;
+        self.begin_wifi_mutation();
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -4566,7 +4662,7 @@ impl Settings {
         if !candidate.can_connect() {
             return;
         }
-        self.wifi_busy = true;
+        self.begin_wifi_mutation();
         self.wifi_connecting = Some(network.clone());
         self.wifi_error = None;
         cx.notify();
@@ -4632,7 +4728,7 @@ impl Settings {
             return;
         }
 
-        self.wifi_busy = true;
+        self.begin_wifi_mutation();
         self.wifi_forgetting = Some(network.clone());
         self.wifi_forget_confirmation = None;
         self.wifi_error = None;
@@ -4744,7 +4840,7 @@ impl Settings {
         window.focus(&focus);
 
         let cancellation = rmac_network::WifiCancellation::new();
-        self.wifi_busy = true;
+        self.begin_wifi_mutation();
         self.wifi_connecting = Some(network.clone());
         self.wifi_cancellation = Some(cancellation.clone());
         self.wifi_error = None;
@@ -11320,6 +11416,7 @@ impl Render for Settings {
             .or_else(|| self.sharing_error.clone())
             .or_else(|| self.sharing_stream_error.clone())
             .or_else(|| self.wifi_error.clone())
+            .or_else(|| self.wifi_stream_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
             .or_else(|| self.vpn_error.clone())
@@ -11381,6 +11478,7 @@ impl Render for Settings {
                             this.sharing_error = None;
                             this.sharing_stream_error = None;
                             this.wifi_error = None;
+                            this.wifi_stream_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
                             this.vpn_error = None;
@@ -12913,9 +13011,9 @@ mod tests {
     use super::{
         categories, category_has_dedicated_renderer, category_name_for_pane_id, category_position,
         composite_wallpaper_pixel, notification_policy_with, render_wallpaper_preview,
-        wallpaper_selection, DockChange, NotificationPolicyChange, ScreenReaderCapability,
-        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-        WallpaperTarget, GENERAL_DESTINATIONS,
+        wallpaper_selection, wifi_stream_snapshot_is_current, DockChange, NotificationPolicyChange,
+        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
+        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -12924,6 +13022,14 @@ mod tests {
             GENERAL_DESTINATIONS,
             ["About", "Software Update", "Storage"]
         );
+    }
+
+    #[test]
+    fn wifi_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(wifi_stream_snapshot_is_current(7, 7, false, false));
+        assert!(!wifi_stream_snapshot_is_current(6, 7, false, false));
+        assert!(!wifi_stream_snapshot_is_current(7, 7, true, false));
+        assert!(!wifi_stream_snapshot_is_current(7, 7, false, true));
     }
 
     #[test]

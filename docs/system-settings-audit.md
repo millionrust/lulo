@@ -8,7 +8,7 @@ equivalents rather than simulated.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|
-| Wi-Fi | Real state, radio mutation, access-point scan, typed security, exact saved/open/Enhanced Open activation, masked WPA Personal/SAE password sheet, one-shot Secret Agent, cancellation, complete Known Networks inventory, confirmed exact-profile forgetting with active disconnect, bounded completion, and authoritative readback | NetworkManager D-Bus | Live signals, restart recovery, enterprise setup, and Linux permission/cancellation/wrong-secret/partial-delete evidence |
+| Wi-Fi | Real state, radio mutation, access-point scan, typed security, exact saved/open/Enhanced Open activation, masked WPA Personal/SAE password sheet, one-shot Secret Agent, cancellation, complete Known Networks inventory, confirmed exact-profile forgetting with active disconnect, coalesced live signals, owner-loss/restart recovery, bounded completion, and authoritative readback | NetworkManager D-Bus | Enterprise setup plus Linux signal/restart/permission/cancellation/wrong-secret/partial-delete evidence |
 | Bluetooth | Real adapter, discovery, and known-device connections | BlueZ D-Bus | Confirmation agent for new-device pairing and live signals |
 | Network | Real interfaces, route, IP, gateway, and DNS state | NetworkManager D-Bus | Safe connection editing and live signals |
 | VPN | Real profile listing and activation/deactivation | NetworkManager VPN plugins | Import supported profiles and live signals |
@@ -60,7 +60,10 @@ persistence. Saved profiles remain manageable while out of range or with the
 radio off; forgetting confirms, disconnects an active exact profile, deletes
 all accessible compatible profiles, and recovers authoritative state after a
 partial failure. Enterprise and legacy networks remain honestly unavailable.
-The complete transaction and remaining F1 gates are recorded in
+NetworkManager object signals are coalesced into full snapshot reads; service
+owner loss preserves the last known-good state with a separate stream error,
+and reappearance guarantees a recovery read. The complete transaction and
+remaining F1 gates are recorded in
 [`wifi.md`](wifi.md).
 
 General now exposes only About, the explicitly read-only Software Update status,

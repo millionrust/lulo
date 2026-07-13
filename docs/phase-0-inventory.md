@@ -114,9 +114,12 @@ owns persisted system secrets. Accessible saved profiles also populate a
 deduplicated Known Networks list even while out of range; confirmed forgetting
 disconnects an active matching profile, deletes every exact compatible profile,
 and refreshes authoritative state after success or possible partial failure.
-macOS retains `networksetup`. System Settings keeps all calls off the UI thread
-and surfaces service failures. The complete pane-to-service contract is tracked
-in `docs/system-settings-audit.md` and `docs/wifi.md`.
+Coalesced NetworkManager object signals drive complete snapshot resampling;
+well-known-name loss and recovery preserve last-known-good state and guarantee
+a refresh after service restart. macOS retains `networksetup`. System Settings
+keeps all calls off the UI thread and surfaces mutation and stream failures
+separately. The complete pane-to-service contract is tracked in
+`docs/system-settings-audit.md` and `docs/wifi.md`.
 
 `rmac-bluetooth` backs the Bluetooth pane through BlueZ's D-Bus ObjectManager
 on Linux. Adapter power/discoverability, bounded discovery, and known-device

@@ -5892,8 +5892,49 @@ impl Settings {
                 ));
             }
         }
+        cards.push(section_header("Desktop Application Sources"));
+        let application_sources = rmac_apps::source_inventory(&self.app_catalog);
+        cards.push(card(vec![
+            value_row(
+                "icons/app-window.svg",
+                accent(),
+                "Desktop-visible applications".into(),
+                application_sources.total().to_string().into(),
+            ),
+            value_row(
+                "icons/app-window.svg",
+                secondary(),
+                "Sandbox package exports".into(),
+                format!(
+                    "{} Flatpak · {} Snap",
+                    application_sources.flatpak, application_sources.snap
+                )
+                .into(),
+            ),
+            value_row(
+                "icons/app-window.svg",
+                secondary(),
+                "Portable applications".into(),
+                format!("{} AppImage", application_sources.appimage).into(),
+            ),
+            value_row(
+                "icons/info.svg",
+                secondary(),
+                "Unattributed desktop entries".into(),
+                format!(
+                    "{} system · {} user · {} other",
+                    application_sources.system_desktop_entries,
+                    application_sources.user_desktop_entries,
+                    application_sources.other_desktop_entries
+                )
+                .into(),
+            ),
+        ]));
         cards.push(note_card(
-            "Reset removes only the selected stored portal decision through PermissionStore version 2. Permission tokens are displayed verbatim because the store does not interpret them. Package-origin counts describe installed APT packages, not the trustworthiness of a repository or the security state of Flatpak, Snap, AppImage, or manually installed software.",
+            "Application source counts cover the live desktop-entry catalog. Flatpak and Snap use their exported desktop-entry paths; AppImage uses integration IDs or the launch executable. System and user desktop entries are not claimed to be APT-owned, and command-line-only packages are outside this inventory.",
+        ));
+        cards.push(note_card(
+            "Reset removes only the selected stored portal decision through PermissionStore version 2. Permission tokens are displayed verbatim because the store does not interpret them. Package and application source counts describe provenance signals, not repository trust or the security state of individual applications.",
         ));
         self.pane(cards)
     }

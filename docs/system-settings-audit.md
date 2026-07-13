@@ -33,7 +33,7 @@ equivalents rather than simulated.
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Hidden from production navigation | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Real live lock and capability-gated automatic-suspend choices; truthful Hidden preview state; secure manual/logind/pre-sleep and idle paths | `org.rmac.LockScreen1`, provider security state machine, bounded action-free notification projection, logind `CanSuspend`/`Suspend(false)`, niri `ext-session-lock-v1`, PAM-enabled swaylock, and delay inhibitor | Reviewed Wayland/PAM adapter and rmac presentation, preview controls, scoped build, and Linux security/accessibility evidence |
-| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens and version-gated reset; PackageKit security-update summary; Ubuntu Pro Client package-origin, contract/service, and unattended-upgrades authorities with partial-failure visibility; explicit native/active-access and non-APT limits | `rmac-privacy`, `rmac-privacy-linux`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit, Ubuntu Pro Client offline API | Standard-release support-period authority, non-APT application source inventory, supported automatic-update mutation, live PermissionStore changes, and Linux revoke/access evidence |
+| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens and version-gated reset; PackageKit security-update summary; Ubuntu Pro package-origin/contract/service/unattended-upgrades authorities; live desktop catalog source inventory for Flatpak, Snap, AppImage, and unattributed entries; explicit provenance limits | `rmac-privacy`, `rmac-privacy-linux`, `rmac-apps`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit, Ubuntu Pro Client offline API | Standard-release support-period authority, package ownership/trust drill-down, supported automatic-update mutation, live PermissionStore changes, and Linux revoke/access evidence |
 
 ## Delivery order
 
@@ -307,6 +307,14 @@ non-zero upgrade interval. The pane does not infer repository trust, standard
 release support dates, or Flatpak/Snap/AppImage/manual-install status from these
 values. Authority references: [Ubuntu Pro Client API](https://documentation.ubuntu.com/pro-client/en/docs/references/api/)
 and [unattended-upgrade](https://manpages.ubuntu.com/manpages/noble/man8/unattended-upgrade.8.html).
+
+Application provenance is a separate live inventory over the same XDG desktop
+catalog used throughout rmac. Exact Flatpak export and Snap desktop paths are
+counted separately, while AppImage entries require an integration ID or an
+`.AppImage` launch executable. Remaining entries are labeled system, user, or
+other desktop entries; rmac does not equate those locations with APT ownership.
+The count therefore covers desktop-visible applications, not command-line-only
+packages, repository signatures, or whether an individual application is safe.
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

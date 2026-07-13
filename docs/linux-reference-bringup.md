@@ -203,6 +203,23 @@ dismissal, System Settings routing, keyboard-only order, and no hardware watcher
 remaining after close. Repeat at 100%, 125%, 150%, and 200% with Orca and record
 primary/trailing placement as candidate evidence, not final layer-shell proof.
 
+Confirm the App Drawer service is idle-ready with no window or catalog watcher,
+then invoke the exact action used by both shortcut backends:
+
+```sh
+systemctl --user --no-pager status rmac-app-drawer.service
+~/.local/libexec/rmac/rmac-shortcut-dispatch app-drawer
+```
+
+Verify the first dispatch opens one window, the second closes it, and the third
+opens a fresh view without restarting the service. Install, remove, and edit a
+desktop entry while open and prove the coalesced live refresh. Close the drawer,
+change the catalog again, and confirm the idle service performs no catalog scan
+or redraw. Restart the service and prove the first post-readiness dispatch is
+accepted. Complete the G6 keyboard, context-action, strict-focus, scaling, Orca,
+icon/cache, and cold-start measurements below using the supervised path; retain
+standalone mode only as the explicit app/benchmark comparison.
+
 The D-phase component units are condition-gated until their binaries are
 installed, so they remain skipped rather than entering false crash loops. The
 supervisor must be active and its JSON health output must identify every unit.

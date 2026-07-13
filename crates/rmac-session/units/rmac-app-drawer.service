@@ -1,0 +1,18 @@
+[Unit]
+Description=rmac App Drawer
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+Before=rmac-shortcut-broker.service
+OnFailure=rmac-component-failure@%N.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionPathIsExecutable=%h/.local/libexec/rmac/rmac-app-drawer
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=%h/.local/libexec/rmac/rmac-app-drawer --service
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

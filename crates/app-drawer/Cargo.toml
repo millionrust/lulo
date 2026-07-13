@@ -11,8 +11,12 @@ path = "src/main.rs"
 
 [dependencies]
 async-channel.workspace = true
+blocking.workspace = true
+futures-util.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+gpui-component-assets.workspace = true
 rmac-apps.workspace = true
 rmac-app-launch.workspace = true
+rmac-shortcuts.workspace = true
 rmac-ui.workspace = true

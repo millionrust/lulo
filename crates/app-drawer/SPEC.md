@@ -20,6 +20,10 @@ software store, package manager, or imitation of Apple Launchpad.
 - “Show in Folder” uses the file-manager portal through `rmac-apps::reveal`.
 - `rmac-ui` owns live appearance, shared controls, text scaling, and window
   chrome. App Drawer does not maintain a private theme.
+- `rmac-app-drawer.service` owns only the action-scoped `app-drawer` shortcut
+  endpoint and one on-demand window. Its explicit `--service` mode reports ready
+  only after binding; standalone launches remain available for development and
+  performance measurement without competing for the shortcut.
 
 ## Primary journeys
 
@@ -35,6 +39,9 @@ software store, package manager, or imitation of Apple Launchpad.
    such as New Window, or Show in Folder.
 6. Install, remove, or edit a desktop entry and see a coalesced catalog refresh
    that preserves selection by source path where possible.
+7. Invoke the global shortcut to open one App Drawer, invoke it again to close
+   that window, and invoke it a third time to open a fresh view without
+   restarting the supervised endpoint.
 
 ## Interaction contract
 
@@ -86,6 +93,8 @@ software store, package manager, or imitation of Apple Launchpad.
 ## Release gates and remaining work
 
 - Add stable persisted view preference if usability evidence supports it.
+- Prove service readiness, first-dispatch delivery, repeated-invocation toggle,
+  restart recovery, and zero catalog watcher activity while no window exists.
 - Prove keyboard focus order, context-action activation, live cache
   invalidation, cold-cache performance, icon fallback, and install/removal on
   Ubuntu 26.04 with niri.

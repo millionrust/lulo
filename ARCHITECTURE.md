@@ -304,6 +304,11 @@ Receipts never update the Dock model; only later catalog/compositor events do.
 Its context boundary exposes per-window focus/close and current-settings-based
 pin mutations. Pin writes preserve unrelated shell settings and reread the
 atomic authority before returning; there is no fabricated process-wide Quit.
+App Drawer's explicit supervised mode owns the action-scoped `app-drawer`
+shortcut endpoint and reports readiness only after binding. It constructs its
+catalog watcher and GPUI entity only while its single window exists; repeated
+activation dismisses that window without stopping the endpoint. Its standalone
+mode remains a normal measurable product app and never competes for the socket.
 `rmac-dock-runtime` establishes the app-directory watcher before discovery and
 combines its coalesced changes with reconnecting niri events and versioned
 shell-settings events. It waits until every source is healthy or explicitly

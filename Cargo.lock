@@ -4849,10 +4849,14 @@ name = "rmac-app-drawer"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
+ "blocking",
+ "futures-util",
  "gpui",
  "gpui-component",
+ "gpui-component-assets",
  "rmac-app-launch",
  "rmac-apps",
+ "rmac-shortcuts",
  "rmac-ui",
 ]
 

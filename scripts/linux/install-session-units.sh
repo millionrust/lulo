@@ -38,6 +38,7 @@ esac
 (cd "${repo_root}" && cargo build --locked --release \
     -p rmac-session --bin rmac-session-supervisor \
     -p rmac-launcher-app --bin rmac-launcher \
+    -p rmac-app-drawer --bin rmac-app-drawer \
     -p rmac-quick-settings-app --bin rmac-quick-settings \
     -p rmac-notification-center-app --bin rmac-notification-center-panel \
     -p rmac-system-settings --bin rmac-system-settings \
@@ -50,6 +51,7 @@ install -d -m 0755 "${libexec_dir}"
 install -d -m 0755 "${bin_dir}"
 install -m 0755 "${target_dir}/release/rmac-session-supervisor" "${libexec_dir}/rmac-session-supervisor"
 install -m 0755 "${target_dir}/release/rmac-launcher" "${libexec_dir}/rmac-launcher"
+install -m 0755 "${target_dir}/release/rmac-app-drawer" "${libexec_dir}/rmac-app-drawer"
 install -m 0755 "${target_dir}/release/rmac-quick-settings" "${libexec_dir}/rmac-quick-settings"
 install -m 0755 "${target_dir}/release/rmac-notification-center-panel" "${libexec_dir}/rmac-notification-center-panel"
 install -m 0755 "${target_dir}/release/rmac-system-settings" "${libexec_dir}/rmac-system-settings"
@@ -109,7 +111,7 @@ fallback_path="${config_home}/rmac/niri-shortcuts.kdl"
     "${fallback_path}" "${libexec_dir}/rmac-shortcut-dispatch"
 echo "Installed rmac user units in ${unit_dir}."
 echo "Installed the supervisor in ${libexec_dir}."
-echo "Installed the notification service, supervised on-demand Center and Quick Settings panels, and rmac notification portal backend."
+echo "Installed the supervised App Drawer, notification service, on-demand Center and Quick Settings panels, and rmac notification portal backend."
 echo "Installed the Focus policy authority."
 echo "Installed secure swaylock supervision, logind coordination, idle locking, and default lock policy."
 echo "Start the session from niri with ${bin_dir}/rmac-session-start."

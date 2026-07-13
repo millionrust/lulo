@@ -10,14 +10,27 @@ or balance controls that have no reviewed session authority.
 `rmac-audio` runs blocking audio queries and mutations off the UI thread. The
 current Linux adapter uses argument-separated official `wpctl` operations for
 the default sink/source level, mute, device inventory, and default-node change.
-Each mutation is followed by a complete snapshot; Settings never assumes that
-the requested value became authoritative from command completion alone.
+The inventory comes from the tab-separated machine-readable `wpctl list`
+contract: numeric object ID, exact `node.name`, media class, and default marker.
+The private node name is retained only to revalidate a selected node against a
+fresh graph; it is omitted from `Debug` output and never persisted. The numeric
+ID is treated as current-graph identity rather than a stable hardware ID.
 
-The current inventory parser remains a compatibility boundary around
-`wpctl status`. F6 is not complete until the reference Ubuntu version supports
-and rmac adopts the official machine-readable `wpctl list` contract or a
-reviewed native WirePlumber/PipeWire client. Route, device-profile, and channel
-map information is therefore not claimed yet.
+`pw-dump --no-colors` supplies best-effort friendly descriptions only. rmac
+accepts descriptions solely from PipeWire Node objects whose media class is
+`Audio/Sink` or `Audio/Source`; an invalid or unavailable dump cannot replace
+the authoritative `wpctl list` inventory. Both standard output and standard
+error are drained to process completion while retaining at most 4 MiB each, so
+a large graph cannot deadlock the child or grow memory without bound. The dump
+is held in memory only long enough to extract bounded labels.
+
+Volume reads target the exact advertised default node IDs. Default-device
+mutation re-reads the selected ID and private node name before issuing
+`wpctl set-default`, polls the machine-readable inventory for at most three
+seconds, and returns a complete snapshot only after the same identity is
+advertised as default. Settings consumes that verified snapshot directly;
+command completion alone is never presented as success. Volume and mute
+mutations likewise end in a complete readback.
 
 ## Live changes and recovery
 
@@ -45,7 +58,6 @@ cannot be silently lost or overwrite newer readback.
 
 F6 remains open until rmac adds and the Ubuntu/niri reference PC proves:
 
-- a reviewed machine-readable or native snapshot boundary for node identity;
 - advertised device profiles and routes with exact identity, availability,
   mutation, authoritative readback, hotplug, and rollback-safe failure states;
 - per-channel balance only where a real channel map supports it;
@@ -55,5 +67,6 @@ F6 remains open until rmac adds and the Ubuntu/niri reference PC proves:
   idle wakeups, and combined shell behavior.
 
 The implementation follows the official
-[`pw-mon` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-mon_1.html)
+[`pw-mon` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-mon_1.html),
+[`pw-dump` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-dump_1.html),
 and [WirePlumber `wpctl` interface](https://pipewire.pages.freedesktop.org/wireplumber/tools/wpctl.html).

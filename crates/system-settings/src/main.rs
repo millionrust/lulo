@@ -900,7 +900,7 @@ struct Settings {
 enum AudioChange {
     Volume(rmac_audio::DeviceKind, u8),
     Muted(rmac_audio::DeviceKind, bool),
-    DefaultDevice(rmac_audio::DeviceKind, String),
+    DefaultDevice(rmac_audio::DeviceKind, rmac_audio::Device),
 }
 
 #[derive(Clone, Copy)]
@@ -5045,7 +5045,7 @@ impl Settings {
     fn set_default_audio_device(
         &mut self,
         kind: rmac_audio::DeviceKind,
-        id: String,
+        device: rmac_audio::Device,
         cx: &mut Context<Self>,
     ) {
         if self.audio_loading
@@ -5055,7 +5055,7 @@ impl Settings {
         {
             return;
         }
-        self.apply_audio_change(AudioChange::DefaultDevice(kind, id), cx);
+        self.apply_audio_change(AudioChange::DefaultDevice(kind, device), cx);
     }
 
     fn apply_audio_change(&mut self, change: AudioChange, cx: &mut Context<Self>) {
@@ -5069,8 +5069,8 @@ impl Settings {
                     match change {
                         AudioChange::Volume(kind, volume) => rmac_audio::set_volume(kind, volume)?,
                         AudioChange::Muted(kind, muted) => rmac_audio::set_muted(kind, muted)?,
-                        AudioChange::DefaultDevice(kind, id) => {
-                            rmac_audio::set_default_device(kind, &id)?
+                        AudioChange::DefaultDevice(kind, device) => {
+                            return rmac_audio::set_default_device(kind, &device);
                         }
                     }
                     rmac_audio::snapshot()
@@ -11896,6 +11896,7 @@ impl Settings {
             .iter()
             .map(|d| {
                 let id = d.id.clone();
+                let device = d.clone();
                 let device_view = view.clone();
                 row_base()
                     .id(ElementId::from(SharedString::from(format!(
@@ -11916,9 +11917,9 @@ impl Settings {
                         el.cursor_pointer()
                             .hover(|hover| hover.bg(rmac_ui::mac::hover()))
                             .on_click(move |_, _, cx| {
-                                let id = id.clone();
+                                let device = device.clone();
                                 device_view.update(cx, |settings, cx| {
-                                    settings.set_default_audio_device(kind, id, cx)
+                                    settings.set_default_audio_device(kind, device, cx)
                                 });
                             })
                     })

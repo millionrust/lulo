@@ -4905,6 +4905,7 @@ dependencies = [
  "async-process",
  "futures-lite 2.6.1",
  "futures-util",
+ "serde_json",
 ]
 
 [[package]]

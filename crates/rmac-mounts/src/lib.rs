@@ -13,6 +13,44 @@ pub struct Mount {
     pub ejectable: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub total: u64,
+    pub used: u64,
+    pub available: u64,
+}
+
+impl Usage {
+    pub fn used_fraction(self) -> f32 {
+        if self.total == 0 {
+            0.0
+        } else {
+            (self.used as f32 / self.total as f32).clamp(0.0, 1.0)
+        }
+    }
+
+    pub fn is_low_space(self) -> bool {
+        self.total > 0 && (self.available < 5_000_000_000 || self.available < self.total / 20)
+    }
+
+    fn from_blocks(block_size: u64, blocks: u64, available_blocks: u64) -> Self {
+        let total = blocks.saturating_mul(block_size);
+        let available = available_blocks.saturating_mul(block_size).min(total);
+        Self {
+            total,
+            used: total.saturating_sub(available),
+            available,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Volume {
+    pub mount: Mount,
+    pub usage: Option<Usage>,
+    pub usage_error: Option<String>,
+}
+
 #[derive(Debug)]
 pub enum Error {
     Io {
@@ -76,6 +114,49 @@ pub fn discover() -> Result<Vec<Mount>, Error> {
         })?;
         Ok(parse_mountinfo(&contents))
     }
+}
+
+/// Return the system volume plus user-visible mounted volumes with independent
+/// capacity results. A broken or disconnected mount never hides healthy ones.
+pub fn volumes() -> Result<Vec<Volume>, Error> {
+    let mut mounts = vec![Mount {
+        name: "System Volume".into(),
+        path: PathBuf::from("/"),
+        ejectable: false,
+    }];
+    mounts.extend(discover()?);
+    sort_and_deduplicate(&mut mounts);
+    // Keep the system volume first regardless of localized external names.
+    mounts.sort_by_key(|mount| mount.ejectable);
+    Ok(mounts
+        .into_iter()
+        .map(|mount| match volume_usage(&mount.path) {
+            Ok(usage) => Volume {
+                mount,
+                usage: Some(usage),
+                usage_error: None,
+            },
+            Err(error) => Volume {
+                mount,
+                usage: None,
+                usage_error: Some(format!("Could not read capacity: {error}")),
+            },
+        })
+        .collect())
+}
+
+fn volume_usage(path: &Path) -> io::Result<Usage> {
+    let status = rustix::fs::statvfs(path).map_err(io::Error::from)?;
+    let block_size = if status.f_frsize > 0 {
+        status.f_frsize
+    } else {
+        status.f_bsize
+    };
+    Ok(Usage::from_blocks(
+        block_size,
+        status.f_blocks,
+        status.f_bavail,
+    ))
 }
 
 pub fn unmount(path: &Path) -> Result<(), Error> {
@@ -262,5 +343,29 @@ mod tests {
         let line = "36 25 8:1 / /media/alice/Drive rw - vfat /dev/sdb1 rw\n";
         let mounts = parse_mountinfo(&format!("{line}{line}"));
         assert_eq!(mounts.len(), 1);
+    }
+
+    #[test]
+    fn usage_math_is_saturating_and_flags_low_space() {
+        let healthy = Usage::from_blocks(4096, 10_000_000, 5_000_000);
+        assert_eq!(healthy.total, 40_960_000_000);
+        assert_eq!(healthy.used, 20_480_000_000);
+        assert!(!healthy.is_low_space());
+
+        let low = Usage::from_blocks(4096, 10_000_000, 100_000);
+        assert!(low.is_low_space());
+        assert!(low.used_fraction() > 0.9);
+
+        let inconsistent = Usage::from_blocks(u64::MAX, u64::MAX, u64::MAX);
+        assert_eq!(inconsistent.available, inconsistent.total);
+        assert_eq!(inconsistent.used, 0);
+    }
+
+    #[test]
+    fn live_root_volume_has_bounded_capacity_relationships() {
+        let usage = volume_usage(Path::new("/")).unwrap();
+        assert!(usage.total > 0);
+        assert!(usage.available <= usage.total);
+        assert_eq!(usage.used, usage.total - usage.available);
     }
 }

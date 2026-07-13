@@ -24,6 +24,7 @@ rmac-focus.workspace = true
 rmac-focus-linux.workspace = true
 rmac-focus-settings.workspace = true
 rmac-input.workspace = true
+rmac-mounts.workspace = true
 rmac-network.workspace = true
 rmac-notifications-linux.workspace = true
 rmac-notifications.workspace = true

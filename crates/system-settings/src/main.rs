@@ -138,15 +138,6 @@ enum SubPage {
     FocusSchedule { schedule_id: String },
 }
 
-/// Boot-volume storage usage (read once after launch via `df`).
-#[derive(Default)]
-struct StorageInfo {
-    volume: String,
-    total: u64,
-    used: u64,
-    avail: u64,
-}
-
 struct Settings {
     system_data_loading: bool,
     system_data_busy: bool,
@@ -162,7 +153,9 @@ struct Settings {
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
-    storage: StorageInfo,
+    storage: Vec<rmac_mounts::Volume>,
+    storage_busy: bool,
+    storage_error: Option<SharedString>,
     audio: rmac_audio::Snapshot,
     input: rmac_input::Snapshot,
     sections: Vec<Vec<Category>>,
@@ -342,7 +335,7 @@ impl DisplayChange {
 struct SystemSnapshot {
     account: String,
     sysinfo: std::result::Result<rmac_system_info::Snapshot, rmac_system_info::Error>,
-    storage: StorageInfo,
+    storage: std::result::Result<Vec<rmac_mounts::Volume>, rmac_mounts::Error>,
 }
 
 struct ThemeLoad {
@@ -659,7 +652,9 @@ impl Settings {
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
-            storage: StorageInfo::default(),
+            storage: Vec::new(),
+            storage_busy: false,
+            storage_error: None,
             audio: rmac_audio::Snapshot::default(),
             input: rmac_input::Snapshot::default(),
             sections: categories(),
@@ -759,7 +754,16 @@ impl Settings {
                     Some(format!("Could not read system information: {error}").into());
             }
         }
-        self.storage = snapshot.storage;
+        match snapshot.storage {
+            Ok(storage) => {
+                self.storage = storage;
+                self.storage_error = None;
+            }
+            Err(error) => {
+                self.storage_error =
+                    Some(format!("Could not read storage volumes: {error}").into());
+            }
+        }
         self.system_data_loading = false;
     }
 
@@ -900,6 +904,36 @@ impl Settings {
             let result = rmac_updates_linux::snapshot(rmac_updates::Request::refresh()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_update_status(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_storage(&mut self, cx: &mut Context<Self>) {
+        if self.storage_busy {
+            return;
+        }
+        self.storage_busy = true;
+        self.storage_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_mounts::volumes() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.storage_busy = false;
+                match result {
+                    Ok(volumes) => {
+                        this.storage = volumes;
+                        this.storage_error = None;
+                    }
+                    Err(error) => {
+                        this.storage_error =
+                            Some(format!("Could not refresh storage volumes: {error}").into());
+                    }
+                }
                 cx.notify();
             });
         })
@@ -4988,84 +5022,133 @@ impl Settings {
         self.pane(cards)
     }
 
-    /// Real boot-volume storage usage with a macOS-style fill bar.
-    fn storage_body(&self) -> Div {
-        let s = &self.storage;
-        let frac = if s.total > 0 {
-            (s.used as f32 / s.total as f32).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-
-        let bar_card = div()
-            .v_flex()
-            .gap_2()
-            .mb_3()
-            .p_4()
-            .rounded(px(10.0))
-            .bg(card_bg())
-            .border_1()
-            .border_color(sep())
+    /// Direct per-volume capacity state from the mount service.
+    fn storage_body(&self, cx: &Context<Self>) -> Div {
+        let refresh_view = cx.entity();
+        let mut body = div().v_flex().child(card(vec![row_base()
+            .child(tile("icons/hard-drive.svg", accent(), 22.0))
+            .child(text_block(
+                "Mounted volumes".into(),
+                Some("System and user-visible removable volumes".into()),
+            ))
             .child(
-                div()
-                    .h_flex()
-                    .justify_between()
-                    .items_baseline()
-                    .child(
-                        div()
-                            .text_size(px(15.0))
-                            .font_weight(rmac_ui::mac::SEMIBOLD)
-                            .text_color(label())
-                            .child(s.volume.clone()),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(13.0))
-                            .text_color(secondary())
-                            .child(format!(
-                                "{} available of {}",
-                                fmt_gb(s.avail),
-                                fmt_gb(s.total)
-                            )),
-                    ),
+                Button::new("refresh-storage", "Refresh")
+                    .busy(self.storage_busy)
+                    .disabled(self.storage_busy)
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_storage(cx));
+                    }),
             )
-            .child(
-                div()
-                    .w_full()
-                    .h(px(10.0))
-                    .rounded(px(5.0))
-                    .bg(rmac_ui::mac::control_fill())
-                    .child(
-                        div()
-                            .h_full()
-                            .w(gpui::relative(frac))
-                            .rounded(px(5.0))
-                            .bg(accent()),
-                    ),
+            .into_any_element()]));
+
+        if self.storage.is_empty() {
+            return body.child(
+                EmptyState::new("No storage volumes available")
+                    .message("Refresh after the mount service becomes available")
+                    .error(self.storage_error.is_some()),
             );
+        }
 
-        let rows = card(vec![
-            value_row(
-                "icons/database.svg",
-                accent(),
-                "Capacity".into(),
-                fmt_gb(s.total).into(),
-            ),
-            value_row(
-                "icons/database.svg",
-                hsl(0xff9500),
-                "Used".into(),
-                fmt_gb(s.used).into(),
-            ),
-            value_row(
-                "icons/database.svg",
-                hsl(0x34c759),
-                "Available".into(),
-                fmt_gb(s.avail).into(),
-            ),
-        ]);
-
-        div().v_flex().child(bar_card).child(rows)
+        for volume in &self.storage {
+            body = body.child(section_header(volume.mount.name.clone()));
+            let Some(usage) = volume.usage else {
+                body = body.child(card(vec![row_base()
+                    .child(tile("icons/hard-drive.svg", hsl(0xff9500), 22.0))
+                    .child(text_block(
+                        volume.mount.name.clone().into(),
+                        volume.usage_error.clone().map(Into::into),
+                    ))
+                    .into_any_element()]));
+                continue;
+            };
+            let available_color = if usage.is_low_space() {
+                hsl(0xff3b30)
+            } else {
+                hsl(0x34c759)
+            };
+            body = body
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .mb_3()
+                        .p_4()
+                        .rounded(px(10.0))
+                        .bg(card_bg())
+                        .border_1()
+                        .border_color(if usage.is_low_space() {
+                            rmac_ui::mac::warning_border()
+                        } else {
+                            sep()
+                        })
+                        .child(
+                            div()
+                                .h_flex()
+                                .justify_between()
+                                .items_baseline()
+                                .child(
+                                    div()
+                                        .text_size(px(15.0))
+                                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                                        .text_color(label())
+                                        .child(volume.mount.name.clone()),
+                                )
+                                .child(div().text_size(px(13.0)).text_color(secondary()).child(
+                                    format!(
+                                        "{} available of {}",
+                                        fmt_gb(usage.available),
+                                        fmt_gb(usage.total)
+                                    ),
+                                )),
+                        )
+                        .child(
+                            div()
+                                .w_full()
+                                .h(px(10.0))
+                                .rounded(px(5.0))
+                                .bg(rmac_ui::mac::control_fill())
+                                .child(
+                                    div()
+                                        .h_full()
+                                        .w(gpui::relative(usage.used_fraction()))
+                                        .rounded(px(5.0))
+                                        .bg(if usage.is_low_space() {
+                                            hsl(0xff3b30)
+                                        } else {
+                                            accent()
+                                        }),
+                                ),
+                        ),
+                )
+                .child(card(vec![
+                    value_row(
+                        "icons/database.svg",
+                        secondary(),
+                        "Capacity".into(),
+                        fmt_gb(usage.total).into(),
+                    ),
+                    value_row(
+                        "icons/database.svg",
+                        hsl(0xff9500),
+                        "Used".into(),
+                        fmt_gb(usage.used).into(),
+                    ),
+                    value_row(
+                        "icons/database.svg",
+                        available_color,
+                        "Available".into(),
+                        fmt_gb(usage.available).into(),
+                    ),
+                ]));
+            if usage.is_low_space() {
+                body = body.child(note_card(
+                    "Space is low on this volume. Review large personal files and application caches before removing anything; rmac does not guess which files are safe to delete.",
+                ));
+            }
+        }
+        body.child(note_card(
+            "Storage categories and cleanup actions stay hidden until they can be measured and reversed safely.",
+        ))
     }
 
     // ---- subpages -----------------------------------------------------
@@ -5074,7 +5157,7 @@ impl Settings {
         let (title, body): (SharedString, Div) = match sub {
             SubPage::About => ("About".into(), self.about_body(cx)),
             SubPage::SoftwareUpdate => ("Software Update".into(), self.software_update_body(cx)),
-            SubPage::Storage => ("Storage".into(), self.storage_body()),
+            SubPage::Storage => ("Storage".into(), self.storage_body(cx)),
             SubPage::NotificationApp { app_id } => (
                 self.application_identity(app_id)
                     .map(|identity| identity.name.clone())
@@ -5423,6 +5506,7 @@ impl Render for Settings {
             .system_data_error
             .clone()
             .or_else(|| self.updates_error.clone())
+            .or_else(|| self.storage_error.clone())
             .or_else(|| self.wifi_error.clone())
             .or_else(|| self.bluetooth_error.clone())
             .or_else(|| self.network_error.clone())
@@ -5454,6 +5538,7 @@ impl Render for Settings {
                         .on_dismiss(cx.listener(|this, _, _, cx| {
                             this.system_data_error = None;
                             this.updates_error = None;
+                            this.storage_error = None;
                             this.wifi_error = None;
                             this.bluetooth_error = None;
                             this.network_error = None;
@@ -5561,7 +5646,7 @@ fn note_card(text: impl Into<SharedString>) -> Div {
 }
 
 /// A section header above a card (gray small caps-ish title).
-fn section_header(title: &'static str) -> Div {
+fn section_header(title: impl Into<SharedString>) -> Div {
     div()
         .px_1()
         .pt_2()
@@ -5569,7 +5654,7 @@ fn section_header(title: &'static str) -> Div {
         .text_size(px(12.0))
         .font_weight(rmac_ui::mac::SEMIBOLD)
         .text_color(secondary())
-        .child(title)
+        .child(title.into())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6320,7 +6405,7 @@ fn gather_system_snapshot() -> SystemSnapshot {
     SystemSnapshot {
         account: account_name(),
         sysinfo: rmac_system_info::snapshot(),
-        storage: gather_storage(),
+        storage: rmac_mounts::volumes(),
     }
 }
 
@@ -6361,40 +6446,6 @@ fn power_degradation_label(reason: &str) -> String {
 /// Format bytes as decimal GB (matching macOS storage display).
 fn fmt_gb(bytes: u64) -> String {
     format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
-}
-
-/// Read boot-volume storage usage via `df -k /`.
-fn gather_storage() -> StorageInfo {
-    let line = cmd("df", &["-k", "/"]).and_then(|o| o.lines().nth(1).map(|s| s.to_string()));
-    let cols: Vec<u64> = line
-        .as_deref()
-        .map(|l| {
-            l.split_whitespace()
-                .skip(1)
-                .take(3)
-                .filter_map(|c| c.parse().ok())
-                .collect()
-        })
-        .unwrap_or_default();
-    let total = cols.first().copied().unwrap_or(0) * 1024;
-    let avail = cols.get(2).copied().unwrap_or(0) * 1024;
-    // macOS shows "used" as capacity minus free; derive it from total - available.
-    let used = total.saturating_sub(avail);
-    let volume = cmd("diskutil", &["info", "/"])
-        .and_then(|o| {
-            o.lines().find_map(|l| {
-                l.split_once("Volume Name:")
-                    .map(|(_, v)| v.trim().to_string())
-            })
-        })
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Macintosh HD".into());
-    StorageInfo {
-        volume,
-        total,
-        used,
-        avail,
-    }
 }
 
 fn categories() -> Vec<Vec<Category>> {

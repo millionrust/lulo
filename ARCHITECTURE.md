@@ -149,6 +149,13 @@ and has a fixed timeout. System Settings retains the last successful snapshot
 when a refresh fails. Installation remains outside this read-only boundary
 until progress, cancellation, polkit, restart, and recovery states are complete.
 
+`rmac-mounts` also owns storage-capacity discovery. It combines the system
+volume with user-visible removable/network mounts and calls `statvfs` directly
+for each one. Capacity failures remain attached to their volume rather than
+failing the entire snapshot. System Settings performs discovery off the UI
+thread, preserves the last good list on refresh failure, and does not infer
+categories or safe-to-delete files from raw filesystem totals.
+
 Appearance is split deliberately: `rmac-appearance` owns the platform-neutral
 snapshot, capabilities, event reducer, source trait, and deterministic fake;
 `rmac-appearance-portal` reads standardized host preferences and follows the

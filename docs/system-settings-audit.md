@@ -15,7 +15,7 @@ equivalents rather than simulated.
 | Battery | Real battery/AC state, health, and power profiles | UPower and power-profiles-daemon | Live signals and supported charge thresholds |
 | General/About | Typed privacy-safe OS, kernel, architecture, hardware, graphics, and session facts; validated hostname mutation with busy/error state; authoritative refresh; redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs/sysfs, display service | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname refresh, and clipboard contents |
 | Software Update | Live bounded PackageKit update status with security/blocked classification, cached startup query, explicit freshness request, timeout, service/backend errors, and last-known-good refresh behavior | PackageKit system D-Bus over the Ubuntu APT backend | Trusted download/install transaction, progress/cancel, restart requirements, polkit outcomes, live signals, and Linux interaction evidence |
-| Storage | macOS-shaped `df` snapshot | Filesystem/mount service | Per-volume usage and safe cleanup guidance |
+| Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
 | Date & Time | Placeholder | timedate1 D-Bus | Time zone, automatic time, clock settings |
 | Language & Region | Placeholder | locale1 D-Bus and input services | Locale, formats, keyboard/input sources |
 | Login Items | Placeholder | systemd user/XDG autostart | Enable/disable user startup entries |
@@ -82,6 +82,14 @@ confirmation, polkit, progress, cancellation, and recovery slice.
 
 Authority references: [Ubuntu 26.04 Software Updater guidance](https://documentation.ubuntu.com/desktop/en/26.04/tutorial/install-ubuntu-desktop/)
 and the [PackageKit transaction API](https://packagekit.freedesktop.org/gtk-doc/Transaction.html).
+
+Storage no longer parses `df` or invents a `Macintosh HD` label on Linux.
+`rmac-mounts` returns the system volume plus user-visible removable and network
+mounts, then measures each independently with `statvfs`. One inaccessible or
+disconnected volume reports its own failure without hiding healthy volumes.
+The pane flags low space, refreshes off the UI thread, and offers conservative
+guidance. It does not fabricate storage categories or expose cleanup buttons
+until category measurement and reversible deletion plans exist.
 
 Assistant & Intelligence and Screen Time are absent from sidebar and search
 navigation because neither has an accepted local-first privacy/service design.

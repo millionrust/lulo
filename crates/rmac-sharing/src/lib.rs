@@ -106,6 +106,7 @@ impl std::error::Error for Error {}
 pub trait Service {
     fn snapshot(&self) -> Result<Snapshot, Error>;
     fn set_remote_login(&self, enabled: bool) -> Result<Snapshot, Error>;
+    fn set_file_sharing(&self, enabled: bool) -> Result<Snapshot, Error>;
 }
 
 #[cfg(test)]

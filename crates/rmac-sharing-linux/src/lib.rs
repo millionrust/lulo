@@ -1,13 +1,19 @@
 //! Linux sharing adapter backed by systemd and read-only firewall inspection.
 
+use rmac_sharing::{Error, ErrorKind, Service, Snapshot};
 #[cfg(target_os = "linux")]
-use rmac_sharing::FileSharing;
-use rmac_sharing::{Error, ErrorKind, RemoteLogin, Service, Snapshot};
+use rmac_sharing::{FileSharing, RemoteLogin};
 #[cfg(any(target_os = "linux", test))]
 use rmac_sharing::{FirewallState, Share};
 
 #[cfg(target_os = "linux")]
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ManagedService {
+    RemoteLogin,
+    FileSharing,
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemService;
@@ -27,14 +33,52 @@ impl Service for SystemService {
         {
             return Ok(current);
         }
-        if let Err(error) = system_set_remote_login(unit, enabled) {
-            let _ = restore_remote_login(unit, &current.remote_login);
+        if let Err(error) = system_set_service(unit, enabled, "SSH") {
+            let _ = restore_service(
+                unit,
+                current.remote_login.active,
+                current.remote_login.enabled_at_boot,
+            );
             return Err(error);
         }
-        match wait_for_state(enabled) {
+        match wait_for_state(ManagedService::RemoteLogin, enabled) {
             Ok(snapshot) => Ok(snapshot),
             Err(error) => {
-                let _ = restore_remote_login(unit, &current.remote_login);
+                let _ = restore_service(
+                    unit,
+                    current.remote_login.active,
+                    current.remote_login.enabled_at_boot,
+                );
+                Err(error)
+            }
+        }
+    }
+
+    fn set_file_sharing(&self, enabled: bool) -> Result<Snapshot, Error> {
+        let current = self.snapshot()?;
+        let unit = current.file_sharing.unit.as_deref().ok_or_else(|| {
+            Error::new(ErrorKind::Unavailable, "Samba file server is not installed")
+        })?;
+        if current.file_sharing.active == enabled && current.file_sharing.enabled_at_boot == enabled
+        {
+            return Ok(current);
+        }
+        if let Err(error) = system_set_service(unit, enabled, "SMB") {
+            let _ = restore_service(
+                unit,
+                current.file_sharing.active,
+                current.file_sharing.enabled_at_boot,
+            );
+            return Err(error);
+        }
+        match wait_for_state(ManagedService::FileSharing, enabled) {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let _ = restore_service(
+                    unit,
+                    current.file_sharing.active,
+                    current.file_sharing.enabled_at_boot,
+                );
                 Err(error)
             }
         }
@@ -47,6 +91,10 @@ pub fn snapshot() -> Result<Snapshot, Error> {
 
 pub fn set_remote_login(enabled: bool) -> Result<Snapshot, Error> {
     SystemService.set_remote_login(enabled)
+}
+
+pub fn set_file_sharing(enabled: bool) -> Result<Snapshot, Error> {
+    SystemService.set_file_sharing(enabled)
 }
 
 #[cfg(target_os = "linux")]
@@ -362,7 +410,7 @@ fn system_snapshot() -> Result<Snapshot, Error> {
 }
 
 #[cfg(target_os = "linux")]
-fn system_set_remote_login(unit: &str, enabled: bool) -> Result<(), Error> {
+fn system_set_service(unit: &str, enabled: bool, label: &str) -> Result<(), Error> {
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
     let files = vec![unit];
@@ -373,7 +421,7 @@ fn system_set_remote_login(unit: &str, enabled: bool) -> Result<(), Error> {
         if !install {
             return Err(Error::new(
                 ErrorKind::Mutation,
-                "the SSH service has no persistent install information",
+                format!("the {label} service has no persistent install information"),
             ));
         }
         manager
@@ -407,10 +455,10 @@ fn system_set_remote_login(unit: &str, enabled: bool) -> Result<(), Error> {
 }
 
 #[cfg(target_os = "linux")]
-fn restore_remote_login(unit: &str, previous: &RemoteLogin) -> Result<(), Error> {
+fn restore_service(unit: &str, was_active: bool, was_enabled_at_boot: bool) -> Result<(), Error> {
     let connection = system_connection()?;
     let manager = manager_proxy(&connection)?;
-    if previous.enabled_at_boot {
+    if was_enabled_at_boot {
         let _: (bool, Vec<(String, String, String)>) = manager
             .call("EnableUnitFiles", &(vec![unit], false, false))
             .map_err(mutation_error)?;
@@ -422,11 +470,7 @@ fn restore_remote_login(unit: &str, previous: &RemoteLogin) -> Result<(), Error>
     manager
         .call::<_, _, ()>("Reload", &())
         .map_err(mutation_error)?;
-    let method = if previous.active {
-        "StartUnit"
-    } else {
-        "StopUnit"
-    };
+    let method = if was_active { "StartUnit" } else { "StopUnit" };
     manager
         .call::<_, _, zbus::zvariant::OwnedObjectPath>(method, &(unit, "replace"))
         .map(|_| ())
@@ -434,43 +478,76 @@ fn restore_remote_login(unit: &str, previous: &RemoteLogin) -> Result<(), Error>
 }
 
 #[cfg(not(target_os = "linux"))]
-fn system_set_remote_login(_unit: &str, _enabled: bool) -> Result<(), Error> {
+fn system_set_service(_unit: &str, _enabled: bool, _label: &str) -> Result<(), Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
-        "Remote Login changes are available in the supported Linux session",
+        "Sharing changes are available in the supported Linux session",
     ))
 }
 
 #[cfg(not(target_os = "linux"))]
-fn restore_remote_login(_unit: &str, _previous: &RemoteLogin) -> Result<(), Error> {
+fn restore_service(
+    _unit: &str,
+    _was_active: bool,
+    _was_enabled_at_boot: bool,
+) -> Result<(), Error> {
     system_snapshot().map(|_| ())
 }
 
 #[cfg(target_os = "linux")]
-fn wait_for_state(enabled: bool) -> Result<Snapshot, Error> {
+fn wait_for_state(service: ManagedService, enabled: bool) -> Result<Snapshot, Error> {
     for _ in 0..25 {
-        let snapshot = system_snapshot()?;
-        let service_reached = if enabled {
-            snapshot.remote_login.service_state.as_deref() == Some("active")
-        } else {
-            matches!(
-                snapshot.remote_login.service_state.as_deref(),
-                Some("inactive" | "failed")
-            )
-        };
-        if service_reached && snapshot.remote_login.enabled_at_boot == enabled {
-            return Ok(snapshot);
+        let (service_state, enabled_at_boot) = managed_service_state(service)?;
+        if requested_state_reached(service_state.as_deref(), enabled_at_boot, enabled) {
+            return system_snapshot();
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     Err(Error::new(
         ErrorKind::Mutation,
-        "the SSH service did not reach the requested state",
+        match service {
+            ManagedService::RemoteLogin => "the SSH service did not reach the requested state",
+            ManagedService::FileSharing => "the SMB service did not reach the requested state",
+        },
+    ))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn requested_state_reached(
+    service_state: Option<&str>,
+    enabled_at_boot: bool,
+    enabled: bool,
+) -> bool {
+    let runtime_reached = if enabled {
+        service_state == Some("active")
+    } else {
+        matches!(service_state, Some("inactive" | "failed"))
+    };
+    runtime_reached && enabled_at_boot == enabled
+}
+
+#[cfg(target_os = "linux")]
+fn managed_service_state(service: ManagedService) -> Result<(Option<String>, bool), Error> {
+    let connection = system_connection()?;
+    let manager = manager_proxy(&connection)?;
+    let files = manager
+        .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
+        .map_err(|error| Error::new(ErrorKind::Protocol, error.to_string()))?;
+    let candidates = match service {
+        ManagedService::RemoteLogin => &["ssh.service", "sshd.service"][..],
+        ManagedService::FileSharing => &["smbd.service"][..],
+    };
+    let Some(state) = service_state(&connection, &manager, &files, candidates)? else {
+        return Ok((None, false));
+    };
+    Ok((
+        Some(state.active_state),
+        unit_enabled(&state.unit_file_state),
     ))
 }
 
 #[cfg(not(target_os = "linux"))]
-fn wait_for_state(_enabled: bool) -> Result<Snapshot, Error> {
+fn wait_for_state(_service: ManagedService, _enabled: bool) -> Result<Snapshot, Error> {
     system_snapshot()
 }
 
@@ -713,6 +790,17 @@ mod tests {
         let (shares, truncated) = parse_samba_shares(&input);
         assert!(truncated);
         assert_eq!(shares.len(), 128);
+    }
+
+    #[test]
+    fn convergence_requires_both_runtime_and_boot_authorities() {
+        assert!(requested_state_reached(Some("active"), true, true));
+        assert!(!requested_state_reached(Some("active"), false, true));
+        assert!(!requested_state_reached(Some("activating"), true, true));
+        assert!(requested_state_reached(Some("inactive"), false, false));
+        assert!(requested_state_reached(Some("failed"), false, false));
+        assert!(!requested_state_reached(Some("inactive"), true, false));
+        assert!(!requested_state_reached(None, false, false));
     }
 
     #[test]

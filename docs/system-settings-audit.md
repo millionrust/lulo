@@ -213,9 +213,13 @@ printer-only sections; share paths and credentials are never exposed. Invalid,
 oversized, unavailable, or non-UTF-8 configuration output is reported without
 inventing state. A separate UFW result recognizes only the complete named Samba
 application profile, rather than claiming that one manually opened SMB port is
-sufficient. SMB mutation remains unavailable until its service, configuration,
-authorization, and rollback model is reviewed. AirDrop is not presented because
-Linux has no compatible local authority. Authority references: Ubuntu's
+sufficient. The File Sharing switch has the same explicit warning, polkit-backed
+systemd submission, bounded convergence, and exact previous runtime/boot rollback
+contract as Remote Login. Its warning makes clear that every accepted effective
+share may become reachable, while the operation changes only `smbd.service`: it
+never edits share definitions, paths, file permissions, credentials, or
+firewall policy. AirDrop is not presented because Linux has no compatible local authority.
+Authority references: Ubuntu's
 [OpenSSH server guidance](https://documentation.ubuntu.com/server/how-to/security/openssh-server/),
 [firewall guidance](https://documentation.ubuntu.com/server/how-to/security/firewalls/),
 [Samba file-server guidance](https://documentation.ubuntu.com/server/how-to/samba/file-server/),

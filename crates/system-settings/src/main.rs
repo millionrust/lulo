@@ -180,6 +180,7 @@ struct Settings {
     sharing_stream_error: Option<SharedString>,
     sharing: Option<rmac_sharing::Snapshot>,
     sharing_confirmation: Option<bool>,
+    file_sharing_confirmation: Option<bool>,
     power: rmac_power::Snapshot,
     display: rmac_display::Snapshot,
     network: rmac_network::NetworkSnapshot,
@@ -937,6 +938,7 @@ impl Settings {
             sharing_stream_error: None,
             sharing: None,
             sharing_confirmation: None,
+            file_sharing_confirmation: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
             network: rmac_network::NetworkSnapshot::default(),
@@ -1879,6 +1881,33 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 if succeeded {
                     this.sharing_confirmation = None;
+                }
+                this.finish_sharing_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn confirm_file_sharing(&mut self, cx: &mut Context<Self>) {
+        if self.sharing_busy {
+            return;
+        }
+        let Some(enabled) = self.file_sharing_confirmation else {
+            return;
+        };
+        self.sharing_busy = true;
+        self.sharing_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_sharing_linux::set_file_sharing(enabled) })
+                .await;
+            let succeeded = result.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if succeeded {
+                    this.file_sharing_confirmation = None;
                 }
                 this.finish_sharing_update(result);
                 cx.notify();
@@ -4659,6 +4688,7 @@ impl Settings {
             .on_click(move |enabled, _, cx| {
                 toggle_view.update(cx, |settings, cx| {
                     settings.sharing_confirmation = Some(*enabled);
+                    settings.file_sharing_confirmation = None;
                     cx.notify();
                 });
             });
@@ -4759,26 +4789,39 @@ impl Settings {
         }
         cards.push(section_header("File Sharing"));
         let file = &snapshot.file_sharing;
+        let file_toggle_view = view.clone();
+        let file_toggle = Toggle::new("file-sharing")
+            .checked(file.active && file.enabled_at_boot)
+            .disabled(self.sharing_busy || !file.available)
+            .on_click(move |enabled, _, cx| {
+                file_toggle_view.update(cx, |settings, cx| {
+                    settings.file_sharing_confirmation = Some(*enabled);
+                    settings.sharing_confirmation = None;
+                    cx.notify();
+                });
+            });
         cards.push(card(vec![
-            value_row(
-                "icons/hard-drive.svg",
-                accent(),
-                "SMB File Sharing".into(),
-                if file.available {
-                    format!(
-                        "{} · {}",
-                        file.service_state.as_deref().unwrap_or("unknown"),
-                        if file.enabled_at_boot {
-                            "starts at boot"
-                        } else {
-                            "disabled at boot"
-                        }
-                    )
-                    .into()
-                } else {
-                    "Samba file server is not installed".into()
-                },
-            ),
+            row_base()
+                .child(tile("icons/hard-drive.svg", accent(), 22.0))
+                .child(text_block(
+                    "SMB File Sharing".into(),
+                    Some(if file.available {
+                        format!(
+                            "{} · {}",
+                            file.service_state.as_deref().unwrap_or("unknown"),
+                            if file.enabled_at_boot {
+                                "starts at boot"
+                            } else {
+                                "disabled at boot"
+                            }
+                        )
+                        .into()
+                    } else {
+                        "Samba file server is not installed".into()
+                    }),
+                ))
+                .child(file_toggle)
+                .into_any_element(),
             value_row(
                 "icons/shield.svg",
                 if file.firewall == rmac_sharing::FirewallState::Allows {
@@ -4815,6 +4858,49 @@ impl Settings {
                     .collect(),
             ));
         }
+        if let Some(enabled) = self.file_sharing_confirmation {
+            let cancel_view = view.clone();
+            let confirm_view = view.clone();
+            cards.push(note_card(if enabled {
+                "Turn on File Sharing? This enables and starts Samba after administrator authorization. Every effective configured share may become reachable under its existing access policy. Firewall rules, share definitions, file permissions, and credentials are not changed."
+            } else {
+                "Turn off File Sharing? Connected SMB clients may lose access immediately. This stops and disables Samba after administrator authorization without deleting share definitions."
+            }));
+            cards.push(card(vec![row_base()
+                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(text_block(
+                    if enabled {
+                        "Confirm enabling File Sharing"
+                    } else {
+                        "Confirm disabling File Sharing"
+                    }
+                    .into(),
+                    Some("Administrator authorization may be requested".into()),
+                ))
+                .child(
+                    Button::new("cancel-file-sharing", "Cancel")
+                        .disabled(self.sharing_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| {
+                                settings.file_sharing_confirmation = None;
+                                cx.notify();
+                            });
+                        }),
+                )
+                .child(
+                    Button::new(
+                        "confirm-file-sharing",
+                        if enabled { "Turn On" } else { "Turn Off" },
+                    )
+                    .primary()
+                    .busy(self.sharing_busy)
+                    .disabled(self.sharing_busy)
+                    .on_click(move |_, _, cx| {
+                        confirm_view.update(cx, |settings, cx| settings.confirm_file_sharing(cx));
+                    }),
+                )
+                .into_any_element()]));
+        }
         if file.shares_truncated {
             cards.push(note_card(
                 "The effective Samba share inventory exceeded the bounded display limit.",
@@ -4829,7 +4915,7 @@ impl Settings {
             })));
         }
         cards.push(note_card(
-            "File Sharing is read-only while safe service and share mutation is reviewed. rmac does not present AirDrop because Linux has no compatible local authority.",
+            "The switch controls only smbd.service runtime and boot state. Share definitions, permissions, credentials, and firewall policy remain separate authorities. rmac does not present AirDrop because Linux has no compatible local authority.",
         ));
         self.pane(cards)
     }

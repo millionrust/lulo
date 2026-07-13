@@ -24,6 +24,16 @@ logs passwords, private keys, certificates, or plugin data. NetworkManager and
 the installed VPN plugin remain responsible for authentication prompts,
 secret-agent integration, and persistent secret storage.
 
+This division is required by the Secret Agent contract rather than being a UI
+shortcut. VPN hints can name multiple plugin-specific values and carry an
+`x-vpn-message:` prompt. An agent that collects an `AGENT_OWNED` value must
+persist it itself; an ephemeral rmac prompt cannot honestly claim that role.
+OpenVPN alone may request the account password, certificate passphrase, and
+HTTP proxy password, while OpenConnect uses dynamic authentication forms. rmac
+therefore delegates new credentials to the installed plugin/authentication
+agent until the session has a reviewed credential-store and external-UI
+protocol implementation.
+
 ## Installed import capabilities
 
 Import does not guess Ubuntu package names or claim that every known VPN type is
@@ -132,6 +142,29 @@ longer matches and rmac refuses to mutate it. If other fields change during the
 unversioned partial NetworkManager transaction, rmac leaves the newer state
 untouched and requires a refresh instead of attempting a lossy rollback.
 
+## Forgetting saved authentication
+
+Plugin-backed profiles expose a separate destructive “Forget Saved
+Authentication” action. Preparation runs off the UI thread and captures the
+exact Settings path, UUID, stable full non-secret map, persistent
+`Unsaved=false` state, display name, service, and whether the tunnel is active.
+The confirmation explains that the profile and current tunnel remain, while
+the installed plugin may ask again after the next disconnect.
+
+Confirm performs the same stable exact-map revalidation and calls
+`Settings.Connection.ClearSecrets`; it never calls `GetSecrets`, enumerates
+secret names, or copies a credential through UI state. NetworkManager owns
+clearing both its persistent secrets and the appropriate registered agent's
+stored values. The method's successful D-Bus reply is the secret authority;
+because `GetSettings` intentionally cannot reveal secrets, verification instead
+requires the exact profile to remain persistent with an unchanged visible map
+and to appear in a fresh VPN snapshot. A concurrent visible edit is preserved
+and reported rather than rolled back.
+
+Native WireGuard is deliberately excluded. Its private key is itself a profile
+secret, so a generic clear action could make the connection unusable. The UI
+states that WireGuard keys are never cleared here.
+
 ## Activation and deactivation
 
 Connecting calls NetworkManager's `ActivateConnection` with the exact saved
@@ -176,9 +209,13 @@ preview exists, so that temporary object is never presented as an installed VPN.
 
 F4 remains open. The next slices must:
 
-- delegate any new secret mutation to NetworkManager's appropriate secret flags
-  or agent rather than rmac preferences; plugin-specific configuration remains
-  under the installed plugin's own editor/authority;
+- prove that the Ubuntu/niri session starts a compatible NetworkManager secret
+  agent and each installed plugin's authentication UI, including agent-owned,
+  system-owned, always-ask/OTP, multi-field, cancel, retry, and wrong-secret
+  paths; rmac must not implement agent-owned persistence without a reviewed
+  credential store and plugin external-UI protocol;
+- keep plugin-specific configuration under the installed plugin's own editor or
+  another typed authority rather than reconstructing its opaque data map;
 - prove capability discovery, each supported import format, secret handling,
   authentication, connect, cancel, failure, save/cancel preview, active/inactive
   deletion and concurrent-edit preservation,
@@ -190,6 +227,7 @@ The implementation follows NetworkManager's official
 [`NMVpnEditorPlugin`](https://networkmanager.dev/docs/libnm/latest/NMVpnEditorPlugin.html),
 [`nmcli import`](https://networkmanager.pages.freedesktop.org/NetworkManager/NetworkManager/nmcli.html),
 [`Settings.Connection`](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.Settings.Connection.html),
+[`SecretAgent`](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.SecretAgent.html),
 [`ActivateConnection`/`DeactivateConnection`](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.html),
 and [`VPN.Connection`](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.VPN.Connection.html)
 contracts.

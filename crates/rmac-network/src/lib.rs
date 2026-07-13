@@ -15,6 +15,7 @@ mod secret_agent;
 mod vpn_delete;
 mod vpn_editor;
 mod vpn_import;
+mod vpn_secrets;
 
 pub use network_editor::{
     IpAddress, IpConfiguration, IpFamily, IpMethod, NetworkConfiguration, NetworkConnectionId,
@@ -26,6 +27,7 @@ pub use vpn_import::{
     VpnImportCapabilities, VpnImportCapability, VpnImportCapabilityId, VpnImportPreview,
     VpnImportPreviewId,
 };
+pub use vpn_secrets::{VpnSecretClearPreview, VpnSecretClearPreviewId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum WifiPersonalMode {
@@ -533,6 +535,16 @@ pub fn vpn_profile_configuration(id: &VpnProfileId) -> Result<VpnProfileConfigur
 
 pub fn update_vpn_profile(edit: &VpnProfileEdit) -> Result<VpnSnapshot, Error> {
     vpn_editor::update(edit)
+}
+
+pub fn prepare_vpn_secret_clear(
+    configuration: &VpnProfileConfiguration,
+) -> Result<VpnSecretClearPreview, Error> {
+    vpn_secrets::prepare(configuration.profile_id())
+}
+
+pub fn clear_vpn_profile_secrets(preview: &VpnSecretClearPreviewId) -> Result<VpnSnapshot, Error> {
+    vpn_secrets::clear(preview)
 }
 
 pub fn set_vpn_enabled(

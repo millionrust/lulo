@@ -791,6 +791,9 @@ struct Settings {
     vpn_editor_loading: Option<rmac_network::VpnProfileId>,
     vpn_editor_busy: bool,
     vpn_editor: Option<VpnEditorState>,
+    vpn_secret_preparing: bool,
+    vpn_secret_busy: bool,
+    vpn_secret_preview: Option<rmac_network::VpnSecretClearPreview>,
     vpn_delete_preparing: Option<rmac_network::VpnProfileId>,
     vpn_delete_busy: bool,
     vpn_delete_preview: Option<rmac_network::VpnDeletePreview>,
@@ -1559,6 +1562,9 @@ impl Settings {
                                             || this.vpn_editor_loading.is_some()
                                             || this.vpn_editor_busy
                                             || this.vpn_editor.is_some()
+                                            || this.vpn_secret_preparing
+                                            || this.vpn_secret_busy
+                                            || this.vpn_secret_preview.is_some()
                                             || this.vpn_delete_preparing.is_some()
                                             || this.vpn_delete_busy
                                             || this.vpn_delete_preview.is_some(),
@@ -2058,6 +2064,9 @@ impl Settings {
             vpn_editor_loading: None,
             vpn_editor_busy: false,
             vpn_editor: None,
+            vpn_secret_preparing: false,
+            vpn_secret_busy: false,
+            vpn_secret_preview: None,
             vpn_delete_preparing: None,
             vpn_delete_busy: false,
             vpn_delete_preview: None,
@@ -4397,7 +4406,11 @@ impl Settings {
     }
 
     fn set_vpn_editor_persistent(&mut self, persistent: bool, cx: &mut Context<Self>) {
-        if self.vpn_editor_busy {
+        if self.vpn_editor_busy
+            || self.vpn_secret_preparing
+            || self.vpn_secret_busy
+            || self.vpn_secret_preview.is_some()
+        {
             return;
         }
         if let Some(editor) = &mut self.vpn_editor {
@@ -4408,7 +4421,12 @@ impl Settings {
     }
 
     fn cancel_vpn_edit(&mut self, cx: &mut Context<Self>) {
-        if !self.vpn_editor_busy && self.vpn_editor_loading.is_none() {
+        if !self.vpn_editor_busy
+            && self.vpn_editor_loading.is_none()
+            && !self.vpn_secret_preparing
+            && !self.vpn_secret_busy
+            && self.vpn_secret_preview.is_none()
+        {
             self.vpn_editor = None;
             self.vpn_error = None;
             cx.notify();
@@ -4416,7 +4434,12 @@ impl Settings {
     }
 
     fn submit_vpn_edit(&mut self, cx: &mut Context<Self>) {
-        if self.vpn_editor_busy || self.vpn_editor_loading.is_some() {
+        if self.vpn_editor_busy
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_secret_preparing
+            || self.vpn_secret_busy
+            || self.vpn_secret_preview.is_some()
+        {
             return;
         }
         let Some(editor) = &self.vpn_editor else {
@@ -4492,6 +4515,113 @@ impl Settings {
                     Err(error) => {
                         let message: SharedString =
                             format!("Could not save VPN details: {error}").into();
+                        this.vpn_error = Some(message.clone());
+                        if let Some(editor) = &mut this.vpn_editor {
+                            editor.validation_error = Some(message);
+                        }
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn request_vpn_secret_clear(
+        &mut self,
+        configuration: rmac_network::VpnProfileConfiguration,
+        cx: &mut Context<Self>,
+    ) {
+        if self.vpn_editor.is_none()
+            || self.vpn_editor_busy
+            || self.vpn_secret_preparing
+            || self.vpn_secret_busy
+            || self.vpn_secret_preview.is_some()
+            || !configuration.supports_vpn_options
+        {
+            return;
+        }
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_secret_preparing = true;
+        self.vpn_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_network::prepare_vpn_secret_clear(&configuration) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_secret_preparing = false;
+                match result {
+                    Ok(preview) => {
+                        this.vpn_secret_preview = Some(preview);
+                        this.vpn_error = None;
+                    }
+                    Err(error) => {
+                        this.vpn_error = Some(
+                            format!("Could not prepare saved authentication removal: {error}")
+                                .into(),
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn cancel_vpn_secret_clear(&mut self, cx: &mut Context<Self>) {
+        if self.vpn_secret_busy || self.vpn_secret_preparing {
+            return;
+        }
+        if self.vpn_secret_preview.take().is_some() {
+            self.vpn_error = None;
+            cx.notify();
+        }
+    }
+
+    fn confirm_vpn_secret_clear(&mut self, cx: &mut Context<Self>) {
+        if self.vpn_secret_busy || self.vpn_secret_preparing {
+            return;
+        }
+        let Some(preview) = self
+            .vpn_secret_preview
+            .as_ref()
+            .map(|preview| preview.id.clone())
+        else {
+            return;
+        };
+        self.vpn_generation = self.vpn_generation.wrapping_add(1);
+        self.vpn_secret_busy = true;
+        self.vpn_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result = rmac_network::clear_vpn_profile_secrets(&preview);
+                    let recovery = result
+                        .as_ref()
+                        .err()
+                        .and_then(|_| rmac_network::vpn_snapshot().ok());
+                    (result, recovery)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.vpn_secret_busy = false;
+                this.vpn_secret_preview = None;
+                if let Some(snapshot) = recovery {
+                    this.vpn = snapshot;
+                }
+                match result {
+                    Ok(snapshot) => {
+                        this.vpn = snapshot;
+                        this.vpn_error = None;
+                        this.vpn_stream_error = None;
+                    }
+                    Err(error) => {
+                        let message: SharedString =
+                            format!("Could not forget saved VPN authentication: {error}").into();
                         this.vpn_error = Some(message.clone());
                         if let Some(editor) = &mut this.vpn_editor {
                             editor.validation_error = Some(message);
@@ -12689,6 +12819,10 @@ impl Settings {
         let refresh_view = view.clone();
         let refresh_label = if self.vpn_delete_busy || self.vpn_delete_preparing.is_some() {
             "Deleting…"
+        } else if self.vpn_secret_busy {
+            "Forgetting…"
+        } else if self.vpn_secret_preparing {
+            "Preparing…"
         } else if self.vpn_editor_busy {
             "Saving…"
         } else if self.vpn_editor_loading.is_some() {
@@ -12977,15 +13111,21 @@ impl Settings {
             return Vec::new();
         };
         let busy = self.vpn_editor_busy;
+        let locked = busy
+            || self.vpn_secret_preparing
+            || self.vpn_secret_busy
+            || self.vpn_secret_preview.is_some();
         let view = cx.entity();
         let persistent_view = view.clone();
+        let authentication_view = view.clone();
+        let authentication_configuration = editor.configuration.clone();
         let cancel_view = view.clone();
         let save_view = view.clone();
         let mut rows = vec![network_field_row(
             "Name",
             "Shown in VPN lists and connection menus",
             &editor.name,
-            !busy,
+            !locked,
         )];
         if editor.configuration.supports_vpn_options {
             rows.extend([
@@ -12993,7 +13133,7 @@ impl Settings {
                     "Account Name",
                     "Optional non-secret username; passwords are not read here",
                     &editor.username,
-                    !busy,
+                    !locked,
                 ),
                 row_base()
                     .child(text_block(
@@ -13003,7 +13143,7 @@ impl Settings {
                     .child(
                         Toggle::new("vpn-edit-persistent")
                             .checked(editor.persistent)
-                            .disabled(busy)
+                            .disabled(locked)
                             .on_click(move |persistent, _, cx| {
                                 persistent_view.update(cx, |settings, cx| {
                                     settings.set_vpn_editor_persistent(*persistent, cx)
@@ -13015,16 +13155,48 @@ impl Settings {
                     "Connection Timeout",
                     "Seconds; 0 uses the VPN plugin default",
                     &editor.timeout,
-                    !busy,
+                    !locked,
                 ),
             ]);
         }
-        rows.push(value_row(
-            "icons/key.svg",
-            secondary(),
-            "Passwords and Keys".into(),
-            "Managed by NetworkManager".into(),
-        ));
+        if editor.configuration.supports_vpn_options {
+            rows.push(
+                row_base()
+                    .child(tile("icons/key.svg", secondary(), 22.0))
+                    .child(text_block(
+                        "Saved Authentication".into(),
+                        Some(
+                            "Passwords, passphrases, and plugin tokens managed by NetworkManager"
+                                .into(),
+                        ),
+                    ))
+                    .child(
+                        Button::new(
+                            "vpn-forget-authentication",
+                            if self.vpn_secret_preparing {
+                                "Preparing…"
+                            } else {
+                                "Forget…"
+                            },
+                        )
+                        .disabled(locked)
+                        .on_click(move |_, _, cx| {
+                            let configuration = authentication_configuration.clone();
+                            authentication_view.update(cx, |settings, cx| {
+                                settings.request_vpn_secret_clear(configuration, cx)
+                            });
+                        }),
+                    )
+                    .into_any_element(),
+            );
+        } else {
+            rows.push(value_row(
+                "icons/key.svg",
+                secondary(),
+                "Private Key".into(),
+                "Never cleared here".into(),
+            ));
+        }
         let mut sections = vec![
             section_header(format!("{} · Details", editor.configuration.name)),
             note_card(
@@ -13057,7 +13229,7 @@ impl Settings {
                 .mb_3()
                 .child(
                     Button::new("vpn-edit-cancel", "Cancel")
-                        .disabled(busy)
+                        .disabled(locked)
                         .on_click(move |_, _, cx| {
                             cancel_view.update(cx, |settings, cx| settings.cancel_vpn_edit(cx));
                         }),
@@ -13065,13 +13237,103 @@ impl Settings {
                 .child(
                     Button::new("vpn-edit-save", if busy { "Saving…" } else { "Save" })
                         .primary()
-                        .disabled(busy)
+                        .disabled(locked)
                         .on_click(move |_, _, cx| {
                             save_view.update(cx, |settings, cx| settings.submit_vpn_edit(cx));
                         }),
                 ),
         );
         sections
+    }
+
+    fn render_vpn_secret_clear_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let preview = self.vpn_secret_preview.as_ref()?;
+        let busy = self.vpn_secret_busy;
+        let consequence = if preview.currently_connected {
+            "The current connection will stay active. NetworkManager will remove saved passwords, certificate passphrases, proxy passwords, and plugin tokens, then the installed VPN plugin may ask for them after the next disconnect. This cannot be undone by rmac."
+        } else {
+            "NetworkManager will remove saved passwords, certificate passphrases, proxy passwords, and plugin tokens. The installed VPN plugin may ask for them on the next connection. This cannot be undone by rmac."
+        };
+        let content = div()
+            .w(px(440.0))
+            .v_flex()
+            .gap_4()
+            .p_5()
+            .rounded(px(14.0))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(format!("Forget authentication for “{}”?", preview.name)),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child(preview.service.clone()),
+                    ),
+            )
+            .child(note_card(consequence))
+            .child(note_card(
+                "The VPN profile, server configuration, certificates, and current tunnel are not deleted. Native WireGuard private keys are never handled by this action.",
+            ))
+            .when(busy, |dialog| {
+                dialog.child(Progress::indeterminate().label("Forgetting saved authentication…"))
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "vpn-secret-clear-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .disabled(busy)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.cancel_vpn_secret_clear(cx)
+                        })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "vpn-secret-clear-confirm",
+                            "Forget",
+                            rmac_ui::DialogButtonKind::Destructive,
+                        )
+                        .disabled(busy)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.confirm_vpn_secret_clear(cx)
+                        })),
+                    ),
+            );
+        Some(
+            rmac_ui::dialog("vpn-secret-clear-dialog", content)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" if !this.vpn_secret_busy => {
+                            cx.stop_propagation();
+                            this.cancel_vpn_secret_clear(cx);
+                        }
+                        "enter" if !this.vpn_secret_busy => {
+                            cx.stop_propagation();
+                            this.confirm_vpn_secret_clear(cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
     }
 
     fn render_vpn_import_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
@@ -13765,6 +14027,7 @@ impl Render for Settings {
         let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
         let bluetooth_forget_dialog = self.render_bluetooth_forget_dialog(cx);
         let vpn_import_dialog = self.render_vpn_import_dialog(cx);
+        let vpn_secret_clear_dialog = self.render_vpn_secret_clear_dialog(cx);
         let vpn_delete_dialog = self.render_vpn_delete_dialog(cx);
         div()
             .size_full()
@@ -13789,6 +14052,12 @@ impl Render for Settings {
                 {
                     cx.stop_propagation();
                     this.finish_vpn_import(false, cx);
+                } else if event.keystroke.key == "escape"
+                    && this.vpn_secret_preview.is_some()
+                    && !this.vpn_secret_busy
+                {
+                    cx.stop_propagation();
+                    this.cancel_vpn_secret_clear(cx);
                 } else if event.keystroke.key == "escape"
                     && this.vpn_delete_preview.is_some()
                     && !this.vpn_delete_busy
@@ -13828,6 +14097,13 @@ impl Render for Settings {
                     return;
                 }
                 if this.vpn_delete_preview.take().is_some() {
+                    window.remove_window();
+                    return;
+                }
+                if this.vpn_secret_preparing || this.vpn_secret_busy {
+                    return;
+                }
+                if this.vpn_secret_preview.take().is_some() {
                     window.remove_window();
                     return;
                 }
@@ -13907,6 +14183,7 @@ impl Render for Settings {
             .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_forget_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_import_dialog, |root, dialog| root.child(dialog))
+            .when_some(vpn_secret_clear_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_delete_dialog, |root, dialog| root.child(dialog))
     }
 }

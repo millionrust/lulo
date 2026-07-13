@@ -37,6 +37,12 @@ pub struct VpnProfileConfiguration {
     pub supports_vpn_options: bool,
 }
 
+impl VpnProfileConfiguration {
+    pub(super) fn profile_id(&self) -> &super::VpnProfileId {
+        &self.id.profile
+    }
+}
+
 impl fmt::Debug for VpnProfileConfiguration {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

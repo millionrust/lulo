@@ -264,9 +264,18 @@ Its private-safe import plan binds the exact base/candidate library and note
 revisions, attachment identity, recognized kind, byte length, and SHA-256; the
 plan can replay the ordinary mutation and prove that no unrelated metadata
 change entered the candidate. Raw bytes and source paths never enter the domain
-model, and names and hashes are redacted from debug output. Durable intent,
-managed-byte staging, decoded-image validation, retry/recovery, and runtime
-wiring remain storage/application work.
+model, and names and hashes are redacted from debug output. The storage boundary
+now completely reads at most 64 MiB, recognizes content rather than extension,
+and fully decodes PNG, JPEG, or WebP with 16,384-axis, 40-million-pixel, and
+160-MiB decoder-allocation limits. It retains a path-free prepared value,
+canonicalizes the display extension, and binds its exact length/SHA-256 to a
+private versioned import intent before create-new staging under the stable ID.
+Metadata publishes last. Startup removes only an exact staged orphan when the
+base remains authoritative, keeps and verifies exact bytes when the candidate
+was accepted, and preserves changed, linked, missing-after-acceptance,
+malformed, or ambiguous state as blocking maintenance. Repository retry,
+runtime/portal dispatch, bounded preview rendering, and legacy-image decoder
+validation remain.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic

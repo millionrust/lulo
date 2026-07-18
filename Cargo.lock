@@ -5261,6 +5261,7 @@ dependencies = [
 name = "rmac-notes-storage"
 version = "0.1.0"
 dependencies = [
+ "image",
  "libc",
  "rmac-notes-store",
  "rmac-storage",

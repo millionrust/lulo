@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use rmac_notes_store::{
     encode, AttachmentId, LibrarySnapshot, NoteId, PurgePlan, MAX_ATTACHMENTS,
@@ -9,6 +9,8 @@ use rmac_notes_store::{
 };
 use rmac_storage::{Backend, FileFingerprint};
 use sha2::{Digest as _, Sha256};
+
+use crate::managed_attachment_path;
 
 const PURGE_MAGIC: &[u8; 8] = b"RMNPURG\0";
 const PURGE_VERSION: u16 = 1;
@@ -310,11 +312,6 @@ impl fmt::Debug for PurgeIntent {
     }
 }
 
-fn managed_attachment_path(root: &Path, id: AttachmentId) -> PathBuf {
-    root.join("attachments")
-        .join(format!("{:020}.bin", id.get()))
-}
-
 fn strictly_sorted<T: Ord>(values: &[T]) -> bool {
     values.windows(2).all(|pair| pair[0] < pair[1])
 }
@@ -396,6 +393,7 @@ impl<'a> Reader<'a> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
     use rmac_notes_store::{

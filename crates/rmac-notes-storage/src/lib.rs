@@ -13,10 +13,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rmac_notes_store::{decode, encode, CodecError, LibrarySnapshot, PurgePlan, MAX_LIBRARY_BYTES};
+use rmac_notes_store::{
+    decode, encode, AttachmentImportPlan, CodecError, LibrarySnapshot, PurgePlan, MAX_LIBRARY_BYTES,
+};
 use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
+mod attachment;
 mod drafts;
 mod legacy_scan;
 mod migration;
@@ -25,7 +28,13 @@ mod repository;
 mod startup;
 mod writer;
 
+use attachment::{ImportAuthority, ImportError, ImportIntent, MAX_IMPORT_INTENT_BYTES};
 use purge::{PurgeAuthority, PurgeError, PurgeIntent, MAX_PURGE_INTENT_BYTES};
+
+pub use attachment::{
+    PreparedImageAttachment, MAX_IMPORTED_IMAGE_BYTES, MAX_IMPORTED_IMAGE_DIMENSION,
+    MAX_IMPORTED_IMAGE_PIXELS,
+};
 
 pub use drafts::{
     decode_draft, encode_draft, DraftCodecError, DraftDiscovery, DraftError, DraftErrorKind,
@@ -64,6 +73,10 @@ pub enum RecoveryNotice {
     FinishedInterruptedPurge,
     CorruptPurgePreserved,
     PurgeCleanupPending,
+    RolledBackInterruptedAttachmentImport,
+    FinishedInterruptedAttachmentImport,
+    CorruptAttachmentImportPreserved,
+    AttachmentImportPending,
 }
 
 #[derive(Clone, Debug)]
@@ -125,6 +138,15 @@ pub enum Operation {
     RemovePurgeIntent,
     VerifyPurgeAttachment,
     RemovePurgeAttachment,
+    ReadAttachmentSource,
+    DecodeAttachmentSource,
+    ReadAttachmentImportIntent,
+    WriteAttachmentImportIntent,
+    VerifyAttachmentImportIntent,
+    RemoveAttachmentImportIntent,
+    StageManagedAttachment,
+    VerifyManagedAttachment,
+    RemoveManagedAttachment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,6 +158,9 @@ pub enum ErrorKind {
     ReadbackMismatch,
     AmbiguousJournal,
     InvalidPurge,
+    InvalidAttachmentImport,
+    UnsupportedAttachment,
+    AttachmentTooLarge,
     AttachmentMismatch,
 }
 
@@ -177,7 +202,16 @@ impl fmt::Display for StoreError {
                 "Notes found an interrupted transaction that needs recovery"
             }
             ErrorKind::InvalidPurge => "Notes found invalid permanent-deletion state",
-            ErrorKind::AttachmentMismatch => "Notes refused to delete an attachment that changed",
+            ErrorKind::InvalidAttachmentImport => {
+                "Notes found invalid image-attachment import state"
+            }
+            ErrorKind::UnsupportedAttachment => {
+                "Notes supports PNG, JPEG, and WebP image attachments"
+            }
+            ErrorKind::AttachmentTooLarge => "The selected image exceeds a Notes safety limit",
+            ErrorKind::AttachmentMismatch => {
+                "Notes found managed attachment bytes that changed unexpectedly"
+            }
         })
     }
 }
@@ -213,6 +247,23 @@ impl<B: Backend> NotesLibraryStore<B> {
         &self.root
     }
 
+    /// Completely read, content-recognize, and decode one portal-selected
+    /// image. The returned value retains bytes, not the untrusted source path.
+    pub fn prepare_image_attachment(
+        &self,
+        selected_path: &Path,
+    ) -> Result<PreparedImageAttachment, StoreError> {
+        attachment::prepare_image(&self.backend, selected_path).map_err(|error| {
+            map_import_error(
+                match error {
+                    ImportError::Io(_) | ImportError::TooLarge => Operation::ReadAttachmentSource,
+                    _ => Operation::DecodeAttachmentSource,
+                },
+                error,
+            )
+        })
+    }
+
     pub fn load(&self) -> Result<LoadedLibrary, StoreError> {
         let _guard = self
             .transaction_lock
@@ -231,7 +282,53 @@ impl<B: Backend> NotesLibraryStore<B> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.require_no_purge_intent()?;
+        self.require_no_import_intent()?;
         self.save_locked(loaded, candidate)
+    }
+
+    /// Stage one exact decoded image under its fresh managed identity, then
+    /// publish only the metadata candidate bound by `plan`.
+    pub fn save_attachment_import(
+        &self,
+        loaded: &LoadedLibrary,
+        candidate: &LibrarySnapshot,
+        plan: &AttachmentImportPlan,
+        prepared: &PreparedImageAttachment,
+    ) -> Result<SaveOutcome, StoreError> {
+        let _guard = self
+            .transaction_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if has_blocking_notice(loaded.notices()) {
+            return Err(StoreError::new(
+                Operation::PreflightPrimary,
+                ErrorKind::AmbiguousJournal,
+            ));
+        }
+        self.require_no_purge_intent()?;
+        self.require_no_import_intent()?;
+        let intent = ImportIntent::prepare(loaded.snapshot(), candidate, plan, prepared)
+            .map_err(|error| map_import_error(Operation::WriteAttachmentImportIntent, error))?;
+        self.write_import_intent(&intent)?;
+        intent
+            .stage(&self.root, &self.backend, prepared)
+            .map_err(|error| map_import_error(Operation::StageManagedAttachment, error))?;
+        let mut outcome = self.save_locked(loaded, candidate)?;
+        if outcome.maintenance_pending {
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::AttachmentImportPending,
+            );
+            return Ok(outcome);
+        }
+        if self.remove_import_intent().is_err() {
+            outcome.maintenance_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::AttachmentImportPending,
+            );
+        }
+        Ok(outcome)
     }
 
     /// Publish an exact purge candidate, then collect only the managed
@@ -253,6 +350,7 @@ impl<B: Backend> NotesLibraryStore<B> {
             ));
         }
         self.require_no_purge_intent()?;
+        self.require_no_import_intent()?;
         let intent = PurgeIntent::prepare(loaded.snapshot(), candidate, plan)
             .map_err(|error| map_purge_error(Operation::WritePurgeIntent, error))?;
         self.write_purge_intent(&intent)?;
@@ -343,7 +441,19 @@ impl<B: Backend> NotesLibraryStore<B> {
                 _ => return Err(primary_error),
             },
         };
-        self.recover_purge(loaded)
+        let purge_present = self.intent_present(&self.purge_path(), MAX_PURGE_INTENT_BYTES);
+        let import_present = self.intent_present(&self.import_path(), MAX_IMPORT_INTENT_BYTES);
+        if purge_present && import_present {
+            let mut loaded = loaded;
+            push_notice(&mut loaded.notices, RecoveryNotice::CorruptPurgePreserved);
+            push_notice(
+                &mut loaded.notices,
+                RecoveryNotice::CorruptAttachmentImportPreserved,
+            );
+            return Ok(loaded);
+        }
+        let loaded = self.recover_purge(loaded)?;
+        self.recover_attachment_import(loaded)
     }
 
     fn save_locked(
@@ -475,6 +585,129 @@ impl<B: Backend> NotesLibraryStore<B> {
             }
         }
         Ok(loaded)
+    }
+
+    fn recover_attachment_import(
+        &self,
+        mut loaded: LoadedLibrary,
+    ) -> Result<LoadedLibrary, StoreError> {
+        let bytes = match self
+            .backend
+            .read_bounded_no_follow(&self.import_path(), MAX_IMPORT_INTENT_BYTES)
+        {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(loaded),
+            Err(_) => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptAttachmentImportPreserved,
+                );
+                return Ok(loaded);
+            }
+        };
+        let intent = match ImportIntent::decode(&bytes) {
+            Ok(intent) => intent,
+            Err(_) => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptAttachmentImportPreserved,
+                );
+                return Ok(loaded);
+            }
+        };
+        match intent
+            .authority(&loaded.snapshot)
+            .map_err(|error| map_import_error(Operation::ReadAttachmentImportIntent, error))?
+        {
+            ImportAuthority::RolledBack => {
+                if intent
+                    .rollback_staging(&self.root, &self.backend)
+                    .and_then(|()| self.remove_import_intent().map_err(import_error_from_store))
+                    .is_ok()
+                {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::RolledBackInterruptedAttachmentImport,
+                    );
+                } else {
+                    push_notice(&mut loaded.notices, RecoveryNotice::AttachmentImportPending);
+                }
+            }
+            ImportAuthority::Accepted | ImportAuthority::AcceptedDescendant => {
+                if intent
+                    .verify_staged(&self.root, &self.backend)
+                    .and_then(|()| self.remove_import_intent().map_err(import_error_from_store))
+                    .is_ok()
+                {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::FinishedInterruptedAttachmentImport,
+                    );
+                } else {
+                    push_notice(&mut loaded.notices, RecoveryNotice::AttachmentImportPending);
+                }
+            }
+            ImportAuthority::Ambiguous => push_notice(
+                &mut loaded.notices,
+                RecoveryNotice::CorruptAttachmentImportPreserved,
+            ),
+        }
+        Ok(loaded)
+    }
+
+    fn write_import_intent(&self, intent: &ImportIntent) -> Result<(), StoreError> {
+        let bytes = intent
+            .encode()
+            .map_err(|error| map_import_error(Operation::WriteAttachmentImportIntent, error))?;
+        self.backend
+            .create_dir_all_private(&self.root)
+            .map_err(|error| StoreError::io(Operation::CreateDirectory, error))?;
+        self.backend
+            .write_atomic_private(&self.import_path(), &bytes)
+            .map_err(|error| StoreError::io(Operation::WriteAttachmentImportIntent, error))?;
+        let readback = self
+            .backend
+            .read_bounded_no_follow(&self.import_path(), MAX_IMPORT_INTENT_BYTES)
+            .map_err(|error| StoreError::io(Operation::VerifyAttachmentImportIntent, error))?;
+        if readback != bytes || ImportIntent::decode(&readback).ok().as_ref() != Some(intent) {
+            return Err(StoreError::new(
+                Operation::VerifyAttachmentImportIntent,
+                ErrorKind::ReadbackMismatch,
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_no_import_intent(&self) -> Result<(), StoreError> {
+        match self
+            .backend
+            .read_bounded_no_follow(&self.import_path(), MAX_IMPORT_INTENT_BYTES)
+        {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Ok(_) => Err(StoreError::new(
+                Operation::ReadAttachmentImportIntent,
+                ErrorKind::InvalidAttachmentImport,
+            )),
+            Err(error) => Err(StoreError::io(Operation::ReadAttachmentImportIntent, error)),
+        }
+    }
+
+    fn remove_import_intent(&self) -> Result<(), StoreError> {
+        match self.backend.remove_file_durable(&self.import_path()) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(StoreError::io(
+                Operation::RemoveAttachmentImportIntent,
+                error,
+            )),
+        }
+    }
+
+    fn intent_present(&self, path: &Path, maximum: usize) -> bool {
+        match self.backend.read_bounded_no_follow(path, maximum) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Ok(_) | Err(_) => true,
+        }
     }
 
     fn write_purge_intent(&self, intent: &PurgeIntent) -> Result<(), StoreError> {
@@ -717,12 +950,21 @@ impl<B: Backend> NotesLibraryStore<B> {
     fn purge_path(&self) -> PathBuf {
         self.root.join("library.purge.bin")
     }
+
+    fn import_path(&self) -> PathBuf {
+        self.root.join("library.attachment-import.bin")
+    }
 }
 
 fn push_notice(notices: &mut Vec<RecoveryNotice>, notice: RecoveryNotice) {
     if !notices.contains(&notice) {
         notices.push(notice);
     }
+}
+
+pub(crate) fn managed_attachment_path(root: &Path, id: rmac_notes_store::AttachmentId) -> PathBuf {
+    root.join("attachments")
+        .join(format!("{:020}.bin", id.get()))
 }
 
 fn has_blocking_notice(notices: &[RecoveryNotice]) -> bool {
@@ -733,6 +975,8 @@ fn has_blocking_notice(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::MaintenancePending
                 | RecoveryNotice::CorruptPurgePreserved
                 | RecoveryNotice::PurgeCleanupPending
+                | RecoveryNotice::CorruptAttachmentImportPreserved
+                | RecoveryNotice::AttachmentImportPending
         )
     })
 }
@@ -748,6 +992,30 @@ fn map_purge_error(operation: Operation, error: PurgeError) -> StoreError {
         }
         PurgeError::ReadbackMismatch => StoreError::new(operation, ErrorKind::ReadbackMismatch),
         PurgeError::AttachmentMismatch => StoreError::new(operation, ErrorKind::AttachmentMismatch),
+    }
+}
+
+fn map_import_error(operation: Operation, error: ImportError) -> StoreError {
+    match error {
+        ImportError::InvalidPlan | ImportError::Malformed => {
+            StoreError::new(operation, ErrorKind::InvalidAttachmentImport)
+        }
+        ImportError::Unsupported => StoreError::new(operation, ErrorKind::UnsupportedAttachment),
+        ImportError::TooLarge => StoreError::new(operation, ErrorKind::AttachmentTooLarge),
+        ImportError::Io(kind) => StoreError::new(operation, ErrorKind::Io(kind)),
+        ImportError::ReadbackMismatch => StoreError::new(operation, ErrorKind::ReadbackMismatch),
+        ImportError::AttachmentMismatch => {
+            StoreError::new(operation, ErrorKind::AttachmentMismatch)
+        }
+    }
+}
+
+fn import_error_from_store(error: StoreError) -> ImportError {
+    match error.kind {
+        ErrorKind::Io(kind) => ImportError::Io(kind),
+        ErrorKind::ReadbackMismatch => ImportError::ReadbackMismatch,
+        ErrorKind::AttachmentMismatch => ImportError::AttachmentMismatch,
+        _ => ImportError::Malformed,
     }
 }
 
@@ -916,6 +1184,7 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::ImageEncoder as _;
     use rmac_notes_store::{
         AttachmentId, AttachmentKind, AttachmentRecord, LibraryTransaction, NewNote, NoteId,
         NoteRecord, SortOrder,
@@ -1102,6 +1371,219 @@ mod tests {
             ),
             backend,
         )
+    }
+
+    fn png_bytes() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut bytes)
+            .write_image(&[12, 34, 56, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        bytes
+    }
+
+    fn install_attachment_base(
+        store: &NotesLibraryStore<FakeBackend>,
+    ) -> (LoadedLibrary, LibrarySnapshot, NoteId) {
+        let initial = store.load().unwrap();
+        let mut transaction = LibraryTransaction::begin(initial.snapshot()).unwrap();
+        let note_id = transaction
+            .create_note(NewNote {
+                created_unix_ms: 10,
+                title: "Private note".into(),
+                body: "Private body".into(),
+                tags: Vec::new(),
+                folder_id: None,
+            })
+            .unwrap();
+        let base = transaction.finish().unwrap();
+        let loaded = store.save(&initial, &base).unwrap().library;
+        (loaded, base, note_id)
+    }
+
+    fn attachment_candidate(
+        base: &LibrarySnapshot,
+        note_id: NoteId,
+        prepared: &PreparedImageAttachment,
+    ) -> (LibrarySnapshot, AttachmentImportPlan) {
+        let mut transaction = LibraryTransaction::begin(base).unwrap();
+        let plan = transaction
+            .add_attachment(note_id, 1, 11, prepared.metadata())
+            .unwrap();
+        (transaction.finish().unwrap(), plan)
+    }
+
+    #[test]
+    fn selected_image_is_content_recognized_fully_decoded_and_path_free() {
+        let (store, backend) = store();
+        let selected = PathBuf::from("/portal/private-plan.not-an-image-extension");
+        let bytes = png_bytes();
+        backend.set(selected.clone(), bytes.clone());
+
+        let prepared = store.prepare_image_attachment(&selected).unwrap();
+
+        assert_eq!(prepared.kind(), AttachmentKind::Png);
+        assert_eq!((prepared.width(), prepared.height()), (1, 1));
+        assert_eq!(prepared.byte_len(), bytes.len() as u64);
+        assert_eq!(prepared.metadata().display_name, "private-plan.png");
+        let debug = format!("{prepared:?}");
+        assert!(!debug.contains("private-plan"));
+        assert!(!debug.contains("/portal"));
+
+        backend.set(
+            selected.clone(),
+            b"plain text pretending to be an image".to_vec(),
+        );
+        assert_eq!(
+            store.prepare_image_attachment(&selected).unwrap_err().kind,
+            ErrorKind::UnsupportedAttachment
+        );
+        backend.set(selected, b"\x89PNG\r\n\x1a\ntruncated".to_vec());
+        assert_eq!(
+            store
+                .prepare_image_attachment(Path::new("/portal/private-plan.not-an-image-extension"))
+                .unwrap_err()
+                .kind,
+            ErrorKind::InvalidAttachmentImport
+        );
+    }
+
+    #[test]
+    fn attachment_import_stages_exact_bytes_then_publishes_metadata() {
+        let (store, backend) = store();
+        let selected = PathBuf::from("/portal/private-plan.png");
+        let bytes = png_bytes();
+        backend.set(selected.clone(), bytes.clone());
+        let prepared = store.prepare_image_attachment(&selected).unwrap();
+        let (loaded, base, note_id) = install_attachment_base(&store);
+        let (candidate, plan) = attachment_candidate(&base, note_id, &prepared);
+
+        let outcome = store
+            .save_attachment_import(&loaded, &candidate, &plan, &prepared)
+            .unwrap();
+
+        assert_eq!(outcome.library.snapshot(), &candidate);
+        assert!(!outcome.maintenance_pending);
+        assert_eq!(
+            backend.get(&managed_attachment_path(store.root(), plan.attachment_id)),
+            Some(bytes)
+        );
+        assert_eq!(backend.get(&store.import_path()), None);
+        assert_eq!(candidate.notes[0].attachments, vec![plan.attachment_id]);
+    }
+
+    #[test]
+    fn rolled_back_import_removes_only_its_exact_staged_orphan() {
+        let (store, backend) = store();
+        let selected = PathBuf::from("/portal/private-plan.png");
+        let bytes = png_bytes();
+        backend.set(selected.clone(), bytes);
+        let prepared = store.prepare_image_attachment(&selected).unwrap();
+        let (loaded, base, note_id) = install_attachment_base(&store);
+        let (candidate, plan) = attachment_candidate(&base, note_id, &prepared);
+        backend.fail_next_write(store.primary_path());
+
+        assert_eq!(
+            store
+                .save_attachment_import(&loaded, &candidate, &plan, &prepared)
+                .unwrap_err()
+                .operation,
+            Operation::WritePrimary
+        );
+        let attachment_path = managed_attachment_path(store.root(), plan.attachment_id);
+        assert!(backend.get(&attachment_path).is_some());
+        assert!(backend.get(&store.import_path()).is_some());
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &base);
+        assert_eq!(backend.get(&attachment_path), None);
+        assert_eq!(backend.get(&store.import_path()), None);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::RolledBackInterruptedAttachmentImport));
+    }
+
+    #[test]
+    fn accepted_import_recovery_keeps_verified_bytes_and_finishes_intent() {
+        let (store, backend) = store();
+        let selected = PathBuf::from("/portal/private-plan.png");
+        let bytes = png_bytes();
+        backend.set(selected.clone(), bytes.clone());
+        let prepared = store.prepare_image_attachment(&selected).unwrap();
+        let (loaded, base, note_id) = install_attachment_base(&store);
+        let (candidate, plan) = attachment_candidate(&base, note_id, &prepared);
+        backend.fail_after_next_write(store.primary_path());
+
+        assert_eq!(
+            store
+                .save_attachment_import(&loaded, &candidate, &plan, &prepared)
+                .unwrap_err()
+                .operation,
+            Operation::WritePrimary
+        );
+        let recovered = store.load().unwrap();
+
+        assert_eq!(recovered.snapshot(), &candidate);
+        assert_eq!(
+            backend.get(&managed_attachment_path(store.root(), plan.attachment_id)),
+            Some(bytes)
+        );
+        assert_eq!(backend.get(&store.import_path()), None);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::FinishedInterruptedAttachmentImport));
+    }
+
+    #[test]
+    fn substituted_or_missing_managed_bytes_are_preserved_as_blocking_maintenance() {
+        let (store, backend) = store();
+        let selected = PathBuf::from("/portal/private-plan.png");
+        backend.set(selected.clone(), png_bytes());
+        let prepared = store.prepare_image_attachment(&selected).unwrap();
+        let (loaded, base, note_id) = install_attachment_base(&store);
+        let (candidate, plan) = attachment_candidate(&base, note_id, &prepared);
+        backend.fail_next_write(store.primary_path());
+        store
+            .save_attachment_import(&loaded, &candidate, &plan, &prepared)
+            .unwrap_err();
+        let attachment_path = managed_attachment_path(store.root(), plan.attachment_id);
+        let substituted = b"substituted private bytes".to_vec();
+        backend.set(attachment_path.clone(), substituted.clone());
+
+        let blocked = store.load().unwrap();
+        assert_eq!(blocked.snapshot(), &base);
+        assert_eq!(backend.get(&attachment_path), Some(substituted));
+        assert!(backend.get(&store.import_path()).is_some());
+        assert!(blocked
+            .notices()
+            .contains(&RecoveryNotice::AttachmentImportPending));
+        assert_eq!(
+            store.save(&blocked, &candidate).unwrap_err().kind,
+            ErrorKind::InvalidAttachmentImport
+        );
+    }
+
+    #[test]
+    fn import_plan_mismatch_fails_before_intent_or_managed_bytes() {
+        let (store, backend) = store();
+        let selected = PathBuf::from("/portal/private-plan.png");
+        backend.set(selected.clone(), png_bytes());
+        let prepared = store.prepare_image_attachment(&selected).unwrap();
+        let (loaded, base, note_id) = install_attachment_base(&store);
+        let (mut candidate, plan) = attachment_candidate(&base, note_id, &prepared);
+        candidate.notes[0].title = "Unrelated metadata change".into();
+
+        assert_eq!(
+            store
+                .save_attachment_import(&loaded, &candidate, &plan, &prepared)
+                .unwrap_err()
+                .kind,
+            ErrorKind::InvalidAttachmentImport
+        );
+        assert_eq!(backend.get(&store.import_path()), None);
+        assert_eq!(
+            backend.get(&managed_attachment_path(store.root(), plan.attachment_id)),
+            None
+        );
     }
 
     fn legacy_fixture() -> LegacyLibraryInput {

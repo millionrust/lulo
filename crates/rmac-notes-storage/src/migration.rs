@@ -12,7 +12,7 @@ use rmac_notes_store::{
 use rmac_storage::Backend;
 use sha2::{Digest as _, Sha256};
 
-use crate::{LoadedLibrary, NotesLibraryStore, StoreError};
+use crate::{managed_attachment_path, LoadedLibrary, NotesLibraryStore, StoreError};
 
 pub(super) const MAX_LEGACY_PATH_BYTES: usize = 4096;
 pub(super) const MAX_TOTAL_ATTACHMENT_BYTES: u64 = 1024 * 1024 * 1024;
@@ -478,6 +478,12 @@ pub(super) fn commit_legacy_migration_locked<B: Backend>(
             MigrationCommitErrorKind::Store(error),
         )
     })?;
+    store.require_no_import_intent().map_err(|error| {
+        MigrationCommitError::new(
+            MigrationCommitOperation::CommitMetadata,
+            MigrationCommitErrorKind::Store(error),
+        )
+    })?;
 
     let already_committed = loaded.snapshot() == &current_plan.snapshot;
     if !already_committed && loaded.snapshot() != &LibrarySnapshot::default() {
@@ -731,11 +737,6 @@ fn recovery_file_path(root: &Path, index: usize) -> PathBuf {
     root.join("legacy-recovery")
         .join("files")
         .join(format!("{index:020}.bin"))
-}
-
-fn managed_attachment_path(root: &Path, id: AttachmentId) -> PathBuf {
-    root.join("attachments")
-        .join(format!("{:020}.bin", id.get()))
 }
 
 fn migration_receipt_path(root: &Path) -> PathBuf {

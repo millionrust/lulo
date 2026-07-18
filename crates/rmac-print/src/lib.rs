@@ -45,6 +45,59 @@ impl Default for PageLayout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageOrientation {
+    Portrait,
+    Landscape,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PageDescription {
+    pub width_mm: Option<f64>,
+    pub height_mm: Option<f64>,
+    pub margin_top_mm: Option<f64>,
+    pub margin_right_mm: Option<f64>,
+    pub margin_bottom_mm: Option<f64>,
+    pub margin_left_mm: Option<f64>,
+    pub orientation: Option<PageOrientation>,
+}
+
+impl PageLayout {
+    /// Convert a portal page description into the renderer's exact layout.
+    /// Missing values use the documented A4 defaults; invalid values remain
+    /// errors rather than being silently clamped.
+    pub fn from_description(description: PageDescription) -> Result<Self, Error> {
+        let defaults = Self::default();
+        let mut width_mm = description.width_mm.unwrap_or(defaults.width_mm);
+        let mut height_mm = description.height_mm.unwrap_or(defaults.height_mm);
+        match description.orientation {
+            Some(PageOrientation::Landscape) if width_mm < height_mm => {
+                std::mem::swap(&mut width_mm, &mut height_mm);
+            }
+            Some(PageOrientation::Portrait) if width_mm > height_mm => {
+                std::mem::swap(&mut width_mm, &mut height_mm);
+            }
+            _ => {}
+        }
+        let layout = Self {
+            width_mm,
+            height_mm,
+            margin_top_mm: description.margin_top_mm.unwrap_or(defaults.margin_top_mm),
+            margin_right_mm: description
+                .margin_right_mm
+                .unwrap_or(defaults.margin_right_mm),
+            margin_bottom_mm: description
+                .margin_bottom_mm
+                .unwrap_or(defaults.margin_bottom_mm),
+            margin_left_mm: description
+                .margin_left_mm
+                .unwrap_or(defaults.margin_left_mm),
+            dpi: defaults.dpi,
+        };
+        validate_layout(layout).map(|_| layout)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     SourceTooLarge,
     InvalidPageLayout,
@@ -370,6 +423,25 @@ mod tests {
         assert!(pdf
             .windows(b"/Count 1".len())
             .any(|part| part == b"/Count 1"));
+    }
+
+    #[test]
+    fn portal_page_description_uses_orientation_and_rejects_bad_margins() {
+        let landscape = PageLayout::from_description(PageDescription {
+            width_mm: Some(210.0),
+            height_mm: Some(297.0),
+            orientation: Some(PageOrientation::Landscape),
+            ..PageDescription::default()
+        })
+        .unwrap();
+        assert_eq!((landscape.width_mm, landscape.height_mm), (297.0, 210.0));
+
+        let invalid = PageLayout::from_description(PageDescription {
+            margin_left_mm: Some(120.0),
+            margin_right_mm: Some(120.0),
+            ..PageDescription::default()
+        });
+        assert_eq!(invalid, Err(Error::InvalidPageLayout));
     }
 
     #[test]

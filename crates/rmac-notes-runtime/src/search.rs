@@ -551,8 +551,14 @@ impl NotesSearchSession {
         true
     }
 
-    pub fn fail(&mut self, generation: SearchGeneration, error: SearchError) -> bool {
+    pub fn fail(
+        &mut self,
+        generation: SearchGeneration,
+        library_revision: u64,
+        error: SearchError,
+    ) -> bool {
         if generation.get() != self.generation
+            || Some(library_revision) != self.expected_library_revision
             || self
                 .cancellation
                 .as_ref()
@@ -569,6 +575,15 @@ impl NotesSearchSession {
         self.selection_anchor = None;
         self.state = SearchState::Unavailable;
         true
+    }
+
+    pub(crate) fn is_pending(&self, generation: SearchGeneration, library_revision: u64) -> bool {
+        generation.get() == self.generation
+            && Some(library_revision) == self.expected_library_revision
+            && self
+                .cancellation
+                .as_ref()
+                .is_some_and(|cancellation| !cancellation.is_cancelled())
     }
 
     pub fn cancel(&mut self) {
@@ -931,7 +946,7 @@ mod tests {
         session.cancel();
         assert_eq!(session.state(), SearchState::Empty);
         assert!(session.hits().is_empty());
-        assert!(!session.fail(second.generation(), SearchError::Cancelled));
+        assert!(!session.fail(second.generation(), 7, SearchError::Cancelled));
     }
 
     #[test]
@@ -947,7 +962,7 @@ mod tests {
         assert_eq!(session.state(), SearchState::NoMatches);
 
         let request = session.begin("roadmap", 10, 7).unwrap().unwrap();
-        assert!(session.fail(request.generation(), SearchError::IndexTooLarge));
+        assert!(session.fail(request.generation(), 7, SearchError::IndexTooLarge));
         assert_eq!(session.state(), SearchState::Unavailable);
         assert_eq!(session.failure(), Some(SearchError::IndexTooLarge));
     }
@@ -991,6 +1006,8 @@ mod tests {
             results_truncated: false,
             work_bytes: 0,
         }));
+        assert!(!session.fail(stale.generation(), 5, SearchError::StaleIndex));
+        assert_eq!(session.state(), SearchState::Indexing);
 
         let error = session
             .begin("query", MAX_SEARCH_RESULTS + 1, 7)

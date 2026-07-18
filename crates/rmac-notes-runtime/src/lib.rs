@@ -6,6 +6,7 @@
 
 mod scheduler;
 mod search;
+mod search_worker;
 mod session;
 mod worker;
 
@@ -18,6 +19,11 @@ pub use search::{
     SearchField, SearchGeneration, SearchHit, SearchMatch, SearchRank, SearchRequest, SearchState,
     TextSpan, MAX_SEARCH_INDEX_TEXT_BYTES, MAX_SEARCH_MATCHES_PER_RESULT, MAX_SEARCH_QUERY_BYTES,
     MAX_SEARCH_RESULTS, SEARCH_INDEX_VERSION,
+};
+pub use search_worker::{
+    NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents, SearchJob,
+    SearchWorkerEvent, SearchWorkerSendError, SearchWorkerStartError, SEARCH_COMMAND_CAPACITY,
+    SEARCH_EVENT_CAPACITY,
 };
 pub use session::{FolderSelection, NotesSession, SessionPhase};
 pub use worker::{

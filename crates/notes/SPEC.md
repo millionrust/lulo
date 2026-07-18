@@ -324,8 +324,21 @@ results, no-match, and unavailable states, retains a selected stable ID when it
 survives, and rejects both late generations and batches from a different
 library revision. Debug output contains counts, revisions, IDs, and states but
 not queries, note text, tags, or attachment names. The index is intentionally
-not persisted. The background worker must still rebuild it after accepted
-snapshots and the live Notes view must dispatch work and render these states.
+not persisted and must be rebuilt after accepted snapshot changes. The live
+Notes view must still dispatch work and render these states.
+
+A dedicated search worker now keeps that work outside both GPUI and the
+single-writer repository thread. Each job carries one exact accepted snapshot,
+query generation, library revision, and shared cancellation token. The worker
+reuses an index only for the same revision, otherwise performs a cancellable
+rebuild before searching, and publishes typed started/result/failure events.
+The session projection accepts those events only while the exact generation and
+revision remain pending. Fixed 8-command and 16-event channels expose
+backpressure instead of growing, cancelled queued jobs publish nothing, and
+dropping the event endpoint cancels active work and deterministically joins the
+thread even while command clients remain. The live view still needs to submit
+the current accepted snapshot on each query/revision change and render the
+projected states; no running application behavior has changed yet.
 
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned

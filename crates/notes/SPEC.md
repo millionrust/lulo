@@ -242,6 +242,18 @@ stays authoritative; retry first resolves the journal, adopts a candidate that
 committed before an error was reported, retries a rolled-back candidate, or
 surfaces an unrelated durable change without overwrite.
 
+Startup path authority now accepts only normalized absolute `HOME` and
+`XDG_DATA_HOME` values, rejects overlapping managed/legacy roots, uses
+`$XDG_DATA_HOME/rmac/notes` or the specified `$HOME/.local/share/rmac/notes`
+fallback, and never falls back to the working directory. First run holds the
+writer lease while it returns either a ready accepted library or a migration
+review containing hashes/metadata rather than retained source bytes. Accept
+performs the complete fresh scan and plan comparison before the metadata-last
+commit; a changed source cannot publish. Starting empty is session-only unless
+the user then commits a new library, restart never reoffers an already migrated
+library, and blocking journal maintenance takes priority over a migration the
+store cannot accept.
+
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
 manifest/journal or aggregate bounds, no exact conflict preflight/readback, no

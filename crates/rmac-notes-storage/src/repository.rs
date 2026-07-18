@@ -83,6 +83,10 @@ impl<B: Backend> AcceptedLibrary<B> {
         Ok(Self { store, loaded })
     }
 
+    pub(super) fn from_loaded(store: NotesLibraryStore<B>, loaded: LoadedLibrary) -> Self {
+        Self { store, loaded }
+    }
+
     pub fn snapshot(&self) -> &LibrarySnapshot {
         self.loaded.snapshot()
     }

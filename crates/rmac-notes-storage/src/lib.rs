@@ -20,6 +20,7 @@ use sha2::{Digest as _, Sha256};
 mod legacy_scan;
 mod migration;
 mod repository;
+mod startup;
 mod writer;
 
 pub use legacy_scan::{
@@ -32,6 +33,10 @@ pub use migration::{
     PlannedNoteSource, RecoveryFile,
 };
 pub use repository::{AcceptedCommit, AcceptedLibrary, CommitError, PendingCommit, PendingReason};
+pub use startup::{
+    inspect_notes_startup, resolve_notes_paths, MigrationReview, NotesPathError, NotesPaths,
+    NotesStartup, StartupError,
+};
 pub use writer::{WriterLease, WriterLeaseError, WriterLeaseErrorKind, WriterLeaseOperation};
 
 const JOURNAL_MAGIC: &[u8; 8] = b"RMNJRN\0\0";

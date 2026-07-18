@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub use codec::{decode, encode, CodecError, MAX_LIBRARY_BYTES, SCHEMA_VERSION};
-pub use mutation::{LibraryTransaction, MutationError, NewNote, NoteChanges};
+pub use mutation::{LibraryTransaction, MutationError, NewNote, NoteChanges, PurgePlan};
 
 pub const MAX_NOTES: usize = 100_000;
 pub const MAX_FOLDERS: usize = 10_000;

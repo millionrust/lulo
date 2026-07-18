@@ -130,6 +130,15 @@ ordinary files enter or leave it only through explicit import and export.
   its last folder where possible and otherwise explains the fallback. Empty
   Trash is destructive, never the default action, names the scope, and does not
   claim secure erasure on general filesystems.
+- A single permanent delete retains the exact trashed-note revision reviewed by
+  the user. Empty Trash retains the exact accepted library revision and removes
+  only the notes present in that review; it never sweeps in a concurrently
+  trashed note. Both operations run in an otherwise empty transaction and
+  return the stable note IDs, every attachment record owned by those notes
+  (including an already-unreferenced tombstone), and the checked byte total.
+  Managed bytes are collected only after that exact metadata revision is
+  durable. Until cleanup and crash recovery are implemented and verified, the
+  runtime must not expose either operation or claim permanent deletion.
 
 ## Search and organization
 
@@ -197,6 +206,16 @@ revisions are monotonic and bounded, invalid/no-op candidates cannot reach the
 storage adapter, and deleting a folder moves live notes without erasing a
 trashed note's restore context. The existing prototype remains the live
 authority until application integration is complete.
+
+The domain layer now additionally produces bounded permanent-delete plans.
+Deleting one note requires its exact trashed revision; Empty Trash requires the
+exact reviewed library revision; and both refuse to share a transaction with
+any other mutation. The resulting next-revision candidate removes the complete
+note and every attachment record it owns while preserving monotonic next-ID
+sequences. Its private-safe plan contains only stable note/attachment IDs and a
+checked byte total for post-commit collection. This is deliberately not a
+runtime action yet: storage still needs a crash-recoverable cleanup authority
+for the corresponding managed attachment files.
 
 The separate `rmac-notes-storage` adapter now provides the metadata transaction
 protocol: private primary/last-known-good/journal files, exact loaded-byte
@@ -343,7 +362,8 @@ projected states; no running application behavior has changed yet.
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
 manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
-recovery records, silent scan/decode failures, permanent file/folder deletion,
+recovery records, silent scan/decode failures, no durable managed-attachment
+cleanup or live permanent file/folder deletion,
 attachment copies outside a note transaction, no orphan policy, no safe import/
 export/bundle format, no consumption of the derived cancellable index, and no
 Linux accessibility/runtime evidence. Migration must preserve every readable

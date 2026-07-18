@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::{
-    validate_name, validate_tag, FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord,
-    SortOrder, ValidationError, MAX_BODY_BYTES, MAX_TAGS_PER_NOTE, MAX_TITLE_BYTES,
+    validate_name, validate_tag, AttachmentId, FolderId, FolderRecord, LibrarySnapshot, NoteId,
+    NoteRecord, SortOrder, ValidationError, MAX_BODY_BYTES, MAX_TAGS_PER_NOTE, MAX_TITLE_BYTES,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +21,20 @@ pub struct NoteChanges {
     pub title: String,
     pub body: String,
     pub tags: Vec<String>,
+}
+
+/// Exact identities removed from one candidate library revision.
+///
+/// Managed attachment bytes remain untouched until the metadata candidate is
+/// durably accepted. Storage uses this bounded plan for post-commit cleanup;
+/// presenting permanent deletion before that cleanup is verified is forbidden.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PurgePlan {
+    pub base_library_revision: u64,
+    pub candidate_library_revision: u64,
+    pub note_ids: Vec<NoteId>,
+    pub attachment_ids: Vec<AttachmentId>,
+    pub attachment_bytes: u64,
 }
 
 impl NoteChanges {
@@ -42,6 +56,8 @@ pub enum MutationError {
     MissingNote,
     DeletedFolder,
     DeletedNote,
+    NoteNotTrashed,
+    PurgeRequiresExclusiveTransaction,
     NoChanges,
 }
 
@@ -58,6 +74,10 @@ impl fmt::Display for MutationError {
             Self::MissingNote => "the selected note no longer exists",
             Self::DeletedFolder => "the selected Notes folder is in Notes Trash",
             Self::DeletedNote => "the selected note is in Notes Trash",
+            Self::NoteNotTrashed => "the selected note is not in Notes Trash",
+            Self::PurgeRequiresExclusiveTransaction => {
+                "permanent deletion requires a separate Notes transaction"
+            }
             Self::NoChanges => "the Notes transaction contains no changes",
         })
     }
@@ -71,6 +91,7 @@ impl std::error::Error for MutationError {}
 /// every cross-record invariant. Callers discard the transaction on any error
 /// and pass only a finished candidate to the storage adapter.
 pub struct LibraryTransaction {
+    base_revision: u64,
     candidate: LibrarySnapshot,
     changed: bool,
 }
@@ -85,6 +106,7 @@ impl LibraryTransaction {
         let mut candidate = base.clone();
         candidate.revision = revision;
         Ok(Self {
+            base_revision: base.revision,
             candidate,
             changed: false,
         })
@@ -310,6 +332,74 @@ impl LibraryTransaction {
         Ok(folder_id)
     }
 
+    /// Remove one exact trashed note and all attachment records it owns.
+    ///
+    /// The returned plan does not authorize deleting managed bytes until this
+    /// transaction's candidate revision has been durably accepted.
+    pub fn purge_trashed_note(
+        &mut self,
+        id: NoteId,
+        expected_revision: u64,
+    ) -> Result<PurgePlan, MutationError> {
+        if self.changed {
+            return Err(MutationError::PurgeRequiresExclusiveTransaction);
+        }
+        let note_index = self
+            .candidate
+            .notes
+            .iter()
+            .position(|note| note.id == id)
+            .ok_or(MutationError::MissingNote)?;
+        let note = &self.candidate.notes[note_index];
+        require_revision(note.revision, expected_revision)?;
+        if !note.deleted {
+            return Err(MutationError::NoteNotTrashed);
+        }
+        let plan = purge_plan(
+            &self.candidate,
+            self.base_revision,
+            std::iter::once(id).collect(),
+        )?;
+        self.candidate.notes.remove(note_index);
+        self.candidate
+            .attachments
+            .retain(|attachment| attachment.note_id != id);
+        self.changed = true;
+        Ok(plan)
+    }
+
+    /// Remove exactly the notes that were in Trash at the reviewed library
+    /// revision. A newer library revision must be reviewed again so a note
+    /// trashed after confirmation is never swept into the operation.
+    pub fn empty_trash(
+        &mut self,
+        expected_library_revision: u64,
+    ) -> Result<PurgePlan, MutationError> {
+        if self.changed {
+            return Err(MutationError::PurgeRequiresExclusiveTransaction);
+        }
+        require_revision(self.base_revision, expected_library_revision)?;
+        let note_ids = self
+            .candidate
+            .notes
+            .iter()
+            .filter(|note| note.deleted)
+            .map(|note| note.id)
+            .collect::<BTreeSet<_>>();
+        if note_ids.is_empty() {
+            return Err(MutationError::NoChanges);
+        }
+        let plan = purge_plan(&self.candidate, self.base_revision, note_ids.clone())?;
+        self.candidate
+            .notes
+            .retain(|note| !note_ids.contains(&note.id));
+        self.candidate
+            .attachments
+            .retain(|attachment| !note_ids.contains(&attachment.note_id));
+        self.changed = true;
+        Ok(plan)
+    }
+
     pub fn set_sort_order(&mut self, sort_order: SortOrder) -> bool {
         if self.candidate.sort_order == sort_order {
             return false;
@@ -346,6 +436,31 @@ impl LibraryTransaction {
         }
         Ok(note)
     }
+}
+
+fn purge_plan(
+    snapshot: &LibrarySnapshot,
+    base_library_revision: u64,
+    note_ids: BTreeSet<NoteId>,
+) -> Result<PurgePlan, MutationError> {
+    let mut attachment_ids = Vec::new();
+    let mut attachment_bytes = 0_u64;
+    for attachment in &snapshot.attachments {
+        if note_ids.contains(&attachment.note_id) {
+            attachment_ids.push(attachment.id);
+            attachment_bytes = attachment_bytes.checked_add(attachment.byte_len).ok_or(
+                MutationError::InvalidCandidate(ValidationError::CollectionLimit),
+            )?;
+        }
+    }
+    attachment_ids.sort_unstable();
+    Ok(PurgePlan {
+        base_library_revision,
+        candidate_library_revision: snapshot.revision,
+        note_ids: note_ids.into_iter().collect(),
+        attachment_ids,
+        attachment_bytes,
+    })
 }
 
 fn require_live_folder(
@@ -422,6 +537,7 @@ fn next_identity(current: u64) -> Result<u64, MutationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AttachmentKind, AttachmentRecord};
 
     fn snapshot() -> LibrarySnapshot {
         let folder_id = FolderId::new(1).unwrap();
@@ -545,6 +661,124 @@ mod tests {
         let restored = restore.finish().unwrap();
         assert!(!restored.notes[0].deleted);
         assert_eq!(restored.notes[0].revision, 5);
+    }
+
+    #[test]
+    fn permanent_delete_requires_trash_and_returns_exact_cleanup_identities() {
+        let mut base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let attachment_id = AttachmentId::new(1).unwrap();
+        base.notes[0].pinned = false;
+        base.notes[0].deleted = true;
+        base.notes[0].attachments.push(attachment_id);
+        base.next_attachment_id = 2;
+        base.attachments.push(AttachmentRecord {
+            id: attachment_id,
+            revision: 1,
+            note_id,
+            display_name: "diagram.png".into(),
+            kind: AttachmentKind::Png,
+            byte_len: 99,
+            sha256: [1; 32],
+            deleted: false,
+        });
+        base.validate().unwrap();
+
+        let mut transaction = LibraryTransaction::begin(&base).unwrap();
+        let plan = transaction.purge_trashed_note(note_id, 3).unwrap();
+        let candidate = transaction.finish().unwrap();
+
+        assert_eq!(plan.base_library_revision, 7);
+        assert_eq!(plan.candidate_library_revision, 8);
+        assert_eq!(plan.note_ids, vec![note_id]);
+        assert_eq!(plan.attachment_ids, vec![attachment_id]);
+        assert_eq!(plan.attachment_bytes, 99);
+        assert!(candidate.notes.is_empty());
+        assert!(candidate.attachments.is_empty());
+        assert_eq!(candidate.next_note_id, 2);
+        assert_eq!(candidate.next_attachment_id, 2);
+        candidate.validate().unwrap();
+
+        let mut live = LibraryTransaction::begin(&snapshot()).unwrap();
+        assert_eq!(
+            live.purge_trashed_note(note_id, 3),
+            Err(MutationError::NoteNotTrashed)
+        );
+        assert_eq!(live.finish().unwrap_err(), MutationError::NoChanges);
+    }
+
+    #[test]
+    fn empty_trash_is_exact_revision_bounded_and_includes_owned_orphans() {
+        let mut base = snapshot();
+        let live_note_id = NoteId::new(1).unwrap();
+        let trashed_note_id = NoteId::new(2).unwrap();
+        let live_attachment_id = AttachmentId::new(1).unwrap();
+        let orphan_attachment_id = AttachmentId::new(2).unwrap();
+        let mut trashed = base.notes[0].clone();
+        trashed.id = trashed_note_id;
+        trashed.revision = 1;
+        trashed.pinned = false;
+        trashed.deleted = true;
+        trashed.attachments = vec![live_attachment_id];
+        base.notes.push(trashed);
+        base.next_note_id = 3;
+        base.next_attachment_id = 3;
+        base.attachments.extend([
+            AttachmentRecord {
+                id: live_attachment_id,
+                revision: 1,
+                note_id: trashed_note_id,
+                display_name: "kept-until-purge.png".into(),
+                kind: AttachmentKind::Png,
+                byte_len: 10,
+                sha256: [1; 32],
+                deleted: false,
+            },
+            AttachmentRecord {
+                id: orphan_attachment_id,
+                revision: 2,
+                note_id: trashed_note_id,
+                display_name: "orphaned-before-purge.png".into(),
+                kind: AttachmentKind::Png,
+                byte_len: 20,
+                sha256: [2; 32],
+                deleted: true,
+            },
+        ]);
+        base.validate().unwrap();
+
+        let mut mixed = LibraryTransaction::begin(&base).unwrap();
+        assert!(mixed.set_sort_order(SortOrder::Title));
+        assert_eq!(
+            mixed.empty_trash(7),
+            Err(MutationError::PurgeRequiresExclusiveTransaction)
+        );
+
+        let mut transaction = LibraryTransaction::begin(&base).unwrap();
+        assert_eq!(
+            transaction.empty_trash(6),
+            Err(MutationError::RevisionConflict)
+        );
+        let plan = transaction.empty_trash(7).unwrap();
+        let candidate = transaction.finish().unwrap();
+
+        assert_eq!(plan.note_ids, vec![trashed_note_id]);
+        assert_eq!(
+            plan.attachment_ids,
+            vec![live_attachment_id, orphan_attachment_id]
+        );
+        assert_eq!(plan.attachment_bytes, 30);
+        assert_eq!(candidate.notes.len(), 1);
+        assert_eq!(candidate.notes[0].id, live_note_id);
+        assert!(candidate.attachments.is_empty());
+        candidate.validate().unwrap();
+
+        let mut empty = LibraryTransaction::begin(&candidate).unwrap();
+        assert_eq!(
+            empty.empty_trash(candidate.revision),
+            Err(MutationError::NoChanges)
+        );
+        assert_eq!(empty.finish().unwrap_err(), MutationError::NoChanges);
     }
 
     #[test]

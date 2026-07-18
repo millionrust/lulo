@@ -273,9 +273,17 @@ new note when the previous edit is rejected, and a failed store commit retains
 the complete candidate while an unrelated durable change becomes an explicit
 conflict. Fixed 64-command and 16-event queues apply visible backpressure
 instead of unbounded growth, and an idle worker blocks without a timer. Event
-debug output reports revisions/counts but not note content. The live Notes view
-wiring and draft recovery remain; the prototype's 1.5-second loop is still the
-running behavior until that integration lands and is validated.
+debug output reports revisions/counts but not note content. A split endpoint
+gives the UI a cloneable nonblocking command client while one background task
+owns blocking event delivery; dropping that event endpoint shuts down and joins
+the repository thread even if a UI client remains. The runtime session
+projection consumes those events without optimistic publish, preserves note
+selection by stable ID across reordered readback snapshots, normalizes deleted
+folder selection, provides deterministic pinned/folder/Trash ordering, reveals
+an accepted created note, and retains pending/conflict/rejection phases without
+debugging note content. The live Notes view wiring and draft recovery remain;
+the prototype's 1.5-second loop is still the running behavior until that
+integration lands and is validated.
 
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned

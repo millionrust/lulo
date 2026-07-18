@@ -5,14 +5,17 @@
 //! remain a renderer of accepted snapshots rather than a filesystem authority.
 
 mod scheduler;
+mod session;
 mod worker;
 
 pub use scheduler::{
     EditGeneration, EditScheduler, ScheduleOutcome, ScheduledEdit, SchedulerError,
     DEFAULT_EDIT_DEBOUNCE, MAX_EDIT_DEBOUNCE,
 };
+pub use session::{FolderSelection, NotesSession, SessionPhase};
 pub use worker::{
     AcceptedEvent, ActionRequest, ActionResult, LibraryAction, MigrationReviewSummary, NotesWorker,
-    PendingEvent, RejectedEvent, SnapshotEvent, WorkerCommand, WorkerEvent, WorkerFailure,
-    WorkerSendError, WorkerStartError, COMMAND_CAPACITY, EVENT_CAPACITY,
+    NotesWorkerClient, NotesWorkerEvents, PendingEvent, RejectedEvent, SnapshotEvent,
+    WorkerCommand, WorkerEvent, WorkerFailure, WorkerSendError, WorkerStartError, COMMAND_CAPACITY,
+    EVENT_CAPACITY,
 };

@@ -338,6 +338,73 @@ pub struct NotesWorker {
     thread: Option<JoinHandle<()>>,
 }
 
+/// Cloneable, nonblocking command endpoint retained by the UI thread.
+#[derive(Clone)]
+pub struct NotesWorkerClient {
+    commands: SyncSender<WorkerCommand>,
+}
+
+impl NotesWorkerClient {
+    pub fn try_send(&self, command: WorkerCommand) -> Result<(), WorkerSendError> {
+        try_send_command(&self.commands, command)
+    }
+}
+
+impl fmt::Debug for NotesWorkerClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("NotesWorkerClient").finish()
+    }
+}
+
+/// Blocking event endpoint intended to live on one background task.
+///
+/// Dropping it disconnects event delivery, requests shutdown, and joins the
+/// repository thread even if a cloned [`NotesWorkerClient`] still exists.
+pub struct NotesWorkerEvents {
+    events: Option<Receiver<WorkerEvent>>,
+    shutdown: Option<SyncSender<WorkerCommand>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl NotesWorkerEvents {
+    pub fn recv(&self) -> Result<WorkerEvent, RecvError> {
+        self.events.as_ref().ok_or(RecvError)?.recv()
+    }
+
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<WorkerEvent, RecvTimeoutError> {
+        self.events
+            .as_ref()
+            .ok_or(RecvTimeoutError::Disconnected)?
+            .recv_timeout(timeout)
+    }
+
+    pub fn try_recv(&self) -> Result<WorkerEvent, TryRecvError> {
+        self.events
+            .as_ref()
+            .ok_or(TryRecvError::Disconnected)?
+            .try_recv()
+    }
+}
+
+impl fmt::Debug for NotesWorkerEvents {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("NotesWorkerEvents").finish()
+    }
+}
+
+impl Drop for NotesWorkerEvents {
+    fn drop(&mut self) {
+        self.events.take();
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.try_send(WorkerCommand::Shutdown);
+            drop(shutdown);
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 impl NotesWorker {
     pub fn start(paths: NotesPaths) -> Result<Self, WorkerStartError> {
         Self::start_with_debounce(paths, DEFAULT_EDIT_DEBOUNCE)
@@ -362,22 +429,10 @@ impl NotesWorker {
     }
 
     pub fn try_send(&self, command: WorkerCommand) -> Result<(), WorkerSendError> {
-        let (request_id, _) = command.request_context();
-        if !matches!(
+        try_send_command(
+            self.commands.as_ref().ok_or(WorkerSendError::Closed)?,
             command,
-            WorkerCommand::RetryPending | WorkerCommand::Shutdown
-        ) && request_id == 0
-        {
-            return Err(WorkerSendError::InvalidRequest);
-        }
-        self.commands
-            .as_ref()
-            .ok_or(WorkerSendError::Closed)?
-            .try_send(command)
-            .map_err(|error| match error {
-                TrySendError::Full(_) => WorkerSendError::Full,
-                TrySendError::Disconnected(_) => WorkerSendError::Closed,
-            })
+        )
     }
 
     pub fn recv(&self) -> Result<WorkerEvent, RecvError> {
@@ -397,6 +452,32 @@ impl NotesWorker {
             .ok_or(TryRecvError::Disconnected)?
             .try_recv()
     }
+
+    /// Separates the UI command endpoint from the background event endpoint.
+    pub fn into_parts(mut self) -> (NotesWorkerClient, NotesWorkerEvents) {
+        let commands = self
+            .commands
+            .take()
+            .expect("a live Notes worker always owns its command endpoint");
+        let events = self
+            .events
+            .take()
+            .expect("a live Notes worker always owns its event endpoint");
+        let thread = self
+            .thread
+            .take()
+            .expect("a live Notes worker always owns its repository thread");
+        (
+            NotesWorkerClient {
+                commands: commands.clone(),
+            },
+            NotesWorkerEvents {
+                events: Some(events),
+                shutdown: Some(commands),
+                thread: Some(thread),
+            },
+        )
+    }
 }
 
 impl Drop for NotesWorker {
@@ -410,6 +491,24 @@ impl Drop for NotesWorker {
             let _ = thread.join();
         }
     }
+}
+
+fn try_send_command(
+    commands: &SyncSender<WorkerCommand>,
+    command: WorkerCommand,
+) -> Result<(), WorkerSendError> {
+    let (request_id, _) = command.request_context();
+    if !matches!(
+        command,
+        WorkerCommand::RetryPending | WorkerCommand::Shutdown
+    ) && request_id == 0
+    {
+        return Err(WorkerSendError::InvalidRequest);
+    }
+    commands.try_send(command).map_err(|error| match error {
+        TrySendError::Full(_) => WorkerSendError::Full,
+        TrySendError::Disconnected(_) => WorkerSendError::Closed,
+    })
 }
 
 struct ReadyState {
@@ -1356,5 +1455,67 @@ mod tests {
         assert!(!debug.contains("Private title"));
         assert!(!debug.contains("secret worker body"));
         assert!(debug.contains("[private]"));
+    }
+
+    #[test]
+    fn split_endpoints_support_background_event_delivery() {
+        let (container, paths) = roots("split");
+        let worker = NotesWorker::start(paths).unwrap();
+        let (client, events) = worker.into_parts();
+
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Ready(_)
+        ));
+        client
+            .try_send(WorkerCommand::Apply(
+                ActionRequest::new(
+                    1,
+                    LibraryAction::CreateNote(NewNote {
+                        created_unix_ms: 10,
+                        title: "Private title".into(),
+                        body: "Private body".into(),
+                        tags: Vec::new(),
+                        folder_id: None,
+                    }),
+                )
+                .unwrap(),
+            ))
+            .unwrap();
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Accepted(_)
+        ));
+        client.try_send(WorkerCommand::Shutdown).unwrap();
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Stopped { .. }
+        ));
+
+        drop(events);
+        assert_eq!(
+            client.try_send(WorkerCommand::Flush { request_id: 2 }),
+            Err(WorkerSendError::Closed)
+        );
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn dropping_event_endpoint_stops_worker_while_clients_remain() {
+        let (container, paths) = roots("split-drop");
+        let worker = NotesWorker::start(paths).unwrap();
+        let (client, events) = worker.into_parts();
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Ready(_)
+        ));
+
+        drop(events);
+
+        assert_eq!(
+            client.try_send(WorkerCommand::Flush { request_id: 1 }),
+            Err(WorkerSendError::Closed)
+        );
+        std::fs::remove_dir_all(container).unwrap();
     }
 }

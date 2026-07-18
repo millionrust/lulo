@@ -24,7 +24,7 @@ use rmac_notes_runtime::{
     WorkerFailure, WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{resolve_notes_paths, PendingReason};
-use rmac_notes_store::{NewNote, NoteChanges, NoteId, SortOrder};
+use rmac_notes_store::{FolderId, NewNote, NoteChanges, NoteId, SortOrder};
 use rmac_ui::{mac, Button, InputEvent, TextField};
 
 const FOLDERS_W: f32 = 210.0;
@@ -40,7 +40,9 @@ actions!(
         SortByEdited,
         SortByCreated,
         SortByTitle,
-        FocusSearch
+        FocusSearch,
+        RenameSelectedFolder,
+        DeleteSelectedFolder
     ]
 );
 
@@ -50,6 +52,7 @@ struct NotesView {
     session: NotesSession,
     search: NotesSearchSession,
     search_query: Entity<InputState>,
+    folder_name_input: Entity<InputState>,
     title: Entity<InputState>,
     body: Entity<InputState>,
     focus: FocusHandle,
@@ -61,6 +64,7 @@ struct NotesView {
     recovery_notice_dismissed: bool,
     recovery_decision: Option<(NoteId, RecoveryDecision)>,
     recovery_copy_pending: Option<(u64, NoteId)>,
+    folder_dialog: Option<FolderDialog>,
     search_shutdown_requested: bool,
     closing: bool,
 }
@@ -69,6 +73,12 @@ struct NotesView {
 enum RecoveryDecision {
     RestoreOriginal,
     PreserveCopy,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FolderDialog {
+    Rename(FolderId),
+    Delete(FolderId),
 }
 
 impl NotesView {
@@ -81,6 +91,7 @@ impl NotesView {
         ]);
 
         let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let folder_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Folder Name"));
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
         let body = rmac_editor::multiline("Note", window, cx);
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
@@ -101,6 +112,12 @@ impl NotesView {
             }
         })
         .detach();
+        cx.subscribe(&folder_name_input, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                this.commit_folder_rename(cx);
+            }
+        })
+        .detach();
 
         let focus = cx.focus_handle();
         window.focus(&focus);
@@ -110,6 +127,7 @@ impl NotesView {
             session: NotesSession::new(),
             search: NotesSearchSession::new(),
             search_query,
+            folder_name_input,
             title,
             body,
             focus,
@@ -121,6 +139,7 @@ impl NotesView {
             recovery_notice_dismissed: false,
             recovery_decision: None,
             recovery_copy_pending: None,
+            folder_dialog: None,
             search_shutdown_requested: false,
             closing: false,
         };
@@ -383,6 +402,9 @@ impl NotesView {
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.folder_dialog.is_some() {
+            return;
+        }
         self.search_query
             .update(cx, |state, cx| state.focus(window, cx));
     }
@@ -572,7 +594,9 @@ impl NotesView {
     }
 
     fn is_interactive_ready(&self) -> bool {
-        matches!(self.session.phase(), SessionPhase::Ready) && !self.recovery_review_is_blocking()
+        matches!(self.session.phase(), SessionPhase::Ready)
+            && !self.recovery_review_is_blocking()
+            && self.folder_dialog.is_none()
     }
 
     fn recovery_review_is_blocking(&self) -> bool {
@@ -687,6 +711,110 @@ impl NotesView {
             .collect::<Vec<_>>();
         let name = unique_folder_name(&existing);
         self.send_action(LibraryAction::CreateFolder { name }, cx);
+    }
+
+    fn begin_folder_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let rmac_notes_runtime::FolderSelection::Folder(folder_id) =
+            self.session.folder_selection()
+        else {
+            return;
+        };
+        let Some(name) = self
+            .session
+            .folders()
+            .into_iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.name.clone())
+        else {
+            return;
+        };
+        self.folder_name_input
+            .update(cx, |state, cx| state.set_value(name, window, cx));
+        self.folder_dialog = Some(FolderDialog::Rename(folder_id));
+        self.folder_name_input
+            .update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
+    fn commit_folder_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(FolderDialog::Rename(folder_id)) = self.folder_dialog else {
+            return;
+        };
+        let name = self.folder_name_input.read(cx).value().trim().to_string();
+        if name.is_empty() {
+            self.message = Some("A Notes folder name cannot be empty".into());
+            cx.notify();
+            return;
+        }
+        let Some(expected_revision) = self
+            .session
+            .folders()
+            .into_iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.revision)
+        else {
+            self.folder_dialog = None;
+            self.message = Some("That Notes folder is no longer available".into());
+            cx.notify();
+            return;
+        };
+        self.folder_dialog = None;
+        self.send_action(
+            LibraryAction::RenameFolder {
+                folder_id,
+                expected_revision,
+                name,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn begin_folder_delete(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        if let rmac_notes_runtime::FolderSelection::Folder(folder_id) =
+            self.session.folder_selection()
+        {
+            self.folder_dialog = Some(FolderDialog::Delete(folder_id));
+            cx.notify();
+        }
+    }
+
+    fn confirm_folder_delete(&mut self, cx: &mut Context<Self>) {
+        let Some(FolderDialog::Delete(folder_id)) = self.folder_dialog else {
+            return;
+        };
+        let Some(expected_revision) = self
+            .session
+            .folders()
+            .into_iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.revision)
+        else {
+            self.folder_dialog = None;
+            self.message = Some("That Notes folder is no longer available".into());
+            cx.notify();
+            return;
+        };
+        self.folder_dialog = None;
+        self.send_action(
+            LibraryAction::DeleteFolder {
+                folder_id,
+                expected_revision,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn cancel_folder_dialog(&mut self, cx: &mut Context<Self>) {
+        self.folder_dialog = None;
+        cx.notify();
     }
 
     fn trash_or_restore(&mut self, cx: &mut Context<Self>) {
@@ -807,6 +935,10 @@ impl NotesView {
     }
 
     fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.folder_dialog.take().is_some() {
+            cx.notify();
+            return;
+        }
         if matches!(self.session.phase(), SessionPhase::Pending { .. }) {
             self.message = Some("Retry or discard the pending change before closing Notes".into());
             cx.notify();
@@ -985,6 +1117,7 @@ impl NotesView {
             snapshot.notes.iter().filter(|note| note.deleted).count()
         });
         let current = self.session.folder_selection();
+        let has_selected_folder = matches!(current, FolderSelection::Folder(_));
         let mut sidebar = div()
             .w(px(FOLDERS_W))
             .h_full()
@@ -1010,13 +1143,31 @@ impl NotesView {
                             .child("ON THIS COMPUTER"),
                     )
                     .child(
-                        Button::new("new-folder", "")
-                            .icon(IconName::Plus)
-                            .ghost()
-                            .with_size(Size::XSmall)
-                            .disabled(!self.is_interactive_ready())
-                            .tooltip("New Folder")
-                            .on_click(cx.listener(|this, _, _, cx| this.create_folder(cx))),
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_0p5()
+                            .child(
+                                Button::new("folder-actions", "")
+                                    .icon(IconName::Ellipsis)
+                                    .ghost()
+                                    .with_size(Size::XSmall)
+                                    .disabled(!self.is_interactive_ready() || !has_selected_folder)
+                                    .tooltip("Folder Actions")
+                                    .dropdown_menu(|menu, _, _| {
+                                        menu.menu("Rename Folder…", Box::new(RenameSelectedFolder))
+                                            .menu("Delete Folder…", Box::new(DeleteSelectedFolder))
+                                    }),
+                            )
+                            .child(
+                                Button::new("new-folder", "")
+                                    .icon(IconName::Plus)
+                                    .ghost()
+                                    .with_size(Size::XSmall)
+                                    .disabled(!self.is_interactive_ready())
+                                    .tooltip("New Folder")
+                                    .on_click(cx.listener(|this, _, _, cx| this.create_folder(cx))),
+                            ),
                     ),
             )
             .child(folder_row(
@@ -1595,6 +1746,90 @@ impl NotesView {
             .into_any_element()
     }
 
+    fn render_folder_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
+
+        let dialog = self.folder_dialog?;
+        let folder_id = match dialog {
+            FolderDialog::Rename(folder_id) | FolderDialog::Delete(folder_id) => folder_id,
+        };
+        let folder = self
+            .session
+            .folders()
+            .into_iter()
+            .find(|folder| folder.id == folder_id)?;
+        match dialog {
+            FolderDialog::Rename(_) => {
+                let card = div()
+                    .w(px(360.0))
+                    .p(px(20.0))
+                    .v_flex()
+                    .gap_3()
+                    .rounded(px(12.0))
+                    .bg(mac::window())
+                    .border_1()
+                    .border_color(mac::separator())
+                    .shadow_xl()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(15.0))
+                            .font_weight(mac::BOLD)
+                            .child("Rename Folder"),
+                    )
+                    .child(TextField::new(&self.folder_name_input).cleanable(true))
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                rmac_ui::dialog_button("cancel-folder-rename", "Cancel", Normal)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.cancel_folder_dialog(cx)),
+                                    ),
+                            )
+                            .child(
+                                rmac_ui::dialog_button("commit-folder-rename", "Rename", Primary)
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.commit_folder_rename(cx)),
+                                    ),
+                            ),
+                    );
+                Some(rmac_ui::dialog("rename-folder-dialog", card).into_any_element())
+            }
+            FolderDialog::Delete(_) => {
+                let count = self.session.folder_count(folder_id);
+                let message = format!(
+                    "Delete “{}”? {} {} will move to All Notes. The notes and their attachments will not be deleted.",
+                    folder.name,
+                    count,
+                    if count == 1 { "note" } else { "notes" }
+                );
+                Some(
+                    rmac_ui::alert(
+                        "Delete this folder?",
+                        message,
+                        vec![
+                            rmac_ui::dialog_button("cancel-folder-delete", "Cancel", Normal)
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.cancel_folder_dialog(cx)),
+                                )
+                                .into_any_element(),
+                            rmac_ui::dialog_button(
+                                "confirm-folder-delete",
+                                "Delete Folder",
+                                Destructive,
+                            )
+                            .on_click(cx.listener(|this, _, _, cx| this.confirm_folder_delete(cx)))
+                            .into_any_element(),
+                        ],
+                    )
+                    .into_any_element(),
+                )
+            }
+        }
+    }
+
     fn render_status_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (message, actions) = match self.session.phase() {
             SessionPhase::Pending { reason, .. } => (
@@ -1714,6 +1949,7 @@ impl Render for NotesView {
                 )
                 .into_any_element(),
         };
+        let folder_dialog = self.render_folder_dialog(cx);
 
         div()
             .track_focus(&self.focus)
@@ -1734,6 +1970,12 @@ impl Render for NotesView {
             .on_action(
                 cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &RenameSelectedFolder, window, cx| {
+                this.begin_folder_rename(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &DeleteSelectedFolder, _, cx| this.begin_folder_delete(cx)),
+            )
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.request_close(window, cx)
             }))
@@ -1741,6 +1983,7 @@ impl Render for NotesView {
             .bg(mac::window())
             .text_color(mac::text())
             .child(content)
+            .when_some(folder_dialog, |element, dialog| element.child(dialog))
     }
 }
 

@@ -484,7 +484,11 @@ debugging note content. The live GPUI Notes process now owns only the command
 client and session projection. A bounded bridge forwards worker events without
 idle polling; startup, migration review, accepted snapshots, stable-ID folder/
 note selection, create, edit, pin, sort, Trash/restore, Pending Retry/Discard,
-maintenance gating, and typed failures are rendered from that projection. The
+maintenance gating, and typed failures are rendered from that projection.
+Selected custom folders expose Rename and Delete actions. Rename uses a focused
+modal field and exact folder revision; Delete uses a destructive review that
+states the live-note count and preserves those notes by moving them to All Notes
+before the accepted folder tombstone publishes. The
 old synchronous path scanner, direct note writes, path identity, and permanent
 1.5-second save loop have been removed from the running app. Window close is
 refused when a Pending decision exists or when the bounded command queue cannot
@@ -559,9 +563,9 @@ cancels the session and orders search-worker shutdown before dropping the view.
 Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
-Known live-app gaps now include folder rename/delete review, tag editing,
-formatted Markdown preview, image attach/preview/reference-removal UI, reviewed
-permanent file/folder deletion, XDG portal text/bundle import and export review/
+Known live-app gaps now include tag editing, formatted Markdown preview, image
+attach/preview/reference-removal UI, reviewed permanent note/attachment deletion,
+XDG portal text/bundle import and export review/
 progress, rich search-match highlighting, richer conflict-resolution choices,
 semantic accessibility, and Linux runtime/visual evidence. The accepted store
 remains local-only and makes no cloud-sync claim.

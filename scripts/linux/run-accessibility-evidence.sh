@@ -61,6 +61,11 @@ bash "$repo_root/scripts/linux/collect-reference-evidence.sh" "$evidence_dir"
   echo "wayland_display=${WAYLAND_DISPLAY:-unset}"
   echo "x11_display=${DISPLAY:-unset}"
   echo "orca_path=$(command -v orca || echo unavailable)"
+  echo "xwayland_satellite_path=$(command -v xwayland-satellite || echo unavailable)"
+  if command -v xwayland-satellite >/dev/null 2>&1; then
+    echo -n "xwayland_satellite_version="
+    xwayland-satellite --version 2>&1 || true
+  fi
   if command -v gsettings >/dev/null 2>&1; then
     echo -n "gtk_text_factor="
     gsettings get org.gnome.desktop.interface text-scaling-factor 2>&1 || true
@@ -75,6 +80,9 @@ bash "$repo_root/scripts/linux/collect-reference-evidence.sh" "$evidence_dir"
     niri --version 2>&1 || true
     echo -n "niri_config="
     niri validate >/dev/null 2>&1 && echo valid || echo invalid-or-unavailable
+    echo "niri_outputs_begin"
+    niri msg outputs 2>&1 || true
+    echo "niri_outputs_end"
   else
     echo "niri_version=unavailable"
     echo "niri_config=unavailable"
@@ -94,6 +102,9 @@ for every item. An unchecked item is not evidence of completion.
 - [ ] Extra Large text at 100% output scale across all seven apps
 - [ ] Extra Large text at every supported output scale through 200%
 - [ ] Live changes do not clip, overlap, displace focus, or break hit regions
+- [ ] External portal/theme-file changes appear live without a stale overwrite
+- [ ] A concurrent external theme edit makes the in-pane transaction refuse
+- [ ] Theme watcher failure retains last-known-good state and recovers live
 - [ ] Editor, note-body, and terminal content fonts remain independent
 
 ## GTK text authority
@@ -103,6 +114,10 @@ for every item. An unchecked item is not evidence of completion.
 - [ ] Extra Large is confirmed as 130% by GSettings and a GTK application
 - [ ] GTK changes do not alter niri output scale or rmac text scale
 - [ ] A custom factor is shown exactly with no preset falsely selected
+- [ ] An external GSettings change appears live without pressing Refresh
+- [ ] A concurrent value or writable-policy change is refused before save
+- [ ] Monitor failure retains last-known-good state and reconnects
+- [ ] Missing schema and policy-locked states remain truthful and read-only
 
 ## Keyboard
 
@@ -124,9 +139,15 @@ for every item. An unchecked item is not evidence of completion.
 ## Orca
 
 - [ ] Full niri session is detected
-- [ ] Xwayland DISPLAY is detected
+- [ ] Connected and enabled niri output is detected
+- [ ] Exported Xwayland DISPLAY is reported without claiming it proves success
+- [ ] xwayland-satellite version or custom configured path is recorded
 - [ ] Orca executable is detected
 - [ ] Super–Alt–S starts Orca in the default niri configuration
+- [ ] Customized shortcut is not falsely reported as the default binding
+- [ ] Working EGL, Xwayland, and speech output are proven separately
+- [ ] Disabled/no-output, missing Orca, and niri restart states are truthful
+- [ ] Built-in zoom and screen curtain remain explicitly unavailable
 - [ ] Upstream accessibility probe roles, names, states, actions, and focus work
 - [ ] rmac AT-SPI gaps are recorded precisely and are not marked as passing
 CHECKLIST

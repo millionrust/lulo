@@ -20,8 +20,8 @@ equivalents rather than simulated.
 | Language & Region | Canonical bounded locale1 state and installed inventory; independent Language and Region mutations preserving unrelated effective categories; deterministic native previews; exact readback; conflict-checked locale rollback; validated multi-layout XKB editing only when niri follows localed; exact keyboard readback/rollback; filtered generation-safe property/restart refresh; privacy-safe failures; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, and `localectl` layout inventory | Ubuntu language/region/XKB/polkit/concurrency/restart/sign-out matrix plus keyboard, scale, performance, and accessibility evidence in `docs/language-region.md` |
 | Login Items | Effective bounded XDG precedence with non-symlink reads, session applicability, atomic exact-readback `Hidden` overrides, and malformed-entry suppression; portal add/replace with exact source/destination-byte and sign-in-command review; exact revalidated Trash removal with lower-system-entry protection; bounded systemd inventory with user-owned-only persistent toggles and read-only system/protected/runtime/masked/static states; sender-filtered generation-safe live refresh, privacy-safe failures, and partial-authority recovery | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Ubuntu XDG/systemd mutation, conflict, restart, privacy, interaction, scale, performance, and accessibility evidence in `docs/login-items.md` |
 | Sharing | Capability-detected OpenSSH and Samba services with separate runtime/boot state, explicit enable/disable confirmation, systemd system-manager/polkit mutation, bounded completion wait and exact rollback; effective bounded Samba share names from `testparm -s`; separate read-only UFW SSH/Samba allowance truth; live systemd, UFW, and Samba configuration refresh; no AirDrop branding | `rmac-sharing`, `rmac-sharing-linux`, `org.freedesktop.systemd1`, `ssh.service`, `smbd.service`, Samba `testparm`, UFW status/configuration | Linux polkit/network/scale/accessibility evidence and reviewed share editing if added |
-| Accessibility | Live rmac increased-contrast, reduced-motion, and bounded application text-size preferences with effective-state display; text size updates the shared GPUI rem base and migrated semantic/shared UI text without changing display or content-font scaling; separate confirmed GNOME/GTK text scaling; authoritative niri-backed keyboard, mouse, and trackpad controls; off-thread full-niri-session, Xwayland, and installed-Orca readiness with the documented default shortcut; explicit rmac AT-SPI limits | `rmac-theme`, `rmac-ui`, `rmac-gtk-settings`, GPUI per-window rem size, GNOME interface GSettings, Settings portal appearance values, `rmac-input`, niri configuration and accessibility bridge | Linux text/output clipping, keyboard, pointer, and AT-SPI/Orca evidence |
-| Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
+| Accessibility | Generation-safe live rmac contrast, motion, and bounded application text preferences with scoped conflict-refusing save and exact readback; shared GPUI rem adoption without changing output/content fonts; separate bounded, live-watched, conflict-refusing GNOME/GTK text authority; niri-backed keyboard/pointer controls; off-thread full-session, enabled-output, exported-`DISPLAY`, satellite, and Orca readiness; explicit EGL, zoom, curtain, and rmac AT-SPI limits | `rmac-theme`, `rmac-ui`, `rmac-gtk-settings`, Settings portal appearance values, GNOME interface GSettings, `rmac-input`, direct niri state/configuration and accessibility bridge | Ubuntu/niri text, input, watcher/recovery, output, Xwayland/EGL, and application AT-SPI/Orca matrix in `docs/accessibility.md` |
+| Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence/recovery, portal and preference-file watching, generation-safe refresh, conflict-refusing scoped mutation, exact readback, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, external-change/concurrency, scaling, contrast, motion, and Orca evidence |
 | Assistant & Intelligence | Hidden from production navigation | Optional local/provider integrations | Leave absent until a privacy design exists |
 | Desktop & Dock | Live C4 shell-settings editor for placement, all/primary/named-output scope, autohide, magnification/scale, reserved space, and supported repeated-click behavior; every mutation reloads the latest complete document, changes only Dock policy, saves atomically, rereads authority, retains last-known-good UI state, and offers one-step Dock rollback; bounded file watching resamples external edits and reconnects; direct niri events expose connection and enabled-output capability; primary scope consumes the persistent display Main authority without connector-order guessing; unsupported application-hide behavior is explicit | `rmac-shell-settings`, `rmac-compositor`, `rmac-display`, direct `rmac-compositor-niri` event stream, and the existing `rmac-dock`/`rmac-dock-runtime` consumer | Actual layer-surface Dock presentation plus live niri/reference-PC hotplug, scale, keyboard, accessibility, and performance evidence |
 | Displays | Typed live output identity and layout; proportional arrangement preview plus edge placement relative to Main; exact advertised mode, scale, rotation, and position mutations; complete pre-change snapshot with 15-second Keep/Revert; concurrent-change-safe whole-layout restore; coalesced live resampling; one persistent Main output; bounded/symlink-refusing owned niri include; complete-layout validation, candidate `niri validate`, atomic save, last-good copy, verified readback, and truthful native-mirror limitation | `rmac-display`, bounded argument-separated niri output IPC, direct `rmac-compositor-niri` event hints, and an isolated first-position niri include | Ubuntu/niri multi-monitor persistence, hotplug/dock/lid/suspend/restart/failure/concurrency interaction matrix plus keyboard, scale, and accessibility evidence recorded in `docs/displays.md` |
@@ -345,14 +345,21 @@ factor; fixed-height segmented/accent controls retain sufficient logical height
 at the bounded 130% maximum. Every app-owned label and chrome surface in
 Activity Monitor, Finder, App Drawer, Notes, Terminal, and Text Editor follows
 the live factor, while independently controlled editor and terminal content
-fonts remain separate. Linux clipping evidence is still required.
+fonts remain separate. Portal and theme-file events now coalesce into complete
+generation-safe reads. Every in-pane change performs a fresh whole-preference
+identity check, changes only its selected field, saves atomically, and requires
+exact readback, so a cached Settings snapshot cannot overwrite another editor.
+Linux clipping evidence is still required.
 GTK Application Text is a separate Standard/Large/Extra Large control backed by
 `org.gnome.desktop.interface text-scaling-factor`. It distinguishes missing
 GSettings/schema support from a policy-locked key, validates requested factors,
-and reports success only after an authoritative readback matches. Custom GTK
-factors remain visible without falsely selecting a preset. This changes GTK
-application text without claiming to control browsers, document fonts, niri
-output scale, or rmac's GPUI typography.
+performs a second exact value-and-policy preflight, refuses concurrent changes,
+and reports success only after an authoritative readback matches. A bounded,
+reconnecting `gsettings monitor` stream drives generation-safe complete reads,
+preserves last-known-good state through failure, and never surfaces raw command
+diagnostics. Custom GTK factors remain visible without falsely selecting a
+preset. This changes GTK application text without claiming to control browsers,
+document fonts, niri output scale, or rmac's GPUI typography.
 The Motor section also exposes three atomic keyboard-response presets backed by
 niri's real repeat delay and rate. It always shows the exact effective values,
 leaves custom combinations visibly unselected, validates the complete candidate
@@ -367,15 +374,18 @@ unavailable because niri exposes no authority for them. Mouse and Trackpad also
 show middle-emulation controls beside their existing niri-backed speed,
 acceleration, handedness, scrolling, typing suppression, and drag-lock controls.
 The pane also discovers screen-reader readiness off the UI thread: a full niri
-desktop session, non-empty Xwayland `DISPLAY`, and an Orca
-executable found within a bounded PATH search are reported independently. It
+desktop session, a directly reported enabled output, exported Xwayland
+`DISPLAY`, bounded-PATH `xwayland-satellite`, and Orca executable are reported
+independently. `DISPLAY` is not presented as proof that Xwayland works, and the
+satellite check does not prove its version or a configured custom path. The pane
 shows niri's documented default `Super`–`Alt`–`S` shortcut but does not claim
 that a user-customized binding exists. An explicit off-thread refresh resamples
-all three prerequisites after session or package changes. This readiness
-describes niri and Orca, not rmac: application roles, names, states, actions,
-focus, and announcements
-remain gated on Linux AT-SPI/Orca runtime evidence. Authority reference:
-[niri Accessibility](https://github.com/niri-wm/niri/wiki/Accessibility).
+the environment and package prerequisites after changes. Working EGL, speech,
+focus transfer, built-in zoom, and screen curtain remain explicit limitations.
+This readiness describes niri and Orca, not rmac: application roles, names,
+states, actions, focus, and announcements remain gated on Linux AT-SPI/Orca
+runtime evidence. Authority reference:
+[niri Accessibility](https://niri-wm.github.io/niri/Accessibility.html).
 
 Privacy & Security no longer uses the generic unavailable renderer. Its first
 permission slice reads only the PermissionStore `devices` table's `camera` and

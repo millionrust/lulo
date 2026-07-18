@@ -692,6 +692,7 @@ struct Settings {
     account: SharedString,
     sysinfo: rmac_system_info::Snapshot,
     screen_reader: ScreenReaderCapability,
+    screen_reader_loading: bool,
     updates_loading: bool,
     updates_busy: bool,
     updates_error: Option<SharedString>,
@@ -789,9 +790,12 @@ struct Settings {
     input_error: Option<SharedString>,
     input_stream_error: Option<SharedString>,
     theme_error: Option<SharedString>,
+    theme_store_stream_error: Option<SharedString>,
+    theme_portal_stream_error: Option<SharedString>,
     shell_settings_error: Option<SharedString>,
     shell_settings_stream_error: Option<SharedString>,
     gtk_text_error: Option<SharedString>,
+    gtk_text_stream_error: Option<SharedString>,
     privacy_error: Option<SharedString>,
     privacy_stream_error: Option<SharedString>,
     notification_error: Option<SharedString>,
@@ -901,10 +905,16 @@ struct Settings {
     theme: Option<rmac_theme::Snapshot>,
     theme_loading: bool,
     theme_busy: bool,
+    theme_generation: u64,
+    theme_refresh_pending: bool,
+    theme_stream_refreshing: bool,
 
     // External GTK application text
     gtk_text_loading: bool,
     gtk_text_busy: bool,
+    gtk_text_generation: u64,
+    gtk_text_refresh_pending: bool,
+    gtk_text_stream_refreshing: bool,
 
     // Privacy & Security
     privacy_loading: bool,
@@ -993,6 +1003,13 @@ enum ThemeChange {
     Contrast(rmac_theme::ContrastPreference),
     Motion(rmac_theme::MotionPreferenceSetting),
     TextScale(rmac_theme::TextScalePreference),
+}
+
+#[derive(Clone, Copy)]
+enum ThemeStoreWatchEvent {
+    Available,
+    Changed,
+    Unavailable,
 }
 
 #[derive(Clone, Copy)]
@@ -1189,6 +1206,24 @@ fn login_items_stream_snapshot_is_current(
     snapshot_generation == current_generation && !loading && !busy
 }
 
+fn gtk_text_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
+fn theme_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
 fn current_system_time_usec() -> Option<u64> {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
     u64::try_from(elapsed.as_micros()).ok()
@@ -1199,27 +1234,29 @@ struct SystemSnapshot {
     account: String,
     sysinfo: std::result::Result<rmac_system_info::Snapshot, rmac_system_info::Error>,
     storage: std::result::Result<Vec<rmac_mounts::Volume>, rmac_mounts::Error>,
-    screen_reader: ScreenReaderCapability,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct ScreenReaderCapability {
     niri_session: bool,
-    xwayland: bool,
-    orca_path: Option<PathBuf>,
+    x11_display: bool,
+    xwayland_satellite_installed: bool,
+    orca_installed: bool,
 }
 
 impl ScreenReaderCapability {
-    fn ready(&self) -> bool {
-        self.niri_session && self.xwayland && self.orca_path.is_some()
+    fn prerequisites_present(&self, enabled_output: bool) -> bool {
+        self.niri_session && self.x11_display && self.orca_installed && enabled_output
     }
 
-    fn limitation(&self) -> Option<&'static str> {
+    fn limitation(&self, enabled_output: bool) -> Option<&'static str> {
         if !self.niri_session {
             Some("Start the desktop through a full niri-session")
-        } else if !self.xwayland {
-            Some("Xwayland is required by Orca in the current niri integration")
-        } else if self.orca_path.is_none() {
+        } else if !enabled_output {
+            Some("Connect and enable a display before testing Orca")
+        } else if !self.x11_display {
+            Some("An exported Xwayland DISPLAY is required by Orca with niri")
+        } else if !self.orca_installed {
             Some("Install Orca to enable screen-reader support")
         } else {
             None
@@ -1372,6 +1409,19 @@ impl Settings {
                 this.apply_system_snapshot(snapshot);
                 this.run_pending_system_info_refresh(cx);
                 this.run_pending_storage_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let capability = cx
+                .background_executor()
+                .spawn(async { gather_screen_reader_capability() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.screen_reader = capability;
+                this.screen_reader_loading = false;
                 cx.notify();
             });
         })
@@ -2219,8 +2269,42 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_gtk_text_update(result);
+                this.run_pending_gtk_text_refresh(cx);
                 cx.notify();
             });
+        })
+        .detach();
+
+        let (gtk_text_updates, gtk_text_update_rx) = async_channel::bounded(2);
+        std::thread::spawn(move || {
+            let _ = rmac_gtk_settings::watch(gtk_text_updates);
+        });
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = gtk_text_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        match event {
+                            rmac_gtk_settings::WatchEvent::Available => {
+                                this.gtk_text_stream_error = None;
+                            }
+                            rmac_gtk_settings::WatchEvent::Changed => {
+                                this.gtk_text_stream_error = None;
+                                this.queue_gtk_text_stream_refresh(cx);
+                            }
+                            rmac_gtk_settings::WatchEvent::Unavailable => {
+                                this.gtk_text_stream_error = Some(
+                                    "Live GTK text-scale updates are temporarily unavailable"
+                                        .into(),
+                                );
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
         })
         .detach();
 
@@ -2256,8 +2340,124 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_theme_update(result);
+                this.run_pending_theme_refresh(cx);
                 cx.notify();
             });
+        })
+        .detach();
+
+        let (theme_store_updates, theme_store_update_rx) = async_channel::bounded(2);
+        cx.background_executor()
+            .spawn(async move {
+                loop {
+                    let watcher = match rmac_theme::ThemeStore::from_environment()
+                        .and_then(|store| store.watch())
+                    {
+                        Ok(watcher) => watcher,
+                        Err(_) => {
+                            if theme_store_updates
+                                .send(ThemeStoreWatchEvent::Unavailable)
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                            async_io::Timer::after(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    };
+                    if theme_store_updates
+                        .send(ThemeStoreWatchEvent::Available)
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                    loop {
+                        match watcher.recv().await {
+                            Ok(rmac_theme::StoreEvent::Changed) => {
+                                if theme_store_updates
+                                    .send(ThemeStoreWatchEvent::Changed)
+                                    .await
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                            }
+                            Ok(rmac_theme::StoreEvent::WatchError(_)) | Err(_) => {
+                                if theme_store_updates
+                                    .send(ThemeStoreWatchEvent::Unavailable)
+                                    .await
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    async_io::Timer::after(Duration::from_secs(1)).await;
+                }
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = theme_store_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        match event {
+                            ThemeStoreWatchEvent::Available => {
+                                this.theme_store_stream_error = None;
+                            }
+                            ThemeStoreWatchEvent::Changed => {
+                                this.theme_store_stream_error = None;
+                                this.queue_theme_stream_refresh(cx);
+                            }
+                            ThemeStoreWatchEvent::Unavailable => {
+                                this.theme_store_stream_error = Some(
+                                    "Live rmac appearance updates are temporarily unavailable"
+                                        .into(),
+                                );
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        let (portal_appearance_updates, portal_appearance_update_rx) = async_channel::bounded(2);
+        cx.background_executor()
+            .spawn(async move {
+                let _ = rmac_appearance_portal::watch(portal_appearance_updates).await;
+            })
+            .detach();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = portal_appearance_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        match event {
+                            rmac_appearance::Event::Snapshot(_) => {
+                                this.theme_portal_stream_error = None;
+                                this.queue_theme_stream_refresh(cx);
+                            }
+                            rmac_appearance::Event::Unavailable(_) => {
+                                this.theme_portal_stream_error = Some(
+                                    "Live desktop appearance updates are temporarily unavailable"
+                                        .into(),
+                                );
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
         })
         .detach();
 
@@ -2511,6 +2711,7 @@ impl Settings {
                 .into(),
             sysinfo: rmac_system_info::Snapshot::default(),
             screen_reader: ScreenReaderCapability::default(),
+            screen_reader_loading: true,
             updates_loading: true,
             updates_busy: false,
             updates_error: None,
@@ -2608,9 +2809,12 @@ impl Settings {
             input_error: None,
             input_stream_error: None,
             theme_error: None,
+            theme_store_stream_error: None,
+            theme_portal_stream_error: None,
             shell_settings_error: None,
             shell_settings_stream_error: None,
             gtk_text_error: None,
+            gtk_text_stream_error: None,
             privacy_error: None,
             privacy_stream_error: None,
             notification_error: None,
@@ -2711,8 +2915,14 @@ impl Settings {
             theme: None,
             theme_loading: true,
             theme_busy: false,
+            theme_generation: 0,
+            theme_refresh_pending: false,
+            theme_stream_refreshing: false,
             gtk_text_loading: true,
             gtk_text_busy: false,
+            gtk_text_generation: 0,
+            gtk_text_refresh_pending: false,
+            gtk_text_stream_refreshing: false,
 
             privacy_loading: true,
             privacy_busy: None,
@@ -3334,7 +3544,6 @@ impl Settings {
 
     fn apply_system_snapshot(&mut self, snapshot: SystemSnapshot) {
         self.account = snapshot.account.into();
-        self.screen_reader = snapshot.screen_reader;
         match snapshot.sysinfo {
             Ok(sysinfo) => {
                 self.sysinfo = sysinfo;
@@ -3495,18 +3704,12 @@ impl Settings {
         self.system_data_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let (result, screen_reader) = cx
+            let result = cx
                 .background_executor()
-                .spawn(async {
-                    (
-                        rmac_system_info::snapshot(),
-                        gather_screen_reader_capability(),
-                    )
-                })
+                .spawn(async { rmac_system_info::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.system_data_busy = false;
-                this.screen_reader = screen_reader;
                 match result {
                     Ok(snapshot) => {
                         this.sysinfo = snapshot;
@@ -3520,6 +3723,26 @@ impl Settings {
                     }
                 }
                 this.run_pending_system_info_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn refresh_screen_reader(&mut self, cx: &mut Context<Self>) {
+        if self.screen_reader_loading {
+            return;
+        }
+        self.screen_reader_loading = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let capability = cx
+                .background_executor()
+                .spawn(async { gather_screen_reader_capability() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.screen_reader = capability;
+                this.screen_reader_loading = false;
                 cx.notify();
             });
         })
@@ -7285,9 +7508,10 @@ impl Settings {
     }
 
     fn refresh_theme(&mut self, cx: &mut Context<Self>) {
-        if self.theme_loading || self.theme_busy {
+        if self.theme_loading || self.theme_busy || self.theme_stream_refreshing {
             return;
         }
+        self.theme_generation = self.theme_generation.wrapping_add(1);
         self.theme_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -7297,6 +7521,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_theme_update(result);
+                this.run_pending_theme_refresh(cx);
                 cx.notify();
             });
         })
@@ -7304,41 +7529,76 @@ impl Settings {
     }
 
     fn apply_theme_change(&mut self, change: ThemeChange, cx: &mut Context<Self>) {
-        if self.theme_loading || self.theme_busy {
+        if self.theme_loading || self.theme_busy || self.theme_stream_refreshing {
             return;
         }
         let Some(theme) = &self.theme else {
             return;
         };
-        let mut preferences = theme.preferences.clone();
-        match change {
-            ThemeChange::Scheme(value) => preferences.color_scheme = value,
-            ThemeChange::Accent(value) => preferences.accent_color = value,
-            ThemeChange::Contrast(value) => preferences.contrast = value,
-            ThemeChange::Motion(value) => preferences.motion = value,
-            ThemeChange::TextScale(value) => preferences.text_scale = value,
-        }
-        let host = self.host_appearance.clone();
+        let expected = theme.preferences.clone();
+        self.theme_generation = self.theme_generation.wrapping_add(1);
         self.theme_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    let store = rmac_theme::ThemeStore::from_environment()
-                        .map_err(|error| error.to_string())?;
-                    let theme = store
-                        .save(&preferences, &host)
-                        .map_err(|error| error.to_string())?;
-                    Ok::<_, String>(ThemeLoad { host, theme })
-                })
+                .spawn(apply_theme_change_authoritatively(change, expected))
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_theme_update(result);
+                this.run_pending_theme_refresh(cx);
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    fn queue_theme_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.theme_loading || self.theme_busy || self.theme_stream_refreshing {
+            self.theme_refresh_pending = true;
+            return;
+        }
+        self.theme_refresh_pending = false;
+        self.theme_stream_refreshing = true;
+        let generation = self.theme_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { load_theme_state().await })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.theme_stream_refreshing = false;
+                if theme_stream_snapshot_is_current(
+                    generation,
+                    this.theme_generation,
+                    this.theme_loading,
+                    this.theme_busy,
+                ) {
+                    match result {
+                        Ok(load) => this.finish_theme_update(Ok(load)),
+                        Err(_) => {
+                            this.theme_error =
+                                Some("Could not refresh changed appearance preferences".into());
+                        }
+                    }
+                } else {
+                    this.theme_refresh_pending = true;
+                }
+                this.run_pending_theme_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_theme_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.theme_refresh_pending
+            && !self.theme_loading
+            && !self.theme_busy
+            && !self.theme_stream_refreshing
+        {
+            self.queue_theme_stream_refresh(cx);
+        }
     }
 
     fn refresh_input(&mut self, cx: &mut Context<Self>) {
@@ -7407,11 +7667,63 @@ impl Settings {
         }
     }
 
+    fn queue_gtk_text_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.gtk_text_loading || self.gtk_text_busy || self.gtk_text_stream_refreshing {
+            self.gtk_text_refresh_pending = true;
+            return;
+        }
+        self.gtk_text_refresh_pending = false;
+        self.gtk_text_stream_refreshing = true;
+        let generation = self.gtk_text_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_gtk_settings::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.gtk_text_stream_refreshing = false;
+                if gtk_text_stream_snapshot_is_current(
+                    generation,
+                    this.gtk_text_generation,
+                    this.gtk_text_loading,
+                    this.gtk_text_busy,
+                ) {
+                    match result {
+                        Ok(snapshot) => {
+                            this.gtk_text = Some(snapshot);
+                            this.gtk_text_error = None;
+                        }
+                        Err(_) => {
+                            this.gtk_text_error =
+                                Some("Could not refresh changed GTK text scaling".into());
+                        }
+                    }
+                } else {
+                    this.gtk_text_refresh_pending = true;
+                }
+                this.run_pending_gtk_text_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_gtk_text_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.gtk_text_refresh_pending
+            && !self.gtk_text_loading
+            && !self.gtk_text_busy
+            && !self.gtk_text_stream_refreshing
+        {
+            self.queue_gtk_text_stream_refresh(cx);
+        }
+    }
+
     fn refresh_gtk_text(&mut self, cx: &mut Context<Self>) {
-        if self.gtk_text_loading || self.gtk_text_busy {
+        if self.gtk_text_loading || self.gtk_text_busy || self.gtk_text_stream_refreshing {
             return;
         }
         self.gtk_text_busy = true;
+        self.gtk_text_generation = self.gtk_text_generation.wrapping_add(1);
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -7420,6 +7732,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_gtk_text_update(result);
+                this.run_pending_gtk_text_refresh(cx);
                 cx.notify();
             });
         })
@@ -7429,6 +7742,7 @@ impl Settings {
     fn set_gtk_text_scale(&mut self, factor: f64, cx: &mut Context<Self>) {
         if self.gtk_text_loading
             || self.gtk_text_busy
+            || self.gtk_text_stream_refreshing
             || !self
                 .gtk_text
                 .as_ref()
@@ -7437,6 +7751,7 @@ impl Settings {
             return;
         }
         self.gtk_text_busy = true;
+        self.gtk_text_generation = self.gtk_text_generation.wrapping_add(1);
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -7445,6 +7760,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_gtk_text_update(result);
+                this.run_pending_gtk_text_refresh(cx);
                 cx.notify();
             });
         })
@@ -11721,8 +12037,8 @@ impl Settings {
             ))
             .child(
                 Button::new("accessibility-refresh", "Refresh")
-                    .busy(self.theme_busy)
-                    .disabled(self.theme_loading || self.theme_busy)
+                    .busy(self.theme_busy || self.theme_stream_refreshing)
+                    .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
                     .on_click(move |_, _, cx| {
                         refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
                     }),
@@ -11746,7 +12062,7 @@ impl Settings {
                         rmac_theme::ContrastPreference::Normal => 1,
                         rmac_theme::ContrastPreference::Higher => 2,
                     },
-                    !self.theme_busy,
+                    !self.theme_busy && !self.theme_stream_refreshing,
                 ),
                 theme_segment_row(
                     view.clone(),
@@ -11758,7 +12074,7 @@ impl Settings {
                         rmac_theme::MotionPreferenceSetting::Full => 1,
                         rmac_theme::MotionPreferenceSetting::Reduced => 2,
                     },
-                    !self.theme_busy,
+                    !self.theme_busy && !self.theme_stream_refreshing,
                 ),
                 theme_segment_row(
                     view.clone(),
@@ -11770,7 +12086,7 @@ impl Settings {
                         rmac_theme::TextScalePreference::Large => 1,
                         rmac_theme::TextScalePreference::ExtraLarge => 2,
                     },
-                    !self.theme_busy,
+                    !self.theme_busy && !self.theme_stream_refreshing,
                 ),
                 value_row(
                     "icons/info.svg",
@@ -11806,8 +12122,12 @@ impl Settings {
             ))
             .child(
                 Button::new("gtk-text-refresh", "Refresh")
-                    .busy(self.gtk_text_busy)
-                    .disabled(self.gtk_text_loading || self.gtk_text_busy)
+                    .busy(self.gtk_text_busy || self.gtk_text_stream_refreshing)
+                    .disabled(
+                        self.gtk_text_loading
+                            || self.gtk_text_busy
+                            || self.gtk_text_stream_refreshing,
+                    )
                     .on_click(move |_, _, cx| {
                         gtk_refresh_view.update(cx, |settings, cx| settings.refresh_gtk_text(cx));
                     }),
@@ -11824,7 +12144,9 @@ impl Settings {
                     gtk_text_scale_row(
                         view.clone(),
                         selected,
-                        snapshot.writable && !self.gtk_text_busy,
+                        snapshot.writable
+                            && !self.gtk_text_busy
+                            && !self.gtk_text_stream_refreshing,
                     ),
                     value_row(
                         "icons/app-window.svg",
@@ -11976,11 +12298,18 @@ impl Settings {
             "Text size applies live to shared controls and app-owned interface text across the current rmac apps. It does not change GTK, browser, editor or terminal content fonts, display scaling, or compositor scaling.",
         ));
         let screen_reader = &self.screen_reader;
+        let enabled_output = self
+            .dock_compositor
+            .outputs
+            .values()
+            .any(rmac_compositor::Output::enabled);
+        let prerequisites_present =
+            screen_reader.prerequisites_present(enabled_output) && !self.screen_reader_loading;
         cards.push(card(vec![
             row_base()
                 .child(tile(
                     "icons/accessibility.svg",
-                    if screen_reader.ready() {
+                    if prerequisites_present {
                         hsl(0x34c759)
                     } else {
                         secondary()
@@ -11989,7 +12318,9 @@ impl Settings {
                 ))
                 .child(text_block(
                     "Niri/Orca prerequisites".into(),
-                    Some(if screen_reader.ready() {
+                    Some(if self.screen_reader_loading {
+                        "Checking…".into()
+                    } else if prerequisites_present {
                         "Detected".into()
                     } else {
                         "Incomplete".into()
@@ -11997,11 +12328,11 @@ impl Settings {
                 ))
                 .child(
                     Button::new("refresh-screen-reader", "Refresh")
-                        .busy(self.system_data_busy)
-                        .disabled(self.system_data_busy)
+                        .busy(self.screen_reader_loading)
+                        .disabled(self.screen_reader_loading)
                         .on_click(move |_, _, cx| {
                             screen_reader_refresh_view
-                                .update(cx, |settings, cx| settings.refresh_system_info(cx));
+                                .update(cx, |settings, cx| settings.refresh_screen_reader(cx));
                         }),
                 )
                 .into_any_element(),
@@ -12018,18 +12349,40 @@ impl Settings {
             value_row(
                 "icons/monitor.svg",
                 secondary(),
-                "Xwayland".into(),
-                if screen_reader.xwayland {
-                    "Available".into()
+                "Enabled display".into(),
+                if enabled_output {
+                    "Detected from niri".into()
+                } else {
+                    "Not detected".into()
+                },
+            ),
+            value_row(
+                "icons/monitor.svg",
+                secondary(),
+                "Xwayland display for Orca".into(),
+                if screen_reader.x11_display {
+                    "DISPLAY exported".into()
                 } else {
                     "Unavailable".into()
+                },
+            ),
+            value_row(
+                "icons/settings.svg",
+                secondary(),
+                "xwayland-satellite".into(),
+                if screen_reader.xwayland_satellite_installed {
+                    "Executable in PATH".into()
+                } else if screen_reader.x11_display {
+                    "Custom X11 path exported".into()
+                } else {
+                    "Not found in PATH".into()
                 },
             ),
             value_row(
                 "icons/accessibility.svg",
                 secondary(),
                 "Orca".into(),
-                if screen_reader.orca_path.is_some() {
+                if screen_reader.orca_installed {
                     "Installed".into()
                 } else {
                     "Not found in PATH".into()
@@ -12042,13 +12395,18 @@ impl Settings {
                 "Super–Alt–S".into(),
             ),
         ]));
-        if let Some(limitation) = screen_reader.limitation() {
+        if self.screen_reader_loading {
+            cards.push(note_card("Checking niri and Orca prerequisites…"));
+        } else if let Some(limitation) = screen_reader.limitation(enabled_output) {
             cards.push(note_card(limitation));
         } else {
             cards.push(note_card(
-                "The session prerequisites are present, but environment detection cannot prove that Xwayland and Orca will operate correctly. Use the niri default shortcut to test speech on the Linux PC.",
+                "The detectable prerequisites are present. Environment checks cannot prove working EGL, speech output, the configured shortcut, or application semantics; test all four on the Linux PC.",
             ));
         }
+        cards.push(note_card(
+            "Niri does not currently provide built-in desktop zoom or a screen curtain. Those controls remain unavailable instead of being simulated by rmac.",
+        ));
         cards.push(note_card(
             "This readiness check covers niri and Orca only. rmac application roles, names, states, actions, focus, and announcements still require Linux AT-SPI/Orca runtime evidence before accessibility can be claimed.",
         ));
@@ -12472,7 +12830,7 @@ impl Settings {
                     .text_color(accent())
                     .cursor_pointer()
                     .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                    .child(if self.theme_busy {
+                    .child(if self.theme_busy || self.theme_stream_refreshing {
                         "Applying…"
                     } else {
                         "Refresh"
@@ -12491,7 +12849,7 @@ impl Settings {
             ));
             return self.pane(cards);
         };
-        let enabled = !self.theme_busy;
+        let enabled = !self.theme_busy && !self.theme_stream_refreshing;
         let preferences = &theme.preferences;
         let scheme_card = {
             let option = |id: &'static str,
@@ -16792,11 +17150,14 @@ impl Render for Settings {
             .or_else(|| self.input_error.clone())
             .or_else(|| self.input_stream_error.clone())
             .or_else(|| self.theme_error.clone())
+            .or_else(|| self.theme_store_stream_error.clone())
+            .or_else(|| self.theme_portal_stream_error.clone())
             .or_else(|| self.shell_settings_error.clone())
             .or_else(|| self.shell_settings_stream_error.clone())
             .or_else(|| self.wallpaper_error.clone())
             .or_else(|| self.spotlight_error.clone())
             .or_else(|| self.gtk_text_error.clone())
+            .or_else(|| self.gtk_text_stream_error.clone())
             .or_else(|| self.privacy_error.clone())
             .or_else(|| self.privacy_stream_error.clone());
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
@@ -16981,11 +17342,14 @@ impl Render for Settings {
                             this.input_error = None;
                             this.input_stream_error = None;
                             this.theme_error = None;
+                            this.theme_store_stream_error = None;
+                            this.theme_portal_stream_error = None;
                             this.shell_settings_error = None;
                             this.shell_settings_stream_error = None;
                             this.wallpaper_error = None;
                             this.spotlight_error = None;
                             this.gtk_text_error = None;
+                            this.gtk_text_stream_error = None;
                             this.privacy_error = None;
                             this.privacy_stream_error = None;
                             cx.notify();
@@ -18493,12 +18857,11 @@ fn gather_system_snapshot() -> SystemSnapshot {
         account: account_name(),
         sysinfo: rmac_system_info::snapshot(),
         storage: rmac_mounts::volumes(),
-        screen_reader: gather_screen_reader_capability(),
     }
 }
 
 fn gather_screen_reader_capability() -> ScreenReaderCapability {
-    let niri_session = ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
+    let niri_desktop = ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
         .into_iter()
         .filter_map(|key| std::env::var(key).ok())
         .any(|value| {
@@ -18506,18 +18869,24 @@ fn gather_screen_reader_capability() -> ScreenReaderCapability {
                 .split([':', ';'])
                 .any(|desktop| desktop.eq_ignore_ascii_case("niri"))
         });
-    let xwayland = std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty());
-    let orca_path = std::env::var_os("PATH").and_then(|path| {
+    let wayland_session =
+        std::env::var("XDG_SESSION_TYPE").is_ok_and(|value| value.eq_ignore_ascii_case("wayland"));
+    let niri_socket = std::env::var_os("NIRI_SOCKET").is_some_and(|value| !value.is_empty());
+    ScreenReaderCapability {
+        niri_session: niri_desktop && wayland_session && niri_socket,
+        x11_display: std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty()),
+        xwayland_satellite_installed: executable_in_path("xwayland-satellite"),
+        orca_installed: executable_in_path("orca"),
+    }
+}
+
+fn executable_in_path(program: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| {
         std::env::split_paths(&path)
             .take(128)
-            .map(|directory| directory.join("orca"))
-            .find(|candidate| is_executable_file(candidate))
-    });
-    ScreenReaderCapability {
-        niri_session,
-        xwayland,
-        orca_path,
-    }
+            .map(|directory| directory.join(program))
+            .any(|candidate| is_executable_file(&candidate))
+    })
 }
 
 #[cfg(unix)]
@@ -18536,11 +18905,63 @@ fn is_executable_file(path: &std::path::Path) -> bool {
 async fn load_theme_state() -> std::result::Result<ThemeLoad, String> {
     let host = match rmac_appearance_portal::snapshot().await {
         Ok(host) => host,
-        Err(error) => rmac_appearance::Snapshot::unavailable(error.to_string()),
+        Err(_) => rmac_appearance::Snapshot::unavailable(
+            "The desktop Settings portal is temporarily unavailable.",
+        ),
     };
-    let store = rmac_theme::ThemeStore::from_environment().map_err(|error| error.to_string())?;
-    let theme = store.load(&host).map_err(|error| error.to_string())?;
+    let store = rmac_theme::ThemeStore::from_environment()
+        .map_err(|_| "the rmac appearance preference authority is unavailable".to_string())?;
+    let theme = store
+        .load(&host)
+        .map_err(|_| "the rmac appearance preferences could not be read".to_string())?;
     Ok(ThemeLoad { host, theme })
+}
+
+fn apply_theme_change_to_preferences(
+    preferences: &mut rmac_theme::Preferences,
+    change: ThemeChange,
+) {
+    match change {
+        ThemeChange::Scheme(value) => preferences.color_scheme = value,
+        ThemeChange::Accent(value) => preferences.accent_color = value,
+        ThemeChange::Contrast(value) => preferences.contrast = value,
+        ThemeChange::Motion(value) => preferences.motion = value,
+        ThemeChange::TextScale(value) => preferences.text_scale = value,
+    }
+}
+
+async fn apply_theme_change_authoritatively(
+    change: ThemeChange,
+    expected: rmac_theme::Preferences,
+) -> std::result::Result<ThemeLoad, String> {
+    let fresh = load_theme_state().await?;
+    if fresh.theme.preferences != expected {
+        return Err(
+            "appearance preferences changed before save; refresh and try again".to_string(),
+        );
+    }
+
+    let mut requested = fresh.theme.preferences.clone();
+    apply_theme_change_to_preferences(&mut requested, change);
+    if requested == fresh.theme.preferences {
+        return Ok(fresh);
+    }
+
+    let store = rmac_theme::ThemeStore::from_environment()
+        .map_err(|_| "the rmac appearance preference authority is unavailable".to_string())?;
+    store
+        .save(&requested, &fresh.host)
+        .map_err(|_| "the appearance preference could not be saved".to_string())?;
+    let theme = store
+        .load(&fresh.host)
+        .map_err(|_| "the saved appearance preference could not be read back".to_string())?;
+    if theme.preferences != requested {
+        return Err("the saved appearance preference did not match after readback".to_string());
+    }
+    Ok(ThemeLoad {
+        host: fresh.host,
+        theme,
+    })
 }
 
 fn account_name() -> String {
@@ -18926,16 +19347,17 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        audio_change_needs_followup, audio_choice_is_actionable, audio_stream_snapshot_is_current,
-        bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
-        category_name_for_pane_id, category_position, charge_threshold_description,
-        composite_wallpaper_pixel, compositor_event_affects_displays,
+        apply_theme_change_to_preferences, audio_change_needs_followup, audio_choice_is_actionable,
+        audio_stream_snapshot_is_current, bluetooth_stream_snapshot_is_current, categories,
+        category_has_dedicated_renderer, category_name_for_pane_id, category_position,
+        charge_threshold_description, composite_wallpaper_pixel, compositor_event_affects_displays,
         compositor_event_affects_input, compositor_input_config_failed,
-        input_stream_snapshot_is_current, locale_stream_snapshot_is_current,
-        login_items_stream_snapshot_is_current, network_stream_snapshot_is_current,
-        notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
-        relative_display_position, render_wallpaper_preview, sample_battery_history,
-        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
+        gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
+        locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
+        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
+        power_stream_snapshot_is_current, relative_display_position, render_wallpaper_preview,
+        sample_battery_history, storage_stream_snapshot_is_current,
+        system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
         time_stream_snapshot_is_current, update_stream_snapshot_is_current,
         vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
         DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
@@ -19080,6 +19502,43 @@ mod tests {
         assert!(!login_items_stream_snapshot_is_current(3, 4, false, false));
         assert!(!login_items_stream_snapshot_is_current(4, 4, true, false));
         assert!(!login_items_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn gtk_text_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(gtk_text_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!gtk_text_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!gtk_text_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!gtk_text_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn theme_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(theme_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!theme_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!theme_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!theme_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn theme_changes_touch_only_the_selected_preference() {
+        let original = rmac_theme::Preferences {
+            color_scheme: rmac_theme::SchemePreference::Dark,
+            accent_color: rmac_theme::AccentPreference::Custom([0.1, 0.2, 0.3]),
+            contrast: rmac_theme::ContrastPreference::Normal,
+            motion: rmac_theme::MotionPreferenceSetting::Full,
+            text_scale: rmac_theme::TextScalePreference::Large,
+        };
+        let mut changed = original.clone();
+        apply_theme_change_to_preferences(
+            &mut changed,
+            super::ThemeChange::Contrast(rmac_theme::ContrastPreference::Higher),
+        );
+        assert_eq!(changed.contrast, rmac_theme::ContrastPreference::Higher);
+        assert_eq!(changed.color_scheme, original.color_scheme);
+        assert_eq!(changed.accent_color, original.accent_color);
+        assert_eq!(changed.motion, original.motion);
+        assert_eq!(changed.text_scale, original.text_scale);
     }
 
     #[test]
@@ -19254,22 +19713,27 @@ mod tests {
     fn screen_reader_readiness_requires_every_niri_orca_authority() {
         let mut capability = ScreenReaderCapability::default();
         assert_eq!(
-            capability.limitation(),
+            capability.limitation(false),
             Some("Start the desktop through a full niri-session")
         );
         capability.niri_session = true;
         assert_eq!(
-            capability.limitation(),
-            Some("Xwayland is required by Orca in the current niri integration")
+            capability.limitation(false),
+            Some("Connect and enable a display before testing Orca")
         );
-        capability.xwayland = true;
         assert_eq!(
-            capability.limitation(),
+            capability.limitation(true),
+            Some("An exported Xwayland DISPLAY is required by Orca with niri")
+        );
+        capability.x11_display = true;
+        assert_eq!(
+            capability.limitation(true),
             Some("Install Orca to enable screen-reader support")
         );
-        capability.orca_path = Some("/usr/bin/orca".into());
-        assert!(capability.ready());
-        assert_eq!(capability.limitation(), None);
+        capability.orca_installed = true;
+        assert!(capability.prerequisites_present(true));
+        assert!(!capability.prerequisites_present(false));
+        assert_eq!(capability.limitation(true), None);
     }
 
     #[test]

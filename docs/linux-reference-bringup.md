@@ -275,7 +275,13 @@ gsettings get org.gnome.desktop.interface text-scaling-factor
 ```
 
 The GTK application must visibly adopt the value without changing niri output
-scale. This is external-toolkit evidence only; it does not prove rmac scaling.
+scale. While Settings remains open, change the factor once through `gsettings`
+and confirm the pane follows it without Refresh. Stop or otherwise break the
+monitor authority, confirm the last known-good factor stays visible with a
+separate error, restore it, and confirm live recovery. Race an external edit
+against an in-pane choice and verify Settings refuses the stale transaction
+instead of overwriting it. This is external-toolkit evidence only; it does not
+prove rmac scaling.
 
 For keyboard evidence, select each Key repeat preset, refresh System Settings,
 and confirm that the exact delay and rate remain displayed. In `wev`, hold one
@@ -295,10 +301,14 @@ typing separately. Mouse Keys, dwell click, and double-click timing must remain
 unavailable rather than showing switches that niri cannot enforce.
 
 Finally, start Orca with niri's documented default `Super`–`Alt`–`S` shortcut.
-Refresh the readiness card and record the full-niri-session, Xwayland, and Orca
-rows independently. Then run the upstream accessibility probe below and record
-the precise rmac AT-SPI failure; environment readiness is not application
-accessibility proof.
+Refresh the readiness card and record the full-niri-session, enabled-display,
+exported-`DISPLAY`, `xwayland-satellite`, and Orca rows independently. Repeat
+with a disabled output and with Orca absent. Confirm Xwayland and EGL by running
+Orca rather than treating the environment rows as proof; record satellite
+version or a custom configured path separately. Verify that built-in zoom and
+screen curtain remain described as unavailable. Then run the upstream
+accessibility probe below and record the precise rmac AT-SPI failure;
+environment readiness is not application accessibility proof.
 
 Run the evidence collector again, then launch the current-upstream probes:
 

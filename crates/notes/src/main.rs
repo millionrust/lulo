@@ -20,22 +20,22 @@ use gpui::{
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
-    ActionRequest, ActionResult, DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction,
-    NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
-    NotesSearchSession, NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents,
-    NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PreviewState,
-    PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchState, SearchWorkerEvent,
-    SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent, WorkerFailure,
-    WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS, PREVIEW_EVENT_CAPACITY,
-    SEARCH_EVENT_CAPACITY,
+    ActionRequest, ActionResult, BundleImportAcceptRequest, BundleImportReviewRequest,
+    DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction, NotesPreviewSession,
+    NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents, NotesSearchSession,
+    NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents, NotesSession, NotesWorker,
+    NotesWorkerClient, NotesWorkerEvents, PreviewState, PreviewWorkerEvent, PreviewWorkerSendError,
+    ScheduledEdit, SearchState, SearchWorkerEvent, SearchWorkerSendError, SessionPhase,
+    WorkerCommand, WorkerEvent, WorkerFailure, WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS,
+    PREVIEW_EVENT_CAPACITY, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{
     resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, PendingReason,
     PreviewSize,
 };
 use rmac_notes_store::{
-    AttachmentId, ExportScope, FolderId, NewNote, NoteChanges, NoteId, NoteRecord, SortOrder,
-    MAX_TAGS_PER_NOTE, MAX_TAG_BYTES,
+    AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, NewNote,
+    NoteChanges, NoteId, NoteRecord, SortOrder, MAX_TAGS_PER_NOTE, MAX_TAG_BYTES,
 };
 use rmac_ui::{mac, Button, InputEvent, TextField};
 
@@ -95,6 +95,11 @@ struct NotesView {
     export_dialog: Option<ExportDialog>,
     export_chooser_open: bool,
     export_request_id: Option<u64>,
+    bundle_chooser_open: bool,
+    bundle_review_request_id: Option<u64>,
+    bundle_review: Option<(u64, BundleImportReview)>,
+    bundle_action_request_id: Option<u64>,
+    bundle_import_completion: Option<BundleImportCompletion>,
     search_shutdown_requested: bool,
     preview_shutdown_requested: bool,
     closing: bool,
@@ -171,6 +176,15 @@ struct ExportReview {
 enum ExportDialog {
     Review(ExportReview),
     Complete(ExportOutcome),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BundleImportCompletion {
+    folder_count: usize,
+    note_count: usize,
+    attachment_count: usize,
+    attachment_bytes: u64,
+    maintenance_pending: bool,
 }
 
 struct PreviewBridgeEvent {
@@ -262,6 +276,11 @@ impl NotesView {
             export_dialog: None,
             export_chooser_open: false,
             export_request_id: None,
+            bundle_chooser_open: false,
+            bundle_review_request_id: None,
+            bundle_review: None,
+            bundle_action_request_id: None,
+            bundle_import_completion: None,
             search_shutdown_requested: false,
             preview_shutdown_requested: false,
             closing: false,
@@ -454,6 +473,39 @@ impl NotesView {
             WorkerEvent::Exported(exported) => Some(*exported),
             _ => None,
         };
+        let worker_ready = matches!(&event, WorkerEvent::Ready(_));
+        let bundle_reviewed = match &event {
+            WorkerEvent::BundleImportReviewed(reviewed) => Some(*reviewed),
+            _ => None,
+        };
+        let bundle_review_discarded = match &event {
+            WorkerEvent::BundleImportReviewDiscarded {
+                request_id,
+                review_request_id,
+            } => Some((*request_id, *review_request_id)),
+            _ => None,
+        };
+        let imported_bundle = match &event {
+            WorkerEvent::Accepted(accepted) => match accepted.result {
+                ActionResult::ImportedBundle {
+                    folder_count,
+                    note_count,
+                    attachment_count,
+                    attachment_bytes,
+                } => Some((
+                    accepted.request_id,
+                    BundleImportCompletion {
+                        folder_count,
+                        note_count,
+                        attachment_count,
+                        attachment_bytes,
+                        maintenance_pending: accepted.commit.maintenance_pending,
+                    },
+                )),
+                _ => None,
+            },
+            _ => None,
+        };
         let attached_image = match &event {
             WorkerEvent::Accepted(accepted) => match accepted.result {
                 ActionResult::AttachedImage {
@@ -520,6 +572,25 @@ impl NotesView {
         {
             self.export_request_id = None;
         }
+        let tracked_bundle_discard =
+            bundle_review_discarded.is_some_and(|(request_id, review_request_id)| {
+                self.bundle_action_request_id == Some(request_id)
+                    && self.bundle_review_request_id == Some(review_request_id)
+            });
+        let tracked_bundle_import = imported_bundle
+            .is_some_and(|(request_id, _)| self.bundle_action_request_id == Some(request_id));
+        if rejected_request_id
+            .is_some_and(|request_id| self.bundle_action_request_id == Some(request_id))
+        {
+            self.bundle_action_request_id = None;
+        }
+        if rejected_request_id.is_some_and(|request_id| {
+            self.bundle_review_request_id == Some(request_id)
+                && self.bundle_action_request_id != Some(request_id)
+        }) {
+            self.bundle_review_request_id = None;
+            self.bundle_review = None;
+        }
         if matches!(&event, WorkerEvent::DraftReview(_)) {
             self.recovery_notice_dismissed = false;
         }
@@ -538,6 +609,30 @@ impl NotesView {
             _ => None,
         };
         self.session.apply(event);
+        if let Some(reviewed) = bundle_reviewed
+            .filter(|reviewed| self.bundle_review_request_id == Some(reviewed.request_id))
+        {
+            self.bundle_review = Some((reviewed.request_id, reviewed.review));
+        }
+        if tracked_bundle_discard {
+            self.bundle_review_request_id = None;
+            self.bundle_review = None;
+            self.bundle_action_request_id = None;
+        }
+        if tracked_bundle_import {
+            self.bundle_review_request_id = None;
+            self.bundle_review = None;
+            self.bundle_action_request_id = None;
+            self.bundle_import_completion = imported_bundle.map(|(_, completion)| completion);
+        }
+        if worker_ready
+            && self.bundle_action_request_id.is_some()
+            && self.bundle_review_request_id.is_some()
+        {
+            self.bundle_review_request_id = None;
+            self.bundle_review = None;
+            self.bundle_action_request_id = None;
+        }
         if let Some(ExportDialog::Review(review)) = self.export_dialog {
             if self
                 .session
@@ -1004,6 +1099,11 @@ impl NotesView {
             || self.note_import_request_id.is_some()
             || self.export_chooser_open
             || self.export_request_id.is_some()
+            || self.bundle_chooser_open
+            || self.bundle_review_request_id.is_some()
+            || self.bundle_review.is_some()
+            || self.bundle_action_request_id.is_some()
+            || self.bundle_import_completion.is_some()
             || self.attachment_action_pending()
         {
             return;
@@ -1224,6 +1324,11 @@ impl NotesView {
             && self.note_import_request_id.is_none()
             && !self.export_chooser_open
             && self.export_request_id.is_none()
+            && !self.bundle_chooser_open
+            && self.bundle_review_request_id.is_none()
+            && self.bundle_review.is_none()
+            && self.bundle_action_request_id.is_none()
+            && self.bundle_import_completion.is_none()
             && !self.attachment_action_pending()
     }
 
@@ -1762,6 +1867,154 @@ impl NotesView {
         }
     }
 
+    fn choose_bundle_import(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        if self.latest_local_generation.is_some() {
+            self.message =
+                Some("Wait for this note to finish saving before importing a bundle".into());
+            cx.notify();
+            return;
+        }
+        self.bundle_chooser_open = true;
+        self.message = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let choice = rmac_portal::choose_notes_bundle().await;
+            let _ = this.update(cx, |this, cx| {
+                this.bundle_chooser_open = false;
+                match choice {
+                    Ok(Some(path)) => this.queue_bundle_import_review(path, cx),
+                    Ok(None) => cx.notify(),
+                    Err(_) => {
+                        this.message =
+                            Some("Notes could not open the Linux bundle importer".into());
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn queue_bundle_import_review(
+        &mut self,
+        selected_path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() || self.latest_local_generation.is_some() {
+            self.message = Some(
+                "The Notes library changed while the bundle chooser was open. Choose the bundle again."
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let request = match BundleImportReviewRequest::new(request_id, selected_path) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::ReviewBundleImport(request), cx) {
+            self.bundle_review_request_id = Some(request_id);
+            self.bundle_review = None;
+            self.message = None;
+            cx.notify();
+        }
+    }
+
+    fn accept_bundle_import(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.session.phase(), SessionPhase::Ready)
+            || self.bundle_action_request_id.is_some()
+            || self.bundle_import_completion.is_some()
+        {
+            return;
+        }
+        let Some(review_request_id) = self.bundle_review_request_id else {
+            return;
+        };
+        let Some((reviewed_request_id, review)) = self.bundle_review else {
+            return;
+        };
+        if reviewed_request_id != review_request_id {
+            return;
+        }
+        if self
+            .session
+            .snapshot()
+            .is_none_or(|snapshot| snapshot.revision != review.base_library_revision)
+        {
+            self.message = Some(
+                "The Notes library changed. Cancel this review and choose the bundle again.".into(),
+            );
+            cx.notify();
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let request = match BundleImportAcceptRequest::new(
+            request_id,
+            review_request_id,
+            BundleCollisionPolicy::KeepBoth,
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::AcceptBundleImport(request), cx) {
+            self.bundle_action_request_id = Some(request_id);
+            self.message = None;
+            cx.notify();
+        }
+    }
+
+    fn discard_bundle_import_review(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.session.phase(), SessionPhase::Ready)
+            || self.bundle_action_request_id.is_some()
+        {
+            return;
+        }
+        let Some(review_request_id) = self.bundle_review_request_id else {
+            return;
+        };
+        if self
+            .bundle_review
+            .is_none_or(|(request_id, _)| request_id != review_request_id)
+        {
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        if self.send(
+            WorkerCommand::DiscardBundleImportReview {
+                request_id,
+                review_request_id,
+            },
+            cx,
+        ) {
+            self.bundle_action_request_id = Some(request_id);
+            self.message = None;
+            cx.notify();
+        }
+    }
+
+    fn dismiss_bundle_import_completion(&mut self, cx: &mut Context<Self>) {
+        self.bundle_import_completion = None;
+        cx.notify();
+    }
+
     fn begin_export(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -2101,11 +2354,13 @@ impl NotesView {
         let dismissed_move_dialog = self.move_dialog.take().is_some();
         let dismissed_attachment_dialog = self.attachment_dialog.take().is_some();
         let dismissed_export_dialog = self.export_dialog.take().is_some();
+        let dismissed_bundle_completion = self.bundle_import_completion.take().is_some();
         if dismissed_folder_dialog
             || dismissed_purge_dialog
             || dismissed_move_dialog
             || dismissed_attachment_dialog
             || dismissed_export_dialog
+            || dismissed_bundle_completion
         {
             cx.notify();
             return;
@@ -2132,6 +2387,27 @@ impl NotesView {
         }
         if self.export_request_id.is_some() {
             self.message = Some("Wait for the Notes export to finish".into());
+            cx.notify();
+            return;
+        }
+        if self.bundle_chooser_open {
+            self.message = Some("Finish or cancel the bundle chooser before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.bundle_action_request_id.is_some() {
+            self.message = Some("Wait for the current bundle operation to finish".into());
+            cx.notify();
+            return;
+        }
+        if self.bundle_review_request_id.is_some() {
+            self.message = Some(if self.bundle_review.is_some() {
+                "Import or cancel the reviewed bundle before closing Notes so its private review can be released."
+                    .into()
+            } else {
+                "Wait for the selected Notes bundle to finish its private review before closing."
+                    .into()
+            });
             cx.notify();
             return;
         }
@@ -2226,6 +2502,9 @@ impl NotesView {
         let note_import_busy =
             self.note_import_chooser_open || self.note_import_request_id.is_some();
         let export_busy = self.export_chooser_open || self.export_request_id.is_some();
+        let bundle_import_busy = self.bundle_chooser_open
+            || self.bundle_review_request_id.is_some()
+            || self.bundle_action_request_id.is_some();
         let sort_order = self
             .session
             .snapshot()
@@ -2284,6 +2563,22 @@ impl NotesView {
                             .on_click(
                                 cx.listener(|this, _, _, cx| this.choose_text_note_import(cx)),
                             ),
+                    )
+                    .child(
+                        Button::new("import-bundle", "")
+                            .icon(IconName::FolderOpen)
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .busy(bundle_import_busy)
+                            .disabled(!ready || note_save_pending)
+                            .tooltip(if bundle_import_busy {
+                                "Importing Notes Bundle…"
+                            } else if note_save_pending {
+                                "Saving Note…"
+                            } else {
+                                "Import Notes Bundle…"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| this.choose_bundle_import(cx))),
                     )
                     .child(
                         Button::new("compose", "")
@@ -3601,6 +3896,224 @@ impl NotesView {
         }
     }
 
+    fn render_bundle_import_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Normal, Primary};
+
+        if let Some(completion) = self.bundle_import_completion {
+            let title = if completion.maintenance_pending {
+                "Import accepted"
+            } else {
+                "Import complete"
+            };
+            let maintenance = if completion.maintenance_pending {
+                " The imported library is durable, but verified storage maintenance is still pending. Editing remains paused until recovery finishes."
+            } else {
+                " Notes verified the accepted library and its imported attachments."
+            };
+            return Some(
+                rmac_ui::alert(
+                    title,
+                    format!(
+                        "Imported {} {}, {} {}, and {} {} ({} of attachments).{maintenance}",
+                        completion.folder_count,
+                        if completion.folder_count == 1 {
+                            "folder"
+                        } else {
+                            "folders"
+                        },
+                        completion.note_count,
+                        if completion.note_count == 1 {
+                            "note"
+                        } else {
+                            "notes"
+                        },
+                        completion.attachment_count,
+                        if completion.attachment_count == 1 {
+                            "attachment"
+                        } else {
+                            "attachments"
+                        },
+                        format_storage_bytes(completion.attachment_bytes),
+                    ),
+                    vec![
+                        rmac_ui::dialog_button("dismiss-bundle-import", "Done", Primary)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.dismiss_bundle_import_completion(cx)
+                            }))
+                            .into_any_element(),
+                    ],
+                )
+                .into_any_element(),
+            );
+        }
+
+        let review_request_id = self.bundle_review_request_id?;
+        if self.bundle_action_request_id.is_some() {
+            if matches!(self.session.phase(), SessionPhase::Pending { .. }) {
+                return None;
+            }
+            let card = div()
+                .w(px(420.0))
+                .p(px(20.0))
+                .v_flex()
+                .gap_3()
+                .rounded(px(12.0))
+                .bg(mac::window())
+                .border_1()
+                .border_color(mac::separator())
+                .shadow_xl()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(17.0))
+                        .font_weight(mac::BOLD)
+                        .child("Applying Notes bundle…"),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child(
+                            "Notes is verifying the reviewed source and committing attachments before publishing metadata.",
+                        ),
+                );
+            return Some(rmac_ui::dialog("bundle-import-progress", card).into_any_element());
+        }
+
+        let Some((reviewed_request_id, review)) = self.bundle_review else {
+            let card = div()
+                .w(px(420.0))
+                .p(px(20.0))
+                .v_flex()
+                .gap_3()
+                .rounded(px(12.0))
+                .bg(mac::window())
+                .border_1()
+                .border_color(mac::separator())
+                .shadow_xl()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(17.0))
+                        .font_weight(mac::BOLD)
+                        .child("Reviewing Notes bundle…"),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child(
+                            "Checking the versioned manifest, note records, hashes, and bounded image payloads. No library changes have been made.",
+                        ),
+                );
+            return Some(rmac_ui::dialog("bundle-review-progress", card).into_any_element());
+        };
+        if reviewed_request_id != review_request_id {
+            return None;
+        }
+        let collision_detail = if review.identity_collisions == 0
+            && review.folder_name_collisions == 0
+        {
+            "No stable-identity or live folder-name collisions were found.".to_string()
+        } else {
+            format!(
+                "{} stable-identity collision{} will be remapped, and {} live folder-name collision{} will receive a deterministic imported suffix.",
+                review.identity_collisions,
+                if review.identity_collisions == 1 { "" } else { "s" },
+                review.folder_name_collisions,
+                if review.folder_name_collisions == 1 { "" } else { "s" },
+            )
+        };
+        let card = div()
+            .w(px(460.0))
+            .p(px(20.0))
+            .v_flex()
+            .gap_3()
+            .rounded(px(12.0))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(17.0))
+                    .font_weight(mac::BOLD)
+                    .child("Import Notes Bundle"),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(format!(
+                        "This review is bound to library revision {} and bundle library revision {}.",
+                        review.base_library_revision, review.source_library_revision
+                    )),
+            )
+            .child(
+                div()
+                    .p_3()
+                    .rounded(px(8.0))
+                    .bg(mac::control_fill())
+                    .v_flex()
+                    .gap_1()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(format!(
+                        "{} {}, {} {}, and {} {}",
+                        review.folder_count,
+                        if review.folder_count == 1 { "folder" } else { "folders" },
+                        review.note_count,
+                        if review.note_count == 1 { "note" } else { "notes" },
+                        review.attachment_count,
+                        if review.attachment_count == 1 {
+                            "attachment"
+                        } else {
+                            "attachments"
+                        },
+                    ))
+                    .child(format!(
+                        "{} bundle source; {} of attachment payloads",
+                        format_storage_bytes(review.source_bytes),
+                        format_storage_bytes(review.attachment_bytes),
+                    )),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(collision_detail),
+            )
+            .child(
+                div()
+                    .p_3()
+                    .rounded(px(8.0))
+                    .bg(mac::control_fill())
+                    .text_size(rmac_ui::text_px(12.0))
+                    .child(
+                        "Keep Both never overwrites an existing note, folder, attachment, or purged identity. Imported records are safely renamed or remapped when needed.",
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button("cancel-bundle-import", "Cancel", Normal)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.discard_bundle_import_review(cx)
+                            })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            ("accept-bundle-import", review_request_id),
+                            "Import and Keep Both",
+                            Primary,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.accept_bundle_import(cx))),
+                    ),
+            );
+        Some(rmac_ui::dialog("bundle-import-review", card).into_any_element())
+    }
+
     fn render_move_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use rmac_ui::DialogButtonKind::Normal;
 
@@ -3823,6 +4336,7 @@ impl Render for NotesView {
         let move_dialog = self.render_move_dialog(cx);
         let attachment_dialog = self.render_attachment_dialog(cx);
         let export_dialog = self.render_export_dialog(cx);
+        let bundle_import_dialog = self.render_bundle_import_dialog(cx);
 
         div()
             .track_focus(&self.focus)
@@ -3862,6 +4376,9 @@ impl Render for NotesView {
             .when_some(move_dialog, |element, dialog| element.child(dialog))
             .when_some(attachment_dialog, |element, dialog| element.child(dialog))
             .when_some(export_dialog, |element, dialog| element.child(dialog))
+            .when_some(bundle_import_dialog, |element, dialog| {
+                element.child(dialog)
+            })
     }
 }
 

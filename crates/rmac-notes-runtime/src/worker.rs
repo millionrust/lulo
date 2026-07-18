@@ -1469,11 +1469,10 @@ fn process_command(
                     Phase::Stopped
                 };
             }
-            let reviewed = ready
+            let planned = match ready
                 .bundle_import_review
-                .take()
-                .expect("matching review checked above");
-            let planned = match reviewed
+                .as_ref()
+                .expect("matching review checked above")
                 .prepared
                 .plan(ready.library.snapshot(), request.policy)
             {
@@ -1491,6 +1490,10 @@ fn process_command(
                     };
                 }
             };
+            let reviewed = ready
+                .bundle_import_review
+                .take()
+                .expect("matching review checked above");
             let context = RequestContext {
                 request_id: request.request_id,
                 generation: None,

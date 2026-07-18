@@ -448,7 +448,20 @@ Retry. The worker flushes pending edits, retains one review by request identity,
 does parsing/planning/I/O off GPUI, rejects mismatched review acceptance without
 consuming the valid review, and emits only safe counts plus the accepted
 snapshot. The session projects the review and bundle maintenance distinctly.
-XDG FileChooser dispatch and the live review/progress/collision UI remain.
+The live toolbar now dispatches the XDG FileChooser with versioned bundle
+guidance; cancellation is ordinary and non-local results fail. Selection,
+bounded review, acceptance, discard, and completion block editing without
+moving paths or payloads onto GPUI. A progress sheet discloses that manifest,
+record, hash, and image checks are still running. The collision review is bound
+to the exact review request and accepted library revision, shows only safe
+counts and checked sizes, explains identity remapping and deterministic folder
+suffixes, and offers only explicit `KeepBoth` acceptance or an exact worker-side
+discard. Acceptance disappears into progress until a matching typed outcome;
+its completion reports verified counts and says only “accepted” when durable
+storage maintenance remains. A pending commit returns to the existing truthful
+Retry/Discard surface, and abandoning it clears the obsolete UI review rather
+than permitting a stale retry. Linux portal interaction and accessibility
+evidence remain.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -626,10 +639,9 @@ cancels the session and orders search-worker shutdown before dropping the view.
 Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
-Known live-app gaps now include formatted Markdown preview, XDG portal bundle
-import review/progress, rich search-match highlighting,
-richer conflict-resolution choices, semantic accessibility, and Linux runtime/
-visual evidence. The accepted store
+Known live-app gaps now include formatted Markdown preview, rich search-match
+highlighting, richer conflict-resolution choices, semantic accessibility, and
+Linux runtime/visual evidence. The accepted store
 remains local-only and makes no cloud-sync claim.
 Migration must preserve every readable existing note and attachment; it must
 not delete the prototype library after a partial import.

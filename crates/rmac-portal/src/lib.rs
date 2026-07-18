@@ -235,6 +235,51 @@ pub async fn choose_notes_text() -> Result<Option<PathBuf>, Error> {
     }
 }
 
+/// Ask the desktop portal for one local versioned rmac Notes bundle to import.
+/// Notes must still parse, hash, decode, and review the complete returned file
+/// before any library mutation.
+pub async fn choose_notes_bundle() -> Result<Option<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let request = OpenFileRequest::default()
+            .title("Import Notes Bundle")
+            .accept_label("Review")
+            .modal(true)
+            .filter(
+                FileFilter::new("rmac Notes bundles")
+                    .mimetype("application/octet-stream")
+                    .glob("*.rmacnotes"),
+            )
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(None),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        let Some(uri) = response.uris().first() else {
+            return Ok(None);
+        };
+        uri.to_file_path().map(Some).map_err(|()| Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the portal returned a non-local Notes bundle".into(),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the Notes bundle importer is available in the supported Linux session".into(),
+        })
+    }
+}
+
 /// Ask the desktop portal for one local destination for a reviewed Notes
 /// export. The caller supplies a filename-safe suggestion and must still
 /// revalidate the final destination at its storage boundary.

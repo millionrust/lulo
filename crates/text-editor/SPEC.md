@@ -23,8 +23,11 @@ plain text over a rich-text file.
    preserve selection/focus through empty, no-match, and replacement states.
 6. Open RTF as a bounded read-only preview. Continue as a new plain-text
    document only after an explicit action; never overwrite the source RTF.
-7. Open multiple documents in independent windows. Each window owns its path,
-   revision, dirty baseline, recovery identity, dialogs, and close guard.
+7. Create independent document windows with Command-N or open multiple selected
+   documents at once. A clean empty untitled window may adopt the first
+   selection; every other document gets its own window. Each window owns its
+   path, revision, dirty baseline, recovery identity, dialogs, watcher, and
+   close guard, and closing one window never bypasses another window's guard.
 8. Print or export only through a documented Linux authority. Until that
    authority is implemented, no control may imply printing or PDF export works.
 
@@ -103,7 +106,7 @@ External-change choices are precise:
 ## Keyboard and accessibility
 
 - `Super/Command-N`, `-O`, `-S`, `-Shift-S`, `-F`, `-Shift-F`, and `-W` cover
-  New, Open, Save, Save As, Find, Replace, and Close Window.
+  New Window, Open, Save, Save As, Find, Replace, and Close Window.
 - `Enter`/`Shift-Enter` or `Super/Command-G`/`-Shift-G` traverse matches;
   Escape closes the find bar or cancels the topmost dialog without data loss.
 - Tab order follows toolbar, find/replace controls, document, status controls,

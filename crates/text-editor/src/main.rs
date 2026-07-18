@@ -11,22 +11,25 @@ mod recovery;
 mod rtf;
 mod storage;
 
-use std::{path::Path, path::PathBuf, time::Duration};
+use std::{path::Path, path::PathBuf, sync::Mutex, time::Duration};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    actions, div, font, px, AppContext as _, Context, Entity, FocusHandle, InteractiveElement as _,
-    IntoElement, KeyBinding, ParentElement, PathPromptOptions, Render, SharedString,
-    StatefulInteractiveElement as _, Styled, StyledText, Subscription, TextRun, UnderlineStyle,
-    Window,
+    actions, div, font, px, App, AppContext as _, Context, Entity, FocusHandle,
+    InteractiveElement as _, IntoElement, KeyBinding, ParentElement, PathPromptOptions, Render,
+    SharedString, StatefulInteractiveElement as _, Styled, StyledText, Subscription, TextRun,
+    UnderlineStyle, Window,
 };
-use gpui_component::{Icon, IconName, Size, StyledExt as _};
+use gpui_component::{Icon, IconName, Root, Size, StyledExt as _};
 use notify::Watcher as _;
 use rmac_ui::{
     mac, Button, InputEvent, InputState, Position, RopeExt as _, SearchField, TextField,
 };
 
 const CTX: &str = "TextEditor";
+const WINDOW_WIDTH: f32 = 860.0;
+const WINDOW_HEIGHT: f32 = 640.0;
+static STARTUP_RECOVERY_LOCK: Mutex<()> = Mutex::new(());
 
 actions!(
     text_editor,
@@ -50,8 +53,6 @@ actions!(
 /// A pending document switch that must wait on an unsaved-changes prompt.
 #[derive(Clone, Copy)]
 enum Pending {
-    New,
-    Open,
     Close,
 }
 
@@ -182,15 +183,29 @@ struct EditorView {
     recovery_clock: RecoveryClock,
     recovery_loading: bool,
     recovery_error: Option<SharedString>,
-    recovery_notice: Option<SharedString>,
+    status_notice: Option<SharedString>,
     document_generation: u64,
     external_change: Option<ExternalChange>,
     document_watch_warning: bool,
     watched_directory: Option<PathBuf>,
     document_watcher: Option<notify::RecommendedWatcher>,
+    pending_startup_path: Option<PathBuf>,
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
     alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,
+}
+
+fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) -> Result<(), ()> {
+    cx.open_window(
+        rmac_ui::window_options(WINDOW_WIDTH, WINDOW_HEIGHT),
+        |window, cx| {
+            rmac_ui::prepare_surface_window(window, cx);
+            let view = cx.new(|cx| EditorView::new_with_path(initial_path, window, cx));
+            cx.new(|cx| Root::new(view, window, cx))
+        },
+    )
+    .map(|_| ())
+    .map_err(|_| ())
 }
 
 fn platform_recovery_path() -> Result<PathBuf, storage::Failure> {
@@ -235,6 +250,12 @@ struct StartupRecovery {
 }
 
 fn startup_recovery() -> StartupRecovery {
+    // Multiple windows can launch concurrently. Serializing only this
+    // background discovery/migration boundary prevents two windows from
+    // importing the same legacy raw draft before either removes it.
+    let _guard = STARTUP_RECOVERY_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let temporary_legacy = std::env::temp_dir().join("rmac-text-editor-recovery.txt");
     let (legacy_primary, mut warning) = match platform_recovery_path() {
         Ok(path) => (path, false),
@@ -434,6 +455,15 @@ fn inspect_external_revision(path: &Path, expected: &[u8]) -> Option<ExternalCha
     }
 }
 
+fn should_reuse_untitled_window(
+    dirty: bool,
+    has_path: bool,
+    rich_text_preview: bool,
+    empty: bool,
+) -> bool {
+    !dirty && !has_path && !rich_text_preview && empty
+}
+
 fn recovery_failure_message() -> SharedString {
     "Text Editor could not safely update its private recovery data. The current buffer remains open; save the document before closing."
         .into()
@@ -441,6 +471,14 @@ fn recovery_failure_message() -> SharedString {
 
 impl EditorView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_with_path(None, window, cx)
+    }
+
+    fn new_with_path(
+        initial_path: Option<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let input = rmac_editor::multiline("", window, cx);
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
@@ -497,18 +535,23 @@ impl EditorView {
         // MiB. Present the first frame immediately and keep the document gated
         // until the background result establishes this window's recovery
         // identity and any required Restore/Discard decision.
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+        cx.spawn_in(window, async move |this, cx| {
             let recovery = cx
                 .background_executor()
                 .spawn(async { startup_recovery() })
                 .await;
-            let _ = this.update(cx, |this, cx| {
+            let _ = this.update_in(cx, |this, window, cx| {
                 this.recovery_directory = recovery.directory;
                 this.recovery_path = recovery.active_path;
                 this.recovery_cleanup_paths = recovery.cleanup_paths;
                 this.recovery_loading = false;
                 this.recovery_error = recovery.warning.then(recovery_failure_message);
                 this.alert = recovery.prompt.map(ActiveAlert::Recover);
+                if this.alert.is_none() {
+                    if let Some(path) = this.pending_startup_path.take() {
+                        this.load_document_path(path, "Failed to open the file.", window, cx);
+                    }
+                }
                 cx.notify();
             });
         })
@@ -613,12 +656,13 @@ impl EditorView {
             recovery_clock: RecoveryClock::default(),
             recovery_loading: true,
             recovery_error: None,
-            recovery_notice: None,
+            status_notice: None,
             document_generation: 0,
             external_change: None,
             document_watch_warning: false,
             watched_directory: None,
             document_watcher,
+            pending_startup_path: initial_path,
             _subscriptions: vec![sub_main, sub_find],
         }
     }
@@ -776,29 +820,25 @@ impl EditorView {
 
     // ── File operations ─────────────────────────────────────────────────
 
-    fn new_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn new_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.file_busy || self.file_action_blocked() {
             return;
         }
-        self.guarded(Pending::New, window, cx);
+        if open_editor_window(cx, None).is_err() {
+            self.alert = Some(ActiveAlert::Error {
+                title: "Could not open a new document window.",
+                message: "Text Editor could not create another window. This document remains open."
+                    .into(),
+            });
+            cx.notify();
+        }
     }
 
     fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.file_busy || self.file_action_blocked() {
             return;
         }
-        self.guarded(Pending::Open, window, cx);
-    }
-
-    fn do_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.input.update(cx, |s, cx| s.set_value("", window, cx));
-        self.path = None;
-        self.saved_bytes = None;
-        self.text_format = document::TextFormat::default();
-        self.rtf_runs = None;
-        self.reset_document_watch();
-        self.mark_clean(String::new(), cx);
-        cx.notify();
+        self.do_open(window, cx);
     }
 
     /// Leave the read-only RTF preview and continue editing the extracted text
@@ -821,11 +861,17 @@ impl EditorView {
             return;
         }
         self.file_busy = true;
+        let reuse_current = should_reuse_untitled_window(
+            self.dirty,
+            self.path.is_some(),
+            self.rtf_runs.is_some(),
+            self.input.read(cx).value().is_empty(),
+        );
         cx.notify();
         let rx = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
-            multiple: false,
+            multiple: true,
             prompt: None,
         });
         cx.spawn_in(window, async move |this, cx| {
@@ -843,13 +889,53 @@ impl EditorView {
                 });
                 return;
             };
-            let Some(path) = paths.into_iter().next() else {
-                let _ = this.update_in(cx, |this, _, cx| {
-                    this.file_busy = false;
-                    cx.notify();
-                });
-                return;
-            };
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.file_busy = false;
+                let mut paths = paths.into_iter();
+                if reuse_current {
+                    if let Some(path) = paths.next() {
+                        this.load_document_path(path, "Failed to open the file.", window, cx);
+                    }
+                }
+                let mut failed_windows = 0_usize;
+                for path in paths {
+                    if open_editor_window(cx, Some(path)).is_err() {
+                        failed_windows += 1;
+                    }
+                }
+                if failed_windows > 0 {
+                    this.status_notice = Some(
+                        format!(
+                            "Text Editor could not create {} selected document {}.",
+                            failed_windows,
+                            if failed_windows == 1 {
+                                "window"
+                            } else {
+                                "windows"
+                            }
+                        )
+                        .into(),
+                    );
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn load_document_path(
+        &mut self,
+        path: PathBuf,
+        error_title: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.file_busy {
+            return;
+        }
+        self.file_busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
             let loaded = cx
                 .background_executor()
                 .spawn({
@@ -883,7 +969,7 @@ impl EditorView {
                     }
                     Err(message) => {
                         this.alert = Some(ActiveAlert::Error {
-                            title: "Failed to open the file.",
+                            title: error_title,
                             message,
                         });
                     }
@@ -1250,7 +1336,7 @@ impl EditorView {
                 self.input
                     .update(cx, |state, cx| state.set_value(prompt.content, window, cx));
                 if prompt.additional_drafts > 0 {
-                    self.recovery_notice = Some(
+                    self.status_notice = Some(
                         format!(
                             "{} additional recovered {} remain available on the next launch.",
                             prompt.additional_drafts,
@@ -1266,6 +1352,14 @@ impl EditorView {
                 // Recovered text is unsaved relative to the empty baseline, so
                 // this marks the buffer dirty and re-arms autosave.
                 self.on_buffer_changed(cx);
+                if let Some(path) = self.pending_startup_path.take() {
+                    if open_editor_window(cx, Some(path)).is_err() {
+                        self.status_notice = Some(
+                            "The recovered draft is safe, but Text Editor could not open the requested document window."
+                                .into(),
+                        );
+                    }
+                }
             }
             Some(ActiveAlert::ConfirmSave(pending)) => self.save_with(Some(pending), window, cx),
             Some(ActiveAlert::Conflict) => self.save_conflicting_copy(window, cx),
@@ -1283,12 +1377,12 @@ impl EditorView {
             Some(ActiveAlert::Recover(prompt)) => {
                 if !self.clear_recovery(cx) {
                     self.alert = Some(ActiveAlert::Recover(prompt));
+                } else if let Some(path) = self.pending_startup_path.take() {
+                    self.load_document_path(path, "Failed to open the file.", window, cx);
                 }
             }
             Some(ActiveAlert::ConfirmSave(pending)) => {
-                // Keep the draft recoverable while the Open picker is active:
-                // cancelling the picker leaves the current document intact.
-                if matches!(pending, Pending::Open) || self.clear_recovery(cx) {
+                if self.clear_recovery(cx) {
                     self.perform(pending, window, cx);
                 } else {
                     self.alert = Some(ActiveAlert::ConfirmSave(pending));
@@ -1305,11 +1399,9 @@ impl EditorView {
         cx.notify();
     }
 
-    fn perform(&mut self, pending: Pending, window: &mut Window, cx: &mut Context<Self>) {
+    fn perform(&mut self, pending: Pending, window: &mut Window, _cx: &mut Context<Self>) {
         match pending {
-            Pending::New => self.do_new(window, cx),
-            Pending::Open => self.do_open(window, cx),
-            Pending::Close => cx.quit(),
+            Pending::Close => window.remove_window(),
         }
     }
 
@@ -1469,7 +1561,7 @@ impl EditorView {
                             .ghost()
                             .with_size(Size::Medium)
                             .disabled(self.file_busy || self.file_action_blocked())
-                            .tooltip("New")
+                            .tooltip("New Window")
                             .on_click(cx.listener(|this, _, window, cx| this.new_file(window, cx))),
                     )
                     .child(
@@ -1908,7 +2000,7 @@ impl Render for EditorView {
         let size = self.font_size;
         let recovery_loading = self.recovery_loading;
         let recovery_error = self.recovery_error.clone();
-        let recovery_notice = self.recovery_notice.clone();
+        let status_notice = self.status_notice.clone();
         let external_change = self.external_change;
         let document_watch_warning = self.document_watch_warning;
 
@@ -1983,7 +2075,7 @@ impl Render for EditorView {
                         })),
                 )
             })
-            .when_some(recovery_notice, |editor, message| {
+            .when_some(status_notice, |editor, message| {
                 editor.child(
                     div()
                         .id("recovery-notice")
@@ -2002,7 +2094,7 @@ impl Render for EditorView {
                         .child(div().flex_1().child(message))
                         .child("Dismiss")
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.recovery_notice = None;
+                            this.status_notice = None;
                             cx.notify();
                         })),
                 )
@@ -2092,7 +2184,7 @@ impl Render for EditorView {
 }
 
 fn main() {
-    rmac_ui::boot("Text Editor", 860.0, 640.0, |window, cx| {
+    rmac_ui::boot("Text Editor", WINDOW_WIDTH, WINDOW_HEIGHT, |window, cx| {
         EditorView::new(window, cx)
     });
 }
@@ -2101,7 +2193,7 @@ fn main() {
 mod tests {
     use super::{
         document, recovery_path_for_platform, same_file_identity, save_document_copy,
-        RecoveryClock, SaveFailure,
+        should_reuse_untitled_window, RecoveryClock, SaveFailure,
     };
     use std::path::PathBuf;
 
@@ -2209,5 +2301,14 @@ mod tests {
         assert!(matches!(error, SaveFailure::ConflictingCopyDestination));
         assert_eq!(std::fs::read(&source).unwrap(), b"external revision");
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn open_reuses_only_a_clean_empty_untitled_window() {
+        assert!(should_reuse_untitled_window(false, false, false, true));
+        assert!(!should_reuse_untitled_window(true, false, false, false));
+        assert!(!should_reuse_untitled_window(false, true, false, false));
+        assert!(!should_reuse_untitled_window(false, false, true, false));
+        assert!(!should_reuse_untitled_window(false, false, false, false));
     }
 }

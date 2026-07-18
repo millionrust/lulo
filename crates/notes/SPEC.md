@@ -203,8 +203,8 @@ preflight, candidate and journal revalidation, atomic replacement, exact
 readback, committed-with-maintenance reporting, corrupt-primary restoration,
 and deterministic interrupted-save rollback/finish. A malformed or ambiguous
 journal remains preserved and blocks writes. This adapter is not yet wired to
-the Notes process, and process-wide single-writer ownership, attachment-file
-transactions, recovery drafts, and prototype migration remain required.
+the Notes process; attachment mutation transactions, recovery drafts, and live
+application integration remain required.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -221,8 +221,16 @@ original relative-path/length/hash mapping; exact staged files are reusable on
 retry, conflicting files fail closed, metadata failure leaves recovery data
 intact, and an existing nonempty library is never overwritten. The prototype
 source is not mutated. Filesystem discovery, symlink-safe source traversal,
-full image-decoder validation, and Notes process integration remain. The real
-store now canonicalizes an absolute app-owned root, makes it private, rejects
+full image-decoder validation, and Notes process integration remain. A bounded
+legacy discovery adapter now requires an absolute non-symlink source, sorts
+every entry, opens regular files no-follow, caps entries and aggregate bytes,
+preserves empty folders and nested unclaimed files, normalizes only inside-root
+legacy absolute pins, and rejects links, deeper trees, invalid metadata/sort/
+timestamps, unreadable entries, and excessive files without partially
+importing them. Its deterministic output feeds the planner directly, so the
+application can scan once for review and scan again for the commit's exact-plan
+comparison. Full image decoding and Linux runtime wiring remain. The real store
+now canonicalizes an absolute app-owned root, makes it private, rejects
 symlink/hard-link lock substitution, and holds one nonblocking advisory writer
 lease across recovery, migration, and saves. Same-process duplicate stores and
 independent kernel descriptors are rejected; the persistent private rendezvous
@@ -234,12 +242,12 @@ stays authoritative; retry first resolves the journal, adopts a candidate that
 committed before an error was reported, retries a rolled-back candidate, or
 surfaces an unrelated durable change without overwrite.
 
-Known gaps include path-based identity and pins, synchronous scans/reads on the
-UI thread, a permanent 1.5-second save loop, no versioned manifest/journal or
-aggregate bounds, no exact conflict preflight/readback, no recovery records,
-silent scan/decode failures, permanent file/folder deletion, attachment copies
-outside a note transaction, no orphan policy, no safe import/export/bundle
-format, no derived cancellable index, and no Linux accessibility/runtime
+Known live-prototype gaps include path-based identity and pins, synchronous
+scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
+manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
+recovery records, silent scan/decode failures, permanent file/folder deletion,
+attachment copies outside a note transaction, no orphan policy, no safe import/
+export/bundle format, no derived cancellable index, and no Linux accessibility/runtime
 evidence. Migration must preserve every readable existing note and attachment;
 it must not delete the prototype library after a partial import.
 

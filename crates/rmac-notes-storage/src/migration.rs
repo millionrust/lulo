@@ -14,8 +14,8 @@ use sha2::{Digest as _, Sha256};
 
 use crate::{LoadedLibrary, NotesLibraryStore, StoreError};
 
-const MAX_LEGACY_PATH_BYTES: usize = 4096;
-const MAX_TOTAL_ATTACHMENT_BYTES: u64 = 1024 * 1024 * 1024;
+pub(super) const MAX_LEGACY_PATH_BYTES: usize = 4096;
+pub(super) const MAX_TOTAL_ATTACHMENT_BYTES: u64 = 1024 * 1024 * 1024;
 const MIGRATION_RECEIPT_MAGIC: &[u8; 8] = b"RMNMIG\0\0";
 const MIGRATION_RECEIPT_VERSION: u16 = 1;
 const MAX_MIGRATION_RECEIPT_BYTES: usize = MAX_LIBRARY_BYTES;
@@ -36,6 +36,7 @@ pub struct LegacyAttachmentInput {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LegacyLibraryInput {
+    pub folder_names: Vec<String>,
     pub notes: Vec<LegacyNoteInput>,
     pub attachments: Vec<LegacyAttachmentInput>,
     pub pinned_note_paths: Vec<String>,
@@ -194,7 +195,8 @@ impl fmt::Display for MigrationError {
 impl std::error::Error for MigrationError {}
 
 pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPlan, MigrationError> {
-    if input.notes.len() > MAX_NOTES
+    if input.folder_names.len() > MAX_FOLDERS
+        || input.notes.len() > MAX_NOTES
         || input.attachments.len() > MAX_ATTACHMENTS
         || input.pinned_note_paths.len() > MAX_NOTES
     {
@@ -236,14 +238,19 @@ pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPla
         .iter()
         .map(|note| parse_note_path(&note.relative_path))
         .collect::<Result<Vec<_>, _>>()?;
-    let mut folder_names = parsed_paths
-        .iter()
-        .filter_map(|path| path.folder.clone())
-        .collect::<Vec<_>>();
-    folder_names.sort();
-    folder_names.dedup();
+    input.folder_names.sort();
+    if input.folder_names.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(MigrationError::DuplicatePath);
+    }
+    let mut folder_names = input.folder_names.into_iter().collect::<BTreeSet<_>>();
+    for folder in parsed_paths.iter().filter_map(|path| path.folder.clone()) {
+        folder_names.insert(folder);
+    }
     if folder_names.len() > MAX_FOLDERS {
         return Err(MigrationError::CollectionLimit);
+    }
+    for name in &folder_names {
+        validate_display_name(name)?;
     }
     let mut normalized_folders = BTreeSet::new();
     if folder_names
@@ -336,7 +343,12 @@ pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPla
                 id: attachment_id,
                 revision: 1,
                 note_id,
-                display_name: attachment.relative_path.clone(),
+                display_name: attachment
+                    .relative_path
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or(attachment.relative_path.as_str())
+                    .to_string(),
                 kind,
                 byte_len: attachment.bytes.len() as u64,
                 sha256: hash,
@@ -716,11 +728,11 @@ fn migration_receipt_path(root: &Path) -> PathBuf {
 }
 
 #[derive(Clone, Debug)]
-struct ParsedNotePath {
+pub(super) struct ParsedNotePath {
     folder: Option<String>,
 }
 
-fn parse_note_path(path: &str) -> Result<ParsedNotePath, MigrationError> {
+pub(super) fn parse_note_path(path: &str) -> Result<ParsedNotePath, MigrationError> {
     validate_relative_path(path)?;
     let parts = path.split('/').collect::<Vec<_>>();
     if !parts.last().is_some_and(|name| name.ends_with(".md")) {
@@ -738,15 +750,22 @@ fn parse_note_path(path: &str) -> Result<ParsedNotePath, MigrationError> {
     }
 }
 
-fn validate_attachment_path(path: &str) -> Result<(), MigrationError> {
+pub(super) fn validate_attachment_path(path: &str) -> Result<(), MigrationError> {
     validate_relative_path(path)?;
-    if path.contains('/') || path.ends_with(".md") || matches!(path, ".pinned" | ".sort") {
+    let parts = path.split('/').collect::<Vec<_>>();
+    let Some(file_name) = parts.last() else {
+        return Err(MigrationError::InvalidPath);
+    };
+    if parts.len() > 2 || file_name.ends_with(".md") || matches!(*file_name, ".pinned" | ".sort") {
         return Err(MigrationError::InvalidPath);
     }
-    validate_display_name(path)
+    for part in parts {
+        validate_display_name(part)?;
+    }
+    Ok(())
 }
 
-fn validate_relative_path(path: &str) -> Result<(), MigrationError> {
+pub(super) fn validate_relative_path(path: &str) -> Result<(), MigrationError> {
     if path.is_empty()
         || path.len() > MAX_LEGACY_PATH_BYTES
         || path.starts_with('/')
@@ -877,6 +896,7 @@ mod tests {
 
     fn fixture() -> LegacyLibraryInput {
         LegacyLibraryInput {
+            folder_names: vec!["Projects".into()],
             notes: vec![
                 LegacyNoteInput {
                     relative_path: "note-1.md".into(),
@@ -984,5 +1004,18 @@ mod tests {
             .recovery_files
             .iter()
             .any(|file| file.relative_path == "orphan.bin"));
+    }
+
+    #[test]
+    fn bounded_nested_attachment_paths_use_only_the_file_name_for_display() {
+        let mut input = fixture();
+        input.notes[0].bytes = b"Root\n![](Assets/diagram.png)".to_vec();
+        input.attachments[0].relative_path = "Assets/diagram.png".into();
+
+        let plan = plan_legacy_library(input).unwrap();
+
+        assert_eq!(plan.attachments[0].relative_path, "Assets/diagram.png");
+        assert_eq!(plan.snapshot.attachments[0].display_name, "diagram.png");
+        assert!(plan.snapshot.validate().is_ok());
     }
 }

@@ -17,10 +17,14 @@ use rmac_notes_store::{decode, encode, CodecError, LibrarySnapshot, MAX_LIBRARY_
 use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
+mod legacy_scan;
 mod migration;
 mod repository;
 mod writer;
 
+pub use legacy_scan::{
+    scan_legacy_library, LegacyScanError, LegacyScanErrorKind, LegacyScanOperation,
+};
 pub use migration::{
     plan_legacy_library, LegacyAttachmentInput, LegacyLibraryInput, LegacyNoteInput,
     MigrationCommitError, MigrationCommitErrorKind, MigrationCommitOperation,
@@ -829,6 +833,7 @@ mod tests {
 
     fn legacy_fixture() -> LegacyLibraryInput {
         LegacyLibraryInput {
+            folder_names: vec!["Projects".into()],
             notes: vec![LegacyNoteInput {
                 relative_path: "Projects/roadmap.md".into(),
                 bytes: b"Roadmap\nKeep every byte\n![](diagram.png)".to_vec(),

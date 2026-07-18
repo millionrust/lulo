@@ -5245,10 +5245,12 @@ dependencies = [
  "chrono",
  "gpui",
  "gpui-component",
+ "image",
  "rmac-editor",
  "rmac-notes-runtime",
  "rmac-notes-storage",
  "rmac-notes-store",
+ "rmac-portal",
  "rmac-ui",
 ]
 

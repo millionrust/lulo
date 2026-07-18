@@ -12,9 +12,10 @@ mod session;
 mod worker;
 
 pub use preview_worker::{
-    NotesPreviewSession, NotesPreviewWorker, PreviewCancellation, PreviewGeneration,
-    PreviewRequest, PreviewRequestError, PreviewState, PreviewWorkerEvent, PreviewWorkerSendError,
-    PreviewWorkerStartError, PREVIEW_COMMAND_CAPACITY, PREVIEW_EVENT_CAPACITY,
+    NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
+    PreviewCancellation, PreviewGeneration, PreviewRequest, PreviewRequestError, PreviewState,
+    PreviewWorkerEvent, PreviewWorkerSendError, PreviewWorkerStartError, PREVIEW_COMMAND_CAPACITY,
+    PREVIEW_EVENT_CAPACITY,
 };
 pub use scheduler::{
     EditGeneration, EditScheduler, ScheduleOutcome, ScheduledEdit, SchedulerError,

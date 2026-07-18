@@ -6,27 +6,33 @@
 
 use std::collections::BTreeSet;
 use std::io;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    actions, div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Div,
-    Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ParentElement, Render,
-    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
+    actions, div, img, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Div,
+    Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit,
+    ParentElement, Render, RenderImage, SharedString, Stateful, StatefulInteractiveElement as _,
+    Styled, StyledImage as _, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
     ActionRequest, ActionResult, DraftRecoveryKind, EditGeneration, LibraryAction,
+    NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
     NotesSearchSession, NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents,
-    NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, ScheduledEdit, SearchState,
-    SearchWorkerEvent, SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent,
-    WorkerFailure, WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS, SEARCH_EVENT_CAPACITY,
+    NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PreviewState,
+    PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchState, SearchWorkerEvent,
+    SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent, WorkerFailure,
+    WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS, PREVIEW_EVENT_CAPACITY,
+    SEARCH_EVENT_CAPACITY,
 };
-use rmac_notes_storage::{resolve_notes_paths, PendingReason};
+use rmac_notes_storage::{resolve_notes_paths, DecodedImagePreview, PendingReason, PreviewSize};
 use rmac_notes_store::{
-    FolderId, NewNote, NoteChanges, NoteId, SortOrder, MAX_TAGS_PER_NOTE, MAX_TAG_BYTES,
+    AttachmentId, FolderId, NewNote, NoteChanges, NoteId, NoteRecord, SortOrder, MAX_TAGS_PER_NOTE,
+    MAX_TAG_BYTES,
 };
 use rmac_ui::{mac, Button, InputEvent, TextField};
 
@@ -52,8 +58,12 @@ actions!(
 struct NotesView {
     worker: Option<NotesWorkerClient>,
     search_worker: Option<NotesSearchWorkerClient>,
+    preview_worker: Option<NotesPreviewWorkerClient>,
     session: NotesSession,
     search: NotesSearchSession,
+    preview: NotesPreviewSession,
+    preview_image: Option<Arc<RenderImage>>,
+    selected_attachment: Option<AttachmentId>,
     search_query: Entity<InputState>,
     folder_name_input: Entity<InputState>,
     title: Entity<InputState>,
@@ -71,7 +81,10 @@ struct NotesView {
     folder_dialog: Option<FolderDialog>,
     purge_dialog: Option<PurgeDialog>,
     move_dialog: Option<MoveDialog>,
+    attachment_chooser_open: bool,
+    attachment_request_id: Option<u64>,
     search_shutdown_requested: bool,
+    preview_shutdown_requested: bool,
     closing: bool,
 }
 
@@ -108,6 +121,11 @@ struct MoveDialog {
     note_id: NoteId,
     note_revision: u64,
     current_folder: Option<FolderId>,
+}
+
+struct PreviewBridgeEvent {
+    event: PreviewWorkerEvent,
+    rendered: Option<Arc<RenderImage>>,
 }
 
 impl NotesView {
@@ -160,8 +178,12 @@ impl NotesView {
         let mut view = Self {
             worker: None,
             search_worker: None,
+            preview_worker: None,
             session: NotesSession::new(),
             search: NotesSearchSession::new(),
+            preview: NotesPreviewSession::new(),
+            preview_image: None,
+            selected_attachment: None,
             search_query,
             folder_name_input,
             title,
@@ -179,27 +201,66 @@ impl NotesView {
             folder_dialog: None,
             purge_dialog: None,
             move_dialog: None,
+            attachment_chooser_open: false,
+            attachment_request_id: None,
             search_shutdown_requested: false,
+            preview_shutdown_requested: false,
             closing: false,
         };
 
-        match resolve_notes_paths()
-            .map_err(|error| error.to_string())
-            .and_then(|paths| NotesWorker::start(paths).map_err(|error| error.to_string()))
-            .and_then(|worker| {
-                let (client, events) = worker.into_parts();
-                bridge_worker_events(events)
-                    .map(|receiver| (client, receiver))
-                    .map_err(|error| format!("Notes could not start its event bridge: {error}"))
-            }) {
-            Ok((client, receiver)) => {
-                view.worker = Some(client);
+        let notes_paths = match resolve_notes_paths() {
+            Ok(paths) => Some(paths),
+            Err(error) => {
+                view.message = Some(error.to_string().into());
+                None
+            }
+        };
+
+        if let Some(paths) = notes_paths.as_ref() {
+            match NotesWorker::start(paths.clone())
+                .map_err(|error| error.to_string())
+                .and_then(|worker| {
+                    let (client, events) = worker.into_parts();
+                    bridge_worker_events(events)
+                        .map(|receiver| (client, receiver))
+                        .map_err(|error| format!("Notes could not start its event bridge: {error}"))
+                }) {
+                Ok((client, receiver)) => {
+                    view.worker = Some(client);
+                    cx.spawn_in(window, async move |this, cx| {
+                        while let Ok(event) = receiver.recv().await {
+                            if this
+                                .update_in(cx, |this, window, cx| {
+                                    this.apply_worker_event(event, window, cx)
+                                })
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    })
+                    .detach();
+                }
+                Err(message) => view.message = Some(message.into()),
+            }
+
+            if let Ok((client, receiver)) =
+                NotesPreviewWorker::start(paths.data_root().to_path_buf())
+                    .map_err(|error| error.to_string())
+                    .and_then(|worker| {
+                        let (client, events) = worker.into_parts();
+                        bridge_preview_events(events)
+                            .map(|receiver| (client, receiver))
+                            .map_err(|error| {
+                                format!("Notes could not start its preview bridge: {error}")
+                            })
+                    })
+            {
+                view.preview_worker = Some(client);
                 cx.spawn_in(window, async move |this, cx| {
                     while let Ok(event) = receiver.recv().await {
                         if this
-                            .update_in(cx, |this, window, cx| {
-                                this.apply_worker_event(event, window, cx)
-                            })
+                            .update_in(cx, |this, _window, cx| this.apply_preview_event(event, cx))
                             .is_err()
                         {
                             break;
@@ -208,7 +269,6 @@ impl NotesView {
                 })
                 .detach();
             }
-            Err(message) => view.message = Some(message.into()),
         }
 
         match NotesSearchWorker::start()
@@ -279,6 +339,25 @@ impl NotesView {
         }
     }
 
+    fn apply_preview_event(&mut self, bridged: PreviewBridgeEvent, cx: &mut Context<Self>) {
+        if matches!(&bridged.event, PreviewWorkerEvent::Stopped { .. }) {
+            let unexpected = !self.closing && !self.preview_shutdown_requested;
+            self.preview.clear();
+            self.preview_image = None;
+            self.preview_shutdown_requested = true;
+            self.preview_worker = None;
+            if unexpected {
+                self.message = Some("Notes image previews stopped unexpectedly".into());
+            }
+            cx.notify();
+            return;
+        }
+        if bridged.event.project(&mut self.preview) {
+            self.preview_image = bridged.rendered;
+            cx.notify();
+        }
+    }
+
     fn apply_worker_event(
         &mut self,
         event: WorkerEvent,
@@ -312,6 +391,24 @@ impl NotesView {
             WorkerEvent::Rejected(rejected) => Some(rejected.request_id),
             _ => None,
         };
+        let attached_image = match &event {
+            WorkerEvent::Accepted(accepted) => match accepted.result {
+                ActionResult::AttachedImage {
+                    note_id,
+                    attachment_id,
+                    ..
+                } => Some((note_id, attachment_id)),
+                _ => None,
+            },
+            _ => None,
+        };
+        if accepted_request_id
+            .or(rejected_request_id)
+            .is_some_and(|request_id| self.attachment_request_id == Some(request_id))
+            || matches!(&event, WorkerEvent::Ready(_)) && self.attachment_request_id.is_some()
+        {
+            self.attachment_request_id = None;
+        }
         if matches!(&event, WorkerEvent::DraftReview(_)) {
             self.recovery_notice_dismissed = false;
         }
@@ -330,6 +427,11 @@ impl NotesView {
             _ => None,
         };
         self.session.apply(event);
+        if let Some((note_id, attachment_id)) = attached_image {
+            if self.session.selected_note_id() == Some(note_id) {
+                self.selected_attachment = Some(attachment_id);
+            }
+        }
         if let Some(accepted) = accepted_generation {
             if self
                 .latest_local_generation
@@ -401,6 +503,101 @@ impl NotesView {
         self.body
             .update(cx, |state, cx| state.set_value(body, window, cx));
         self.applying_snapshot = false;
+        self.sync_attachment_preview(false, cx);
+    }
+
+    fn sync_attachment_preview(&mut self, force: bool, cx: &mut Context<Self>) {
+        let candidate = self.session.snapshot().and_then(|snapshot| {
+            let note = self.session.selected_note()?;
+            let selected = self
+                .selected_attachment
+                .filter(|id| note.attachments.contains(id))
+                .or_else(|| note.attachments.first().copied());
+            let attachment_id = selected?;
+            let attachment = snapshot
+                .attachments
+                .iter()
+                .find(|attachment| attachment.id == attachment_id && !attachment.deleted)?
+                .clone();
+            Some((snapshot.revision, attachment_id, attachment))
+        });
+        let Some((library_revision, attachment_id, attachment)) = candidate else {
+            self.selected_attachment = None;
+            self.preview.clear();
+            self.preview_image = None;
+            cx.notify();
+            return;
+        };
+        self.selected_attachment = Some(attachment_id);
+        let current_is_exact = match self.preview.state() {
+            PreviewState::Loading {
+                library_revision: current_revision,
+                attachment_id: current_attachment,
+                ..
+            }
+            | PreviewState::Unavailable {
+                library_revision: current_revision,
+                attachment_id: current_attachment,
+                ..
+            } => *current_revision == library_revision && *current_attachment == attachment_id,
+            PreviewState::Ready {
+                library_revision: current_revision,
+                image,
+                ..
+            } => *current_revision == library_revision && image.attachment_id() == attachment_id,
+            PreviewState::Empty => false,
+        };
+        if current_is_exact && !force {
+            return;
+        }
+        let Some(worker) = self.preview_worker.clone() else {
+            self.preview.clear();
+            self.preview_image = None;
+            cx.notify();
+            return;
+        };
+        let target = match PreviewSize::new(720, 360) {
+            Ok(target) => target,
+            Err(error) => {
+                self.preview.clear();
+                self.preview_image = None;
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        let request = match self.preview.request(library_revision, attachment, target) {
+            Ok(request) => request,
+            Err(error) => {
+                self.preview.clear();
+                self.preview_image = None;
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        self.preview_image = None;
+        if let Err(error) = worker.try_run(request) {
+            self.preview.clear();
+            self.message = Some(error.to_string().into());
+        }
+        cx.notify();
+    }
+
+    fn select_attachment_preview(&mut self, attachment_id: AttachmentId, cx: &mut Context<Self>) {
+        let belongs_to_note = self
+            .session
+            .selected_note()
+            .is_some_and(|note| note.attachments.contains(&attachment_id));
+        if !belongs_to_note {
+            return;
+        }
+        self.selected_attachment = Some(attachment_id);
+        self.sync_attachment_preview(true, cx);
+    }
+
+    fn retry_attachment_preview(&mut self, cx: &mut Context<Self>) {
+        self.sync_attachment_preview(true, cx);
     }
 
     fn dispatch_search(&mut self, cx: &mut Context<Self>) {
@@ -443,7 +640,11 @@ impl NotesView {
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.folder_dialog.is_some() || self.purge_dialog.is_some() || self.move_dialog.is_some()
+        if self.folder_dialog.is_some()
+            || self.purge_dialog.is_some()
+            || self.move_dialog.is_some()
+            || self.attachment_chooser_open
+            || self.attachment_request_id.is_some()
         {
             return;
         }
@@ -656,6 +857,8 @@ impl NotesView {
             && self.folder_dialog.is_none()
             && self.purge_dialog.is_none()
             && self.move_dialog.is_none()
+            && !self.attachment_chooser_open
+            && self.attachment_request_id.is_none()
     }
 
     fn recovery_review_is_blocking(&self) -> bool {
@@ -1040,6 +1243,87 @@ impl NotesView {
         cx.notify();
     }
 
+    fn choose_image_attachment(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        if self.latest_local_generation.is_some() {
+            self.message = Some("Wait for this note to finish saving before adding a photo".into());
+            cx.notify();
+            return;
+        }
+        if self.session.selected_note().is_none_or(|note| note.deleted) {
+            return;
+        }
+        self.attachment_chooser_open = true;
+        self.message = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let choice = rmac_portal::choose_notes_image().await;
+            let _ = this.update(cx, |this, cx| {
+                this.attachment_chooser_open = false;
+                match choice {
+                    Ok(Some(path)) => this.queue_image_attachment(path, cx),
+                    Ok(None) => cx.notify(),
+                    Err(_) => {
+                        this.message = Some("Notes could not open the Linux image chooser".into());
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn queue_image_attachment(
+        &mut self,
+        selected_path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() || self.latest_local_generation.is_some() {
+            self.message = Some(
+                "The note changed while the image chooser was open. Save it, then choose the image again."
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| !note.deleted) else {
+            self.message = Some("The selected note is no longer available".into());
+            cx.notify();
+            return;
+        };
+        let note_id = note.id;
+        let expected_revision = note.revision;
+        let modified_unix_ms = now_unix_ms()
+            .max(note.created_unix_ms)
+            .max(note.modified_unix_ms);
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let request = match ActionRequest::new(
+            request_id,
+            LibraryAction::AttachImage {
+                note_id,
+                expected_revision,
+                modified_unix_ms,
+                selected_path,
+            },
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::Apply(request), cx) {
+            self.attachment_request_id = Some(request_id);
+            self.message = None;
+            cx.notify();
+        }
+    }
+
     fn toggle_pin(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -1144,9 +1428,22 @@ impl NotesView {
             cx.notify();
             return;
         }
+        if self.attachment_chooser_open {
+            self.message = Some("Finish or cancel the image chooser before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.attachment_request_id.is_some() {
+            self.message = Some("Wait for the selected image to finish importing".into());
+            cx.notify();
+            return;
+        }
         if matches!(self.session.phase(), SessionPhase::Pending { .. }) {
             self.message = Some("Retry or discard the pending change before closing Notes".into());
             cx.notify();
+            return;
+        }
+        if !self.request_preview_shutdown(cx) {
             return;
         }
         if !self.request_search_shutdown(cx) {
@@ -1165,6 +1462,32 @@ impl NotesView {
         }
         self.closing = true;
         window.remove_window();
+    }
+
+    fn request_preview_shutdown(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.preview_shutdown_requested {
+            return true;
+        }
+        self.preview.clear();
+        self.preview_image = None;
+        let result = self
+            .preview_worker
+            .as_ref()
+            .ok_or(PreviewWorkerSendError::Closed)
+            .and_then(NotesPreviewWorkerClient::try_shutdown);
+        match result {
+            Ok(()) | Err(PreviewWorkerSendError::Closed) => {
+                self.preview_shutdown_requested = true;
+                true
+            }
+            Err(error) => {
+                self.message = Some(
+                    format!("Notes image preview is still finishing: {error}. Try again.").into(),
+                );
+                cx.notify();
+                false
+            }
+        }
     }
 
     fn request_search_shutdown(&mut self, cx: &mut Context<Self>) -> bool {
@@ -1196,6 +1519,8 @@ impl NotesView {
         let selected = self.session.selected_note();
         let deleted = selected.is_some_and(|note| note.deleted);
         let pinned = selected.is_some_and(|note| note.pinned);
+        let note_save_pending = self.latest_local_generation.is_some();
+        let attachment_busy = self.attachment_chooser_open || self.attachment_request_id.is_some();
         let sort_order = self
             .session
             .snapshot()
@@ -1278,6 +1603,24 @@ impl NotesView {
                                     .cleanable(true)
                                     .small()
                                     .disabled(self.session.snapshot().is_none()),
+                            ),
+                    )
+                    .child(
+                        Button::new("add-image", "")
+                            .icon(IconName::GalleryVerticalEnd)
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .busy(attachment_busy)
+                            .disabled(!ready || deleted || selected.is_none() || note_save_pending)
+                            .tooltip(if attachment_busy {
+                                "Adding Photo…"
+                            } else if note_save_pending {
+                                "Saving Note…"
+                            } else {
+                                "Add Photo…"
+                            })
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.choose_image_attachment(cx)),
                             ),
                     )
                     .child(
@@ -1643,6 +1986,109 @@ impl NotesView {
             )
     }
 
+    fn render_attachments(&self, note: &NoteRecord, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let snapshot = self.session.snapshot()?;
+        let attachments = note
+            .attachments
+            .iter()
+            .filter_map(|attachment_id| {
+                snapshot
+                    .attachments
+                    .iter()
+                    .find(|attachment| attachment.id == *attachment_id && !attachment.deleted)
+            })
+            .collect::<Vec<_>>();
+        if attachments.is_empty() {
+            return None;
+        }
+        let selected = self.selected_attachment;
+        let preview = match self.preview.state() {
+            PreviewState::Loading { attachment_id, .. } if selected == Some(*attachment_id) => {
+                centered_attachment_state("Loading preview…", None, cx)
+            }
+            PreviewState::Ready { image, .. }
+                if selected == Some(image.attachment_id()) && self.preview_image.is_some() =>
+            {
+                div()
+                    .size_full()
+                    .rounded(px(8.0))
+                    .overflow_hidden()
+                    .bg(mac::control_fill())
+                    .child(
+                        img(self
+                            .preview_image
+                            .as_ref()
+                            .expect("preview image checked")
+                            .clone())
+                        .size_full()
+                        .object_fit(ObjectFit::Contain),
+                    )
+                    .into_any_element()
+            }
+            PreviewState::Ready { image, .. } if selected == Some(image.attachment_id()) => {
+                centered_attachment_state("Preview unavailable", Some("Try Again"), cx)
+            }
+            PreviewState::Unavailable { attachment_id, .. } if selected == Some(*attachment_id) => {
+                centered_attachment_state("Preview unavailable", Some("Try Again"), cx)
+            }
+            _ if self.preview_worker.is_none() => {
+                centered_attachment_state("Preview unavailable", None, cx)
+            }
+            _ => centered_attachment_state("Loading preview…", None, cx),
+        };
+        let rows = attachments.into_iter().map(|attachment| {
+            let attachment_id = attachment.id;
+            div()
+                .v_flex()
+                .gap_0p5()
+                .child(
+                    Button::new(
+                        ("attachment-preview", attachment_id.get()),
+                        attachment.display_name.clone(),
+                    )
+                    .selected(selected == Some(attachment_id))
+                    .xsmall()
+                    .w_full()
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.select_attachment_preview(attachment_id, cx)
+                    })),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .text_size(rmac_ui::text_px(10.0))
+                        .text_color(mac::text_tertiary())
+                        .child(format_storage_bytes(attachment.byte_len)),
+                )
+        });
+        Some(
+            div()
+                .mx(px(44.0))
+                .mb_2()
+                .h(px(174.0))
+                .flex_none()
+                .flex()
+                .gap_3()
+                .p_2()
+                .rounded(px(10.0))
+                .border_1()
+                .border_color(mac::separator())
+                .bg(mac::window())
+                .child(div().w(px(260.0)).h_full().child(preview))
+                .child(
+                    div()
+                        .id("attachment-list")
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .overflow_y_scroll()
+                        .v_flex()
+                        .gap_1()
+                        .children(rows),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn render_editor(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(note) = self.session.selected_note() else {
             return centered_state("No Note Selected", "Choose a note or create a new one.");
@@ -1650,6 +2096,7 @@ impl NotesView {
         let editable = self.is_interactive_ready() && !note.deleted;
         let words = self.body.read(cx).value().split_whitespace().count();
         let characters = self.body.read(cx).value().chars().count();
+        let attachments = self.render_attachments(note, cx);
         div()
             .size_full()
             .v_flex()
@@ -1701,19 +2148,8 @@ impl NotesView {
                             .disabled(!editable),
                     ),
             )
-            .when(!note.attachments.is_empty(), |element| {
-                element.child(
-                    div()
-                        .px(px(44.0))
-                        .pb_1()
-                        .text_size(rmac_ui::text_px(11.0))
-                        .text_color(mac::text_tertiary())
-                        .child(format!(
-                            "{} attachment{}",
-                            note.attachments.len(),
-                            if note.attachments.len() == 1 { "" } else { "s" }
-                        )),
-                )
+            .when_some(attachments, |element, attachments| {
+                element.child(attachments)
             })
             .child(
                 div()
@@ -2257,6 +2693,20 @@ impl NotesView {
 impl Drop for NotesView {
     fn drop(&mut self) {
         if !self.closing {
+            self.preview.clear();
+            if let Some(preview_worker) = &self.preview_worker {
+                if matches!(
+                    preview_worker.try_shutdown(),
+                    Err(PreviewWorkerSendError::Full)
+                ) {
+                    let preview_worker = preview_worker.clone();
+                    let _ = thread::Builder::new()
+                        .name("rmac-notes-preview-close".into())
+                        .spawn(move || {
+                            let _ = preview_worker.shutdown_blocking();
+                        });
+                }
+            }
             self.search.cancel();
             if let Some(search_worker) = &self.search_worker {
                 if matches!(
@@ -2401,6 +2851,48 @@ fn bridge_search_events(
     Ok(receiver)
 }
 
+fn bridge_preview_events(
+    events: NotesPreviewWorkerEvents,
+) -> io::Result<async_channel::Receiver<PreviewBridgeEvent>> {
+    let (sender, receiver) = async_channel::bounded(PREVIEW_EVENT_CAPACITY);
+    thread::Builder::new()
+        .name("rmac-notes-ui-preview-events".into())
+        .spawn(move || {
+            while let Ok(event) = events.recv() {
+                let rendered = match &event {
+                    PreviewWorkerEvent::Ready { image, .. } => render_preview_image(image),
+                    _ => None,
+                };
+                if sender
+                    .send_blocking(PreviewBridgeEvent { event, rendered })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })?;
+    Ok(receiver)
+}
+
+fn render_preview_image(preview: &DecodedImagePreview) -> Option<Arc<RenderImage>> {
+    let expected = u64::from(preview.width())
+        .checked_mul(u64::from(preview.height()))?
+        .checked_mul(4)?;
+    if expected != preview.rgba().len() as u64 {
+        return None;
+    }
+    let mut bgra = Vec::with_capacity(preview.rgba().len());
+    let mut pixels = preview.rgba().chunks_exact(4);
+    for pixel in &mut pixels {
+        bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
+    }
+    if !pixels.remainder().is_empty() {
+        return None;
+    }
+    let buffer = image::RgbaImage::from_raw(preview.width(), preview.height(), bgra)?;
+    Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+}
+
 fn folder_row(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
@@ -2442,6 +2934,39 @@ fn folder_row(
                 .child(count.to_string()),
         )
         .on_click(on_click)
+}
+
+fn centered_attachment_state(
+    message: &'static str,
+    retry_label: Option<&'static str>,
+    cx: &mut Context<NotesView>,
+) -> AnyElement {
+    div()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(8.0))
+        .bg(mac::control_fill())
+        .child(
+            div()
+                .v_flex()
+                .items_center()
+                .gap_2()
+                .text_size(rmac_ui::text_px(12.0))
+                .text_color(mac::text_secondary())
+                .child(message)
+                .when_some(retry_label, |element, label| {
+                    element.child(
+                        Button::new("retry-attachment-preview", label)
+                            .xsmall()
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.retry_attachment_preview(cx)),
+                            ),
+                    )
+                }),
+        )
+        .into_any_element()
 }
 
 fn centered_state(title: impl Into<SharedString>, detail: impl Into<SharedString>) -> AnyElement {

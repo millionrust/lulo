@@ -367,6 +367,95 @@ pub struct NotesPreviewWorker {
     thread: Option<JoinHandle<()>>,
 }
 
+/// Cloneable, nonblocking command endpoint retained by the UI thread.
+#[derive(Clone)]
+pub struct NotesPreviewWorkerClient {
+    commands: SyncSender<PreviewWorkerCommand>,
+    active: Arc<Mutex<Option<PreviewCancellation>>>,
+}
+
+impl NotesPreviewWorkerClient {
+    pub fn try_run(&self, request: PreviewRequest) -> Result<(), PreviewWorkerSendError> {
+        try_send_preview(&self.commands, request)
+    }
+
+    pub fn try_shutdown(&self) -> Result<(), PreviewWorkerSendError> {
+        cancel_active(&self.active);
+        self.commands
+            .try_send(PreviewWorkerCommand::Shutdown)
+            .map_err(|error| match error {
+                TrySendError::Full(_) => PreviewWorkerSendError::Full,
+                TrySendError::Disconnected(_) => PreviewWorkerSendError::Closed,
+            })
+    }
+
+    /// Requests shutdown after bounded queue space becomes available. This is
+    /// intended for a background teardown helper, not an interactive UI path.
+    pub fn shutdown_blocking(&self) -> Result<(), PreviewWorkerSendError> {
+        cancel_active(&self.active);
+        self.commands
+            .send(PreviewWorkerCommand::Shutdown)
+            .map_err(|_| PreviewWorkerSendError::Closed)
+    }
+}
+
+impl fmt::Debug for NotesPreviewWorkerClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("NotesPreviewWorkerClient").finish()
+    }
+}
+
+/// Blocking event endpoint intended to live on one background bridge.
+///
+/// Dropping it disconnects delivery, cancels active work, requests shutdown,
+/// and joins the preview thread even when a cloned client remains.
+pub struct NotesPreviewWorkerEvents {
+    events: Option<Receiver<PreviewWorkerEvent>>,
+    shutdown: Option<SyncSender<PreviewWorkerCommand>>,
+    active: Arc<Mutex<Option<PreviewCancellation>>>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl NotesPreviewWorkerEvents {
+    pub fn recv(&self) -> Result<PreviewWorkerEvent, RecvError> {
+        self.events.as_ref().ok_or(RecvError)?.recv()
+    }
+
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<PreviewWorkerEvent, RecvTimeoutError> {
+        self.events
+            .as_ref()
+            .ok_or(RecvTimeoutError::Disconnected)?
+            .recv_timeout(timeout)
+    }
+
+    pub fn try_recv(&self) -> Result<PreviewWorkerEvent, TryRecvError> {
+        self.events
+            .as_ref()
+            .ok_or(TryRecvError::Disconnected)?
+            .try_recv()
+    }
+}
+
+impl fmt::Debug for NotesPreviewWorkerEvents {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("NotesPreviewWorkerEvents").finish()
+    }
+}
+
+impl Drop for NotesPreviewWorkerEvents {
+    fn drop(&mut self) {
+        self.events.take();
+        cancel_active(&self.active);
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.try_send(PreviewWorkerCommand::Shutdown);
+            drop(shutdown);
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 impl NotesPreviewWorker {
     pub fn start(root: PathBuf) -> Result<Self, PreviewWorkerStartError> {
         if !root.is_absolute()
@@ -393,14 +482,12 @@ impl NotesPreviewWorker {
     }
 
     pub fn try_run(&self, request: PreviewRequest) -> Result<(), PreviewWorkerSendError> {
-        self.commands
-            .as_ref()
-            .ok_or(PreviewWorkerSendError::Closed)?
-            .try_send(PreviewWorkerCommand::Run(request))
-            .map_err(|error| match error {
-                TrySendError::Full(_) => PreviewWorkerSendError::Full,
-                TrySendError::Disconnected(_) => PreviewWorkerSendError::Closed,
-            })
+        try_send_preview(
+            self.commands
+                .as_ref()
+                .ok_or(PreviewWorkerSendError::Closed)?,
+            request,
+        )
     }
 
     pub fn recv(&self) -> Result<PreviewWorkerEvent, RecvError> {
@@ -419,6 +506,33 @@ impl NotesPreviewWorker {
             .as_ref()
             .ok_or(TryRecvError::Disconnected)?
             .try_recv()
+    }
+
+    pub fn into_parts(mut self) -> (NotesPreviewWorkerClient, NotesPreviewWorkerEvents) {
+        let commands = self
+            .commands
+            .take()
+            .expect("a live Notes preview worker owns its command endpoint");
+        let events = self
+            .events
+            .take()
+            .expect("a live Notes preview worker owns its event endpoint");
+        let thread = self
+            .thread
+            .take()
+            .expect("a live Notes preview worker owns its thread");
+        (
+            NotesPreviewWorkerClient {
+                commands: commands.clone(),
+                active: self.active.clone(),
+            },
+            NotesPreviewWorkerEvents {
+                events: Some(events),
+                shutdown: Some(commands),
+                active: self.active.clone(),
+                thread: Some(thread),
+            },
+        )
     }
 }
 
@@ -446,6 +560,28 @@ impl Drop for NotesPreviewWorker {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+}
+
+fn try_send_preview(
+    commands: &SyncSender<PreviewWorkerCommand>,
+    request: PreviewRequest,
+) -> Result<(), PreviewWorkerSendError> {
+    commands
+        .try_send(PreviewWorkerCommand::Run(request))
+        .map_err(|error| match error {
+            TrySendError::Full(_) => PreviewWorkerSendError::Full,
+            TrySendError::Disconnected(_) => PreviewWorkerSendError::Closed,
+        })
+}
+
+fn cancel_active(active: &Mutex<Option<PreviewCancellation>>) {
+    if let Some(cancellation) = active
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
+    {
+        cancellation.cancel();
     }
 }
 
@@ -667,5 +803,35 @@ mod tests {
             NotesPreviewSession::new().request(1, deleted, PreviewSize::new(10, 10).unwrap()),
             Err(PreviewRequestError::InvalidRequest)
         ));
+    }
+
+    #[test]
+    fn split_endpoints_deliver_events_and_own_shutdown() {
+        let root = root("split");
+        let bytes = png();
+        install(&root, &bytes);
+        let worker = NotesPreviewWorker::start(root.clone()).unwrap();
+        let (client, events) = worker.into_parts();
+        let mut session = NotesPreviewSession::new();
+        let request = session
+            .request(3, attachment(&bytes), PreviewSize::new(64, 64).unwrap())
+            .unwrap();
+        client.try_run(request).unwrap();
+        assert!(events
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .project(&mut session));
+        assert!(events
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .project(&mut session));
+        client.try_shutdown().unwrap();
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            PreviewWorkerEvent::Stopped { jobs_started: 1 }
+        ));
+        drop(events);
+        assert_eq!(client.try_shutdown(), Err(PreviewWorkerSendError::Closed));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

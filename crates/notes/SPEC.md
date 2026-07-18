@@ -295,8 +295,25 @@ non-upscaled RGBA thumbnail under 4,096-axis/16-million-pixel output limits.
 A separate four-command/two-event preview worker keeps decode off both GPUI and
 the repository writer; generation, accepted-library revision, and attachment
 identity gate Started/Ready/Unavailable projection, a newer request cancels the
-old one, and diagnostics expose no names, paths, hashes, or pixels. Portal
-dispatch, the live Notes view, and preview rendering/accessibility still remain.
+old one, and diagnostics expose no names, paths, hashes, or pixels. Split
+command/event endpoints now let the UI issue nonblocking requests while one
+background bridge owns blocking delivery and deterministic cancellation/join.
+That bridge performs the bounded RGBA-to-GPUI pixel conversion before the event
+returns to the application thread.
+
+The live toolbar now opens the XDG FileChooser with PNG/JPEG/WebP guidance;
+cancellation is ordinary, non-local results fail, and the storage worker still
+content-recognizes and fully decodes the selected source rather than trusting
+the filter or extension. The chooser and accepted import request temporarily
+block editing so a queued edit cannot make the captured note revision stale.
+Only the current selected live note and exact accepted revision enter the
+redacted image action. After accepted readback, a stable-ID attachment list
+selects the new image and requests its exact accepted-library preview. Loading,
+ready, unavailable, retry, worker-unavailable, filename, and checked-byte-size
+states render without reading managed files on GPUI. Re-selection and every
+accepted library revision cancel or reject stale preview generations. Window
+shutdown cancels preview work before search and repository shutdown. Semantic
+attachment accessibility and Linux portal/rendering evidence still remain.
 
 Removing an attachment reference is now a separate ordinary metadata
 transaction: it requires the exact live-note and attachment revisions, verifies
@@ -500,8 +517,10 @@ the first spelling while deduplicating case-insensitively. Tag changes become
 searchable only after accepted readback. A Move Note sheet binds the selected
 stable note ID and exact accepted revision, lists All Notes plus every live
 stable folder, marks the current destination, treats choosing it as a no-op, and
-publishes a changed location only after accepted readback. The old synchronous path scanner,
-direct note writes, path identity, and permanent
+publishes a changed location only after accepted readback. Add Photo uses the
+Linux portal and accepted attachment transaction; the editor renders a bounded
+stable-ID list and cancellable managed preview with loading/failure/retry
+states. The old synchronous path scanner, direct note writes, path identity, and permanent
 1.5-second save loop have been removed from the running app. Window close is
 refused when a Pending decision exists or when the bounded command queue cannot
 accept shutdown; an accepted shutdown flushes the complete scheduled edit
@@ -575,9 +594,9 @@ cancels the session and orders search-worker shutdown before dropping the view.
 Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
-Known live-app gaps now include formatted Markdown preview, image attach/preview/
-reference-removal and orphan-collection UI, XDG portal
-text/bundle import and export review/progress, rich search-match highlighting,
+Known live-app gaps now include formatted Markdown preview, reviewed attachment
+reference-removal and orphan-collection UI, XDG portal text/bundle import and
+export review/progress, rich search-match highlighting,
 richer conflict-resolution choices, semantic accessibility, and Linux runtime/
 visual evidence. The accepted store
 remains local-only and makes no cloud-sync claim.

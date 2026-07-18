@@ -127,6 +127,58 @@ pub async fn choose_wallpaper_file() -> Result<Option<PathBuf>, Error> {
     }
 }
 
+/// Ask the desktop portal for one local PNG, JPEG, or WebP image to attach to
+/// a note.
+///
+/// The filter is chooser guidance only. Notes must content-recognize, fully
+/// decode, bound, and copy the selected source through its storage authority.
+pub async fn choose_notes_image() -> Result<Option<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let request = OpenFileRequest::default()
+            .title("Add Photo to Note")
+            .accept_label("Add")
+            .modal(true)
+            .filter(
+                FileFilter::new("Images")
+                    .mimetype("image/png")
+                    .mimetype("image/jpeg")
+                    .mimetype("image/webp")
+                    .glob("*.png")
+                    .glob("*.jpg")
+                    .glob("*.jpeg")
+                    .glob("*.webp"),
+            )
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(None),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        let Some(uri) = response.uris().first() else {
+            return Ok(None);
+        };
+        uri.to_file_path().map(Some).map_err(|()| Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the portal returned a non-local image file".into(),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the Notes image chooser is available in the supported Linux session".into(),
+        })
+    }
+}
+
 /// Ask the desktop portal for one local VPN configuration file.
 ///
 /// VPN plugins own their input formats, so this chooser deliberately uses a

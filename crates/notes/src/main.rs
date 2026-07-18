@@ -69,6 +69,7 @@ struct NotesView {
     recovery_decision: Option<(NoteId, RecoveryDecision)>,
     recovery_copy_pending: Option<(u64, NoteId)>,
     folder_dialog: Option<FolderDialog>,
+    purge_dialog: Option<PurgeDialog>,
     search_shutdown_requested: bool,
     closing: bool,
 }
@@ -83,6 +84,22 @@ enum RecoveryDecision {
 enum FolderDialog {
     Rename(FolderId),
     Delete(FolderId),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PurgeDialog {
+    Note {
+        note_id: NoteId,
+        note_revision: u64,
+        attachment_count: usize,
+        attachment_bytes: u64,
+    },
+    EmptyTrash {
+        library_revision: u64,
+        note_count: usize,
+        attachment_count: usize,
+        attachment_bytes: u64,
+    },
 }
 
 impl NotesView {
@@ -152,6 +169,7 @@ impl NotesView {
             recovery_decision: None,
             recovery_copy_pending: None,
             folder_dialog: None,
+            purge_dialog: None,
             search_shutdown_requested: false,
             closing: false,
         };
@@ -416,7 +434,7 @@ impl NotesView {
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.folder_dialog.is_some() {
+        if self.folder_dialog.is_some() || self.purge_dialog.is_some() {
             return;
         }
         self.search_query
@@ -450,6 +468,9 @@ impl NotesView {
         let Some(note) = self.session.selected_note() else {
             return;
         };
+        if note.deleted {
+            return;
+        }
         let note_id = note.id;
         let expected_revision = note.revision;
         let created_unix_ms = note.created_unix_ms;
@@ -623,6 +644,7 @@ impl NotesView {
         matches!(self.session.phase(), SessionPhase::Ready)
             && !self.recovery_review_is_blocking()
             && self.folder_dialog.is_none()
+            && self.purge_dialog.is_none()
     }
 
     fn recovery_review_is_blocking(&self) -> bool {
@@ -864,6 +886,110 @@ impl NotesView {
         self.send_action(action, cx);
     }
 
+    fn begin_permanent_note_delete(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| note.deleted) else {
+            return;
+        };
+        let note_id = note.id;
+        let note_revision = note.revision;
+        let Some(snapshot) = self.session.snapshot() else {
+            return;
+        };
+        let mut attachment_count = 0_usize;
+        let mut attachment_bytes = 0_u64;
+        for attachment in snapshot
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.note_id == note_id)
+        {
+            attachment_count = attachment_count.saturating_add(1);
+            let Some(total) = attachment_bytes.checked_add(attachment.byte_len) else {
+                self.message = Some("The attachment deletion total is too large to review".into());
+                cx.notify();
+                return;
+            };
+            attachment_bytes = total;
+        }
+        self.purge_dialog = Some(PurgeDialog::Note {
+            note_id,
+            note_revision,
+            attachment_count,
+            attachment_bytes,
+        });
+        cx.notify();
+    }
+
+    fn begin_empty_trash(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(snapshot) = self.session.snapshot() else {
+            return;
+        };
+        let note_ids = snapshot
+            .notes
+            .iter()
+            .filter(|note| note.deleted)
+            .map(|note| note.id)
+            .collect::<BTreeSet<_>>();
+        if note_ids.is_empty() {
+            return;
+        }
+        let mut attachment_count = 0_usize;
+        let mut attachment_bytes = 0_u64;
+        for attachment in snapshot
+            .attachments
+            .iter()
+            .filter(|attachment| note_ids.contains(&attachment.note_id))
+        {
+            attachment_count = attachment_count.saturating_add(1);
+            let Some(total) = attachment_bytes.checked_add(attachment.byte_len) else {
+                self.message = Some("The Trash deletion total is too large to review".into());
+                cx.notify();
+                return;
+            };
+            attachment_bytes = total;
+        }
+        self.purge_dialog = Some(PurgeDialog::EmptyTrash {
+            library_revision: snapshot.revision,
+            note_count: note_ids.len(),
+            attachment_count,
+            attachment_bytes,
+        });
+        cx.notify();
+    }
+
+    fn confirm_purge(&mut self, cx: &mut Context<Self>) {
+        let Some(dialog) = self.purge_dialog.take() else {
+            return;
+        };
+        let action = match dialog {
+            PurgeDialog::Note {
+                note_id,
+                note_revision,
+                ..
+            } => LibraryAction::DeleteNotePermanently {
+                note_id,
+                expected_revision: note_revision,
+            },
+            PurgeDialog::EmptyTrash {
+                library_revision, ..
+            } => LibraryAction::EmptyTrash {
+                expected_library_revision: library_revision,
+            },
+        };
+        self.send_action(action, cx);
+        cx.notify();
+    }
+
+    fn cancel_purge(&mut self, cx: &mut Context<Self>) {
+        self.purge_dialog = None;
+        cx.notify();
+    }
+
     fn toggle_pin(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -961,7 +1087,9 @@ impl NotesView {
     }
 
     fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.folder_dialog.take().is_some() {
+        let dismissed_folder_dialog = self.folder_dialog.take().is_some();
+        let dismissed_purge_dialog = self.purge_dialog.take().is_some();
+        if dismissed_folder_dialog || dismissed_purge_dialog {
             cx.notify();
             return;
         }
@@ -1127,7 +1255,20 @@ impl NotesView {
                                 "Move to Trash"
                             })
                             .on_click(cx.listener(|this, _, _, cx| this.trash_or_restore(cx))),
-                    ),
+                    )
+                    .when(deleted, |element| {
+                        element.child(
+                            Button::new("delete-permanently", "")
+                                .icon(IconName::Delete)
+                                .destructive()
+                                .with_size(Size::Medium)
+                                .disabled(!ready)
+                                .tooltip("Delete Note Permanently…")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.begin_permanent_note_delete(cx)
+                                })),
+                        )
+                    }),
             );
         rmac_ui::toolbar(row)
     }
@@ -1235,6 +1376,8 @@ impl NotesView {
 
     fn render_note_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let search_active = !self.search_query.read(cx).value().trim().is_empty();
+        let in_trash =
+            self.session.folder_selection() == rmac_notes_runtime::FolderSelection::Trash;
         let selected = if search_active {
             self.search.selected()
         } else {
@@ -1384,24 +1527,38 @@ impl NotesView {
                     .h(px(42.0))
                     .flex()
                     .items_center()
+                    .justify_between()
                     .px_4()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .font_weight(mac::SEMIBOLD)
-                    .text_color(mac::text_secondary())
-                    .child(format!(
-                        "{note_count} {}",
-                        if search_active {
-                            if note_count == 1 {
-                                "Result"
-                            } else {
-                                "Results"
-                            }
-                        } else if note_count == 1 {
-                            "Note"
-                        } else {
-                            "Notes"
-                        }
-                    )),
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .text_color(mac::text_secondary())
+                            .child(format!(
+                                "{note_count} {}",
+                                if search_active {
+                                    if note_count == 1 {
+                                        "Result"
+                                    } else {
+                                        "Results"
+                                    }
+                                } else if note_count == 1 {
+                                    "Note"
+                                } else {
+                                    "Notes"
+                                }
+                            )),
+                    )
+                    .when(!search_active && in_trash && note_count != 0, |element| {
+                        element.child(
+                            Button::new("empty-trash", "Empty")
+                                .destructive()
+                                .xsmall()
+                                .disabled(!self.is_interactive_ready())
+                                .tooltip("Empty Recently Deleted…")
+                                .on_click(cx.listener(|this, _, _, cx| this.begin_empty_trash(cx))),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -1430,7 +1587,7 @@ impl NotesView {
         let Some(note) = self.session.selected_note() else {
             return centered_state("No Note Selected", "Choose a note or create a new one.");
         };
-        let editable = self.is_interactive_ready();
+        let editable = self.is_interactive_ready() && !note.deleted;
         let words = self.body.read(cx).value().split_whitespace().count();
         let characters = self.body.read(cx).value().chars().count();
         div()
@@ -1868,6 +2025,65 @@ impl NotesView {
         }
     }
 
+    fn render_purge_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal};
+
+        let dialog = self.purge_dialog?;
+        let (title, message, confirm_label) = match dialog {
+            PurgeDialog::Note {
+                note_id,
+                attachment_count,
+                attachment_bytes,
+                ..
+            } => {
+                let note_title = self
+                    .session
+                    .snapshot()
+                    .and_then(|snapshot| snapshot.notes.iter().find(|note| note.id == note_id))
+                    .map_or_else(|| "this note".to_string(), |note| display_title(&note.title).to_string());
+                (
+                    "Delete this note permanently?",
+                    format!(
+                        "“{note_title}” and {attachment_count} {} ({}) will be permanently deleted. This cannot be undone. If attachment cleanup needs attention, Notes will pause further edits.",
+                        if attachment_count == 1 { "attachment" } else { "attachments" },
+                        format_storage_bytes(attachment_bytes)
+                    ),
+                    "Delete Note",
+                )
+            }
+            PurgeDialog::EmptyTrash {
+                note_count,
+                attachment_count,
+                attachment_bytes,
+                ..
+            } => (
+                "Permanently delete all notes?",
+                format!(
+                    "{note_count} {} and {attachment_count} {} ({}) will be permanently deleted. This cannot be undone. If attachment cleanup needs attention, Notes will pause further edits.",
+                    if note_count == 1 { "note" } else { "notes" },
+                    if attachment_count == 1 { "attachment" } else { "attachments" },
+                    format_storage_bytes(attachment_bytes)
+                ),
+                "Empty Trash",
+            ),
+        };
+        Some(
+            rmac_ui::alert(
+                title,
+                message,
+                vec![
+                    rmac_ui::dialog_button("cancel-purge", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_purge(cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("confirm-purge", confirm_label, Destructive)
+                        .on_click(cx.listener(|this, _, _, cx| this.confirm_purge(cx)))
+                        .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
+    }
+
     fn render_status_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (message, actions) = match self.session.phase() {
             SessionPhase::Pending { reason, .. } => (
@@ -1988,6 +2204,7 @@ impl Render for NotesView {
                 .into_any_element(),
         };
         let folder_dialog = self.render_folder_dialog(cx);
+        let purge_dialog = self.render_purge_dialog(cx);
 
         div()
             .track_focus(&self.focus)
@@ -2022,6 +2239,7 @@ impl Render for NotesView {
             .text_color(mac::text())
             .child(content)
             .when_some(folder_dialog, |element, dialog| element.child(dialog))
+            .when_some(purge_dialog, |element, dialog| element.child(dialog))
     }
 }
 
@@ -2242,6 +2460,22 @@ fn tag_pill(tag: String) -> impl IntoElement {
         .text_size(rmac_ui::text_px(10.0))
         .text_color(mac::text_secondary())
         .child(format!("#{tag}"))
+}
+
+fn format_storage_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    let bytes_f64 = bytes as f64;
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes_f64 < MIB {
+        format!("{:.1} KiB", bytes_f64 / KIB)
+    } else if bytes_f64 < GIB {
+        format!("{:.1} MiB", bytes_f64 / MIB)
+    } else {
+        format!("{:.1} GiB", bytes_f64 / GIB)
+    }
 }
 
 fn date_label(unix_ms: u64) -> SharedString {

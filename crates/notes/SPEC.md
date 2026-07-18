@@ -252,9 +252,14 @@ and carries `purge_cleanup_pending` on the accepted commit. Startup notices or
 an accepted purge with unfinished cleanup project to a distinct Maintenance
 session phase, so the view cannot present ordinary Ready state or permit later
 writes silently. Pending metadata commits keep the purge plan through Retry,
-and stale/live-note/empty/mixed requests remain typed rejections. The GPUI
-confirmation sheets, destructive-action wiring, and Linux failure evidence are
-still absent, so the running prototype does not yet expose these operations.
+and stale/live-note/empty/mixed requests remain typed rejections. The live Trash
+view now exposes a separate destructive action for the selected deleted note
+and an Empty control for all deleted notes. Each modal binds the exact reviewed
+note or library revision, counts every owned live/tombstoned attachment, checks
+the byte total, states that deletion cannot be undone, and explains that
+unfinished attachment cleanup pauses editing in Maintenance. Restore remains a
+separate non-destructive action. Linux interruption/cleanup evidence is still
+absent, so the full acceptance gate remains open.
 
 The domain layer now also admits an image attachment only through an exclusive
 revision-checked import transaction. It validates the live note, display name,
@@ -568,7 +573,7 @@ Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
 Known live-app gaps now include formatted Markdown preview, image attach/preview/
-reference-removal UI, reviewed permanent note/attachment deletion, XDG portal
+reference-removal and orphan-collection UI, XDG portal
 text/bundle import and export review/progress, rich search-match highlighting,
 richer conflict-resolution choices, semantic accessibility, and Linux runtime/
 visual evidence. The accepted store

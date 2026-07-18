@@ -10,7 +10,6 @@ pub(crate) enum Operation {
     CreateRecoveryDirectory,
     LoadDocument,
     LoadRecovery,
-    MigrateRecovery,
     RemoveRecovery,
     ReadbackDocument,
     ResolveRecoveryPath,
@@ -25,7 +24,6 @@ impl fmt::Display for Operation {
             Self::CreateRecoveryDirectory => "create recovery storage",
             Self::LoadDocument => "open document",
             Self::LoadRecovery => "load recovery data",
-            Self::MigrateRecovery => "migrate recovery data",
             Self::RemoveRecovery => "remove recovery data",
             Self::ReadbackDocument => "read back the saved document",
             Self::ResolveRecoveryPath => "resolve the recovery path",
@@ -55,6 +53,7 @@ impl fmt::Display for SaveDocumentError {
 
 impl std::error::Error for SaveDocumentError {}
 
+#[cfg(test)]
 pub(crate) fn read(
     storage: &impl Storage,
     operation: Operation,
@@ -161,7 +160,9 @@ pub(crate) fn save_recovery(
     storage
         .create_dir_all(parent)
         .map_err(|error| Failure::from_io(Operation::CreateRecoveryDirectory, parent, error))?;
-    write(storage, operation, path, contents)
+    storage
+        .write_atomic_private(path, contents.as_ref())
+        .map_err(|error| Failure::from_io(operation, path, error))
 }
 
 pub(crate) fn remove_recovery(storage: &impl Storage, path: &Path) -> Result<(), Failure> {
@@ -172,110 +173,95 @@ pub(crate) fn remove_recovery(storage: &impl Storage, path: &Path) -> Result<(),
     }
 }
 
-pub(crate) struct LoadedRecovery {
-    pub(crate) content: Option<String>,
-    pub(crate) legacy_path: Option<PathBuf>,
+pub(crate) struct LegacyDraft {
+    pub(crate) content: String,
+    pub(crate) paths: Vec<PathBuf>,
+}
+
+pub(crate) struct LoadedLegacyDrafts {
+    pub(crate) drafts: Vec<LegacyDraft>,
     pub(crate) warning: Option<Failure>,
 }
 
-pub(crate) fn load_migrating_recovery(
+/// Load every distinct legacy draft without mutating either source. A caller
+/// can then create and verify a versioned record before removing the exact raw
+/// paths represented by that record.
+pub(crate) fn load_legacy_recovery_drafts(
     storage: &impl Storage,
     primary: &Path,
     legacy: &Path,
-) -> LoadedRecovery {
-    match load_recovery(storage, primary) {
-        Ok(Some(primary_content)) => match load_recovery(storage, legacy) {
-            Ok(Some(legacy_content)) if legacy_content == primary_content => {
-                match remove_recovery(storage, legacy) {
-                    Ok(()) => LoadedRecovery {
-                        content: Some(primary_content),
-                        legacy_path: None,
-                        warning: None,
-                    },
-                    Err(failure) => LoadedRecovery {
-                        content: Some(primary_content),
-                        legacy_path: Some(legacy.to_path_buf()),
-                        warning: Some(failure),
-                    },
-                }
-            }
-            Ok(Some(_)) => LoadedRecovery {
-                content: Some(primary_content),
-                legacy_path: Some(legacy.to_path_buf()),
-                warning: Some(Failure::message(
-                    Operation::LoadRecovery,
-                    legacy,
-                    "a different legacy draft was preserved; saving or discarding clears both",
-                )),
-            },
-            Ok(None) => LoadedRecovery {
-                content: Some(primary_content),
-                legacy_path: None,
-                warning: None,
-            },
-            Err(failure) => LoadedRecovery {
-                content: Some(primary_content),
-                legacy_path: Some(legacy.to_path_buf()),
-                warning: Some(failure),
-            },
-        },
-        Ok(None) => match load_recovery(storage, legacy) {
+) -> LoadedLegacyDrafts {
+    let mut loaded = LoadedLegacyDrafts {
+        drafts: Vec::new(),
+        warning: None,
+    };
+    for path in [primary, legacy] {
+        if loaded
+            .drafts
+            .iter()
+            .flat_map(|draft| &draft.paths)
+            .any(|known| known == path)
+        {
+            continue;
+        }
+        match load_recovery(storage, path) {
             Ok(Some(content)) => {
-                match save_recovery(storage, Operation::MigrateRecovery, primary, &content) {
-                    Ok(()) => match remove_recovery(storage, legacy) {
-                        Ok(()) => LoadedRecovery {
-                            content: Some(content),
-                            legacy_path: None,
-                            warning: None,
-                        },
-                        Err(failure) => LoadedRecovery {
-                            content: Some(content),
-                            legacy_path: Some(legacy.to_path_buf()),
-                            warning: Some(failure),
-                        },
-                    },
-                    Err(failure) => LoadedRecovery {
-                        content: Some(content),
-                        legacy_path: Some(legacy.to_path_buf()),
-                        warning: Some(failure),
-                    },
+                if let Some(existing) = loaded
+                    .drafts
+                    .iter_mut()
+                    .find(|draft| draft.content == content)
+                {
+                    existing.paths.push(path.to_path_buf());
+                } else {
+                    loaded.drafts.push(LegacyDraft {
+                        content,
+                        paths: vec![path.to_path_buf()],
+                    });
                 }
             }
-            Ok(None) => LoadedRecovery {
-                content: None,
-                legacy_path: None,
-                warning: None,
-            },
-            Err(failure) => LoadedRecovery {
-                content: None,
-                legacy_path: Some(legacy.to_path_buf()),
-                warning: Some(failure),
-            },
-        },
-        Err(failure) => {
-            let legacy_content = load_recovery(storage, legacy).ok().flatten();
-            LoadedRecovery {
-                content: legacy_content,
-                legacy_path: Some(legacy.to_path_buf()),
-                warning: Some(failure),
+            Ok(None) => {}
+            Err(failure) => {
+                loaded.warning.get_or_insert(failure);
             }
         }
     }
+    loaded
 }
 
 /// Attempt every cleanup path so one inaccessible file never prevents removal
 /// of another copy. The first typed failure remains visible to the caller.
+#[cfg(test)]
 pub(crate) fn remove_recoveries(
     storage: &impl Storage,
     primary: &Path,
     legacy: Option<&Path>,
 ) -> Result<(), Failure> {
-    let primary_result = remove_recovery(storage, primary);
-    let legacy_result = legacy
-        .filter(|path| *path != primary)
-        .map(|path| remove_recovery(storage, path))
-        .transpose();
-    primary_result.and(legacy_result.map(|_| ()))
+    let mut paths = vec![primary.to_path_buf()];
+    if let Some(legacy) = legacy.filter(|path| *path != primary) {
+        paths.push(legacy.to_path_buf());
+    }
+    remove_recovery_paths(storage, &paths)
+}
+
+/// Attempt every path and retain the first failure, so a stale/inaccessible
+/// legacy record cannot prevent cleanup of the current private draft.
+pub(crate) fn remove_recovery_paths(
+    storage: &impl Storage,
+    paths: &[PathBuf],
+) -> Result<(), Failure> {
+    let mut first_failure = None;
+    for (index, path) in paths.iter().enumerate() {
+        if paths[..index].contains(path) {
+            continue;
+        }
+        if let Err(failure) = remove_recovery(storage, path) {
+            first_failure.get_or_insert(failure);
+        }
+    }
+    match first_failure {
+        Some(failure) => Err(failure),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -300,6 +286,10 @@ mod tests {
         }
 
         fn write_atomic(&self, _path: &Path, _contents: &[u8]) -> io::Result<()> {
+            Err(self.failure())
+        }
+
+        fn write_atomic_private(&self, _path: &Path, _contents: &[u8]) -> io::Result<()> {
             Err(self.failure())
         }
 
@@ -356,6 +346,10 @@ mod tests {
             Ok(())
         }
 
+        fn write_atomic_private(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
+            self.write_atomic(path, contents)
+        }
+
         fn remove_file(&self, path: &Path) -> io::Result<()> {
             if self.fail_remove.as_deref() == Some(path) {
                 return Err(io::Error::new(
@@ -407,43 +401,54 @@ mod tests {
     }
 
     #[test]
-    fn legacy_recovery_migrates_without_losing_content() {
+    fn legacy_recovery_collection_is_read_only_and_deduplicates_content() {
         let primary = Path::new("state/recovery.txt");
         let legacy = Path::new("tmp/recovery.txt");
-        let storage = MemoryStorage::with_file(legacy, "unsaved draft");
+        let storage = MemoryStorage::with_file(primary, "unsaved draft");
+        storage
+            .files
+            .borrow_mut()
+            .insert(legacy.to_path_buf(), b"unsaved draft".to_vec());
 
-        let loaded = load_migrating_recovery(&storage, primary, legacy);
+        let loaded = load_legacy_recovery_drafts(&storage, primary, legacy);
 
-        assert_eq!(loaded.content.as_deref(), Some("unsaved draft"));
-        assert!(loaded.legacy_path.is_none());
+        assert_eq!(loaded.drafts.len(), 1);
+        assert_eq!(loaded.drafts[0].content, "unsaved draft");
+        assert_eq!(loaded.drafts[0].paths, [primary, legacy]);
         assert!(loaded.warning.is_none());
-        assert_eq!(
-            storage.files.borrow().get(primary).unwrap(),
-            b"unsaved draft"
-        );
-        assert!(!storage.files.borrow().contains_key(legacy));
+        assert!(storage.files.borrow().contains_key(primary));
+        assert!(storage.files.borrow().contains_key(legacy));
     }
 
     #[test]
-    fn failed_migration_keeps_the_legacy_draft_recoverable() {
+    fn distinct_legacy_drafts_are_both_preserved() {
         let primary = Path::new("state/recovery.txt");
         let legacy = Path::new("tmp/recovery.txt");
-        let mut storage = MemoryStorage::with_file(legacy, "unsaved draft");
-        storage.fail_write = true;
+        let storage = MemoryStorage::with_file(primary, "newer draft");
+        storage
+            .files
+            .borrow_mut()
+            .insert(legacy.to_path_buf(), b"older distinct draft".to_vec());
 
-        let loaded = load_migrating_recovery(&storage, primary, legacy);
+        let loaded = load_legacy_recovery_drafts(&storage, primary, legacy);
 
-        assert_eq!(loaded.content.as_deref(), Some("unsaved draft"));
-        assert_eq!(loaded.legacy_path.as_deref(), Some(legacy));
-        assert_eq!(
-            loaded.warning.unwrap().operation,
-            Operation::MigrateRecovery
-        );
-        assert!(!storage.files.borrow().contains_key(primary));
-        assert_eq!(
-            storage.files.borrow().get(legacy).unwrap(),
-            b"unsaved draft"
-        );
+        assert_eq!(loaded.drafts.len(), 2);
+        assert_eq!(loaded.drafts[0].content, "newer draft");
+        assert_eq!(loaded.drafts[1].content, "older distinct draft");
+        assert!(loaded.warning.is_none());
+    }
+
+    #[test]
+    fn identical_legacy_and_primary_paths_never_delete_the_only_copy() {
+        let path = Path::new("state/recovery.txt");
+        let storage = MemoryStorage::with_file(path, "unsaved draft");
+
+        let loaded = load_legacy_recovery_drafts(&storage, path, path);
+
+        assert_eq!(loaded.drafts.len(), 1);
+        assert_eq!(loaded.drafts[0].content, "unsaved draft");
+        assert_eq!(loaded.drafts[0].paths, [path]);
+        assert_eq!(storage.files.borrow().get(path).unwrap(), b"unsaved draft");
     }
 
     #[test]

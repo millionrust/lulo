@@ -7,6 +7,7 @@
 //! size). Shares the editing configuration with Notes via `rmac-editor`.
 
 mod document;
+mod recovery;
 mod rtf;
 mod storage;
 
@@ -71,13 +72,17 @@ impl RecoveryClock {
     fn should_write(&self, generation: u64, dirty: bool) -> bool {
         dirty && self.generation == generation
     }
+
+    fn is_current(&self, generation: u64) -> bool {
+        self.generation == generation
+    }
 }
 
 /// A modal alert awaiting the user, shown via the shared `rmac_ui::alert`.
 #[derive(Clone)]
 enum ActiveAlert {
     /// A recovery file was found — Restore (load it) or Discard.
-    Recover(String),
+    Recover(RecoveryPrompt),
     /// The buffer is dirty before `Pending` — Save / Don't Save / Cancel.
     ConfirmSave(Pending),
     /// The opened document no longer matches its retained exact revision.
@@ -87,6 +92,14 @@ enum ActiveAlert {
         title: &'static str,
         message: String,
     },
+}
+
+#[derive(Clone)]
+struct RecoveryPrompt {
+    content: String,
+    document_label: String,
+    format: document::TextFormat,
+    additional_drafts: usize,
 }
 
 enum LoadedFile {
@@ -144,10 +157,12 @@ struct EditorView {
 
     // Infra
     focus: FocusHandle,
+    recovery_directory: PathBuf,
     recovery_path: PathBuf,
-    legacy_recovery_path: Option<PathBuf>,
+    recovery_cleanup_paths: Vec<PathBuf>,
     recovery_clock: RecoveryClock,
     recovery_error: Option<SharedString>,
+    recovery_notice: Option<SharedString>,
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
     alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,
@@ -183,6 +198,125 @@ fn recovery_path_for_platform(
         Ok(home.join("Library/Application Support/rmac-text-editor/recovery.txt"))
     } else {
         Ok(home.join(".local/state/rmac-text-editor/recovery.txt"))
+    }
+}
+
+struct StartupRecovery {
+    directory: PathBuf,
+    active_path: PathBuf,
+    cleanup_paths: Vec<PathBuf>,
+    prompt: Option<RecoveryPrompt>,
+    warning: bool,
+}
+
+fn startup_recovery() -> StartupRecovery {
+    let temporary_legacy = std::env::temp_dir().join("rmac-text-editor-recovery.txt");
+    let (legacy_primary, mut warning) = match platform_recovery_path() {
+        Ok(path) => (path, false),
+        Err(_) => (temporary_legacy.clone(), true),
+    };
+    let directory = legacy_primary
+        .parent()
+        .map(|parent| parent.join("recovery"))
+        .unwrap_or_else(|| std::env::temp_dir().join("rmac-text-editor-recovery"));
+    let mut discovery = recovery::discover(&directory);
+    warning |= discovery.unavailable || discovery.excessive || discovery.malformed > 0;
+
+    let loaded_legacy = storage::load_legacy_recovery_drafts(
+        &storage::RealStorage,
+        &legacy_primary,
+        &temporary_legacy,
+    );
+    warning |= loaded_legacy.warning.is_some();
+    let mut cleanup_paths = Vec::new();
+    let mut unmigrated = Vec::new();
+    let legacy_count = loaded_legacy.drafts.len();
+    for (index, draft) in loaded_legacy.drafts.into_iter().enumerate() {
+        let record = recovery::RecoveryRecord::for_document(
+            None,
+            document::TextFormat::default(),
+            draft.content,
+        );
+        let migrated_path = recovery::fresh_record_path(&directory);
+        if recovery::save(&storage::RealStorage, &migrated_path, &record).is_ok() {
+            if storage::remove_recovery_paths(&storage::RealStorage, &draft.paths).is_err() {
+                warning = true;
+                cleanup_paths.extend(draft.paths);
+            }
+            discovery.candidates.push(recovery::Candidate {
+                path: migrated_path,
+                record,
+            });
+        } else {
+            warning = true;
+            unmigrated.push((
+                RecoveryPrompt {
+                    content: record.content,
+                    document_label: if legacy_count == 1 {
+                        "Legacy unsaved document".into()
+                    } else {
+                        format!("Legacy unsaved document {}", index + 1)
+                    },
+                    format: record.format,
+                    additional_drafts: 0,
+                },
+                draft.paths,
+            ));
+        }
+    }
+
+    discovery.candidates.sort_by(|left, right| {
+        right
+            .record
+            .created_unix_ms
+            .cmp(&left.record.created_unix_ms)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    if !unmigrated.is_empty() {
+        let additional_drafts = discovery
+            .candidates
+            .len()
+            .saturating_add(unmigrated.len().saturating_sub(1));
+        let (mut prompt, selected_paths) = unmigrated.remove(0);
+        prompt.additional_drafts = additional_drafts;
+        cleanup_paths.extend(selected_paths);
+        let active_path = recovery::fresh_record_path(&directory);
+        return StartupRecovery {
+            directory,
+            active_path,
+            cleanup_paths,
+            prompt: Some(prompt),
+            warning,
+        };
+    }
+    let mut selected = None;
+    let mut remaining = discovery.candidates.len();
+    for candidate in discovery.candidates {
+        remaining = remaining.saturating_sub(1);
+        match recovery::claim(&directory, candidate) {
+            Ok(claimed) => {
+                selected = Some(claimed);
+                break;
+            }
+            Err(_) => warning = true,
+        }
+    }
+    let active_path = selected
+        .as_ref()
+        .map(|candidate| candidate.path.clone())
+        .unwrap_or_else(|| recovery::fresh_record_path(&directory));
+    let prompt = selected.map(|candidate| RecoveryPrompt {
+        content: candidate.record.content,
+        document_label: candidate.record.document_label,
+        format: candidate.record.format,
+        additional_drafts: remaining,
+    });
+    StartupRecovery {
+        directory,
+        active_path,
+        cleanup_paths,
+        prompt,
+        warning,
     }
 }
 
@@ -271,32 +405,9 @@ impl EditorView {
             KeyBinding::new("cmd-w", CloseWindow, Some(CTX)),
         ]);
 
-        let legacy_path = std::env::temp_dir().join("rmac-text-editor-recovery.txt");
-        let (recovery_path, loaded) = match platform_recovery_path() {
-            Ok(recovery_path) => {
-                let loaded = storage::load_migrating_recovery(
-                    &storage::RealStorage,
-                    &recovery_path,
-                    &legacy_path,
-                );
-                (recovery_path, loaded)
-            }
-            Err(failure) => {
-                let content = storage::load_recovery(&storage::RealStorage, &legacy_path)
-                    .ok()
-                    .flatten();
-                (
-                    legacy_path.clone(),
-                    storage::LoadedRecovery {
-                        content,
-                        legacy_path: None,
-                        warning: Some(failure),
-                    },
-                )
-            }
-        };
-        let alert = loaded.content.map(ActiveAlert::Recover);
-        let recovery_error = loaded.warning.map(|_| recovery_failure_message());
+        let recovery = startup_recovery();
+        let alert = recovery.prompt.map(ActiveAlert::Recover);
+        let recovery_error = recovery.warning.then(recovery_failure_message);
 
         Self {
             alert,
@@ -317,10 +428,12 @@ impl EditorView {
             font_size: 15.0,
             rtf_runs: None,
             focus: cx.focus_handle(),
-            recovery_path,
-            legacy_recovery_path: loaded.legacy_path,
+            recovery_directory: recovery.directory,
+            recovery_path: recovery.active_path,
+            recovery_cleanup_paths: recovery.cleanup_paths,
             recovery_clock: RecoveryClock::default(),
             recovery_error,
+            recovery_notice: None,
             _subscriptions: vec![sub_main, sub_find],
         }
     }
@@ -334,6 +447,10 @@ impl EditorView {
                 .into(),
             None => "Untitled".into(),
         }
+    }
+
+    fn recovery_decision_pending(&self) -> bool {
+        matches!(self.alert, Some(ActiveAlert::Recover(_)))
     }
 
     // ── Dirty + autosave ────────────────────────────────────────────────
@@ -358,21 +475,57 @@ impl EditorView {
         let generation = self.recovery_clock.arm();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(2)).await;
-            let _ = this.update(cx, |this, cx| {
-                if this.recovery_clock.should_write(generation, this.dirty) {
-                    let content = this.input.read(cx).value().to_string();
-                    match storage::save_recovery(
-                        &storage::RealStorage,
-                        storage::Operation::SaveRecovery,
-                        &this.recovery_path,
-                        content,
-                    ) {
-                        Ok(()) if this.legacy_recovery_path.is_none() => this.recovery_error = None,
-                        Ok(()) => {}
-                        Err(failure) => this.record_recovery_failure(failure, cx),
+            let Ok(Some((path, record, cleanup_paths))) = this.update(cx, |this, cx| {
+                this.recovery_clock
+                    .should_write(generation, this.dirty)
+                    .then(|| {
+                        let content = this.input.read(cx).value().to_string();
+                        (
+                            this.recovery_path.clone(),
+                            recovery::RecoveryRecord::for_document(
+                                this.path.as_deref(),
+                                this.text_format,
+                                content,
+                            ),
+                            this.recovery_cleanup_paths.clone(),
+                        )
+                    })
+            }) else {
+                return;
+            };
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move {
+                        recovery::save(&storage::RealStorage, &path, &record)?;
+                        storage::remove_recovery_paths(&storage::RealStorage, &cleanup_paths)
                     }
-                }
-            });
+                })
+                .await;
+            let stale = this
+                .update(cx, |this, cx| {
+                    let current = this.recovery_clock.is_current(generation)
+                        && this.dirty
+                        && this.recovery_path == path;
+                    if current {
+                        match result {
+                            Ok(()) => {
+                                this.recovery_cleanup_paths.clear();
+                                this.recovery_error = None;
+                            }
+                            Err(failure) => this.record_recovery_failure(failure, cx),
+                        }
+                    }
+                    !current
+                })
+                .unwrap_or(false);
+            if stale {
+                let _ = cx
+                    .background_executor()
+                    .spawn(async move { storage::remove_recovery(&storage::RealStorage, &path) })
+                    .await;
+            }
         })
         .detach();
     }
@@ -384,13 +537,12 @@ impl EditorView {
 
     fn clear_recovery(&mut self, cx: &mut Context<Self>) -> bool {
         self.recovery_clock.invalidate();
-        match storage::remove_recoveries(
-            &storage::RealStorage,
-            &self.recovery_path,
-            self.legacy_recovery_path.as_deref(),
-        ) {
+        let mut paths = vec![self.recovery_path.clone()];
+        paths.extend(self.recovery_cleanup_paths.iter().cloned());
+        match storage::remove_recovery_paths(&storage::RealStorage, &paths) {
             Ok(()) => {
-                self.legacy_recovery_path = None;
+                self.recovery_cleanup_paths.clear();
+                self.recovery_path = recovery::fresh_record_path(&self.recovery_directory);
                 self.recovery_error = None;
                 true
             }
@@ -410,14 +562,14 @@ impl EditorView {
     // ── File operations ─────────────────────────────────────────────────
 
     fn new_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy {
+        if self.file_busy || self.recovery_decision_pending() {
             return;
         }
         self.guarded(Pending::New, window, cx);
     }
 
     fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy {
+        if self.file_busy || self.recovery_decision_pending() {
             return;
         }
         self.guarded(Pending::Open, window, cx);
@@ -524,14 +676,14 @@ impl EditorView {
     }
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy {
+        if self.file_busy || self.recovery_decision_pending() {
             return;
         }
         self.save_with(None, window, cx);
     }
 
     fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy || self.rtf_runs.is_some() {
+        if self.file_busy || self.rtf_runs.is_some() || self.recovery_decision_pending() {
             return;
         }
         let content = self.input.read(cx).value().to_string();
@@ -692,7 +844,7 @@ impl EditorView {
 
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.
     fn guarded(&mut self, pending: Pending, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy {
+        if self.file_busy || self.recovery_decision_pending() {
             return;
         }
         if !self.dirty {
@@ -708,9 +860,26 @@ impl EditorView {
     /// Primary (default) button of the active alert: Restore / Save / OK.
     fn alert_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.alert.take() {
-            Some(ActiveAlert::Recover(content)) => {
+            Some(ActiveAlert::Recover(prompt)) => {
+                self.text_format = prompt.format;
+                self.path = None;
+                self.saved_bytes = None;
                 self.input
-                    .update(cx, |s, cx| s.set_value(content, window, cx));
+                    .update(cx, |state, cx| state.set_value(prompt.content, window, cx));
+                if prompt.additional_drafts > 0 {
+                    self.recovery_notice = Some(
+                        format!(
+                            "{} additional recovered {} remain available on the next launch.",
+                            prompt.additional_drafts,
+                            if prompt.additional_drafts == 1 {
+                                "draft"
+                            } else {
+                                "drafts"
+                            }
+                        )
+                        .into(),
+                    );
+                }
                 // Recovered text is unsaved relative to the empty baseline, so
                 // this marks the buffer dirty and re-arms autosave.
                 self.on_buffer_changed(cx);
@@ -725,9 +894,9 @@ impl EditorView {
     /// Secondary button: Discard (recover) / Don't Save (confirm).
     fn alert_secondary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.alert.take() {
-            Some(ActiveAlert::Recover(content)) => {
+            Some(ActiveAlert::Recover(prompt)) => {
                 if !self.clear_recovery(cx) {
-                    self.alert = Some(ActiveAlert::Recover(content));
+                    self.alert = Some(ActiveAlert::Recover(prompt));
                 }
             }
             Some(ActiveAlert::ConfirmSave(pending)) => {
@@ -913,7 +1082,7 @@ impl EditorView {
                             .icon(Icon::new(IconName::File).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
-                            .disabled(self.file_busy)
+                            .disabled(self.file_busy || self.recovery_decision_pending())
                             .tooltip("New")
                             .on_click(cx.listener(|this, _, window, cx| this.new_file(window, cx))),
                     )
@@ -922,7 +1091,7 @@ impl EditorView {
                             .icon(Icon::new(IconName::FolderOpen).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
-                            .disabled(self.file_busy)
+                            .disabled(self.file_busy || self.recovery_decision_pending())
                             .tooltip("Open")
                             .on_click(cx.listener(|this, _, window, cx| this.open(window, cx))),
                     )
@@ -992,7 +1161,11 @@ impl EditorView {
                             .primary()
                             .with_size(Size::Small)
                             .busy(self.file_busy)
-                            .disabled(self.file_busy || self.rtf_runs.is_some())
+                            .disabled(
+                                self.file_busy
+                                    || self.rtf_runs.is_some()
+                                    || self.recovery_decision_pending(),
+                            )
                             .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                     ),
             );
@@ -1232,9 +1405,25 @@ impl EditorView {
     fn render_alert(&self, alert: ActiveAlert, cx: &mut Context<Self>) -> impl IntoElement {
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
         let (title, message, buttons): (&str, String, Vec<gpui::AnyElement>) = match alert {
-            ActiveAlert::Recover(_) => (
+            ActiveAlert::Recover(prompt) => (
                 "Recover unsaved changes?",
-                "An autosaved document from a previous session was found.".into(),
+                format!(
+                    "An autosaved draft for “{}” was found.{}",
+                    prompt.document_label,
+                    if prompt.additional_drafts == 0 {
+                        String::new()
+                    } else {
+                        format!(
+                            " {} additional {} will remain available for a later launch.",
+                            prompt.additional_drafts,
+                            if prompt.additional_drafts == 1 {
+                                "draft"
+                            } else {
+                                "drafts"
+                            }
+                        )
+                    }
+                ),
                 vec![
                     rmac_ui::dialog_button("alert-discard", "Discard", Normal)
                         .on_click(
@@ -1297,6 +1486,7 @@ impl Render for EditorView {
         };
         let size = self.font_size;
         let recovery_error = self.recovery_error.clone();
+        let recovery_notice = self.recovery_notice.clone();
 
         div()
             .size_full()
@@ -1348,6 +1538,30 @@ impl Render for EditorView {
                         .child("Dismiss")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.recovery_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
+            .when_some(recovery_notice, |editor, message| {
+                editor.child(
+                    div()
+                        .id("recovery-notice")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(mac::chrome())
+                        .border_b_1()
+                        .border_color(mac::separator())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .cursor_pointer()
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.recovery_notice = None;
                             cx.notify();
                         })),
                 )

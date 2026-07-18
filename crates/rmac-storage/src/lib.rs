@@ -95,6 +95,10 @@ pub trait Backend {
         Err(unsupported("write atomically"))
     }
 
+    fn write_atomic_private(&self, _path: &Path, _contents: &[u8]) -> io::Result<()> {
+        Err(unsupported("write private data atomically"))
+    }
+
     fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
         Err(unsupported("create directory"))
     }
@@ -157,6 +161,10 @@ impl Backend for FileSystem {
 
     fn write_atomic(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
         atomic_write(path, contents)
+    }
+
+    fn write_atomic_private(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
+        atomic_write_private(path, contents)
     }
 
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {

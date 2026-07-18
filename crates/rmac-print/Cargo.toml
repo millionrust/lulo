@@ -1,0 +1,11 @@
+[package]
+name = "rmac-print"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+cosmic-text.workspace = true
+flate2.workspace = true

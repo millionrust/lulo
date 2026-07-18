@@ -5346,6 +5346,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-print"
+version = "0.1.0"
+dependencies = [
+ "cosmic-text",
+ "flate2",
+]
+
+[[package]]
 name = "rmac-privacy"
 version = "0.1.0"
 

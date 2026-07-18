@@ -62,6 +62,10 @@ for subsequent changes. It must never describe this as a transactional lock.
   on save. A mixed source records both its mixed origin and a deterministic
   normalization target; the status UI must disclose conversion before a dirty
   save.
+- The status control exposes checked UTF-8, UTF-8 BOM, UTF-16 LE/BE, LF, CRLF,
+  and CR save choices. A format-only choice is an unsaved change: it is covered
+  by recovery and close guards, and the status discloses the exact pending
+  source-to-target conversion before bytes are replaced.
 - A clean save may preserve the exact original bytes. A dirty save encodes from
   the typed format, writes atomically, reads back the complete file, and adopts
   a new baseline only when bytes match exactly.

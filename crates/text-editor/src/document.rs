@@ -62,21 +62,44 @@ impl Default for TextFormat {
 }
 
 impl TextFormat {
-    pub(crate) fn status(self) -> String {
-        if self.source_line_ending == LineEnding::Mixed {
+    pub(crate) fn status_against(self, saved: Self) -> String {
+        let encoding_changed = self.encoding != saved.encoding;
+        let encoding = if !encoding_changed {
+            self.encoding.label().to_string()
+        } else {
+            format!("{} → {}", saved.encoding.label(), self.encoding.label(),)
+        };
+        let source_line_ending = match self.source_line_ending {
+            LineEnding::None => saved.save_line_ending,
+            source => source,
+        };
+        let line_ending_changed = source_line_ending != self.save_line_ending;
+        let line_ending = if source_line_ending == LineEnding::Mixed || line_ending_changed {
             format!(
-                "{} · Mixed → {} on save",
-                self.encoding.label(),
+                "{} → {}",
+                source_line_ending.label(),
                 self.save_line_ending.label()
             )
         } else {
-            format!(
-                "{} · {}",
-                self.encoding.label(),
-                self.save_line_ending.label()
-            )
-        }
+            self.save_line_ending.label().to_string()
+        };
+        let pending =
+            if encoding_changed || line_ending_changed || source_line_ending == LineEnding::Mixed {
+                " on save"
+            } else {
+                ""
+            };
+        format!("{encoding} · {line_ending}{pending}")
     }
+}
+
+pub(crate) fn has_unsaved_changes(
+    value: &str,
+    saved_value: &str,
+    format: TextFormat,
+    saved_format: TextFormat,
+) -> bool {
+    value != saved_value || format != saved_format
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -338,7 +361,61 @@ mod tests {
         assert_eq!(decoded.text, "one\ntwo\nthree\nfour\n");
         assert_eq!(decoded.format.source_line_ending, LineEnding::Mixed);
         assert_eq!(decoded.format.save_line_ending, LineEnding::CrLf);
-        assert_eq!(decoded.format.status(), "UTF-8 · Mixed → CRLF on save");
+        assert_eq!(
+            decoded.format.status_against(decoded.format),
+            "UTF-8 · Mixed → CRLF on save"
+        );
+    }
+
+    #[test]
+    fn pending_format_conversions_are_disclosed_before_save() {
+        let saved = TextFormat {
+            encoding: TextEncoding::Utf8,
+            source_line_ending: LineEnding::Lf,
+            save_line_ending: LineEnding::Lf,
+        };
+        let pending = TextFormat {
+            encoding: TextEncoding::Utf16Le,
+            save_line_ending: LineEnding::CrLf,
+            ..saved
+        };
+
+        assert_eq!(
+            pending.status_against(saved),
+            "UTF-8 → UTF-16 LE · LF → CRLF on save"
+        );
+    }
+
+    #[test]
+    fn format_only_changes_are_unsaved_until_reverted_or_written() {
+        let saved = TextFormat::default();
+        let converted = TextFormat {
+            encoding: TextEncoding::Utf16Be,
+            save_line_ending: LineEnding::CrLf,
+            ..saved
+        };
+
+        assert!(has_unsaved_changes("same", "same", converted, saved));
+        assert!(!has_unsaved_changes("same", "same", saved, saved));
+        assert!(has_unsaved_changes("changed", "same", saved, saved));
+    }
+
+    #[test]
+    fn selected_encoding_and_line_ending_drive_exact_output() {
+        let opened = decode(b"one\ntwo\n".to_vec()).unwrap();
+        let selected = TextFormat {
+            encoding: TextEncoding::Utf16Be,
+            save_line_ending: LineEnding::CrLf,
+            ..opened.format
+        };
+
+        let bytes = encode(&opened.text, selected).unwrap();
+        assert_eq!(&bytes[..2], &[0xfe, 0xff]);
+        let written = decode(bytes).unwrap();
+        assert_eq!(written.text, "one\ntwo\n");
+        assert_eq!(written.format.encoding, TextEncoding::Utf16Be);
+        assert_eq!(written.format.source_line_ending, LineEnding::CrLf);
+        assert_eq!(written.format.save_line_ending, LineEnding::CrLf);
     }
 
     #[test]

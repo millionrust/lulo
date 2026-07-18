@@ -44,6 +44,13 @@ actions!(
         FindPrev,
         CloseBar,
         ToggleMono,
+        SetEncodingUtf8,
+        SetEncodingUtf8Bom,
+        SetEncodingUtf16Le,
+        SetEncodingUtf16Be,
+        SetLineEndingLf,
+        SetLineEndingCrLf,
+        SetLineEndingCr,
         IncreaseFont,
         DecreaseFont,
         CloseWindow,
@@ -152,6 +159,9 @@ struct EditorView {
     /// document saves must still match this revision immediately before write.
     saved_bytes: Option<Vec<u8>>,
     text_format: document::TextFormat,
+    /// Format at the last exact successful read or write. A format-only
+    /// conversion is an unsaved document change just like a text edit.
+    saved_format: document::TextFormat,
     /// Text as last saved (or opened/new) — the dirty baseline.
     saved_value: String,
     dirty: bool,
@@ -637,6 +647,7 @@ impl EditorView {
             path: None,
             saved_bytes: None,
             text_format: document::TextFormat::default(),
+            saved_format: document::TextFormat::default(),
             saved_value: String::new(),
             dirty: false,
             file_busy: false,
@@ -715,11 +726,20 @@ impl EditorView {
     // ── Dirty + autosave ────────────────────────────────────────────────
 
     fn on_buffer_changed(&mut self, cx: &mut Context<Self>) {
-        let value = self.input.read(cx).value().to_string();
-        self.dirty = value != self.saved_value;
         if self.find_open {
             self.recompute_matches(cx);
         }
+        self.refresh_dirty_state(cx);
+    }
+
+    fn refresh_dirty_state(&mut self, cx: &mut Context<Self>) {
+        let value = self.input.read(cx).value().to_string();
+        self.dirty = document::has_unsaved_changes(
+            &value,
+            &self.saved_value,
+            self.text_format,
+            self.saved_format,
+        );
         if self.dirty {
             self.schedule_autosave(cx);
         } else {
@@ -814,6 +834,7 @@ impl EditorView {
 
     fn mark_clean(&mut self, value: String, cx: &mut Context<Self>) -> bool {
         self.saved_value = value;
+        self.saved_format = self.text_format;
         self.dirty = false;
         self.clear_recovery(cx)
     }
@@ -1331,6 +1352,7 @@ impl EditorView {
         match self.alert.take() {
             Some(ActiveAlert::Recover(prompt)) => {
                 self.text_format = prompt.format;
+                self.saved_format = prompt.format;
                 self.path = None;
                 self.saved_bytes = None;
                 self.input
@@ -1538,6 +1560,32 @@ impl EditorView {
     fn decrease_font(&mut self, cx: &mut Context<Self>) {
         self.font_size = (self.font_size - 1.0).max(9.0);
         cx.notify();
+    }
+
+    fn set_encoding(&mut self, encoding: document::TextEncoding, cx: &mut Context<Self>) {
+        if self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked() {
+            return;
+        }
+        if self.text_format.encoding != encoding {
+            self.text_format.encoding = encoding;
+            self.refresh_dirty_state(cx);
+        }
+    }
+
+    fn set_line_ending(&mut self, line_ending: document::LineEnding, cx: &mut Context<Self>) {
+        if self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked() {
+            return;
+        }
+        if !matches!(
+            line_ending,
+            document::LineEnding::Lf | document::LineEnding::CrLf | document::LineEnding::Cr
+        ) {
+            return;
+        }
+        if self.text_format.save_line_ending != line_ending {
+            self.text_format.save_line_ending = line_ending;
+            self.refresh_dirty_state(cx);
+        }
     }
 
     // ── Rendering ───────────────────────────────────────────────────────
@@ -1865,7 +1913,59 @@ impl EditorView {
                     .flex()
                     .items_center()
                     .gap_3()
-                    .child(cell(self.text_format.status()))
+                    .child(
+                        Button::new(
+                            "document-format",
+                            self.text_format.status_against(self.saved_format),
+                        )
+                        .ghost()
+                        .xsmall()
+                        .disabled(
+                            self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked(),
+                        )
+                        .tooltip("Text encoding and line endings")
+                        .dropdown_menu({
+                            let format = self.text_format;
+                            move |menu, _, _| {
+                                menu.menu_with_check(
+                                    "UTF-8",
+                                    format.encoding == document::TextEncoding::Utf8,
+                                    Box::new(SetEncodingUtf8),
+                                )
+                                .menu_with_check(
+                                    "UTF-8 with BOM",
+                                    format.encoding == document::TextEncoding::Utf8Bom,
+                                    Box::new(SetEncodingUtf8Bom),
+                                )
+                                .menu_with_check(
+                                    "UTF-16 Little Endian",
+                                    format.encoding == document::TextEncoding::Utf16Le,
+                                    Box::new(SetEncodingUtf16Le),
+                                )
+                                .menu_with_check(
+                                    "UTF-16 Big Endian",
+                                    format.encoding == document::TextEncoding::Utf16Be,
+                                    Box::new(SetEncodingUtf16Be),
+                                )
+                                .separator()
+                                .menu_with_check(
+                                    "Unix (LF)",
+                                    format.save_line_ending == document::LineEnding::Lf,
+                                    Box::new(SetLineEndingLf),
+                                )
+                                .menu_with_check(
+                                    "Windows (CRLF)",
+                                    format.save_line_ending == document::LineEnding::CrLf,
+                                    Box::new(SetLineEndingCrLf),
+                                )
+                                .menu_with_check(
+                                    "Classic Mac (CR)",
+                                    format.save_line_ending == document::LineEnding::Cr,
+                                    Box::new(SetLineEndingCr),
+                                )
+                            }
+                        }),
+                    )
                     .child(cell(format!(
                         "{} {}",
                         words,
@@ -2021,6 +2121,27 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &FindPrev, window, cx| this.find_prev(window, cx)))
             .on_action(cx.listener(|this, _: &CloseBar, _, cx| this.close_bar(cx)))
             .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
+            .on_action(cx.listener(|this, _: &SetEncodingUtf8, _, cx| {
+                this.set_encoding(document::TextEncoding::Utf8, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetEncodingUtf8Bom, _, cx| {
+                this.set_encoding(document::TextEncoding::Utf8Bom, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetEncodingUtf16Le, _, cx| {
+                this.set_encoding(document::TextEncoding::Utf16Le, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetEncodingUtf16Be, _, cx| {
+                this.set_encoding(document::TextEncoding::Utf16Be, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetLineEndingLf, _, cx| {
+                this.set_line_ending(document::LineEnding::Lf, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetLineEndingCrLf, _, cx| {
+                this.set_line_ending(document::LineEnding::CrLf, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetLineEndingCr, _, cx| {
+                this.set_line_ending(document::LineEnding::Cr, cx)
+            }))
             .on_action(cx.listener(|this, _: &IncreaseFont, _, cx| this.increase_font(cx)))
             .on_action(cx.listener(|this, _: &DecreaseFont, _, cx| this.decrease_font(cx)))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {

@@ -1,11 +1,12 @@
 //! XDG autostart adapter for the supported Linux session.
 
 use rmac_login_items::{
-    AddPreview, BackgroundService, Error, ErrorKind, Issue, Item, Service, Snapshot,
+    AddPreview, BackgroundService, Error, ErrorKind, Issue, Item, RemovePreview, Service, Snapshot,
 };
 #[cfg(target_os = "linux")]
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 #[cfg(target_os = "linux")]
@@ -44,9 +45,8 @@ impl Service for SystemService {
             .items
             .iter()
             .find(|item| item.id == id)
-            .ok_or_else(|| {
-                Error::new(ErrorKind::InvalidEntry, "autostart entry no longer exists")
-            })?;
+            .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "autostart entry no longer exists"))?
+            .clone();
         if item.enabled == enabled {
             return Ok(current);
         }
@@ -56,12 +56,29 @@ impl Service for SystemService {
                 "this system entry cannot be enabled without a user-owned override",
             ));
         }
+        let source_before = read_entry_bytes(&item.source)?;
+        let confirmed = self.snapshot()?;
+        let confirmed_item = confirmed
+            .items
+            .iter()
+            .find(|candidate| candidate.id == id)
+            .ok_or_else(|| {
+                Error::new(ErrorKind::Conflict, "autostart entry changed before save")
+            })?;
+        if confirmed_item != &item || read_entry_bytes(&item.source)? != source_before {
+            return Err(Error::new(
+                ErrorKind::Conflict,
+                "autostart entry changed before save; refresh and try again",
+            ));
+        }
         let user_path = self.environment.config_home.join("autostart").join(id);
-        if enabled && item.managed_override && item.source == user_path {
+        let expected_contents = if enabled && item.managed_override && item.source == user_path {
             std::fs::remove_file(&user_path).map_err(mutation_error)?;
             sync_parent(&user_path)?;
+            None
         } else {
-            let source = std::fs::read_to_string(&item.source).map_err(mutation_error)?;
+            let source = String::from_utf8(source_before)
+                .map_err(|_| Error::new(ErrorKind::InvalidEntry, "autostart entry is not UTF-8"))?;
             let managed = !item.user_owned;
             let updated = rmac_login_items::with_hidden(&source, !enabled, managed)?;
             std::fs::create_dir_all(
@@ -71,8 +88,35 @@ impl Service for SystemService {
             )
             .map_err(mutation_error)?;
             rmac_storage::atomic_write(&user_path, updated.as_bytes()).map_err(mutation_error)?;
+            Some(updated.into_bytes())
+        };
+        let refreshed = self.snapshot()?;
+        let confirmed_state = refreshed
+            .items
+            .iter()
+            .find(|candidate| candidate.id == id)
+            .is_some_and(|candidate| {
+                candidate.enabled == enabled
+                    && if expected_contents.is_some() {
+                        candidate.source == user_path
+                            && candidate.user_owned
+                            && candidate.managed_override != item.user_owned
+                    } else {
+                        candidate.source != user_path && !candidate.managed_override
+                    }
+            });
+        let exact_file = match expected_contents {
+            Some(expected) => read_entry_bytes(&user_path)? == expected,
+            None => read_optional_entry_bytes(&user_path)?.is_none(),
+        };
+        if confirmed_state && exact_file {
+            Ok(refreshed)
+        } else {
+            Err(Error::new(
+                ErrorKind::Mismatch,
+                "the autostart inventory did not confirm the requested state",
+            ))
         }
-        self.snapshot()
     }
 
     fn set_background_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error> {
@@ -82,7 +126,8 @@ impl Service for SystemService {
             .background_services
             .iter()
             .find(|item| item.id == id)
-            .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "user service no longer exists"))?;
+            .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "user service no longer exists"))?
+            .clone();
         if item.enabled == enabled {
             return Ok(current);
         }
@@ -92,18 +137,34 @@ impl Service for SystemService {
                 "this user service does not have a safe persistent transition",
             ));
         }
+        let confirmed = self.snapshot()?;
+        if confirmed
+            .background_services
+            .iter()
+            .find(|candidate| candidate.id == id)
+            != Some(&item)
+        {
+            return Err(Error::new(
+                ErrorKind::Conflict,
+                "the user service changed before save; refresh and try again",
+            ));
+        }
         systemd_set_enabled(id, enabled)?;
         let refreshed = self.snapshot()?;
         let changed = refreshed
             .background_services
             .iter()
             .find(|item| item.id == id)
-            .is_some_and(|item| item.enabled == enabled);
+            .is_some_and(|candidate| {
+                candidate.enabled == enabled
+                    && candidate.user_owned
+                    && candidate.source == item.source
+            });
         if changed {
             Ok(refreshed)
         } else {
             Err(Error::new(
-                ErrorKind::Mutation,
+                ErrorKind::Mismatch,
                 "the user manager did not confirm the requested unit-file state",
             ))
         }
@@ -113,28 +174,51 @@ impl Service for SystemService {
         prepare_add(&self.environment, source)
     }
 
-    fn add(&self, source: &Path, replace: bool) -> Result<Snapshot, Error> {
-        let preview = self.prepare_add(source)?;
-        if preview.replacing && !replace {
+    fn add(&self, preview: &AddPreview) -> Result<Snapshot, Error> {
+        let current_source = read_entry_bytes(&preview.source)?;
+        if current_source != preview.source_contents() {
             return Err(Error::new(
-                ErrorKind::Mutation,
-                "an entry with this filename already exists; replacement was not confirmed",
+                ErrorKind::Conflict,
+                "the selected desktop entry changed after review",
             ));
         }
-        let contents = std::fs::read_to_string(&preview.source).map_err(mutation_error)?;
+        let contents = String::from_utf8(current_source)
+            .map_err(|_| Error::new(ErrorKind::InvalidEntry, "desktop entry is not UTF-8"))?;
         let contents = rmac_login_items::with_hidden(&contents, false, false)?;
         let target = self
             .environment
             .config_home
             .join("autostart")
             .join(&preview.id);
+        let current_target = read_optional_entry_bytes(&target)?;
+        if current_target.as_deref() != preview.target_contents() {
+            return Err(Error::new(
+                ErrorKind::Conflict,
+                "the destination login item changed after review",
+            ));
+        }
         std::fs::create_dir_all(target.parent().expect("autostart target has a parent"))
             .map_err(mutation_error)?;
         rmac_storage::atomic_write(&target, contents.as_bytes()).map_err(mutation_error)?;
-        self.snapshot()
+        let refreshed = self.snapshot()?;
+        let exact_inventory = refreshed.items.iter().any(|item| {
+            item.id == preview.id
+                && item.enabled
+                && item.source == target
+                && item.name == preview.name
+        });
+        let exact_file = read_entry_bytes(&target)? == contents.as_bytes();
+        if exact_inventory && exact_file {
+            Ok(refreshed)
+        } else {
+            Err(Error::new(
+                ErrorKind::Mismatch,
+                "the autostart inventory did not confirm the installed login item",
+            ))
+        }
     }
 
-    fn remove(&self, id: &str) -> Result<Snapshot, Error> {
+    fn prepare_remove(&self, id: &str) -> Result<RemovePreview, Error> {
         rmac_login_items::validate_id(id)?;
         let current = self.snapshot()?;
         let item = current
@@ -150,18 +234,31 @@ impl Service for SystemService {
                 "only user-owned application entries can be moved to Trash",
             ));
         }
-        trash::delete(&item.source)
-            .map_err(|error| Error::new(ErrorKind::Mutation, error.to_string()))?;
-        let refreshed = self.snapshot()?;
-        if refreshed
-            .items
-            .iter()
-            .any(|candidate| candidate.id == id && candidate.enabled)
-        {
-            self.set_enabled(id, false)
-        } else {
-            Ok(refreshed)
+        let contents = read_entry_bytes(&item.source)?;
+        Ok(RemovePreview::new(
+            item.id.clone(),
+            item.name.clone(),
+            item.source.clone(),
+            contents,
+        ))
+    }
+
+    fn remove(&self, preview: &RemovePreview) -> Result<Snapshot, Error> {
+        let current = self.prepare_remove(&preview.id)?;
+        if current != *preview || read_entry_bytes(&preview.source)? != preview.contents() {
+            return Err(Error::new(
+                ErrorKind::Conflict,
+                "the login item changed after removal was confirmed",
+            ));
         }
+        trash::delete(&preview.source).map_err(|_| {
+            Error::new(
+                ErrorKind::Mutation,
+                "the login item could not be moved to Trash",
+            )
+        })?;
+        let refreshed = self.snapshot()?;
+        preserve_disabled_after_removal(self, preview, refreshed)
     }
 }
 
@@ -181,12 +278,16 @@ pub fn prepare_add_source(source: &Path) -> Result<AddPreview, Error> {
     SystemService::default().prepare_add(source)
 }
 
-pub fn add_source(source: &Path, replace: bool) -> Result<Snapshot, Error> {
-    SystemService::default().add(source, replace)
+pub fn add_source(preview: &AddPreview) -> Result<Snapshot, Error> {
+    SystemService::default().add(preview)
 }
 
-pub fn remove_autostart(id: &str) -> Result<Snapshot, Error> {
-    SystemService::default().remove(id)
+pub fn prepare_remove_autostart(id: &str) -> Result<RemovePreview, Error> {
+    SystemService::default().prepare_remove(id)
+}
+
+pub fn remove_autostart(preview: &RemovePreview) -> Result<Snapshot, Error> {
+    SystemService::default().remove(preview)
 }
 
 pub fn autostart_source(id: &str) -> Result<PathBuf, Error> {
@@ -277,7 +378,12 @@ fn filesystem_watcher(
             let _ = sender.try_send(rmac_login_items::WatchEvent::Changed);
         }
     })
-    .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
+    .map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "the login item filesystem watcher is unavailable",
+        )
+    })?;
     let mut watched = 0;
     for root in roots {
         let target = if root.is_dir() {
@@ -334,6 +440,8 @@ async fn watch_systemd_once(
     })?;
     let unit_rule = MatchRule::builder()
         .msg_type(Type::Signal)
+        .sender("org.freedesktop.systemd1")
+        .map_err(|_| Error::new(ErrorKind::Unavailable, "invalid systemd signal sender"))?
         .path("/org/freedesktop/systemd1")
         .map_err(|_| Error::new(ErrorKind::Unavailable, "invalid systemd manager path"))?
         .interface("org.freedesktop.systemd1.Manager")
@@ -460,7 +568,7 @@ impl Environment {
 }
 
 fn prepare_add(environment: &Environment, source: &Path) -> Result<AddPreview, Error> {
-    if !source.is_absolute() || !source.is_file() {
+    if !source.is_absolute() {
         return Err(Error::new(
             ErrorKind::InvalidEntry,
             "choose a local desktop-entry file",
@@ -471,8 +579,10 @@ fn prepare_add(environment: &Environment, source: &Path) -> Result<AddPreview, E
         .and_then(|name| name.to_str())
         .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "entry filename is not UTF-8"))?;
     rmac_login_items::validate_id(id)?;
-    let contents = std::fs::read_to_string(source).map_err(mutation_error)?;
-    let parsed = rmac_login_items::parse_entry(&contents)?;
+    let source_contents = read_entry_bytes(source)?;
+    let contents = std::str::from_utf8(&source_contents)
+        .map_err(|_| Error::new(ErrorKind::InvalidEntry, "desktop entry is not UTF-8"))?;
+    let parsed = rmac_login_items::parse_entry(contents)?;
     let target = environment.config_home.join("autostart").join(id);
     if source == target {
         return Err(Error::new(
@@ -480,12 +590,93 @@ fn prepare_add(environment: &Environment, source: &Path) -> Result<AddPreview, E
             "this entry is already installed in the user autostart directory",
         ));
     }
-    Ok(AddPreview {
-        source: source.to_path_buf(),
-        id: id.into(),
-        name: parsed.name,
-        replacing: target.exists(),
-    })
+    let target_contents = read_optional_entry_bytes(&target)?;
+    Ok(AddPreview::new(
+        source.to_path_buf(),
+        id.into(),
+        parsed.name,
+        parsed.command,
+        source_contents,
+        target_contents,
+    ))
+}
+
+fn preserve_disabled_after_removal(
+    service: &SystemService,
+    preview: &RemovePreview,
+    refreshed: Snapshot,
+) -> Result<Snapshot, Error> {
+    let Some(revealed) = refreshed
+        .items
+        .iter()
+        .find(|candidate| candidate.id == preview.id)
+        .cloned()
+    else {
+        return Ok(refreshed);
+    };
+    if !revealed.enabled {
+        return Ok(refreshed);
+    }
+    if revealed.user_owned {
+        return Err(Error::new(
+            ErrorKind::Conflict,
+            "a new user login item appeared while the prior item was being removed",
+        ));
+    }
+
+    let source_contents = read_entry_bytes(&revealed.source)?;
+    let confirmed = service.snapshot()?;
+    let confirmed_item = confirmed
+        .items
+        .iter()
+        .find(|candidate| candidate.id == preview.id)
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Conflict,
+                "the revealed system login item changed before it could be disabled",
+            )
+        })?;
+    if confirmed_item != &revealed || read_entry_bytes(&revealed.source)? != source_contents {
+        return Err(Error::new(
+            ErrorKind::Conflict,
+            "the revealed system login item changed before it could be disabled",
+        ));
+    }
+
+    let target = service
+        .environment
+        .config_home
+        .join("autostart")
+        .join(&preview.id);
+    if read_optional_entry_bytes(&target)?.is_some() {
+        return Err(Error::new(
+            ErrorKind::Conflict,
+            "a new user login item appeared while the prior item was being removed",
+        ));
+    }
+    let source = String::from_utf8(source_contents)
+        .map_err(|_| Error::new(ErrorKind::InvalidEntry, "desktop entry is not UTF-8"))?;
+    let hidden = rmac_login_items::with_hidden(&source, true, true)?;
+    std::fs::create_dir_all(target.parent().expect("autostart target has a parent"))
+        .map_err(mutation_error)?;
+    rmac_storage::atomic_write(&target, hidden.as_bytes()).map_err(mutation_error)?;
+
+    let final_snapshot = service.snapshot()?;
+    let exact = final_snapshot.items.iter().any(|candidate| {
+        candidate.id == preview.id
+            && !candidate.enabled
+            && candidate.user_owned
+            && candidate.managed_override
+            && candidate.source == target
+    }) && read_entry_bytes(&target)? == hidden.as_bytes();
+    if exact {
+        Ok(final_snapshot)
+    } else {
+        Err(Error::new(
+            ErrorKind::Mismatch,
+            "the autostart inventory did not confirm the protective disabled override",
+        ))
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -501,7 +692,12 @@ fn systemd_background_services(
     let proxy = systemd_proxy(&connection)?;
     let files = proxy
         .call::<_, _, Vec<(String, String)>>("ListUnitFiles", &())
-        .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
+        .map_err(|_| {
+            Error::new(
+                ErrorKind::Unavailable,
+                "could not list systemd user services",
+            )
+        })?;
     let unit_paths = proxy
         .get_property::<Vec<String>>("UnitPath")
         .unwrap_or_default()
@@ -624,8 +820,11 @@ fn systemd_proxy(
 }
 
 #[cfg(target_os = "linux")]
-fn systemd_mutation_error(error: zbus::Error) -> Error {
-    Error::new(ErrorKind::Mutation, error.to_string())
+fn systemd_mutation_error(_error: zbus::Error) -> Error {
+    Error::new(
+        ErrorKind::Mutation,
+        "the systemd user manager could not apply the requested change",
+    )
 }
 
 fn discover(environment: &Environment) -> Result<Snapshot, Error> {
@@ -642,8 +841,8 @@ fn discover(environment: &Environment) -> Result<Snapshot, Error> {
                 push_issue(
                     &mut issues,
                     &mut truncated,
-                    directory.display().to_string(),
-                    format!("could not read directory: {error}"),
+                    "Autostart directory".into(),
+                    directory_read_issue(error.kind()).into(),
                 );
                 continue;
             }
@@ -659,23 +858,44 @@ fn discover(environment: &Environment) -> Result<Snapshot, Error> {
             {
                 continue;
             }
+            if rmac_login_items::validate_id(id).is_err() {
+                push_issue(
+                    &mut issues,
+                    &mut truncated,
+                    "Invalid desktop entry".into(),
+                    "desktop entry has an invalid filename".into(),
+                );
+                continue;
+            }
             if items.len() >= rmac_login_items::MAX_ITEMS {
                 truncated = true;
                 continue;
             }
-            let contents = match std::fs::read_to_string(&path) {
+            let bytes = match read_entry_bytes(&path) {
                 Ok(contents) => contents,
                 Err(error) => {
                     push_issue(
                         &mut issues,
                         &mut truncated,
                         id.to_owned(),
-                        format!("could not read entry: {error}"),
+                        error.to_string(),
                     );
                     continue;
                 }
             };
-            match rmac_login_items::parse_entry(&contents) {
+            let contents = match std::str::from_utf8(&bytes) {
+                Ok(contents) => contents,
+                Err(_) => {
+                    push_issue(
+                        &mut issues,
+                        &mut truncated,
+                        id.to_owned(),
+                        "desktop entry is not UTF-8".into(),
+                    );
+                    continue;
+                }
+            };
+            match rmac_login_items::parse_entry(contents) {
                 Ok(parsed) => {
                     let try_exec_available =
                         parsed.try_exec.as_deref().is_none_or(executable_exists);
@@ -690,8 +910,8 @@ fn discover(environment: &Environment) -> Result<Snapshot, Error> {
                         enabled: !parsed.hidden,
                         applies_to_session: applies,
                         session_detail: (!applies).then(|| match parsed.try_exec.as_deref() {
-                            Some(program) if !try_exec_available => {
-                                format!("TryExec is unavailable: {program}")
+                            Some(_) if !try_exec_available => {
+                                "Required TryExec program is unavailable".into()
                             }
                             _ => "Excluded by OnlyShowIn/NotShowIn for this desktop".into(),
                         }),
@@ -729,7 +949,85 @@ fn push_issue(issues: &mut Vec<Issue>, truncated: &mut bool, file: String, detai
 }
 
 fn mutation_error(error: std::io::Error) -> Error {
-    Error::new(ErrorKind::Mutation, error.to_string())
+    let detail = match error.kind() {
+        std::io::ErrorKind::PermissionDenied => {
+            "permission was denied while changing the login item"
+        }
+        std::io::ErrorKind::NotFound => "the login item changed before the operation completed",
+        std::io::ErrorKind::AlreadyExists => "the login item destination changed unexpectedly",
+        _ => "the login item change could not be saved",
+    };
+    Error::new(ErrorKind::Mutation, detail)
+}
+
+fn directory_read_issue(kind: std::io::ErrorKind) -> &'static str {
+    if kind == std::io::ErrorKind::PermissionDenied {
+        "permission was denied while reading an autostart directory"
+    } else {
+        "could not read an autostart directory"
+    }
+}
+
+fn read_optional_entry_bytes(path: &Path) -> Result<Option<Vec<u8>>, Error> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => read_entry_bytes(path).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(entry_read_error(error.kind())),
+    }
+}
+
+fn read_entry_bytes(path: &Path) -> Result<Vec<u8>, Error> {
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|error| entry_read_error(error.kind()))?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(Error::new(
+            ErrorKind::InvalidEntry,
+            "login items must be regular files, not links or directories",
+        ));
+    }
+    if metadata.len() > rmac_login_items::MAX_ENTRY_BYTES as u64 {
+        return Err(Error::new(ErrorKind::InvalidEntry, "entry is too large"));
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
+    }
+    let file = options
+        .open(path)
+        .map_err(|error| entry_read_error(error.kind()))?;
+    let opened = file
+        .metadata()
+        .map_err(|error| entry_read_error(error.kind()))?;
+    if !opened.file_type().is_file() || opened.len() > rmac_login_items::MAX_ENTRY_BYTES as u64 {
+        return Err(Error::new(ErrorKind::InvalidEntry, "entry is too large"));
+    }
+    let mut contents = Vec::with_capacity(opened.len() as usize);
+    file.take(rmac_login_items::MAX_ENTRY_BYTES as u64 + 1)
+        .read_to_end(&mut contents)
+        .map_err(|error| entry_read_error(error.kind()))?;
+    if contents.len() > rmac_login_items::MAX_ENTRY_BYTES {
+        return Err(Error::new(ErrorKind::InvalidEntry, "entry is too large"));
+    }
+    Ok(contents)
+}
+
+fn entry_read_error(kind: std::io::ErrorKind) -> Error {
+    let (error_kind, detail) = match kind {
+        std::io::ErrorKind::NotFound => (
+            ErrorKind::Conflict,
+            "the login item changed before it could be read",
+        ),
+        std::io::ErrorKind::PermissionDenied => (
+            ErrorKind::Unavailable,
+            "permission was denied while reading the login item",
+        ),
+        _ => (ErrorKind::Unavailable, "the login item could not be read"),
+    };
+    Error::new(error_kind, detail)
 }
 
 fn executable_exists(program: &str) -> bool {
@@ -832,6 +1130,7 @@ mod tests {
     fn add_requires_explicit_replacement_and_installs_enabled_entry() {
         let (root, environment) = environment();
         let source = root.join("demo.desktop");
+        let target = environment.config_home.join("autostart/demo.desktop");
         std::fs::write(
             &source,
             "[Desktop Entry]\nType=Application\nName=Demo\nHidden=true\nExec=demo\n",
@@ -840,11 +1139,148 @@ mod tests {
         let service = SystemService { environment };
         let preview = service.prepare_add(&source).unwrap();
         assert!(!preview.replacing);
-        let snapshot = service.add(&source, false).unwrap();
+        assert_eq!(preview.command, "demo");
+        let snapshot = service.add(&preview).unwrap();
         assert!(snapshot.items[0].enabled);
-        assert!(service.prepare_add(&source).unwrap().replacing);
-        assert!(service.add(&source, false).is_err());
-        assert!(service.add(&source, true).is_ok());
+        assert!(service.add(&preview).is_err());
+        let replacement = service.prepare_add(&source).unwrap();
+        assert!(replacement.replacing);
+        std::fs::write(
+            &target,
+            "[Desktop Entry]\nType=Application\nName=External\nExec=external\n",
+        )
+        .unwrap();
+        assert_eq!(
+            service.add(&replacement).unwrap_err().kind(),
+            ErrorKind::Conflict
+        );
+        assert!(std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("Exec=external"));
+        let replacement = service.prepare_add(&source).unwrap();
+        assert!(service.add(&replacement).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn add_rejects_a_source_changed_after_confirmation() {
+        let (root, environment) = environment();
+        let source = root.join("demo.desktop");
+        std::fs::write(
+            &source,
+            "[Desktop Entry]\nType=Application\nName=Demo\nExec=demo\n",
+        )
+        .unwrap();
+        let service = SystemService { environment };
+        let preview = service.prepare_add(&source).unwrap();
+        std::fs::write(
+            &source,
+            "[Desktop Entry]\nType=Application\nName=Changed\nExec=other\n",
+        )
+        .unwrap();
+        assert_eq!(
+            service.add(&preview).unwrap_err().kind(),
+            ErrorKind::Conflict
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bounded_reader_rejects_oversized_and_linked_entries() {
+        let (root, environment) = environment();
+        let oversized = environment.config_dirs[0].join("autostart/oversized.desktop");
+        std::fs::write(
+            &oversized,
+            vec![b'x'; rmac_login_items::MAX_ENTRY_BYTES + 1],
+        )
+        .unwrap();
+        let snapshot = discover(&environment).unwrap();
+        assert!(snapshot.items.is_empty());
+        assert_eq!(snapshot.issues[0].detail, "entry is too large");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            let real = root.join("real.desktop");
+            std::fs::write(
+                &real,
+                "[Desktop Entry]\nType=Application\nName=Real\nExec=real\n",
+            )
+            .unwrap();
+            let linked = root.join("linked.desktop");
+            symlink(&real, &linked).unwrap();
+            assert_eq!(
+                prepare_add(&environment, &linked).unwrap_err().kind(),
+                ErrorKind::InvalidEntry
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn removal_keeps_a_revealed_system_entry_disabled() {
+        let (root, environment) = environment();
+        let system = environment.config_dirs[0]
+            .join("autostart")
+            .join("demo.desktop");
+        std::fs::write(
+            &system,
+            "[Desktop Entry]\nType=Application\nName=System Demo\nExec=system-demo\n",
+        )
+        .unwrap();
+        let user = environment
+            .config_home
+            .join("autostart")
+            .join("demo.desktop");
+        std::fs::create_dir_all(user.parent().unwrap()).unwrap();
+        let contents =
+            "[Desktop Entry]\nType=Application\nName=User Demo\nHidden=true\nExec=user-demo\n";
+        std::fs::write(&user, contents).unwrap();
+        let service = SystemService { environment };
+        let preview = service.prepare_remove("demo.desktop").unwrap();
+        std::fs::remove_file(&user).unwrap();
+        let revealed = service.snapshot().unwrap();
+        assert!(revealed.items[0].enabled);
+        let protected = preserve_disabled_after_removal(&service, &preview, revealed).unwrap();
+        assert!(!protected.items[0].enabled);
+        assert!(protected.items[0].managed_override);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn removal_recovery_never_overwrites_a_concurrent_user_entry() {
+        let (root, environment) = environment();
+        let system = environment.config_dirs[0]
+            .join("autostart")
+            .join("demo.desktop");
+        std::fs::write(
+            &system,
+            "[Desktop Entry]\nType=Application\nName=System Demo\nExec=system-demo\n",
+        )
+        .unwrap();
+        let user = environment
+            .config_home
+            .join("autostart")
+            .join("demo.desktop");
+        std::fs::create_dir_all(user.parent().unwrap()).unwrap();
+        std::fs::write(
+            &user,
+            "[Desktop Entry]\nType=Application\nName=Old User\nHidden=true\nExec=old\n",
+        )
+        .unwrap();
+        let service = SystemService { environment };
+        let preview = service.prepare_remove("demo.desktop").unwrap();
+        std::fs::remove_file(&user).unwrap();
+        let revealed = service.snapshot().unwrap();
+        let replacement = "[Desktop Entry]\nType=Application\nName=New User\nExec=new\n";
+        std::fs::write(&user, replacement).unwrap();
+        assert_eq!(
+            preserve_disabled_after_removal(&service, &preview, revealed)
+                .unwrap_err()
+                .kind(),
+            ErrorKind::Conflict
+        );
+        assert_eq!(std::fs::read_to_string(&user).unwrap(), replacement);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

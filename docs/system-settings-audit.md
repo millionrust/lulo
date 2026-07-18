@@ -18,7 +18,7 @@ equivalents rather than simulated.
 | Storage | Bounded current-namespace system/removable/network inventory; privacy-safe display names and opaque identities; independent saturating `statvfs` capacity; low-space state; kernel-poll live refresh with generation-safe coalescing; exact revalidated portal-backed Review in Files; no guessed categories or destructive cleanup | `rmac-mounts`, `/proc/self/mountinfo`, pollable `/proc/self/mounts`, `statvfs`, and the desktop OpenURI portal | Ubuntu filesystem/mount/hotplug/portal matrix, a reviewed reversible cleanup design, and keyboard/scale/performance/accessibility evidence in `docs/storage.md` |
 | Date & Time | Bounded timedated timezone inventory/current zone, live system clock and read-only RTC mode, NTP capability/enabled/synchronized state, exact timezone and automatic-time transactions, canonical offset-bearing manual clock input with safety confirmation and elapsed-aware readback, interactive polkit, filtered property/restart signals plus kernel timerfd clock-jump detection, generation-safe refresh, low-wakeup display, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1`, and `CLOCK_REALTIME` timerfd | Ubuntu NTP/timezone/manual-clock/polkit/jump/restart/suspend matrix plus keyboard, scale, performance, and accessibility evidence in `docs/date-time.md` |
 | Language & Region | Canonical bounded locale1 state and installed inventory; independent Language and Region mutations preserving unrelated effective categories; deterministic native previews; exact readback; conflict-checked locale rollback; validated multi-layout XKB editing only when niri follows localed; exact keyboard readback/rollback; filtered generation-safe property/restart refresh; privacy-safe failures; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, and `localectl` layout inventory | Ubuntu language/region/XKB/polkit/concurrency/restart/sign-out matrix plus keyboard, scale, performance, and accessibility evidence in `docs/language-region.md` |
-| Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, portal-selected validated add/replace, Trash-backed user-entry removal, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, and resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Linux interaction/scale/accessibility evidence |
+| Login Items | Effective bounded XDG precedence with non-symlink reads, session applicability, atomic exact-readback `Hidden` overrides, and malformed-entry suppression; portal add/replace with exact source/destination-byte and sign-in-command review; exact revalidated Trash removal with lower-system-entry protection; bounded systemd inventory with user-owned-only persistent toggles and read-only system/protected/runtime/masked/static states; sender-filtered generation-safe live refresh, privacy-safe failures, and partial-authority recovery | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Ubuntu XDG/systemd mutation, conflict, restart, privacy, interaction, scale, performance, and accessibility evidence in `docs/login-items.md` |
 | Sharing | Capability-detected OpenSSH and Samba services with separate runtime/boot state, explicit enable/disable confirmation, systemd system-manager/polkit mutation, bounded completion wait and exact rollback; effective bounded Samba share names from `testparm -s`; separate read-only UFW SSH/Samba allowance truth; live systemd, UFW, and Samba configuration refresh; no AirDrop branding | `rmac-sharing`, `rmac-sharing-linux`, `org.freedesktop.systemd1`, `ssh.service`, `smbd.service`, Samba `testparm`, UFW status/configuration | Linux polkit/network/scale/accessibility evidence and reviewed share editing if added |
 | Accessibility | Live rmac increased-contrast, reduced-motion, and bounded application text-size preferences with effective-state display; text size updates the shared GPUI rem base and migrated semantic/shared UI text without changing display or content-font scaling; separate confirmed GNOME/GTK text scaling; authoritative niri-backed keyboard, mouse, and trackpad controls; off-thread full-niri-session, Xwayland, and installed-Orca readiness with the documented default shortcut; explicit rmac AT-SPI limits | `rmac-theme`, `rmac-ui`, `rmac-gtk-settings`, GPUI per-window rem size, GNOME interface GSettings, Settings portal appearance values, `rmac-input`, niri configuration and accessibility bridge | Linux text/output clipping, keyboard, pointer, and AT-SPI/Orca evidence |
 | Appearance | Real scheme, accent, contrast, and motion preferences with host-following automatic modes, atomic persistence, recovery, refresh, and live adoption across all seven apps | Settings portal plus `rmac-theme` | Linux visual, scaling, contrast, motion, and Orca evidence |
@@ -252,58 +252,37 @@ Linux [`nl_langinfo_l(3)`](https://man7.org/linux/man-pages/man3/nl_langinfo.3.h
 [`strftime_l(3)`](https://man7.org/linux/man-pages/man3/strftime.3.html), and
 [`strfmon_l(3)`](https://man7.org/linux/man-pages/man3/strfmon.3.html).
 
-Login Items currently owns the XDG application-autostart half of F14. It scans
-`$XDG_CONFIG_HOME/autostart` before each `$XDG_CONFIG_DIRS/autostart`, so a
-higher-priority filename always hides lower copies exactly as specified. Valid
-entries expose their effective `Hidden` state and whether `OnlyShowIn` or
-`NotShowIn` excludes the current desktop, including unavailable `TryExec`
-requirements. Malformed or unreadable higher-priority entries remain visible as issues and still suppress lower
-copies; rmac never silently runs or rewrites them. Disabling a user entry
-atomically preserves its contents while changing `Hidden`. Disabling a system
-entry creates a full user copy marked as an rmac-managed hidden override;
-re-enabling removes only that marked override and reveals the original system
-entry. Every mutation re-enumerates authority, and failures retain the last
-known-good snapshot. Reveal resolves the effective entry again immediately
-before passing its path to the desktop portal. Adding starts with the portal
-file chooser restricted to local `.desktop` files, validates the chosen entry,
-and shows an inline Add or Replace confirmation. A target that appears after
-preview is never overwritten without a new replacement confirmation. The
-installed copy is normalized to enabled state. Remove is offered only for
-user-owned, non-managed entries and requires a second confirmation before the
-file moves to the desktop Trash. If removing a user override reveals a lower
-system entry, rmac immediately creates a managed disabled override rather than
-silently starting that system item at the next login. Applications themselves
-and systemd unit files are never deleted from this pane.
-Authority references: the freedesktop.org
-[Desktop Application Autostart Specification](https://specifications.freedesktop.org/autostart/0.5/),
-[Desktop Entry Specification](https://specifications.freedesktop.org/desktop-entry/latest-single/),
-the [XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/),
-and the [freedesktop Trash Specification](https://specifications.freedesktop.org/trash/latest/).
+Login Items owns the XDG application-autostart half of F14. It applies user and
+system config-directory precedence before parsing, so malformed or unreadable
+higher-priority files remain bounded issues and still suppress lower copies.
+Regular-file-only bounded reads expose `Hidden`, session inclusion, and private-
+safe `TryExec` availability. Toggle transactions revalidate exact snapshots and
+source bytes, write atomic user-owned overrides, and demand exact file plus
+inventory readback.
 
-The same Login Items snapshot now includes systemd user services from the
-session-bus `org.freedesktop.systemd1.Manager.ListUnitFiles()` authority. It
-shows enabled/linked services plus user-installed disabled, masked, runtime,
-and static units without dumping every inactive distribution unit. Only
-persistent enabled, linked, or disabled states expose a toggle. Runtime-only,
-masked, static, generated, and unknown states remain read-only with their exact
-reason, and `rmac-*` services are protected because disabling shell
-infrastructure from inside the shell is not a recoverable Login Items action.
-Mutations call `EnableUnitFiles()` or `DisableUnitFiles()` on the user manager,
-reload it, and require a refreshed unit-file state to confirm success. They do
-not start or stop the currently running service; the pane states that the
-change applies at the next sign-in. A missing user manager degrades only the
-background-service section, leaving XDG application autostart usable.
-When systemd exposes an absolute unit path, or the unit can be resolved through
-its authoritative `UnitPath` search order, the pane offers the same portal-backed
-reveal action. Stale IDs and files that disappear before activation fail visibly
-instead of opening a guessed location.
-One capacity-one stream combines filtered events from the effective XDG
-autostart and user-unit directories with systemd's `UnitFilesChanged` signal.
-Manager reappearance triggers a refresh, session-bus loss reports a separate
-stream error, and the watcher reconnects without allowing event bursts to grow
-memory. Every event causes a complete off-thread authority resample; event
-payloads never mutate UI state directly.
-Authority reference: [Ubuntu 26.04 `org.freedesktop.systemd1(5)`](https://manpages.ubuntu.com/manpages/resolute/en/man5/org.freedesktop.systemd1.5.html).
+Portal-selected Add/Replace previews retain exact source and optional target
+bytes and show the exact sign-in command before confirmation. A changed source,
+appeared/removed target, or changed replacement is refused. Remove captures the
+fresh user-owned file and repeats exact preparation before using desktop Trash.
+If removal reveals an enabled system entry, a revalidated managed hidden
+override prevents a new next-login launch without overwriting a concurrent user
+entry. Applications and systemd unit files are never deleted from this pane.
+
+The same bounded snapshot uses the session-bus systemd user manager's
+`ListUnitFiles()` authority. User-owned persistent enabled, linked, and disabled
+states may be toggled after a second exact inventory check and complete
+readback. System-provided, runtime-only, masked, static/generated, unknown, and
+`rmac-*` infrastructure states remain read-only with an explanation. Changes
+call `EnableUnitFiles()` or `DisableUnitFiles()` and `Reload()` but do not start
+or stop an already-running service. Missing systemd authority degrades only the
+background-service section.
+
+A capacity-one filesystem stream, sender-filtered `UnitFilesChanged`, and
+filtered manager-owner changes drive complete off-thread snapshots and
+reconnect after loss. Settings generations prevent an older stream read from
+crossing a preview, reveal, refresh, or mutation, while retaining one pending
+refresh through busy work. The full authority contract, source references, and
+remaining Linux matrix are in [`login-items.md`](login-items.md).
 
 Sharing now exposes Remote Login only when the installed system unit inventory
 contains Ubuntu's canonical `ssh.service` (or its `sshd.service` alias). Runtime

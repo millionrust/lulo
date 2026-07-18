@@ -16,4 +16,5 @@ trash.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 async-io.workspace = true
 futures-util.workspace = true
+libc.workspace = true
 zbus.workspace = true

@@ -7,6 +7,8 @@ pub const MAX_ITEMS: usize = 512;
 pub const MAX_BACKGROUND_SERVICES: usize = 512;
 pub const MAX_ISSUES: usize = 128;
 pub const MAX_ENTRY_BYTES: usize = 256 * 1024;
+const MAX_ERROR_BYTES: usize = 512;
+const MAX_DISPLAY_FIELD_BYTES: usize = 4 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WatchEvent {
@@ -38,7 +40,62 @@ pub struct AddPreview {
     pub source: PathBuf,
     pub id: String,
     pub name: String,
+    pub command: String,
     pub replacing: bool,
+    source_contents: Vec<u8>,
+    target_contents: Option<Vec<u8>>,
+}
+
+impl AddPreview {
+    pub fn new(
+        source: PathBuf,
+        id: String,
+        name: String,
+        command: String,
+        source_contents: Vec<u8>,
+        target_contents: Option<Vec<u8>>,
+    ) -> Self {
+        Self {
+            source,
+            id,
+            name,
+            command,
+            replacing: target_contents.is_some(),
+            source_contents,
+            target_contents,
+        }
+    }
+
+    pub fn source_contents(&self) -> &[u8] {
+        &self.source_contents
+    }
+
+    pub fn target_contents(&self) -> Option<&[u8]> {
+        self.target_contents.as_deref()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RemovePreview {
+    pub id: String,
+    pub name: String,
+    pub source: PathBuf,
+    contents: Vec<u8>,
+}
+
+impl RemovePreview {
+    pub fn new(id: String, name: String, source: PathBuf, contents: Vec<u8>) -> Self {
+        Self {
+            id,
+            name,
+            source,
+            contents,
+        }
+    }
+
+    pub fn contents(&self) -> &[u8] {
+        &self.contents
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,6 +164,7 @@ pub struct Snapshot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParsedEntry {
     pub name: String,
+    pub command: String,
     pub hidden: bool,
     pub only_show_in: Vec<String>,
     pub not_show_in: Vec<String>,
@@ -118,7 +176,9 @@ pub struct ParsedEntry {
 pub enum ErrorKind {
     InvalidEntry,
     Unavailable,
+    Conflict,
     Mutation,
+    Mismatch,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,9 +189,10 @@ pub struct Error {
 
 impl Error {
     pub fn new(kind: ErrorKind, detail: impl Into<String>) -> Self {
+        let detail = detail.into();
         Self {
             kind,
-            detail: detail.into(),
+            detail: bounded_text(&detail),
         }
     }
 
@@ -153,8 +214,9 @@ pub trait Service {
     fn set_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error>;
     fn set_background_enabled(&self, id: &str, enabled: bool) -> Result<Snapshot, Error>;
     fn prepare_add(&self, source: &std::path::Path) -> Result<AddPreview, Error>;
-    fn add(&self, source: &std::path::Path, replace: bool) -> Result<Snapshot, Error>;
-    fn remove(&self, id: &str) -> Result<Snapshot, Error>;
+    fn add(&self, preview: &AddPreview) -> Result<Snapshot, Error>;
+    fn prepare_remove(&self, id: &str) -> Result<RemovePreview, Error>;
+    fn remove(&self, preview: &RemovePreview) -> Result<Snapshot, Error>;
 }
 
 pub fn validate_id(id: &str) -> Result<(), Error> {
@@ -215,7 +277,8 @@ pub fn background_service(
         return Ok(None);
     }
     let protected = id.starts_with("rmac-");
-    let can_toggle = !protected
+    let can_toggle = user_owned
+        && !protected
         && matches!(
             state,
             UnitFileState::Enabled | UnitFileState::Disabled | UnitFileState::Linked
@@ -262,6 +325,8 @@ pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
     let mut not = Vec::new();
     let mut managed = false;
     let mut try_exec = None;
+    let mut exec = None;
+    let mut dbus_activatable = false;
     for raw in contents.lines() {
         let line = raw.trim();
         if line.starts_with('[') && line.ends_with(']') {
@@ -288,6 +353,10 @@ pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
             "TryExec" => {
                 try_exec.get_or_insert(value);
             }
+            "Exec" => {
+                exec.get_or_insert(value);
+            }
+            "DBusActivatable" => dbus_activatable = value.eq_ignore_ascii_case("true"),
             "X-rmac-ManagedHidden" => managed = value.eq_ignore_ascii_case("true"),
             _ => continue,
         };
@@ -301,6 +370,20 @@ pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
     let name = name
         .filter(|name| !name.is_empty())
         .ok_or_else(|| Error::new(ErrorKind::InvalidEntry, "desktop entry has no display name"))?;
+    validate_display_field(name, "desktop entry name")?;
+    let command = exec
+        .map(str::to_owned)
+        .or_else(|| dbus_activatable.then(|| "D-Bus application activation".into()))
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::InvalidEntry,
+                "desktop entry has neither Exec nor D-Bus activation",
+            )
+        })?;
+    validate_display_field(&command, "desktop entry command")?;
+    if let Some(value) = try_exec {
+        validate_display_field(value, "desktop entry TryExec value")?;
+    }
     if !only.is_empty() && !not.is_empty() {
         return Err(Error::new(
             ErrorKind::InvalidEntry,
@@ -309,6 +392,7 @@ pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
     }
     Ok(ParsedEntry {
         name: name.to_owned(),
+        command,
         hidden,
         only_show_in: only,
         not_show_in: not,
@@ -372,6 +456,38 @@ fn split_list(value: &str) -> Vec<String> {
         .collect()
 }
 
+fn validate_display_field(value: &str, label: &str) -> Result<(), Error> {
+    if value.is_empty()
+        || value.len() > MAX_DISPLAY_FIELD_BYTES
+        || value.chars().any(char::is_control)
+    {
+        Err(Error::new(
+            ErrorKind::InvalidEntry,
+            format!("{label} is invalid or too large"),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn bounded_text(value: &str) -> String {
+    let normalized = value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let mut end = normalized.len().min(MAX_ERROR_BYTES);
+    while !normalized.is_char_boundary(end) {
+        end -= 1;
+    }
+    normalized[..end].trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -407,11 +523,27 @@ mod tests {
                 .kind(),
             ErrorKind::InvalidEntry
         );
+        assert!(
+            parse_entry("[Desktop Entry]\nType=Application\nName=Demo\nExec=bad\tcommand\n")
+                .is_err()
+        );
+        assert!(parse_entry(&format!(
+            "[Desktop Entry]\nType=Application\nName=Demo\nExec={}\n",
+            "x".repeat(MAX_DISPLAY_FIELD_BYTES + 1)
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn errors_are_bounded_and_control_normalized() {
+        let error = Error::new(ErrorKind::Mutation, format!("{}\nsecret", "x".repeat(600)));
+        assert!(error.to_string().len() <= MAX_ERROR_BYTES);
+        assert!(!error.to_string().contains('\n'));
     }
 
     #[test]
     fn systemd_states_expose_only_safe_persistent_transitions() {
-        let enabled = background_service("example.service", "enabled", false, None)
+        let enabled = background_service("example.service", "enabled", true, None)
             .unwrap()
             .unwrap();
         assert!(enabled.enabled);
@@ -440,5 +572,17 @@ mod tests {
                 .can_toggle
         );
         assert!(validate_service_id("../bad.service").is_err());
+    }
+
+    #[test]
+    fn system_services_are_read_only_without_user_owned_unit_authority() {
+        let system = background_service("system-agent.service", "enabled", false, None)
+            .unwrap()
+            .unwrap();
+        assert!(!system.can_toggle);
+        let user = background_service("user-agent.service", "enabled", true, None)
+            .unwrap()
+            .unwrap();
+        assert!(user.can_toggle);
     }
 }

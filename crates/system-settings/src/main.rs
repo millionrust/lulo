@@ -737,9 +737,12 @@ struct Settings {
     login_item_busy: Option<String>,
     login_items_error: Option<SharedString>,
     login_items_stream_error: Option<SharedString>,
+    login_items_generation: u64,
+    login_items_refresh_pending: bool,
+    login_items_stream_refreshing: bool,
     login_items: Option<rmac_login_items::Snapshot>,
     login_item_add: Option<rmac_login_items::AddPreview>,
-    login_item_remove: Option<(String, String)>,
+    login_item_remove: Option<rmac_login_items::RemovePreview>,
     sharing_loading: bool,
     sharing_busy: bool,
     sharing_error: Option<SharedString>,
@@ -1177,6 +1180,15 @@ fn locale_stream_snapshot_is_current(
     snapshot_generation == current_generation && !loading && !busy
 }
 
+fn login_items_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
 fn current_system_time_usec() -> Option<u64> {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
     u64::try_from(elapsed.as_micros()).ok()
@@ -1500,17 +1512,9 @@ impl Settings {
             while let Ok(event) = login_item_update_rx.recv().await {
                 match event {
                     rmac_login_items::WatchEvent::Changed => {
-                        let result = cx
-                            .background_executor()
-                            .spawn(async { rmac_login_items_linux::snapshot() })
-                            .await;
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                if this.login_item_busy.is_none() {
-                                    this.finish_login_items_update(result);
-                                    this.login_items_stream_error = None;
-                                    cx.notify();
-                                }
+                                this.queue_login_items_stream_refresh(cx);
                             })
                             .is_err()
                         {
@@ -1713,6 +1717,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_login_items_update(result);
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
@@ -2551,6 +2556,9 @@ impl Settings {
             login_item_busy: None,
             login_items_error: None,
             login_items_stream_error: None,
+            login_items_generation: 0,
+            login_items_refresh_pending: false,
+            login_items_stream_refreshing: false,
             login_items: None,
             login_item_add: None,
             login_item_remove: None,
@@ -4589,6 +4597,7 @@ impl Settings {
             Ok(snapshot) => {
                 self.login_items = Some(snapshot);
                 self.login_items_error = None;
+                self.login_items_stream_error = None;
             }
             Err(error) => {
                 self.login_items_error =
@@ -4597,11 +4606,70 @@ impl Settings {
         }
     }
 
+    fn queue_login_items_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.login_items_loading
+            || self.login_item_busy.is_some()
+            || self.login_items_stream_refreshing
+        {
+            self.login_items_refresh_pending = true;
+            return;
+        }
+        self.login_items_refresh_pending = false;
+        self.login_items_stream_refreshing = true;
+        let generation = self.login_items_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_login_items_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.login_items_stream_refreshing = false;
+                if login_items_stream_snapshot_is_current(
+                    generation,
+                    this.login_items_generation,
+                    this.login_items_loading,
+                    this.login_item_busy.is_some(),
+                ) {
+                    match result {
+                        Ok(snapshot) => {
+                            this.login_items = Some(snapshot);
+                            this.login_items_error = None;
+                            this.login_items_stream_error = None;
+                        }
+                        Err(_) => {
+                            this.login_items_stream_error =
+                                Some("Could not refresh changed Login Items state".into());
+                        }
+                    }
+                } else {
+                    this.login_items_refresh_pending = true;
+                }
+                this.run_pending_login_items_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_login_items_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.login_items_refresh_pending
+            && !self.login_items_loading
+            && self.login_item_busy.is_none()
+            && !self.login_items_stream_refreshing
+        {
+            self.queue_login_items_stream_refresh(cx);
+        }
+    }
+
     fn refresh_login_items(&mut self, cx: &mut Context<Self>) {
-        if self.login_items_loading || self.login_item_busy.is_some() {
+        if self.login_items_loading
+            || self.login_item_busy.is_some()
+            || self.login_items_stream_refreshing
+        {
             return;
         }
         self.login_item_busy = Some("refresh".into());
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
         self.login_items_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4611,6 +4679,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_login_items_update(result);
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
@@ -4622,6 +4691,7 @@ impl Settings {
             return;
         }
         self.login_item_busy = Some(id.clone());
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
         self.login_items_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4631,6 +4701,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_login_items_update(result);
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
@@ -4647,6 +4718,7 @@ impl Settings {
             return;
         }
         self.login_item_busy = Some(format!("systemd:{id}"));
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
         self.login_items_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4656,6 +4728,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_login_items_update(result);
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
@@ -4667,6 +4740,7 @@ impl Settings {
             return;
         }
         self.login_item_busy = Some(format!("reveal:{id}"));
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
         self.login_items_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4683,7 +4757,7 @@ impl Settings {
             let result = match path {
                 Ok(path) => rmac_portal::show_item(&path)
                     .await
-                    .map_err(|error| error.to_string()),
+                    .map_err(|_| "the file manager could not reveal this login item".to_string()),
                 Err(error) => Err(error.to_string()),
             };
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -4691,6 +4765,7 @@ impl Settings {
                 this.login_items_error = result
                     .err()
                     .map(|error| format!("Could not reveal login item: {error}").into());
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
@@ -4702,6 +4777,7 @@ impl Settings {
             return;
         }
         self.login_item_busy = Some("choose".into());
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
         self.login_items_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4713,9 +4789,9 @@ impl Settings {
                         .await,
                 ),
                 Ok(None) => None,
-                Err(error) => Some(Err(rmac_login_items::Error::new(
+                Err(_) => Some(Err(rmac_login_items::Error::new(
                     rmac_login_items::ErrorKind::Unavailable,
-                    error.to_string(),
+                    "the desktop-entry chooser is unavailable",
                 ))),
             };
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -4731,6 +4807,7 @@ impl Settings {
                     }
                     None => {}
                 }
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
@@ -4745,14 +4822,13 @@ impl Settings {
             return;
         };
         self.login_item_busy = Some("add".into());
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
         self.login_items_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    rmac_login_items_linux::add_source(&preview.source, preview.replacing)
-                })
+                .spawn(async move { rmac_login_items_linux::add_source(&preview) })
                 .await;
             let succeeded = result.is_ok();
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -4760,33 +4836,60 @@ impl Settings {
                     this.login_item_add = None;
                 }
                 this.finish_login_items_update(result);
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
         .detach();
     }
 
-    fn request_remove_login_item(&mut self, id: String, name: String, cx: &mut Context<Self>) {
-        if self.login_item_busy.is_none() {
-            self.login_item_remove = Some((id, name));
-            cx.notify();
+    fn request_remove_login_item(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.login_item_busy.is_some() {
+            return;
         }
+        self.login_item_busy = Some(format!("prepare-remove:{id}"));
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
+        self.login_items_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_login_items_linux::prepare_remove_autostart(&id) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.login_item_busy = None;
+                match result {
+                    Ok(preview) => {
+                        this.login_item_remove = Some(preview);
+                        this.login_items_error = None;
+                    }
+                    Err(error) => {
+                        this.login_items_error =
+                            Some(format!("Could not prepare login item removal: {error}").into());
+                    }
+                }
+                this.run_pending_login_items_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn confirm_remove_login_item(&mut self, cx: &mut Context<Self>) {
         if self.login_item_busy.is_some() {
             return;
         }
-        let Some((id, _)) = self.login_item_remove.clone() else {
+        let Some(preview) = self.login_item_remove.clone() else {
             return;
         };
         self.login_item_busy = Some("remove".into());
+        self.login_items_generation = self.login_items_generation.wrapping_add(1);
         self.login_items_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move { rmac_login_items_linux::remove_autostart(&id) })
+                .spawn(async move { rmac_login_items_linux::remove_autostart(&preview) })
                 .await;
             let succeeded = result.is_ok();
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -4794,6 +4897,7 @@ impl Settings {
                     this.login_item_remove = None;
                 }
                 this.finish_login_items_update(result);
+                this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
         })
@@ -10982,8 +11086,15 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let refresh = Button::new("refresh-login-items", "Refresh")
-            .busy(self.login_item_busy.as_deref() == Some("refresh"))
-            .disabled(self.login_items_loading || self.login_item_busy.is_some())
+            .busy(
+                self.login_item_busy.as_deref() == Some("refresh")
+                    || self.login_items_stream_refreshing,
+            )
+            .disabled(
+                self.login_items_loading
+                    || self.login_item_busy.is_some()
+                    || self.login_items_stream_refreshing,
+            )
             .on_click(move |_, _, cx| {
                 refresh_view.update(cx, |settings, cx| settings.refresh_login_items(cx));
             });
@@ -11026,7 +11137,7 @@ impl Settings {
             let cancel_view = view.clone();
             let confirm_view = view.clone();
             cards.push(note_card(format!(
-                "Review “{}” ({}). {}",
+                "Review “{}” ({}). This command will be allowed to run at sign-in. {}",
                 preview.name,
                 preview.id,
                 if preview.replacing {
@@ -11035,6 +11146,13 @@ impl Settings {
                     "The validated entry will be copied into your user autostart directory."
                 }
             )));
+            cards.push(card(vec![row_base()
+                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(text_block(
+                    "Command at sign-in".into(),
+                    Some(preview.command.clone().into()),
+                ))
+                .into_any_element()]));
             cards.push(card(vec![row_base()
                 .child(tile("icons/info.svg", secondary(), 22.0))
                 .child(text_block(
@@ -11083,8 +11201,10 @@ impl Settings {
                     let reveal_view = view.clone();
                     let remove_view = view.clone();
                     let remove_id = item.id.clone();
-                    let remove_name = item.name.clone();
                     let busy = self.login_item_busy.as_deref() == Some(item.id.as_str());
+                    let remove_key = format!("prepare-remove:{}", item.id);
+                    let preparing_remove =
+                        self.login_item_busy.as_deref() == Some(remove_key.as_str());
                     let reveal_key = format!("reveal:{}", item.id);
                     let revealing = self.login_item_busy.as_deref() == Some(reveal_key.as_str());
                     let subtitle = item.session_detail.clone().unwrap_or_else(|| {
@@ -11106,14 +11226,11 @@ impl Settings {
                                     ))),
                                     "Remove…",
                                 )
+                                .busy(preparing_remove)
                                 .disabled(self.login_item_busy.is_some())
                                 .on_click(move |_, _, cx| {
                                     remove_view.update(cx, |settings, cx| {
-                                        settings.request_remove_login_item(
-                                            remove_id.clone(),
-                                            remove_name.clone(),
-                                            cx,
-                                        );
+                                        settings.request_remove_login_item(remove_id.clone(), cx);
                                     });
                                 }),
                             )
@@ -11160,11 +11277,12 @@ impl Settings {
                 .collect();
             cards.push(card(rows));
         }
-        if let Some((_, name)) = &self.login_item_remove {
+        if let Some(preview) = &self.login_item_remove {
             let cancel_view = view.clone();
             let confirm_view = view.clone();
             cards.push(note_card(format!(
-                "Remove “{name}”? Its user-owned desktop entry will be moved to Trash. If a system entry with the same filename exists, it will remain visible but disabled."
+                "Remove “{}”? Its user-owned desktop entry will be moved to Trash. If a system entry with the same filename exists, it will remain visible but disabled.",
+                preview.name
             )));
             cards.push(card(vec![row_base()
                 .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
@@ -18814,14 +18932,15 @@ mod tests {
         composite_wallpaper_pixel, compositor_event_affects_displays,
         compositor_event_affects_input, compositor_input_config_failed,
         input_stream_snapshot_is_current, locale_stream_snapshot_is_current,
-        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
-        power_stream_snapshot_is_current, relative_display_position, render_wallpaper_preview,
-        sample_battery_history, storage_stream_snapshot_is_current,
-        system_info_stream_snapshot_is_current, time_stream_snapshot_is_current,
-        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
-        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
-        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
+        login_items_stream_snapshot_is_current, network_stream_snapshot_is_current,
+        notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
+        relative_display_position, render_wallpaper_preview, sample_battery_history,
+        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
+        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
+        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
+        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+        WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -18953,6 +19072,14 @@ mod tests {
         assert!(!locale_stream_snapshot_is_current(3, 4, false, false));
         assert!(!locale_stream_snapshot_is_current(4, 4, true, false));
         assert!(!locale_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn login_item_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(login_items_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!login_items_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!login_items_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!login_items_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

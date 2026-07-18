@@ -1047,6 +1047,7 @@ fn update_managed_source(existing: Option<&str>, layout: &Layout) -> Result<Stri
             "saved and connected displays exceed the 32-output safety limit",
         ));
     }
+    document.ensure_v1();
     Ok(format!("{MANAGED_HEADER}\n{document}"))
 }
 
@@ -1293,7 +1294,7 @@ fn run_niri_output(_: &str, _: &[&str], operation: &'static str) -> Result<(), E
 }
 
 fn validate_output_id(output: &str) -> Result<(), Error> {
-    if output.trim().is_empty() || output.contains('\0') {
+    if output.trim().is_empty() || output.chars().any(char::is_control) {
         Err(Error::new("address display", "invalid output name"))
     } else {
         Ok(())
@@ -1634,6 +1635,7 @@ mod tests {
         };
         assert_eq!(mode.niri_argument(), "2560x1440@143.912");
         assert!(validate_output_id("").is_err());
+        assert!(validate_output_id("DP-1\noutput DP-2").is_err());
         let output = Output {
             id: "DP-1".into(),
             connector: "DP-1".into(),
@@ -1794,6 +1796,35 @@ mod tests {
         assert!(saved.contains("Offline Panel 9"));
         assert!(saved.contains("2560x1440@59.951"));
         assert!(saved.contains("transform \"90\""));
+    }
+
+    #[test]
+    fn managed_layout_serializes_plain_strings_as_niri_kdl_v1() {
+        let layout = Layout {
+            primary: "eDP-1".into(),
+            outputs: vec![OutputConfiguration {
+                id: "eDP-1".into(),
+                mode: Mode {
+                    width: 1920,
+                    height: 1080,
+                    refresh_rate: 60_000,
+                    preferred: true,
+                },
+                scale: 1.0,
+                transform: Transform::Normal,
+                x: 0,
+                y: 0,
+                logical_width: 1920,
+                logical_height: 1080,
+            }],
+        };
+
+        let saved = update_managed_source(None, &layout).unwrap();
+        assert!(saved.contains("output \"eDP-1\""));
+        assert!(saved.contains("mode \"1920x1080@60.000\""));
+        assert!(saved.contains("transform \"normal\""));
+        assert!(!saved.contains("#true"));
+        assert!(!saved.contains("#false"));
     }
 
     #[test]

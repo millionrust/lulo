@@ -427,8 +427,8 @@ comparison. Every referenced PNG/JPEG/WebP candidate must now pass the same
 complete bounded decode as a new import during both review and fresh-reread
 planning; signature-only malformed data and GIF remain unchanged in raw
 recovery, keep their Markdown text, and produce an unsupported-reference
-warning instead of authoritative attachment metadata. Linux runtime wiring
-remains. The real store
+warning instead of authoritative attachment metadata. Linux reference-PC
+evidence remains. The real store
 now canonicalizes an absolute app-owned root, makes it private, rejects
 symlink/hard-link lock substitution, and holds one nonblocking advisory writer
 lease across recovery, migration, and saves. Same-process duplicate stores and
@@ -480,9 +480,16 @@ projection consumes those events without optimistic publish, preserves note
 selection by stable ID across reordered readback snapshots, normalizes deleted
 folder selection, provides deterministic pinned/folder/Trash ordering, reveals
 an accepted created note, and retains pending/conflict/rejection phases without
-debugging note content. The live Notes view wiring remains; the prototype's
-1.5-second loop is still the running behavior until that integration lands and
-is validated.
+debugging note content. The live GPUI Notes process now owns only the command
+client and session projection. A bounded bridge forwards worker events without
+idle polling; startup, migration review, accepted snapshots, stable-ID folder/
+note selection, create, edit, pin, sort, Trash/restore, Pending Retry/Discard,
+maintenance gating, and typed failures are rendered from that projection. The
+old synchronous path scanner, direct note writes, path identity, and permanent
+1.5-second save loop have been removed from the running app. Window close is
+refused when a Pending decision exists or when the bounded command queue cannot
+accept shutdown; an accepted shutdown flushes the complete scheduled edit
+before the storage worker stops.
 
 The storage layer now has the first complete draft-recovery foundation. Each
 versioned record is keyed by stable note ID and retains its base note revision,
@@ -505,9 +512,14 @@ the durable note, and classifies remaining records as directly applicable,
 conflicting, or orphaned using stable identity and exact revisions. The UI
 receives only bounded summaries until it explicitly requests Restore, while
 Discard removes and verifies the exact stable-ID record. The session projection
-keeps review/restored state until accepted cleanup or explicit discard. Live
-recovery dialogs and editor restoration remain, so draft recovery is not yet a
-complete application claim.
+keeps review/restored state until accepted cleanup or explicit discard. The
+live view now blocks ordinary editing while a draft review is unresolved,
+restores an applicable exact-base draft through the normal scheduler, preserves
+a conflicting or orphaned draft as a newly accepted note before discarding the
+recovery record, and offers an explicit destructive discard. Unavailable or
+excessive discovery remains fail-closed; isolated malformed/quarantined notices
+require an explicit Continue. Full conflict overwrite/reload choices and Linux
+crash/recovery evidence remain before the complete application claim.
 
 The GPUI-free runtime now also provides a disposable version-1 search index
 built from an exact accepted library revision. It indexes only live notes and
@@ -536,18 +548,16 @@ backpressure instead of growing, cancelled queued jobs publish nothing, and
 dropping the event endpoint cancels active work and deterministically joins the
 thread even while command clients remain. The live view still needs to submit
 the current accepted snapshot on each query/revision change and render the
-projected states; no running application behavior has changed yet.
+projected states; live search still uses no derived-index behavior yet.
 
-Known live-prototype gaps include path-based identity and pins, synchronous
-scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
-manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
-recovery records, silent scan/decode failures, no live permanent file/folder
-deletion confirmation/action UI,
-attachment copies outside a note transaction, no live portal import/export or
-bundle-import review UI, no consumption of the derived cancellable index, and no
-Linux accessibility/runtime evidence. Migration must preserve every readable
-existing note and attachment; it must not delete the prototype library after a
-partial import.
+Known live-app gaps now include folder rename/delete review, tag editing,
+formatted Markdown preview, image attach/preview/reference-removal UI, reviewed
+permanent file/folder deletion, XDG portal text/bundle import and export review/
+progress, consumption of the derived cancellable search index, richer
+conflict-resolution choices, semantic accessibility, and Linux runtime/visual
+evidence. The accepted store remains local-only and makes no cloud-sync claim.
+Migration must preserve every readable existing note and attachment; it must
+not delete the prototype library after a partial import.
 
 ## Acceptance evidence
 

@@ -1103,6 +1103,12 @@ fn process_command(
     events: &SyncSender<WorkerEvent>,
 ) -> Phase {
     match (phase, command) {
+        (Phase::Ready(mut ready), WorkerCommand::Shutdown) => {
+            if let Some(edit) = ready.scheduler.flush() {
+                let _ = commit_edit(&mut ready, edit, events);
+            }
+            Phase::Stopped
+        }
         (_, WorkerCommand::Shutdown) => Phase::Stopped,
         (Phase::Review(review), WorkerCommand::AcceptMigration { request_id }) => {
             match review.review.accept() {
@@ -3581,6 +3587,51 @@ mod tests {
             client.try_send(WorkerCommand::Flush { request_id: 2 }),
             Err(WorkerSendError::Closed)
         );
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn shutdown_flushes_the_complete_scheduled_edit_before_stopping() {
+        let (container, paths) = roots("shutdown-flush");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_secs(5)).unwrap();
+        ready(&worker);
+        let (note_id, _) = create_note(&worker, 1);
+        worker
+            .try_send(WorkerCommand::ScheduleEdit(scheduled_edit(
+                2,
+                1,
+                note_id,
+                1,
+                "Durable body from close",
+            )))
+            .unwrap();
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+
+        let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("shutdown must flush before stopping, got {event:?}"),
+        };
+        assert_eq!(accepted.result, ActionResult::Edited(note_id));
+        assert_eq!(
+            accepted.accepted.snapshot.notes[0].body,
+            "Durable body from close"
+        );
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Stopped { .. }
+        ));
+        drop(worker);
+
+        let reopened = NotesWorker::start(paths).unwrap();
+        let snapshot = ready(&reopened);
+        assert_eq!(snapshot.snapshot.notes[0].body, "Durable body from close");
+        reopened.try_send(WorkerCommand::Shutdown).unwrap();
+        assert!(matches!(
+            reopened.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Stopped { .. }
+        ));
+        drop(reopened);
         std::fs::remove_dir_all(container).unwrap();
     }
 

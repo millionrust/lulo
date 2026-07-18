@@ -10,9 +10,12 @@ name = "rmac-notes"
 path = "src/main.rs"
 
 [dependencies]
+async-channel.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui.workspace = true
 rmac-editor.workspace = true
-rmac-storage.workspace = true
+rmac-notes-runtime.workspace = true
+rmac-notes-storage.workspace = true
+rmac-notes-store.workspace = true
 chrono.workspace = true

@@ -1,44 +1,39 @@
-//! rmac Notes — an Apple Notes-style app, built for fidelity.
+//! rmac Notes live application.
 //!
-//! Three columns: folders sidebar │ notes list │ editor. The editor splits each
-//! note into a big bold title (first line) and a regular body, exactly like
-//! macOS Notes. Notes are `.md` files under `~/Documents/rmac-notes`,
-//! auto-saved on a 1.5s debounce.
-//!
-//! Real folders live as subdirectories of the notes dir. Notes carry per-note
-//! tags (persisted as a trailing `<!--tags: ...-->` comment line) and the
-//! editor has a format bar that inserts markdown blocks (headings, bullet
-//! lists, checklists) and a live preview that renders them with macOS styling.
+//! The GPUI view is a projection of `rmac-notes-runtime`: it never scans or
+//! writes the library directly. Stable IDs, accepted snapshots, recovery, and
+//! the single writer remain authoritative off the UI thread.
 
-mod storage;
-
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::io;
+use std::thread;
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Div,
-    Entity, FocusHandle, Focusable as _, InteractiveElement as _, IntoElement, KeyBinding,
-    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, SharedString,
-    Stateful, StatefulInteractiveElement as _, Styled, Window,
+    Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ParentElement, Render,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
-use rmac_ui::{mac, Button, InputEvent, SearchField, TextField};
+use rmac_notes_runtime::{
+    ActionRequest, ActionResult, DraftRecoveryKind, EditGeneration, LibraryAction, NotesSession,
+    NotesWorker, NotesWorkerClient, NotesWorkerEvents, ScheduledEdit, SessionPhase, WorkerCommand,
+    WorkerEvent, WorkerFailure, WorkerSendError, EVENT_CAPACITY,
+};
+use rmac_notes_storage::{resolve_notes_paths, PendingReason};
+use rmac_notes_store::{NewNote, NoteChanges, NoteId, SortOrder};
+use rmac_ui::{mac, Button, InputEvent, TextField};
 
-const FOLDERS_W: f32 = 200.0;
-const LIST_W: f32 = 292.0;
+const FOLDERS_W: f32 = 210.0;
+const LIST_W: f32 = 310.0;
 
 actions!(
     notes,
     [
-        NewNote,
-        NewFolder,
-        DeleteNote,
-        TogglePreview,
-        RenameFolder,
-        DeleteFolder,
+        ComposeNote,
+        CreateFolder,
+        TrashOrRestore,
         TogglePin,
         SortByEdited,
         SortByCreated,
@@ -46,678 +41,650 @@ actions!(
     ]
 );
 
-/// The order the note list is sorted in (matches macOS Notes' View ▸ Sort By).
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SortBy {
-    Edited,
-    Created,
-    Title,
-}
-
-impl SortBy {
-    fn label(self) -> &'static str {
-        match self {
-            SortBy::Edited => "Date Edited",
-            SortBy::Created => "Date Created",
-            SortBy::Title => "Title",
-        }
-    }
-    fn id(self) -> &'static str {
-        match self {
-            SortBy::Edited => "edited",
-            SortBy::Created => "created",
-            SortBy::Title => "title",
-        }
-    }
-    fn from_id(s: &str) -> Self {
-        match s {
-            "created" => SortBy::Created,
-            "title" => SortBy::Title,
-            _ => SortBy::Edited,
-        }
-    }
-}
-
-/// Which folder the user is browsing. `All` is the virtual "All Notes" view.
-#[derive(Clone, PartialEq)]
-enum FolderSel {
-    All,
-    Folder(String),
-}
-
-struct Folder {
-    name: SharedString,
-    count: usize,
-}
-
-struct Note {
-    path: PathBuf,
-    /// Parent folder name, or `None` for notes in the root (no folder).
-    folder: Option<String>,
-    title: SharedString,
-    snippet: SharedString,
-    date: SharedString,
-    tags: Vec<String>,
-    /// Raw modified / created times, for the Sort By order.
-    mtime: SystemTime,
-    ctime: SystemTime,
-}
-
 struct NotesView {
-    dir: PathBuf,
-    notes: Vec<Note>,
-    folders: Vec<Folder>,
-    folder_sel: FolderSel,
-    /// Index into `self.notes` of the open note (stable across filtering).
-    selected: Option<usize>,
-    /// In-place folder rename: (original name, edit field).
-    renaming_folder: Option<(String, Entity<InputState>)>,
+    worker: Option<NotesWorkerClient>,
+    session: NotesSession,
     title: Entity<InputState>,
     body: Entity<InputState>,
-    tags_input: Entity<InputState>,
-    search: Entity<InputState>,
-    preview: bool,
-    last_saved: String,
-    /// Paths of pinned notes (sort to the top), persisted to a `.pinned` file.
-    pinned: HashSet<PathBuf>,
-    /// Order the note list is sorted in, persisted to a `.sort` file.
-    sort_by: SortBy,
-    /// Open right-click menu: window-relative position + which menu.
-    menu: Option<(Point<Pixels>, NoteMenuKind)>,
-    /// Folder name awaiting a delete confirmation (shared alert), if any.
-    confirm_delete_folder: Option<String>,
-    storage_error: Option<SharedString>,
     focus: FocusHandle,
+    applying_snapshot: bool,
+    next_request_id: u64,
+    next_edit_generation: u64,
+    latest_local_generation: Option<EditGeneration>,
+    message: Option<SharedString>,
+    recovery_notice_dismissed: bool,
+    recovery_decision: Option<(NoteId, RecoveryDecision)>,
+    recovery_copy_pending: Option<(u64, NoteId)>,
+    closing: bool,
 }
 
-/// Which right-click menu is open in Notes.
-#[derive(Clone, Copy)]
-enum NoteMenuKind {
-    Folder,
-    Note,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RecoveryDecision {
+    RestoreOriginal,
+    PreserveCopy,
 }
 
 impl NotesView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let dir = PathBuf::from(home).join("Documents").join("rmac-notes");
-        let mut storage_error = storage::create_dir(
-            &storage::RealStorage,
-            storage::Operation::CreateFolder,
-            &dir,
-        )
-        .err()
-        .map(|failure| failure.to_string().into());
-
         cx.bind_keys([
-            KeyBinding::new("cmd-n", NewNote, Some("Notes")),
-            KeyBinding::new("shift-cmd-n", NewFolder, Some("Notes")),
-            KeyBinding::new("cmd-backspace", DeleteNote, Some("Notes")),
-            KeyBinding::new("shift-cmd-p", TogglePreview, Some("Notes")),
+            KeyBinding::new("cmd-n", ComposeNote, Some("Notes")),
+            KeyBinding::new("shift-cmd-n", CreateFolder, Some("Notes")),
+            KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
         ]);
 
-        // Title is single-line; body is multi-line soft-wrapped.
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
         let body = rmac_editor::multiline("Note", window, cx);
-        let tags_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Add tags, comma separated"));
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        cx.observe(&search, |_, _, cx| cx.notify()).detach();
-        // Re-render tag pills as the user edits the tags field.
-        cx.observe(&tags_input, |_, _, cx| cx.notify()).detach();
-
-        let pinned = load_pins(&dir).unwrap_or_else(|failure| {
-            storage_error = Some(failure.to_string().into());
-            HashSet::new()
-        });
-        let sort_by = load_sort(&dir).unwrap_or_else(|failure| {
-            storage_error = Some(failure.to_string().into());
-            SortBy::Edited
-        });
-        let mut view = Self {
-            notes: Vec::new(),
-            folders: Vec::new(),
-            folder_sel: FolderSel::All,
-            dir,
-            selected: None,
-            renaming_folder: None,
-            title,
-            body,
-            tags_input,
-            search,
-            preview: false,
-            last_saved: String::new(),
-            pinned,
-            sort_by,
-            menu: None,
-            confirm_delete_folder: None,
-            storage_error,
-            focus: cx.focus_handle(),
-        };
-        view.reload(None, cx);
-
-        if !view.notes.is_empty() {
-            view.select(0, window, cx);
-        }
-
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(1500))
-                .await;
-            let Some(this) = this.upgrade() else { break };
-            if cx
-                .update_entity(&this, |view: &mut NotesView, cx| view.save_current(cx))
-                .is_err()
-            {
-                break;
+        cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.schedule_current_edit(cx);
+            }
+        })
+        .detach();
+        cx.subscribe(&body, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.schedule_current_edit(cx);
             }
         })
         .detach();
 
+        let focus = cx.focus_handle();
+        window.focus(&focus);
+        let mut view = Self {
+            worker: None,
+            session: NotesSession::new(),
+            title,
+            body,
+            focus,
+            applying_snapshot: false,
+            next_request_id: 1,
+            next_edit_generation: 1,
+            latest_local_generation: None,
+            message: None,
+            recovery_notice_dismissed: false,
+            recovery_decision: None,
+            recovery_copy_pending: None,
+            closing: false,
+        };
+
+        match resolve_notes_paths()
+            .map_err(|error| error.to_string())
+            .and_then(|paths| NotesWorker::start(paths).map_err(|error| error.to_string()))
+            .and_then(|worker| {
+                let (client, events) = worker.into_parts();
+                bridge_worker_events(events)
+                    .map(|receiver| (client, receiver))
+                    .map_err(|error| format!("Notes could not start its event bridge: {error}"))
+            }) {
+            Ok((client, receiver)) => {
+                view.worker = Some(client);
+                cx.spawn_in(window, async move |this, cx| {
+                    while let Ok(event) = receiver.recv().await {
+                        if this
+                            .update_in(cx, |this, window, cx| {
+                                this.apply_worker_event(event, window, cx)
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                })
+                .detach();
+            }
+            Err(message) => view.message = Some(message.into()),
+        }
+
         view
     }
 
-    // ---- model ----
-
-    /// Does a note belong to the folder currently being browsed?
-    fn in_folder(&self, note: &Note) -> bool {
-        match &self.folder_sel {
-            FolderSel::All => true,
-            FolderSel::Folder(name) => note.folder.as_deref() == Some(name.as_str()),
-        }
-    }
-
-    /// Rescan folders and notes from disk, preserving the open note by path.
-    /// Pin or unpin the selected note (sorts it to the top), persisting the set.
-    fn toggle_pin(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self
-            .selected
-            .and_then(|i| self.notes.get(i))
-            .map(|n| n.path.clone())
-        else {
-            return;
+    fn apply_worker_event(
+        &mut self,
+        event: WorkerEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let accepted_generation = match &event {
+            WorkerEvent::Accepted(accepted) => accepted.generation,
+            _ => None,
         };
-        let mut next = self.pinned.clone();
-        if !next.remove(&path) {
-            next.insert(path.clone());
+        let sync_editor = match &event {
+            WorkerEvent::Ready(_) => self.latest_local_generation.is_none(),
+            WorkerEvent::Accepted(accepted) => match accepted.generation {
+                Some(generation) => self
+                    .latest_local_generation
+                    .is_none_or(|latest| generation >= latest),
+                None => self.latest_local_generation.is_none(),
+            },
+            _ => false,
+        };
+        let restored_draft = match &event {
+            WorkerEvent::DraftRestored(restored) => Some(restored.clone()),
+            _ => None,
+        };
+        let accepted_request_id = match &event {
+            WorkerEvent::Accepted(accepted) => Some(accepted.request_id),
+            _ => None,
+        };
+        let rejected_request_id = match &event {
+            WorkerEvent::Rejected(rejected) => Some(rejected.request_id),
+            _ => None,
+        };
+        if matches!(&event, WorkerEvent::DraftReview(_)) {
+            self.recovery_notice_dismissed = false;
         }
-        match save_pins(&self.dir, &next) {
-            Ok(()) => {
-                self.pinned = next;
-                self.storage_error = None;
-                self.reload(Some(path), cx);
+        let reveal_created = matches!(
+            &event,
+            WorkerEvent::Accepted(accepted)
+                if matches!(
+                    accepted.result,
+                    ActionResult::CreatedNote(_) | ActionResult::ImportedNote { .. }
+                )
+        );
+        let rejection = match &event {
+            WorkerEvent::Rejected(rejected) => Some(worker_failure_message(rejected.failure)),
+            WorkerEvent::Pending(pending) => Some(pending_message(pending.reason)),
+            WorkerEvent::StartupFailed(error) => Some(error.to_string()),
+            _ => None,
+        };
+        self.session.apply(event);
+        if let Some(accepted) = accepted_generation {
+            if self
+                .latest_local_generation
+                .is_some_and(|latest| accepted >= latest)
+            {
+                self.latest_local_generation = None;
             }
-            Err(failure) => self.record_storage_failure(failure, cx),
         }
-    }
-
-    /// Change the note-list sort order, persist it, and re-sort the list.
-    fn set_sort(&mut self, sort: SortBy, cx: &mut Context<Self>) {
-        if self.sort_by == sort {
-            return;
+        if let Some(message) = rejection {
+            self.message = Some(message.into());
+        } else if sync_editor {
+            self.message = None;
         }
-        match save_sort(&self.dir, sort) {
-            Ok(()) => {
-                self.sort_by = sort;
-                self.storage_error = None;
-                self.reload(None, cx);
-            }
-            Err(failure) => self.record_storage_failure(failure, cx),
+        if sync_editor {
+            self.sync_editor(window, cx);
         }
-    }
-
-    fn reload(&mut self, preserve: Option<PathBuf>, cx: &mut Context<Self>) {
-        let keep = preserve.or_else(|| {
-            self.selected
-                .and_then(|i| self.notes.get(i))
-                .map(|n| n.path.clone())
-        });
-
-        let mut notes = scan_notes(&self.dir);
-        // Apply the chosen sort order, then sort pinned notes first (stable, so
-        // the chosen order is preserved within each group).
-        match self.sort_by {
-            SortBy::Edited => notes.sort_by(|a, b| b.mtime.cmp(&a.mtime)),
-            SortBy::Created => notes.sort_by(|a, b| b.ctime.cmp(&a.ctime)),
-            SortBy::Title => {
-                notes.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
-            }
-        }
-        self.pinned.retain(|p| p.exists());
-        notes.sort_by_key(|n| !self.pinned.contains(&n.path));
-        self.notes = notes;
-        let names = scan_folders(&self.dir);
-        self.folders = names
-            .into_iter()
-            .map(|name| {
-                let count = self
-                    .notes
-                    .iter()
-                    .filter(|n| n.folder.as_deref() == Some(name.as_str()))
-                    .count();
-                Folder {
-                    name: name.into(),
-                    count,
+        if let Some(restored) = restored_draft {
+            let decision = self
+                .recovery_decision
+                .take()
+                .filter(|(note_id, _)| *note_id == restored.draft.note_id)
+                .map(|(_, decision)| decision);
+            match decision {
+                Some(decision) => self.commit_restored_draft(restored, decision, window, cx),
+                None => {
+                    self.message = Some(
+                        "Notes received an unexpected recovery response. The recovery record was preserved."
+                            .into(),
+                    );
                 }
-            })
-            .collect();
-
-        self.selected = keep.and_then(|p| self.notes.iter().position(|n| n.path == p));
-        cx.notify();
-    }
-
-    /// The full document text (title line + body + tags) for the open note.
-    fn doc(&self, cx: &Context<Self>) -> String {
-        let t = self.title.read(cx).value().to_string();
-        let b = self.body.read(cx).value().to_string();
-        let tags = parse_tags(&self.tags_input.read(cx).value());
-        let mut s = if t.is_empty() && b.is_empty() {
-            String::new()
-        } else {
-            format!("{t}\n{b}")
-        };
-        if !tags.is_empty() {
-            if !s.is_empty() {
-                s.push('\n');
-            }
-            s.push_str(&format!("<!--tags: {}-->", tags.join(", ")));
-        }
-        s
-    }
-
-    /// Split a stored document into the title, body, and tags fields.
-    fn load_doc(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let (t, b, tags) = parse_doc(text);
-        self.title.update(cx, |s, cx| s.set_value(t, window, cx));
-        self.body.update(cx, |s, cx| s.set_value(b, window, cx));
-        self.tags_input
-            .update(cx, |s, cx| s.set_value(tags.join(", "), window, cx));
-    }
-
-    fn record_storage_failure(&mut self, failure: storage::Failure, cx: &mut Context<Self>) {
-        self.storage_error = Some(failure.to_string().into());
-        cx.notify();
-    }
-
-    fn save_current(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(ix) = self.selected else { return true };
-        let doc = self.doc(cx);
-        if doc == self.last_saved {
-            return true;
-        }
-        // Compute every derived value before taking a mutable borrow of `notes`.
-        let t = self.title.read(cx).value().to_string();
-        let b = self.body.read(cx).value().to_string();
-        let meta = format!("{t}\n{b}");
-        let tags = parse_tags(&self.tags_input.read(cx).value());
-        let Some(path) = self.notes.get(ix).map(|note| note.path.clone()) else {
-            return true;
-        };
-        if let Err(failure) = storage::write(
-            &storage::RealStorage,
-            storage::Operation::SaveNote,
-            &path,
-            &doc,
-        ) {
-            self.record_storage_failure(failure, cx);
-            return false;
-        }
-        if let Some(note) = self.notes.get_mut(ix) {
-            note.title = title_of(&meta).into();
-            note.snippet = snippet_of(&meta).into();
-            note.date = date_label(SystemTime::now()).into();
-            note.tags = tags;
-            self.last_saved = doc;
-            self.storage_error = None;
-            cx.notify();
-        }
-        true
-    }
-
-    fn select(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.save_current(cx) {
-            return;
-        }
-        let Some(path) = self.notes.get(ix).map(|note| note.path.clone()) else {
-            return;
-        };
-        let text = match storage::read(&storage::RealStorage, storage::Operation::LoadNote, &path) {
-            Ok(text) => text,
-            Err(failure) => {
-                self.record_storage_failure(failure, cx);
-                return;
-            }
-        };
-        self.load_doc(&text, window, cx);
-        self.selected = Some(ix);
-        self.last_saved = self.doc(cx);
-        cx.notify();
-    }
-
-    fn new_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.save_current(cx) {
-            return;
-        }
-        let target = match &self.folder_sel {
-            FolderSel::Folder(n) => self.dir.join(n),
-            FolderSel::All => self.dir.clone(),
-        };
-        if let Err(failure) = storage::create_dir(
-            &storage::RealStorage,
-            storage::Operation::CreateFolder,
-            &target,
-        ) {
-            self.record_storage_failure(failure, cx);
-            return;
-        }
-        let path = unique_path(&target);
-        if let Err(failure) = storage::write(
-            &storage::RealStorage,
-            storage::Operation::CreateNote,
-            &path,
-            "",
-        ) {
-            self.record_storage_failure(failure, cx);
-            return;
-        }
-        self.storage_error = None;
-        self.reload(Some(path.clone()), cx);
-        if let Some(ix) = self.notes.iter().position(|n| n.path == path) {
-            self.select(ix, window, cx);
-            let handle = self.title.read(cx).focus_handle(cx);
-            window.focus(&handle);
-        }
-    }
-
-    fn delete_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(ix) = self.selected else { return };
-        if ix >= self.notes.len() {
-            return;
-        }
-        let path = self.notes[ix].path.clone();
-        if let Err(failure) =
-            storage::remove_file(&storage::RealStorage, storage::Operation::DeleteNote, &path)
-        {
-            self.record_storage_failure(failure, cx);
-            return;
-        }
-        self.storage_error = None;
-        if self.pinned.remove(&path) {
-            if let Err(failure) = save_pins(&self.dir, &self.pinned) {
-                self.record_storage_failure(failure, cx);
             }
         }
-        self.selected = None;
-        self.last_saved.clear();
-        self.reload(None, cx);
-
-        // Re-open the next visible note in this folder, if any.
-        if let Some(ix) = self.notes.iter().position(|n| self.in_folder(n)) {
-            self.select(ix, window, cx);
-        } else {
-            self.load_doc("", window, cx);
+        if let Some(request_id) = rejected_request_id {
+            if self
+                .recovery_copy_pending
+                .is_some_and(|(pending, _)| pending == request_id)
+            {
+                self.recovery_copy_pending = None;
+            }
+        }
+        if let Some(request_id) = accepted_request_id {
+            if let Some((_, draft_note_id)) = self
+                .recovery_copy_pending
+                .take_if(|(pending, _)| *pending == request_id)
+            {
+                self.discard_draft(draft_note_id, cx);
+            }
+        }
+        if reveal_created {
+            self.title.update(cx, |state, cx| state.focus(window, cx));
         }
         cx.notify();
     }
 
-    // ---- folders ----
+    fn sync_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (title, body) = self
+            .session
+            .selected_note()
+            .map(|note| (note.title.clone(), note.body.clone()))
+            .unwrap_or_default();
+        self.applying_snapshot = true;
+        self.title
+            .update(cx, |state, cx| state.set_value(title, window, cx));
+        self.body
+            .update(cx, |state, cx| state.set_value(body, window, cx));
+        self.applying_snapshot = false;
+    }
 
-    fn select_folder(&mut self, sel: FolderSel, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.save_current(cx) {
+    fn schedule_current_edit(&mut self, cx: &mut Context<Self>) {
+        if self.applying_snapshot || !self.is_interactive_ready() {
             return;
         }
-        self.folder_sel = sel;
-        self.renaming_folder = None;
-        match self.notes.iter().position(|n| self.in_folder(n)) {
-            Some(ix) => self.select(ix, window, cx),
-            None => {
-                self.selected = None;
-                self.last_saved.clear();
-                self.load_doc("", window, cx);
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        let note_id = note.id;
+        let expected_revision = note.revision;
+        let created_unix_ms = note.created_unix_ms;
+        let previous_modified = note.modified_unix_ms;
+        let tags = note.tags.clone();
+        let title = self.title.read(cx).value().to_string();
+        let body = self.body.read(cx).value().to_string();
+        if title == note.title && body == note.body {
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let Some(generation) = self.take_edit_generation() else {
+            return;
+        };
+        let modified_unix_ms = now_unix_ms().max(created_unix_ms).max(previous_modified);
+        let edit = ScheduledEdit::new(
+            request_id,
+            generation,
+            note_id,
+            expected_revision,
+            NoteChanges {
+                modified_unix_ms,
+                title,
+                body,
+                tags,
+            },
+        );
+        match edit {
+            Ok(edit) => {
+                if self.send(WorkerCommand::ScheduleEdit(edit), cx) {
+                    self.latest_local_generation = Some(generation);
+                }
+            }
+            Err(error) => {
+                self.message = Some(error.to_string().into());
                 cx.notify();
             }
         }
     }
 
-    fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let path = unique_folder(&self.dir);
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("New Folder")
-            .to_string();
-        if let Err(failure) = storage::create_dir(
-            &storage::RealStorage,
-            storage::Operation::CreateFolder,
-            &path,
-        ) {
-            self.record_storage_failure(failure, cx);
+    fn commit_restored_draft(
+        &mut self,
+        restored: rmac_notes_runtime::DraftRestoredEvent,
+        decision: RecoveryDecision,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let note_id = restored.draft.note_id;
+        if decision == RecoveryDecision::PreserveCopy {
+            self.preserve_recovered_copy(restored, cx);
             return;
         }
-        self.storage_error = None;
-        self.reload(None, cx);
-        self.folder_sel = FolderSel::Folder(name.clone());
-        self.rename_folder_start(window, cx);
-    }
-
-    fn rename_folder_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let FolderSel::Folder(name) = self.folder_sel.clone() else {
+        let destination = self.session.snapshot().and_then(|snapshot| {
+            snapshot
+                .notes
+                .iter()
+                .find(|note| note.id == note_id && !note.deleted)
+                .map(|note| note.folder_id)
+        });
+        let Some(folder_id) = destination else {
+            self.message = Some(
+                "The recovered edit no longer has a safe destination. Its recovery record was preserved."
+                    .into(),
+            );
+            cx.notify();
             return;
         };
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(name.clone()));
-        // Commit the typed name on Enter, or when focus leaves the field
-        // ("type name, click away"). Escape cancels via on_key_down before
-        // any blur fires, so a cancel never reaches this commit path.
-        cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| match ev {
-            InputEvent::PressEnter { .. } | InputEvent::Blur => this.rename_folder_commit(cx),
-            _ => {}
-        })
-        .detach();
-        let handle = input.read(cx).focus_handle(cx);
-        window.focus(&handle);
-        self.renaming_folder = Some((name, input));
-        cx.notify();
-    }
+        self.session.select_folder(folder_id.map_or(
+            rmac_notes_runtime::FolderSelection::All,
+            rmac_notes_runtime::FolderSelection::Folder,
+        ));
+        if !self.session.select_note(note_id) {
+            self.message = Some(
+                "The recovered edit could not be selected safely. Its recovery record was preserved."
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
 
-    fn rename_folder_commit(&mut self, cx: &mut Context<Self>) {
-        let Some((old, input)) = self.renaming_folder.take() else {
+        let changes = restored.draft.changes.clone();
+        self.applying_snapshot = true;
+        self.title.update(cx, |state, cx| {
+            state.set_value(changes.title.clone(), window, cx)
+        });
+        self.body.update(cx, |state, cx| {
+            state.set_value(changes.body.clone(), window, cx)
+        });
+        self.applying_snapshot = false;
+
+        let Some(request_id) = self.take_request_id() else {
             return;
         };
-        let new_name = input.read(cx).value().trim().to_string();
-        let mut preserve = self
-            .selected
-            .and_then(|i| self.notes.get(i))
-            .map(|n| n.path.clone());
-        if !new_name.is_empty() && new_name != old {
-            let src = self.dir.join(&old);
-            let dst = self.dir.join(&new_name);
-            if !dst.exists() {
-                if let Err(failure) = storage::rename(
-                    &storage::RealStorage,
-                    storage::Operation::RenameFolder,
-                    &src,
-                    &dst,
-                ) {
-                    self.record_storage_failure(failure, cx);
-                    self.reload(preserve, cx);
-                    return;
+        let Some(generation) = self.take_edit_generation() else {
+            return;
+        };
+        match ScheduledEdit::new(
+            request_id,
+            generation,
+            note_id,
+            restored.draft.base_note_revision,
+            changes,
+        ) {
+            Ok(edit) => {
+                self.message = Some("Restoring the recovered edit…".into());
+                if self.send(WorkerCommand::ScheduleEdit(edit), cx) {
+                    self.latest_local_generation = Some(generation);
                 }
-                self.storage_error = None;
-                // The open note moved with its folder — remap its path.
-                if let Some(p) = preserve.clone() {
-                    if let Ok(rel) = p.strip_prefix(&src) {
-                        preserve = Some(dst.join(rel));
-                    }
-                }
-                let mut pins_changed = false;
-                self.pinned = self
-                    .pinned
-                    .iter()
-                    .map(|path| {
-                        if let Ok(relative) = path.strip_prefix(&src) {
-                            pins_changed = true;
-                            dst.join(relative)
-                        } else {
-                            path.clone()
-                        }
-                    })
-                    .collect();
-                if pins_changed {
-                    if let Err(failure) = save_pins(&self.dir, &self.pinned) {
-                        self.record_storage_failure(failure, cx);
-                    }
-                }
-                if let FolderSel::Folder(n) = &self.folder_sel {
-                    if n == &old {
-                        self.folder_sel = FolderSel::Folder(new_name.clone());
-                    }
-                }
-            } else {
-                self.record_storage_failure(
-                    storage::Failure::message(
-                        storage::Operation::RenameFolder,
-                        &src,
-                        "a folder with that name already exists",
-                    ),
-                    cx,
-                );
+            }
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
             }
         }
-        self.reload(preserve, cx);
     }
 
-    /// Escape path: discard the rename and drop the edit field without renaming.
-    fn rename_folder_cancel(&mut self, cx: &mut Context<Self>) {
-        if self.renaming_folder.take().is_some() {
+    fn preserve_recovered_copy(
+        &mut self,
+        restored: rmac_notes_runtime::DraftRestoredEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let draft_note_id = restored.draft.note_id;
+        let folder_id = self.session.snapshot().and_then(|snapshot| {
+            snapshot
+                .notes
+                .iter()
+                .find(|note| note.id == draft_note_id && !note.deleted)
+                .and_then(|note| note.folder_id)
+        });
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let changes = restored.draft.changes;
+        let action = LibraryAction::CreateNote(NewNote {
+            created_unix_ms: now_unix_ms(),
+            title: changes.title,
+            body: changes.body,
+            tags: changes.tags,
+            folder_id,
+        });
+        let request = match ActionRequest::new(request_id, action) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::Apply(request), cx) {
+            self.recovery_copy_pending = Some((request_id, draft_note_id));
+            self.message = Some("Preserving the recovered edit as a new note…".into());
             cx.notify();
         }
     }
 
-    fn delete_folder(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let FolderSel::Folder(name) = self.folder_sel.clone() else {
+    fn is_interactive_ready(&self) -> bool {
+        matches!(self.session.phase(), SessionPhase::Ready) && !self.recovery_review_is_blocking()
+    }
+
+    fn recovery_review_is_blocking(&self) -> bool {
+        self.session.draft_review().is_some() && !self.recovery_notice_dismissed
+    }
+
+    fn send_action(&mut self, action: LibraryAction, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
             return;
         };
-        // Persist any pending edits in the open note before touching the disk —
-        // the note may live inside the folder we're about to remove.
-        if !self.save_current(cx) {
-            return;
-        }
-        self.confirm_delete_folder = Some(name);
-        cx.notify();
-    }
-
-    /// Confirm button of the delete-folder alert.
-    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
-        if let Some(name) = self.confirm_delete_folder.take() {
-            self.delete_folder_confirmed(&name, cx);
-        }
-        cx.notify();
-    }
-
-    fn delete_folder_confirmed(&mut self, name: &str, cx: &mut Context<Self>) {
-        let path = self.dir.join(name);
-        if let Err(failure) = storage::remove_dir_all(
-            &storage::RealStorage,
-            storage::Operation::DeleteFolder,
-            &path,
-        ) {
-            self.record_storage_failure(failure, cx);
-            return;
-        }
-        self.storage_error = None;
-        let previous_pin_count = self.pinned.len();
-        self.pinned.retain(|pinned| !pinned.starts_with(&path));
-        if self.pinned.len() != previous_pin_count {
-            if let Err(failure) = save_pins(&self.dir, &self.pinned) {
-                self.record_storage_failure(failure, cx);
+        match ActionRequest::new(request_id, action) {
+            Ok(request) => {
+                self.send(WorkerCommand::Apply(request), cx);
+            }
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
             }
         }
-        if self.folder_sel == FolderSel::Folder(name.to_string()) {
-            self.folder_sel = FolderSel::All;
-        }
-        self.selected = None;
-        self.last_saved.clear();
-        self.reload(None, cx);
     }
 
-    // ---- format blocks ----
+    fn send(&mut self, command: WorkerCommand, cx: &mut Context<Self>) -> bool {
+        let result = self
+            .worker
+            .as_ref()
+            .ok_or(WorkerSendError::Closed)
+            .and_then(|worker| worker.try_send(command));
+        if let Err(error) = result {
+            self.message = Some(error.to_string().into());
+            cx.notify();
+            false
+        } else {
+            true
+        }
+    }
 
-    /// Attach an image: pick a file, copy it next to the note, insert a markdown ref.
-    fn attach_image(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let rx = cx.prompt_for_paths(gpui::PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: None,
-        });
-        let dir = self.dir.clone();
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(paths))) = rx.await else {
-                return;
-            };
-            let Some(src) = paths.into_iter().next() else {
-                return;
-            };
-            let requested_name = src
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "image".to_string());
-            let dst = unique_named_path(&dir, &requested_name);
-            let name = dst
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or(requested_name);
-            let result = storage::copy(
-                &storage::RealStorage,
-                storage::Operation::Attach,
-                &src,
-                &dst,
-            );
-            let _ = this.update_in(cx, |this, window, cx| match result {
-                Ok(()) => {
-                    this.storage_error = None;
-                    this.insert_token(&format!("\n![]({name})\n"), window, cx);
-                }
-                Err(failure) => this.record_storage_failure(failure, cx),
-            });
+    fn take_request_id(&mut self) -> Option<u64> {
+        take_counter(&mut self.next_request_id).or_else(|| {
+            self.message = Some("Notes exhausted its request identity sequence".into());
+            None
         })
-        .detach();
     }
 
-    fn insert_token(&mut self, tok: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let tok = tok.to_string();
-        self.body.update(cx, |s, cx| s.insert(tok, window, cx));
-        let handle = self.body.read(cx).focus_handle(cx);
-        window.focus(&handle);
-        cx.notify();
+    fn take_edit_generation(&mut self) -> Option<EditGeneration> {
+        take_counter(&mut self.next_edit_generation)
+            .and_then(EditGeneration::new)
+            .or_else(|| {
+                self.message = Some("Notes exhausted its edit generation sequence".into());
+                None
+            })
     }
 
-    /// Toggle the checkbox state of the markdown checklist on `line_ix`.
-    fn toggle_check(&mut self, line_ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let body = self.body.read(cx).value().to_string();
-        let mut lines: Vec<String> = body.lines().map(|s| s.to_string()).collect();
-        if let Some(l) = lines.get_mut(line_ix) {
-            let indent: String = l.chars().take_while(|c| c.is_whitespace()).collect();
-            let trimmed = l.trim_start();
-            if let Some(rest) = trimmed.strip_prefix("- [ ]") {
-                *l = format!("{indent}- [x]{rest}");
-            } else if let Some(rest) = trimmed.strip_prefix("- [x]") {
-                *l = format!("{indent}- [ ]{rest}");
-            }
+    fn select_folder(
+        &mut self,
+        folder: rmac_notes_runtime::FolderSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() {
+            return;
         }
-        let new = lines.join("\n");
-        self.body.update(cx, |s, cx| s.set_value(new, window, cx));
+        self.session.select_folder(folder);
+        self.sync_editor(window, cx);
         cx.notify();
     }
 
-    // ---- chrome ----
+    fn select_note(&mut self, note_id: NoteId, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        if self.session.select_note(note_id) {
+            self.sync_editor(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn create_note(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let folder_id = match self.session.folder_selection() {
+            rmac_notes_runtime::FolderSelection::Folder(folder_id) => Some(folder_id),
+            _ => None,
+        };
+        self.send_action(
+            LibraryAction::CreateNote(NewNote {
+                created_unix_ms: now_unix_ms(),
+                title: "New Note".into(),
+                body: String::new(),
+                tags: Vec::new(),
+                folder_id,
+            }),
+            cx,
+        );
+    }
+
+    fn create_folder(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let existing = self
+            .session
+            .folders()
+            .into_iter()
+            .map(|folder| folder.name.to_lowercase())
+            .collect::<Vec<_>>();
+        let name = unique_folder_name(&existing);
+        self.send_action(LibraryAction::CreateFolder { name }, cx);
+    }
+
+    fn trash_or_restore(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        let action = if note.deleted {
+            LibraryAction::RestoreNote {
+                note_id: note.id,
+                expected_revision: note.revision,
+            }
+        } else {
+            LibraryAction::TrashNote {
+                note_id: note.id,
+                expected_revision: note.revision,
+            }
+        };
+        self.send_action(action, cx);
+    }
+
+    fn toggle_pin(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        self.send_action(
+            LibraryAction::SetPinned {
+                note_id: note.id,
+                expected_revision: note.revision,
+                pinned: !note.pinned,
+            },
+            cx,
+        );
+    }
+
+    fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {
+        if self.is_interactive_ready() {
+            self.send_action(LibraryAction::SetSort(sort_order), cx);
+        }
+    }
+
+    fn accept_migration(&mut self, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        self.send(WorkerCommand::AcceptMigration { request_id }, cx);
+    }
+
+    fn start_empty(&mut self, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        self.send(WorkerCommand::StartEmpty { request_id }, cx);
+    }
+
+    fn retry_pending(&mut self, cx: &mut Context<Self>) {
+        self.send(WorkerCommand::RetryPending, cx);
+    }
+
+    fn discard_pending(&mut self, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        if self.send(WorkerCommand::DiscardPending { request_id }, cx) {
+            self.latest_local_generation = None;
+        }
+    }
+
+    fn restore_draft(
+        &mut self,
+        note_id: NoteId,
+        decision: RecoveryDecision,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        self.recovery_decision = Some((note_id, decision));
+        if !self.send(
+            WorkerCommand::RestoreDraft {
+                request_id,
+                note_id,
+            },
+            cx,
+        ) {
+            self.recovery_decision = None;
+        }
+    }
+
+    fn discard_draft(&mut self, note_id: NoteId, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        self.send(
+            WorkerCommand::DiscardDraft {
+                request_id,
+                note_id,
+            },
+            cx,
+        );
+    }
+
+    fn continue_after_recovery_notice(&mut self, cx: &mut Context<Self>) {
+        if self
+            .session
+            .draft_review()
+            .is_some_and(|review| review.drafts.is_empty())
+        {
+            self.recovery_notice_dismissed = true;
+            self.message = None;
+            cx.notify();
+        }
+    }
+
+    fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.session.phase(), SessionPhase::Pending { .. }) {
+            self.message = Some("Retry or discard the pending change before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        self.closing = true;
+        let shutdown = self
+            .worker
+            .as_ref()
+            .ok_or(WorkerSendError::Closed)
+            .and_then(|worker| worker.try_send(WorkerCommand::Shutdown));
+        if let Err(error) = shutdown {
+            self.closing = false;
+            self.message =
+                Some(format!("Notes could not safely close yet: {error}. Try again.").into());
+            cx.notify();
+            return;
+        }
+        window.remove_window();
+    }
 
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let ready = self.is_interactive_ready();
+        let selected = self.session.selected_note();
+        let deleted = selected.is_some_and(|note| note.deleted);
+        let pinned = selected.is_some_and(|note| note.pinned);
+        let sort_order = self
+            .session
+            .snapshot()
+            .map(|snapshot| snapshot.sort_order)
+            .unwrap_or(SortOrder::Edited);
         let row = div()
             .size_full()
             .flex()
             .items_center()
-            .child(div().w(px(FOLDERS_W - 80.0)))
+            .child(div().w(px(FOLDERS_W - 76.0)))
             .child(
                 div()
                     .w(px(LIST_W))
@@ -731,26 +698,24 @@ impl NotesView {
                             .icon(IconName::SortDescending)
                             .ghost()
                             .with_size(Size::Medium)
-                            .tooltip("Sort By")
-                            .dropdown_menu({
-                                let current = self.sort_by;
-                                move |menu, _, _| {
-                                    menu.menu_with_check(
-                                        SortBy::Edited.label(),
-                                        current == SortBy::Edited,
-                                        Box::new(SortByEdited),
-                                    )
-                                    .menu_with_check(
-                                        SortBy::Created.label(),
-                                        current == SortBy::Created,
-                                        Box::new(SortByCreated),
-                                    )
-                                    .menu_with_check(
-                                        SortBy::Title.label(),
-                                        current == SortBy::Title,
-                                        Box::new(SortByTitle),
-                                    )
-                                }
+                            .disabled(!ready)
+                            .tooltip("Sort Notes")
+                            .dropdown_menu(move |menu, _, _| {
+                                menu.menu_with_check(
+                                    "Date Edited",
+                                    sort_order == SortOrder::Edited,
+                                    Box::new(SortByEdited),
+                                )
+                                .menu_with_check(
+                                    "Date Created",
+                                    sort_order == SortOrder::Created,
+                                    Box::new(SortByCreated),
+                                )
+                                .menu_with_check(
+                                    "Title",
+                                    sort_order == SortOrder::Title,
+                                    Box::new(SortByTitle),
+                                )
                             }),
                     )
                     .child(
@@ -758,8 +723,9 @@ impl NotesView {
                             .icon(IconName::Plus)
                             .ghost()
                             .with_size(Size::Medium)
+                            .disabled(!ready)
                             .tooltip("New Note")
-                            .on_click(cx.listener(|this, _, window, cx| this.new_note(window, cx))),
+                            .on_click(cx.listener(|this, _, _, cx| this.create_note(cx))),
                     ),
             )
             .child(
@@ -768,63 +734,51 @@ impl NotesView {
                     .flex()
                     .items_center()
                     .justify_end()
+                    .gap_1()
                     .pr_4()
                     .child(
-                        Button::new("delete", "")
-                            .icon(IconName::Delete)
+                        Button::new("pin", "")
+                            .icon(IconName::Star)
+                            .ghost()
+                            .selected(pinned)
+                            .with_size(Size::Medium)
+                            .disabled(!ready || deleted || selected.is_none())
+                            .tooltip(if pinned { "Unpin Note" } else { "Pin Note" })
+                            .on_click(cx.listener(|this, _, _, cx| this.toggle_pin(cx))),
+                    )
+                    .child(
+                        Button::new("trash", "")
+                            .icon(if deleted {
+                                IconName::ArrowUp
+                            } else {
+                                IconName::Delete
+                            })
                             .ghost()
                             .with_size(Size::Medium)
-                            .tooltip("Delete Note")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.delete_current(window, cx)),
-                            ),
+                            .disabled(!ready || selected.is_none())
+                            .tooltip(if deleted {
+                                "Restore Note"
+                            } else {
+                                "Move to Trash"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| this.trash_or_restore(cx))),
                     ),
             );
         rmac_ui::toolbar(row)
     }
 
-    fn render_folders(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let all_count = self.notes.len();
-        let all_selected = self.folder_sel == FolderSel::All;
+    fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use rmac_notes_runtime::FolderSelection;
 
-        // "All Notes" virtual row.
-        let all_row = div()
-            .id("folder-all")
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_2()
-            .py_1p5()
-            .rounded(px(6.0))
-            .when(all_selected, |el: Stateful<Div>| {
-                el.bg(mac::sidebar_selection())
-            })
-            .when(!all_selected, |el: Stateful<Div>| {
-                el.hover(|h| h.bg(mac::hover()))
-            })
-            .child(
-                Icon::new(IconName::Folder)
-                    .text_color(mac::notes_accent())
-                    .with_size(Size::Small),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(mac::text())
-                    .child("All Notes"),
-            )
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(mac::text_tertiary())
-                    .child(all_count.to_string()),
-            )
-            .on_click(
-                cx.listener(|this, _, window, cx| this.select_folder(FolderSel::All, window, cx)),
-            );
-
-        let mut col = div()
+        let snapshot = self.session.snapshot();
+        let all_count = snapshot.map_or(0, |snapshot| {
+            snapshot.notes.iter().filter(|note| !note.deleted).count()
+        });
+        let trash_count = snapshot.map_or(0, |snapshot| {
+            snapshot.notes.iter().filter(|note| note.deleted).count()
+        });
+        let current = self.session.folder_selection();
+        let mut sidebar = div()
             .w(px(FOLDERS_W))
             .h_full()
             .flex_shrink_0()
@@ -846,157 +800,75 @@ impl NotesView {
                             .text_size(rmac_ui::text_px(11.0))
                             .font_weight(mac::SEMIBOLD)
                             .text_color(mac::text_tertiary())
-                            .child("ON MY MAC"),
+                            .child("ON THIS COMPUTER"),
                     )
                     .child(
                         Button::new("new-folder", "")
                             .icon(IconName::Plus)
                             .ghost()
                             .with_size(Size::XSmall)
+                            .disabled(!self.is_interactive_ready())
                             .tooltip("New Folder")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.new_folder(window, cx)),
-                            ),
+                            .on_click(cx.listener(|this, _, _, cx| this.create_folder(cx))),
                     ),
             )
-            .child(all_row);
+            .child(folder_row(
+                "all-notes",
+                "All Notes",
+                IconName::Folder,
+                all_count,
+                current == FolderSelection::All,
+                cx.listener(|this, _, window, cx| {
+                    this.select_folder(FolderSelection::All, window, cx)
+                }),
+            ));
 
-        for (fidx, folder) in self.folders.iter().enumerate() {
-            let name = folder.name.to_string();
-            let selected = self.folder_sel == FolderSel::Folder(name.clone());
-
-            // In-place rename field for this folder.
-            if let Some((renaming, input)) = &self.renaming_folder {
-                if renaming == &name {
-                    col = col.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .py_1()
-                            // Escape cancels the rename (keeps the original name);
-                            // blur/Enter commit it.
-                            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
-                                if ev.keystroke.key == "escape" {
-                                    this.rename_folder_cancel(cx);
-                                }
-                            }))
-                            .child(
-                                Icon::new(IconName::Folder)
-                                    .text_color(mac::notes_accent())
-                                    .with_size(Size::Small),
-                            )
-                            .child(div().flex_1().child(TextField::new(input).small())),
-                    );
-                    continue;
-                }
-            }
-
-            let sel_click = name.clone();
-            let sel_menu = name.clone();
-            let row = div()
-                .id(("folder", fidx))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_2()
-                .py_1p5()
-                .rounded(px(6.0))
-                .when(selected, |el: Stateful<Div>| {
-                    el.bg(mac::sidebar_selection())
-                })
-                .when(!selected, |el: Stateful<Div>| {
-                    el.hover(|h| h.bg(mac::hover()))
-                })
-                .child(
-                    Icon::new(IconName::Folder)
-                        .text_color(mac::notes_accent())
-                        .with_size(Size::Small),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(mac::text())
-                        .truncate()
-                        .child(folder.name.clone()),
-                )
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(mac::text_tertiary())
-                        .child(folder.count.to_string()),
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.select_folder(FolderSel::Folder(sel_click.clone()), window, cx)
-                }))
-                // Right-click selects this folder so the context-menu actions target it.
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                        this.select_folder(FolderSel::Folder(sel_menu.clone()), window, cx);
-                        this.menu = Some((ev.position, NoteMenuKind::Folder));
-                        cx.notify();
-                    }),
-                );
-            col = col.child(row);
+        for folder in self.session.folders() {
+            let folder_id = folder.id;
+            sidebar = sidebar.child(folder_row(
+                ("folder", folder_id.get()),
+                folder.name.clone(),
+                IconName::Folder,
+                self.session.folder_count(folder_id),
+                current == FolderSelection::Folder(folder_id),
+                cx.listener(move |this, _, window, cx| {
+                    this.select_folder(FolderSelection::Folder(folder_id), window, cx)
+                }),
+            ));
         }
 
-        col
+        sidebar.child(div().mt_2().child(folder_row(
+            "trash-notes",
+            "Recently Deleted",
+            IconName::Delete,
+            trash_count,
+            current == FolderSelection::Trash,
+            cx.listener(|this, _, window, cx| {
+                this.select_folder(FolderSelection::Trash, window, cx)
+            }),
+        )))
     }
 
-    fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let q = self.search.read(cx).value().to_lowercase();
-        let mut items: Vec<AnyElement> = Vec::new();
-        let visible: Vec<usize> = self
-            .notes
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| self.in_folder(n))
-            .filter(|(_, n)| {
-                q.is_empty()
-                    || n.title.to_lowercase().contains(&q)
-                    || n.snippet.to_lowercase().contains(&q)
-                    || n.tags.iter().any(|t| t.to_lowercase().contains(&q))
-            })
-            .map(|(ix, _)| ix)
-            .collect();
-
-        let any_pinned = visible
-            .iter()
-            .any(|&ix| self.pinned.contains(&self.notes[ix].path));
-        let mut header_pinned = false;
-        let mut header_notes = false;
-
-        let last = visible.len().saturating_sub(1);
-        for (pos, &ix) in visible.iter().enumerate() {
-            let note = &self.notes[ix];
-            let selected = self.selected == Some(ix);
-            let is_pinned = self.pinned.contains(&note.path);
+    fn render_note_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let selected = self.session.selected_note_id();
+        let notes = self.session.visible_notes();
+        let note_count = notes.len();
+        let mut items = Vec::<AnyElement>::new();
+        for note in notes {
+            let note_id = note.id;
             let tags = note.tags.clone();
-
-            // Section headers, macOS-style: "Pinned" then "Notes".
-            if any_pinned {
-                if is_pinned && !header_pinned {
-                    header_pinned = true;
-                    items.push(list_section_header("Pinned"));
-                } else if !is_pinned && !header_notes {
-                    header_notes = true;
-                    items.push(list_section_header("Notes"));
-                }
-            }
-
             items.push(
                 div()
-                    .id(("note", ix))
+                    .id(("note", note.id.get()))
                     .mx_1()
                     .px_3()
                     .py_2()
                     .rounded(px(6.0))
-                    .when(selected, |el: Stateful<Div>| el.bg(mac::notes_selection()))
-                    .when(!selected, |el: Stateful<Div>| {
-                        el.hover(|h| h.bg(mac::hover()))
+                    .when(selected == Some(note.id), |element: Stateful<Div>| {
+                        element.bg(mac::notes_selection())
+                    })
+                    .when(selected != Some(note.id), |element: Stateful<Div>| {
+                        element.hover(|hover| hover.bg(mac::hover()))
                     })
                     .child(
                         div()
@@ -1007,8 +879,8 @@ impl NotesView {
                                     .flex()
                                     .items_center()
                                     .gap_1()
-                                    .when(is_pinned, |el| {
-                                        el.child(
+                                    .when(note.pinned, |element| {
+                                        element.child(
                                             Icon::new(IconName::Star)
                                                 .text_color(mac::notes_accent())
                                                 .with_size(Size::XSmall),
@@ -1021,7 +893,7 @@ impl NotesView {
                                             .font_weight(mac::SEMIBOLD)
                                             .text_color(mac::text())
                                             .truncate()
-                                            .child(note.title.clone()),
+                                            .child(display_title(&note.title)),
                                     ),
                             )
                             .child(
@@ -1034,7 +906,7 @@ impl NotesView {
                                             .text_size(rmac_ui::text_px(12.0))
                                             .font_weight(mac::MEDIUM)
                                             .text_color(mac::text())
-                                            .child(note.date.clone()),
+                                            .child(date_label(note.modified_unix_ms)),
                                     )
                                     .child(
                                         div()
@@ -1042,11 +914,11 @@ impl NotesView {
                                             .text_size(rmac_ui::text_px(12.0))
                                             .text_color(mac::text_secondary())
                                             .truncate()
-                                            .child(note.snippet.clone()),
+                                            .child(snippet(&note.body)),
                                     ),
                             )
-                            .when(!tags.is_empty(), |el| {
-                                el.child(
+                            .when(!tags.is_empty(), |element| {
+                                element.child(
                                     div()
                                         .flex()
                                         .flex_wrap()
@@ -1056,35 +928,33 @@ impl NotesView {
                                 )
                             }),
                     )
-                    .on_click(cx.listener(move |this, _, window, cx| this.select(ix, window, cx)))
-                    // Right-click selects this note so the menu acts on it.
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                            this.select(ix, window, cx);
-                            this.menu = Some((ev.position, NoteMenuKind::Note));
-                            cx.notify();
+                    .on_click(
+                        cx.listener(move |this, _, window, cx| {
+                            this.select_note(note_id, window, cx)
                         }),
                     )
                     .into_any_element(),
             );
-            if pos != last {
-                let next_selected = visible
-                    .get(pos + 1)
-                    .map(|&n| self.selected == Some(n))
-                    .unwrap_or(false);
-                if !selected && !next_selected {
-                    items.push(
-                        div()
-                            .mx_4()
-                            .h(px(1.0))
-                            .bg(mac::separator())
-                            .into_any_element(),
-                    );
-                }
-            }
         }
-
+        if items.is_empty() {
+            items.push(
+                div()
+                    .px_4()
+                    .py_6()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(mac::text_tertiary())
+                    .child(
+                        if self.session.folder_selection()
+                            == rmac_notes_runtime::FolderSelection::Trash
+                        {
+                            "Recently Deleted is empty"
+                        } else {
+                            "No notes in this folder"
+                        },
+                    )
+                    .into_any_element(),
+            );
+        }
         div()
             .w(px(LIST_W))
             .h_full()
@@ -1094,743 +964,714 @@ impl NotesView {
             .border_r_1()
             .border_color(mac::separator())
             .child(
-                div().px_2().py_2().child(
-                    div()
-                        .h(px(28.0))
-                        .flex()
-                        .items_center()
-                        .px_2()
-                        .rounded(px(7.0))
-                        .bg(mac::control_fill())
-                        .child(
-                            div()
-                                .flex_1()
-                                .child(SearchField::new(&self.search).appearance(false)),
-                        ),
-                ),
+                div()
+                    .h(px(42.0))
+                    .flex()
+                    .items_center()
+                    .px_4()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(mac::SEMIBOLD)
+                    .text_color(mac::text_secondary())
+                    .child(format!(
+                        "{note_count} {}",
+                        if note_count == 1 { "Note" } else { "Notes" }
+                    )),
             )
             .child(
                 div()
                     .id("notes-scroll")
                     .flex_1()
-                    .py_1()
                     .overflow_y_scroll()
-                    .child(div().v_flex().children(items)),
+                    .py_1()
+                    .children(items),
             )
     }
 
-    /// Footer with live word + character counts for the active note body.
-    fn render_count_footer(&self, cx: &Context<Self>) -> impl IntoElement {
-        let body = self.body.read(cx).value().to_string();
-        let words = body.split_whitespace().count();
-        let chars = body.chars().count();
-        div()
-            .flex_none()
-            .h(px(22.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .gap_2()
-            .border_t_1()
-            .border_color(mac::separator())
-            .bg(mac::window())
-            .text_size(rmac_ui::text_px(11.0))
-            .text_color(mac::text_tertiary())
-            .child(format!("{words} word{}", if words == 1 { "" } else { "s" }))
-            .child(div().text_color(mac::text_tertiary()).child("•"))
-            .child(format!(
-                "{chars} character{}",
-                if chars == 1 { "" } else { "s" }
-            ))
-    }
-
-    fn render_format_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let preview = self.preview;
-        let btn = |id: &'static str,
-                   label: &'static str,
-                   tip: &'static str,
-                   tok: &'static str,
-                   cx: &mut Context<Self>| {
-            Button::new(id, label)
-                .ghost()
-                .with_size(Size::Small)
-                .disabled(preview)
-                .tooltip(tip)
-                .on_click(
-                    cx.listener(move |this, _, window, cx| this.insert_token(tok, window, cx)),
-                )
+    fn render_editor(&self, cx: &mut Context<Self>) -> AnyElement {
+        let Some(note) = self.session.selected_note() else {
+            return centered_state("No Note Selected", "Choose a note or create a new one.");
         };
+        let editable = self.is_interactive_ready();
+        let words = self.body.read(cx).value().split_whitespace().count();
+        let characters = self.body.read(cx).value().chars().count();
         div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .px(px(40.0))
-            .py_1()
-            .border_b_1()
-            .border_color(mac::separator())
-            .child(btn("fmt-h1", "Title", "Heading", "# ", cx))
-            .child(btn("fmt-h2", "Heading", "Subheading", "## ", cx))
-            .child(btn("fmt-bullet", "• List", "Bulleted List", "- ", cx))
-            .child(btn("fmt-check", "☑ Checklist", "Checklist", "- [ ] ", cx))
+            .size_full()
+            .v_flex()
+            .bg(mac::window())
             .child(
-                Button::new("fmt-attach", "📎 Attach")
-                    .ghost()
-                    .with_size(Size::Small)
-                    .disabled(preview)
-                    .tooltip("Attach Image")
-                    .on_click(cx.listener(|this, _, window, cx| this.attach_image(window, cx))),
-            )
-            .child(div().flex_1())
-            .child(
-                Button::new("preview", if preview { "Edit" } else { "Preview" })
-                    .icon(if preview {
-                        IconName::EyeOff
-                    } else {
-                        IconName::Eye
-                    })
-                    .ghost()
-                    .with_size(Size::Small)
-                    .when(preview, |b| b.primary())
-                    .tooltip("Toggle Preview")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.preview = !this.preview;
-                        cx.notify();
-                    })),
-            )
-    }
-
-    /// Render the note body as styled markdown blocks (headings, bullets,
-    /// checklists). Checklist boxes are clickable.
-    fn render_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let body = self.body.read(cx).value().to_string();
-        let mut blocks: Vec<AnyElement> = Vec::new();
-        for (i, line) in body.lines().enumerate() {
-            let trimmed = line.trim_start();
-            let el: AnyElement = if let Some(path) = parse_image(trimmed) {
-                gpui::img(self.dir.join(&path))
-                    .max_w(px(380.0))
-                    .rounded(px(6.0))
-                    .into_any_element()
-            } else if let Some(rest) = trimmed
-                .strip_prefix("- [ ]")
-                .or_else(|| trimmed.strip_prefix("- [x]"))
-            {
-                let checked = trimmed.starts_with("- [x]");
-                checklist_row(i, checked, rest.trim(), cx)
-            } else if let Some(rest) = trimmed.strip_prefix("## ") {
                 div()
-                    .pt_2()
-                    .text_size(px(20.0))
-                    .font_weight(mac::BOLD)
-                    .text_color(mac::text())
-                    .child(rest.to_string())
-                    .into_any_element()
-            } else if let Some(rest) = trimmed.strip_prefix("# ") {
-                div()
-                    .pt_2()
-                    .text_size(px(26.0))
-                    .font_weight(mac::BOLD)
-                    .text_color(mac::text())
-                    .child(rest.to_string())
-                    .into_any_element()
-            } else if let Some(rest) = trimmed
-                .strip_prefix("- ")
-                .or_else(|| trimmed.strip_prefix("* "))
-            {
-                div()
+                    .pt_3()
+                    .pb_1()
                     .flex()
-                    .items_start()
-                    .gap_2()
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .text_color(mac::text_secondary())
-                            .child("•"),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(16.0))
-                            .text_color(mac::text())
-                            .child(rest.to_string()),
-                    )
-                    .into_any_element()
-            } else if trimmed.is_empty() {
-                div().h(px(10.0)).into_any_element()
-            } else {
-                div()
-                    .text_size(px(16.0))
-                    .line_height(px(24.0))
-                    .text_color(mac::text())
-                    .child(line.to_string())
-                    .into_any_element()
-            };
-            blocks.push(el);
-        }
-
-        div()
-            .id("preview-scroll")
-            .flex_1()
-            .px(px(44.0))
-            .pt_2()
-            .pb_4()
-            .overflow_y_scroll()
-            .child(div().v_flex().gap_1().children(blocks))
-    }
-
-    fn render_tags_bar(&self, cx: &Context<Self>) -> impl IntoElement {
-        let tags = parse_tags(&self.tags_input.read(cx).value());
-        div()
-            .px(px(40.0))
-            .py_1()
-            .flex()
-            .items_center()
-            .flex_wrap()
-            .gap_1()
-            .child(
-                Icon::new(IconName::Folder)
-                    .text_color(mac::text_tertiary())
-                    .with_size(Size::XSmall),
+                    .justify_center()
+                    .text_size(rmac_ui::text_px(11.0))
+                    .text_color(mac::text_secondary())
+                    .child(date_label(note.modified_unix_ms)),
             )
-            .children(tags.into_iter().map(tag_pill))
+            .child(
+                div()
+                    .px(px(44.0))
+                    .pt_1()
+                    .text_size(px(28.0))
+                    .line_height(px(34.0))
+                    .font_weight(mac::BOLD)
+                    .text_color(mac::text())
+                    .child(
+                        TextField::new(&self.title)
+                            .appearance(false)
+                            .disabled(!editable),
+                    ),
+            )
+            .when(!note.tags.is_empty(), |element| {
+                element.child(
+                    div()
+                        .px(px(44.0))
+                        .py_2()
+                        .flex()
+                        .flex_wrap()
+                        .gap_1()
+                        .children(note.tags.clone().into_iter().map(tag_pill)),
+                )
+            })
+            .when(!note.attachments.is_empty(), |element| {
+                element.child(
+                    div()
+                        .px(px(44.0))
+                        .pb_1()
+                        .text_size(rmac_ui::text_px(11.0))
+                        .text_color(mac::text_tertiary())
+                        .child(format!(
+                            "{} attachment{}",
+                            note.attachments.len(),
+                            if note.attachments.len() == 1 { "" } else { "s" }
+                        )),
+                )
+            })
             .child(
                 div()
                     .flex_1()
-                    .min_w(px(120.0))
-                    .child(TextField::new(&self.tags_input).appearance(false).small()),
+                    .min_h(px(0.0))
+                    .px(px(44.0))
+                    .pt_2()
+                    .pb_4()
+                    .text_size(px(16.0))
+                    .line_height(px(24.0))
+                    .text_color(mac::text())
+                    .child(
+                        TextField::new(&self.body)
+                            .h_full()
+                            .appearance(false)
+                            .disabled(!editable),
+                    ),
             )
+            .child(
+                div()
+                    .h(px(24.0))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .gap_2()
+                    .border_t_1()
+                    .border_color(mac::separator())
+                    .text_size(rmac_ui::text_px(11.0))
+                    .text_color(mac::text_tertiary())
+                    .child(format!("{words} words"))
+                    .child("•")
+                    .child(format!("{characters} characters")),
+            )
+            .into_any_element()
     }
 
-    fn render_editor(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.selected.is_some() {
-            let meta = self
-                .selected
-                .and_then(|ix| self.notes.get(ix))
-                .map(|n| n.date.clone())
-                .unwrap_or_default();
-            div()
-                .size_full()
-                .v_flex()
-                .bg(mac::window())
-                .child(self.render_format_bar(cx))
+    fn render_migration_review(
+        &self,
+        review: &rmac_notes_runtime::MigrationReviewSummary,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(mac::window())
+            .child(
+                div()
+                    .w(px(460.0))
+                    .p_6()
+                    .v_flex()
+                    .gap_3()
+                    .rounded(px(14.0))
+                    .bg(mac::raised())
+                    .border_1()
+                    .border_color(mac::separator())
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(20.0))
+                            .font_weight(mac::BOLD)
+                            .child("Bring your existing notes into rmac Notes?"),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(mac::text_secondary())
+                            .child(format!(
+                                "Notes found {} notes in {} folders, with {} managed attachments and {} recovery files. The source stays untouched.",
+                                review.notes,
+                                review.folders,
+                                review.managed_attachments,
+                                review.recovery_files
+                            )),
+                    )
+                    .when(!review.warnings.is_empty(), |element| {
+                        element.child(
+                            div()
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(mac::warning_text())
+                                .child(format!(
+                                    "{} item{} need recovery attention after import.",
+                                    review.warnings.len(),
+                                    if review.warnings.len() == 1 { "" } else { "s" }
+                                )),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                Button::new("start-empty", "Not Now")
+                                    .on_click(cx.listener(|this, _, _, cx| this.start_empty(cx))),
+                            )
+                            .child(
+                                Button::new("accept-migration", "Import Notes")
+                                    .primary()
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.accept_migration(cx)),
+                                    ),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn render_draft_review(
+        &self,
+        review: &rmac_notes_runtime::DraftReviewSummary,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let busy = self.recovery_decision.is_some() || self.recovery_copy_pending.is_some();
+        let warning_count = review
+            .malformed
+            .saturating_add(review.quarantined)
+            .saturating_add(review.cleanup_pending);
+        let mut card = div()
+            .w(px(500.0))
+            .p_6()
+            .v_flex()
+            .gap_3()
+            .rounded(px(14.0))
+            .bg(mac::raised())
+            .border_1()
+            .border_color(mac::separator());
+
+        if let Some(draft) = review.drafts.first() {
+            let note_id = draft.note_id;
+            let note_title = self
+                .session
+                .snapshot()
+                .and_then(|snapshot| snapshot.notes.iter().find(|note| note.id == note_id))
+                .map(|note| display_title(&note.title))
+                .unwrap_or_else(|| "Deleted or unavailable note".into());
+            let (heading, detail, decision, action_label) = match draft.kind {
+                DraftRecoveryKind::Applicable => (
+                    "Recover unsaved changes?",
+                    "This recovery copy matches the durable note and can be restored safely.",
+                    RecoveryDecision::RestoreOriginal,
+                    "Restore",
+                ),
+                DraftRecoveryKind::Conflict => (
+                    "Keep both versions?",
+                    "The durable note changed after this recovery copy was written. Preserve the recovered text as a new note to avoid overwriting either version.",
+                    RecoveryDecision::PreserveCopy,
+                    "Keep as New Note",
+                ),
+                DraftRecoveryKind::Orphaned => (
+                    "Preserve recovered text?",
+                    "The original note is no longer available. Preserve this recovery copy as a new note before continuing.",
+                    RecoveryDecision::PreserveCopy,
+                    "Keep as New Note",
+                ),
+            };
+            card = card
                 .child(
                     div()
-                        .pt_3()
-                        .pb_1()
-                        .flex()
-                        .justify_center()
-                        .text_size(rmac_ui::text_px(11.0))
-                        .text_color(mac::text_secondary())
-                        .child(meta),
-                )
-                // Big bold title (cascades into the single-line Input).
-                .child(
-                    div()
-                        .px(px(44.0))
-                        .pt_1()
-                        .text_size(px(28.0))
-                        .line_height(px(34.0))
+                        .text_size(rmac_ui::text_px(20.0))
                         .font_weight(mac::BOLD)
-                        .text_color(mac::text())
-                        .child(TextField::new(&self.title).appearance(false)),
+                        .child(heading),
                 )
-                .child(self.render_tags_bar(cx))
-                // Body — editor or rendered preview.
-                .child(if self.preview {
-                    self.render_preview(cx).into_any_element()
-                } else {
+                .child(
                     div()
-                        .flex_1()
-                        .min_h(px(0.0))
-                        .px(px(44.0))
-                        .pt_2()
-                        .pb_4()
-                        .text_size(px(16.0))
-                        .line_height(px(24.0))
-                        .text_color(mac::text())
-                        .child(TextField::new(&self.body).h_full().appearance(false))
-                        .into_any_element()
-                })
-                .child(self.render_count_footer(cx))
-                .into_any_element()
+                        .text_size(rmac_ui::text_px(14.0))
+                        .font_weight(mac::SEMIBOLD)
+                        .child(note_title),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(mac::text_secondary())
+                        .child(detail),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(11.0))
+                        .text_color(mac::text_tertiary())
+                        .child(format!(
+                            "{} recovery {} remaining",
+                            review.drafts.len(),
+                            if review.drafts.len() == 1 {
+                                "copy"
+                            } else {
+                                "copies"
+                            }
+                        )),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("close-recovery", "Review Later")
+                                .disabled(busy)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.request_close(window, cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("discard-recovery", "Discard Recovery")
+                                .destructive()
+                                .disabled(busy)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.discard_draft(note_id, cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("restore-recovery", action_label)
+                                .primary()
+                                .busy(busy)
+                                .disabled(busy)
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.restore_draft(note_id, decision, cx)
+                                })),
+                        ),
+                );
         } else {
-            div()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(mac::window())
-                .text_size(rmac_ui::text_px(15.0))
-                .text_color(mac::text_tertiary())
-                .child("No Note Selected")
-                .into_any_element()
+            let cannot_continue = review.unavailable || review.excessive;
+            let detail = if cannot_continue {
+                "Notes could not enumerate every recovery record safely. The records remain untouched; close Notes and resolve the storage problem before editing."
+            } else {
+                "No recoverable note text remains. Any malformed records were isolated and will not be treated as valid note content."
+            };
+            card = card
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(20.0))
+                        .font_weight(mac::BOLD)
+                        .child(if cannot_continue {
+                            "Recovery needs attention"
+                        } else {
+                            "Recovery review complete"
+                        }),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(mac::text_secondary())
+                        .child(detail),
+                )
+                .when(warning_count != 0, |element| {
+                    element.child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(mac::warning_text())
+                            .child(format!(
+                                "{warning_count} recovery record operation{} reported attention.",
+                                if warning_count == 1 { "" } else { "s" }
+                            )),
+                    )
+                })
+                .child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("close-recovery-notice", "Close Notes").on_click(
+                                cx.listener(|this, _, window, cx| this.request_close(window, cx)),
+                            ),
+                        )
+                        .when(!cannot_continue, |element| {
+                            element.child(
+                                Button::new("continue-recovery", "Continue")
+                                    .primary()
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.continue_after_recovery_notice(cx)
+                                    })),
+                            )
+                        }),
+                );
+        }
+
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(mac::window())
+            .child(card)
+            .into_any_element()
+    }
+
+    fn render_status_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (message, actions) = match self.session.phase() {
+            SessionPhase::Pending { reason, .. } => (
+                pending_message(*reason),
+                Some(("Retry", "Discard")),
+            ),
+            SessionPhase::Maintenance { .. } => (
+                "Notes recovered the library but maintenance still needs attention. Editing is paused."
+                    .to_string(),
+                None,
+            ),
+            _ => match &self.message {
+                Some(message) => (message.to_string(), None),
+                None => return None,
+            },
+        };
+        let mut banner = div()
+            .h(px(38.0))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .bg(mac::error_background())
+            .border_b_1()
+            .border_color(mac::error_border())
+            .text_size(rmac_ui::text_px(12.0))
+            .text_color(mac::danger())
+            .child(div().flex_1().child(message));
+        if let Some((retry, discard)) = actions {
+            banner = banner
+                .child(
+                    Button::new("retry-pending", retry)
+                        .xsmall()
+                        .on_click(cx.listener(|this, _, _, cx| this.retry_pending(cx))),
+                )
+                .child(
+                    Button::new("discard-pending", discard)
+                        .xsmall()
+                        .on_click(cx.listener(|this, _, _, cx| this.discard_pending(cx))),
+                );
+        }
+        Some(banner.into_any_element())
+    }
+}
+
+impl Drop for NotesView {
+    fn drop(&mut self) {
+        if !self.closing {
+            if let Some(worker) = &self.worker {
+                let _ = worker.try_send(WorkerCommand::Shutdown);
+            }
         }
     }
 }
 
 impl Render for NotesView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let storage_error = self.storage_error.clone();
+        let content = match self.session.phase() {
+            SessionPhase::Starting if self.message.is_none() => centered_state(
+                "Opening Notes…",
+                "Checking the private library and recovery state.",
+            ),
+            SessionPhase::Starting => centered_state(
+                "Notes could not start",
+                self.message
+                    .clone()
+                    .unwrap_or_else(|| "The private Notes worker is unavailable.".into()),
+            ),
+            SessionPhase::MigrationReview(review) => self.render_migration_review(review, cx),
+            SessionPhase::Failed(error) => {
+                centered_state("Notes could not open", error.to_string())
+            }
+            SessionPhase::Stopped if !self.closing => centered_state(
+                "Notes stopped",
+                "Close and reopen the app to reconnect to the private library.",
+            ),
+            SessionPhase::Ready if self.recovery_review_is_blocking() => self
+                .session
+                .draft_review()
+                .map(|review| self.render_draft_review(review, cx))
+                .unwrap_or_else(|| {
+                    centered_state("Recovery unavailable", "Close and reopen Notes safely.")
+                }),
+            SessionPhase::Ready
+            | SessionPhase::Maintenance { .. }
+            | SessionPhase::Pending { .. }
+            | SessionPhase::Stopped => div()
+                .size_full()
+                .v_flex()
+                .child(self.render_toolbar(cx))
+                .when_some(self.render_status_banner(cx), |element, banner| {
+                    element.child(banner)
+                })
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .min_h(px(0.0))
+                        .child(self.render_sidebar(cx))
+                        .child(self.render_note_list(cx))
+                        .child(div().flex_1().min_w(px(0.0)).child(self.render_editor(cx))),
+                )
+                .into_any_element(),
+        };
+
         div()
             .track_focus(&self.focus)
             .key_context("Notes")
-            .on_action(cx.listener(|this, _: &NewNote, window, cx| this.new_note(window, cx)))
-            .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
-            .on_action(
-                cx.listener(|this, _: &DeleteNote, window, cx| this.delete_current(window, cx)),
-            )
-            .on_action(cx.listener(|this, _: &TogglePreview, _, cx| {
-                this.preview = !this.preview;
-                cx.notify();
-            }))
+            .on_action(cx.listener(|this, _: &ComposeNote, _, cx| this.create_note(cx)))
+            .on_action(cx.listener(|this, _: &CreateFolder, _, cx| this.create_folder(cx)))
+            .on_action(cx.listener(|this, _: &TrashOrRestore, _, cx| this.trash_or_restore(cx)))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
             .on_action(
-                cx.listener(|this, _: &SortByEdited, _, cx| this.set_sort(SortBy::Edited, cx)),
+                cx.listener(|this, _: &SortByEdited, _, cx| this.set_sort(SortOrder::Edited, cx)),
             )
             .on_action(
-                cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortBy::Created, cx)),
+                cx.listener(|this, _: &SortByCreated, _, cx| this.set_sort(SortOrder::Created, cx)),
             )
-            .on_action(cx.listener(|this, _: &SortByTitle, _, cx| this.set_sort(SortBy::Title, cx)))
-            .on_action(cx.listener(|this, _: &RenameFolder, window, cx| {
-                this.rename_folder_start(window, cx)
-            }))
             .on_action(
-                cx.listener(|this, _: &DeleteFolder, window, cx| this.delete_folder(window, cx)),
+                cx.listener(|this, _: &SortByTitle, _, cx| this.set_sort(SortOrder::Title, cx)),
             )
-            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
-                this.menu = None;
-                cx.notify();
-            }))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
-                if this.save_current(cx) {
-                    window.remove_window();
-                }
+                this.request_close(window, cx)
             }))
             .size_full()
-            .v_flex()
             .bg(mac::window())
             .text_color(mac::text())
-            .child(self.render_toolbar(cx))
-            .when_some(storage_error, |el, message| {
-                el.child(
-                    div()
-                        .id("storage-error")
-                        .h(px(34.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .bg(mac::error_background())
-                        .border_b_1()
-                        .border_color(mac::error_border())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(mac::danger())
-                        .cursor_pointer()
-                        .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.storage_error = None;
-                            cx.notify();
-                        })),
-                )
-            })
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .child(self.render_folders(cx))
-                    .child(self.render_list(cx))
-                    .child(div().flex_1().child(self.render_editor(cx))),
-            )
-            .when_some(self.menu, |el: Div, (pos, kind)| {
-                let menu = match kind {
-                    NoteMenuKind::Folder => rmac_ui::ContextMenu::new(pos)
-                        .item("Rename Folder", Box::new(RenameFolder))
-                        .separator()
-                        .danger_item("Delete Folder", Box::new(DeleteFolder)),
-                    NoteMenuKind::Note => {
-                        let pinned = self
-                            .selected
-                            .and_then(|i| self.notes.get(i))
-                            .map(|n| self.pinned.contains(&n.path))
-                            .unwrap_or(false);
-                        rmac_ui::ContextMenu::new(pos)
-                            .item(
-                                if pinned { "Unpin Note" } else { "Pin Note" },
-                                Box::new(TogglePin),
-                            )
-                            .separator()
-                            .danger_item("Delete Note", Box::new(DeleteNote))
-                    }
-                };
-                el.child(menu.render())
-            })
-            .when_some(self.confirm_delete_folder.clone(), |el: Div, name| {
-                use rmac_ui::DialogButtonKind::{Destructive, Normal};
-                el.child(rmac_ui::alert(
-                    format!("Delete the folder \u{201c}{name}\u{201d}?"),
-                    "All notes in this folder will be permanently deleted. This cannot be undone."
-                        .to_string(),
-                    vec![
-                        rmac_ui::dialog_button("del-cancel", "Cancel", Normal)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.confirm_delete_folder = None;
-                                cx.notify();
-                            }))
-                            .into_any_element(),
-                        rmac_ui::dialog_button("del-confirm", "Delete", Destructive)
-                            .on_click(cx.listener(|this, _, _, cx| this.confirm_delete(cx)))
-                            .into_any_element(),
-                    ],
-                ))
-            })
+            .child(content)
     }
 }
 
-// ---- small view helpers ----
+fn bridge_worker_events(
+    events: NotesWorkerEvents,
+) -> io::Result<async_channel::Receiver<WorkerEvent>> {
+    let (sender, receiver) = async_channel::bounded(EVENT_CAPACITY);
+    thread::Builder::new()
+        .name("rmac-notes-ui-events".into())
+        .spawn(move || {
+            while let Ok(event) = events.recv() {
+                if sender.send_blocking(event).is_err() {
+                    break;
+                }
+            }
+        })?;
+    Ok(receiver)
+}
 
-/// A pill for a single tag.
+fn folder_row(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    icon: IconName,
+    count: usize,
+    selected: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_2()
+        .px_2()
+        .py_1p5()
+        .rounded(px(6.0))
+        .when(selected, |element: Stateful<Div>| {
+            element.bg(mac::sidebar_selection())
+        })
+        .when(!selected, |element: Stateful<Div>| {
+            element.hover(|hover| hover.bg(mac::hover()))
+        })
+        .child(
+            Icon::new(icon)
+                .text_color(mac::notes_accent())
+                .with_size(Size::Small),
+        )
+        .child(
+            div()
+                .flex_1()
+                .truncate()
+                .text_size(rmac_ui::text_px(13.0))
+                .child(label.into()),
+        )
+        .child(
+            div()
+                .text_size(rmac_ui::text_px(12.0))
+                .text_color(mac::text_tertiary())
+                .child(count.to_string()),
+        )
+        .on_click(on_click)
+}
+
+fn centered_state(title: impl Into<SharedString>, detail: impl Into<SharedString>) -> AnyElement {
+    div()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(mac::window())
+        .child(
+            div()
+                .w(px(440.0))
+                .v_flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(18.0))
+                        .font_weight(mac::SEMIBOLD)
+                        .child(title.into()),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(mac::text_secondary())
+                        .text_center()
+                        .child(detail.into()),
+                ),
+        )
+        .into_any_element()
+}
+
+fn worker_failure_message(failure: WorkerFailure) -> String {
+    match failure {
+        WorkerFailure::WrongPhase => "Notes is not ready for that action".into(),
+        WorkerFailure::CommitPending => "Resolve the pending Notes change first".into(),
+        WorkerFailure::Scheduler(error) => error.to_string(),
+        WorkerFailure::Mutation(error) => error.to_string(),
+        WorkerFailure::Storage(error) => error.to_string(),
+        WorkerFailure::TextImport(error) => error.to_string(),
+        WorkerFailure::Draft(error) => error.to_string(),
+        WorkerFailure::MissingDraft => "That recovery draft is no longer available".into(),
+        WorkerFailure::ExportPlan(error) => error.to_string(),
+        WorkerFailure::Export(error) => error.to_string(),
+        WorkerFailure::BundleImport(error) => error.to_string(),
+        WorkerFailure::BundlePlan(error) => error.to_string(),
+        WorkerFailure::MissingBundleImportReview => {
+            "Review the selected Notes bundle again before importing".into()
+        }
+    }
+}
+
+fn pending_message(reason: PendingReason) -> String {
+    match reason {
+        PendingReason::Store(error) => error.to_string(),
+        PendingReason::AcceptedStateChanged => {
+            "The durable Notes library changed while this local change was pending".into()
+        }
+    }
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX - 1)
+        .max(1)
+}
+
+fn take_counter(counter: &mut u64) -> Option<u64> {
+    let current = *counter;
+    if current == 0 || current == u64::MAX {
+        return None;
+    }
+    *counter = current + 1;
+    Some(current)
+}
+
+fn unique_folder_name(existing: &[String]) -> String {
+    for suffix in 1..=existing.len().saturating_add(2) {
+        let candidate = if suffix == 1 {
+            "New Folder".to_string()
+        } else {
+            format!("New Folder {suffix}")
+        };
+        if !existing
+            .iter()
+            .any(|name| name == &candidate.to_lowercase())
+        {
+            return candidate;
+        }
+    }
+    "Imported Notes".into()
+}
+
+fn display_title(title: &str) -> SharedString {
+    if title.trim().is_empty() {
+        "New Note".into()
+    } else {
+        title.to_string().into()
+    }
+}
+
+fn snippet(body: &str) -> SharedString {
+    let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if compact.is_empty() {
+        "No additional text".into()
+    } else {
+        compact.chars().take(90).collect::<String>().into()
+    }
+}
+
 fn tag_pill(tag: String) -> impl IntoElement {
     div()
         .px_1p5()
         .py_0p5()
         .rounded(px(5.0))
-        .bg(mac::notes_selection())
-        .text_size(rmac_ui::text_px(11.0))
-        .font_weight(mac::MEDIUM)
-        .text_color(mac::text())
+        .bg(mac::control_fill())
+        .text_size(rmac_ui::text_px(10.0))
+        .text_color(mac::text_secondary())
         .child(format!("#{tag}"))
 }
 
-/// A checklist row in the preview, with a clickable box.
-fn checklist_row(
-    line_ix: usize,
-    checked: bool,
-    text: &str,
-    cx: &mut Context<NotesView>,
-) -> AnyElement {
-    let box_el = div()
-        .id(("check", line_ix))
-        .w(px(18.0))
-        .h(px(18.0))
-        .mt(px(2.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(4.0))
-        .border_1()
-        .border_color(if checked {
-            mac::notes_accent()
-        } else {
-            mac::text_tertiary()
-        })
-        .when(checked, |el: Stateful<Div>| el.bg(mac::notes_accent()))
-        .when(checked, |el: Stateful<Div>| {
-            el.child(
-                Icon::new(IconName::Check)
-                    .text_color(mac::text())
-                    .with_size(Size::XSmall),
-            )
-        })
-        .on_click(cx.listener(move |this, _, window, cx| this.toggle_check(line_ix, window, cx)));
-
-    div()
-        .flex()
-        .items_start()
-        .gap_2()
-        .child(box_el)
-        .child(
-            div()
-                .flex_1()
-                .text_size(px(16.0))
-                .text_color(if checked {
-                    mac::text_secondary()
-                } else {
-                    mac::text()
-                })
-                .child(text.to_string()),
-        )
-        .into_any_element()
-}
-
-// ---- pure helpers ----
-
-/// Parse a markdown image line `![alt](path)` → the path.
-fn parse_image(line: &str) -> Option<String> {
-    let l = line.trim();
-    if !l.starts_with("![") {
-        return None;
-    }
-    let open = l.find("](")?;
-    let end = l.rfind(')')?;
-    if end > open + 2 {
-        Some(l[open + 2..end].to_string())
-    } else {
-        None
-    }
-}
-
-fn parse_tags(raw: &str) -> Vec<String> {
-    raw.split(',')
-        .map(|s| s.trim().trim_start_matches('#').trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect()
-}
-
-/// Split a stored document into (title, body, tags). The tags line is a
-/// trailing `<!--tags: a, b-->` comment and is removed from the body.
-fn parse_doc(text: &str) -> (String, String, Vec<String>) {
-    let mut tags = Vec::new();
-    let mut body_lines: Vec<&str> = text.lines().collect();
-    // Tags live on the FINAL line only (trailing metadata). A `<!--tags: ...-->`
-    // comment anywhere else in the body is real content and must be preserved.
-    if let Some(last) = body_lines.last() {
-        if let Some(rest) = last
-            .trim()
-            .strip_prefix("<!--tags:")
-            .and_then(|r| r.strip_suffix("-->"))
-        {
-            tags = parse_tags(rest);
-            body_lines.pop();
-        }
-    }
-    let joined = body_lines.join("\n");
-    let mut parts = joined.splitn(2, '\n');
-    let title = parts.next().unwrap_or("").to_string();
-    let body = parts.next().unwrap_or("").to_string();
-    (title, body, tags)
-}
-
-fn title_of(body: &str) -> String {
-    body.lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty())
-        .map(|l| {
-            let t: String = l.trim_start_matches('#').trim().chars().take(60).collect();
-            if t.is_empty() {
-                "New Note".to_string()
-            } else {
-                t
-            }
-        })
-        .unwrap_or_else(|| "New Note".to_string())
-}
-
-fn snippet_of(body: &str) -> String {
-    let mut lines = body.lines().map(str::trim).filter(|l| !l.is_empty());
-    let _title = lines.next();
-    let rest: String = lines.collect::<Vec<_>>().join(" ");
-    if rest.is_empty() {
-        "No additional text".to_string()
-    } else {
-        rest.chars().take(80).collect()
-    }
-}
-
-/// macOS-style relative date: time today, "Yesterday", weekday this week, else M/D/YY.
-fn date_label(t: SystemTime) -> String {
-    let dt: DateTime<Local> = t.into();
+fn date_label(unix_ms: u64) -> SharedString {
+    let time = SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_millis(unix_ms))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let date: DateTime<Local> = time.into();
     let now = Local::now();
     let days = now
         .date_naive()
-        .signed_duration_since(dt.date_naive())
+        .signed_duration_since(date.date_naive())
         .num_days();
     if days == 0 {
-        let h = dt.hour();
-        let (h12, ap) = if h == 0 {
-            (12, "AM")
-        } else if h < 12 {
-            (h, "AM")
-        } else if h == 12 {
-            (12, "PM")
-        } else {
-            (h - 12, "PM")
+        let hour = date.hour();
+        let (hour, suffix) = match hour {
+            0 => (12, "AM"),
+            1..=11 => (hour, "AM"),
+            12 => (12, "PM"),
+            _ => (hour - 12, "PM"),
         };
-        format!("{}:{:02} {}", h12, dt.minute(), ap)
+        format!("{hour}:{:02} {suffix}", date.minute()).into()
     } else if days == 1 {
-        "Yesterday".to_string()
-    } else if days < 7 {
-        dt.format("%A").to_string()
+        "Yesterday".into()
+    } else if (2..7).contains(&days) {
+        date.format("%A").to_string().into()
     } else {
-        format!("{}/{}/{:02}", dt.month(), dt.day(), dt.year() % 100)
-    }
-}
-
-fn scan_folders(dir: &Path) -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let p = e.path();
-            if p.is_dir() {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|s| s.to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    v.sort();
-    v
-}
-
-fn collect_notes(dir: &Path, folder: Option<String>, out: &mut Vec<(Note, SystemTime)>) {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in rd.flatten() {
-        let path = e.path();
-        if path.extension().and_then(|x| x.to_str()) != Some("md") {
-            continue;
-        }
-        let md = e.metadata().ok();
-        let mtime = md
-            .as_ref()
-            .and_then(|m| m.modified().ok())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
-        let ctime = md.as_ref().and_then(|m| m.created().ok()).unwrap_or(mtime);
-        let raw = std::fs::read_to_string(&path).unwrap_or_default();
-        let (t, b, tags) = parse_doc(&raw);
-        let meta = format!("{t}\n{b}");
-        out.push((
-            Note {
-                title: title_of(&meta).into(),
-                snippet: snippet_of(&meta).into(),
-                date: date_label(mtime).into(),
-                tags,
-                folder: folder.clone(),
-                path,
-                mtime,
-                ctime,
-            },
-            mtime,
-        ));
-    }
-}
-
-/// A small all-caps section header for the note list ("Pinned" / "Notes").
-fn list_section_header(title: &'static str) -> AnyElement {
-    div()
-        .px_4()
-        .pt_2()
-        .pb_1()
-        .text_size(rmac_ui::text_px(11.0))
-        .font_weight(mac::SEMIBOLD)
-        .text_color(mac::text_tertiary())
-        .child(title)
-        .into_any_element()
-}
-
-/// Load the set of pinned note paths from `<dir>/.pinned` (one path per line).
-fn load_pins(dir: &Path) -> Result<HashSet<PathBuf>, storage::Failure> {
-    let path = dir.join(".pinned");
-    match storage::read(&storage::RealStorage, storage::Operation::LoadPins, &path) {
-        Ok(contents) => Ok({
-            let s = contents;
-            s.lines()
-                .filter(|l| !l.is_empty())
-                .map(PathBuf::from)
-                .collect()
-        }),
-        Err(failure) if failure.error_kind == std::io::ErrorKind::NotFound => Ok(HashSet::new()),
-        Err(failure) => Err(failure),
-    }
-}
-
-fn save_pins(dir: &Path, pins: &HashSet<PathBuf>) -> Result<(), storage::Failure> {
-    let body = pins
-        .iter()
-        .map(|p| p.display().to_string())
-        .collect::<Vec<_>>()
-        .join("\n");
-    storage::write(
-        &storage::RealStorage,
-        storage::Operation::SavePins,
-        &dir.join(".pinned"),
-        body,
-    )
-}
-
-/// Load the persisted sort order from `<dir>/.sort` (defaults to Date Edited).
-fn load_sort(dir: &Path) -> Result<SortBy, storage::Failure> {
-    let path = dir.join(".sort");
-    match storage::read(&storage::RealStorage, storage::Operation::LoadSort, &path) {
-        Ok(contents) => Ok(SortBy::from_id(contents.trim())),
-        Err(failure) if failure.error_kind == std::io::ErrorKind::NotFound => Ok(SortBy::Edited),
-        Err(failure) => Err(failure),
-    }
-}
-
-fn save_sort(dir: &Path, sort: SortBy) -> Result<(), storage::Failure> {
-    storage::write(
-        &storage::RealStorage,
-        storage::Operation::SaveSort,
-        &dir.join(".sort"),
-        sort.id(),
-    )
-}
-
-fn scan_notes(dir: &Path) -> Vec<Note> {
-    let mut entries: Vec<(Note, SystemTime)> = Vec::new();
-    collect_notes(dir, None, &mut entries);
-    for name in scan_folders(dir) {
-        collect_notes(&dir.join(&name), Some(name), &mut entries);
-    }
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
-    entries.into_iter().map(|(n, _)| n).collect()
-}
-
-fn unique_path(dir: &Path) -> PathBuf {
-    let mut n = 1;
-    loop {
-        let path = dir.join(format!("note-{n}.md"));
-        if !path.exists() {
-            return path;
-        }
-        n += 1;
-    }
-}
-
-fn unique_named_path(dir: &Path, name: &str) -> PathBuf {
-    let requested = dir.join(name);
-    if !requested.exists() {
-        return requested;
-    }
-    let path = Path::new(name);
-    let stem = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("attachment");
-    let extension = path.extension().and_then(|extension| extension.to_str());
-    for suffix in 2..10_000 {
-        let candidate = match extension {
-            Some(extension) => dir.join(format!("{stem} {suffix}.{extension}")),
-            None => dir.join(format!("{stem} {suffix}")),
-        };
-        if !candidate.exists() {
-            return candidate;
-        }
-    }
-    requested
-}
-
-fn unique_folder(dir: &Path) -> PathBuf {
-    let mut n = 0;
-    loop {
-        let name = if n == 0 {
-            "New Folder".to_string()
-        } else {
-            format!("New Folder {n}")
-        };
-        let path = dir.join(&name);
-        if !path.exists() {
-            return path;
-        }
-        n += 1;
+        format!("{}/{}/{:02}", date.month(), date.day(), date.year() % 100).into()
     }
 }
 
@@ -1838,4 +1679,30 @@ fn main() {
     rmac_ui::boot("Notes", 1080.0, 720.0, |window, cx| {
         NotesView::new(window, cx)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counters_never_wrap_or_emit_zero() {
+        let mut counter = 1;
+        assert_eq!(take_counter(&mut counter), Some(1));
+        assert_eq!(take_counter(&mut counter), Some(2));
+        counter = u64::MAX;
+        assert_eq!(take_counter(&mut counter), None);
+    }
+
+    #[test]
+    fn folder_names_are_case_insensitive_and_deterministic() {
+        let existing = vec!["new folder".into(), "new folder 2".into()];
+        assert_eq!(unique_folder_name(&existing), "New Folder 3");
+    }
+
+    #[test]
+    fn empty_note_metadata_has_private_safe_fallbacks() {
+        assert_eq!(display_title(""), SharedString::from("New Note"));
+        assert_eq!(snippet("  \n"), SharedString::from("No additional text"));
+    }
 }

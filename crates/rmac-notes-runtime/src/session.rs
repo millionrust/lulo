@@ -26,6 +26,7 @@ pub enum SessionPhase {
     Maintenance {
         purge_cleanup_pending: bool,
         attachment_import_pending: bool,
+        orphan_collection_pending: bool,
     },
     Pending {
         request_id: u64,
@@ -236,6 +237,7 @@ impl NotesSession {
                     SessionPhase::Maintenance {
                         purge_cleanup_pending: event.commit.purge_cleanup_pending,
                         attachment_import_pending: event.commit.attachment_import_pending,
+                        orphan_collection_pending: event.commit.orphan_collection_pending,
                     }
                 } else {
                     SessionPhase::Ready
@@ -347,6 +349,8 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                 | RecoveryNotice::PurgeCleanupPending
                 | RecoveryNotice::CorruptAttachmentImportPreserved
                 | RecoveryNotice::AttachmentImportPending
+                | RecoveryNotice::CorruptOrphanCollectionPreserved
+                | RecoveryNotice::OrphanCollectionPending
         )
     });
     if maintenance_pending {
@@ -362,6 +366,13 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                     notice,
                     RecoveryNotice::CorruptAttachmentImportPreserved
                         | RecoveryNotice::AttachmentImportPending
+                )
+            }),
+            orphan_collection_pending: notices.iter().any(|notice| {
+                matches!(
+                    notice,
+                    RecoveryNotice::CorruptOrphanCollectionPreserved
+                        | RecoveryNotice::OrphanCollectionPending
                 )
             }),
         }
@@ -459,6 +470,7 @@ mod tests {
                 maintenance_pending: false,
                 purge_cleanup_pending: false,
                 attachment_import_pending: false,
+                orphan_collection_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(created),
@@ -628,6 +640,7 @@ mod tests {
                 maintenance_pending: false,
                 purge_cleanup_pending: false,
                 attachment_import_pending: false,
+                orphan_collection_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(snapshot),
@@ -666,6 +679,7 @@ mod tests {
             &SessionPhase::Maintenance {
                 purge_cleanup_pending: true,
                 attachment_import_pending: false,
+                orphan_collection_pending: false,
             }
         );
         assert!(session.snapshot().is_some());
@@ -680,6 +694,7 @@ mod tests {
                 maintenance_pending: true,
                 purge_cleanup_pending: true,
                 attachment_import_pending: false,
+                orphan_collection_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(accepted),
@@ -690,6 +705,7 @@ mod tests {
             &SessionPhase::Maintenance {
                 purge_cleanup_pending: true,
                 attachment_import_pending: false,
+                orphan_collection_pending: false,
             }
         );
     }
@@ -707,6 +723,25 @@ mod tests {
             &SessionPhase::Maintenance {
                 purge_cleanup_pending: false,
                 attachment_import_pending: true,
+                orphan_collection_pending: false,
+            }
+        );
+    }
+
+    #[test]
+    fn orphan_collection_attention_is_a_distinct_maintenance_state() {
+        let mut session = NotesSession::new();
+        let mut event = snapshot_event(snapshot(SortOrder::Edited));
+        event.notices = vec![RecoveryNotice::OrphanCollectionPending];
+
+        session.apply(WorkerEvent::Ready(event));
+
+        assert_eq!(
+            session.phase(),
+            &SessionPhase::Maintenance {
+                purge_cleanup_pending: false,
+                attachment_import_pending: false,
+                orphan_collection_pending: true,
             }
         );
     }

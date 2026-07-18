@@ -75,6 +75,10 @@ pub enum LibraryAction {
         expected_attachment_revision: u64,
         modified_unix_ms: u64,
     },
+    CollectOrphanedAttachment {
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+    },
     DeleteNotePermanently {
         note_id: NoteId,
         expected_revision: u64,
@@ -99,6 +103,7 @@ impl fmt::Debug for LibraryAction {
             Self::AttachImage { .. } => "AttachImage([private source])",
             Self::ImportTextNote { .. } => "ImportTextNote([private source])",
             Self::RemoveAttachmentReference { .. } => "RemoveAttachmentReference",
+            Self::CollectOrphanedAttachment { .. } => "CollectOrphanedAttachment",
             Self::DeleteNotePermanently { .. } => "DeleteNotePermanently",
             Self::EmptyTrash { .. } => "EmptyTrash",
         })
@@ -340,6 +345,10 @@ pub enum ActionResult {
     AttachmentReferenceRemoved {
         note_id: NoteId,
         attachment_id: AttachmentId,
+    },
+    OrphanCollectionAccepted {
+        attachment_id: AttachmentId,
+        byte_len: u64,
     },
     PermanentDeleteAccepted {
         note_id: NoteId,
@@ -1350,6 +1359,7 @@ fn commit_action(
         Err(error) => return reject_mutation(events, request_id, None, error),
     };
     let mut purge = None;
+    let mut orphan_collection = None;
     let result = match action {
         LibraryAction::CreateNote(note) => {
             transaction.create_note(note).map(ActionResult::CreatedNote)
@@ -1418,6 +1428,19 @@ fn commit_action(
                 note_id,
                 attachment_id,
             }),
+        LibraryAction::CollectOrphanedAttachment {
+            attachment_id,
+            expected_attachment_revision,
+        } => transaction
+            .collect_orphaned_attachment(attachment_id, expected_attachment_revision)
+            .map(|plan| {
+                let result = ActionResult::OrphanCollectionAccepted {
+                    attachment_id,
+                    byte_len: plan.byte_len,
+                };
+                orphan_collection = Some(plan);
+                result
+            }),
         LibraryAction::DeleteNotePermanently {
             note_id,
             expected_revision,
@@ -1458,7 +1481,10 @@ fn commit_action(
         result,
         draft: None,
     };
-    let commit = purge.map_or(TransactionCommit::Ordinary, TransactionCommit::Purge);
+    let commit = orphan_collection.map_or_else(
+        || purge.map_or(TransactionCommit::Ordinary, TransactionCommit::Purge),
+        TransactionCommit::OrphanCollection,
+    );
     commit_transaction(ready, transaction, commit, context, events)
 }
 
@@ -1553,6 +1579,7 @@ fn commit_attachment_action(
 enum TransactionCommit {
     Ordinary,
     Purge(rmac_notes_store::PurgePlan),
+    OrphanCollection(rmac_notes_store::OrphanCollectionPlan),
     AttachmentImport {
         plan: rmac_notes_store::AttachmentImportPlan,
         prepared: PreparedImageAttachment,
@@ -1569,6 +1596,9 @@ fn commit_transaction(
     let outcome = match transaction_commit {
         TransactionCommit::Ordinary => ready.library.commit(transaction),
         TransactionCommit::Purge(plan) => ready.library.commit_purge(transaction, plan),
+        TransactionCommit::OrphanCollection(plan) => {
+            ready.library.commit_orphan_collection(transaction, plan)
+        }
         TransactionCommit::AttachmentImport { plan, prepared } => ready
             .library
             .commit_attachment_import(transaction, plan, prepared),
@@ -1962,11 +1992,47 @@ mod tests {
         assert_eq!(removed.accepted.snapshot.attachments[0].revision, 2);
         assert_eq!(std::fs::read(&managed_path).unwrap(), tiny_png());
 
+        assert!(matches!(
+            apply_action(
+                &worker,
+                4,
+                LibraryAction::CollectOrphanedAttachment {
+                    attachment_id,
+                    expected_attachment_revision: 1,
+                },
+            ),
+            WorkerEvent::Rejected(RejectedEvent {
+                failure: WorkerFailure::Mutation(MutationError::RevisionConflict),
+                ..
+            })
+        ));
+        let collected = match apply_action(
+            &worker,
+            5,
+            LibraryAction::CollectOrphanedAttachment {
+                attachment_id,
+                expected_attachment_revision: 2,
+            },
+        ) {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted orphan collection, got {event:?}"),
+        };
+        assert_eq!(
+            collected.result,
+            ActionResult::OrphanCollectionAccepted {
+                attachment_id,
+                byte_len: tiny_png().len() as u64,
+            }
+        );
+        assert!(!collected.commit.orphan_collection_pending);
+        assert!(collected.accepted.snapshot.attachments.is_empty());
+        assert!(!managed_path.exists());
+
         let invalid = container.join("private-invalid.png");
         std::fs::write(&invalid, b"not an image").unwrap();
         match apply_action(
             &worker,
-            4,
+            6,
             LibraryAction::AttachImage {
                 note_id,
                 expected_revision: 3,
@@ -1975,7 +2041,7 @@ mod tests {
             },
         ) {
             WorkerEvent::Rejected(RejectedEvent {
-                request_id: 4,
+                request_id: 6,
                 failure: WorkerFailure::Storage(error),
                 ..
             }) => assert_eq!(error.kind, ErrorKind::UnsupportedAttachment),

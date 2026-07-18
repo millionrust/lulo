@@ -299,10 +299,19 @@ ownership and monotonic modification time, removes the stable ID from the note,
 increments both records, and retains the attachment as a deleted orphan
 tombstone with its byte identity intact. The worker result is explicitly
 `AttachmentReferenceRemoved`; tests prove the managed file remains unchanged,
-and search/preview omit the tombstone. No path claims physical deletion.
-Reviewed orphan collection and its crash-recoverable cleanup intent remain a
-later, separately durable operation (permanent note purge already includes all
-owned live and tombstoned attachments).
+and search/preview omit the tombstone. No path claims physical deletion. A
+second exclusive `OrphanCollectionPlan` requires the exact tombstone revision
+and proves the candidate is only the next library revision with that one record
+removed. Storage writes and verifies a distinct private version-1 intent before
+metadata publication, waits for primary/last-known-good/journal authority, then
+streams an owner/single-link/no-follow length-and-SHA verification before a
+durable unlink. Rollback never touches bytes; accepted and proven-descendant
+recovery is idempotent; changed, linked, malformed, ambiguous, or simultaneous
+cleanup state remains preserved and blocks writes. Repository Retry retains the
+plan, the worker reports `OrphanCollectionAccepted` rather than completed, and
+`orphan_collection_pending` projects separately into Maintenance. The GPUI
+review/confirmation surface remains absent. Permanent note purge continues to
+include all owned live and tombstoned attachments.
 
 The first ordinary-file note import path is now strict and path-free. Storage
 reads at most twice the 4 MiB decoded-body limit plus BOM allowance; accepts

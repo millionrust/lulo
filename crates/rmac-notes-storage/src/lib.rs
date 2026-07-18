@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rmac_notes_store::{
-    decode, encode, AttachmentImportPlan, CodecError, LibrarySnapshot, PurgePlan, MAX_LIBRARY_BYTES,
+    decode, encode, AttachmentImportPlan, CodecError, LibrarySnapshot, OrphanCollectionPlan,
+    PurgePlan, MAX_LIBRARY_BYTES,
 };
 use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
@@ -24,12 +25,14 @@ mod drafts;
 mod legacy_scan;
 mod migration;
 mod note_import;
+mod orphan;
 mod purge;
 mod repository;
 mod startup;
 mod writer;
 
 use attachment::{ImportAuthority, ImportError, ImportIntent, MAX_IMPORT_INTENT_BYTES};
+use orphan::{OrphanAuthority, OrphanError, OrphanIntent, MAX_ORPHAN_INTENT_BYTES};
 use purge::{PurgeAuthority, PurgeError, PurgeIntent, MAX_PURGE_INTENT_BYTES};
 
 pub use attachment::{
@@ -83,6 +86,10 @@ pub enum RecoveryNotice {
     FinishedInterruptedAttachmentImport,
     CorruptAttachmentImportPreserved,
     AttachmentImportPending,
+    RolledBackInterruptedOrphanCollection,
+    FinishedInterruptedOrphanCollection,
+    CorruptOrphanCollectionPreserved,
+    OrphanCollectionPending,
 }
 
 #[derive(Clone, Debug)]
@@ -118,6 +125,7 @@ pub struct SaveOutcome {
     pub maintenance_pending: bool,
     pub purge_cleanup_pending: bool,
     pub attachment_import_pending: bool,
+    pub orphan_collection_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,6 +162,12 @@ pub enum Operation {
     StageManagedAttachment,
     VerifyManagedAttachment,
     RemoveManagedAttachment,
+    ReadOrphanCollectionIntent,
+    WriteOrphanCollectionIntent,
+    VerifyOrphanCollectionIntent,
+    RemoveOrphanCollectionIntent,
+    VerifyOrphanAttachment,
+    RemoveOrphanAttachment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +180,7 @@ pub enum ErrorKind {
     AmbiguousJournal,
     InvalidPurge,
     InvalidAttachmentImport,
+    InvalidOrphanCollection,
     UnsupportedAttachment,
     AttachmentTooLarge,
     AttachmentMismatch,
@@ -211,6 +226,9 @@ impl fmt::Display for StoreError {
             ErrorKind::InvalidPurge => "Notes found invalid permanent-deletion state",
             ErrorKind::InvalidAttachmentImport => {
                 "Notes found invalid image-attachment import state"
+            }
+            ErrorKind::InvalidOrphanCollection => {
+                "Notes found invalid orphan-attachment collection state"
             }
             ErrorKind::UnsupportedAttachment => {
                 "Notes supports PNG, JPEG, and WebP image attachments"
@@ -299,6 +317,7 @@ impl<B: Backend> NotesLibraryStore<B> {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.require_no_purge_intent()?;
         self.require_no_import_intent()?;
+        self.require_no_orphan_intent()?;
         self.save_locked(loaded, candidate)
     }
 
@@ -323,6 +342,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         }
         self.require_no_purge_intent()?;
         self.require_no_import_intent()?;
+        self.require_no_orphan_intent()?;
         let intent = ImportIntent::prepare(loaded.snapshot(), candidate, plan, prepared)
             .map_err(|error| map_import_error(Operation::WriteAttachmentImportIntent, error))?;
         self.write_import_intent(&intent)?;
@@ -369,6 +389,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         }
         self.require_no_purge_intent()?;
         self.require_no_import_intent()?;
+        self.require_no_orphan_intent()?;
         let intent = PurgeIntent::prepare(loaded.snapshot(), candidate, plan)
             .map_err(|error| map_purge_error(Operation::WritePurgeIntent, error))?;
         self.write_purge_intent(&intent)?;
@@ -387,6 +408,50 @@ impl<B: Backend> NotesLibraryStore<B> {
             push_notice(
                 &mut outcome.library.notices,
                 RecoveryNotice::PurgeCleanupPending,
+            );
+        }
+        Ok(outcome)
+    }
+
+    /// Publish the exact metadata removal for one reviewed tombstone, then
+    /// durably collect only its identity-bound managed bytes.
+    pub fn save_orphan_collection(
+        &self,
+        loaded: &LoadedLibrary,
+        candidate: &LibrarySnapshot,
+        plan: &OrphanCollectionPlan,
+    ) -> Result<SaveOutcome, StoreError> {
+        let _guard = self
+            .transaction_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if has_blocking_notice(loaded.notices()) {
+            return Err(StoreError::new(
+                Operation::PreflightPrimary,
+                ErrorKind::AmbiguousJournal,
+            ));
+        }
+        self.require_no_purge_intent()?;
+        self.require_no_import_intent()?;
+        self.require_no_orphan_intent()?;
+        let intent = OrphanIntent::prepare(loaded.snapshot(), candidate, plan)
+            .map_err(|error| map_orphan_error(Operation::WriteOrphanCollectionIntent, error))?;
+        self.write_orphan_intent(&intent)?;
+        let mut outcome = self.save_locked(loaded, candidate)?;
+        if outcome.maintenance_pending {
+            outcome.orphan_collection_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::OrphanCollectionPending,
+            );
+            return Ok(outcome);
+        }
+        if self.finish_orphan_collection(&intent).is_err() {
+            outcome.maintenance_pending = true;
+            outcome.orphan_collection_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::OrphanCollectionPending,
             );
         }
         Ok(outcome)
@@ -461,17 +526,34 @@ impl<B: Backend> NotesLibraryStore<B> {
         };
         let purge_present = self.intent_present(&self.purge_path(), MAX_PURGE_INTENT_BYTES);
         let import_present = self.intent_present(&self.import_path(), MAX_IMPORT_INTENT_BYTES);
-        if purge_present && import_present {
+        let orphan_present = self.intent_present(&self.orphan_path(), MAX_ORPHAN_INTENT_BYTES);
+        if [purge_present, import_present, orphan_present]
+            .into_iter()
+            .filter(|present| *present)
+            .count()
+            > 1
+        {
             let mut loaded = loaded;
-            push_notice(&mut loaded.notices, RecoveryNotice::CorruptPurgePreserved);
-            push_notice(
-                &mut loaded.notices,
-                RecoveryNotice::CorruptAttachmentImportPreserved,
-            );
+            if purge_present {
+                push_notice(&mut loaded.notices, RecoveryNotice::CorruptPurgePreserved);
+            }
+            if import_present {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptAttachmentImportPreserved,
+                );
+            }
+            if orphan_present {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptOrphanCollectionPreserved,
+                );
+            }
             return Ok(loaded);
         }
         let loaded = self.recover_purge(loaded)?;
-        self.recover_attachment_import(loaded)
+        let loaded = self.recover_attachment_import(loaded)?;
+        self.recover_orphan_collection(loaded)
     }
 
     fn save_locked(
@@ -554,6 +636,7 @@ impl<B: Backend> NotesLibraryStore<B> {
             maintenance_pending,
             purge_cleanup_pending: false,
             attachment_import_pending: false,
+            orphan_collection_pending: false,
         })
     }
 
@@ -672,6 +755,119 @@ impl<B: Backend> NotesLibraryStore<B> {
             ),
         }
         Ok(loaded)
+    }
+
+    fn recover_orphan_collection(
+        &self,
+        mut loaded: LoadedLibrary,
+    ) -> Result<LoadedLibrary, StoreError> {
+        let bytes = match self
+            .backend
+            .read_bounded_no_follow(&self.orphan_path(), MAX_ORPHAN_INTENT_BYTES)
+        {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(loaded),
+            Err(_) => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptOrphanCollectionPreserved,
+                );
+                return Ok(loaded);
+            }
+        };
+        let intent = match OrphanIntent::decode(&bytes) {
+            Ok(intent) => intent,
+            Err(_) => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptOrphanCollectionPreserved,
+                );
+                return Ok(loaded);
+            }
+        };
+        match intent
+            .authority(&loaded.snapshot)
+            .map_err(|error| map_orphan_error(Operation::ReadOrphanCollectionIntent, error))?
+        {
+            OrphanAuthority::RolledBack => {
+                if self.remove_orphan_intent().is_ok() {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::RolledBackInterruptedOrphanCollection,
+                    );
+                } else {
+                    push_notice(&mut loaded.notices, RecoveryNotice::OrphanCollectionPending);
+                }
+            }
+            OrphanAuthority::Accepted | OrphanAuthority::AcceptedDescendant => {
+                if self.finish_orphan_collection(&intent).is_ok() {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::FinishedInterruptedOrphanCollection,
+                    );
+                } else {
+                    push_notice(&mut loaded.notices, RecoveryNotice::OrphanCollectionPending);
+                }
+            }
+            OrphanAuthority::Ambiguous => push_notice(
+                &mut loaded.notices,
+                RecoveryNotice::CorruptOrphanCollectionPreserved,
+            ),
+        }
+        Ok(loaded)
+    }
+
+    fn write_orphan_intent(&self, intent: &OrphanIntent) -> Result<(), StoreError> {
+        let bytes = intent.encode();
+        self.backend
+            .create_dir_all_private(&self.root)
+            .map_err(|error| StoreError::io(Operation::CreateDirectory, error))?;
+        self.backend
+            .write_atomic_private(&self.orphan_path(), &bytes)
+            .map_err(|error| StoreError::io(Operation::WriteOrphanCollectionIntent, error))?;
+        let readback = self
+            .backend
+            .read_bounded_no_follow(&self.orphan_path(), MAX_ORPHAN_INTENT_BYTES)
+            .map_err(|error| StoreError::io(Operation::VerifyOrphanCollectionIntent, error))?;
+        if readback != bytes || OrphanIntent::decode(&readback).ok().as_ref() != Some(intent) {
+            return Err(StoreError::new(
+                Operation::VerifyOrphanCollectionIntent,
+                ErrorKind::ReadbackMismatch,
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_no_orphan_intent(&self) -> Result<(), StoreError> {
+        match self
+            .backend
+            .read_bounded_no_follow(&self.orphan_path(), MAX_ORPHAN_INTENT_BYTES)
+        {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Ok(_) => Err(StoreError::new(
+                Operation::ReadOrphanCollectionIntent,
+                ErrorKind::InvalidOrphanCollection,
+            )),
+            Err(error) => Err(StoreError::io(Operation::ReadOrphanCollectionIntent, error)),
+        }
+    }
+
+    fn remove_orphan_intent(&self) -> Result<(), StoreError> {
+        match self.backend.remove_file_durable(&self.orphan_path()) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(StoreError::io(
+                Operation::RemoveOrphanCollectionIntent,
+                error,
+            )),
+        }
+    }
+
+    fn finish_orphan_collection(&self, intent: &OrphanIntent) -> Result<(), StoreError> {
+        intent
+            .cleanup(&self.root, &self.backend)
+            .map_err(|error| map_orphan_error(Operation::VerifyOrphanAttachment, error))?;
+        self.remove_orphan_intent()
     }
 
     fn write_import_intent(&self, intent: &ImportIntent) -> Result<(), StoreError> {
@@ -973,6 +1169,10 @@ impl<B: Backend> NotesLibraryStore<B> {
     fn import_path(&self) -> PathBuf {
         self.root.join("library.attachment-import.bin")
     }
+
+    fn orphan_path(&self) -> PathBuf {
+        self.root.join("library.orphan-collection.bin")
+    }
 }
 
 fn push_notice(notices: &mut Vec<RecoveryNotice>, notice: RecoveryNotice) {
@@ -996,8 +1196,26 @@ fn has_blocking_notice(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::PurgeCleanupPending
                 | RecoveryNotice::CorruptAttachmentImportPreserved
                 | RecoveryNotice::AttachmentImportPending
+                | RecoveryNotice::CorruptOrphanCollectionPreserved
+                | RecoveryNotice::OrphanCollectionPending
         )
     })
+}
+
+fn map_orphan_error(operation: Operation, error: OrphanError) -> StoreError {
+    match error {
+        OrphanError::InvalidPlan | OrphanError::Malformed => {
+            StoreError::new(operation, ErrorKind::InvalidOrphanCollection)
+        }
+        OrphanError::Io(kind) => StoreError::new(operation, ErrorKind::Io(kind)),
+        OrphanError::Remove(kind) => {
+            StoreError::new(Operation::RemoveOrphanAttachment, ErrorKind::Io(kind))
+        }
+        OrphanError::ReadbackMismatch => StoreError::new(operation, ErrorKind::ReadbackMismatch),
+        OrphanError::AttachmentMismatch => {
+            StoreError::new(operation, ErrorKind::AttachmentMismatch)
+        }
+    }
 }
 
 fn map_purge_error(operation: Operation, error: PurgeError) -> StoreError {
@@ -1377,6 +1595,69 @@ mod tests {
         let mut transaction = LibraryTransaction::begin(base).unwrap();
         let plan = transaction
             .purge_trashed_note(NoteId::new(1).unwrap(), 2)
+            .unwrap();
+        (transaction.finish().unwrap(), plan)
+    }
+
+    fn orphan_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
+        let note_id = NoteId::new(1).unwrap();
+        let attachment_id = AttachmentId::new(1).unwrap();
+        let attachment_bytes = b"exact private orphan attachment".to_vec();
+        (
+            LibrarySnapshot {
+                revision: 2,
+                sort_order: SortOrder::Edited,
+                next_note_id: 2,
+                next_folder_id: 1,
+                next_attachment_id: 2,
+                folders: Vec::new(),
+                notes: vec![NoteRecord {
+                    id: note_id,
+                    revision: 2,
+                    created_unix_ms: 1,
+                    modified_unix_ms: 2,
+                    title: "Private live note".into(),
+                    body: "Private body".into(),
+                    tags: Vec::new(),
+                    folder_id: None,
+                    pinned: false,
+                    deleted: false,
+                    attachments: Vec::new(),
+                }],
+                attachments: vec![AttachmentRecord {
+                    id: attachment_id,
+                    revision: 2,
+                    note_id,
+                    display_name: "private-orphan.png".into(),
+                    kind: AttachmentKind::Png,
+                    byte_len: attachment_bytes.len() as u64,
+                    sha256: digest(&attachment_bytes),
+                    deleted: true,
+                }],
+            },
+            PathBuf::from("/virtual/library/attachments/00000000000000000001.bin"),
+            attachment_bytes,
+        )
+    }
+
+    fn install_orphan_base(
+        store: &NotesLibraryStore<FakeBackend>,
+        backend: &FakeBackend,
+    ) -> (LoadedLibrary, LibrarySnapshot, PathBuf, Vec<u8>) {
+        let initial = store.load().unwrap();
+        let (base, attachment_path, attachment_bytes) = orphan_fixture();
+        base.validate().unwrap();
+        let loaded = store.save(&initial, &base).unwrap().library;
+        backend.set(attachment_path.clone(), attachment_bytes.clone());
+        (loaded, base, attachment_path, attachment_bytes)
+    }
+
+    fn orphan_candidate(
+        base: &LibrarySnapshot,
+    ) -> (LibrarySnapshot, rmac_notes_store::OrphanCollectionPlan) {
+        let mut transaction = LibraryTransaction::begin(base).unwrap();
+        let plan = transaction
+            .collect_orphaned_attachment(AttachmentId::new(1).unwrap(), 2)
             .unwrap();
         (transaction.finish().unwrap(), plan)
     }
@@ -1980,6 +2261,152 @@ mod tests {
     }
 
     #[test]
+    fn accepted_orphan_collection_removes_exact_bytes_after_metadata() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, _) = install_orphan_base(&store, &backend);
+        let (collected, plan) = orphan_candidate(&base);
+
+        let outcome = store
+            .save_orphan_collection(&loaded, &collected, &plan)
+            .unwrap();
+
+        assert_eq!(outcome.library.snapshot(), &collected);
+        assert!(!outcome.maintenance_pending);
+        assert!(!outcome.orphan_collection_pending);
+        assert_eq!(backend.get(&attachment_path), None);
+        assert_eq!(backend.get(&store.orphan_path()), None);
+    }
+
+    #[test]
+    fn rolled_back_orphan_metadata_never_deletes_managed_bytes() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, attachment_bytes) =
+            install_orphan_base(&store, &backend);
+        let (collected, plan) = orphan_candidate(&base);
+        backend.fail_next_write(store.primary_path());
+
+        assert_eq!(
+            store
+                .save_orphan_collection(&loaded, &collected, &plan)
+                .unwrap_err()
+                .operation,
+            Operation::WritePrimary
+        );
+        assert_eq!(
+            backend.get(&attachment_path),
+            Some(attachment_bytes.clone())
+        );
+        assert!(backend.get(&store.orphan_path()).is_some());
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &base);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::RolledBackInterruptedOrphanCollection));
+        assert_eq!(backend.get(&attachment_path), Some(attachment_bytes));
+        assert_eq!(backend.get(&store.orphan_path()), None);
+    }
+
+    #[test]
+    fn orphan_collection_waits_for_metadata_maintenance_then_recovers() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, attachment_bytes) =
+            install_orphan_base(&store, &backend);
+        let (collected, plan) = orphan_candidate(&base);
+        backend.fail_next_write(store.last_good_path());
+
+        let outcome = store
+            .save_orphan_collection(&loaded, &collected, &plan)
+            .unwrap();
+        assert!(outcome.maintenance_pending);
+        assert!(outcome.orphan_collection_pending);
+        assert_eq!(backend.get(&attachment_path), Some(attachment_bytes));
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &collected);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::FinishedInterruptedOrphanCollection));
+        assert_eq!(backend.get(&attachment_path), None);
+        assert_eq!(backend.get(&store.orphan_path()), None);
+    }
+
+    #[test]
+    fn changed_orphan_bytes_are_preserved_and_block_writes() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, _) = install_orphan_base(&store, &backend);
+        let (collected, plan) = orphan_candidate(&base);
+        let substituted = b"substituted private orphan".to_vec();
+        backend.set(attachment_path.clone(), substituted.clone());
+
+        let outcome = store
+            .save_orphan_collection(&loaded, &collected, &plan)
+            .unwrap();
+        assert!(outcome.maintenance_pending);
+        assert!(outcome.orphan_collection_pending);
+        assert_eq!(backend.get(&attachment_path), Some(substituted.clone()));
+
+        let reopened = store.load().unwrap();
+        assert!(reopened
+            .notices()
+            .contains(&RecoveryNotice::OrphanCollectionPending));
+        assert_eq!(backend.get(&attachment_path), Some(substituted));
+        let later = candidate(&collected, "must remain blocked");
+        assert_eq!(
+            store.save(&reopened, &later).unwrap_err().kind,
+            ErrorKind::InvalidOrphanCollection
+        );
+    }
+
+    #[test]
+    fn orphan_remove_failure_and_missing_after_acceptance_resume_idempotently() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, _) = install_orphan_base(&store, &backend);
+        let (collected, plan) = orphan_candidate(&base);
+        backend.fail_next_remove(attachment_path.clone());
+
+        let outcome = store
+            .save_orphan_collection(&loaded, &collected, &plan)
+            .unwrap();
+        assert!(outcome.orphan_collection_pending);
+        backend.0.lock().unwrap().files.remove(&attachment_path);
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &collected);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::FinishedInterruptedOrphanCollection));
+        assert_eq!(backend.get(&store.orphan_path()), None);
+    }
+
+    #[test]
+    fn malformed_or_multiple_cleanup_intents_are_preserved_and_blocked() {
+        let (store, backend) = store();
+        backend.set(store.orphan_path(), b"malformed orphan intent".to_vec());
+
+        let orphan_only = store.load().unwrap();
+        assert!(orphan_only
+            .notices()
+            .contains(&RecoveryNotice::CorruptOrphanCollectionPreserved));
+        let next = candidate(orphan_only.snapshot(), "blocked");
+        assert_eq!(
+            store.save(&orphan_only, &next).unwrap_err().kind,
+            ErrorKind::InvalidOrphanCollection
+        );
+
+        backend.set(store.purge_path(), b"malformed purge intent".to_vec());
+        let multiple = store.load().unwrap();
+        assert!(multiple
+            .notices()
+            .contains(&RecoveryNotice::CorruptOrphanCollectionPreserved));
+        assert!(multiple
+            .notices()
+            .contains(&RecoveryNotice::CorruptPurgePreserved));
+        assert!(backend.get(&store.orphan_path()).is_some());
+        assert!(backend.get(&store.purge_path()).is_some());
+    }
+
+    #[test]
     fn journal_header_is_versioned_and_candidate_is_revalidated() {
         let loaded = LoadedLibrary {
             snapshot: LibrarySnapshot::default(),
@@ -2301,6 +2728,36 @@ mod tests {
         assert!(!accepted.purge_cleanup_pending);
         assert_eq!(backend.get(&attachment_path), None);
         assert!(repository.snapshot().notes.is_empty());
+    }
+
+    #[test]
+    fn repository_retry_retains_orphan_plan_and_collects_only_after_acceptance() {
+        let (store, backend) = store();
+        let (loaded, _base, attachment_path, attachment_bytes) =
+            install_orphan_base(&store, &backend);
+        let primary = store.primary_path();
+        let mut repository = AcceptedLibrary::from_loaded(store, loaded);
+        let mut transaction = repository.begin().unwrap();
+        let plan = transaction
+            .collect_orphaned_attachment(AttachmentId::new(1).unwrap(), 2)
+            .unwrap();
+        backend.fail_next_write(primary);
+
+        let CommitError::Pending(pending) = repository
+            .commit_orphan_collection(transaction, plan.clone())
+            .unwrap_err()
+        else {
+            panic!("expected retained orphan-collection candidate")
+        };
+        assert_eq!(pending.orphan_collection_plan(), Some(&plan));
+        assert_eq!(backend.get(&attachment_path), Some(attachment_bytes));
+        assert!(!format!("{pending:?}").contains("["));
+
+        let accepted = repository.retry(pending).unwrap();
+        assert!(accepted.recovered_after_error);
+        assert!(!accepted.orphan_collection_pending);
+        assert_eq!(backend.get(&attachment_path), None);
+        assert!(repository.snapshot().attachments.is_empty());
     }
 
     #[test]

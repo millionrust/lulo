@@ -2,7 +2,8 @@ use std::fmt;
 use std::path::Path;
 
 use rmac_notes_store::{
-    AttachmentImportPlan, LibrarySnapshot, LibraryTransaction, MutationError, PurgePlan,
+    AttachmentImportPlan, LibrarySnapshot, LibraryTransaction, MutationError, OrphanCollectionPlan,
+    PurgePlan,
 };
 use rmac_storage::{Backend, FileSystem};
 
@@ -35,6 +36,7 @@ impl fmt::Debug for PendingCommit {
                     PendingOperation::Ordinary => "ordinary",
                     PendingOperation::Purge(_) => "purge",
                     PendingOperation::AttachmentImport { .. } => "attachment import",
+                    PendingOperation::OrphanCollection(_) => "orphan collection",
                 },
             )
             .field("reason", &self.reason)
@@ -46,6 +48,7 @@ impl fmt::Debug for PendingCommit {
 enum PendingOperation {
     Ordinary,
     Purge(Box<PurgePlan>),
+    OrphanCollection(Box<OrphanCollectionPlan>),
     AttachmentImport {
         plan: Box<AttachmentImportPlan>,
         prepared: Box<PreparedImageAttachment>,
@@ -64,14 +67,27 @@ impl PendingCommit {
     pub fn purge_plan(&self) -> Option<&PurgePlan> {
         match &self.operation {
             PendingOperation::Purge(plan) => Some(plan),
-            PendingOperation::Ordinary | PendingOperation::AttachmentImport { .. } => None,
+            PendingOperation::Ordinary
+            | PendingOperation::AttachmentImport { .. }
+            | PendingOperation::OrphanCollection(_) => None,
         }
     }
 
     pub fn attachment_import_plan(&self) -> Option<&AttachmentImportPlan> {
         match &self.operation {
             PendingOperation::AttachmentImport { plan, .. } => Some(plan),
-            PendingOperation::Ordinary | PendingOperation::Purge(_) => None,
+            PendingOperation::Ordinary
+            | PendingOperation::Purge(_)
+            | PendingOperation::OrphanCollection(_) => None,
+        }
+    }
+
+    pub fn orphan_collection_plan(&self) -> Option<&OrphanCollectionPlan> {
+        match &self.operation {
+            PendingOperation::OrphanCollection(plan) => Some(plan),
+            PendingOperation::Ordinary
+            | PendingOperation::Purge(_)
+            | PendingOperation::AttachmentImport { .. } => None,
         }
     }
 
@@ -118,6 +134,7 @@ pub struct AcceptedCommit {
     pub maintenance_pending: bool,
     pub purge_cleanup_pending: bool,
     pub attachment_import_pending: bool,
+    pub orphan_collection_pending: bool,
     pub recovered_after_error: bool,
 }
 
@@ -209,6 +226,20 @@ impl<B: Backend> AcceptedLibrary<B> {
         .map_err(CommitError::Pending)
     }
 
+    pub fn commit_orphan_collection(
+        &mut self,
+        transaction: LibraryTransaction,
+        plan: OrphanCollectionPlan,
+    ) -> Result<AcceptedCommit, CommitError> {
+        let candidate = transaction.finish().map_err(CommitError::Mutation)?;
+        self.commit_candidate(
+            candidate,
+            PendingOperation::OrphanCollection(Box::new(plan)),
+            false,
+        )
+        .map_err(CommitError::Pending)
+    }
+
     pub fn retry(&mut self, pending: PendingCommit) -> Result<AcceptedCommit, PendingCommit> {
         let PendingCommit {
             candidate,
@@ -223,12 +254,14 @@ impl<B: Backend> AcceptedLibrary<B> {
             let maintenance_pending = has_blocking_maintenance(reloaded.notices());
             let purge_cleanup_pending = has_purge_maintenance(reloaded.notices());
             let attachment_import_pending = has_attachment_maintenance(reloaded.notices());
+            let orphan_collection_pending = has_orphan_maintenance(reloaded.notices());
             self.loaded = reloaded;
             return Ok(AcceptedCommit {
                 revision: candidate.revision,
                 maintenance_pending,
                 purge_cleanup_pending,
                 attachment_import_pending,
+                orphan_collection_pending,
                 recovered_after_error: true,
             });
         }
@@ -256,6 +289,10 @@ impl<B: Backend> AcceptedLibrary<B> {
             PendingOperation::AttachmentImport { plan, prepared } => self
                 .store
                 .save_attachment_import(&self.loaded, &candidate, plan, prepared),
+            PendingOperation::OrphanCollection(plan) => {
+                self.store
+                    .save_orphan_collection(&self.loaded, &candidate, plan)
+            }
         };
         match outcome {
             Ok(outcome) => {
@@ -264,6 +301,7 @@ impl<B: Backend> AcceptedLibrary<B> {
                     maintenance_pending: outcome.maintenance_pending,
                     purge_cleanup_pending: outcome.purge_cleanup_pending,
                     attachment_import_pending: outcome.attachment_import_pending,
+                    orphan_collection_pending: outcome.orphan_collection_pending,
                     recovered_after_error,
                 };
                 self.loaded = outcome.library;
@@ -284,6 +322,8 @@ fn has_blocking_maintenance(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::PurgeCleanupPending
                 | RecoveryNotice::CorruptAttachmentImportPreserved
                 | RecoveryNotice::AttachmentImportPending
+                | RecoveryNotice::CorruptOrphanCollectionPreserved
+                | RecoveryNotice::OrphanCollectionPending
         )
     })
 }
@@ -303,6 +343,16 @@ fn has_purge_maintenance(notices: &[RecoveryNotice]) -> bool {
         matches!(
             notice,
             RecoveryNotice::CorruptPurgePreserved | RecoveryNotice::PurgeCleanupPending
+        )
+    })
+}
+
+fn has_orphan_maintenance(notices: &[RecoveryNotice]) -> bool {
+    notices.iter().any(|notice| {
+        matches!(
+            notice,
+            RecoveryNotice::CorruptOrphanCollectionPreserved
+                | RecoveryNotice::OrphanCollectionPending
         )
     })
 }

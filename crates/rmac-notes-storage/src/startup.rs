@@ -183,6 +183,8 @@ pub fn inspect_notes_startup(paths: &NotesPaths) -> Result<NotesStartup, Startup
                 | RecoveryNotice::PurgeCleanupPending
                 | RecoveryNotice::CorruptAttachmentImportPreserved
                 | RecoveryNotice::AttachmentImportPending
+                | RecoveryNotice::CorruptOrphanCollectionPreserved
+                | RecoveryNotice::OrphanCollectionPending
         )
     });
     if loaded.snapshot() != &LibrarySnapshot::default() || storage_needs_attention {

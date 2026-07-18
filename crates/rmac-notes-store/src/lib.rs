@@ -14,7 +14,7 @@ use std::fmt;
 pub use codec::{decode, encode, CodecError, MAX_LIBRARY_BYTES, SCHEMA_VERSION};
 pub use mutation::{
     AttachmentImportPlan, LibraryTransaction, MutationError, NewAttachment, NewNote, NoteChanges,
-    PurgePlan,
+    OrphanCollectionPlan, PurgePlan,
 };
 
 pub const MAX_NOTES: usize = 100_000;

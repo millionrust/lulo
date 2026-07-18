@@ -171,6 +171,95 @@ pub struct PurgePlan {
     pub attachment_bytes: u64,
 }
 
+/// Exact authority for collecting one already-unreferenced attachment.
+///
+/// Reference removal and byte collection are deliberately separate reviewed
+/// transactions. Storage may remove the managed file only after it proves that
+/// the candidate is exactly the next revision with this tombstone removed.
+#[derive(Clone, PartialEq, Eq)]
+pub struct OrphanCollectionPlan {
+    pub base_library_revision: u64,
+    pub candidate_library_revision: u64,
+    pub attachment_id: AttachmentId,
+    pub attachment_revision: u64,
+    pub owner_note_id: NoteId,
+    pub byte_len: u64,
+    pub sha256: [u8; 32],
+}
+
+impl fmt::Debug for OrphanCollectionPlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrphanCollectionPlan")
+            .field("base_library_revision", &self.base_library_revision)
+            .field(
+                "candidate_library_revision",
+                &self.candidate_library_revision,
+            )
+            .field("attachment_id", &self.attachment_id)
+            .field("attachment_revision", &self.attachment_revision)
+            .field("owner_note_id", &self.owner_note_id)
+            .field("byte_len", &self.byte_len)
+            .field("sha256", &"<redacted>")
+            .finish()
+    }
+}
+
+impl OrphanCollectionPlan {
+    /// Prove that `candidate` is exactly `base` minus this tombstone record.
+    pub fn validate_candidate(
+        &self,
+        base: &LibrarySnapshot,
+        candidate: &LibrarySnapshot,
+    ) -> Result<(), MutationError> {
+        base.validate().map_err(MutationError::InvalidBase)?;
+        candidate
+            .validate()
+            .map_err(MutationError::InvalidCandidate)?;
+        if base.revision != self.base_library_revision
+            || candidate.revision != self.candidate_library_revision
+            || candidate.revision
+                != base
+                    .revision
+                    .checked_add(1)
+                    .ok_or(MutationError::RevisionExhausted)?
+        {
+            return Err(MutationError::RevisionConflict);
+        }
+        let attachment = base
+            .attachments
+            .iter()
+            .find(|attachment| attachment.id == self.attachment_id)
+            .ok_or(MutationError::MissingAttachment)?;
+        if attachment.revision != self.attachment_revision {
+            return Err(MutationError::RevisionConflict);
+        }
+        if !attachment.deleted {
+            return Err(MutationError::AttachmentNotOrphaned);
+        }
+        if attachment.note_id != self.owner_note_id
+            || attachment.byte_len != self.byte_len
+            || attachment.sha256 != self.sha256
+        {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InconsistentAttachment,
+            ));
+        }
+
+        let mut expected = base.clone();
+        expected.revision = candidate.revision;
+        expected
+            .attachments
+            .retain(|attachment| attachment.id != self.attachment_id);
+        if expected != *candidate {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InconsistentAttachment,
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl NoteChanges {
     /// Validate content bounds and tag invariants without requiring a base
     /// note. Storage-side recovery records use this before retaining a draft.
@@ -193,9 +282,11 @@ pub enum MutationError {
     DeletedNote,
     AttachmentNotOwned,
     AttachmentAlreadyRemoved,
+    AttachmentNotOrphaned,
     NoteNotTrashed,
     AttachmentImportRequiresExclusiveTransaction,
     PurgeRequiresExclusiveTransaction,
+    OrphanCollectionRequiresExclusiveTransaction,
     NoChanges,
 }
 
@@ -217,12 +308,18 @@ impl fmt::Display for MutationError {
             Self::AttachmentAlreadyRemoved => {
                 "the selected attachment reference was already removed"
             }
+            Self::AttachmentNotOrphaned => {
+                "the selected attachment is still referenced by its note"
+            }
             Self::NoteNotTrashed => "the selected note is not in Notes Trash",
             Self::AttachmentImportRequiresExclusiveTransaction => {
                 "an attachment import requires a separate Notes transaction"
             }
             Self::PurgeRequiresExclusiveTransaction => {
                 "permanent deletion requires a separate Notes transaction"
+            }
+            Self::OrphanCollectionRequiresExclusiveTransaction => {
+                "orphan collection requires a separate Notes transaction"
             }
             Self::NoChanges => "the Notes transaction contains no changes",
         })
@@ -621,6 +718,43 @@ impl LibraryTransaction {
         attachment.deleted = true;
         self.changed = true;
         Ok(())
+    }
+
+    /// Remove one exact orphan tombstone from metadata.
+    ///
+    /// The returned plan authorizes storage to collect the matching managed
+    /// bytes only after this candidate becomes durably authoritative.
+    pub fn collect_orphaned_attachment(
+        &mut self,
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+    ) -> Result<OrphanCollectionPlan, MutationError> {
+        if self.changed {
+            return Err(MutationError::OrphanCollectionRequiresExclusiveTransaction);
+        }
+        let attachment_index = self
+            .candidate
+            .attachments
+            .iter()
+            .position(|attachment| attachment.id == attachment_id)
+            .ok_or(MutationError::MissingAttachment)?;
+        let attachment = &self.candidate.attachments[attachment_index];
+        require_revision(attachment.revision, expected_attachment_revision)?;
+        if !attachment.deleted {
+            return Err(MutationError::AttachmentNotOrphaned);
+        }
+        let plan = OrphanCollectionPlan {
+            base_library_revision: self.base_revision,
+            candidate_library_revision: self.candidate.revision,
+            attachment_id,
+            attachment_revision: attachment.revision,
+            owner_note_id: attachment.note_id,
+            byte_len: attachment.byte_len,
+            sha256: attachment.sha256,
+        };
+        self.candidate.attachments.remove(attachment_index);
+        self.changed = true;
+        Ok(plan)
     }
 
     /// Remove one exact trashed note and all attachment records it owns.
@@ -1169,6 +1303,92 @@ mod tests {
         assert_eq!(
             remove_from_trash.remove_attachment_reference(note_id, 5, plan.attachment_id, 1, 30,),
             Err(MutationError::DeletedNote)
+        );
+    }
+
+    #[test]
+    fn orphan_collection_removes_only_the_exact_reviewed_tombstone() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let mut import = LibraryTransaction::begin(&base).unwrap();
+        let imported = import
+            .add_attachment(note_id, 3, 25, new_attachment())
+            .unwrap();
+        let attached = import.finish().unwrap();
+        let mut remove = LibraryTransaction::begin(&attached).unwrap();
+        remove
+            .remove_attachment_reference(note_id, 4, imported.attachment_id, 1, 30)
+            .unwrap();
+        let detached = remove.finish().unwrap();
+        let mut collect = LibraryTransaction::begin(&detached).unwrap();
+
+        let plan = collect
+            .collect_orphaned_attachment(imported.attachment_id, 2)
+            .unwrap();
+        let candidate = collect.finish().unwrap();
+
+        assert_eq!(plan.base_library_revision, detached.revision);
+        assert_eq!(plan.candidate_library_revision, detached.revision + 1);
+        assert_eq!(plan.attachment_id, imported.attachment_id);
+        assert_eq!(plan.attachment_revision, 2);
+        assert_eq!(plan.owner_note_id, note_id);
+        assert_eq!(plan.byte_len, imported.byte_len);
+        assert!(candidate.attachments.is_empty());
+        assert_eq!(candidate.notes, detached.notes);
+        assert_eq!(candidate.next_attachment_id, detached.next_attachment_id);
+        plan.validate_candidate(&detached, &candidate).unwrap();
+
+        let debug = format!("{plan:?}");
+        assert!(debug.contains("attachment_id"));
+        assert!(!debug.contains("[9, 9"));
+    }
+
+    #[test]
+    fn orphan_collection_rejects_live_stale_mixed_and_inexact_candidates() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let mut import = LibraryTransaction::begin(&base).unwrap();
+        let imported = import
+            .add_attachment(note_id, 3, 25, new_attachment())
+            .unwrap();
+        let attached = import.finish().unwrap();
+
+        let mut live = LibraryTransaction::begin(&attached).unwrap();
+        assert_eq!(
+            live.collect_orphaned_attachment(imported.attachment_id, 1),
+            Err(MutationError::AttachmentNotOrphaned)
+        );
+
+        let mut remove = LibraryTransaction::begin(&attached).unwrap();
+        remove
+            .remove_attachment_reference(note_id, 4, imported.attachment_id, 1, 30)
+            .unwrap();
+        let detached = remove.finish().unwrap();
+        let mut stale = LibraryTransaction::begin(&detached).unwrap();
+        assert_eq!(
+            stale.collect_orphaned_attachment(imported.attachment_id, 1),
+            Err(MutationError::RevisionConflict)
+        );
+
+        let mut mixed = LibraryTransaction::begin(&detached).unwrap();
+        assert!(mixed.set_sort_order(SortOrder::Title));
+        assert_eq!(
+            mixed.collect_orphaned_attachment(imported.attachment_id, 2),
+            Err(MutationError::OrphanCollectionRequiresExclusiveTransaction)
+        );
+
+        let mut collect = LibraryTransaction::begin(&detached).unwrap();
+        let plan = collect
+            .collect_orphaned_attachment(imported.attachment_id, 2)
+            .unwrap();
+        let candidate = collect.finish().unwrap();
+        let mut changed = candidate.clone();
+        changed.notes[0].title = "Unreviewed change".into();
+        assert_eq!(
+            plan.validate_candidate(&detached, &changed),
+            Err(MutationError::InvalidCandidate(
+                ValidationError::InconsistentAttachment
+            ))
         );
     }
 

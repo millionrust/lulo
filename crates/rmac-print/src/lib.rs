@@ -12,6 +12,13 @@ use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, Sw
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
+mod portal;
+
+pub use portal::{
+    OutputFormat, PortalPrintError, PortalPrintPhase, PortalPrintTransaction, PrintIdentity,
+    PrintSubmission,
+};
+
 pub const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 pub const MAX_PAGES: usize = 256;
 const MAX_RASTER_BYTES: usize = 96 * 1024 * 1024;
@@ -48,6 +55,19 @@ impl Default for PageLayout {
 pub enum PageOrientation {
     Portrait,
     Landscape,
+}
+
+impl PageOrientation {
+    /// Parse both spellings used by the portal's settings and page-setup
+    /// dictionaries. Reverse orientation changes physical feed direction, not
+    /// the portrait/landscape geometry required by this renderer.
+    pub fn from_portal(value: &str) -> Option<Self> {
+        match value {
+            "portrait" | "reverse_portrait" | "reverse-portrait" => Some(Self::Portrait),
+            "landscape" | "reverse_landscape" | "reverse-landscape" => Some(Self::Landscape),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

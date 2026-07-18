@@ -45,6 +45,19 @@ plain text over a rich-text file.
   not a substitute for the user document and is never treated as saved content.
 - The filesystem remains authoritative. File monitors are refresh hints only;
   an exact fresh preflight is required before overwriting an opened document.
+- Linux printing must export the initiating Wayland window and retain the exact
+  window/document generations through XDG PreparePrint, background rendering,
+  and Print. The shared transaction advertises only PDF, refuses stale portal
+  responses or unsupported PS/SVG output, preserves the returned token and page
+  setup, and treats cancellation at either portal request as a normal result.
+  The platform adapter must provide the final readable PDF file descriptor; no
+  Print control is exposed until that complete adapter is available.
+- ashpd 0.12.3 can export the GPUI raw Wayland handle, but its high-level print
+  methods do not expose the portal version-3 `supported_output_file_formats`
+  option. The Linux adapter must therefore use an exact reviewed D-Bus request
+  that includes `['pdf']`, or adopt a verified library API that exposes the
+  option. Calling the current convenience method and silently advertising all
+  formats is prohibited.
 
 There is no portable atomic compare-and-replace operation against arbitrary
 cooperating and non-cooperating editors. Text Editor therefore performs an

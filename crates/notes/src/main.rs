@@ -4,6 +4,7 @@
 //! writes the library directly. Stable IDs, accepted snapshots, recovery, and
 //! the single writer remain authoritative off the UI thread.
 
+use std::collections::BTreeSet;
 use std::io;
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -24,7 +25,9 @@ use rmac_notes_runtime::{
     WorkerFailure, WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{resolve_notes_paths, PendingReason};
-use rmac_notes_store::{FolderId, NewNote, NoteChanges, NoteId, SortOrder};
+use rmac_notes_store::{
+    FolderId, NewNote, NoteChanges, NoteId, SortOrder, MAX_TAGS_PER_NOTE, MAX_TAG_BYTES,
+};
 use rmac_ui::{mac, Button, InputEvent, TextField};
 
 const FOLDERS_W: f32 = 210.0;
@@ -54,6 +57,7 @@ struct NotesView {
     search_query: Entity<InputState>,
     folder_name_input: Entity<InputState>,
     title: Entity<InputState>,
+    tags: Entity<InputState>,
     body: Entity<InputState>,
     focus: FocusHandle,
     applying_snapshot: bool,
@@ -93,6 +97,7 @@ impl NotesView {
         let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let folder_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Folder Name"));
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
+        let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Tags"));
         let body = rmac_editor::multiline("Note", window, cx);
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
@@ -101,6 +106,12 @@ impl NotesView {
         })
         .detach();
         cx.subscribe(&body, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.schedule_current_edit(cx);
+            }
+        })
+        .detach();
+        cx.subscribe(&tags, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 this.schedule_current_edit(cx);
             }
@@ -129,6 +140,7 @@ impl NotesView {
             search_query,
             folder_name_input,
             title,
+            tags,
             body,
             focus,
             applying_snapshot: false,
@@ -349,14 +361,16 @@ impl NotesView {
     }
 
     fn sync_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let (title, body) = self
+        let (title, tags, body) = self
             .session
             .selected_note()
-            .map(|note| (note.title.clone(), note.body.clone()))
+            .map(|note| (note.title.clone(), note.tags.join(", "), note.body.clone()))
             .unwrap_or_default();
         self.applying_snapshot = true;
         self.title
             .update(cx, |state, cx| state.set_value(title, window, cx));
+        self.tags
+            .update(cx, |state, cx| state.set_value(tags, window, cx));
         self.body
             .update(cx, |state, cx| state.set_value(body, window, cx));
         self.applying_snapshot = false;
@@ -440,10 +454,19 @@ impl NotesView {
         let expected_revision = note.revision;
         let created_unix_ms = note.created_unix_ms;
         let previous_modified = note.modified_unix_ms;
-        let tags = note.tags.clone();
+        let accepted_tags = note.tags.clone();
         let title = self.title.read(cx).value().to_string();
         let body = self.body.read(cx).value().to_string();
-        if title == note.title && body == note.body {
+        let tag_text = self.tags.read(cx).value().to_string();
+        let tags = match parse_tags(&tag_text) {
+            Ok(tags) => tags,
+            Err(message) => {
+                self.message = Some(message.into());
+                cx.notify();
+                return;
+            }
+        };
+        if title == note.title && body == note.body && tags == accepted_tags {
             return;
         }
         let Some(request_id) = self.take_request_id() else {
@@ -522,6 +545,9 @@ impl NotesView {
         self.applying_snapshot = true;
         self.title.update(cx, |state, cx| {
             state.set_value(changes.title.clone(), window, cx)
+        });
+        self.tags.update(cx, |state, cx| {
+            state.set_value(changes.tags.join(", "), window, cx)
         });
         self.body.update(cx, |state, cx| {
             state.set_value(changes.body.clone(), window, cx)
@@ -1435,17 +1461,29 @@ impl NotesView {
                             .disabled(!editable),
                     ),
             )
-            .when(!note.tags.is_empty(), |element| {
-                element.child(
-                    div()
-                        .px(px(44.0))
-                        .py_2()
-                        .flex()
-                        .flex_wrap()
-                        .gap_1()
-                        .children(note.tags.clone().into_iter().map(tag_pill)),
-                )
-            })
+            .child(
+                div()
+                    .mx(px(44.0))
+                    .mt_1()
+                    .mb_2()
+                    .h(px(28.0))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .px_2()
+                    .rounded(px(7.0))
+                    .bg(mac::control_fill())
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::notes_accent())
+                    .child("#")
+                    .child(
+                        TextField::new(&self.tags)
+                            .appearance(false)
+                            .cleanable(true)
+                            .small()
+                            .disabled(!editable),
+                    ),
+            )
             .when(!note.attachments.is_empty(), |element| {
                 element.child(
                     div()
@@ -2155,6 +2193,27 @@ fn unique_folder_name(existing: &[String]) -> String {
         }
     }
     "Imported Notes".into()
+}
+
+fn parse_tags(input: &str) -> Result<Vec<String>, &'static str> {
+    let mut tags = Vec::new();
+    let mut unique = BTreeSet::new();
+    for value in input.split(',') {
+        let value = value.trim().trim_start_matches('#').trim();
+        if value.is_empty() {
+            continue;
+        }
+        if value.len() > MAX_TAG_BYTES || value.chars().any(char::is_control) {
+            return Err("Each Notes tag must be valid text no longer than 256 bytes");
+        }
+        if unique.insert(value.to_lowercase()) {
+            if tags.len() == MAX_TAGS_PER_NOTE {
+                return Err("A note can contain at most 32 tags");
+            }
+            tags.push(value.to_string());
+        }
+    }
+    Ok(tags)
 }
 
 fn display_title(title: &str) -> SharedString {

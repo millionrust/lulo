@@ -488,8 +488,12 @@ maintenance gating, and typed failures are rendered from that projection.
 Selected custom folders expose Rename and Delete actions. Rename uses a focused
 modal field and exact folder revision; Delete uses a destructive review that
 states the live-note count and preserves those notes by moving them to All Notes
-before the accepted folder tombstone publishes. The
-old synchronous path scanner, direct note writes, path identity, and permanent
+before the accepted folder tombstone publishes. A compact tag field edits the
+same complete scheduled candidate as title/body, accepts comma-separated input,
+strips presentation `#` prefixes, bounds individual/count input, and preserves
+the first spelling while deduplicating case-insensitively. Tag changes become
+searchable only after accepted readback. The old synchronous path scanner,
+direct note writes, path identity, and permanent
 1.5-second save loop have been removed from the running app. Window close is
 refused when a Pending decision exists or when the bounded command queue cannot
 accept shutdown; an accepted shutdown flushes the complete scheduled edit
@@ -563,11 +567,11 @@ cancels the session and orders search-worker shutdown before dropping the view.
 Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
-Known live-app gaps now include tag editing, formatted Markdown preview, image
-attach/preview/reference-removal UI, reviewed permanent note/attachment deletion,
-XDG portal text/bundle import and export review/
-progress, rich search-match highlighting, richer conflict-resolution choices,
-semantic accessibility, and Linux runtime/visual evidence. The accepted store
+Known live-app gaps now include formatted Markdown preview, image attach/preview/
+reference-removal UI, reviewed permanent note/attachment deletion, XDG portal
+text/bundle import and export review/progress, rich search-match highlighting,
+richer conflict-resolution choices, semantic accessibility, and Linux runtime/
+visual evidence. The accepted store
 remains local-only and makes no cloud-sync claim.
 Migration must preserve every readable existing note and attachment; it must
 not delete the prototype library after a partial import.

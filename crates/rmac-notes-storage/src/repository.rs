@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::Path;
 
-use rmac_notes_store::{LibrarySnapshot, LibraryTransaction, MutationError};
+use rmac_notes_store::{LibrarySnapshot, LibraryTransaction, MutationError, PurgePlan};
 use rmac_storage::{Backend, FileSystem};
 
 use crate::{LoadedLibrary, NotesLibraryStore, RecoveryNotice, StoreError};
@@ -14,7 +14,8 @@ pub enum PendingReason {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PendingCommit {
-    candidate: LibrarySnapshot,
+    candidate: Box<LibrarySnapshot>,
+    purge: Option<Box<PurgePlan>>,
     pub reason: PendingReason,
 }
 
@@ -24,12 +25,21 @@ impl PendingCommit {
     }
 
     pub fn into_candidate(self) -> LibrarySnapshot {
-        self.candidate
+        *self.candidate
     }
 
-    fn store(candidate: LibrarySnapshot, error: StoreError) -> Self {
+    pub fn purge_plan(&self) -> Option<&PurgePlan> {
+        self.purge.as_deref()
+    }
+
+    fn store(
+        candidate: Box<LibrarySnapshot>,
+        purge: Option<Box<PurgePlan>>,
+        error: StoreError,
+    ) -> Self {
         Self {
             candidate,
+            purge,
             reason: PendingReason::Store(error),
         }
     }
@@ -63,6 +73,7 @@ impl std::error::Error for CommitError {}
 pub struct AcceptedCommit {
     pub revision: u64,
     pub maintenance_pending: bool,
+    pub purge_cleanup_pending: bool,
     pub recovered_after_error: bool,
 }
 
@@ -108,27 +119,36 @@ impl<B: Backend> AcceptedLibrary<B> {
         transaction: LibraryTransaction,
     ) -> Result<AcceptedCommit, CommitError> {
         let candidate = transaction.finish().map_err(CommitError::Mutation)?;
-        self.commit_candidate(candidate, false)
+        self.commit_candidate(candidate, None, false)
+            .map_err(CommitError::Pending)
+    }
+
+    pub fn commit_purge(
+        &mut self,
+        transaction: LibraryTransaction,
+        plan: PurgePlan,
+    ) -> Result<AcceptedCommit, CommitError> {
+        let candidate = transaction.finish().map_err(CommitError::Mutation)?;
+        self.commit_candidate(candidate, Some(Box::new(plan)), false)
             .map_err(CommitError::Pending)
     }
 
     pub fn retry(&mut self, pending: PendingCommit) -> Result<AcceptedCommit, PendingCommit> {
-        let candidate = pending.candidate;
+        let PendingCommit {
+            candidate, purge, ..
+        } = pending;
         let reloaded = match self.store.load() {
             Ok(reloaded) => reloaded,
-            Err(error) => return Err(PendingCommit::store(candidate, error)),
+            Err(error) => return Err(PendingCommit::store(candidate, purge, error)),
         };
-        if reloaded.snapshot() == &candidate {
-            let maintenance_pending = reloaded.notices().iter().any(|notice| {
-                matches!(
-                    notice,
-                    RecoveryNotice::MaintenancePending | RecoveryNotice::CorruptJournalPreserved
-                )
-            });
+        if reloaded.snapshot() == candidate.as_ref() {
+            let maintenance_pending = has_blocking_maintenance(reloaded.notices());
+            let purge_cleanup_pending = has_purge_maintenance(reloaded.notices());
             self.loaded = reloaded;
             return Ok(AcceptedCommit {
                 revision: candidate.revision,
                 maintenance_pending,
+                purge_cleanup_pending,
                 recovered_after_error: true,
             });
         }
@@ -136,29 +156,57 @@ impl<B: Backend> AcceptedLibrary<B> {
             self.loaded = reloaded;
             return Err(PendingCommit {
                 candidate,
+                purge,
                 reason: PendingReason::AcceptedStateChanged,
             });
         }
         self.loaded = reloaded;
-        self.commit_candidate(candidate, true)
+        self.commit_candidate(*candidate, purge, true)
     }
 
     fn commit_candidate(
         &mut self,
         candidate: LibrarySnapshot,
+        purge: Option<Box<PurgePlan>>,
         recovered_after_error: bool,
     ) -> Result<AcceptedCommit, PendingCommit> {
-        match self.store.save(&self.loaded, &candidate) {
+        let outcome = match purge.as_ref() {
+            Some(plan) => self.store.save_purge(&self.loaded, &candidate, plan),
+            None => self.store.save(&self.loaded, &candidate),
+        };
+        match outcome {
             Ok(outcome) => {
                 let accepted = AcceptedCommit {
                     revision: candidate.revision,
                     maintenance_pending: outcome.maintenance_pending,
+                    purge_cleanup_pending: outcome.purge_cleanup_pending,
                     recovered_after_error,
                 };
                 self.loaded = outcome.library;
                 Ok(accepted)
             }
-            Err(error) => Err(PendingCommit::store(candidate, error)),
+            Err(error) => Err(PendingCommit::store(Box::new(candidate), purge, error)),
         }
     }
+}
+
+fn has_blocking_maintenance(notices: &[RecoveryNotice]) -> bool {
+    notices.iter().any(|notice| {
+        matches!(
+            notice,
+            RecoveryNotice::MaintenancePending
+                | RecoveryNotice::CorruptJournalPreserved
+                | RecoveryNotice::CorruptPurgePreserved
+                | RecoveryNotice::PurgeCleanupPending
+        )
+    })
+}
+
+fn has_purge_maintenance(notices: &[RecoveryNotice]) -> bool {
+    notices.iter().any(|notice| {
+        matches!(
+            notice,
+            RecoveryNotice::CorruptPurgePreserved | RecoveryNotice::PurgeCleanupPending
+        )
+    })
 }

@@ -11,7 +11,15 @@ use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use sha2::{Digest as _, Sha256};
+
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileFingerprint {
+    pub byte_len: u64,
+    pub sha256: [u8; 32],
+}
 
 /// A domain operation plus the path and original I/O classification.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +105,27 @@ pub trait Backend {
         self.read_bounded(path, maximum)
     }
 
+    /// Stream a bounded fingerprint from a private regular file without
+    /// following a substituted final link. Host files are never allocated in
+    /// full; small injectable backends may use their bounded read fallback.
+    fn fingerprint_bounded_no_follow(
+        &self,
+        path: &Path,
+        maximum: u64,
+    ) -> io::Result<FileFingerprint> {
+        let maximum = usize::try_from(maximum).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "fingerprint bound is too large",
+            )
+        })?;
+        let bytes = self.read_bounded_no_follow(path, maximum)?;
+        Ok(FileFingerprint {
+            byte_len: bytes.len() as u64,
+            sha256: Sha256::digest(&bytes).into(),
+        })
+    }
+
     fn write_atomic(&self, _path: &Path, _contents: &[u8]) -> io::Result<()> {
         Err(unsupported("write atomically"))
     }
@@ -125,6 +154,14 @@ pub trait Backend {
 
     fn remove_file(&self, _path: &Path) -> io::Result<()> {
         Err(unsupported("remove file"))
+    }
+
+    /// Remove a file and durably record the directory-entry change.
+    ///
+    /// Injectable backends may model this as a normal removal; the host
+    /// implementation syncs the parent directory before reporting success.
+    fn remove_file_durable(&self, path: &Path) -> io::Result<()> {
+        self.remove_file(path)
     }
 
     fn remove_dir_all(&self, _path: &Path) -> io::Result<()> {
@@ -163,6 +200,14 @@ impl Backend for FileSystem {
         read_bounded_no_follow(path, maximum)
     }
 
+    fn fingerprint_bounded_no_follow(
+        &self,
+        path: &Path,
+        maximum: u64,
+    ) -> io::Result<FileFingerprint> {
+        fingerprint_bounded_no_follow(path, maximum)
+    }
+
     fn write_atomic(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
         atomic_write(path, contents)
     }
@@ -189,6 +234,10 @@ impl Backend for FileSystem {
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
         std::fs::remove_file(path)
+    }
+
+    fn remove_file_durable(&self, path: &Path) -> io::Result<()> {
+        remove_file_durable(path)
     }
 
     fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
@@ -221,6 +270,39 @@ fn read_open_file_bounded(file: File, maximum: usize) -> io::Result<Vec<u8>> {
 
 /// Read a regular, singly linked file without following its final path.
 pub fn read_bounded_no_follow(path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
+    read_open_file_bounded(open_private_file_no_follow(path)?, maximum)
+}
+
+/// Stream a SHA-256 fingerprint from a regular owner-owned, singly linked file
+/// without following its final path or allocating its contents in full.
+pub fn fingerprint_bounded_no_follow(path: &Path, maximum: u64) -> io::Result<FileFingerprint> {
+    let mut file = open_private_file_no_follow(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut byte_len = 0_u64;
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        byte_len = byte_len
+            .checked_add(count as u64)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "file length overflow"))?;
+        if byte_len > maximum {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file exceeds the configured size limit",
+            ));
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(FileFingerprint {
+        byte_len,
+        sha256: hasher.finalize().into(),
+    })
+}
+
+fn open_private_file_no_follow(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -263,7 +345,7 @@ pub fn read_bounded_no_follow(path: &Path, maximum: usize) -> io::Result<Vec<u8>
             ));
         }
     }
-    read_open_file_bounded(file, maximum)
+    Ok(file)
 }
 
 /// Create the final app-owned state directory and enforce owner-only access.
@@ -298,6 +380,18 @@ pub fn create_dir_all_private(path: &Path) -> io::Result<()> {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
     }
     Ok(())
+}
+
+/// Unlink a file and sync its parent directory before returning success.
+pub fn remove_file_durable(path: &Path) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "removal target has no parent directory",
+        )
+    })?;
+    std::fs::remove_file(path)?;
+    File::open(parent)?.sync_all()
 }
 
 /// Atomically replace `path` using a same-directory temporary file.
@@ -502,6 +596,23 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn durable_removal_unlinks_the_exact_entry_and_reports_missing() {
+        let root = temp_root("durable-remove");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("managed.bin");
+        std::fs::write(&target, b"managed bytes").unwrap();
+
+        remove_file_durable(&target).unwrap();
+
+        assert!(!target.exists());
+        assert_eq!(
+            remove_file_durable(&target).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn private_bounded_read_refuses_symlinks_and_hard_links() {
@@ -518,8 +629,22 @@ mod tests {
             read_bounded_no_follow(&regular, 64).unwrap(),
             b"private draft"
         );
+        assert_eq!(
+            fingerprint_bounded_no_follow(&regular, 64).unwrap(),
+            FileFingerprint {
+                byte_len: 13,
+                sha256: Sha256::digest(b"private draft").into(),
+            }
+        );
+        assert_eq!(
+            fingerprint_bounded_no_follow(&regular, 12)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
         symlink(&regular, &symlink_path).unwrap();
         assert!(read_bounded_no_follow(&symlink_path, 64).is_err());
+        assert!(fingerprint_bounded_no_follow(&symlink_path, 64).is_err());
         std::fs::hard_link(&regular, &hard_link).unwrap();
         assert_eq!(
             read_bounded_no_follow(&regular, 64).unwrap_err().kind(),
@@ -527,6 +652,12 @@ mod tests {
         );
         assert_eq!(
             read_bounded_no_follow(&hard_link, 64).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            fingerprint_bounded_no_follow(&regular, 64)
+                .unwrap_err()
+                .kind(),
             io::ErrorKind::InvalidData
         );
         std::fs::remove_dir_all(root).unwrap();

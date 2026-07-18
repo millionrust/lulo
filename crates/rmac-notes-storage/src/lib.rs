@@ -13,16 +13,19 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rmac_notes_store::{decode, encode, CodecError, LibrarySnapshot, MAX_LIBRARY_BYTES};
+use rmac_notes_store::{decode, encode, CodecError, LibrarySnapshot, PurgePlan, MAX_LIBRARY_BYTES};
 use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
 mod drafts;
 mod legacy_scan;
 mod migration;
+mod purge;
 mod repository;
 mod startup;
 mod writer;
+
+use purge::{PurgeAuthority, PurgeError, PurgeIntent, MAX_PURGE_INTENT_BYTES};
 
 pub use drafts::{
     decode_draft, encode_draft, DraftCodecError, DraftDiscovery, DraftError, DraftErrorKind,
@@ -57,6 +60,10 @@ pub enum RecoveryNotice {
     RecoveredLastKnownGood,
     CorruptJournalPreserved,
     MaintenancePending,
+    RolledBackInterruptedPurge,
+    FinishedInterruptedPurge,
+    CorruptPurgePreserved,
+    PurgeCleanupPending,
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +97,7 @@ impl LoadedLibrary {
 pub struct SaveOutcome {
     pub library: LoadedLibrary,
     pub maintenance_pending: bool,
+    pub purge_cleanup_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,6 +119,12 @@ pub enum Operation {
     VerifyLastKnownGood,
     RemoveJournal,
     RecoverPrimary,
+    ReadPurgeIntent,
+    WritePurgeIntent,
+    VerifyPurgeIntent,
+    RemovePurgeIntent,
+    VerifyPurgeAttachment,
+    RemovePurgeAttachment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -121,6 +135,8 @@ pub enum ErrorKind {
     InvalidRevision,
     ReadbackMismatch,
     AmbiguousJournal,
+    InvalidPurge,
+    AttachmentMismatch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +176,8 @@ impl fmt::Display for StoreError {
             ErrorKind::AmbiguousJournal => {
                 "Notes found an interrupted transaction that needs recovery"
             }
+            ErrorKind::InvalidPurge => "Notes found invalid permanent-deletion state",
+            ErrorKind::AttachmentMismatch => "Notes refused to delete an attachment that changed",
         })
     }
 }
@@ -212,7 +230,50 @@ impl<B: Backend> NotesLibraryStore<B> {
             .transaction_lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.require_no_purge_intent()?;
         self.save_locked(loaded, candidate)
+    }
+
+    /// Publish an exact purge candidate, then collect only the managed
+    /// attachment bytes named by its durable private intent.
+    pub fn save_purge(
+        &self,
+        loaded: &LoadedLibrary,
+        candidate: &LibrarySnapshot,
+        plan: &PurgePlan,
+    ) -> Result<SaveOutcome, StoreError> {
+        let _guard = self
+            .transaction_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if has_blocking_notice(loaded.notices()) {
+            return Err(StoreError::new(
+                Operation::PreflightPrimary,
+                ErrorKind::AmbiguousJournal,
+            ));
+        }
+        self.require_no_purge_intent()?;
+        let intent = PurgeIntent::prepare(loaded.snapshot(), candidate, plan)
+            .map_err(|error| map_purge_error(Operation::WritePurgeIntent, error))?;
+        self.write_purge_intent(&intent)?;
+        let mut outcome = self.save_locked(loaded, candidate)?;
+        if outcome.maintenance_pending {
+            outcome.purge_cleanup_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::PurgeCleanupPending,
+            );
+            return Ok(outcome);
+        }
+        if self.finish_purge(&intent).is_err() {
+            outcome.maintenance_pending = true;
+            outcome.purge_cleanup_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::PurgeCleanupPending,
+            );
+        }
+        Ok(outcome)
     }
 
     /// Preserve a freshly reread legacy library and publish its reviewed plan.
@@ -232,17 +293,17 @@ impl<B: Backend> NotesLibraryStore<B> {
     }
 
     fn load_locked(&self) -> Result<LoadedLibrary, StoreError> {
-        let mut notices = self.recover_journal()?;
-        match self.read_snapshot(
+        let notices = self.recover_journal()?;
+        let loaded = match self.read_snapshot(
             &self.primary_path(),
             Operation::ReadPrimary,
             Operation::ParsePrimary,
         ) {
-            Ok(Some((snapshot, bytes))) => Ok(LoadedLibrary {
+            Ok(Some((snapshot, bytes))) => LoadedLibrary {
                 snapshot,
                 baseline: Baseline::Exact(bytes),
                 notices,
-            }),
+            },
             Ok(None) => match self.read_snapshot(
                 &self.last_good_path(),
                 Operation::ReadLastKnownGood,
@@ -250,18 +311,19 @@ impl<B: Backend> NotesLibraryStore<B> {
             )? {
                 Some((snapshot, bytes)) => {
                     self.restore_primary(&bytes)?;
+                    let mut notices = notices;
                     notices.push(RecoveryNotice::RecoveredLastKnownGood);
-                    Ok(LoadedLibrary {
+                    LoadedLibrary {
                         snapshot,
                         baseline: Baseline::Exact(bytes),
                         notices,
-                    })
+                    }
                 }
-                None => Ok(LoadedLibrary {
+                None => LoadedLibrary {
                     snapshot: LibrarySnapshot::default(),
                     baseline: Baseline::Missing,
                     notices,
-                }),
+                },
             },
             Err(primary_error) => match self.read_snapshot(
                 &self.last_good_path(),
@@ -270,16 +332,18 @@ impl<B: Backend> NotesLibraryStore<B> {
             ) {
                 Ok(Some((snapshot, bytes))) => {
                     self.restore_primary(&bytes)?;
+                    let mut notices = notices;
                     notices.push(RecoveryNotice::RecoveredLastKnownGood);
-                    Ok(LoadedLibrary {
+                    LoadedLibrary {
                         snapshot,
                         baseline: Baseline::Exact(bytes),
                         notices,
-                    })
+                    }
                 }
-                _ => Err(primary_error),
+                _ => return Err(primary_error),
             },
-        }
+        };
+        self.recover_purge(loaded)
     }
 
     fn save_locked(
@@ -287,12 +351,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         loaded: &LoadedLibrary,
         candidate: &LibrarySnapshot,
     ) -> Result<SaveOutcome, StoreError> {
-        if loaded.notices.iter().any(|notice| {
-            matches!(
-                notice,
-                RecoveryNotice::CorruptJournalPreserved | RecoveryNotice::MaintenancePending
-            )
-        }) {
+        if has_blocking_notice(&loaded.notices) {
             return Err(StoreError::new(
                 Operation::PreflightPrimary,
                 ErrorKind::AmbiguousJournal,
@@ -365,7 +424,109 @@ impl<B: Backend> NotesLibraryStore<B> {
                 notices,
             },
             maintenance_pending,
+            purge_cleanup_pending: false,
         })
+    }
+
+    fn recover_purge(&self, mut loaded: LoadedLibrary) -> Result<LoadedLibrary, StoreError> {
+        let bytes = match self
+            .backend
+            .read_bounded_no_follow(&self.purge_path(), MAX_PURGE_INTENT_BYTES)
+        {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(loaded),
+            Err(_) => {
+                push_notice(&mut loaded.notices, RecoveryNotice::CorruptPurgePreserved);
+                return Ok(loaded);
+            }
+        };
+        let intent = match PurgeIntent::decode(&bytes) {
+            Ok(intent) => intent,
+            Err(_) => {
+                push_notice(&mut loaded.notices, RecoveryNotice::CorruptPurgePreserved);
+                return Ok(loaded);
+            }
+        };
+        match intent
+            .authority(&loaded.snapshot)
+            .map_err(|error| map_purge_error(Operation::ReadPurgeIntent, error))?
+        {
+            PurgeAuthority::RolledBack => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::RolledBackInterruptedPurge,
+                );
+                if self.remove_purge_intent().is_err() {
+                    push_notice(&mut loaded.notices, RecoveryNotice::PurgeCleanupPending);
+                }
+            }
+            PurgeAuthority::Accepted | PurgeAuthority::AcceptedDescendant => {
+                if self.finish_purge(&intent).is_ok() {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::FinishedInterruptedPurge,
+                    );
+                } else {
+                    push_notice(&mut loaded.notices, RecoveryNotice::PurgeCleanupPending);
+                }
+            }
+            PurgeAuthority::Ambiguous => {
+                push_notice(&mut loaded.notices, RecoveryNotice::CorruptPurgePreserved)
+            }
+        }
+        Ok(loaded)
+    }
+
+    fn write_purge_intent(&self, intent: &PurgeIntent) -> Result<(), StoreError> {
+        let bytes = intent
+            .encode()
+            .map_err(|error| map_purge_error(Operation::WritePurgeIntent, error))?;
+        self.backend
+            .create_dir_all_private(&self.root)
+            .map_err(|error| StoreError::io(Operation::CreateDirectory, error))?;
+        self.backend
+            .write_atomic_private(&self.purge_path(), &bytes)
+            .map_err(|error| StoreError::io(Operation::WritePurgeIntent, error))?;
+        let readback = self
+            .backend
+            .read_bounded_no_follow(&self.purge_path(), MAX_PURGE_INTENT_BYTES)
+            .map_err(|error| StoreError::io(Operation::VerifyPurgeIntent, error))?;
+        if readback != bytes || PurgeIntent::decode(&readback).ok().as_ref() != Some(intent) {
+            return Err(StoreError::new(
+                Operation::VerifyPurgeIntent,
+                ErrorKind::ReadbackMismatch,
+            ));
+        }
+        Ok(())
+    }
+
+    fn finish_purge(&self, intent: &PurgeIntent) -> Result<(), StoreError> {
+        intent
+            .cleanup(&self.root, &self.backend)
+            .map_err(|error| map_purge_error(Operation::VerifyPurgeAttachment, error))?;
+        self.remove_purge_intent()
+    }
+
+    fn require_no_purge_intent(&self) -> Result<(), StoreError> {
+        match self
+            .backend
+            .read_bounded_no_follow(&self.purge_path(), MAX_PURGE_INTENT_BYTES)
+        {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Ok(_) => Err(StoreError::new(
+                Operation::ReadPurgeIntent,
+                ErrorKind::InvalidPurge,
+            )),
+            Err(error) => Err(StoreError::io(Operation::ReadPurgeIntent, error)),
+        }
+    }
+
+    fn remove_purge_intent(&self) -> Result<(), StoreError> {
+        match self.backend.remove_file_durable(&self.purge_path()) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(StoreError::io(Operation::RemovePurgeIntent, error)),
+        }
     }
 
     fn recover_journal(&self) -> Result<Vec<RecoveryNotice>, StoreError> {
@@ -552,6 +713,42 @@ impl<B: Backend> NotesLibraryStore<B> {
     fn journal_path(&self) -> PathBuf {
         self.root.join("library.journal.bin")
     }
+
+    fn purge_path(&self) -> PathBuf {
+        self.root.join("library.purge.bin")
+    }
+}
+
+fn push_notice(notices: &mut Vec<RecoveryNotice>, notice: RecoveryNotice) {
+    if !notices.contains(&notice) {
+        notices.push(notice);
+    }
+}
+
+fn has_blocking_notice(notices: &[RecoveryNotice]) -> bool {
+    notices.iter().any(|notice| {
+        matches!(
+            notice,
+            RecoveryNotice::CorruptJournalPreserved
+                | RecoveryNotice::MaintenancePending
+                | RecoveryNotice::CorruptPurgePreserved
+                | RecoveryNotice::PurgeCleanupPending
+        )
+    })
+}
+
+fn map_purge_error(operation: Operation, error: PurgeError) -> StoreError {
+    match error {
+        PurgeError::InvalidPlan | PurgeError::TooLarge | PurgeError::Malformed => {
+            StoreError::new(operation, ErrorKind::InvalidPurge)
+        }
+        PurgeError::Io(kind) => StoreError::new(operation, ErrorKind::Io(kind)),
+        PurgeError::Remove(kind) => {
+            StoreError::new(Operation::RemovePurgeAttachment, ErrorKind::Io(kind))
+        }
+        PurgeError::ReadbackMismatch => StoreError::new(operation, ErrorKind::ReadbackMismatch),
+        PurgeError::AttachmentMismatch => StoreError::new(operation, ErrorKind::AttachmentMismatch),
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -719,7 +916,10 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmac_notes_store::{NewNote, NoteId, NoteRecord, SortOrder};
+    use rmac_notes_store::{
+        AttachmentId, AttachmentKind, AttachmentRecord, LibraryTransaction, NewNote, NoteId,
+        NoteRecord, SortOrder,
+    };
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -830,6 +1030,67 @@ mod tests {
         });
         candidate.next_note_id += 1;
         candidate
+    }
+
+    fn purge_fixture() -> (LibrarySnapshot, PathBuf, Vec<u8>) {
+        let note_id = NoteId::new(1).unwrap();
+        let attachment_id = AttachmentId::new(1).unwrap();
+        let attachment_bytes = b"exact private managed attachment".to_vec();
+        (
+            LibrarySnapshot {
+                revision: 2,
+                sort_order: SortOrder::Edited,
+                next_note_id: 2,
+                next_folder_id: 1,
+                next_attachment_id: 2,
+                folders: Vec::new(),
+                notes: vec![NoteRecord {
+                    id: note_id,
+                    revision: 2,
+                    created_unix_ms: 1,
+                    modified_unix_ms: 2,
+                    title: "Private trashed note".into(),
+                    body: "Private body".into(),
+                    tags: vec!["private-tag".into()],
+                    folder_id: None,
+                    pinned: false,
+                    deleted: true,
+                    attachments: vec![attachment_id],
+                }],
+                attachments: vec![AttachmentRecord {
+                    id: attachment_id,
+                    revision: 1,
+                    note_id,
+                    display_name: "private-image.png".into(),
+                    kind: AttachmentKind::Png,
+                    byte_len: attachment_bytes.len() as u64,
+                    sha256: digest(&attachment_bytes),
+                    deleted: false,
+                }],
+            },
+            PathBuf::from("/virtual/library/attachments/00000000000000000001.bin"),
+            attachment_bytes,
+        )
+    }
+
+    fn install_purge_base(
+        store: &NotesLibraryStore<FakeBackend>,
+        backend: &FakeBackend,
+    ) -> (LoadedLibrary, LibrarySnapshot, PathBuf, Vec<u8>) {
+        let initial = store.load().unwrap();
+        let (base, attachment_path, attachment_bytes) = purge_fixture();
+        base.validate().unwrap();
+        let loaded = store.save(&initial, &base).unwrap().library;
+        backend.set(attachment_path.clone(), attachment_bytes.clone());
+        (loaded, base, attachment_path, attachment_bytes)
+    }
+
+    fn purge_candidate(base: &LibrarySnapshot) -> (LibrarySnapshot, rmac_notes_store::PurgePlan) {
+        let mut transaction = LibraryTransaction::begin(base).unwrap();
+        let plan = transaction
+            .purge_trashed_note(NoteId::new(1).unwrap(), 2)
+            .unwrap();
+        (transaction.finish().unwrap(), plan)
     }
 
     fn store() -> (NotesLibraryStore<FakeBackend>, FakeBackend) {
@@ -1024,6 +1285,151 @@ mod tests {
             .notices()
             .contains(&RecoveryNotice::FinishedInterruptedSave));
         assert_eq!(backend.get(&store.journal_path()), None);
+    }
+
+    #[test]
+    fn accepted_purge_removes_only_verified_attachment_then_intent() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, _) = install_purge_base(&store, &backend);
+        let (purged, plan) = purge_candidate(&base);
+
+        let outcome = store.save_purge(&loaded, &purged, &plan).unwrap();
+
+        assert_eq!(outcome.library.snapshot(), &purged);
+        assert!(!outcome.maintenance_pending);
+        assert!(!outcome.purge_cleanup_pending);
+        assert_eq!(backend.get(&attachment_path), None);
+        assert_eq!(backend.get(&store.purge_path()), None);
+        assert_eq!(store.load().unwrap().snapshot(), &purged);
+    }
+
+    #[test]
+    fn rolled_back_metadata_never_deletes_attachment_bytes() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, attachment_bytes) =
+            install_purge_base(&store, &backend);
+        let (purged, plan) = purge_candidate(&base);
+        backend.fail_next_write(store.primary_path());
+
+        assert_eq!(
+            store
+                .save_purge(&loaded, &purged, &plan)
+                .unwrap_err()
+                .operation,
+            Operation::WritePrimary
+        );
+        assert!(backend.get(&store.purge_path()).is_some());
+        assert_eq!(
+            backend.get(&attachment_path),
+            Some(attachment_bytes.clone())
+        );
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &base);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::RolledBackInterruptedPurge));
+        assert_eq!(backend.get(&store.purge_path()), None);
+        assert_eq!(backend.get(&attachment_path), Some(attachment_bytes));
+    }
+
+    #[test]
+    fn purge_waits_for_metadata_maintenance_then_resumes_on_load() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, attachment_bytes) =
+            install_purge_base(&store, &backend);
+        let (purged, plan) = purge_candidate(&base);
+        backend.fail_next_write(store.last_good_path());
+
+        let outcome = store.save_purge(&loaded, &purged, &plan).unwrap();
+        assert!(outcome.maintenance_pending);
+        assert!(outcome.purge_cleanup_pending);
+        assert_eq!(backend.get(&attachment_path), Some(attachment_bytes));
+        assert!(backend.get(&store.purge_path()).is_some());
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &purged);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::FinishedInterruptedSave));
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::FinishedInterruptedPurge));
+        assert_eq!(backend.get(&attachment_path), None);
+        assert_eq!(backend.get(&store.purge_path()), None);
+    }
+
+    #[test]
+    fn changed_attachment_is_preserved_and_blocks_later_mutation() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, _) = install_purge_base(&store, &backend);
+        let (purged, plan) = purge_candidate(&base);
+        let substituted = b"different private bytes".to_vec();
+        backend.set(attachment_path.clone(), substituted.clone());
+
+        let outcome = store.save_purge(&loaded, &purged, &plan).unwrap();
+        assert!(outcome.maintenance_pending);
+        assert!(outcome.purge_cleanup_pending);
+        assert_eq!(backend.get(&attachment_path), Some(substituted.clone()));
+        assert!(backend.get(&store.purge_path()).is_some());
+
+        let reopened = store.load().unwrap();
+        assert_eq!(reopened.snapshot(), &purged);
+        assert!(reopened
+            .notices()
+            .contains(&RecoveryNotice::PurgeCleanupPending));
+        assert_eq!(backend.get(&attachment_path), Some(substituted));
+        let later = candidate(&purged, "must remain blocked");
+        assert_eq!(
+            store.save(&reopened, &later).unwrap_err().kind,
+            ErrorKind::InvalidPurge
+        );
+    }
+
+    #[test]
+    fn attachment_remove_failure_is_resumed_without_republishing_metadata() {
+        let (store, backend) = store();
+        let (loaded, base, attachment_path, attachment_bytes) =
+            install_purge_base(&store, &backend);
+        let (purged, plan) = purge_candidate(&base);
+        backend.fail_next_remove(attachment_path.clone());
+
+        let outcome = store.save_purge(&loaded, &purged, &plan).unwrap();
+        assert!(outcome.purge_cleanup_pending);
+        assert_eq!(backend.get(&attachment_path), Some(attachment_bytes));
+        assert_eq!(
+            backend.get(&store.primary_path()),
+            Some(encode(&purged).unwrap())
+        );
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &purged);
+        assert!(recovered
+            .notices()
+            .contains(&RecoveryNotice::FinishedInterruptedPurge));
+        assert_eq!(backend.get(&attachment_path), None);
+        assert_eq!(backend.get(&store.purge_path()), None);
+    }
+
+    #[test]
+    fn malformed_purge_intent_is_preserved_and_blocks_writes() {
+        let (store, backend) = store();
+        backend.set(store.purge_path(), b"malformed private intent".to_vec());
+
+        let loaded = store.load().unwrap();
+
+        assert!(loaded
+            .notices()
+            .contains(&RecoveryNotice::CorruptPurgePreserved));
+        assert_eq!(
+            backend.get(&store.purge_path()),
+            Some(b"malformed private intent".to_vec())
+        );
+        let next = candidate(loaded.snapshot(), "blocked");
+        assert_eq!(
+            store.save(&loaded, &next).unwrap_err().kind,
+            ErrorKind::InvalidPurge
+        );
     }
 
     #[test]
@@ -1300,6 +1706,54 @@ mod tests {
         assert_eq!(pending.candidate().notes[0].title, "Local");
         assert_eq!(repository.snapshot(), &external);
         assert_eq!(repository.snapshot().notes[0].title, "External");
+    }
+
+    #[test]
+    fn accepted_repository_reports_verified_purge_cleanup_separately() {
+        let (store, backend) = store();
+        let (loaded, _base, attachment_path, _) = install_purge_base(&store, &backend);
+        let mut repository = AcceptedLibrary::from_loaded(store, loaded);
+        let mut transaction = repository.begin().unwrap();
+        let plan = transaction
+            .purge_trashed_note(NoteId::new(1).unwrap(), 2)
+            .unwrap();
+
+        let accepted = repository.commit_purge(transaction, plan).unwrap();
+
+        assert_eq!(accepted.revision, 3);
+        assert!(!accepted.maintenance_pending);
+        assert!(!accepted.purge_cleanup_pending);
+        assert_eq!(backend.get(&attachment_path), None);
+        assert!(repository.snapshot().notes.is_empty());
+    }
+
+    #[test]
+    fn repository_retry_retains_purge_plan_and_rolled_back_bytes() {
+        let (store, backend) = store();
+        let (loaded, _base, attachment_path, attachment_bytes) =
+            install_purge_base(&store, &backend);
+        let primary = store.primary_path();
+        let mut repository = AcceptedLibrary::from_loaded(store, loaded);
+        let mut transaction = repository.begin().unwrap();
+        let plan = transaction
+            .purge_trashed_note(NoteId::new(1).unwrap(), 2)
+            .unwrap();
+        backend.fail_next_write(primary);
+
+        let CommitError::Pending(pending) = repository
+            .commit_purge(transaction, plan.clone())
+            .unwrap_err()
+        else {
+            panic!("expected retained purge candidate")
+        };
+        assert_eq!(pending.purge_plan(), Some(&plan));
+        assert_eq!(backend.get(&attachment_path), Some(attachment_bytes));
+
+        let accepted = repository.retry(pending).unwrap();
+        assert!(accepted.recovered_after_error);
+        assert!(!accepted.purge_cleanup_pending);
+        assert_eq!(backend.get(&attachment_path), None);
+        assert!(repository.snapshot().notes.is_empty());
     }
 
     #[test]

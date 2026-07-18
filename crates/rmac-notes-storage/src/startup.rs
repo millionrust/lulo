@@ -177,7 +177,10 @@ pub fn inspect_notes_startup(paths: &NotesPaths) -> Result<NotesStartup, Startup
     let storage_needs_attention = loaded.notices().iter().any(|notice| {
         matches!(
             notice,
-            RecoveryNotice::CorruptJournalPreserved | RecoveryNotice::MaintenancePending
+            RecoveryNotice::CorruptJournalPreserved
+                | RecoveryNotice::MaintenancePending
+                | RecoveryNotice::CorruptPurgePreserved
+                | RecoveryNotice::PurgeCleanupPending
         )
     });
     if loaded.snapshot() != &LibrarySnapshot::default() || storage_needs_attention {

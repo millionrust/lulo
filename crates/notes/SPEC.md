@@ -137,8 +137,9 @@ ordinary files enter or leave it only through explicit import and export.
   return the stable note IDs, every attachment record owned by those notes
   (including an already-unreferenced tombstone), and the checked byte total.
   Managed bytes are collected only after that exact metadata revision is
-  durable. Until cleanup and crash recovery are implemented and verified, the
-  runtime must not expose either operation or claim permanent deletion.
+  durable. The runtime may report completion only when the accepted commit
+  separately proves that managed-attachment cleanup is no longer pending; it
+  never claims secure erasure on a general filesystem.
 
 ## Search and organization
 
@@ -214,8 +215,8 @@ any other mutation. The resulting next-revision candidate removes the complete
 note and every attachment record it owns while preserving monotonic next-ID
 sequences. Its private-safe plan contains only stable note/attachment IDs and a
 checked byte total for post-commit collection. This is deliberately not a
-runtime action yet: storage still needs a crash-recoverable cleanup authority
-for the corresponding managed attachment files.
+runtime action yet; the repository commit path described below must be used so
+metadata acceptance and physical cleanup remain distinguishable.
 
 The separate `rmac-notes-storage` adapter now provides the metadata transaction
 protocol: private primary/last-known-good/journal files, exact loaded-byte
@@ -225,6 +226,24 @@ and deterministic interrupted-save rollback/finish. A malformed or ambiguous
 journal remains preserved and blocks writes. This adapter is not yet wired to
 the Notes process; attachment mutation transactions and live application
 integration remain required.
+
+Permanent-delete storage now uses a separate bounded version-1 private intent
+written and exact-readback verified before the ordinary metadata journal. The
+storage boundary re-derives the scope from the accepted base and rejects any
+candidate that is not canonically the exact next revision with only the
+reviewed notes and owned attachment records removed. The intent retains base
+and candidate revisions and canonical hashes plus stable note IDs and exact
+attachment ID/length/SHA-256 identities; debug and errors expose none of the
+names, paths, content, or hashes. Attachment verification streams in 64 KiB
+chunks through owner/single-link/no-follow storage and never allocates the
+maximum 256 MiB file in full. Bytes are durably unlinked only after primary,
+last-known-good, and journal maintenance prove the candidate authoritative.
+Startup removes a rolled-back intent without touching attachments, resumes an
+accepted or proven-descendant cleanup idempotently, preserves changed or linked
+files, and blocks later writes on malformed, ambiguous, or incomplete cleanup.
+Repository retry retains the purge plan, and `AcceptedCommit` reports purge
+cleanup independently from general maintenance. The runtime permanent-delete
+actions and confirmation UI are still intentionally absent.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -362,8 +381,8 @@ projected states; no running application behavior has changed yet.
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
 manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
-recovery records, silent scan/decode failures, no durable managed-attachment
-cleanup or live permanent file/folder deletion,
+recovery records, silent scan/decode failures, no live permanent file/folder
+deletion UI,
 attachment copies outside a note transaction, no orphan policy, no safe import/
 export/bundle format, no consumption of the derived cancellable index, and no
 Linux accessibility/runtime evidence. Migration must preserve every readable

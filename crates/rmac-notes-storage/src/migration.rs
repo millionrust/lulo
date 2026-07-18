@@ -463,6 +463,21 @@ pub(super) fn commit_legacy_migration_locked<B: Backend>(
             MigrationCommitErrorKind::PlanMismatch,
         ));
     }
+    if crate::has_blocking_notice(loaded.notices()) {
+        return Err(MigrationCommitError::new(
+            MigrationCommitOperation::CommitMetadata,
+            MigrationCommitErrorKind::Store(crate::StoreError::new(
+                crate::Operation::PreflightPrimary,
+                crate::ErrorKind::AmbiguousJournal,
+            )),
+        ));
+    }
+    store.require_no_purge_intent().map_err(|error| {
+        MigrationCommitError::new(
+            MigrationCommitOperation::CommitMetadata,
+            MigrationCommitErrorKind::Store(error),
+        )
+    })?;
 
     let already_committed = loaded.snapshot() == &current_plan.snapshot;
     if !already_committed && loaded.snapshot() != &LibrarySnapshot::default() {

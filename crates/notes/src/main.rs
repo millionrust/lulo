@@ -20,7 +20,7 @@ use gpui::{
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
-    ActionRequest, ActionResult, DraftRecoveryKind, EditGeneration, LibraryAction,
+    ActionRequest, ActionResult, DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction,
     NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
     NotesSearchSession, NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents,
     NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PreviewState,
@@ -29,10 +29,13 @@ use rmac_notes_runtime::{
     WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS, PREVIEW_EVENT_CAPACITY,
     SEARCH_EVENT_CAPACITY,
 };
-use rmac_notes_storage::{resolve_notes_paths, DecodedImagePreview, PendingReason, PreviewSize};
+use rmac_notes_storage::{
+    resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, PendingReason,
+    PreviewSize,
+};
 use rmac_notes_store::{
-    AttachmentId, FolderId, NewNote, NoteChanges, NoteId, NoteRecord, SortOrder, MAX_TAGS_PER_NOTE,
-    MAX_TAG_BYTES,
+    AttachmentId, ExportScope, FolderId, NewNote, NoteChanges, NoteId, NoteRecord, SortOrder,
+    MAX_TAGS_PER_NOTE, MAX_TAG_BYTES,
 };
 use rmac_ui::{mac, Button, InputEvent, TextField};
 
@@ -50,6 +53,7 @@ actions!(
         SortByCreated,
         SortByTitle,
         FocusSearch,
+        ExportNotes,
         RenameSelectedFolder,
         DeleteSelectedFolder
     ]
@@ -88,6 +92,9 @@ struct NotesView {
     orphan_collection_request: Option<(u64, AttachmentId)>,
     note_import_chooser_open: bool,
     note_import_request_id: Option<u64>,
+    export_dialog: Option<ExportDialog>,
+    export_chooser_open: bool,
+    export_request_id: Option<u64>,
     search_shutdown_requested: bool,
     preview_shutdown_requested: bool,
     closing: bool,
@@ -150,6 +157,22 @@ enum StatusActions {
     OrphanCleanup,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ExportReview {
+    library_revision: u64,
+    scope: ExportScope,
+    note_count: usize,
+    attachment_count: usize,
+    markdown_bytes: u64,
+    attachment_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExportDialog {
+    Review(ExportReview),
+    Complete(ExportOutcome),
+}
+
 struct PreviewBridgeEvent {
     event: PreviewWorkerEvent,
     rendered: Option<Arc<RenderImage>>,
@@ -162,6 +185,7 @@ impl NotesView {
             KeyBinding::new("shift-cmd-n", CreateFolder, Some("Notes")),
             KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
             KeyBinding::new("cmd-f", FocusSearch, Some("Notes")),
+            KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
         ]);
 
         let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -235,6 +259,9 @@ impl NotesView {
             orphan_collection_request: None,
             note_import_chooser_open: false,
             note_import_request_id: None,
+            export_dialog: None,
+            export_chooser_open: false,
+            export_request_id: None,
             search_shutdown_requested: false,
             preview_shutdown_requested: false,
             closing: false,
@@ -423,6 +450,10 @@ impl NotesView {
             WorkerEvent::Rejected(rejected) => Some(rejected.request_id),
             _ => None,
         };
+        let exported = match &event {
+            WorkerEvent::Exported(exported) => Some(*exported),
+            _ => None,
+        };
         let attached_image = match &event {
             WorkerEvent::Accepted(accepted) => match accepted.result {
                 ActionResult::AttachedImage {
@@ -480,6 +511,15 @@ impl NotesView {
         {
             self.note_import_request_id = None;
         }
+        let tracked_export =
+            exported.is_some_and(|exported| self.export_request_id == Some(exported.request_id));
+        if tracked_export
+            || rejected_request_id
+                .is_some_and(|request_id| self.export_request_id == Some(request_id))
+            || matches!(&event, WorkerEvent::Ready(_)) && self.export_request_id.is_some()
+        {
+            self.export_request_id = None;
+        }
         if matches!(&event, WorkerEvent::DraftReview(_)) {
             self.recovery_notice_dismissed = false;
         }
@@ -498,6 +538,19 @@ impl NotesView {
             _ => None,
         };
         self.session.apply(event);
+        if let Some(ExportDialog::Review(review)) = self.export_dialog {
+            if self
+                .session
+                .snapshot()
+                .is_none_or(|snapshot| snapshot.revision != review.library_revision)
+            {
+                self.export_dialog = None;
+                self.message = Some(
+                    "The Notes library changed. Review the export again before choosing a destination."
+                        .into(),
+                );
+            }
+        }
         if let Some((note_id, attachment_id)) = attached_image {
             if self.session.selected_note_id() == Some(note_id) {
                 self.selected_attachment = Some(attachment_id);
@@ -561,6 +614,10 @@ impl NotesView {
         }
         if let Some(attachment_id) = orphan_to_collect {
             self.queue_current_orphan_collection(attachment_id, cx);
+        }
+        if tracked_export {
+            self.export_dialog = exported.map(|exported| ExportDialog::Complete(exported.outcome));
+            self.message = None;
         }
         if refresh_search {
             self.dispatch_search(cx);
@@ -941,9 +998,12 @@ impl NotesView {
             || self.purge_dialog.is_some()
             || self.move_dialog.is_some()
             || self.attachment_dialog.is_some()
+            || self.export_dialog.is_some()
             || self.attachment_chooser_open
             || self.note_import_chooser_open
             || self.note_import_request_id.is_some()
+            || self.export_chooser_open
+            || self.export_request_id.is_some()
             || self.attachment_action_pending()
         {
             return;
@@ -1158,9 +1218,12 @@ impl NotesView {
             && self.purge_dialog.is_none()
             && self.move_dialog.is_none()
             && self.attachment_dialog.is_none()
+            && self.export_dialog.is_none()
             && !self.attachment_chooser_open
             && !self.note_import_chooser_open
             && self.note_import_request_id.is_none()
+            && !self.export_chooser_open
+            && self.export_request_id.is_none()
             && !self.attachment_action_pending()
     }
 
@@ -1699,6 +1762,243 @@ impl NotesView {
         }
     }
 
+    fn begin_export(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        if self.latest_local_generation.is_some() {
+            self.message = Some("Wait for this note to finish saving before exporting".into());
+            cx.notify();
+            return;
+        }
+        let Some(snapshot) = self.session.snapshot() else {
+            return;
+        };
+        let scope = if let Some(note) = self.session.selected_note() {
+            ExportScope::Note {
+                note_id: note.id,
+                expected_note_revision: note.revision,
+            }
+        } else if let rmac_notes_runtime::FolderSelection::Folder(folder_id) =
+            self.session.folder_selection()
+        {
+            let Some(folder) = snapshot
+                .folders
+                .iter()
+                .find(|folder| folder.id == folder_id && !folder.deleted)
+            else {
+                return;
+            };
+            ExportScope::Folder {
+                folder_id,
+                expected_folder_revision: folder.revision,
+            }
+        } else {
+            ExportScope::Library {
+                expected_library_revision: snapshot.revision,
+            }
+        };
+        self.set_export_scope(scope, cx);
+    }
+
+    fn review_selected_note_export(&mut self, cx: &mut Context<Self>) {
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        self.set_export_scope(
+            ExportScope::Note {
+                note_id: note.id,
+                expected_note_revision: note.revision,
+            },
+            cx,
+        );
+    }
+
+    fn review_current_folder_export(&mut self, cx: &mut Context<Self>) {
+        let rmac_notes_runtime::FolderSelection::Folder(folder_id) =
+            self.session.folder_selection()
+        else {
+            return;
+        };
+        let Some(folder) = self.session.snapshot().and_then(|snapshot| {
+            snapshot
+                .folders
+                .iter()
+                .find(|folder| folder.id == folder_id && !folder.deleted)
+        }) else {
+            return;
+        };
+        self.set_export_scope(
+            ExportScope::Folder {
+                folder_id,
+                expected_folder_revision: folder.revision,
+            },
+            cx,
+        );
+    }
+
+    fn review_library_export(&mut self, cx: &mut Context<Self>) {
+        let Some(snapshot) = self.session.snapshot() else {
+            return;
+        };
+        self.set_export_scope(
+            ExportScope::Library {
+                expected_library_revision: snapshot.revision,
+            },
+            cx,
+        );
+    }
+
+    fn set_export_scope(&mut self, scope: ExportScope, cx: &mut Context<Self>) {
+        let review = self
+            .session
+            .snapshot()
+            .ok_or_else(|| "The Notes library is unavailable".to_string())
+            .and_then(|snapshot| {
+                snapshot
+                    .plan_export(scope)
+                    .map(|plan| ExportReview {
+                        library_revision: plan.library_revision,
+                        scope,
+                        note_count: plan.note_ids.len(),
+                        attachment_count: plan.attachments.len(),
+                        markdown_bytes: plan.markdown_bytes,
+                        attachment_bytes: plan.attachment_bytes,
+                    })
+                    .map_err(|error| error.to_string())
+            });
+        match review {
+            Ok(review) => {
+                self.export_dialog = Some(ExportDialog::Review(review));
+                self.message = None;
+            }
+            Err(error) => {
+                self.export_dialog = None;
+                self.message = Some(error.into());
+            }
+        }
+        cx.notify();
+    }
+
+    fn choose_export_destination(&mut self, format: ExportFormat, cx: &mut Context<Self>) {
+        let Some(ExportDialog::Review(review)) = self.export_dialog else {
+            return;
+        };
+        if format == ExportFormat::Markdown
+            && (!matches!(review.scope, ExportScope::Note { .. }) || review.attachment_count != 0)
+        {
+            self.message =
+                Some("Markdown export is available only for one note without attachments".into());
+            cx.notify();
+            return;
+        }
+        let suggested_name = self.export_suggested_name(review.scope, format);
+        let portal_format = match format {
+            ExportFormat::Markdown => rmac_portal::NotesExportFormat::Markdown,
+            ExportFormat::RmacBundle => rmac_portal::NotesExportFormat::Bundle,
+        };
+        self.export_dialog = None;
+        self.export_chooser_open = true;
+        self.message = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let destination =
+                rmac_portal::choose_notes_export_destination(portal_format, &suggested_name).await;
+            let _ = this.update(cx, |this, cx| {
+                this.export_chooser_open = false;
+                match destination {
+                    Ok(Some(path)) => this.queue_export(review.scope, format, path, cx),
+                    Ok(None) => cx.notify(),
+                    Err(_) => {
+                        this.message = Some(
+                            "Notes could not open the Linux export destination chooser".into(),
+                        );
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn queue_export(
+        &mut self,
+        scope: ExportScope,
+        format: ExportFormat,
+        selected_path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() {
+            self.message = Some("The Notes library changed. Review the export again.".into());
+            cx.notify();
+            return;
+        }
+        if let Err(error) = self
+            .session
+            .snapshot()
+            .ok_or_else(|| "The Notes library is unavailable".to_string())
+            .and_then(|snapshot| {
+                snapshot
+                    .plan_export(scope)
+                    .map_err(|error| error.to_string())
+            })
+        {
+            self.message = Some(error.into());
+            cx.notify();
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let request = match ExportRequest::new(request_id, scope, format, selected_path) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::Export(request), cx) {
+            self.export_request_id = Some(request_id);
+            self.message = None;
+            cx.notify();
+        }
+    }
+
+    fn export_suggested_name(&self, scope: ExportScope, format: ExportFormat) -> String {
+        let label = match scope {
+            ExportScope::Note { note_id, .. } => self
+                .session
+                .snapshot()
+                .and_then(|snapshot| snapshot.notes.iter().find(|note| note.id == note_id))
+                .map_or_else(
+                    || "Note".to_string(),
+                    |note| display_title(&note.title).to_string(),
+                ),
+            ExportScope::Folder { folder_id, .. } => self
+                .session
+                .snapshot()
+                .and_then(|snapshot| {
+                    snapshot
+                        .folders
+                        .iter()
+                        .find(|folder| folder.id == folder_id)
+                })
+                .map_or_else(|| "Notes Folder".to_string(), |folder| folder.name.clone()),
+            ExportScope::Library { .. } => "All Notes".to_string(),
+        };
+        let extension = match format {
+            ExportFormat::Markdown => "md",
+            ExportFormat::RmacBundle => "rmacnotes",
+        };
+        format!("{}.{}", safe_export_stem(&label), extension)
+    }
+
+    fn dismiss_export_dialog(&mut self, cx: &mut Context<Self>) {
+        self.export_dialog = None;
+        cx.notify();
+    }
+
     fn toggle_pin(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -1800,10 +2100,12 @@ impl NotesView {
         let dismissed_purge_dialog = self.purge_dialog.take().is_some();
         let dismissed_move_dialog = self.move_dialog.take().is_some();
         let dismissed_attachment_dialog = self.attachment_dialog.take().is_some();
+        let dismissed_export_dialog = self.export_dialog.take().is_some();
         if dismissed_folder_dialog
             || dismissed_purge_dialog
             || dismissed_move_dialog
             || dismissed_attachment_dialog
+            || dismissed_export_dialog
         {
             cx.notify();
             return;
@@ -1820,6 +2122,16 @@ impl NotesView {
         }
         if self.note_import_request_id.is_some() {
             self.message = Some("Wait for the selected note file to finish importing".into());
+            cx.notify();
+            return;
+        }
+        if self.export_chooser_open {
+            self.message = Some("Finish or cancel the export chooser before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.export_request_id.is_some() {
+            self.message = Some("Wait for the Notes export to finish".into());
             cx.notify();
             return;
         }
@@ -1913,6 +2225,7 @@ impl NotesView {
         let attachment_busy = self.attachment_chooser_open || self.attachment_action_pending();
         let note_import_busy =
             self.note_import_chooser_open || self.note_import_request_id.is_some();
+        let export_busy = self.export_chooser_open || self.export_request_id.is_some();
         let sort_order = self
             .session
             .snapshot()
@@ -2012,6 +2325,24 @@ impl NotesView {
                                     .small()
                                     .disabled(self.session.snapshot().is_none()),
                             ),
+                    )
+                    .child(
+                        Button::new("export-notes", "")
+                            .icon(IconName::ExternalLink)
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .busy(export_busy)
+                            .disabled(
+                                !ready || self.session.snapshot().is_none() || note_save_pending,
+                            )
+                            .tooltip(if export_busy {
+                                "Exporting Notes…"
+                            } else if note_save_pending {
+                                "Saving Note…"
+                            } else {
+                                "Export…"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| this.begin_export(cx))),
                     )
                     .child(
                         Button::new("add-image", "")
@@ -3079,6 +3410,197 @@ impl NotesView {
         )
     }
 
+    fn render_export_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Normal, Primary};
+
+        match self.export_dialog? {
+            ExportDialog::Complete(outcome) => {
+                let format = match outcome.format {
+                    ExportFormat::Markdown => "Markdown file",
+                    ExportFormat::RmacBundle => "rmac Notes bundle",
+                };
+                Some(
+                    rmac_ui::alert(
+                        "Export complete",
+                        format!(
+                            "Notes verified the final {format}: {} {}, {} {}, {} total.",
+                            outcome.note_count,
+                            if outcome.note_count == 1 {
+                                "note"
+                            } else {
+                                "notes"
+                            },
+                            outcome.attachment_count,
+                            if outcome.attachment_count == 1 {
+                                "attachment"
+                            } else {
+                                "attachments"
+                            },
+                            format_storage_bytes(outcome.output.byte_len)
+                        ),
+                        vec![rmac_ui::dialog_button("dismiss-export", "Done", Primary)
+                            .on_click(cx.listener(|this, _, _, cx| this.dismiss_export_dialog(cx)))
+                            .into_any_element()],
+                    )
+                    .into_any_element(),
+                )
+            }
+            ExportDialog::Review(review) => {
+                let snapshot = self.session.snapshot()?;
+                let note_scope = self.session.selected_note().map(|note| ExportScope::Note {
+                    note_id: note.id,
+                    expected_note_revision: note.revision,
+                });
+                let folder_scope = match self.session.folder_selection() {
+                    rmac_notes_runtime::FolderSelection::Folder(folder_id) => snapshot
+                        .folders
+                        .iter()
+                        .find(|folder| folder.id == folder_id && !folder.deleted)
+                        .map(|folder| ExportScope::Folder {
+                            folder_id,
+                            expected_folder_revision: folder.revision,
+                        }),
+                    _ => None,
+                };
+                let library_scope = ExportScope::Library {
+                    expected_library_revision: snapshot.revision,
+                };
+                let can_markdown = matches!(review.scope, ExportScope::Note { .. })
+                    && review.attachment_count == 0;
+                let scope_detail = match review.scope {
+                    ExportScope::Note { .. } => "The selected note is bound to its exact revision.",
+                    ExportScope::Folder { .. } => {
+                        "Only live notes in the current folder are included."
+                    }
+                    ExportScope::Library { .. } => {
+                        "The complete library includes live and Recently Deleted notes."
+                    }
+                };
+                let reviewed_bytes = review
+                    .markdown_bytes
+                    .saturating_add(review.attachment_bytes);
+                let mut scope_buttons = Vec::<AnyElement>::new();
+                if let Some(scope) = note_scope {
+                    scope_buttons.push(
+                        Button::new("export-this-note", "This Note")
+                            .selected(review.scope == scope)
+                            .w_full()
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.review_selected_note_export(cx)),
+                            )
+                            .into_any_element(),
+                    );
+                }
+                if let Some(scope) = folder_scope {
+                    scope_buttons.push(
+                        Button::new("export-current-folder", "Current Folder")
+                            .selected(review.scope == scope)
+                            .w_full()
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.review_current_folder_export(cx)),
+                            )
+                            .into_any_element(),
+                    );
+                }
+                scope_buttons.push(
+                    Button::new("export-library", "Entire Library")
+                        .selected(review.scope == library_scope)
+                        .w_full()
+                        .on_click(cx.listener(|this, _, _, cx| this.review_library_export(cx)))
+                        .into_any_element(),
+                );
+                let card = div()
+                    .w(px(440.0))
+                    .p(px(20.0))
+                    .v_flex()
+                    .gap_3()
+                    .rounded(px(12.0))
+                    .bg(mac::window())
+                    .border_1()
+                    .border_color(mac::separator())
+                    .shadow_xl()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(mac::BOLD)
+                            .child("Export Notes"),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(mac::text_secondary())
+                            .child(scope_detail),
+                    )
+                    .child(div().v_flex().gap_1().children(scope_buttons))
+                    .child(
+                        div()
+                            .p_3()
+                            .rounded(px(8.0))
+                            .bg(mac::control_fill())
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(mac::text_secondary())
+                            .child(format!(
+                                "{} {}, {} {}, {} of note and attachment content",
+                                review.note_count,
+                                if review.note_count == 1 { "note" } else { "notes" },
+                                review.attachment_count,
+                                if review.attachment_count == 1 {
+                                    "attachment"
+                                } else {
+                                    "attachments"
+                                },
+                                format_storage_bytes(reviewed_bytes)
+                            )),
+                    )
+                    .when(!can_markdown, |element| {
+                        element.child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(mac::text_tertiary())
+                                .child(
+                                    "Use an rmac Notes bundle for folders, the library, or notes with attachments.",
+                                ),
+                        )
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap_2()
+                            .child(
+                                rmac_ui::dialog_button("cancel-export", "Cancel", Normal)
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.dismiss_export_dialog(cx)
+                                    })),
+                            )
+                            .when(can_markdown, |element| {
+                                element.child(
+                                    rmac_ui::dialog_button(
+                                        "export-markdown",
+                                        "Export Markdown…",
+                                        Normal,
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.choose_export_destination(ExportFormat::Markdown, cx)
+                                    })),
+                                )
+                            })
+                            .child(
+                                rmac_ui::dialog_button(
+                                    "export-bundle",
+                                    "Export Bundle…",
+                                    Primary,
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.choose_export_destination(ExportFormat::RmacBundle, cx)
+                                })),
+                            ),
+                    );
+                Some(rmac_ui::dialog("export-dialog", card).into_any_element())
+            }
+        }
+    }
+
     fn render_move_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use rmac_ui::DialogButtonKind::Normal;
 
@@ -3300,6 +3822,7 @@ impl Render for NotesView {
         let purge_dialog = self.render_purge_dialog(cx);
         let move_dialog = self.render_move_dialog(cx);
         let attachment_dialog = self.render_attachment_dialog(cx);
+        let export_dialog = self.render_export_dialog(cx);
 
         div()
             .track_focus(&self.focus)
@@ -3320,6 +3843,7 @@ impl Render for NotesView {
             .on_action(
                 cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &RenameSelectedFolder, window, cx| {
                 this.begin_folder_rename(window, cx)
             }))
@@ -3337,6 +3861,7 @@ impl Render for NotesView {
             .when_some(purge_dialog, |element, dialog| element.child(dialog))
             .when_some(move_dialog, |element, dialog| element.child(dialog))
             .when_some(attachment_dialog, |element, dialog| element.child(dialog))
+            .when_some(export_dialog, |element, dialog| element.child(dialog))
     }
 }
 
@@ -3611,6 +4136,35 @@ fn display_title(title: &str) -> SharedString {
         "New Note".into()
     } else {
         title.to_string().into()
+    }
+}
+
+fn safe_export_stem(label: &str) -> String {
+    const MAX_STEM_BYTES: usize = 80;
+    let mut stem = String::new();
+    let mut previous_space = false;
+    for character in label.trim().chars() {
+        let character = if character.is_control() || "/\\:*?\"<>|".contains(character) {
+            '-'
+        } else if character.is_whitespace() {
+            ' '
+        } else {
+            character
+        };
+        if character == ' ' && previous_space {
+            continue;
+        }
+        if stem.len().saturating_add(character.len_utf8()) > MAX_STEM_BYTES {
+            break;
+        }
+        stem.push(character);
+        previous_space = character == ' ';
+    }
+    let stem = stem.trim().trim_matches('.').trim();
+    if stem.is_empty() {
+        "Notes".into()
+    } else {
+        stem.into()
     }
 }
 

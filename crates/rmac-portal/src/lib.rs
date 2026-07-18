@@ -18,6 +18,12 @@ pub enum Operation {
     Choose,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NotesExportFormat {
+    Markdown,
+    Bundle,
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.operation == Operation::Choose {
@@ -225,6 +231,60 @@ pub async fn choose_notes_text() -> Result<Option<PathBuf>, Error> {
             operation: Operation::Choose,
             path: PathBuf::new(),
             detail: "the Notes text importer is available in the supported Linux session".into(),
+        })
+    }
+}
+
+/// Ask the desktop portal for one local destination for a reviewed Notes
+/// export. The caller supplies a filename-safe suggestion and must still
+/// revalidate the final destination at its storage boundary.
+pub async fn choose_notes_export_destination(
+    format: NotesExportFormat,
+    suggested_name: &str,
+) -> Result<Option<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, SaveFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let filter = match format {
+            NotesExportFormat::Markdown => FileFilter::new("Markdown")
+                .mimetype("text/markdown")
+                .glob("*.md"),
+            NotesExportFormat::Bundle => FileFilter::new("rmac Notes bundles")
+                .mimetype("application/octet-stream")
+                .glob("*.rmacnotes"),
+        };
+        let request = SaveFileRequest::default()
+            .title("Export Notes")
+            .accept_label("Export")
+            .modal(true)
+            .current_name(suggested_name)
+            .filter(filter)
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(None),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        let Some(uri) = response.uris().first() else {
+            return Ok(None);
+        };
+        uri.to_file_path().map(Some).map_err(|()| Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the portal returned a non-local export destination".into(),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (format, suggested_name);
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the Notes exporter is available in the supported Linux session".into(),
         })
     }
 }

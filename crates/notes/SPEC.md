@@ -399,9 +399,20 @@ may already contain the complete candidate and is never silently rolled back
 over a concurrent writer. Export never mutates the accepted Notes library. The
 repository worker flushes a pending edit first, performs planning and all export
 I/O off GPUI, redacts selected paths and hashes, and emits only a typed outcome
-with revisions, counts, byte totals, and output fingerprint. XDG FileChooser
-dispatch, live export review/progress UI, and Linux interaction/accessibility
-evidence remain.
+with revisions, counts, byte totals, and output fingerprint. The live Export
+sheet binds one accepted note, current stable folder, or the complete exact
+library revision and shows checked note/attachment counts and content bytes.
+It discloses that a library bundle includes Recently Deleted notes. Markdown is
+offered only for one attachment-free note; every other scope requires the
+versioned bundle. Command-Shift-E and the toolbar open the same review. A
+filename-safe suggestion and exact scope/format then pass to the XDG SaveFile
+portal; cancellation is ordinary and non-local destinations fail. Editing is
+blocked across review, portal selection, and the worker request. A changed
+accepted revision dismisses the review or fails the exact preflight instead of
+exporting a different scope. The completion sheet appears only after the typed
+`Exported` event proves final readback and reports the verified output size and
+counts without retaining its path or hash. Linux portal interaction and
+accessibility evidence remain.
 
 Bundle import now consumes that exact version-1 format through a separate
 two-step review/accept boundary. Preparation requires an absolute canonical
@@ -616,7 +627,7 @@ Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
 Known live-app gaps now include formatted Markdown preview, XDG portal bundle
-import and export review/progress, rich search-match highlighting,
+import review/progress, rich search-match highlighting,
 richer conflict-resolution choices, semantic accessibility, and Linux runtime/
 visual evidence. The accepted store
 remains local-only and makes no cloud-sync claim.

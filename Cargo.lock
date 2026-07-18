@@ -5250,6 +5250,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-notes-store"
+version = "0.1.0"
+
+[[package]]
 name = "rmac-notification-center-app"
 version = "0.1.0"
 dependencies = [

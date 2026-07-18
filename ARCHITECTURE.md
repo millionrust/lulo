@@ -39,6 +39,14 @@ Dependencies point downward. Domain crates do not import GPUI, D-Bus, Wayland,
 or platform FFI. UI code renders domain snapshots and sends typed commands.
 Adapters translate external events into domain events.
 
+`rmac-notes-store` is the first G2 extraction from the Notes application root.
+It contains only path-independent stable identities, bounded authoritative
+folder/note/attachment records, cross-record invariants, and a canonical
+versioned binary codec. It imports no GPUI, filesystem, portal, or async
+runtime. The forthcoming journal/storage adapter must validate and encode a
+complete candidate through this crate before changing durable state; the Notes
+view will eventually consume accepted snapshots rather than scan paths itself.
+
 `rmac-compositor` owns compositor-independent outputs, workspaces, windows,
 layer surfaces, focus, activation, urgency, snapshots, and incremental events.
 It depends only on serialization crates. The direct niri adapter is a lower

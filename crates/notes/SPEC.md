@@ -179,6 +179,14 @@ The current application provides a useful prototype: Markdown notes under
 search, preview, image copy, atomic individual writes, and visible storage
 errors. These behaviors are inputs to migration, not proof of this contract.
 
+The GPUI-free `rmac-notes-store` foundation now defines path-independent stable
+folder/note/attachment identities, bounded versioned records, canonical binary
+encoding, and strict cross-record validation for revisions, references,
+deletion, names, tags, timestamps, attachment ownership, sizes, and hashes. It
+does not yet provide the journal, filesystem adapter, migration, recovery,
+index, or application integration, so the existing prototype remains the live
+authority for now.
+
 Known gaps include path-based identity and pins, synchronous scans/reads on the
 UI thread, a permanent 1.5-second save loop, no versioned manifest/journal or
 aggregate bounds, no exact conflict preflight/readback, no recovery records,

@@ -21,6 +21,41 @@ pub struct FileFingerprint {
     pub sha256: [u8; 32],
 }
 
+/// Exact state reviewed before replacing a user-selected export destination.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DestinationBaseline {
+    Missing,
+    Exact(FileFingerprint),
+}
+
+impl fmt::Debug for DestinationBaseline {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Missing => formatter.write_str("Missing"),
+            Self::Exact(fingerprint) => formatter
+                .debug_struct("Exact")
+                .field("byte_len", &fingerprint.byte_len)
+                .field("sha256", &"<redacted>")
+                .finish(),
+        }
+    }
+}
+
+/// Which side of a verified streaming copy failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VerifiedCopyError {
+    Source(io::ErrorKind),
+    Destination(io::ErrorKind),
+}
+
+impl VerifiedCopyError {
+    pub fn kind(self) -> io::ErrorKind {
+        match self {
+            Self::Source(kind) | Self::Destination(kind) => kind,
+        }
+    }
+}
+
 /// A domain operation plus the path and original I/O classification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failure<O> {
@@ -277,6 +312,178 @@ pub fn read_bounded_no_follow(path: &Path, maximum: usize) -> io::Result<Vec<u8>
 /// without following its final path or allocating its contents in full.
 pub fn fingerprint_bounded_no_follow(path: &Path, maximum: u64) -> io::Result<FileFingerprint> {
     let mut file = open_private_file_no_follow(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut byte_len = 0_u64;
+    loop {
+        let count = file.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        byte_len = byte_len
+            .checked_add(count as u64)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "file length overflow"))?;
+        if byte_len > maximum {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file exceeds the configured size limit",
+            ));
+        }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(FileFingerprint {
+        byte_len,
+        sha256: hasher.finalize().into(),
+    })
+}
+
+/// Review a regular, non-symlink destination before an atomic export.
+pub fn inspect_destination(path: &Path, maximum: u64) -> io::Result<DestinationBaseline> {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(DestinationBaseline::Missing),
+        Err(error) => Err(error),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "export destination is not a regular file",
+            ))
+        }
+        Ok(_) => fingerprint_regular_no_follow(path, maximum).map(DestinationBaseline::Exact),
+    }
+}
+
+/// Stream one private managed file into `destination` only when its complete
+/// no-follow fingerprint exactly matches the authoritative record.
+pub fn copy_verified_private_file(
+    source: &Path,
+    expected: FileFingerprint,
+    destination: &mut dyn io::Write,
+) -> Result<(), VerifiedCopyError> {
+    let mut source = open_private_file_no_follow(source)
+        .map_err(|error| VerifiedCopyError::Source(error.kind()))?;
+    let mut hasher = Sha256::new();
+    let mut byte_len = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = source
+            .read(&mut buffer)
+            .map_err(|error| VerifiedCopyError::Source(error.kind()))?;
+        if count == 0 {
+            break;
+        }
+        byte_len = byte_len
+            .checked_add(count as u64)
+            .ok_or(VerifiedCopyError::Source(io::ErrorKind::InvalidData))?;
+        if byte_len > expected.byte_len {
+            return Err(VerifiedCopyError::Source(io::ErrorKind::InvalidData));
+        }
+        hasher.update(&buffer[..count]);
+        destination
+            .write_all(&buffer[..count])
+            .map_err(|error| VerifiedCopyError::Destination(error.kind()))?;
+    }
+    let actual = FileFingerprint {
+        byte_len,
+        sha256: hasher.finalize().into(),
+    };
+    if actual != expected {
+        return Err(VerifiedCopyError::Source(io::ErrorKind::InvalidData));
+    }
+    Ok(())
+}
+
+/// Stream an export into an adjacent temporary file, recheck the reviewed
+/// destination immediately before replacement, and verify the final bytes.
+///
+/// The producer never writes directly to the selected path. Any producer or
+/// preflight failure removes only the temporary file.
+pub fn atomic_write_stream_checked<F>(
+    path: &Path,
+    baseline: DestinationBaseline,
+    maximum_bytes: u64,
+    producer: F,
+) -> io::Result<FileFingerprint>
+where
+    F: FnOnce(&mut File) -> io::Result<()>,
+{
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "export target has no parent directory",
+        )
+    })?;
+    let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("export");
+    let temporary = parent.join(format!(
+        ".{name}.rmac-export-{}-{sequence}",
+        std::process::id()
+    ));
+
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        producer(&mut file)?;
+        file.sync_all()?;
+        drop(file);
+        let output = fingerprint_regular_no_follow(&temporary, maximum_bytes)?;
+        if inspect_destination(path, maximum_bytes)? != baseline {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "export destination changed after review",
+            ));
+        }
+        if let DestinationBaseline::Exact(_) = baseline {
+            let permissions = std::fs::metadata(path)?.permissions();
+            std::fs::set_permissions(&temporary, permissions)?;
+        }
+        std::fs::rename(&temporary, path)?;
+        File::open(parent)?.sync_all()?;
+        let readback = fingerprint_regular_no_follow(path, output.byte_len)?;
+        if readback != output {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "export destination readback did not match",
+            ));
+        }
+        Ok(output)
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn fingerprint_regular_no_follow(path: &Path, maximum: u64) -> io::Result<FileFingerprint> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(not(unix))]
+    {
+        let metadata = std::fs::symlink_metadata(path)?;
+        if metadata.file_type().is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "refusing to follow an export destination link",
+            ));
+        }
+    }
+    let mut file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "export destination is not a regular file",
+        ));
+    }
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     let mut byte_len = 0_u64;
@@ -768,6 +975,141 @@ mod tests {
         copy_no_clobber(&source, &destination).unwrap_err();
 
         assert!(!destination.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checked_stream_export_is_atomic_and_exactly_read_back() {
+        let root = temp_root("checked-stream");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("notes.rmacnotes");
+        let baseline = inspect_destination(&target, 1024).unwrap();
+
+        let output = atomic_write_stream_checked(&target, baseline, 1024, |file| {
+            file.write_all(b"manifest")?;
+            file.write_all(b" + attachment")
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"manifest + attachment");
+        assert_eq!(output.byte_len, 21);
+        let expected_sha256: [u8; 32] = Sha256::digest(b"manifest + attachment").into();
+        assert_eq!(output.sha256, expected_sha256);
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checked_stream_export_replaces_the_exact_reviewed_file() {
+        let root = temp_root("checked-stream-replace");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("note.md");
+        std::fs::write(&target, b"reviewed content").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        let baseline = inspect_destination(&target, 1024).unwrap();
+        let baseline_debug = format!("{baseline:?}");
+        let DestinationBaseline::Exact(reviewed) = baseline else {
+            panic!("expected exact destination baseline");
+        };
+        assert!(baseline_debug.contains("<redacted>"));
+        assert!(!baseline_debug.contains(&format!("{:?}", reviewed.sha256)));
+
+        atomic_write_stream_checked(&target, baseline, 1024, |file| {
+            file.write_all(b"replacement")
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"replacement");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+                0o640
+            );
+        }
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checked_stream_export_refuses_a_destination_changed_after_review() {
+        let root = temp_root("checked-stream-conflict");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("note.md");
+        std::fs::write(&target, b"reviewed").unwrap();
+        let baseline = inspect_destination(&target, 1024).unwrap();
+        let changed_target = target.clone();
+
+        let error = atomic_write_stream_checked(&target, baseline, 1024, move |file| {
+            file.write_all(b"export candidate")?;
+            std::fs::write(changed_target, b"changed elsewhere")
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&target).unwrap(), b"changed elsewhere");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn checked_stream_export_removes_an_oversized_candidate_without_publishing() {
+        let root = temp_root("checked-stream-oversized");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("note.md");
+        let baseline = inspect_destination(&target, 8).unwrap();
+
+        let error =
+            atomic_write_stream_checked(&target, baseline, 8, |file| file.write_all(b"nine-byte"))
+                .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(!target.exists());
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn private_stream_copy_requires_the_complete_authoritative_fingerprint() {
+        let root = temp_root("verified-private-copy");
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("managed.bin");
+        std::fs::write(&source, b"exact managed bytes").unwrap();
+        let expected = fingerprint_bounded_no_follow(&source, 1024).unwrap();
+        let mut copied = Vec::new();
+
+        copy_verified_private_file(&source, expected, &mut copied).unwrap();
+        assert_eq!(copied, b"exact managed bytes");
+
+        std::fs::write(&source, b"substituted bytes").unwrap();
+        let mut rejected = Vec::new();
+        assert_eq!(
+            copy_verified_private_file(&source, expected, &mut rejected),
+            Err(VerifiedCopyError::Source(io::ErrorKind::InvalidData))
+        );
+
+        struct RefuseWrites;
+
+        impl io::Write for RefuseWrites {
+            fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+                Err(io::Error::from(io::ErrorKind::WriteZero))
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        std::fs::write(&source, b"exact managed bytes").unwrap();
+        assert_eq!(
+            copy_verified_private_file(&source, expected, &mut RefuseWrites),
+            Err(VerifiedCopyError::Destination(io::ErrorKind::WriteZero))
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

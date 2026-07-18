@@ -11,12 +11,14 @@ use std::time::{Duration, Instant};
 
 use rmac_notes_storage::{
     inspect_notes_startup, AcceptedCommit, AcceptedLibrary, CommitError, DraftError, DraftRecord,
-    DraftStore, ImportedTextEncoding, MigrationReview, MigrationWarning, NotesPaths, NotesStartup,
-    PendingCommit, PendingReason, PreparedImageAttachment, RecoveryNotice, StartupError,
-    StoreError, TextImportError,
+    DraftStore, ExportFailure, ExportFormat, ExportOutcome, ImportedTextEncoding, MigrationReview,
+    MigrationWarning, NotesPaths, NotesStartup, PendingCommit, PendingReason,
+    PreparedExportDestination, PreparedImageAttachment, RecoveryNotice, StartupError, StoreError,
+    TextImportError,
 };
 use rmac_notes_store::{
-    AttachmentId, FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder,
+    AttachmentId, ExportError, ExportScope, FolderId, LibrarySnapshot, MutationError, NewNote,
+    NoteId, SortOrder,
 };
 
 use crate::{EditGeneration, EditScheduler, ScheduledEdit, SchedulerError, DEFAULT_EDIT_DEBOUNCE};
@@ -138,11 +140,54 @@ impl fmt::Debug for ActionRequest {
     }
 }
 
+pub struct ExportRequest {
+    request_id: u64,
+    scope: ExportScope,
+    format: ExportFormat,
+    selected_path: PathBuf,
+}
+
+impl ExportRequest {
+    pub fn new(
+        request_id: u64,
+        scope: ExportScope,
+        format: ExportFormat,
+        selected_path: PathBuf,
+    ) -> Result<Self, WorkerSendError> {
+        if request_id == 0 {
+            return Err(WorkerSendError::InvalidRequest);
+        }
+        Ok(Self {
+            request_id,
+            scope,
+            format,
+            selected_path,
+        })
+    }
+
+    pub fn request_id(&self) -> u64 {
+        self.request_id
+    }
+}
+
+impl fmt::Debug for ExportRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExportRequest")
+            .field("request_id", &self.request_id)
+            .field("scope", &self.scope)
+            .field("format", &self.format)
+            .field("selected_path", &"<redacted>")
+            .finish()
+    }
+}
+
 pub enum WorkerCommand {
     AcceptMigration { request_id: u64 },
     StartEmpty { request_id: u64 },
     ScheduleEdit(ScheduledEdit),
     Apply(ActionRequest),
+    Export(ExportRequest),
     Flush { request_id: u64 },
     RetryPending,
     DiscardPending { request_id: u64 },
@@ -162,6 +207,7 @@ impl WorkerCommand {
             | Self::DiscardDraft { request_id, .. } => (*request_id, None),
             Self::ScheduleEdit(edit) => (edit.request_id(), Some(edit.generation())),
             Self::Apply(request) => (request.request_id(), None),
+            Self::Export(request) => (request.request_id(), None),
             Self::RetryPending | Self::Shutdown => (0, None),
         }
     }
@@ -172,6 +218,7 @@ impl fmt::Debug for WorkerCommand {
         match self {
             Self::ScheduleEdit(edit) => formatter.debug_tuple("ScheduleEdit").field(edit).finish(),
             Self::Apply(request) => formatter.debug_tuple("Apply").field(request).finish(),
+            Self::Export(request) => formatter.debug_tuple("Export").field(request).finish(),
             Self::AcceptMigration { request_id } => formatter
                 .debug_struct("AcceptMigration")
                 .field("request_id", request_id)
@@ -391,6 +438,14 @@ pub enum WorkerFailure {
     TextImport(TextImportError),
     Draft(DraftError),
     MissingDraft,
+    ExportPlan(ExportError),
+    Export(ExportFailure),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ExportedEvent {
+    pub request_id: u64,
+    pub outcome: ExportOutcome,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -415,6 +470,7 @@ pub enum WorkerEvent {
         replaced_generation: EditGeneration,
     },
     Accepted(AcceptedEvent),
+    Exported(ExportedEvent),
     Pending(PendingEvent),
     Rejected(RejectedEvent),
     StartupFailed(StartupError),
@@ -456,6 +512,7 @@ impl fmt::Debug for WorkerEvent {
                 .field("replaced_generation", replaced_generation)
                 .finish(),
             Self::Accepted(event) => formatter.debug_tuple("Accepted").field(event).finish(),
+            Self::Exported(event) => formatter.debug_tuple("Exported").field(event).finish(),
             Self::Pending(event) => formatter.debug_tuple("Pending").field(event).finish(),
             Self::Rejected(event) => formatter.debug_tuple("Rejected").field(event).finish(),
             Self::StartupFailed(error) => {
@@ -1028,6 +1085,97 @@ fn process_command(
                 }),
                 CommitDisposition::Rejected => Phase::Ready(ready),
                 CommitDisposition::Stopped => Phase::Stopped,
+            }
+        }
+        (Phase::Ready(mut ready), WorkerCommand::Export(request)) => {
+            if let Some(edit) = ready.scheduler.flush() {
+                match commit_edit(&mut ready, edit, events) {
+                    CommitDisposition::Ready => {}
+                    CommitDisposition::Pending(pending, context) => {
+                        if !emit_request_rejected(
+                            events,
+                            request.request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            return Phase::Stopped;
+                        }
+                        return Phase::Pending(PendingState {
+                            ready,
+                            pending,
+                            context,
+                        });
+                    }
+                    CommitDisposition::Rejected => {
+                        if emit_request_rejected(
+                            events,
+                            request.request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            return Phase::Ready(ready);
+                        }
+                        return Phase::Stopped;
+                    }
+                    CommitDisposition::Stopped => return Phase::Stopped,
+                }
+            }
+            let plan = match ready.library.snapshot().plan_export(request.scope) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    return if emit_request_rejected(
+                        events,
+                        request.request_id,
+                        None,
+                        WorkerFailure::ExportPlan(error),
+                    ) {
+                        Phase::Ready(ready)
+                    } else {
+                        Phase::Stopped
+                    };
+                }
+            };
+            let destination = match PreparedExportDestination::review(request.selected_path) {
+                Ok(destination) => destination,
+                Err(error) => {
+                    return if emit_request_rejected(
+                        events,
+                        request.request_id,
+                        None,
+                        WorkerFailure::Export(error),
+                    ) {
+                        Phase::Ready(ready)
+                    } else {
+                        Phase::Stopped
+                    };
+                }
+            };
+            match ready.library.export(&plan, request.format, destination) {
+                Ok(outcome) => {
+                    if events
+                        .send(WorkerEvent::Exported(ExportedEvent {
+                            request_id: request.request_id,
+                            outcome,
+                        }))
+                        .is_ok()
+                    {
+                        Phase::Ready(ready)
+                    } else {
+                        Phase::Stopped
+                    }
+                }
+                Err(error) => {
+                    if emit_request_rejected(
+                        events,
+                        request.request_id,
+                        None,
+                        WorkerFailure::Export(error),
+                    ) {
+                        Phase::Ready(ready)
+                    } else {
+                        Phase::Stopped
+                    }
+                }
             }
         }
         (Phase::Ready(mut ready), WorkerCommand::Flush { request_id }) => {
@@ -2047,6 +2195,67 @@ mod tests {
             }) => assert_eq!(error.kind, ErrorKind::UnsupportedAttachment),
             event => panic!("expected rejected invalid image, got {event:?}"),
         }
+
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn worker_exports_exact_accepted_note_to_a_redacted_destination() {
+        let (container, paths) = roots("export");
+        let worker = NotesWorker::start(paths).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+        let destination = container.join("private-export-name.md");
+        let request = ExportRequest::new(
+            2,
+            ExportScope::Note {
+                note_id,
+                expected_note_revision: created.snapshot.notes[0].revision,
+            },
+            ExportFormat::Markdown,
+            destination.clone(),
+        )
+        .unwrap();
+        let debug = format!("{request:?}");
+        assert!(!debug.contains("private-export-name"));
+        assert!(!debug.contains(container.to_string_lossy().as_ref()));
+
+        worker.try_send(WorkerCommand::Export(request)).unwrap();
+        let exported = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Exported(event) => event,
+            event => panic!("expected exported event, got {event:?}"),
+        };
+        assert_eq!(exported.request_id, 2);
+        assert_eq!(exported.outcome.format, ExportFormat::Markdown);
+        assert_eq!(exported.outcome.library_revision, created.snapshot.revision);
+        assert_eq!(exported.outcome.note_count, 1);
+        assert_eq!(exported.outcome.attachment_count, 0);
+        let markdown = std::fs::read_to_string(&destination).unwrap();
+        assert!(markdown.ends_with("# Private title\n\nInitial body"));
+        assert!(!format!("{exported:?}").contains("Private title"));
+
+        let stale = ExportRequest::new(
+            3,
+            ExportScope::Note {
+                note_id,
+                expected_note_revision: 2,
+            },
+            ExportFormat::Markdown,
+            container.join("stale.md"),
+        )
+        .unwrap();
+        worker.try_send(WorkerCommand::Export(stale)).unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 3,
+                failure: WorkerFailure::ExportPlan(ExportError::RevisionConflict),
+                ..
+            })
+        ));
 
         worker.try_send(WorkerCommand::Shutdown).unwrap();
         let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();

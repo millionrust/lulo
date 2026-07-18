@@ -322,8 +322,49 @@ the source filename without retaining that path. Prepared debug output redacts
 title and body. A redacted worker action binds the requested creation time and
 stable folder, creates the complete candidate off GPUI, reports a typed source
 failure, and reveals only a durably accepted stable note with encoding and
-source-length summary. Portal dispatch, Markdown-construct review, bundle
-import, and all export paths remain.
+source-length summary. Portal dispatch, Markdown-construct review, and bundle
+import remain.
+
+Export now begins from a path-free, immutable plan derived from one exact
+accepted library revision. A single-note plan binds the exact note revision; a
+folder plan binds the exact live folder revision and its current live notes;
+and a whole-library plan binds the exact library revision. Every plan contains
+sorted stable note IDs, only referenced nondeleted attachment identities, and
+checked Markdown/attachment byte totals. Revalidation immediately before I/O
+rejects stale or modified plans. Human-readable Markdown export is deliberately
+limited to one note without attachments so it cannot silently discard managed
+bytes. It emits deterministic UTF-8 with a versioned metadata header, stable
+identity, timestamps, pin/trash state, escaped tags, title, and exact body.
+
+The version-1 rmac Notes bundle is one bounded streaming file. All integers are
+little-endian. It starts with the eight-byte `RMNBNDL\0` magic, a `u16` bundle
+version, and a `u64` accepted library revision. The canonical filtered library
+manifest follows as `u64 length + 32-byte SHA-256 + bytes`, then a `u64` note
+count. Each note entry is `u64 stable ID + u64 Markdown length + 32-byte
+SHA-256 + deterministic UTF-8 Markdown`. A `u64` attachment count follows;
+each attachment entry is `u64 stable ID + u64 length + 32-byte SHA-256 + exact
+bytes`. The manifest retains the required folder and identity-sequence context
+but excludes unrelated notes and unreferenced attachment tombstones. The file
+contains no source/destination paths, drafts, recovery state, search data,
+previews, diagnostics, or executable entries.
+
+`rmac-notes-storage` caps the complete bundle at 16 GiB, streams managed files
+in 64 KiB chunks through owner/single-link/no-follow validation, and checks
+each complete length and SHA-256 against the accepted manifest. It writes only
+to a create-new adjacent temporary file, caps and fingerprints that candidate,
+rechecks the exact reviewed destination immediately before atomic replacement,
+preserves an existing destination's permissions, syncs the file and parent,
+and requires exact final readback. A changed attachment, stale library,
+maintenance state, changed destination, or oversized output removes the
+temporary candidate without replacement. A sync or readback failure after the
+atomic rename is reported without claiming export success; the selected target
+may already contain the complete candidate and is never silently rolled back
+over a concurrent writer. Export never mutates the accepted Notes library. The
+repository worker flushes a pending edit first, performs planning and all export
+I/O off GPUI, redacts selected paths and hashes, and emits only a typed outcome
+with revisions, counts, byte totals, and output fingerprint. XDG FileChooser
+dispatch, live export review/progress UI, bundle import, and Linux interaction/
+accessibility evidence remain.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -467,11 +508,11 @@ scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
 manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
 recovery records, silent scan/decode failures, no live permanent file/folder
 deletion confirmation/action UI,
-attachment copies outside a note transaction, no orphan policy, no safe import/
-export/bundle format, no consumption of the derived cancellable index, and no
-Linux accessibility/runtime evidence. Migration must preserve every readable
-existing note and attachment; it must not delete the prototype library after a
-partial import.
+attachment copies outside a note transaction, no live portal import/export or
+bundle import, no consumption of the derived cancellable index, and no Linux
+accessibility/runtime evidence. Migration must preserve every readable existing
+note and attachment; it must not delete the prototype library after a partial
+import.
 
 ## Acceptance evidence
 

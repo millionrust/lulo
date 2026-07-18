@@ -246,6 +246,9 @@ impl NotesSession {
                 self.phase = phase;
                 self.last_rejection = None;
             }
+            WorkerEvent::Exported(_) => {
+                self.last_rejection = None;
+            }
             WorkerEvent::Pending(event) => {
                 self.adopt_snapshot(event.accepted.snapshot, self.selected_note, false);
                 self.phase = SessionPhase::Pending {

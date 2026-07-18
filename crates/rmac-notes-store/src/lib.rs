@@ -6,12 +6,14 @@
 //! unbounded allocation.
 
 mod codec;
+mod export;
 mod mutation;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub use codec::{decode, encode, CodecError, MAX_LIBRARY_BYTES, SCHEMA_VERSION};
+pub use export::{render_export_markdown, ExportAttachment, ExportError, ExportPlan, ExportScope};
 pub use mutation::{
     AttachmentImportPlan, LibraryTransaction, MutationError, NewAttachment, NewNote, NoteChanges,
     OrphanCollectionPlan, PurgePlan,

@@ -8,7 +8,8 @@ use rmac_notes_store::{
 use rmac_storage::{Backend, FileSystem};
 
 use crate::{
-    LoadedLibrary, NotesLibraryStore, PreparedImageAttachment, PreparedTextNote, RecoveryNotice,
+    ExportFailure, ExportFormat, ExportOutcome, LoadedLibrary, NotesLibraryStore,
+    PreparedExportDestination, PreparedImageAttachment, PreparedTextNote, RecoveryNotice,
     StoreError, TextImportError,
 };
 
@@ -309,6 +310,17 @@ impl<B: Backend> AcceptedLibrary<B> {
             }
             Err(error) => Err(PendingCommit::store(Box::new(candidate), operation, error)),
         }
+    }
+}
+
+impl AcceptedLibrary<FileSystem> {
+    pub fn export(
+        &self,
+        plan: &rmac_notes_store::ExportPlan,
+        format: ExportFormat,
+        destination: PreparedExportDestination,
+    ) -> Result<ExportOutcome, ExportFailure> {
+        self.store.export(&self.loaded, plan, format, destination)
     }
 }
 

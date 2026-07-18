@@ -34,8 +34,8 @@ pub use search_worker::{
 pub use session::{FolderSelection, NotesSession, SessionPhase};
 pub use worker::{
     AcceptedEvent, ActionRequest, ActionResult, DraftRecoveryKind, DraftRestoredEvent,
-    DraftReviewSummary, DraftSummary, LibraryAction, MigrationReviewSummary, NotesWorker,
-    NotesWorkerClient, NotesWorkerEvents, PendingEvent, RejectedEvent, SnapshotEvent,
-    WorkerCommand, WorkerEvent, WorkerFailure, WorkerSendError, WorkerStartError, COMMAND_CAPACITY,
-    EVENT_CAPACITY,
+    DraftReviewSummary, DraftSummary, ExportRequest, ExportedEvent, LibraryAction,
+    MigrationReviewSummary, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PendingEvent,
+    RejectedEvent, SnapshotEvent, WorkerCommand, WorkerEvent, WorkerFailure, WorkerSendError,
+    WorkerStartError, COMMAND_CAPACITY, EVENT_CAPACITY,
 };

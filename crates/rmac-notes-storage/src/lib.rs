@@ -22,6 +22,7 @@ use sha2::{Digest as _, Sha256};
 
 mod attachment;
 mod drafts;
+mod export;
 mod legacy_scan;
 mod migration;
 mod note_import;
@@ -45,6 +46,10 @@ pub use drafts::{
     decode_draft, encode_draft, DraftCodecError, DraftDiscovery, DraftError, DraftErrorKind,
     DraftOperation, DraftRecord, DraftStore, MAX_DISCOVERED_DRAFTS, MAX_DRAFT_DISCOVERY_BYTES,
     MAX_DRAFT_RECORD_BYTES, MAX_SCANNED_DRAFT_ENTRIES,
+};
+pub use export::{
+    ExportFailure, ExportFailureKind, ExportFormat, ExportOperation, ExportOutcome,
+    PreparedExportDestination, MAX_EXPORT_BUNDLE_BYTES,
 };
 
 pub use legacy_scan::{

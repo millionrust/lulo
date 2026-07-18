@@ -14,13 +14,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rmac_notes_store::{
-    decode, encode, AttachmentImportPlan, CodecError, LibrarySnapshot, OrphanCollectionPlan,
-    PurgePlan, MAX_LIBRARY_BYTES,
+    decode, encode, AttachmentImportPlan, BundleImportPlan, CodecError, LibrarySnapshot,
+    OrphanCollectionPlan, PurgePlan, MAX_LIBRARY_BYTES,
 };
 use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
 mod attachment;
+mod bundle_import;
 mod drafts;
 mod export;
 mod legacy_scan;
@@ -33,6 +34,7 @@ mod startup;
 mod writer;
 
 use attachment::{ImportAuthority, ImportError, ImportIntent, MAX_IMPORT_INTENT_BYTES};
+use bundle_import::{BundleImportIntent, BundleIntentAuthority, MAX_BUNDLE_IMPORT_INTENT_BYTES};
 use orphan::{OrphanAuthority, OrphanError, OrphanIntent, MAX_ORPHAN_INTENT_BYTES};
 use purge::{PurgeAuthority, PurgeError, PurgeIntent, MAX_PURGE_INTENT_BYTES};
 
@@ -40,6 +42,10 @@ pub use attachment::{
     load_managed_image_preview, DecodedImagePreview, PreparedImageAttachment, PreviewError,
     PreviewSize, MAX_IMPORTED_IMAGE_BYTES, MAX_IMPORTED_IMAGE_DIMENSION, MAX_IMPORTED_IMAGE_PIXELS,
     MAX_PREVIEW_DIMENSION, MAX_PREVIEW_PIXELS,
+};
+pub use bundle_import::{
+    prepare_bundle_import, BundleImportError, BundleImportErrorKind, BundleImportOperation,
+    PreparedBundleImport,
 };
 
 pub use drafts::{
@@ -95,6 +101,10 @@ pub enum RecoveryNotice {
     FinishedInterruptedOrphanCollection,
     CorruptOrphanCollectionPreserved,
     OrphanCollectionPending,
+    RolledBackInterruptedBundleImport,
+    FinishedInterruptedBundleImport,
+    CorruptBundleImportPreserved,
+    BundleImportPending,
 }
 
 #[derive(Clone, Debug)]
@@ -131,6 +141,7 @@ pub struct SaveOutcome {
     pub purge_cleanup_pending: bool,
     pub attachment_import_pending: bool,
     pub orphan_collection_pending: bool,
+    pub bundle_import_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +184,12 @@ pub enum Operation {
     RemoveOrphanCollectionIntent,
     VerifyOrphanAttachment,
     RemoveOrphanAttachment,
+    ReadBundleImportIntent,
+    WriteBundleImportIntent,
+    VerifyBundleImportIntent,
+    RemoveBundleImportIntent,
+    StageBundleAttachment,
+    VerifyBundleAttachment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,6 +203,7 @@ pub enum ErrorKind {
     InvalidPurge,
     InvalidAttachmentImport,
     InvalidOrphanCollection,
+    InvalidBundleImport,
     UnsupportedAttachment,
     AttachmentTooLarge,
     AttachmentMismatch,
@@ -235,6 +253,7 @@ impl fmt::Display for StoreError {
             ErrorKind::InvalidOrphanCollection => {
                 "Notes found invalid orphan-attachment collection state"
             }
+            ErrorKind::InvalidBundleImport => "Notes found invalid bundle-import recovery state",
             ErrorKind::UnsupportedAttachment => {
                 "Notes supports PNG, JPEG, and WebP image attachments"
             }
@@ -303,6 +322,22 @@ impl<B: Backend> NotesLibraryStore<B> {
         note_import::prepare_text_note_with_backend(selected_path, &self.backend)
     }
 
+    /// Stream and verify one portal-selected rmac Notes bundle while retaining
+    /// at most one bounded attachment payload during full image decoding.
+    pub fn prepare_bundle_import(
+        &self,
+        selected_path: &Path,
+    ) -> Result<PreparedBundleImport, BundleImportError> {
+        let prepared = bundle_import::prepare_bundle_import(selected_path)?;
+        if prepared.source_is_within(&self.root) {
+            return Err(BundleImportError {
+                operation: BundleImportOperation::ReviewSource,
+                kind: BundleImportErrorKind::Malformed,
+            });
+        }
+        Ok(prepared)
+    }
+
     pub fn load(&self) -> Result<LoadedLibrary, StoreError> {
         let _guard = self
             .transaction_lock
@@ -323,6 +358,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_purge_intent()?;
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
+        self.require_no_bundle_import_intent()?;
         self.save_locked(loaded, candidate)
     }
 
@@ -348,6 +384,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_purge_intent()?;
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
+        self.require_no_bundle_import_intent()?;
         let intent = ImportIntent::prepare(loaded.snapshot(), candidate, plan, prepared)
             .map_err(|error| map_import_error(Operation::WriteAttachmentImportIntent, error))?;
         self.write_import_intent(&intent)?;
@@ -374,6 +411,55 @@ impl<B: Backend> NotesLibraryStore<B> {
         Ok(outcome)
     }
 
+    /// Stage every exact bundle attachment under its collision-reviewed
+    /// destination identity, then publish the complete metadata candidate.
+    pub fn save_bundle_import(
+        &self,
+        loaded: &LoadedLibrary,
+        candidate: &LibrarySnapshot,
+        plan: &BundleImportPlan,
+        prepared: &PreparedBundleImport,
+    ) -> Result<SaveOutcome, StoreError> {
+        let _guard = self
+            .transaction_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if has_blocking_notice(loaded.notices()) {
+            return Err(StoreError::new(
+                Operation::PreflightPrimary,
+                ErrorKind::AmbiguousJournal,
+            ));
+        }
+        self.require_no_purge_intent()?;
+        self.require_no_import_intent()?;
+        self.require_no_orphan_intent()?;
+        self.require_no_bundle_import_intent()?;
+        let intent = BundleImportIntent::prepare(loaded.snapshot(), candidate, plan, prepared)
+            .map_err(|error| map_bundle_error(Operation::WriteBundleImportIntent, error))?;
+        self.write_bundle_import_intent(&intent)?;
+        intent
+            .stage(&self.root, &self.backend, plan, prepared)
+            .map_err(|error| map_bundle_error(Operation::StageBundleAttachment, error))?;
+        let mut outcome = self.save_locked(loaded, candidate)?;
+        if outcome.maintenance_pending {
+            outcome.bundle_import_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::BundleImportPending,
+            );
+            return Ok(outcome);
+        }
+        if self.remove_bundle_import_intent().is_err() {
+            outcome.maintenance_pending = true;
+            outcome.bundle_import_pending = true;
+            push_notice(
+                &mut outcome.library.notices,
+                RecoveryNotice::BundleImportPending,
+            );
+        }
+        Ok(outcome)
+    }
+
     /// Publish an exact purge candidate, then collect only the managed
     /// attachment bytes named by its durable private intent.
     pub fn save_purge(
@@ -395,6 +481,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_purge_intent()?;
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
+        self.require_no_bundle_import_intent()?;
         let intent = PurgeIntent::prepare(loaded.snapshot(), candidate, plan)
             .map_err(|error| map_purge_error(Operation::WritePurgeIntent, error))?;
         self.write_purge_intent(&intent)?;
@@ -439,6 +526,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         self.require_no_purge_intent()?;
         self.require_no_import_intent()?;
         self.require_no_orphan_intent()?;
+        self.require_no_bundle_import_intent()?;
         let intent = OrphanIntent::prepare(loaded.snapshot(), candidate, plan)
             .map_err(|error| map_orphan_error(Operation::WriteOrphanCollectionIntent, error))?;
         self.write_orphan_intent(&intent)?;
@@ -532,10 +620,17 @@ impl<B: Backend> NotesLibraryStore<B> {
         let purge_present = self.intent_present(&self.purge_path(), MAX_PURGE_INTENT_BYTES);
         let import_present = self.intent_present(&self.import_path(), MAX_IMPORT_INTENT_BYTES);
         let orphan_present = self.intent_present(&self.orphan_path(), MAX_ORPHAN_INTENT_BYTES);
-        if [purge_present, import_present, orphan_present]
-            .into_iter()
-            .filter(|present| *present)
-            .count()
+        let bundle_import_present =
+            self.intent_present(&self.bundle_import_path(), MAX_BUNDLE_IMPORT_INTENT_BYTES);
+        if [
+            purge_present,
+            import_present,
+            orphan_present,
+            bundle_import_present,
+        ]
+        .into_iter()
+        .filter(|present| *present)
+        .count()
             > 1
         {
             let mut loaded = loaded;
@@ -554,11 +649,18 @@ impl<B: Backend> NotesLibraryStore<B> {
                     RecoveryNotice::CorruptOrphanCollectionPreserved,
                 );
             }
+            if bundle_import_present {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptBundleImportPreserved,
+                );
+            }
             return Ok(loaded);
         }
         let loaded = self.recover_purge(loaded)?;
         let loaded = self.recover_attachment_import(loaded)?;
-        self.recover_orphan_collection(loaded)
+        let loaded = self.recover_orphan_collection(loaded)?;
+        self.recover_bundle_import(loaded)
     }
 
     fn save_locked(
@@ -642,6 +744,7 @@ impl<B: Backend> NotesLibraryStore<B> {
             purge_cleanup_pending: false,
             attachment_import_pending: false,
             orphan_collection_pending: false,
+            bundle_import_pending: false,
         })
     }
 
@@ -820,6 +923,126 @@ impl<B: Backend> NotesLibraryStore<B> {
             ),
         }
         Ok(loaded)
+    }
+
+    fn recover_bundle_import(
+        &self,
+        mut loaded: LoadedLibrary,
+    ) -> Result<LoadedLibrary, StoreError> {
+        let bytes = match self
+            .backend
+            .read_bounded_no_follow(&self.bundle_import_path(), MAX_BUNDLE_IMPORT_INTENT_BYTES)
+        {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(loaded),
+            Err(_) => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptBundleImportPreserved,
+                );
+                return Ok(loaded);
+            }
+        };
+        let intent = match BundleImportIntent::decode(&bytes) {
+            Ok(intent) => intent,
+            Err(_) => {
+                push_notice(
+                    &mut loaded.notices,
+                    RecoveryNotice::CorruptBundleImportPreserved,
+                );
+                return Ok(loaded);
+            }
+        };
+        match intent
+            .authority(&loaded.snapshot)
+            .map_err(|error| map_bundle_error(Operation::ReadBundleImportIntent, error))?
+        {
+            BundleIntentAuthority::RolledBack => {
+                if intent
+                    .rollback_staging(&self.root, &self.backend)
+                    .and_then(|()| {
+                        self.remove_bundle_import_intent()
+                            .map_err(bundle_error_from_store)
+                    })
+                    .is_ok()
+                {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::RolledBackInterruptedBundleImport,
+                    );
+                } else {
+                    push_notice(&mut loaded.notices, RecoveryNotice::BundleImportPending);
+                }
+            }
+            BundleIntentAuthority::Accepted => {
+                if intent
+                    .verify_staged(&self.root, &self.backend)
+                    .and_then(|()| {
+                        self.remove_bundle_import_intent()
+                            .map_err(bundle_error_from_store)
+                    })
+                    .is_ok()
+                {
+                    push_notice(
+                        &mut loaded.notices,
+                        RecoveryNotice::FinishedInterruptedBundleImport,
+                    );
+                } else {
+                    push_notice(&mut loaded.notices, RecoveryNotice::BundleImportPending);
+                }
+            }
+            BundleIntentAuthority::Ambiguous => push_notice(
+                &mut loaded.notices,
+                RecoveryNotice::CorruptBundleImportPreserved,
+            ),
+        }
+        Ok(loaded)
+    }
+
+    fn write_bundle_import_intent(&self, intent: &BundleImportIntent) -> Result<(), StoreError> {
+        let bytes = intent
+            .encode()
+            .map_err(|error| map_bundle_error(Operation::WriteBundleImportIntent, error))?;
+        self.backend
+            .create_dir_all_private(&self.root)
+            .map_err(|error| StoreError::io(Operation::CreateDirectory, error))?;
+        self.backend
+            .write_atomic_private(&self.bundle_import_path(), &bytes)
+            .map_err(|error| StoreError::io(Operation::WriteBundleImportIntent, error))?;
+        let readback = self
+            .backend
+            .read_bounded_no_follow(&self.bundle_import_path(), MAX_BUNDLE_IMPORT_INTENT_BYTES)
+            .map_err(|error| StoreError::io(Operation::VerifyBundleImportIntent, error))?;
+        if readback != bytes || BundleImportIntent::decode(&readback).ok().as_ref() != Some(intent)
+        {
+            return Err(StoreError::new(
+                Operation::VerifyBundleImportIntent,
+                ErrorKind::ReadbackMismatch,
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_no_bundle_import_intent(&self) -> Result<(), StoreError> {
+        match self
+            .backend
+            .read_bounded_no_follow(&self.bundle_import_path(), MAX_BUNDLE_IMPORT_INTENT_BYTES)
+        {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Ok(_) => Err(StoreError::new(
+                Operation::ReadBundleImportIntent,
+                ErrorKind::InvalidBundleImport,
+            )),
+            Err(error) => Err(StoreError::io(Operation::ReadBundleImportIntent, error)),
+        }
+    }
+
+    fn remove_bundle_import_intent(&self) -> Result<(), StoreError> {
+        match self.backend.remove_file_durable(&self.bundle_import_path()) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(StoreError::io(Operation::RemoveBundleImportIntent, error)),
+        }
     }
 
     fn write_orphan_intent(&self, intent: &OrphanIntent) -> Result<(), StoreError> {
@@ -1178,6 +1401,10 @@ impl<B: Backend> NotesLibraryStore<B> {
     fn orphan_path(&self) -> PathBuf {
         self.root.join("library.orphan-collection.bin")
     }
+
+    fn bundle_import_path(&self) -> PathBuf {
+        self.root.join("library.bundle-import.bin")
+    }
 }
 
 fn push_notice(notices: &mut Vec<RecoveryNotice>, notice: RecoveryNotice) {
@@ -1203,8 +1430,36 @@ fn has_blocking_notice(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::AttachmentImportPending
                 | RecoveryNotice::CorruptOrphanCollectionPreserved
                 | RecoveryNotice::OrphanCollectionPending
+                | RecoveryNotice::CorruptBundleImportPreserved
+                | RecoveryNotice::BundleImportPending
         )
     })
+}
+
+fn map_bundle_error(operation: Operation, error: BundleImportError) -> StoreError {
+    match error.kind {
+        BundleImportErrorKind::Io(kind) => StoreError::new(operation, ErrorKind::Io(kind)),
+        BundleImportErrorKind::AttachmentMismatch => {
+            StoreError::new(operation, ErrorKind::AttachmentMismatch)
+        }
+        BundleImportErrorKind::HashMismatch => {
+            StoreError::new(operation, ErrorKind::ReadbackMismatch)
+        }
+        _ => StoreError::new(operation, ErrorKind::InvalidBundleImport),
+    }
+}
+
+fn bundle_error_from_store(error: StoreError) -> BundleImportError {
+    let kind = match error.kind {
+        ErrorKind::Io(kind) => BundleImportErrorKind::Io(kind),
+        ErrorKind::AttachmentMismatch => BundleImportErrorKind::AttachmentMismatch,
+        ErrorKind::ReadbackMismatch => BundleImportErrorKind::HashMismatch,
+        _ => BundleImportErrorKind::Malformed,
+    };
+    BundleImportError {
+        operation: BundleImportOperation::StageAttachment,
+        kind,
+    }
 }
 
 fn map_orphan_error(operation: Operation, error: OrphanError) -> StoreError {

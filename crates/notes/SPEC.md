@@ -322,8 +322,7 @@ the source filename without retaining that path. Prepared debug output redacts
 title and body. A redacted worker action binds the requested creation time and
 stable folder, creates the complete candidate off GPUI, reports a typed source
 failure, and reveals only a durably accepted stable note with encoding and
-source-length summary. Portal dispatch, Markdown-construct review, and bundle
-import remain.
+source-length summary. Portal dispatch and Markdown-construct review remain.
 
 Export now begins from a path-free, immutable plan derived from one exact
 accepted library revision. A single-note plan binds the exact note revision; a
@@ -363,8 +362,44 @@ over a concurrent writer. Export never mutates the accepted Notes library. The
 repository worker flushes a pending edit first, performs planning and all export
 I/O off GPUI, redacts selected paths and hashes, and emits only a typed outcome
 with revisions, counts, byte totals, and output fingerprint. XDG FileChooser
-dispatch, live export review/progress UI, bundle import, and Linux interaction/
-accessibility evidence remain.
+dispatch, live export review/progress UI, and Linux interaction/accessibility
+evidence remain.
+
+Bundle import now consumes that exact version-1 format through a separate
+two-step review/accept boundary. Preparation requires an absolute canonical
+portal-selected regular file outside the managed library, opens the final entry
+without following it, caps the complete bundle at 16 GiB, and fingerprints every
+byte while parsing. It requires the exact magic/version/revision, hashed
+canonical manifest re-encoding, sorted note and attachment identities, exact
+deterministic Markdown records, matching attachment lengths and hashes, and no
+trailing data. Each PNG/JPEG/WebP attachment is allocated and fully decoded one
+at a time under the existing 64 MiB compressed, axis, pixel, and decoded-memory
+bounds; unsupported, malformed, tombstoned, or inconsistent attachment state is
+rejected before a review is offered. Prepared paths and fingerprints are
+redacted from diagnostics.
+
+The review binds the exact accepted and source revisions and exposes only folder,
+note, attachment, collision, and byte counts. The initial explicit policy is
+`KeepBoth`: it never overwrites a destination record or reuses purged identity
+history, remaps identities that could collide, preserves unused future source
+identities when safe, retains destination sort order, and deterministically
+suffixes colliding live folder names. Acceptance fully re-derives the complete
+base-to-candidate mapping and rejects a stale accepted library or changed source.
+
+Storage persists a private versioned intent containing exact base/candidate and
+source fingerprints before staging attachments. It streams each reviewed source
+range into a fresh private managed identity, reuses only an exact prior stage,
+checks the complete source again before and after staging, and publishes the
+single complete metadata candidate last. Startup with the exact base removes
+only exact staged orphans; startup with the exact candidate verifies and keeps
+them; substituted, linked, missing-after-acceptance, malformed, simultaneous, or
+otherwise ambiguous state is preserved as blocking bundle-import maintenance.
+The repository retains the path-private prepared source and exact plan through
+Retry. The worker flushes pending edits, retains one review by request identity,
+does parsing/planning/I/O off GPUI, rejects mismatched review acceptance without
+consuming the valid review, and emits only safe counts plus the accepted
+snapshot. The session projects the review and bundle maintenance distinctly.
+XDG FileChooser dispatch and the live review/progress/collision UI remain.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -509,10 +544,10 @@ manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
 recovery records, silent scan/decode failures, no live permanent file/folder
 deletion confirmation/action UI,
 attachment copies outside a note transaction, no live portal import/export or
-bundle import, no consumption of the derived cancellable index, and no Linux
-accessibility/runtime evidence. Migration must preserve every readable existing
-note and attachment; it must not delete the prototype library after a partial
-import.
+bundle-import review UI, no consumption of the derived cancellable index, and no
+Linux accessibility/runtime evidence. Migration must preserve every readable
+existing note and attachment; it must not delete the prototype library after a
+partial import.
 
 ## Acceptance evidence
 

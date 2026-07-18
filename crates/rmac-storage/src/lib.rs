@@ -174,6 +174,16 @@ pub trait Backend {
         Err(unsupported("write new private data"))
     }
 
+    /// Stream into a fresh private file without replacing an existing entry.
+    fn write_new_private_stream(
+        &self,
+        _path: &Path,
+        _source: &mut dyn io::Read,
+        _maximum: u64,
+    ) -> io::Result<FileFingerprint> {
+        Err(unsupported("stream new private data"))
+    }
+
     fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
         Err(unsupported("create directory"))
     }
@@ -253,6 +263,15 @@ impl Backend for FileSystem {
 
     fn write_new_private(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
         write_new_private(path, contents)
+    }
+
+    fn write_new_private_stream(
+        &self,
+        path: &Path,
+        source: &mut dyn io::Read,
+        maximum: u64,
+    ) -> io::Result<FileFingerprint> {
+        write_new_private_stream(path, source, maximum)
     }
 
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
@@ -348,7 +367,9 @@ pub fn inspect_destination(path: &Path, maximum: u64) -> io::Result<DestinationB
                 "export destination is not a regular file",
             ))
         }
-        Ok(_) => fingerprint_regular_no_follow(path, maximum).map(DestinationBaseline::Exact),
+        Ok(_) => {
+            fingerprint_bounded_regular_no_follow(path, maximum).map(DestinationBaseline::Exact)
+        }
     }
 }
 
@@ -430,7 +451,7 @@ where
         producer(&mut file)?;
         file.sync_all()?;
         drop(file);
-        let output = fingerprint_regular_no_follow(&temporary, maximum_bytes)?;
+        let output = fingerprint_bounded_regular_no_follow(&temporary, maximum_bytes)?;
         if inspect_destination(path, maximum_bytes)? != baseline {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
@@ -443,7 +464,7 @@ where
         }
         std::fs::rename(&temporary, path)?;
         File::open(parent)?.sync_all()?;
-        let readback = fingerprint_regular_no_follow(path, output.byte_len)?;
+        let readback = fingerprint_bounded_regular_no_follow(path, output.byte_len)?;
         if readback != output {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -459,7 +480,12 @@ where
     result
 }
 
-fn fingerprint_regular_no_follow(path: &Path, maximum: u64) -> io::Result<FileFingerprint> {
+/// Open a user-selected regular file without following its final path.
+///
+/// Unlike private-state helpers this intentionally does not require ownership
+/// or a single hard link: a portal-selected ordinary file may legitimately be
+/// shared, but its final component must never be a symlink or non-file.
+pub fn open_regular_no_follow(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -477,13 +503,23 @@ fn fingerprint_regular_no_follow(path: &Path, maximum: u64) -> io::Result<FileFi
             ));
         }
     }
-    let mut file = options.open(path)?;
+    let file = options.open(path)?;
     if !file.metadata()?.is_file() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "export destination is not a regular file",
         ));
     }
+    Ok(file)
+}
+
+/// Stream a bounded fingerprint from a user-selected ordinary file without
+/// following its final path.
+pub fn fingerprint_bounded_regular_no_follow(
+    path: &Path,
+    maximum: u64,
+) -> io::Result<FileFingerprint> {
+    let mut file = open_regular_no_follow(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     let mut byte_len = 0_u64;
@@ -726,6 +762,73 @@ pub fn write_new_private(path: &Path, contents: &[u8]) -> io::Result<()> {
 
     if result.is_err() && created {
         let _ = std::fs::remove_file(path);
+    }
+    result
+}
+
+/// Durably stream a bounded source into a fresh owner-only file.
+///
+/// The destination is removed on any read, size, write, permission, or sync
+/// failure. The caller must still reread after an error because cleanup is
+/// necessarily best effort.
+pub fn write_new_private_stream(
+    path: &Path,
+    source: &mut dyn io::Read,
+    maximum: u64,
+) -> io::Result<FileFingerprint> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "target has no parent directory",
+        )
+    })?;
+    let mut created = false;
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let mut file = options.open(path)?;
+        created = true;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+        let mut hasher = Sha256::new();
+        let mut byte_len = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let count = source.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            byte_len = byte_len
+                .checked_add(count as u64)
+                .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
+            if byte_len > maximum {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "private stream exceeds its configured limit",
+                ));
+            }
+            hasher.update(&buffer[..count]);
+            file.write_all(&buffer[..count])?;
+        }
+        file.sync_all()?;
+        drop(file);
+        File::open(parent)?.sync_all()?;
+        Ok(FileFingerprint {
+            byte_len,
+            sha256: hasher.finalize().into(),
+        })
+    })();
+
+    if result.is_err() && created {
+        let _ = remove_file_durable(path);
     }
     result
 }
@@ -1110,6 +1213,40 @@ mod tests {
             copy_verified_private_file(&source, expected, &mut RefuseWrites),
             Err(VerifiedCopyError::Destination(io::ErrorKind::WriteZero))
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn private_stream_creation_is_bounded_hashed_and_never_leaves_a_partial_file() {
+        let root = temp_root("private-stream-create");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("attachment.bin");
+        let bytes = b"exact streamed attachment";
+
+        let fingerprint =
+            write_new_private_stream(&target, &mut bytes.as_slice(), bytes.len() as u64).unwrap();
+
+        assert_eq!(fingerprint.byte_len, bytes.len() as u64);
+        let expected_sha256: [u8; 32] = Sha256::digest(bytes).into();
+        assert_eq!(fingerprint.sha256, expected_sha256);
+        assert_eq!(std::fs::read(&target).unwrap(), bytes);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+
+        let oversized = root.join("oversized.bin");
+        assert_eq!(
+            write_new_private_stream(&oversized, &mut bytes.as_slice(), 3)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert!(!oversized.exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -2,15 +2,15 @@ use std::fmt;
 use std::path::Path;
 
 use rmac_notes_store::{
-    AttachmentImportPlan, LibrarySnapshot, LibraryTransaction, MutationError, OrphanCollectionPlan,
-    PurgePlan,
+    AttachmentImportPlan, BundleImportPlan, LibrarySnapshot, LibraryTransaction, MutationError,
+    OrphanCollectionPlan, PlannedBundleImport, PurgePlan,
 };
 use rmac_storage::{Backend, FileSystem};
 
 use crate::{
     ExportFailure, ExportFormat, ExportOutcome, LoadedLibrary, NotesLibraryStore,
-    PreparedExportDestination, PreparedImageAttachment, PreparedTextNote, RecoveryNotice,
-    StoreError, TextImportError,
+    PreparedBundleImport, PreparedExportDestination, PreparedImageAttachment, PreparedTextNote,
+    RecoveryNotice, StoreError, TextImportError,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,6 +38,7 @@ impl fmt::Debug for PendingCommit {
                     PendingOperation::Purge(_) => "purge",
                     PendingOperation::AttachmentImport { .. } => "attachment import",
                     PendingOperation::OrphanCollection(_) => "orphan collection",
+                    PendingOperation::BundleImport { .. } => "bundle import",
                 },
             )
             .field("reason", &self.reason)
@@ -53,6 +54,10 @@ enum PendingOperation {
     AttachmentImport {
         plan: Box<AttachmentImportPlan>,
         prepared: Box<PreparedImageAttachment>,
+    },
+    BundleImport {
+        plan: Box<BundleImportPlan>,
+        prepared: Box<PreparedBundleImport>,
     },
 }
 
@@ -70,7 +75,8 @@ impl PendingCommit {
             PendingOperation::Purge(plan) => Some(plan),
             PendingOperation::Ordinary
             | PendingOperation::AttachmentImport { .. }
-            | PendingOperation::OrphanCollection(_) => None,
+            | PendingOperation::OrphanCollection(_)
+            | PendingOperation::BundleImport { .. } => None,
         }
     }
 
@@ -79,7 +85,8 @@ impl PendingCommit {
             PendingOperation::AttachmentImport { plan, .. } => Some(plan),
             PendingOperation::Ordinary
             | PendingOperation::Purge(_)
-            | PendingOperation::OrphanCollection(_) => None,
+            | PendingOperation::OrphanCollection(_)
+            | PendingOperation::BundleImport { .. } => None,
         }
     }
 
@@ -88,6 +95,17 @@ impl PendingCommit {
             PendingOperation::OrphanCollection(plan) => Some(plan),
             PendingOperation::Ordinary
             | PendingOperation::Purge(_)
+            | PendingOperation::AttachmentImport { .. }
+            | PendingOperation::BundleImport { .. } => None,
+        }
+    }
+
+    pub fn bundle_import_plan(&self) -> Option<&BundleImportPlan> {
+        match &self.operation {
+            PendingOperation::BundleImport { plan, .. } => Some(plan),
+            PendingOperation::Ordinary
+            | PendingOperation::Purge(_)
+            | PendingOperation::OrphanCollection(_)
             | PendingOperation::AttachmentImport { .. } => None,
         }
     }
@@ -136,6 +154,7 @@ pub struct AcceptedCommit {
     pub purge_cleanup_pending: bool,
     pub attachment_import_pending: bool,
     pub orphan_collection_pending: bool,
+    pub bundle_import_pending: bool,
     pub recovered_after_error: bool,
 }
 
@@ -190,6 +209,13 @@ impl<B: Backend> AcceptedLibrary<B> {
         self.store.prepare_text_note(selected_path)
     }
 
+    pub fn prepare_bundle_import(
+        &self,
+        selected_path: &Path,
+    ) -> Result<PreparedBundleImport, crate::BundleImportError> {
+        self.store.prepare_bundle_import(selected_path)
+    }
+
     pub fn commit(
         &mut self,
         transaction: LibraryTransaction,
@@ -241,6 +267,23 @@ impl<B: Backend> AcceptedLibrary<B> {
         .map_err(CommitError::Pending)
     }
 
+    pub fn commit_bundle_import(
+        &mut self,
+        planned: PlannedBundleImport,
+        prepared: PreparedBundleImport,
+    ) -> Result<AcceptedCommit, CommitError> {
+        let (candidate, plan) = planned.into_parts();
+        self.commit_candidate(
+            candidate,
+            PendingOperation::BundleImport {
+                plan: Box::new(plan),
+                prepared: Box::new(prepared),
+            },
+            false,
+        )
+        .map_err(CommitError::Pending)
+    }
+
     pub fn retry(&mut self, pending: PendingCommit) -> Result<AcceptedCommit, PendingCommit> {
         let PendingCommit {
             candidate,
@@ -256,6 +299,7 @@ impl<B: Backend> AcceptedLibrary<B> {
             let purge_cleanup_pending = has_purge_maintenance(reloaded.notices());
             let attachment_import_pending = has_attachment_maintenance(reloaded.notices());
             let orphan_collection_pending = has_orphan_maintenance(reloaded.notices());
+            let bundle_import_pending = has_bundle_maintenance(reloaded.notices());
             self.loaded = reloaded;
             return Ok(AcceptedCommit {
                 revision: candidate.revision,
@@ -263,6 +307,7 @@ impl<B: Backend> AcceptedLibrary<B> {
                 purge_cleanup_pending,
                 attachment_import_pending,
                 orphan_collection_pending,
+                bundle_import_pending,
                 recovered_after_error: true,
             });
         }
@@ -294,6 +339,10 @@ impl<B: Backend> AcceptedLibrary<B> {
                 self.store
                     .save_orphan_collection(&self.loaded, &candidate, plan)
             }
+            PendingOperation::BundleImport { plan, prepared } => {
+                self.store
+                    .save_bundle_import(&self.loaded, &candidate, plan, prepared)
+            }
         };
         match outcome {
             Ok(outcome) => {
@@ -303,6 +352,7 @@ impl<B: Backend> AcceptedLibrary<B> {
                     purge_cleanup_pending: outcome.purge_cleanup_pending,
                     attachment_import_pending: outcome.attachment_import_pending,
                     orphan_collection_pending: outcome.orphan_collection_pending,
+                    bundle_import_pending: outcome.bundle_import_pending,
                     recovered_after_error,
                 };
                 self.loaded = outcome.library;
@@ -336,6 +386,8 @@ fn has_blocking_maintenance(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::AttachmentImportPending
                 | RecoveryNotice::CorruptOrphanCollectionPreserved
                 | RecoveryNotice::OrphanCollectionPending
+                | RecoveryNotice::CorruptBundleImportPreserved
+                | RecoveryNotice::BundleImportPending
         )
     })
 }
@@ -365,6 +417,15 @@ fn has_orphan_maintenance(notices: &[RecoveryNotice]) -> bool {
             notice,
             RecoveryNotice::CorruptOrphanCollectionPreserved
                 | RecoveryNotice::OrphanCollectionPending
+        )
+    })
+}
+
+fn has_bundle_maintenance(notices: &[RecoveryNotice]) -> bool {
+    notices.iter().any(|notice| {
+        matches!(
+            notice,
+            RecoveryNotice::CorruptBundleImportPreserved | RecoveryNotice::BundleImportPending
         )
     })
 }

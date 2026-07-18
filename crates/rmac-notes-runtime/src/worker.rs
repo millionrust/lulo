@@ -10,15 +10,15 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rmac_notes_storage::{
-    inspect_notes_startup, AcceptedCommit, AcceptedLibrary, CommitError, DraftError, DraftRecord,
-    DraftStore, ExportFailure, ExportFormat, ExportOutcome, ImportedTextEncoding, MigrationReview,
-    MigrationWarning, NotesPaths, NotesStartup, PendingCommit, PendingReason,
-    PreparedExportDestination, PreparedImageAttachment, RecoveryNotice, StartupError, StoreError,
-    TextImportError,
+    inspect_notes_startup, AcceptedCommit, AcceptedLibrary, BundleImportError, CommitError,
+    DraftError, DraftRecord, DraftStore, ExportFailure, ExportFormat, ExportOutcome,
+    ImportedTextEncoding, MigrationReview, MigrationWarning, NotesPaths, NotesStartup,
+    PendingCommit, PendingReason, PreparedBundleImport, PreparedExportDestination,
+    PreparedImageAttachment, RecoveryNotice, StartupError, StoreError, TextImportError,
 };
 use rmac_notes_store::{
-    AttachmentId, ExportError, ExportScope, FolderId, LibrarySnapshot, MutationError, NewNote,
-    NoteId, SortOrder,
+    AttachmentId, BundleCollisionPolicy, BundleImportReview, BundlePlanError, ExportError,
+    ExportScope, FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder,
 };
 
 use crate::{EditGeneration, EditScheduler, ScheduledEdit, SchedulerError, DEFAULT_EDIT_DEBOUNCE};
@@ -182,17 +182,96 @@ impl fmt::Debug for ExportRequest {
     }
 }
 
+pub struct BundleImportReviewRequest {
+    request_id: u64,
+    selected_path: PathBuf,
+}
+
+impl BundleImportReviewRequest {
+    pub fn new(request_id: u64, selected_path: PathBuf) -> Result<Self, WorkerSendError> {
+        if request_id == 0 {
+            return Err(WorkerSendError::InvalidRequest);
+        }
+        Ok(Self {
+            request_id,
+            selected_path,
+        })
+    }
+
+    pub fn request_id(&self) -> u64 {
+        self.request_id
+    }
+}
+
+impl fmt::Debug for BundleImportReviewRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BundleImportReviewRequest")
+            .field("request_id", &self.request_id)
+            .field("selected_path", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BundleImportAcceptRequest {
+    request_id: u64,
+    review_request_id: u64,
+    policy: BundleCollisionPolicy,
+}
+
+impl BundleImportAcceptRequest {
+    pub fn new(
+        request_id: u64,
+        review_request_id: u64,
+        policy: BundleCollisionPolicy,
+    ) -> Result<Self, WorkerSendError> {
+        if request_id == 0 || review_request_id == 0 {
+            return Err(WorkerSendError::InvalidRequest);
+        }
+        Ok(Self {
+            request_id,
+            review_request_id,
+            policy,
+        })
+    }
+
+    pub fn request_id(self) -> u64 {
+        self.request_id
+    }
+}
+
 pub enum WorkerCommand {
-    AcceptMigration { request_id: u64 },
-    StartEmpty { request_id: u64 },
+    AcceptMigration {
+        request_id: u64,
+    },
+    StartEmpty {
+        request_id: u64,
+    },
     ScheduleEdit(ScheduledEdit),
     Apply(ActionRequest),
     Export(ExportRequest),
-    Flush { request_id: u64 },
+    ReviewBundleImport(BundleImportReviewRequest),
+    AcceptBundleImport(BundleImportAcceptRequest),
+    DiscardBundleImportReview {
+        request_id: u64,
+        review_request_id: u64,
+    },
+    Flush {
+        request_id: u64,
+    },
     RetryPending,
-    DiscardPending { request_id: u64 },
-    RestoreDraft { request_id: u64, note_id: NoteId },
-    DiscardDraft { request_id: u64, note_id: NoteId },
+    DiscardPending {
+        request_id: u64,
+    },
+    RestoreDraft {
+        request_id: u64,
+        note_id: NoteId,
+    },
+    DiscardDraft {
+        request_id: u64,
+        note_id: NoteId,
+    },
     Shutdown,
 }
 
@@ -204,10 +283,13 @@ impl WorkerCommand {
             | Self::Flush { request_id }
             | Self::DiscardPending { request_id }
             | Self::RestoreDraft { request_id, .. }
-            | Self::DiscardDraft { request_id, .. } => (*request_id, None),
+            | Self::DiscardDraft { request_id, .. }
+            | Self::DiscardBundleImportReview { request_id, .. } => (*request_id, None),
             Self::ScheduleEdit(edit) => (edit.request_id(), Some(edit.generation())),
             Self::Apply(request) => (request.request_id(), None),
             Self::Export(request) => (request.request_id(), None),
+            Self::ReviewBundleImport(request) => (request.request_id(), None),
+            Self::AcceptBundleImport(request) => (request.request_id(), None),
             Self::RetryPending | Self::Shutdown => (0, None),
         }
     }
@@ -219,6 +301,14 @@ impl fmt::Debug for WorkerCommand {
             Self::ScheduleEdit(edit) => formatter.debug_tuple("ScheduleEdit").field(edit).finish(),
             Self::Apply(request) => formatter.debug_tuple("Apply").field(request).finish(),
             Self::Export(request) => formatter.debug_tuple("Export").field(request).finish(),
+            Self::ReviewBundleImport(request) => formatter
+                .debug_tuple("ReviewBundleImport")
+                .field(request)
+                .finish(),
+            Self::AcceptBundleImport(request) => formatter
+                .debug_tuple("AcceptBundleImport")
+                .field(request)
+                .finish(),
             Self::AcceptMigration { request_id } => formatter
                 .debug_struct("AcceptMigration")
                 .field("request_id", request_id)
@@ -250,6 +340,14 @@ impl fmt::Debug for WorkerCommand {
                 .debug_struct("DiscardDraft")
                 .field("request_id", request_id)
                 .field("note_id", note_id)
+                .finish(),
+            Self::DiscardBundleImportReview {
+                request_id,
+                review_request_id,
+            } => formatter
+                .debug_struct("DiscardBundleImportReview")
+                .field("request_id", request_id)
+                .field("review_request_id", review_request_id)
                 .finish(),
             Self::RetryPending => formatter.write_str("RetryPending"),
             Self::Shutdown => formatter.write_str("Shutdown"),
@@ -389,6 +487,12 @@ pub enum ActionResult {
         encoding: ImportedTextEncoding,
         source_byte_len: u64,
     },
+    ImportedBundle {
+        folder_count: usize,
+        note_count: usize,
+        attachment_count: usize,
+        attachment_bytes: u64,
+    },
     AttachmentReferenceRemoved {
         note_id: NoteId,
         attachment_id: AttachmentId,
@@ -440,12 +544,21 @@ pub enum WorkerFailure {
     MissingDraft,
     ExportPlan(ExportError),
     Export(ExportFailure),
+    BundleImport(BundleImportError),
+    BundlePlan(BundlePlanError),
+    MissingBundleImportReview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExportedEvent {
     pub request_id: u64,
     pub outcome: ExportOutcome,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BundleImportReviewedEvent {
+    pub request_id: u64,
+    pub review: BundleImportReview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -471,6 +584,11 @@ pub enum WorkerEvent {
     },
     Accepted(AcceptedEvent),
     Exported(ExportedEvent),
+    BundleImportReviewed(BundleImportReviewedEvent),
+    BundleImportReviewDiscarded {
+        request_id: u64,
+        review_request_id: u64,
+    },
     Pending(PendingEvent),
     Rejected(RejectedEvent),
     StartupFailed(StartupError),
@@ -513,6 +631,18 @@ impl fmt::Debug for WorkerEvent {
                 .finish(),
             Self::Accepted(event) => formatter.debug_tuple("Accepted").field(event).finish(),
             Self::Exported(event) => formatter.debug_tuple("Exported").field(event).finish(),
+            Self::BundleImportReviewed(event) => formatter
+                .debug_tuple("BundleImportReviewed")
+                .field(event)
+                .finish(),
+            Self::BundleImportReviewDiscarded {
+                request_id,
+                review_request_id,
+            } => formatter
+                .debug_struct("BundleImportReviewDiscarded")
+                .field("request_id", request_id)
+                .field("review_request_id", review_request_id)
+                .finish(),
             Self::Pending(event) => formatter.debug_tuple("Pending").field(event).finish(),
             Self::Rejected(event) => formatter.debug_tuple("Rejected").field(event).finish(),
             Self::StartupFailed(error) => {
@@ -746,6 +876,13 @@ struct ReadyState {
     scheduler: EditScheduler,
     drafts: DraftStore,
     recoverable_drafts: BTreeMap<NoteId, DraftRecord>,
+    bundle_import_review: Option<PendingBundleImportReview>,
+}
+
+struct PendingBundleImportReview {
+    request_id: u64,
+    prepared: PreparedBundleImport,
+    review: BundleImportReview,
 }
 
 impl ReadyState {
@@ -802,6 +939,7 @@ impl ReadyState {
                 scheduler,
                 drafts,
                 recoverable_drafts,
+                bundle_import_review: None,
             },
             review,
         )
@@ -1176,6 +1314,233 @@ fn process_command(
                         Phase::Stopped
                     }
                 }
+            }
+        }
+        (Phase::Ready(mut ready), WorkerCommand::ReviewBundleImport(request)) => {
+            if let Some(edit) = ready.scheduler.flush() {
+                match commit_edit(&mut ready, edit, events) {
+                    CommitDisposition::Ready => {}
+                    CommitDisposition::Pending(pending, context) => {
+                        if !emit_request_rejected(
+                            events,
+                            request.request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            return Phase::Stopped;
+                        }
+                        return Phase::Pending(PendingState {
+                            ready,
+                            pending,
+                            context,
+                        });
+                    }
+                    CommitDisposition::Rejected => {
+                        return if emit_request_rejected(
+                            events,
+                            request.request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            Phase::Ready(ready)
+                        } else {
+                            Phase::Stopped
+                        };
+                    }
+                    CommitDisposition::Stopped => return Phase::Stopped,
+                }
+            }
+            let prepared = match ready.library.prepare_bundle_import(&request.selected_path) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    return if emit_request_rejected(
+                        events,
+                        request.request_id,
+                        None,
+                        WorkerFailure::BundleImport(error),
+                    ) {
+                        Phase::Ready(ready)
+                    } else {
+                        Phase::Stopped
+                    };
+                }
+            };
+            let review = match prepared.review(ready.library.snapshot()) {
+                Ok(review) => review,
+                Err(error) => {
+                    return if emit_request_rejected(
+                        events,
+                        request.request_id,
+                        None,
+                        WorkerFailure::BundlePlan(error),
+                    ) {
+                        Phase::Ready(ready)
+                    } else {
+                        Phase::Stopped
+                    };
+                }
+            };
+            ready.bundle_import_review = Some(PendingBundleImportReview {
+                request_id: request.request_id,
+                prepared,
+                review,
+            });
+            if events
+                .send(WorkerEvent::BundleImportReviewed(
+                    BundleImportReviewedEvent {
+                        request_id: request.request_id,
+                        review,
+                    },
+                ))
+                .is_ok()
+            {
+                Phase::Ready(ready)
+            } else {
+                Phase::Stopped
+            }
+        }
+        (Phase::Ready(mut ready), WorkerCommand::AcceptBundleImport(request)) => {
+            if let Some(edit) = ready.scheduler.flush() {
+                match commit_edit(&mut ready, edit, events) {
+                    CommitDisposition::Ready => {}
+                    CommitDisposition::Pending(pending, context) => {
+                        if !emit_request_rejected(
+                            events,
+                            request.request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            return Phase::Stopped;
+                        }
+                        return Phase::Pending(PendingState {
+                            ready,
+                            pending,
+                            context,
+                        });
+                    }
+                    CommitDisposition::Rejected => {
+                        return if emit_request_rejected(
+                            events,
+                            request.request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            Phase::Ready(ready)
+                        } else {
+                            Phase::Stopped
+                        };
+                    }
+                    CommitDisposition::Stopped => return Phase::Stopped,
+                }
+            }
+            if ready
+                .bundle_import_review
+                .as_ref()
+                .is_none_or(|review| review.request_id != request.review_request_id)
+            {
+                return if emit_request_rejected(
+                    events,
+                    request.request_id,
+                    None,
+                    WorkerFailure::MissingBundleImportReview,
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            if ready.bundle_import_review.as_ref().is_some_and(|review| {
+                review.review.base_library_revision != ready.library.snapshot().revision
+            }) {
+                return if emit_request_rejected(
+                    events,
+                    request.request_id,
+                    None,
+                    WorkerFailure::BundlePlan(BundlePlanError::InvalidPlan),
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            let reviewed = ready
+                .bundle_import_review
+                .take()
+                .expect("matching review checked above");
+            let planned = match reviewed
+                .prepared
+                .plan(ready.library.snapshot(), request.policy)
+            {
+                Ok(planned) => planned,
+                Err(error) => {
+                    return if emit_request_rejected(
+                        events,
+                        request.request_id,
+                        None,
+                        WorkerFailure::BundlePlan(error),
+                    ) {
+                        Phase::Ready(ready)
+                    } else {
+                        Phase::Stopped
+                    };
+                }
+            };
+            let context = RequestContext {
+                request_id: request.request_id,
+                generation: None,
+                result: ActionResult::ImportedBundle {
+                    folder_count: reviewed.review.folder_count,
+                    note_count: reviewed.review.note_count,
+                    attachment_count: reviewed.review.attachment_count,
+                    attachment_bytes: reviewed.review.attachment_bytes,
+                },
+                draft: None,
+            };
+            match commit_bundle_import(&mut ready, planned, reviewed.prepared, context, events) {
+                CommitDisposition::Ready => Phase::Ready(ready),
+                CommitDisposition::Pending(pending, context) => Phase::Pending(PendingState {
+                    ready,
+                    pending,
+                    context,
+                }),
+                CommitDisposition::Rejected => Phase::Ready(ready),
+                CommitDisposition::Stopped => Phase::Stopped,
+            }
+        }
+        (
+            Phase::Ready(mut ready),
+            WorkerCommand::DiscardBundleImportReview {
+                request_id,
+                review_request_id,
+            },
+        ) => {
+            if ready
+                .bundle_import_review
+                .as_ref()
+                .is_none_or(|review| review.request_id != review_request_id)
+            {
+                return if emit_request_rejected(
+                    events,
+                    request_id,
+                    None,
+                    WorkerFailure::MissingBundleImportReview,
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            ready.bundle_import_review = None;
+            if events
+                .send(WorkerEvent::BundleImportReviewDiscarded {
+                    request_id,
+                    review_request_id,
+                })
+                .is_ok()
+            {
+                Phase::Ready(ready)
+            } else {
+                Phase::Stopped
             }
         }
         (Phase::Ready(mut ready), WorkerCommand::Flush { request_id }) => {
@@ -1734,6 +2099,49 @@ enum TransactionCommit {
     },
 }
 
+fn commit_bundle_import(
+    ready: &mut ReadyState,
+    planned: rmac_notes_store::PlannedBundleImport,
+    prepared: PreparedBundleImport,
+    context: RequestContext,
+    events: &SyncSender<WorkerEvent>,
+) -> CommitDisposition {
+    match ready.library.commit_bundle_import(planned, prepared) {
+        Ok(commit) => {
+            let event = AcceptedEvent {
+                request_id: context.request_id,
+                generation: None,
+                result: context.result,
+                commit,
+                accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                draft_cleanup_pending: false,
+            };
+            if events.send(WorkerEvent::Accepted(event)).is_ok() {
+                CommitDisposition::Ready
+            } else {
+                CommitDisposition::Stopped
+            }
+        }
+        Err(CommitError::Mutation(error)) => {
+            reject_mutation(events, context.request_id, None, error)
+        }
+        Err(CommitError::Pending(pending)) => {
+            let event = PendingEvent {
+                request_id: context.request_id,
+                generation: None,
+                reason: pending.reason,
+                accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                draft_error: None,
+            };
+            if events.send(WorkerEvent::Pending(event)).is_ok() {
+                CommitDisposition::Pending(pending, context)
+            } else {
+                CommitDisposition::Stopped
+            }
+        }
+    }
+}
+
 fn commit_transaction(
     ready: &mut ReadyState,
     transaction: rmac_notes_store::LibraryTransaction,
@@ -2261,6 +2669,174 @@ mod tests {
         let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
         drop(worker);
         std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn worker_reviews_then_imports_an_exact_bundle_without_overwriting() {
+        let (source_container, source_paths) = roots("bundle-import-source");
+        std::fs::create_dir_all(&source_container).unwrap();
+        let image_path = source_container.join("private-source.png");
+        std::fs::write(&image_path, tiny_png()).unwrap();
+        let bundle_path = source_container.join("private-export.rmacnotes");
+        let source_worker = NotesWorker::start(source_paths).unwrap();
+        ready(&source_worker);
+        let (note_id, _) = create_note(&source_worker, 1);
+        let attached = apply_action(
+            &source_worker,
+            2,
+            LibraryAction::AttachImage {
+                note_id,
+                expected_revision: 1,
+                modified_unix_ms: 11,
+                selected_path: image_path,
+            },
+        );
+        let attached = match attached {
+            WorkerEvent::Accepted(event) => event.accepted,
+            event => panic!("expected accepted attachment, got {event:?}"),
+        };
+        source_worker
+            .try_send(WorkerCommand::Export(
+                ExportRequest::new(
+                    3,
+                    ExportScope::Note {
+                        note_id,
+                        expected_note_revision: attached.snapshot.notes[0].revision,
+                    },
+                    ExportFormat::RmacBundle,
+                    bundle_path.clone(),
+                )
+                .unwrap(),
+            ))
+            .unwrap();
+        assert!(matches!(
+            source_worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Exported(_)
+        ));
+        source_worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = source_worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(source_worker);
+
+        let (destination_container, destination_paths) = roots("bundle-import-destination");
+        let destination_worker = NotesWorker::start(destination_paths.clone()).unwrap();
+        ready(&destination_worker);
+        let review_request = BundleImportReviewRequest::new(1, bundle_path.clone()).unwrap();
+        let debug = format!("{review_request:?}");
+        assert!(!debug.contains("private-export"));
+        assert!(!debug.contains(source_container.to_string_lossy().as_ref()));
+        destination_worker
+            .try_send(WorkerCommand::ReviewBundleImport(review_request))
+            .unwrap();
+        let reviewed = match destination_worker
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+        {
+            WorkerEvent::BundleImportReviewed(event) => event,
+            event => panic!("expected bundle review, got {event:?}"),
+        };
+        assert_eq!(reviewed.review.note_count, 1);
+        assert_eq!(reviewed.review.attachment_count, 1);
+        assert!(!format!("{reviewed:?}").contains("Private title"));
+
+        destination_worker
+            .try_send(WorkerCommand::AcceptBundleImport(
+                BundleImportAcceptRequest::new(2, 999, BundleCollisionPolicy::KeepBoth).unwrap(),
+            ))
+            .unwrap();
+        assert!(matches!(
+            destination_worker
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 2,
+                failure: WorkerFailure::MissingBundleImportReview,
+                ..
+            })
+        ));
+
+        let (existing_note_id, _) = create_note(&destination_worker, 3);
+        destination_worker
+            .try_send(WorkerCommand::AcceptBundleImport(
+                BundleImportAcceptRequest::new(4, 1, BundleCollisionPolicy::KeepBoth).unwrap(),
+            ))
+            .unwrap();
+        assert!(matches!(
+            destination_worker
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 4,
+                failure: WorkerFailure::BundlePlan(BundlePlanError::InvalidPlan),
+                ..
+            })
+        ));
+
+        destination_worker
+            .try_send(WorkerCommand::ReviewBundleImport(
+                BundleImportReviewRequest::new(5, bundle_path).unwrap(),
+            ))
+            .unwrap();
+        let refreshed = match destination_worker
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+        {
+            WorkerEvent::BundleImportReviewed(event) => event,
+            event => panic!("expected refreshed bundle review, got {event:?}"),
+        };
+        assert_eq!(refreshed.review.identity_collisions, 1);
+        destination_worker
+            .try_send(WorkerCommand::AcceptBundleImport(
+                BundleImportAcceptRequest::new(6, 5, BundleCollisionPolicy::KeepBoth).unwrap(),
+            ))
+            .unwrap();
+        let accepted = match destination_worker
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+        {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted bundle import, got {event:?}"),
+        };
+        assert_eq!(
+            accepted.result,
+            ActionResult::ImportedBundle {
+                folder_count: 0,
+                note_count: 1,
+                attachment_count: 1,
+                attachment_bytes: tiny_png().len() as u64,
+            }
+        );
+        assert_eq!(accepted.accepted.snapshot.notes.len(), 2);
+        let imported_note = accepted
+            .accepted
+            .snapshot
+            .notes
+            .iter()
+            .find(|note| note.id != existing_note_id)
+            .unwrap();
+        assert_eq!(imported_note.title, "Private title");
+        assert_eq!(imported_note.body, "Initial body");
+        assert_ne!(imported_note.id, existing_note_id);
+        let attachment_id = accepted.accepted.snapshot.attachments[0].id;
+        assert_eq!(
+            std::fs::read(
+                destination_paths
+                    .data_root()
+                    .join("attachments")
+                    .join(format!("{:020}.bin", attachment_id.get()))
+            )
+            .unwrap(),
+            tiny_png()
+        );
+
+        destination_worker
+            .try_send(WorkerCommand::Shutdown)
+            .unwrap();
+        let _ = destination_worker
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap();
+        drop(destination_worker);
+        std::fs::remove_dir_all(source_container).unwrap();
+        std::fs::remove_dir_all(destination_container).unwrap();
     }
 
     #[test]

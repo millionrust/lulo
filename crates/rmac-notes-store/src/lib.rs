@@ -5,6 +5,7 @@
 //! changes durable state, and can decode records without lossy fallbacks or
 //! unbounded allocation.
 
+mod bundle_import;
 mod codec;
 mod export;
 mod mutation;
@@ -12,6 +13,10 @@ mod mutation;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+pub use bundle_import::{
+    BundleAttachmentImport, BundleCollisionPolicy, BundleImportPlan, BundleImportReview,
+    BundlePlanError, PlannedBundleImport,
+};
 pub use codec::{decode, encode, CodecError, MAX_LIBRARY_BYTES, SCHEMA_VERSION};
 pub use export::{render_export_markdown, ExportAttachment, ExportError, ExportPlan, ExportScope};
 pub use mutation::{

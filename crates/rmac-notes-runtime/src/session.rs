@@ -3,11 +3,13 @@ use std::fmt;
 use std::sync::Arc;
 
 use rmac_notes_storage::{PendingReason, RecoveryNotice, StartupError};
-use rmac_notes_store::{FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder};
+use rmac_notes_store::{
+    BundleImportReview, FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder,
+};
 
 use crate::{
-    ActionResult, DraftRestoredEvent, DraftReviewSummary, EditGeneration, MigrationReviewSummary,
-    RejectedEvent, WorkerEvent,
+    ActionResult, BundleImportReviewedEvent, DraftRestoredEvent, DraftReviewSummary,
+    EditGeneration, MigrationReviewSummary, RejectedEvent, WorkerEvent,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -27,6 +29,7 @@ pub enum SessionPhase {
         purge_cleanup_pending: bool,
         attachment_import_pending: bool,
         orphan_collection_pending: bool,
+        bundle_import_pending: bool,
     },
     Pending {
         request_id: u64,
@@ -45,6 +48,7 @@ pub struct NotesSession {
     last_rejection: Option<RejectedEvent>,
     draft_review: Option<DraftReviewSummary>,
     restored_draft: Option<DraftRestoredEvent>,
+    bundle_import_review: Option<BundleImportReviewedEvent>,
 }
 
 impl NotesSession {
@@ -57,6 +61,7 @@ impl NotesSession {
             last_rejection: None,
             draft_review: None,
             restored_draft: None,
+            bundle_import_review: None,
         }
     }
 
@@ -87,6 +92,10 @@ impl NotesSession {
 
     pub fn last_rejection(&self) -> Option<RejectedEvent> {
         self.last_rejection
+    }
+
+    pub fn bundle_import_review(&self) -> Option<BundleImportReview> {
+        self.bundle_import_review.map(|event| event.review)
     }
 
     pub fn draft_review(&self) -> Option<&DraftReviewSummary> {
@@ -238,6 +247,7 @@ impl NotesSession {
                         purge_cleanup_pending: event.commit.purge_cleanup_pending,
                         attachment_import_pending: event.commit.attachment_import_pending,
                         orphan_collection_pending: event.commit.orphan_collection_pending,
+                        bundle_import_pending: event.commit.bundle_import_pending,
                     }
                 } else {
                     SessionPhase::Ready
@@ -245,8 +255,26 @@ impl NotesSession {
                 self.adopt_snapshot(event.accepted.snapshot, preferred, reveal_preferred);
                 self.phase = phase;
                 self.last_rejection = None;
+                if matches!(event.result, ActionResult::ImportedBundle { .. }) {
+                    self.bundle_import_review = None;
+                }
             }
             WorkerEvent::Exported(_) => {
+                self.last_rejection = None;
+            }
+            WorkerEvent::BundleImportReviewed(event) => {
+                self.bundle_import_review = Some(event);
+                self.last_rejection = None;
+            }
+            WorkerEvent::BundleImportReviewDiscarded {
+                review_request_id, ..
+            } => {
+                if self
+                    .bundle_import_review
+                    .is_some_and(|review| review.request_id == review_request_id)
+                {
+                    self.bundle_import_review = None;
+                }
                 self.last_rejection = None;
             }
             WorkerEvent::Pending(event) => {
@@ -265,6 +293,7 @@ impl NotesSession {
                 self.selected_note = None;
                 self.draft_review = None;
                 self.restored_draft = None;
+                self.bundle_import_review = None;
             }
             WorkerEvent::Stopped { .. } => self.phase = SessionPhase::Stopped,
         }
@@ -354,6 +383,8 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                 | RecoveryNotice::AttachmentImportPending
                 | RecoveryNotice::CorruptOrphanCollectionPreserved
                 | RecoveryNotice::OrphanCollectionPending
+                | RecoveryNotice::CorruptBundleImportPreserved
+                | RecoveryNotice::BundleImportPending
         )
     });
     if maintenance_pending {
@@ -376,6 +407,13 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                     notice,
                     RecoveryNotice::CorruptOrphanCollectionPreserved
                         | RecoveryNotice::OrphanCollectionPending
+                )
+            }),
+            bundle_import_pending: notices.iter().any(|notice| {
+                matches!(
+                    notice,
+                    RecoveryNotice::CorruptBundleImportPreserved
+                        | RecoveryNotice::BundleImportPending
                 )
             }),
         }
@@ -413,6 +451,13 @@ impl fmt::Debug for NotesSession {
             .field(
                 "draft_review_count",
                 &self.draft_review.as_ref().map(|review| review.drafts.len()),
+            )
+            .field(
+                "bundle_import_review_request_id",
+                &self
+                    .bundle_import_review
+                    .as_ref()
+                    .map(|review| review.request_id),
             )
             .field("restored_draft", &self.restored_draft)
             .finish()
@@ -474,6 +519,7 @@ mod tests {
                 purge_cleanup_pending: false,
                 attachment_import_pending: false,
                 orphan_collection_pending: false,
+                bundle_import_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(created),
@@ -644,6 +690,7 @@ mod tests {
                 purge_cleanup_pending: false,
                 attachment_import_pending: false,
                 orphan_collection_pending: false,
+                bundle_import_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(snapshot),
@@ -683,6 +730,7 @@ mod tests {
                 purge_cleanup_pending: true,
                 attachment_import_pending: false,
                 orphan_collection_pending: false,
+                bundle_import_pending: false,
             }
         );
         assert!(session.snapshot().is_some());
@@ -698,6 +746,7 @@ mod tests {
                 purge_cleanup_pending: true,
                 attachment_import_pending: false,
                 orphan_collection_pending: false,
+                bundle_import_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(accepted),
@@ -709,6 +758,7 @@ mod tests {
                 purge_cleanup_pending: true,
                 attachment_import_pending: false,
                 orphan_collection_pending: false,
+                bundle_import_pending: false,
             }
         );
     }
@@ -727,6 +777,7 @@ mod tests {
                 purge_cleanup_pending: false,
                 attachment_import_pending: true,
                 orphan_collection_pending: false,
+                bundle_import_pending: false,
             }
         );
     }
@@ -745,6 +796,53 @@ mod tests {
                 purge_cleanup_pending: false,
                 attachment_import_pending: false,
                 orphan_collection_pending: true,
+                bundle_import_pending: false,
+            }
+        );
+    }
+
+    #[test]
+    fn bundle_import_review_and_maintenance_are_projected_without_private_source_state() {
+        let mut session = NotesSession::new();
+        let accepted = snapshot(SortOrder::Edited);
+        session.apply(WorkerEvent::Ready(snapshot_event(accepted.clone())));
+        let review = accepted
+            .review_bundle_import(&LibrarySnapshot::default(), 128, [7; 32])
+            .unwrap();
+
+        session.apply(WorkerEvent::BundleImportReviewed(
+            BundleImportReviewedEvent {
+                request_id: 41,
+                review,
+            },
+        ));
+
+        assert_eq!(session.bundle_import_review(), Some(review));
+        let debug = format!("{session:?}");
+        assert!(debug.contains("bundle_import_review_request_id: Some(41)"));
+        assert!(!debug.contains("7, 7, 7"));
+
+        session.apply(WorkerEvent::BundleImportReviewDiscarded {
+            request_id: 42,
+            review_request_id: 99,
+        });
+        assert_eq!(session.bundle_import_review(), Some(review));
+        session.apply(WorkerEvent::BundleImportReviewDiscarded {
+            request_id: 43,
+            review_request_id: 41,
+        });
+        assert_eq!(session.bundle_import_review(), None);
+
+        let mut event = snapshot_event(accepted);
+        event.notices = vec![RecoveryNotice::BundleImportPending];
+        session.apply(WorkerEvent::Ready(event));
+        assert_eq!(
+            session.phase(),
+            &SessionPhase::Maintenance {
+                purge_cleanup_pending: false,
+                attachment_import_pending: false,
+                orphan_collection_pending: false,
+                bundle_import_pending: true,
             }
         );
     }

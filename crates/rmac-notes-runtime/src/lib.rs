@@ -33,7 +33,8 @@ pub use search_worker::{
 };
 pub use session::{FolderSelection, NotesSession, SessionPhase};
 pub use worker::{
-    AcceptedEvent, ActionRequest, ActionResult, DraftRecoveryKind, DraftRestoredEvent,
+    AcceptedEvent, ActionRequest, ActionResult, BundleImportAcceptRequest,
+    BundleImportReviewRequest, BundleImportReviewedEvent, DraftRecoveryKind, DraftRestoredEvent,
     DraftReviewSummary, DraftSummary, ExportRequest, ExportedEvent, LibraryAction,
     MigrationReviewSummary, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PendingEvent,
     RejectedEvent, SnapshotEvent, WorkerCommand, WorkerEvent, WorkerFailure, WorkerSendError,

@@ -14,8 +14,8 @@ use sha2::{Digest as _, Sha256};
 
 use crate::{has_blocking_notice, managed_attachment_path, LoadedLibrary, NotesLibraryStore};
 
-const BUNDLE_MAGIC: &[u8; 8] = b"RMNBNDL\0";
-const BUNDLE_VERSION: u16 = 1;
+pub(crate) const BUNDLE_MAGIC: &[u8; 8] = b"RMNBNDL\0";
+pub(crate) const BUNDLE_VERSION: u16 = 1;
 pub const MAX_EXPORT_BUNDLE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -269,7 +269,7 @@ impl NotesLibraryStore<FileSystem> {
     }
 }
 
-fn write_bundle<W, F>(
+pub(crate) fn write_bundle<W, F>(
     snapshot: &LibrarySnapshot,
     plan: &ExportPlan,
     manifest: &[u8],

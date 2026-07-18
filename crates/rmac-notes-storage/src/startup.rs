@@ -185,6 +185,8 @@ pub fn inspect_notes_startup(paths: &NotesPaths) -> Result<NotesStartup, Startup
                 | RecoveryNotice::AttachmentImportPending
                 | RecoveryNotice::CorruptOrphanCollectionPreserved
                 | RecoveryNotice::OrphanCollectionPending
+                | RecoveryNotice::CorruptBundleImportPreserved
+                | RecoveryNotice::BundleImportPending
         )
     });
     if loaded.snapshot() != &LibrarySnapshot::default() || storage_needs_attention {
@@ -435,6 +437,29 @@ mod tests {
         assert!(ready
             .recovery_notices()
             .contains(&RecoveryNotice::CorruptJournalPreserved));
+        assert_eq!(ready.snapshot(), &LibrarySnapshot::default());
+        drop(ready);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn blocked_bundle_import_recovery_takes_priority_over_legacy_migration() {
+        let (container, paths) = roots("bundle-import-attention");
+        write_legacy(&paths);
+        std::fs::create_dir_all(paths.data_root()).unwrap();
+        std::fs::write(
+            paths.data_root().join("library.bundle-import.bin"),
+            b"malformed",
+        )
+        .unwrap();
+
+        let NotesStartup::Ready(ready) = inspect_notes_startup(&paths).unwrap() else {
+            panic!("blocked bundle recovery must not offer an uncommittable migration");
+        };
+
+        assert!(ready
+            .recovery_notices()
+            .contains(&RecoveryNotice::CorruptBundleImportPreserved));
         assert_eq!(ready.snapshot(), &LibrarySnapshot::default());
         drop(ready);
         std::fs::remove_dir_all(container).unwrap();

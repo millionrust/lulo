@@ -5084,8 +5084,11 @@ version = "0.1.0"
 name = "rmac-input"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
  "kdl 6.5.0",
+ "notify",
  "rmac-storage",
+ "serde_json",
 ]
 
 [[package]]

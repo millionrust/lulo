@@ -755,6 +755,7 @@ struct Settings {
     power_stream_error: Option<SharedString>,
     display_error: Option<SharedString>,
     input_error: Option<SharedString>,
+    input_stream_error: Option<SharedString>,
     theme_error: Option<SharedString>,
     shell_settings_error: Option<SharedString>,
     shell_settings_stream_error: Option<SharedString>,
@@ -907,6 +908,9 @@ struct Settings {
     // Keyboard, mouse, and trackpad
     input_loading: bool,
     input_busy: bool,
+    input_generation: u64,
+    input_refresh_pending: bool,
+    input_stream_refreshing: bool,
 }
 
 enum AudioChange {
@@ -1074,6 +1078,29 @@ fn compositor_event_affects_displays(event: &rmac_compositor::Event) -> bool {
         event,
         rmac_compositor::Event::Unknown { source_kind, .. } if source_kind == "ConfigLoaded"
     )
+}
+
+fn compositor_event_affects_input(event: &rmac_compositor::Event) -> bool {
+    compositor_input_config_failed(event) == Some(false)
+}
+
+fn compositor_input_config_failed(event: &rmac_compositor::Event) -> Option<bool> {
+    match event {
+        rmac_compositor::Event::Unknown {
+            source_kind,
+            payload,
+        } if source_kind == "ConfigLoaded" => payload["failed"].as_bool(),
+        _ => None,
+    }
+}
+
+fn input_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
 }
 
 /// Read-only system data that is slow enough to keep off the first-frame path.
@@ -1985,6 +2012,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result);
+                this.flush_input_stream_refresh(cx);
                 cx.notify();
             });
         })
@@ -2177,9 +2205,19 @@ impl Settings {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
                         let refresh_displays = compositor_event_affects_displays(&event);
+                        let refresh_input = compositor_event_affects_input(&event);
+                        let input_config_failed = compositor_input_config_failed(&event);
                         this.dock_compositor.apply(event);
                         if refresh_displays {
                             this.request_display_stream_refresh(cx);
+                        }
+                        if refresh_input {
+                            this.request_input_stream_refresh(cx);
+                        } else if input_config_failed == Some(true) {
+                            this.input_error = Some(
+                                "Could not update Input settings: niri rejected its latest configuration reload; the last known-good values remain visible."
+                                    .into(),
+                            );
                         }
                         cx.notify();
                     })
@@ -2190,6 +2228,58 @@ impl Settings {
             }
         })
         .detach();
+
+        #[cfg(target_os = "linux")]
+        {
+            let (input_events, input_event_rx) = async_channel::bounded(2);
+            cx.background_executor()
+                .spawn(async move {
+                    loop {
+                        let result = rmac_input::watch(input_events.clone()).await;
+                        if input_events.is_closed() {
+                            return;
+                        }
+                        if let Err(error) = result {
+                            if input_events
+                                .send(rmac_input::WatchEvent::WatchError(error.to_string()))
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        async_io::Timer::after(Duration::from_secs(1)).await;
+                    }
+                })
+                .detach();
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                while let Ok(event) = input_event_rx.recv().await {
+                    if this
+                        .update(cx, |this: &mut Settings, cx| {
+                            match event {
+                                rmac_input::WatchEvent::Changed => {
+                                    this.input_stream_error = None;
+                                    this.request_input_stream_refresh(cx);
+                                }
+                                rmac_input::WatchEvent::WatchError(error) => {
+                                    this.input_stream_error = Some(
+                                        format!(
+                                            "Live input-device updates are unavailable: {error}"
+                                        )
+                                        .into(),
+                                    );
+                                }
+                            }
+                            cx.notify();
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = blocking::unblock(rmac_shortcuts::backend_status).await;
@@ -2290,6 +2380,7 @@ impl Settings {
             power_stream_error: None,
             display_error: None,
             input_error: None,
+            input_stream_error: None,
             theme_error: None,
             shell_settings_error: None,
             shell_settings_stream_error: None,
@@ -2426,6 +2517,9 @@ impl Settings {
 
             input_loading: true,
             input_busy: false,
+            input_generation: 0,
+            input_refresh_pending: false,
+            input_stream_refreshing: false,
         }
     }
 
@@ -6250,9 +6344,12 @@ impl Settings {
     }
 
     fn refresh_input(&mut self, cx: &mut Context<Self>) {
-        if self.input_loading || self.input_busy {
+        if self.input_loading || self.input_busy || self.input_stream_refreshing {
+            self.input_refresh_pending = true;
             return;
         }
+        self.input_refresh_pending = false;
+        self.input_generation = self.input_generation.wrapping_add(1);
         self.input_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -6262,10 +6359,54 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result);
+                this.flush_input_stream_refresh(cx);
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    fn request_input_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.input_loading || self.input_busy || self.input_stream_refreshing {
+            self.input_refresh_pending = true;
+            return;
+        }
+        self.input_refresh_pending = false;
+        self.input_stream_refreshing = true;
+        self.input_generation = self.input_generation.wrapping_add(1);
+        let generation = self.input_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_input::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.input_stream_refreshing = false;
+                if input_stream_snapshot_is_current(
+                    generation,
+                    this.input_generation,
+                    this.input_loading,
+                    this.input_busy,
+                ) {
+                    this.finish_input_update(result);
+                    this.flush_input_stream_refresh(cx);
+                    cx.notify();
+                } else {
+                    this.input_refresh_pending = true;
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn flush_input_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.input_refresh_pending
+            && !self.input_loading
+            && !self.input_busy
+            && !self.input_stream_refreshing
+        {
+            self.request_input_stream_refresh(cx);
+        }
     }
 
     fn refresh_gtk_text(&mut self, cx: &mut Context<Self>) {
@@ -6434,6 +6575,7 @@ impl Settings {
             InputChange::TouchpadDwt(value) => settings.touchpad.disable_while_typing = value,
             InputChange::TouchpadDragLock(value) => settings.touchpad.drag_lock = value,
         }
+        self.input_generation = self.input_generation.wrapping_add(1);
         self.input_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -6443,6 +6585,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result);
+                this.flush_input_stream_refresh(cx);
                 cx.notify();
             });
         })
@@ -10570,6 +10713,7 @@ impl Settings {
                 ),
             ]));
             let mouse = &self.input.settings.mouse;
+            let mouse_writable = self.input.can_configure && mouse.enabled && !self.input_busy;
             let selected_pointer_preset = MOUSE_PRECISION_PRESETS.iter().position(|(_, change)| {
                 matches!(
                     change,
@@ -10584,7 +10728,7 @@ impl Settings {
                     "Mouse precision",
                     &MOUSE_PRECISION_PRESETS,
                     selected_pointer_preset,
-                    self.input.can_configure && !self.input_busy,
+                    mouse_writable,
                 ),
                 input_switch_row(
                     cx.entity(),
@@ -10593,7 +10737,7 @@ impl Settings {
                     "Middle-button emulation",
                     Some("Press the left and right mouse buttons together"),
                     mouse.middle_emulation,
-                    self.input.can_configure && !self.input_busy,
+                    mouse_writable,
                     InputChange::MouseMiddleEmulation,
                 ),
                 value_row(
@@ -12520,10 +12664,60 @@ impl Settings {
         None
     }
 
+    fn input_devices_card(&self, kinds: &[rmac_input::DeviceKind], empty: &'static str) -> Div {
+        let rows = self
+            .input
+            .devices
+            .iter()
+            .filter(|device| kinds.contains(&device.kind))
+            .map(|device| {
+                value_row(
+                    match device.kind {
+                        rmac_input::DeviceKind::Keyboard => "icons/keyboard.svg",
+                        rmac_input::DeviceKind::Touchpad => "icons/touchpad.svg",
+                        _ => "icons/mouse.svg",
+                    },
+                    secondary(),
+                    device.name.clone().into(),
+                    device.kind.label().into(),
+                )
+            })
+            .collect::<Vec<_>>();
+        if rows.is_empty() {
+            note_card(empty)
+        } else {
+            card(rows)
+        }
+    }
+
+    fn has_input_devices(&self, kinds: &[rmac_input::DeviceKind]) -> bool {
+        self.input
+            .devices
+            .iter()
+            .any(|device| kinds.contains(&device.kind))
+    }
+
     fn render_keyboard(&self, cx: &Context<Self>) -> Div {
         let mut cards = vec![self.input_header(cx)];
         if let Some(note) = self.input_unavailable_card() {
             cards.push(note);
+        }
+        cards.push(section_header("Connected Keyboards"));
+        cards.push(self.input_devices_card(
+            &[rmac_input::DeviceKind::Keyboard],
+            "No connected keyboard was reported by the Linux input subsystem.",
+        ));
+        let other_kinds = [
+            rmac_input::DeviceKind::Tablet,
+            rmac_input::DeviceKind::Touchscreen,
+            rmac_input::DeviceKind::Other,
+        ];
+        if self.has_input_devices(&other_kinds) {
+            cards.push(section_header("Other Input Devices"));
+            cards.push(self.input_devices_card(&other_kinds, ""));
+            cards.push(note_card(
+                "Tablets, touchscreens, and unclassified kernel input devices are listed for live inventory; this page does not apply keyboard settings to them.",
+            ));
         }
         let settings = &self.input.settings.keyboard;
         let selected_delay = KEYBOARD_DELAYS.iter().position(|(_, change)| {
@@ -12562,8 +12756,18 @@ impl Settings {
             ),
         ]));
         cards.push(note_card(
-            "Changes are validated, saved to the niri configuration, and applied by niri's live reload.",
+            "Changes are resolved across the positional include graph, candidate-validated, saved to an isolated final rmac include, and applied by niri's live reload.",
         ));
+        if self.input.included_files > 0 {
+            cards.push(note_card(format!(
+                "Effective input values include {} recursively loaded niri configuration file(s).",
+                self.input.included_files
+            )));
+        }
+        cards.push(note_card(self.input.device_overrides.detail()));
+        if let Some(detail) = &self.input.device_detail {
+            cards.push(note_card(detail.clone()));
+        }
         self.pane(cards)
     }
 
@@ -12573,6 +12777,28 @@ impl Settings {
             cards.push(note);
         }
         let settings = &self.input.settings.mouse;
+        let writable = self.input.can_configure && settings.enabled && !self.input_busy;
+        cards.push(section_header("Connected Mice"));
+        cards.push(self.input_devices_card(
+            &[rmac_input::DeviceKind::Mouse],
+            "No connected mouse was reported by the Linux input subsystem.",
+        ));
+        let other_pointer_kinds = [
+            rmac_input::DeviceKind::Trackpoint,
+            rmac_input::DeviceKind::Trackball,
+        ];
+        if self.has_input_devices(&other_pointer_kinds) {
+            cards.push(section_header("Other Pointing Devices"));
+            cards.push(self.input_devices_card(&other_pointer_kinds, ""));
+            cards.push(note_card(
+                "Pointing sticks and trackballs use separate niri device-type sections. They are shown for live inventory and are not changed by the Mouse controls below.",
+            ));
+        }
+        if !settings.enabled {
+            cards.push(note_card(
+                "The niri mouse section is explicitly off. Its effective settings are preserved but cannot affect devices until that type is enabled in the configuration.",
+            ));
+        }
         cards.push(card(vec![
             input_segment_row(
                 cx.entity(),
@@ -12580,7 +12806,7 @@ impl Settings {
                 "Tracking speed",
                 &MOUSE_SPEEDS,
                 Some(speed_index(settings.accel_speed)),
-                self.input.can_configure && !self.input_busy,
+                writable,
             ),
             input_segment_row(
                 cx.entity(),
@@ -12590,7 +12816,7 @@ impl Settings {
                 Some(usize::from(
                     settings.accel_profile == rmac_input::AccelProfile::Flat,
                 )),
-                self.input.can_configure && !self.input_busy,
+                writable,
             ),
             input_switch_row(
                 cx.entity(),
@@ -12599,7 +12825,7 @@ impl Settings {
                 "Natural scrolling",
                 Some("Move content in the direction your finger travels"),
                 settings.natural_scroll,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::MouseNaturalScroll,
             ),
             input_switch_row(
@@ -12609,7 +12835,7 @@ impl Settings {
                 "Primary button on right",
                 Some("Swap the left and right mouse buttons"),
                 settings.left_handed,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::MouseLeftHanded,
             ),
             input_switch_row(
@@ -12619,10 +12845,14 @@ impl Settings {
                 "Middle-button emulation",
                 Some("Press the left and right buttons together for middle click"),
                 settings.middle_emulation,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::MouseMiddleEmulation,
             ),
         ]));
+        cards.push(note_card(self.input.device_overrides.detail()));
+        if let Some(detail) = &self.input.device_detail {
+            cards.push(note_card(detail.clone()));
+        }
         self.pane(cards)
     }
 
@@ -12632,6 +12862,17 @@ impl Settings {
             cards.push(note);
         }
         let settings = &self.input.settings.touchpad;
+        let writable = self.input.can_configure && settings.pointer.enabled && !self.input_busy;
+        cards.push(section_header("Connected Trackpads"));
+        cards.push(self.input_devices_card(
+            &[rmac_input::DeviceKind::Touchpad],
+            "No connected trackpad was reported by the Linux input subsystem.",
+        ));
+        if !settings.pointer.enabled {
+            cards.push(note_card(
+                "The niri touchpad section is explicitly off. Its effective settings are preserved but cannot affect devices until that type is enabled in the configuration.",
+            ));
+        }
         cards.push(card(vec![
             input_segment_row(
                 cx.entity(),
@@ -12639,7 +12880,7 @@ impl Settings {
                 "Tracking speed",
                 &TOUCHPAD_SPEEDS,
                 Some(speed_index(settings.pointer.accel_speed)),
-                self.input.can_configure && !self.input_busy,
+                writable,
             ),
             input_segment_row(
                 cx.entity(),
@@ -12649,7 +12890,7 @@ impl Settings {
                 Some(usize::from(
                     settings.pointer.accel_profile == rmac_input::AccelProfile::Flat,
                 )),
-                self.input.can_configure && !self.input_busy,
+                writable,
             ),
             input_switch_row(
                 cx.entity(),
@@ -12658,7 +12899,7 @@ impl Settings {
                 "Tap to click",
                 None,
                 settings.tap_to_click,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::TouchpadTap,
             ),
             input_switch_row(
@@ -12668,7 +12909,7 @@ impl Settings {
                 "Natural scrolling",
                 Some("Move content in the direction your fingers travel"),
                 settings.pointer.natural_scroll,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::TouchpadNaturalScroll,
             ),
             input_switch_row(
@@ -12678,7 +12919,7 @@ impl Settings {
                 "Ignore while typing",
                 Some("Prevent accidental pointer movement while typing"),
                 settings.disable_while_typing,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::TouchpadDwt,
             ),
             input_switch_row(
@@ -12688,7 +12929,7 @@ impl Settings {
                 "Drag lock",
                 Some("Keep dragging briefly after lifting your finger"),
                 settings.drag_lock,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::TouchpadDragLock,
             ),
             input_switch_row(
@@ -12698,7 +12939,7 @@ impl Settings {
                 "Primary click on right",
                 None,
                 settings.pointer.left_handed,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::TouchpadLeftHanded,
             ),
             input_switch_row(
@@ -12708,10 +12949,14 @@ impl Settings {
                 "Middle-click emulation",
                 Some("Press the left and right click areas together"),
                 settings.pointer.middle_emulation,
-                self.input.can_configure && !self.input_busy,
+                writable,
                 InputChange::TouchpadMiddleEmulation,
             ),
         ]));
+        cards.push(note_card(self.input.device_overrides.detail()));
+        if let Some(detail) = &self.input.device_detail {
+            cards.push(note_card(detail.clone()));
+        }
         self.pane(cards)
     }
 
@@ -15010,6 +15255,7 @@ impl Render for Settings {
             .or_else(|| self.power_stream_error.clone())
             .or_else(|| self.display_error.clone())
             .or_else(|| self.input_error.clone())
+            .or_else(|| self.input_stream_error.clone())
             .or_else(|| self.theme_error.clone())
             .or_else(|| self.shell_settings_error.clone())
             .or_else(|| self.shell_settings_stream_error.clone())
@@ -15157,6 +15403,7 @@ impl Render for Settings {
                             this.power_stream_error = None;
                             this.display_error = None;
                             this.input_error = None;
+                            this.input_stream_error = None;
                             this.theme_error = None;
                             this.shell_settings_error = None;
                             this.shell_settings_stream_error = None;
@@ -17110,12 +17357,14 @@ mod tests {
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, charge_threshold_description,
         composite_wallpaper_pixel, compositor_event_affects_displays,
-        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
-        power_stream_snapshot_is_current, relative_display_position, render_wallpaper_preview,
-        sample_battery_history, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
-        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
-        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
+        compositor_event_affects_input, compositor_input_config_failed,
+        input_stream_snapshot_is_current, network_stream_snapshot_is_current,
+        notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
+        relative_display_position, render_wallpaper_preview, sample_battery_history,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
+        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
+        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+        WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -17173,6 +17422,40 @@ mod tests {
                 windows: Vec::new(),
             }
         ));
+    }
+
+    #[test]
+    fn input_refreshes_only_after_a_loaded_niri_configuration() {
+        let mut loaded = rmac_compositor::Event::Unknown {
+            source_kind: "ConfigLoaded".into(),
+            payload: Default::default(),
+        };
+        let rmac_compositor::Event::Unknown { payload, .. } = &mut loaded else {
+            unreachable!()
+        };
+        payload["failed"] = false.into();
+        assert!(compositor_event_affects_input(&loaded));
+        assert_eq!(compositor_input_config_failed(&loaded), Some(false));
+
+        let rmac_compositor::Event::Unknown { payload, .. } = &mut loaded else {
+            unreachable!()
+        };
+        payload["failed"] = true.into();
+        assert!(!compositor_event_affects_input(&loaded));
+        assert_eq!(compositor_input_config_failed(&loaded), Some(true));
+        assert!(!compositor_event_affects_input(
+            &rmac_compositor::Event::OutputsReplaced {
+                outputs: Vec::new(),
+            }
+        ));
+    }
+
+    #[test]
+    fn input_stream_snapshots_cannot_cross_mutation_generations() {
+        assert!(input_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!input_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!input_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!input_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

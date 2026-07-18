@@ -41,9 +41,12 @@ evidence remains gated by the reference-PC framework work.
   clock/timezone/NTP state plus validated polkit-backed timezone and automatic
   time changes with live service refresh; installation, cleanup actions, manual
   clock editing, and Linux runtime evidence keep overall parity partial.
-- **Notes** ✅ — create/edit/save/search, folders, tags, markdown preview,
-  image attachments, a word/character-count footer, and **pinned notes**
-  (Pinned/Notes sections, persisted).
+- **Notes** 🟡 — the prototype provides create/edit/save/search, folders, tags,
+  Markdown preview, image attachments, word/character counts, and persisted
+  pins/sorting. G2 hardening remains: versioned transactional identity/store,
+  migration, recovery/conflicts, safe attachment lifecycle, import/export,
+  cancellable indexing, app trash/restore, and Linux accessibility/runtime
+  evidence. The authoritative destination is `crates/notes/SPEC.md`.
 - **Activity Monitor** ✅ — live table, process selection + Quit/Force Quit,
   search, five tabbed panes with sparklines, sortable columns, a **column
   chooser** (five extra real columns, persisted), **per-core CPU bars**, a

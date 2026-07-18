@@ -5,6 +5,11 @@ use rmac_locale::{Error, ErrorKind, Service, Snapshot};
 #[cfg(target_os = "linux")]
 use rmac_locale::FormatPreview;
 
+#[cfg(target_os = "linux")]
+const MAX_LOCALE_INVENTORY_BYTES: usize = 1024 * 1024;
+#[cfg(target_os = "linux")]
+const MAX_XKB_INVENTORY_BYTES: usize = 256 * 1024;
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemService;
 
@@ -15,19 +20,16 @@ impl Service for SystemService {
 
     fn set_locale(&self, assignments: &[String]) -> Result<Snapshot, Error> {
         let current = self.snapshot()?;
-        let normalized = rmac_locale::normalize_assignments(assignments.to_vec())?;
-        if let Some(language) = normalized
-            .iter()
-            .find(|assignment| assignment.key == "LANG")
-        {
-            current.validate_installed(&language.value)?;
+        let desired = rmac_locale::normalize_assignments(assignments.to_vec())?;
+        for assignment in &desired {
+            let unchanged = current.locale.iter().any(|candidate| {
+                candidate.key == assignment.key && candidate.value == assignment.value
+            });
+            if assignment.key != "LANGUAGE" && !unchanged {
+                current.validate_installed(&assignment.value)?;
+            }
         }
-        let encoded = normalized
-            .iter()
-            .map(rmac_locale::Assignment::encoded)
-            .collect::<Vec<_>>();
-        system_set_locale(&encoded)?;
-        self.snapshot()
+        apply_complete_locale(current, &desired)
     }
 
     fn set_x11_keyboard(&self, keyboard: &rmac_locale::X11Keyboard) -> Result<Snapshot, Error> {
@@ -40,8 +42,18 @@ impl Service for SystemService {
                 "this control preserves the current XKB model",
             ));
         }
+        if current.x11_keyboard() == validated {
+            return Ok(current);
+        }
         system_set_x11_keyboard(&validated)?;
-        self.snapshot()
+        let after = self.snapshot()?;
+        if after.x11_keyboard() != validated {
+            return Err(Error::new(
+                ErrorKind::Mismatch,
+                "localed did not confirm the requested keyboard layout",
+            ));
+        }
+        Ok(after)
     }
 }
 
@@ -55,6 +67,95 @@ pub fn set_locale(assignments: &[String]) -> Result<Snapshot, Error> {
 
 pub fn set_x11_keyboard(keyboard: &rmac_locale::X11Keyboard) -> Result<Snapshot, Error> {
     SystemService.set_x11_keyboard(keyboard)
+}
+
+pub fn restore_locale(rollback: &rmac_locale::LocaleRollback) -> Result<Snapshot, Error> {
+    let current = SystemService.snapshot()?;
+    if !rmac_locale::locale_assignments_match(&current.locale, rollback.expected()) {
+        return Err(Error::new(
+            ErrorKind::Conflict,
+            "the system locale changed after rmac applied it; refresh before reverting",
+        ));
+    }
+    apply_complete_locale(current, rollback.previous())
+}
+
+pub fn restore_x11_keyboard(rollback: &rmac_locale::KeyboardRollback) -> Result<Snapshot, Error> {
+    let current = SystemService.snapshot()?;
+    if current.x11_keyboard() != *rollback.expected() {
+        return Err(Error::new(
+            ErrorKind::Conflict,
+            "the keyboard layout changed after rmac applied it; refresh before reverting",
+        ));
+    }
+    let previous = rollback.previous();
+    let validated =
+        current.preview_x11_keyboard(&previous.layout, &previous.variant, &previous.options)?;
+    if validated.model != previous.model {
+        return Err(Error::new(
+            ErrorKind::Conflict,
+            "the authoritative keyboard model changed; the previous layout was not restored",
+        ));
+    }
+    system_set_x11_keyboard(previous)?;
+    let after = SystemService.snapshot()?;
+    if after.x11_keyboard() != *previous {
+        return Err(Error::new(
+            ErrorKind::Mismatch,
+            "localed did not confirm the previous keyboard layout",
+        ));
+    }
+    Ok(after)
+}
+
+fn apply_complete_locale(
+    before: Snapshot,
+    desired: &[rmac_locale::Assignment],
+) -> Result<Snapshot, Error> {
+    if rmac_locale::locale_assignments_match(&before.locale, desired) {
+        return Ok(before);
+    }
+    let request = rmac_locale::complete_locale_request(&before.locale, desired);
+    system_set_locale(&request)?;
+    let mut after = SystemService.snapshot()?;
+
+    // When LANG changes, localed may synthesize LANGUAGE from its fallback
+    // table. If that is the sole difference from the desired complete state,
+    // confirm the intermediate snapshot is still current, then remove only
+    // LANGUAGE in a second request without LANG so fallback is not re-triggered.
+    let unexpected = after
+        .locale
+        .iter()
+        .filter(|assignment| {
+            !desired
+                .iter()
+                .any(|candidate| candidate.key == assignment.key)
+        })
+        .collect::<Vec<_>>();
+    let requested_values_match = desired.iter().all(|assignment| {
+        after
+            .locale
+            .iter()
+            .any(|candidate| candidate.key == assignment.key && candidate.value == assignment.value)
+    });
+    if requested_values_match && unexpected.len() == 1 && unexpected[0].key == "LANGUAGE" {
+        let confirmed = SystemService.snapshot()?;
+        if !rmac_locale::locale_assignments_match(&confirmed.locale, &after.locale) {
+            return Err(Error::new(
+                ErrorKind::Conflict,
+                "the system locale changed while localed was applying the request",
+            ));
+        }
+        system_set_locale(&["LANGUAGE=".into()])?;
+        after = SystemService.snapshot()?;
+    }
+    if !rmac_locale::locale_assignments_match(&after.locale, desired) {
+        return Err(Error::new(
+            ErrorKind::Mismatch,
+            "localed did not confirm the requested language and region state",
+        ));
+    }
+    Ok(after)
 }
 
 #[cfg(target_os = "linux")]
@@ -96,12 +197,16 @@ async fn watch_once(sender: &async_channel::Sender<rmac_locale::WatchEvent>) -> 
     })?;
     let properties_rule = MatchRule::builder()
         .msg_type(Type::Signal)
+        .sender("org.freedesktop.locale1")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid localed signal sender"))?
         .path("/org/freedesktop/locale1")
         .map_err(|_| Error::new(ErrorKind::Protocol, "invalid localed event path"))?
         .interface("org.freedesktop.DBus.Properties")
         .map_err(|_| Error::new(ErrorKind::Protocol, "invalid properties interface"))?
         .member("PropertiesChanged")
         .map_err(|_| Error::new(ErrorKind::Protocol, "invalid properties signal"))?
+        .add_arg("org.freedesktop.locale1")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid localed property filter"))?
         .build();
     let owner_rule = MatchRule::builder()
         .msg_type(Type::Signal)
@@ -376,7 +481,6 @@ fn system_snapshot() -> Result<Snapshot, Error> {
 
 #[cfg(target_os = "linux")]
 fn system_set_locale(assignments: &[String]) -> Result<(), Error> {
-    rmac_locale::normalize_assignments(assignments.to_vec())?;
     let connection = system_connection()?;
     let proxy = locale_proxy(&connection)?;
     proxy
@@ -422,18 +526,10 @@ fn system_set_locale(_assignments: &[String]) -> Result<(), Error> {
 
 #[cfg(target_os = "linux")]
 fn installed_locales() -> Result<(Vec<String>, bool), Error> {
-    let output = std::process::Command::new("locale")
-        .arg("-a")
-        .output()
-        .map_err(|_| Error::new(ErrorKind::Unavailable, "could not list installed locales"))?;
-    if !output.status.success() {
-        return Err(Error::new(
-            ErrorKind::Unavailable,
-            "could not list installed locales",
-        ));
-    }
-    let output = String::from_utf8(output.stdout)
-        .map_err(|_| Error::new(ErrorKind::Protocol, "installed locale list is not UTF-8"))?;
+    let mut command = std::process::Command::new("locale");
+    command.arg("-a");
+    let output =
+        bounded_command_output(command, MAX_LOCALE_INVENTORY_BYTES, "installed locale list")?;
     Ok(rmac_locale::normalize_installed_locales(
         output.lines().map(str::to_string).collect(),
     ))
@@ -441,23 +537,64 @@ fn installed_locales() -> Result<(Vec<String>, bool), Error> {
 
 #[cfg(target_os = "linux")]
 fn installed_x11_layouts() -> Result<(Vec<String>, bool), Error> {
-    let output = std::process::Command::new("localectl")
+    let mut command = std::process::Command::new("localectl");
+    command
         .arg("--no-pager")
         .arg("--no-legend")
-        .arg("list-x11-keymap-layouts")
-        .output()
-        .map_err(|_| Error::new(ErrorKind::Unavailable, "could not list XKB layouts"))?;
-    if !output.status.success() {
-        return Err(Error::new(
-            ErrorKind::Unavailable,
-            "could not list XKB layouts",
-        ));
-    }
-    let output = String::from_utf8(output.stdout)
-        .map_err(|_| Error::new(ErrorKind::Protocol, "XKB layout list is not UTF-8"))?;
+        .arg("list-x11-keymap-layouts");
+    let output = bounded_command_output(
+        command,
+        MAX_XKB_INVENTORY_BYTES,
+        "installed XKB layout list",
+    )?;
     Ok(rmac_locale::normalize_installed_x11_layouts(
         output.lines().map(str::to_owned).collect(),
     ))
+}
+
+#[cfg(target_os = "linux")]
+fn bounded_command_output(
+    mut command: std::process::Command,
+    max_bytes: usize,
+    label: &str,
+) -> Result<String, Error> {
+    use std::io::Read as _;
+
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let mut child = command
+        .spawn()
+        .map_err(|_| Error::new(ErrorKind::Unavailable, format!("could not read {label}")))?;
+    let mut output = Vec::with_capacity(max_bytes.min(64 * 1024));
+    let read = child
+        .stdout
+        .take()
+        .ok_or_else(|| Error::new(ErrorKind::Protocol, format!("could not capture {label}")))?
+        .take(max_bytes.saturating_add(1) as u64)
+        .read_to_end(&mut output);
+    if read.is_err() || output.len() > max_bytes {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(Error::new(
+            ErrorKind::Protocol,
+            format!("{label} exceeded its safe output bound"),
+        ));
+    }
+    let status = child.wait().map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            format!("could not finish reading {label}"),
+        )
+    })?;
+    if !status.success() {
+        return Err(Error::new(
+            ErrorKind::Unavailable,
+            format!("could not read {label}"),
+        ));
+    }
+    String::from_utf8(output)
+        .map_err(|_| Error::new(ErrorKind::Protocol, format!("{label} is not UTF-8")))
 }
 
 #[cfg(target_os = "linux")]
@@ -514,7 +651,10 @@ fn mutation_error(error: zbus::Error) -> Error {
             "authorization was denied or cancelled",
         )
     } else {
-        Error::new(ErrorKind::Mutation, detail)
+        Error::new(
+            ErrorKind::Mutation,
+            "localed rejected the requested language or keyboard change",
+        )
     }
 }
 

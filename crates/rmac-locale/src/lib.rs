@@ -6,6 +6,7 @@ pub const MAX_INSTALLED_LOCALES: usize = 4096;
 pub const MAX_INSTALLED_X11_LAYOUTS: usize = 512;
 const MAX_VALUE_BYTES: usize = 128;
 const MAX_X11_LAYOUTS: usize = 4;
+const MAX_ERROR_BYTES: usize = 512;
 
 const LOCALE_KEYS: [&str; 14] = [
     "LANG",
@@ -22,6 +23,17 @@ const LOCALE_KEYS: [&str; 14] = [
     "LC_MEASUREMENT",
     "LC_IDENTIFICATION",
     "LANGUAGE",
+];
+
+const REGION_KEYS: [&str; 8] = [
+    "LC_NUMERIC",
+    "LC_TIME",
+    "LC_MONETARY",
+    "LC_PAPER",
+    "LC_NAME",
+    "LC_ADDRESS",
+    "LC_TELEPHONE",
+    "LC_MEASUREMENT",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,6 +55,12 @@ impl Assignment {
             || value.is_empty()
             || value.len() > MAX_VALUE_BYTES
             || value.chars().any(char::is_control)
+            || (key == "LANGUAGE"
+                && value.chars().any(|character| {
+                    !(character.is_ascii_alphanumeric()
+                        || matches!(character, '_' | '-' | '.' | '@' | ':'))
+                }))
+            || (key != "LANGUAGE" && validate_locale_syntax(value).is_err())
         {
             return None;
         }
@@ -119,7 +137,42 @@ impl Snapshot {
                 },
             );
         }
-        Ok(locale)
+        Ok(canonicalize_assignments(locale))
+    }
+
+    pub fn preview_region(&self, region: &str) -> Result<Vec<Assignment>, Error> {
+        self.validate_installed(region)?;
+        let mut locale = self.locale.clone();
+        for key in REGION_KEYS {
+            if let Some(current) = locale.iter_mut().find(|assignment| assignment.key == key) {
+                current.value = region.into();
+            } else {
+                locale.push(Assignment {
+                    key: key.into(),
+                    value: region.into(),
+                });
+            }
+        }
+        Ok(canonicalize_assignments(locale))
+    }
+
+    pub fn effective_format_locale(&self, key: &str) -> &str {
+        self.locale
+            .iter()
+            .find(|assignment| assignment.key == key)
+            .map(|assignment| assignment.value.as_str())
+            .unwrap_or_else(|| self.language())
+    }
+
+    pub fn region_locale(&self) -> &str {
+        self.effective_format_locale("LC_TIME")
+    }
+
+    pub fn formats_are_mixed(&self) -> bool {
+        let first = self.effective_format_locale(REGION_KEYS[0]);
+        REGION_KEYS[1..]
+            .iter()
+            .any(|key| self.effective_format_locale(key) != first)
     }
 
     pub fn validate_installed(&self, locale: &str) -> Result<(), Error> {
@@ -181,7 +234,9 @@ pub enum ErrorKind {
     InvalidKeyboard,
     Unavailable,
     Authorization,
+    Conflict,
     Mutation,
+    Mismatch,
     Protocol,
 }
 
@@ -193,9 +248,10 @@ pub struct Error {
 
 impl Error {
     pub fn new(kind: ErrorKind, detail: impl Into<String>) -> Self {
+        let detail = detail.into();
         Self {
             kind,
-            detail: detail.into(),
+            detail: bounded_text(&detail),
         }
     }
 
@@ -218,6 +274,52 @@ pub trait Service {
     fn set_x11_keyboard(&self, keyboard: &X11Keyboard) -> Result<Snapshot, Error>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocaleRollback {
+    previous: Vec<Assignment>,
+    expected: Vec<Assignment>,
+}
+
+impl LocaleRollback {
+    pub fn new(previous: &Snapshot, expected: &Snapshot) -> Self {
+        Self {
+            previous: previous.locale.clone(),
+            expected: expected.locale.clone(),
+        }
+    }
+
+    pub fn previous(&self) -> &[Assignment] {
+        &self.previous
+    }
+
+    pub fn expected(&self) -> &[Assignment] {
+        &self.expected
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyboardRollback {
+    previous: X11Keyboard,
+    expected: X11Keyboard,
+}
+
+impl KeyboardRollback {
+    pub fn new(previous: &Snapshot, expected: &Snapshot) -> Self {
+        Self {
+            previous: previous.x11_keyboard(),
+            expected: expected.x11_keyboard(),
+        }
+    }
+
+    pub fn previous(&self) -> &X11Keyboard {
+        &self.previous
+    }
+
+    pub fn expected(&self) -> &X11Keyboard {
+        &self.expected
+    }
+}
+
 pub fn normalize_assignments(values: Vec<String>) -> Result<Vec<Assignment>, Error> {
     let mut assignments: Vec<Assignment> = Vec::new();
     for value in values {
@@ -236,7 +338,51 @@ pub fn normalize_assignments(values: Vec<String>) -> Result<Vec<Assignment>, Err
             assignments.push(assignment);
         }
     }
-    Ok(assignments)
+    Ok(canonicalize_assignments(assignments))
+}
+
+pub fn canonicalize_assignments(mut assignments: Vec<Assignment>) -> Vec<Assignment> {
+    let language = assignments
+        .iter()
+        .find(|assignment| assignment.key == "LANG")
+        .map(|assignment| assignment.value.clone());
+    assignments.retain(|assignment| {
+        assignment.key == "LANG"
+            || language
+                .as_ref()
+                .is_none_or(|language| assignment.value != *language)
+    });
+    assignments
+}
+
+pub fn locale_assignments_match(left: &[Assignment], right: &[Assignment]) -> bool {
+    fn sorted(assignments: &[Assignment]) -> Vec<(&str, &str)> {
+        let mut values = assignments
+            .iter()
+            .map(|assignment| (assignment.key.as_str(), assignment.value.as_str()))
+            .collect::<Vec<_>>();
+        values.sort_unstable();
+        values
+    }
+    sorted(left) == sorted(right)
+}
+
+pub fn complete_locale_request(current: &[Assignment], desired: &[Assignment]) -> Vec<String> {
+    LOCALE_KEYS
+        .iter()
+        .filter_map(|key| {
+            desired
+                .iter()
+                .find(|assignment| assignment.key == *key)
+                .map(Assignment::encoded)
+                .or_else(|| {
+                    current
+                        .iter()
+                        .any(|assignment| assignment.key == *key)
+                        .then(|| format!("{key}="))
+                })
+        })
+        .collect()
 }
 
 pub fn normalize_installed_locales(values: Vec<String>) -> (Vec<String>, bool) {
@@ -338,6 +484,24 @@ fn canonical_locale(locale: &str) -> String {
         .replace('-', "")
 }
 
+fn bounded_text(value: &str) -> String {
+    let normalized = value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let mut end = normalized.len().min(MAX_ERROR_BYTES);
+    while !normalized.is_char_boundary(end) {
+        end -= 1;
+    }
+    normalized[..end].trim().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,6 +561,51 @@ mod tests {
         assert!(preview
             .iter()
             .any(|assignment| assignment.encoded() == "LC_TIME=en_DK.UTF-8"));
+    }
+
+    #[test]
+    fn region_preview_changes_only_format_categories() {
+        let original = snapshot();
+        let preview = original.preview_region("fr_FR.UTF-8").unwrap();
+        assert!(REGION_KEYS.iter().all(|key| preview
+            .iter()
+            .any(|assignment| assignment.key == *key && assignment.value == "fr_FR.UTF-8")));
+        assert!(preview
+            .iter()
+            .any(|assignment| assignment.encoded() == "LANG=en_GB.UTF-8"));
+    }
+
+    #[test]
+    fn canonical_state_elides_redundant_overrides_and_builds_unsets() {
+        let current = normalize_assignments(vec![
+            "LANG=en_GB.UTF-8".into(),
+            "LC_TIME=en_DK.UTF-8".into(),
+            "LANGUAGE=en:en_GB".into(),
+        ])
+        .unwrap();
+        let desired = normalize_assignments(vec!["LANG=en_GB.UTF-8".into()]).unwrap();
+        assert_eq!(
+            complete_locale_request(&current, &desired),
+            [
+                "LANG=en_GB.UTF-8".to_string(),
+                "LC_TIME=".to_string(),
+                "LANGUAGE=".to_string(),
+            ]
+        );
+        let redundant = normalize_assignments(vec![
+            "LANG=en_GB.UTF-8".into(),
+            "LC_TIME=en_GB.UTF-8".into(),
+        ])
+        .unwrap();
+        assert_eq!(redundant.len(), 1);
+        assert!(locale_assignments_match(&desired, &redundant));
+    }
+
+    #[test]
+    fn public_errors_are_bounded_and_control_free() {
+        let error = Error::new(ErrorKind::Protocol, "private\n".repeat(200));
+        assert!(error.to_string().len() <= MAX_ERROR_BYTES);
+        assert!(!error.to_string().chars().any(char::is_control));
     }
 
     #[test]

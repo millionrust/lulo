@@ -17,7 +17,7 @@ equivalents rather than simulated.
 | Software Update | Complete bounded PackageKit status; advertised install capability; trusted-only exact simulation and confirmation; destructive-plan warning; exact pre-install revalidation; interactive authorization; live download/install phase, percentage, package, remaining-time and capability-gated cancellation; restart requirements; privacy-safe typed failures; coalesced repository/service signals; generation-safe authoritative recovery with stale-state refusal | `rmac-updates`, `rmac-updates-linux`, modern PackageKit system D-Bus, polkit, and the Ubuntu APT backend | Ubuntu APT transaction, auth/cancel/failure/recovery/restart matrix plus keyboard, scale, performance, and accessibility evidence in `docs/software-update.md` |
 | Storage | Bounded current-namespace system/removable/network inventory; privacy-safe display names and opaque identities; independent saturating `statvfs` capacity; low-space state; kernel-poll live refresh with generation-safe coalescing; exact revalidated portal-backed Review in Files; no guessed categories or destructive cleanup | `rmac-mounts`, `/proc/self/mountinfo`, pollable `/proc/self/mounts`, `statvfs`, and the desktop OpenURI portal | Ubuntu filesystem/mount/hotplug/portal matrix, a reviewed reversible cleanup design, and keyboard/scale/performance/accessibility evidence in `docs/storage.md` |
 | Date & Time | Bounded timedated timezone inventory/current zone, live system clock and read-only RTC mode, NTP capability/enabled/synchronized state, exact timezone and automatic-time transactions, canonical offset-bearing manual clock input with safety confirmation and elapsed-aware readback, interactive polkit, filtered property/restart signals plus kernel timerfd clock-jump detection, generation-safe refresh, low-wakeup display, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1`, and `CLOCK_REALTIME` timerfd | Ubuntu NTP/timezone/manual-clock/polkit/jump/restart/suspend matrix plus keyboard, scale, performance, and accessibility evidence in `docs/date-time.md` |
-| Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Linux polkit/restart/scale/accessibility evidence |
+| Language & Region | Canonical bounded locale1 state and installed inventory; independent Language and Region mutations preserving unrelated effective categories; deterministic native previews; exact readback; conflict-checked locale rollback; validated multi-layout XKB editing only when niri follows localed; exact keyboard readback/rollback; filtered generation-safe property/restart refresh; privacy-safe failures; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, and `localectl` layout inventory | Ubuntu language/region/XKB/polkit/concurrency/restart/sign-out matrix plus keyboard, scale, performance, and accessibility evidence in `docs/language-region.md` |
 | Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, portal-selected validated add/replace, Trash-backed user-entry removal, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, and resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Linux interaction/scale/accessibility evidence |
 | Sharing | Capability-detected OpenSSH and Samba services with separate runtime/boot state, explicit enable/disable confirmation, systemd system-manager/polkit mutation, bounded completion wait and exact rollback; effective bounded Samba share names from `testparm -s`; separate read-only UFW SSH/Samba allowance truth; live systemd, UFW, and Samba configuration refresh; no AirDrop branding | `rmac-sharing`, `rmac-sharing-linux`, `org.freedesktop.systemd1`, `ssh.service`, `smbd.service`, Samba `testparm`, UFW status/configuration | Linux polkit/network/scale/accessibility evidence and reviewed share editing if added |
 | Accessibility | Live rmac increased-contrast, reduced-motion, and bounded application text-size preferences with effective-state display; text size updates the shared GPUI rem base and migrated semantic/shared UI text without changing display or content-font scaling; separate confirmed GNOME/GTK text scaling; authoritative niri-backed keyboard, mouse, and trackpad controls; off-thread full-niri-session, Xwayland, and installed-Orca readiness with the documented default shortcut; explicit rmac AT-SPI limits | `rmac-theme`, `rmac-ui`, `rmac-gtk-settings`, GPUI per-window rem size, GNOME interface GSettings, Settings portal appearance values, `rmac-input`, niri configuration and accessibility bridge | Linux text/output clipping, keyboard, pointer, and AT-SPI/Orca evidence |
@@ -219,30 +219,33 @@ Linux matrix are in [`date-time.md`](date-time.md). Authority reference:
 Language & Region reads locale assignments and default keyboard metadata from
 systemd-localed, and obtains a bounded installed-locale inventory from the
 argument-separated standard `locale -a` command. The domain service validates
-locale syntax and installation before any mutation. Changing the language
-replaces only `LANG` in a full assignment preview, preserves every existing
-`LC_*` format override, requests interactive polkit authorization, and accepts
-only the fresh post-mutation service snapshot. The previous exact assignment
-set remains available for one-step rollback after success; failed, denied, and
-unavailable mutations preserve the last known-good snapshot. A bounded event
-stream refreshes from authority on localed property changes and daemon
-reappearance, reconnecting after bus failure without treating the daemon's
-normal idle exit as an error. The pane states
-that the current session must sign out and back in, because running processes
-do not adopt the new environment. Deterministic examples use independent POSIX
-locale objects for `LC_TIME`, `LC_NUMERIC`, and `LC_MONETARY`; this avoids
+locale syntax and installation before any mutation. Language changes replace
+only `LANG` while preserving every effective `LC_*` override; Region changes
+only numeric, time, monetary, paper, name, address, telephone, and measurement
+formats. Both account for localed merge, redundant-assignment simplification,
+and derived `LANGUAGE`; request interactive polkit authorization; and require
+canonical complete readback. One-step rollback requires the current state to
+match the exact applied state, refusing to overwrite concurrent edits. Failed,
+denied, unavailable, conflicting, and mismatched mutations preserve the last
+known-good snapshot. Filtered property and owner signals drive generation-safe
+coalesced refresh with retained recovery after a busy transaction. The pane
+states that the current session must sign out and back in, because running
+processes do not adopt the new environment. Deterministic examples use
+independent POSIX locale objects for `LC_TIME`, `LC_NUMERIC`, and
+`LC_MONETARY`; this avoids
 changing process-global locale state and makes each retained override visible.
 If native preview construction fails, the authoritative assignment remains
 visible with an explicit preview error. Input sources accept one to four
 installed comma-separated XKB layouts plus aligned variants and validated XKB
 switching options. The adapter preserves the existing XKB model, calls localed's
 `SetX11Keyboard` with console conversion disabled and interactive authorization,
-then accepts only the refreshed service snapshot. Exact keyboard state remains
-available for one-step rollback. `rmac-input` proves whether niri has no explicit
-XKB block before enabling the editor: current niri follows localed in that case.
-An explicit XKB block or an include graph keeps the system default read-only so
-rmac does not fight an unproven config authority. Included-config traversal and
-Linux interaction evidence remain pending. Authority
+then requires exact model/layout/variant/options readback. Keyboard rollback
+also refuses a changed applied state. `rmac-input` proves whether niri has no
+explicit XKB block before enabling the editor: current niri follows localed in
+that case. A direct or traversed included XKB block keeps the system default
+read-only so rmac does not fight the active config authority. The complete
+contract and remaining evidence are in
+[`language-region.md`](language-region.md). Authority
 references: [Ubuntu 26.04 `org.freedesktop.locale1(5)`](https://manpages.ubuntu.com/manpages/resolute/man5/org.freedesktop.locale1.5.html),
 the [official niri integration contract](https://github.com/YaLTeR/niri/wiki/Integrating-niri),
 Linux [`nl_langinfo_l(3)`](https://man7.org/linux/man-pages/man3/nl_langinfo.3.html),

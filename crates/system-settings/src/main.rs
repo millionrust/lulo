@@ -722,13 +722,17 @@ struct Settings {
     locale_busy: bool,
     locale_error: Option<SharedString>,
     locale_stream_error: Option<SharedString>,
+    locale_generation: u64,
+    locale_refresh_pending: bool,
+    locale_stream_refreshing: bool,
     locale: Option<rmac_locale::Snapshot>,
     locale_editor: Option<Entity<InputState>>,
-    locale_revert: Option<Vec<String>>,
+    region_editor: Option<Entity<InputState>>,
+    locale_revert: Option<rmac_locale::LocaleRollback>,
     x11_layout_editor: Option<Entity<InputState>>,
     x11_variant_editor: Option<Entity<InputState>>,
     x11_options_editor: Option<Entity<InputState>>,
-    x11_keyboard_revert: Option<rmac_locale::X11Keyboard>,
+    x11_keyboard_revert: Option<rmac_locale::KeyboardRollback>,
     login_items_loading: bool,
     login_item_busy: Option<String>,
     login_items_error: Option<SharedString>,
@@ -1156,6 +1160,15 @@ fn storage_stream_snapshot_is_current(
 }
 
 fn time_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
+fn locale_stream_snapshot_is_current(
     snapshot_generation: u64,
     current_generation: u64,
     loading: bool,
@@ -1687,6 +1700,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_locale_update(result);
+                this.run_pending_locale_refresh(cx);
                 cx.notify();
             });
         })
@@ -1714,17 +1728,9 @@ impl Settings {
             while let Ok(event) = locale_update_rx.recv().await {
                 match event {
                     rmac_locale::WatchEvent::Changed => {
-                        let result = cx
-                            .background_executor()
-                            .spawn(async { rmac_locale_linux::snapshot() })
-                            .await;
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                if !this.locale_busy {
-                                    this.finish_locale_update(result);
-                                    this.locale_stream_error = None;
-                                    cx.notify();
-                                }
+                                this.queue_locale_stream_refresh(cx);
                             })
                             .is_err()
                         {
@@ -2530,8 +2536,12 @@ impl Settings {
             locale_busy: false,
             locale_error: None,
             locale_stream_error: None,
+            locale_generation: 0,
+            locale_refresh_pending: false,
+            locale_stream_refreshing: false,
             locale: None,
             locale_editor: None,
+            region_editor: None,
             locale_revert: None,
             x11_layout_editor: None,
             x11_variant_editor: None,
@@ -4183,6 +4193,7 @@ impl Settings {
             Ok(snapshot) => {
                 self.locale = Some(snapshot);
                 self.locale_error = None;
+                self.locale_stream_error = None;
             }
             Err(error) => {
                 self.locale_error =
@@ -4191,11 +4202,64 @@ impl Settings {
         }
     }
 
+    fn queue_locale_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.locale_loading || self.locale_busy || self.locale_stream_refreshing {
+            self.locale_refresh_pending = true;
+            return;
+        }
+        self.locale_refresh_pending = false;
+        self.locale_stream_refreshing = true;
+        let generation = self.locale_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_locale_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.locale_stream_refreshing = false;
+                if locale_stream_snapshot_is_current(
+                    generation,
+                    this.locale_generation,
+                    this.locale_loading,
+                    this.locale_busy,
+                ) {
+                    match result {
+                        Ok(snapshot) => {
+                            this.locale = Some(snapshot);
+                            this.locale_error = None;
+                            this.locale_stream_error = None;
+                        }
+                        Err(_) => {
+                            this.locale_stream_error =
+                                Some("Could not refresh changed language and region state".into());
+                        }
+                    }
+                } else {
+                    this.locale_refresh_pending = true;
+                }
+                this.run_pending_locale_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_locale_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.locale_refresh_pending
+            && !self.locale_loading
+            && !self.locale_busy
+            && !self.locale_stream_refreshing
+        {
+            self.queue_locale_stream_refresh(cx);
+        }
+    }
+
     fn refresh_locale(&mut self, cx: &mut Context<Self>) {
         if self.locale_loading || self.locale_busy {
             return;
         }
         self.locale_busy = true;
+        self.locale_generation = self.locale_generation.wrapping_add(1);
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4205,6 +4269,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_locale_update(result);
+                this.run_pending_locale_refresh(cx);
                 cx.notify();
             });
         })
@@ -4212,7 +4277,11 @@ impl Settings {
     }
 
     fn start_locale_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.locale_busy || self.locale_editor.is_some() {
+        if self.locale_busy
+            || self.locale_editor.is_some()
+            || self.region_editor.is_some()
+            || self.x11_layout_editor.is_some()
+        {
             return;
         }
         let Some(snapshot) = &self.locale else {
@@ -4258,8 +4327,71 @@ impl Settings {
                 return;
             }
         };
-        let previous = snapshot.encoded_locale();
+        self.apply_locale_assignments(next, snapshot.clone(), cx);
+    }
+
+    fn start_region_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.locale_busy
+            || self.region_editor.is_some()
+            || self.locale_editor.is_some()
+            || self.x11_layout_editor.is_some()
+        {
+            return;
+        }
+        let Some(snapshot) = &self.locale else {
+            return;
+        };
+        let region = snapshot.region_locale().to_owned();
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(region)
+                .placeholder("en_IN.UTF-8")
+        });
+        let focus = editor.read(cx).focus_handle(cx);
+        window.focus(&focus);
+        self.region_editor = Some(editor);
+        self.locale_error = None;
+        cx.notify();
+    }
+
+    fn cancel_region_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.locale_busy {
+            self.region_editor = None;
+            self.locale_error = None;
+            cx.notify();
+        }
+    }
+
+    fn submit_region(&mut self, cx: &mut Context<Self>) {
+        if self.locale_busy {
+            return;
+        }
+        let (Some(editor), Some(snapshot)) = (&self.region_editor, &self.locale) else {
+            return;
+        };
+        let region = editor.read(cx).value().trim().to_owned();
+        let next = match snapshot.preview_region(&region) {
+            Ok(assignments) => assignments
+                .iter()
+                .map(rmac_locale::Assignment::encoded)
+                .collect::<Vec<_>>(),
+            Err(error) => {
+                self.locale_error = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        self.apply_locale_assignments(next, snapshot.clone(), cx);
+    }
+
+    fn apply_locale_assignments(
+        &mut self,
+        next: Vec<String>,
+        previous: rmac_locale::Snapshot,
+        cx: &mut Context<Self>,
+    ) {
         self.locale_busy = true;
+        self.locale_generation = self.locale_generation.wrapping_add(1);
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4267,13 +4399,18 @@ impl Settings {
                 .background_executor()
                 .spawn(async move { rmac_locale_linux::set_locale(&next) })
                 .await;
-            let succeeded = result.is_ok();
+            let rollback = result
+                .as_ref()
+                .ok()
+                .map(|applied| rmac_locale::LocaleRollback::new(&previous, applied));
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                if succeeded {
+                if let Some(rollback) = rollback {
                     this.locale_editor = None;
-                    this.locale_revert = Some(previous);
+                    this.region_editor = None;
+                    this.locale_revert = Some(rollback);
                 }
                 this.finish_locale_update(result);
+                this.run_pending_locale_refresh(cx);
                 cx.notify();
             });
         })
@@ -4284,24 +4421,27 @@ impl Settings {
         if self.locale_busy {
             return;
         }
-        let Some(previous) = self.locale_revert.clone() else {
+        let Some(rollback) = self.locale_revert.clone() else {
             return;
         };
         self.locale_busy = true;
+        self.locale_generation = self.locale_generation.wrapping_add(1);
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move { rmac_locale_linux::set_locale(&previous) })
+                .spawn(async move { rmac_locale_linux::restore_locale(&rollback) })
                 .await;
             let succeeded = result.is_ok();
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 if succeeded {
                     this.locale_revert = None;
                     this.locale_editor = None;
+                    this.region_editor = None;
                 }
                 this.finish_locale_update(result);
+                this.run_pending_locale_refresh(cx);
                 cx.notify();
             });
         })
@@ -4311,6 +4451,8 @@ impl Settings {
     fn start_x11_keyboard_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.locale_busy
             || self.x11_layout_editor.is_some()
+            || self.locale_editor.is_some()
+            || self.region_editor.is_some()
             || self.input.keyboard_layout_authority
                 != rmac_input::KeyboardLayoutAuthority::SystemLocaled
         {
@@ -4379,8 +4521,9 @@ impl Settings {
                 return;
             }
         };
-        let previous = snapshot.x11_keyboard();
+        let previous = snapshot.clone();
         self.locale_busy = true;
+        self.locale_generation = self.locale_generation.wrapping_add(1);
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -4388,15 +4531,19 @@ impl Settings {
                 .background_executor()
                 .spawn(async move { rmac_locale_linux::set_x11_keyboard(&keyboard) })
                 .await;
-            let succeeded = result.is_ok();
+            let rollback = result
+                .as_ref()
+                .ok()
+                .map(|applied| rmac_locale::KeyboardRollback::new(&previous, applied));
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                if succeeded {
+                if let Some(rollback) = rollback {
                     this.x11_layout_editor = None;
                     this.x11_variant_editor = None;
                     this.x11_options_editor = None;
-                    this.x11_keyboard_revert = Some(previous);
+                    this.x11_keyboard_revert = Some(rollback);
                 }
                 this.finish_locale_update(result);
+                this.run_pending_locale_refresh(cx);
                 cx.notify();
             });
         })
@@ -4407,16 +4554,17 @@ impl Settings {
         if self.locale_busy {
             return;
         }
-        let Some(keyboard) = self.x11_keyboard_revert.clone() else {
+        let Some(rollback) = self.x11_keyboard_revert.clone() else {
             return;
         };
         self.locale_busy = true;
+        self.locale_generation = self.locale_generation.wrapping_add(1);
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move { rmac_locale_linux::set_x11_keyboard(&keyboard) })
+                .spawn(async move { rmac_locale_linux::restore_x11_keyboard(&rollback) })
                 .await;
             let succeeded = result.is_ok();
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -4424,6 +4572,7 @@ impl Settings {
                     this.x11_keyboard_revert = None;
                 }
                 this.finish_locale_update(result);
+                this.run_pending_locale_refresh(cx);
                 cx.notify();
             });
         })
@@ -10399,8 +10548,8 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let refresh = Button::new("refresh-language-region", "Refresh")
-            .busy(self.locale_busy)
-            .disabled(self.locale_loading || self.locale_busy)
+            .busy(self.locale_busy || self.locale_stream_refreshing)
+            .disabled(self.locale_loading || self.locale_busy || self.locale_stream_refreshing)
             .on_click(move |_, _, cx| {
                 refresh_view.update(cx, |settings, cx| settings.refresh_locale(cx));
             });
@@ -10465,7 +10614,11 @@ impl Settings {
                 )
                 .child(
                     Button::new("locale-edit", "Edit")
-                        .disabled(self.locale_busy)
+                        .disabled(
+                            self.locale_busy
+                                || self.region_editor.is_some()
+                                || self.x11_layout_editor.is_some(),
+                        )
                         .on_click(move |_, window, cx| {
                             edit_view.update(cx, |settings, cx| {
                                 settings.start_locale_edit(window, cx);
@@ -10475,7 +10628,69 @@ impl Settings {
                 .into_any_element()
         };
 
-        let mut cards = vec![card(vec![language_row])];
+        let region_row = if let Some(editor) = &self.region_editor {
+            let cancel_view = view.clone();
+            let apply_view = view.clone();
+            row_base()
+                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(text_block(
+                    "Region".into(),
+                    Some("Sets date, number, currency, and regional formats".into()),
+                ))
+                .child(div().w(px(180.0)).child(TextField::new(editor).small()))
+                .child(
+                    Button::new("region-cancel", "Cancel")
+                        .disabled(self.locale_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| settings.cancel_region_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new("region-apply", "Apply")
+                        .primary()
+                        .busy(self.locale_busy)
+                        .disabled(self.locale_busy)
+                        .on_click(move |_, _, cx| {
+                            apply_view.update(cx, |settings, cx| settings.submit_region(cx));
+                        }),
+                )
+                .into_any_element()
+        } else {
+            let edit_view = view.clone();
+            let value = if snapshot.formats_are_mixed() {
+                format!("Mixed · {}", snapshot.region_locale())
+            } else {
+                snapshot.region_locale().to_owned()
+            };
+            row_base()
+                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(text_block(
+                    "Region".into(),
+                    Some("System-wide formats, independent of display language".into()),
+                ))
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(secondary())
+                        .child(value),
+                )
+                .child(
+                    Button::new("region-edit", "Edit")
+                        .disabled(
+                            self.locale_busy
+                                || self.locale_editor.is_some()
+                                || self.x11_layout_editor.is_some(),
+                        )
+                        .on_click(move |_, window, cx| {
+                            edit_view.update(cx, |settings, cx| {
+                                settings.start_region_edit(window, cx);
+                            });
+                        }),
+                )
+                .into_any_element()
+        };
+
+        let mut cards = vec![card(vec![language_row, region_row])];
         if let Some(editor) = &self.locale_editor {
             let value = editor.read(cx).value();
             match snapshot.preview_language(value.trim()) {
@@ -10503,6 +10718,15 @@ impl Settings {
                         ));
                     }
                 }
+                Err(error) => cards.push(note_card(error.to_string())),
+            }
+        }
+        if let Some(editor) = &self.region_editor {
+            let value = editor.read(cx).value();
+            match snapshot.preview_region(value.trim()) {
+                Ok(_) => cards.push(note_card(
+                    "Applying changes regional date, number, currency, paper, address, telephone, and measurement formats without changing the display language or message locale.",
+                )),
                 Err(error) => cards.push(note_card(error.to_string())),
             }
         }
@@ -10689,7 +10913,7 @@ impl Settings {
                 "The niri config has an explicit XKB block, so it—not systemd-localed—owns this session's keyboard layout. The system default is read-only here to avoid overriding that choice."
             }
             rmac_input::KeyboardLayoutAuthority::IncludedConfig => {
-                "The niri config uses includes, so rmac cannot prove which file owns XKB settings. The system default remains read-only until include traversal is implemented."
+                "A traversed niri include owns explicit XKB settings, so the systemd-localed default remains read-only here instead of competing with that configuration."
             }
             rmac_input::KeyboardLayoutAuthority::Unavailable => {
                 "The active niri keyboard-layout authority could not be verified. The system default remains read-only."
@@ -10727,7 +10951,7 @@ impl Settings {
                     .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
                     .child(text_block(
                         "Previous locale assignments".into(),
-                        Some("Available until the next successful change".into()),
+                        Some("Reverts only if the complete applied state is still current".into()),
                     ))
                     .child(
                         Button::new("locale-revert", "Revert")
@@ -16897,12 +17121,7 @@ fn value_row(
 }
 
 fn locale_format(snapshot: &rmac_locale::Snapshot, key: &str) -> String {
-    snapshot
-        .locale
-        .iter()
-        .find(|assignment| assignment.key == key)
-        .map(|assignment| assignment.value.clone())
-        .unwrap_or_else(|| snapshot.language().to_owned())
+    snapshot.effective_format_locale(key).to_owned()
 }
 
 fn locale_preview_row(
@@ -18594,15 +18813,15 @@ mod tests {
         category_name_for_pane_id, category_position, charge_threshold_description,
         composite_wallpaper_pixel, compositor_event_affects_displays,
         compositor_event_affects_input, compositor_input_config_failed,
-        input_stream_snapshot_is_current, network_stream_snapshot_is_current,
-        notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
-        relative_display_position, render_wallpaper_preview, sample_battery_history,
-        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
-        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
-        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
-        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-        WallpaperTarget, GENERAL_DESTINATIONS,
+        input_stream_snapshot_is_current, locale_stream_snapshot_is_current,
+        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
+        power_stream_snapshot_is_current, relative_display_position, render_wallpaper_preview,
+        sample_battery_history, storage_stream_snapshot_is_current,
+        system_info_stream_snapshot_is_current, time_stream_snapshot_is_current,
+        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
+        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
+        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
+        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -18726,6 +18945,14 @@ mod tests {
         assert!(!time_stream_snapshot_is_current(3, 4, false, false));
         assert!(!time_stream_snapshot_is_current(4, 4, true, false));
         assert!(!time_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn locale_stream_snapshots_cannot_cross_locale_transactions() {
+        assert!(locale_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!locale_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!locale_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!locale_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

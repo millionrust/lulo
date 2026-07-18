@@ -13,7 +13,7 @@ equivalents rather than simulated.
 | Network | Real interfaces, route, IP, gateway, and DNS state; active-profile IPv4/IPv6/DNS/PAC editor with strict typed validation, exact opaque identity, stable full-map reads, version-checked in-memory staging and disk persistence, applied-state verification, ownership-aware rollback, coalesced live signals, and owner-loss/restart recovery | NetworkManager Settings, Settings.Connection, Device, ActiveConnection, and IP configuration D-Bus APIs | Ubuntu mutation/polkit/failure/concurrency/rollback matrix plus keyboard, scale, and accessibility evidence |
 | VPN | Exact opaque profile identity; libnm-discovered reviewed import-capable plugins plus native WireGuard; portal-selected bounded temporary import with unchanged-file proof, autoconnect rejection, exact preview Save/Delete, and no secret-map rewrite; stable-version existing-profile deletion preview, exact active disconnect, post-disconnect revalidation and authoritative absence; non-lossy common name/account/persistence/timeout editing with stable-map preflight, partial official NetworkManager mutation, full typed/unrelated-field readback, and no secret reads or lossy rollback; exact confirmed plugin-only `ClearSecrets` with active-tunnel truth and an explicit native-WireGuard private-key exclusion; plugin-aware live state; bounded activation/deactivation; ownership-safe Stop/timeout cleanup; authoritative recovery and NetworkManager owner-loss/restart refresh | NetworkManager Settings, Settings.Connection, SecretAgent, ActiveConnection, VPN.Connection, libnm VPN editor plugins, native WireGuard, bounded argument-separated `nmcli`, and the desktop portal | Ubuntu secret-agent/plugin authentication, edit/import/deletion/interaction/accessibility evidence |
 | Battery | Real battery/AC state, health, time/rate, physical capacity/cycles/model, and advertised power profiles; coalesced UPower plus modern/legacy profile signals; owner-loss/restart recovery; generation-safe authoritative resampling with a retained post-mutation refresh; single-battery capability-gated optimized charging with private owner/device identity and verified readback; bounded authoritative 24-hour charge history with explicit unsupported/empty/error states | UPower and power-profiles-daemon | Linux threshold/history hardware, polkit, transition, hotplug, restart, suspend, interaction, scale, and accessibility evidence |
-| General/About | Typed privacy-safe OS, kernel, architecture, hardware, graphics, and session facts; validated hostname mutation with busy/error state; authoritative refresh; redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs/sysfs, display service | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname refresh, and clipboard contents |
+| General/About | Typed bounded privacy-safe OS, kernel, architecture, hardware, DRM graphics, and session facts; validated hostname mutation with exact readback; coalesced property/service watching with generation-safe authoritative refresh; injection-safe redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs, DMI/DRM sysfs, XDG session environment | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname/service refresh, hardware facts, clipboard contents, and interaction/accessibility |
 | Software Update | Live bounded PackageKit update status with security/blocked classification, cached startup query, explicit freshness request, timeout, service/backend errors, and last-known-good refresh behavior | PackageKit system D-Bus over the Ubuntu APT backend | Trusted download/install transaction, progress/cancel, restart requirements, polkit outcomes, live signals, and Linux interaction evidence |
 | Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
@@ -146,11 +146,20 @@ absent rather than mapped to generic clickable placeholders.
 About delegates platform identity to `rmac-system-info`; the GPUI view performs
 no host reads or D-Bus work. On Linux, static-hostname changes call
 `org.freedesktop.hostname1.SetStaticHostname` with interactive authorization,
-then replace the UI snapshot only with the service response. Invalid,
-unavailable, denied, and failed mutations preserve the last known-good facts.
-The copied report deliberately omits hostname, username, serial numbers,
-addresses, machine IDs, and paths. This follows the hostname service contract
-documented by the official systemd
+then replace the UI snapshot only when a complete readback reports the exact
+requested static hostname. Hostname property and service-owner changes
+coalesce into complete generation-checked reads, preserving last-known-good
+facts through service loss and preventing a stale stream read from crossing a
+mutation. OS release, procfs, DMI, DRM, and XDG session facts are byte-bounded;
+helper processes have bounded concurrent output drains and a five-second
+timeout. Graphics reporting admits exact DRM card entries and exposes only the
+driver plus public PCI IDs, never bus addresses or serials. Invalid,
+unavailable, denied, failed, and mismatched mutations preserve the previous
+snapshot. The copied report revalidates fields against control-character
+injection and deliberately omits hostname, username, serial numbers, addresses,
+machine IDs, and paths. The complete contract and F9 reference-PC matrix are in
+[`about.md`](about.md). This follows the hostname service contract documented
+by the official systemd
 [`org.freedesktop.hostname1` manual](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.hostname1.html).
 Linux reference-PC interaction evidence remains pending.
 

@@ -683,6 +683,10 @@ struct Settings {
     system_data_loading: bool,
     system_data_busy: bool,
     system_data_error: Option<SharedString>,
+    system_data_stream_error: Option<SharedString>,
+    system_data_generation: u64,
+    system_data_refresh_pending: bool,
+    system_data_stream_refreshing: bool,
     hostname_editor: Option<Entity<InputState>>,
     diagnostics_copied: bool,
     account: SharedString,
@@ -1103,6 +1107,15 @@ fn input_stream_snapshot_is_current(
     snapshot_generation == current_generation && !loading && !busy
 }
 
+fn system_info_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
 /// Read-only system data that is slow enough to keep off the first-frame path.
 struct SystemSnapshot {
     account: String,
@@ -1279,10 +1292,44 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.apply_system_snapshot(snapshot);
+                this.run_pending_system_info_refresh(cx);
                 cx.notify();
             });
         })
         .detach();
+
+        #[cfg(target_os = "linux")]
+        {
+            let (system_info_updates, system_info_update_rx) = async_channel::bounded(1);
+            cx.background_executor()
+                .spawn(async move {
+                    let _ = rmac_system_info::watch(system_info_updates).await;
+                })
+                .detach();
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                while let Ok(event) = system_info_update_rx.recv().await {
+                    if this
+                        .update(cx, |this: &mut Settings, cx| {
+                            match event {
+                                rmac_system_info::WatchEvent::Changed => {
+                                    this.queue_system_info_stream_refresh(cx);
+                                }
+                                rmac_system_info::WatchEvent::Unavailable => {
+                                    this.system_data_stream_error = Some(
+                                        "Live hostname updates are temporarily unavailable".into(),
+                                    );
+                                }
+                            }
+                            cx.notify();
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -2306,6 +2353,10 @@ impl Settings {
             system_data_loading: true,
             system_data_busy: false,
             system_data_error: None,
+            system_data_stream_error: None,
+            system_data_generation: 0,
+            system_data_refresh_pending: false,
+            system_data_stream_refreshing: false,
             hostname_editor: None,
             diagnostics_copied: false,
             account: std::env::var("USER")
@@ -3132,6 +3183,61 @@ impl Settings {
         self.system_data_loading = false;
     }
 
+    fn queue_system_info_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.system_data_loading || self.system_data_busy || self.system_data_stream_refreshing {
+            self.system_data_refresh_pending = true;
+            return;
+        }
+        self.system_data_refresh_pending = false;
+        self.system_data_stream_refreshing = true;
+        let generation = self.system_data_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_system_info::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.system_data_stream_refreshing = false;
+                if system_info_stream_snapshot_is_current(
+                    generation,
+                    this.system_data_generation,
+                    this.system_data_loading,
+                    this.system_data_busy,
+                ) {
+                    match result {
+                        Ok(snapshot) => {
+                            this.sysinfo = snapshot;
+                            this.system_data_error = None;
+                            this.system_data_stream_error = None;
+                            this.diagnostics_copied = false;
+                        }
+                        Err(error) => {
+                            this.system_data_stream_error = Some(
+                                format!("Could not refresh changed system information: {error}")
+                                    .into(),
+                            );
+                        }
+                    }
+                } else {
+                    this.system_data_refresh_pending = true;
+                }
+                this.run_pending_system_info_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_system_info_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.system_data_refresh_pending
+            && !self.system_data_loading
+            && !self.system_data_busy
+            && !self.system_data_stream_refreshing
+        {
+            self.queue_system_info_stream_refresh(cx);
+        }
+    }
+
     fn start_hostname_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.system_data_busy || !self.sysinfo.hostname_mutable {
             return;
@@ -3175,6 +3281,7 @@ impl Settings {
             return;
         }
         self.system_data_busy = true;
+        self.system_data_generation = self.system_data_generation.wrapping_add(1);
         self.system_data_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -3189,12 +3296,14 @@ impl Settings {
                         this.sysinfo = snapshot;
                         this.hostname_editor = None;
                         this.system_data_error = None;
+                        this.system_data_stream_error = None;
                         this.diagnostics_copied = false;
                     }
                     Err(error) => {
                         this.system_data_error = Some(error.to_string().into());
                     }
                 }
+                this.run_pending_system_info_refresh(cx);
                 cx.notify();
             });
         })
@@ -3206,6 +3315,7 @@ impl Settings {
             return;
         }
         self.system_data_busy = true;
+        self.system_data_generation = self.system_data_generation.wrapping_add(1);
         self.system_data_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -3225,6 +3335,7 @@ impl Settings {
                     Ok(snapshot) => {
                         this.sysinfo = snapshot;
                         this.system_data_error = None;
+                        this.system_data_stream_error = None;
                         this.diagnostics_copied = false;
                     }
                     Err(error) => {
@@ -3232,6 +3343,7 @@ impl Settings {
                             Some(format!("Could not refresh system information: {error}").into());
                     }
                 }
+                this.run_pending_system_info_refresh(cx);
                 cx.notify();
             });
         })
@@ -3239,9 +3351,7 @@ impl Settings {
     }
 
     fn copy_diagnostics(&mut self, cx: &mut Context<Self>) {
-        let report = self
-            .sysinfo
-            .diagnostic_report(self.display.graphics.as_deref());
+        let report = self.sysinfo.diagnostic_report();
         cx.write_to_clipboard(ClipboardItem::new_string(report));
         self.diagnostics_copied = true;
         cx.notify();
@@ -13637,7 +13747,7 @@ impl Settings {
             }
         }
 
-        if let Some(graphics) = &self.display.graphics {
+        if let Some(graphics) = &self.sysinfo.graphics {
             cards.push(section_header("Graphics"));
             cards.push(card(vec![value_row(
                 "icons/settings.svg",
@@ -15105,7 +15215,16 @@ impl Settings {
                 .into_any_element()
         };
 
-        let mut facts = vec![
+        let mut facts = Vec::new();
+        if let Some(vendor) = &si.hardware_vendor {
+            facts.push(value_row(
+                "icons/monitor.svg",
+                secondary(),
+                "Manufacturer".into(),
+                vendor.clone().into(),
+            ));
+        }
+        facts.extend([
             value_row(
                 "icons/monitor.svg",
                 secondary(),
@@ -15145,8 +15264,8 @@ impl Settings {
                 "Architecture".into(),
                 si.architecture.clone().into(),
             ),
-        ];
-        if let Some(graphics) = &self.display.graphics {
+        ]);
+        if let Some(graphics) = &si.graphics {
             facts.push(value_row(
                 "icons/monitor.svg",
                 secondary(),
@@ -15231,6 +15350,7 @@ impl Render for Settings {
         let settings_error = self
             .system_data_error
             .clone()
+            .or_else(|| self.system_data_stream_error.clone())
             .or_else(|| self.updates_error.clone())
             .or_else(|| self.storage_error.clone())
             .or_else(|| self.time_error.clone())
@@ -15379,6 +15499,7 @@ impl Render for Settings {
                         .border_r_0()
                         .on_dismiss(cx.listener(|this, _, _, cx| {
                             this.system_data_error = None;
+                            this.system_data_stream_error = None;
                             this.updates_error = None;
                             this.storage_error = None;
                             this.time_error = None;
@@ -17361,10 +17482,11 @@ mod tests {
         input_stream_snapshot_is_current, network_stream_snapshot_is_current,
         notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
         relative_display_position, render_wallpaper_preview, sample_battery_history,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
-        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
-        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-        WallpaperTarget, GENERAL_DESTINATIONS,
+        system_info_stream_snapshot_is_current, vpn_stream_snapshot_is_current,
+        wallpaper_selection, wifi_stream_snapshot_is_current, DisplayPlacement, DockChange,
+        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
+        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
+        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -17456,6 +17578,14 @@ mod tests {
         assert!(!input_stream_snapshot_is_current(3, 4, false, false));
         assert!(!input_stream_snapshot_is_current(4, 4, true, false));
         assert!(!input_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn system_info_stream_snapshots_cannot_cross_hostname_transactions() {
+        assert!(system_info_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!system_info_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!system_info_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!system_info_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

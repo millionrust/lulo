@@ -7,3 +7,8 @@ authors.workspace = true
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 zbus.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+async-channel.workspace = true
+async-io.workspace = true
+futures-util.workspace = true

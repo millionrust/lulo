@@ -354,7 +354,13 @@ the source filename without retaining that path. Prepared debug output redacts
 title and body. A redacted worker action binds the requested creation time and
 stable folder, creates the complete candidate off GPUI, reports a typed source
 failure, and reveals only a durably accepted stable note with encoding and
-source-length summary. Portal dispatch and Markdown-construct review remain.
+source-length summary. The live toolbar now opens the XDG FileChooser with
+plain-text/Markdown guidance and ordinary cancellation, rejects non-local
+results, and blocks editing while the chooser/request owns the current action.
+On return it targets the current accepted stable folder (or All Notes), sends
+only the redacted source action, and reveals/focuses the new note only after
+accepted readback. Pending edit flush, source validation, decoding, and commit
+remain off GPUI. Markdown-construct review and Linux portal evidence remain.
 
 Export now begins from a path-free, immutable plan derived from one exact
 accepted library revision. A single-note plan binds the exact note revision; a
@@ -532,7 +538,9 @@ Linux portal and accepted attachment transaction; the editor renders a bounded
 stable-ID list and cancellable managed preview with loading/failure/retry
 states. Remove Photo reviews exact note/attachment revisions and checked bytes,
 publishes reference removal first, then collects only the accepted tombstone;
-an interrupted cleanup remains visible for a second review. The old synchronous
+an interrupted cleanup remains visible for a second review. Import Note uses
+the Linux portal and strict decoder, targets the accepted current folder, and
+reveals only the readback-accepted stable note. The old synchronous
 path scanner, direct note writes, path identity, and permanent
 1.5-second save loop have been removed from the running app. Window close is
 refused when a Pending decision exists or when the bounded command queue cannot
@@ -607,8 +615,8 @@ cancels the session and orders search-worker shutdown before dropping the view.
 Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
-Known live-app gaps now include formatted Markdown preview, XDG portal text/
-bundle import and export review/progress, rich search-match highlighting,
+Known live-app gaps now include formatted Markdown preview, XDG portal bundle
+import and export review/progress, rich search-match highlighting,
 richer conflict-resolution choices, semantic accessibility, and Linux runtime/
 visual evidence. The accepted store
 remains local-only and makes no cloud-sync claim.

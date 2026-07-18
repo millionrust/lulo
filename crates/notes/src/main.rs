@@ -86,6 +86,8 @@ struct NotesView {
     attachment_request_id: Option<u64>,
     attachment_remove_request: Option<(u64, AttachmentId)>,
     orphan_collection_request: Option<(u64, AttachmentId)>,
+    note_import_chooser_open: bool,
+    note_import_request_id: Option<u64>,
     search_shutdown_requested: bool,
     preview_shutdown_requested: bool,
     closing: bool,
@@ -231,6 +233,8 @@ impl NotesView {
             attachment_request_id: None,
             attachment_remove_request: None,
             orphan_collection_request: None,
+            note_import_chooser_open: false,
+            note_import_request_id: None,
             search_shutdown_requested: false,
             preview_shutdown_requested: false,
             closing: false,
@@ -468,6 +472,13 @@ impl NotesView {
             || matches!(&event, WorkerEvent::Ready(_)) && self.orphan_collection_request.is_some()
         {
             self.orphan_collection_request = None;
+        }
+        if accepted_request_id
+            .or(rejected_request_id)
+            .is_some_and(|request_id| self.note_import_request_id == Some(request_id))
+            || matches!(&event, WorkerEvent::Ready(_)) && self.note_import_request_id.is_some()
+        {
+            self.note_import_request_id = None;
         }
         if matches!(&event, WorkerEvent::DraftReview(_)) {
             self.recovery_notice_dismissed = false;
@@ -931,6 +942,8 @@ impl NotesView {
             || self.move_dialog.is_some()
             || self.attachment_dialog.is_some()
             || self.attachment_chooser_open
+            || self.note_import_chooser_open
+            || self.note_import_request_id.is_some()
             || self.attachment_action_pending()
         {
             return;
@@ -1146,6 +1159,8 @@ impl NotesView {
             && self.move_dialog.is_none()
             && self.attachment_dialog.is_none()
             && !self.attachment_chooser_open
+            && !self.note_import_chooser_open
+            && self.note_import_request_id.is_none()
             && !self.attachment_action_pending()
     }
 
@@ -1618,6 +1633,72 @@ impl NotesView {
         }
     }
 
+    fn choose_text_note_import(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        self.note_import_chooser_open = true;
+        self.message = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let choice = rmac_portal::choose_notes_text().await;
+            let _ = this.update(cx, |this, cx| {
+                this.note_import_chooser_open = false;
+                match choice {
+                    Ok(Some(path)) => this.queue_text_note_import(path, cx),
+                    Ok(None) => cx.notify(),
+                    Err(_) => {
+                        this.message = Some("Notes could not open the Linux note importer".into());
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn queue_text_note_import(
+        &mut self,
+        selected_path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() {
+            self.message = Some(
+                "The Notes library changed while the importer was open. Choose the file again."
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
+        let folder_id = match self.session.folder_selection() {
+            rmac_notes_runtime::FolderSelection::Folder(folder_id) => Some(folder_id),
+            _ => None,
+        };
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let request = match ActionRequest::new(
+            request_id,
+            LibraryAction::ImportTextNote {
+                created_unix_ms: now_unix_ms(),
+                folder_id,
+                selected_path,
+            },
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::Apply(request), cx) {
+            self.note_import_request_id = Some(request_id);
+            self.message = None;
+            cx.notify();
+        }
+    }
+
     fn toggle_pin(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -1732,6 +1813,16 @@ impl NotesView {
             cx.notify();
             return;
         }
+        if self.note_import_chooser_open {
+            self.message = Some("Finish or cancel the note importer before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.note_import_request_id.is_some() {
+            self.message = Some("Wait for the selected note file to finish importing".into());
+            cx.notify();
+            return;
+        }
         if self.attachment_action_pending() {
             self.message = Some("Wait for the current attachment operation to finish".into());
             cx.notify();
@@ -1820,6 +1911,8 @@ impl NotesView {
         let pinned = selected.is_some_and(|note| note.pinned);
         let note_save_pending = self.latest_local_generation.is_some();
         let attachment_busy = self.attachment_chooser_open || self.attachment_action_pending();
+        let note_import_busy =
+            self.note_import_chooser_open || self.note_import_request_id.is_some();
         let sort_order = self
             .session
             .snapshot()
@@ -1862,6 +1955,22 @@ impl NotesView {
                                     Box::new(SortByTitle),
                                 )
                             }),
+                    )
+                    .child(
+                        Button::new("import-note", "")
+                            .icon(IconName::File)
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .busy(note_import_busy)
+                            .disabled(!ready)
+                            .tooltip(if note_import_busy {
+                                "Importing Note…"
+                            } else {
+                                "Import Note…"
+                            })
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.choose_text_note_import(cx)),
+                            ),
                     )
                     .child(
                         Button::new("compose", "")

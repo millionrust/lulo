@@ -111,6 +111,7 @@ pub struct SaveOutcome {
     pub library: LoadedLibrary,
     pub maintenance_pending: bool,
     pub purge_cleanup_pending: bool,
+    pub attachment_import_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -315,6 +316,7 @@ impl<B: Backend> NotesLibraryStore<B> {
             .map_err(|error| map_import_error(Operation::StageManagedAttachment, error))?;
         let mut outcome = self.save_locked(loaded, candidate)?;
         if outcome.maintenance_pending {
+            outcome.attachment_import_pending = true;
             push_notice(
                 &mut outcome.library.notices,
                 RecoveryNotice::AttachmentImportPending,
@@ -323,6 +325,7 @@ impl<B: Backend> NotesLibraryStore<B> {
         }
         if self.remove_import_intent().is_err() {
             outcome.maintenance_pending = true;
+            outcome.attachment_import_pending = true;
             push_notice(
                 &mut outcome.library.notices,
                 RecoveryNotice::AttachmentImportPending,
@@ -535,6 +538,7 @@ impl<B: Backend> NotesLibraryStore<B> {
             },
             maintenance_pending,
             purge_cleanup_pending: false,
+            attachment_import_pending: false,
         })
     }
 
@@ -2236,6 +2240,56 @@ mod tests {
         assert!(!accepted.purge_cleanup_pending);
         assert_eq!(backend.get(&attachment_path), None);
         assert!(repository.snapshot().notes.is_empty());
+    }
+
+    #[test]
+    fn repository_retry_retains_prepared_image_without_exposing_private_data() {
+        let (store, backend) = store();
+        let primary = store.primary_path();
+        let mut repository = AcceptedLibrary::open(store).unwrap();
+        let mut create = repository.begin().unwrap();
+        let note_id = create
+            .create_note(NewNote {
+                created_unix_ms: 10,
+                title: "Private attachment note".into(),
+                body: "Private attachment body".into(),
+                tags: Vec::new(),
+                folder_id: None,
+            })
+            .unwrap();
+        repository.commit(create).unwrap();
+
+        let selected = PathBuf::from("/portal/private-retry-source.dat");
+        backend.set(selected.clone(), png_bytes());
+        let prepared = repository.prepare_image_attachment(&selected).unwrap();
+        let mut transaction = repository.begin().unwrap();
+        let plan = transaction
+            .add_attachment(note_id, 1, 11, prepared.metadata())
+            .unwrap();
+        backend.fail_next_write(primary);
+
+        let CommitError::Pending(pending) = repository
+            .commit_attachment_import(transaction, plan.clone(), prepared)
+            .unwrap_err()
+        else {
+            panic!("expected retained attachment candidate")
+        };
+        assert_eq!(pending.attachment_import_plan(), Some(&plan));
+        let debug = format!("{pending:?}");
+        assert!(!debug.contains("private-retry-source"));
+        assert!(!debug.contains("Private attachment"));
+
+        let accepted = repository.retry(pending).unwrap();
+        assert!(accepted.recovered_after_error);
+        assert!(!accepted.attachment_import_pending);
+        assert_eq!(repository.snapshot().attachments.len(), 1);
+        assert_eq!(repository.snapshot().attachments[0].id, plan.attachment_id);
+        assert!(backend
+            .get(&managed_attachment_path(
+                repository.root(),
+                plan.attachment_id
+            ))
+            .is_some());
     }
 
     #[test]

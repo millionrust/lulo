@@ -1,10 +1,14 @@
 use std::fmt;
 use std::path::Path;
 
-use rmac_notes_store::{LibrarySnapshot, LibraryTransaction, MutationError, PurgePlan};
+use rmac_notes_store::{
+    AttachmentImportPlan, LibrarySnapshot, LibraryTransaction, MutationError, PurgePlan,
+};
 use rmac_storage::{Backend, FileSystem};
 
-use crate::{LoadedLibrary, NotesLibraryStore, RecoveryNotice, StoreError};
+use crate::{
+    LoadedLibrary, NotesLibraryStore, PreparedImageAttachment, RecoveryNotice, StoreError,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PendingReason {
@@ -12,11 +16,39 @@ pub enum PendingReason {
     AcceptedStateChanged,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PendingCommit {
     candidate: Box<LibrarySnapshot>,
-    purge: Option<Box<PurgePlan>>,
+    operation: PendingOperation,
     pub reason: PendingReason,
+}
+
+impl fmt::Debug for PendingCommit {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PendingCommit")
+            .field("candidate_revision", &self.candidate.revision)
+            .field(
+                "operation",
+                &match self.operation {
+                    PendingOperation::Ordinary => "ordinary",
+                    PendingOperation::Purge(_) => "purge",
+                    PendingOperation::AttachmentImport { .. } => "attachment import",
+                },
+            )
+            .field("reason", &self.reason)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PendingOperation {
+    Ordinary,
+    Purge(Box<PurgePlan>),
+    AttachmentImport {
+        plan: Box<AttachmentImportPlan>,
+        prepared: Box<PreparedImageAttachment>,
+    },
 }
 
 impl PendingCommit {
@@ -29,17 +61,27 @@ impl PendingCommit {
     }
 
     pub fn purge_plan(&self) -> Option<&PurgePlan> {
-        self.purge.as_deref()
+        match &self.operation {
+            PendingOperation::Purge(plan) => Some(plan),
+            PendingOperation::Ordinary | PendingOperation::AttachmentImport { .. } => None,
+        }
+    }
+
+    pub fn attachment_import_plan(&self) -> Option<&AttachmentImportPlan> {
+        match &self.operation {
+            PendingOperation::AttachmentImport { plan, .. } => Some(plan),
+            PendingOperation::Ordinary | PendingOperation::Purge(_) => None,
+        }
     }
 
     fn store(
         candidate: Box<LibrarySnapshot>,
-        purge: Option<Box<PurgePlan>>,
+        operation: PendingOperation,
         error: StoreError,
     ) -> Self {
         Self {
             candidate,
-            purge,
+            operation,
             reason: PendingReason::Store(error),
         }
     }
@@ -74,6 +116,7 @@ pub struct AcceptedCommit {
     pub revision: u64,
     pub maintenance_pending: bool,
     pub purge_cleanup_pending: bool,
+    pub attachment_import_pending: bool,
     pub recovered_after_error: bool,
 }
 
@@ -114,12 +157,19 @@ impl<B: Backend> AcceptedLibrary<B> {
         LibraryTransaction::begin(self.snapshot())
     }
 
+    pub fn prepare_image_attachment(
+        &self,
+        selected_path: &Path,
+    ) -> Result<PreparedImageAttachment, StoreError> {
+        self.store.prepare_image_attachment(selected_path)
+    }
+
     pub fn commit(
         &mut self,
         transaction: LibraryTransaction,
     ) -> Result<AcceptedCommit, CommitError> {
         let candidate = transaction.finish().map_err(CommitError::Mutation)?;
-        self.commit_candidate(candidate, None, false)
+        self.commit_candidate(candidate, PendingOperation::Ordinary, false)
             .map_err(CommitError::Pending)
     }
 
@@ -129,26 +179,48 @@ impl<B: Backend> AcceptedLibrary<B> {
         plan: PurgePlan,
     ) -> Result<AcceptedCommit, CommitError> {
         let candidate = transaction.finish().map_err(CommitError::Mutation)?;
-        self.commit_candidate(candidate, Some(Box::new(plan)), false)
+        self.commit_candidate(candidate, PendingOperation::Purge(Box::new(plan)), false)
             .map_err(CommitError::Pending)
+    }
+
+    pub fn commit_attachment_import(
+        &mut self,
+        transaction: LibraryTransaction,
+        plan: AttachmentImportPlan,
+        prepared: PreparedImageAttachment,
+    ) -> Result<AcceptedCommit, CommitError> {
+        let candidate = transaction.finish().map_err(CommitError::Mutation)?;
+        self.commit_candidate(
+            candidate,
+            PendingOperation::AttachmentImport {
+                plan: Box::new(plan),
+                prepared: Box::new(prepared),
+            },
+            false,
+        )
+        .map_err(CommitError::Pending)
     }
 
     pub fn retry(&mut self, pending: PendingCommit) -> Result<AcceptedCommit, PendingCommit> {
         let PendingCommit {
-            candidate, purge, ..
+            candidate,
+            operation,
+            ..
         } = pending;
         let reloaded = match self.store.load() {
             Ok(reloaded) => reloaded,
-            Err(error) => return Err(PendingCommit::store(candidate, purge, error)),
+            Err(error) => return Err(PendingCommit::store(candidate, operation, error)),
         };
         if reloaded.snapshot() == candidate.as_ref() {
             let maintenance_pending = has_blocking_maintenance(reloaded.notices());
             let purge_cleanup_pending = has_purge_maintenance(reloaded.notices());
+            let attachment_import_pending = has_attachment_maintenance(reloaded.notices());
             self.loaded = reloaded;
             return Ok(AcceptedCommit {
                 revision: candidate.revision,
                 maintenance_pending,
                 purge_cleanup_pending,
+                attachment_import_pending,
                 recovered_after_error: true,
             });
         }
@@ -156,23 +228,26 @@ impl<B: Backend> AcceptedLibrary<B> {
             self.loaded = reloaded;
             return Err(PendingCommit {
                 candidate,
-                purge,
+                operation,
                 reason: PendingReason::AcceptedStateChanged,
             });
         }
         self.loaded = reloaded;
-        self.commit_candidate(*candidate, purge, true)
+        self.commit_candidate(*candidate, operation, true)
     }
 
     fn commit_candidate(
         &mut self,
         candidate: LibrarySnapshot,
-        purge: Option<Box<PurgePlan>>,
+        operation: PendingOperation,
         recovered_after_error: bool,
     ) -> Result<AcceptedCommit, PendingCommit> {
-        let outcome = match purge.as_ref() {
-            Some(plan) => self.store.save_purge(&self.loaded, &candidate, plan),
-            None => self.store.save(&self.loaded, &candidate),
+        let outcome = match &operation {
+            PendingOperation::Ordinary => self.store.save(&self.loaded, &candidate),
+            PendingOperation::Purge(plan) => self.store.save_purge(&self.loaded, &candidate, plan),
+            PendingOperation::AttachmentImport { plan, prepared } => self
+                .store
+                .save_attachment_import(&self.loaded, &candidate, plan, prepared),
         };
         match outcome {
             Ok(outcome) => {
@@ -180,12 +255,13 @@ impl<B: Backend> AcceptedLibrary<B> {
                     revision: candidate.revision,
                     maintenance_pending: outcome.maintenance_pending,
                     purge_cleanup_pending: outcome.purge_cleanup_pending,
+                    attachment_import_pending: outcome.attachment_import_pending,
                     recovered_after_error,
                 };
                 self.loaded = outcome.library;
                 Ok(accepted)
             }
-            Err(error) => Err(PendingCommit::store(Box::new(candidate), purge, error)),
+            Err(error) => Err(PendingCommit::store(Box::new(candidate), operation, error)),
         }
     }
 }
@@ -198,6 +274,18 @@ fn has_blocking_maintenance(notices: &[RecoveryNotice]) -> bool {
                 | RecoveryNotice::CorruptJournalPreserved
                 | RecoveryNotice::CorruptPurgePreserved
                 | RecoveryNotice::PurgeCleanupPending
+                | RecoveryNotice::CorruptAttachmentImportPreserved
+                | RecoveryNotice::AttachmentImportPending
+        )
+    })
+}
+
+fn has_attachment_maintenance(notices: &[RecoveryNotice]) -> bool {
+    notices.iter().any(|notice| {
+        matches!(
+            notice,
+            RecoveryNotice::CorruptAttachmentImportPreserved
+                | RecoveryNotice::AttachmentImportPending
         )
     })
 }

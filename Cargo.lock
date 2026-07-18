@@ -5253,6 +5253,7 @@ dependencies = [
 name = "rmac-notes-runtime"
 version = "0.1.0"
 dependencies = [
+ "image",
  "rmac-notes-storage",
  "rmac-notes-store",
 ]

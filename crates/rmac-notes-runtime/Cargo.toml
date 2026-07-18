@@ -9,3 +9,6 @@ publish = false
 [dependencies]
 rmac-notes-store.workspace = true
 rmac-notes-storage.workspace = true
+
+[dev-dependencies]
+image = { workspace = true, features = ["png"] }

@@ -25,6 +25,7 @@ pub enum SessionPhase {
     Ready,
     Maintenance {
         purge_cleanup_pending: bool,
+        attachment_import_pending: bool,
     },
     Pending {
         request_id: u64,
@@ -233,6 +234,7 @@ impl NotesSession {
                 let phase = if event.commit.maintenance_pending {
                     SessionPhase::Maintenance {
                         purge_cleanup_pending: event.commit.purge_cleanup_pending,
+                        attachment_import_pending: event.commit.attachment_import_pending,
                     }
                 } else {
                     SessionPhase::Ready
@@ -342,6 +344,8 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                 | RecoveryNotice::CorruptJournalPreserved
                 | RecoveryNotice::CorruptPurgePreserved
                 | RecoveryNotice::PurgeCleanupPending
+                | RecoveryNotice::CorruptAttachmentImportPreserved
+                | RecoveryNotice::AttachmentImportPending
         )
     });
     if maintenance_pending {
@@ -350,6 +354,13 @@ fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
                 matches!(
                     notice,
                     RecoveryNotice::CorruptPurgePreserved | RecoveryNotice::PurgeCleanupPending
+                )
+            }),
+            attachment_import_pending: notices.iter().any(|notice| {
+                matches!(
+                    notice,
+                    RecoveryNotice::CorruptAttachmentImportPreserved
+                        | RecoveryNotice::AttachmentImportPending
                 )
             }),
         }
@@ -446,6 +457,7 @@ mod tests {
                 revision: created.revision,
                 maintenance_pending: false,
                 purge_cleanup_pending: false,
+                attachment_import_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(created),
@@ -614,6 +626,7 @@ mod tests {
                 revision: 4,
                 maintenance_pending: false,
                 purge_cleanup_pending: false,
+                attachment_import_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(snapshot),
@@ -651,6 +664,7 @@ mod tests {
             session.phase(),
             &SessionPhase::Maintenance {
                 purge_cleanup_pending: true,
+                attachment_import_pending: false,
             }
         );
         assert!(session.snapshot().is_some());
@@ -664,6 +678,7 @@ mod tests {
                 revision: accepted.revision,
                 maintenance_pending: true,
                 purge_cleanup_pending: true,
+                attachment_import_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(accepted),
@@ -673,6 +688,24 @@ mod tests {
             session.phase(),
             &SessionPhase::Maintenance {
                 purge_cleanup_pending: true,
+                attachment_import_pending: false,
+            }
+        );
+    }
+
+    #[test]
+    fn attachment_import_attention_is_distinct_from_purge_cleanup() {
+        let mut session = NotesSession::new();
+        let mut event = snapshot_event(snapshot(SortOrder::Edited));
+        event.notices = vec![RecoveryNotice::AttachmentImportPending];
+
+        session.apply(WorkerEvent::Ready(event));
+
+        assert_eq!(
+            session.phase(),
+            &SessionPhase::Maintenance {
+                purge_cleanup_pending: false,
+                attachment_import_pending: true,
             }
         );
     }

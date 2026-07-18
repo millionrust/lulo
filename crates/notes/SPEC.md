@@ -273,9 +273,18 @@ private versioned import intent before create-new staging under the stable ID.
 Metadata publishes last. Startup removes only an exact staged orphan when the
 base remains authoritative, keeps and verifies exact bytes when the candidate
 was accepted, and preserves changed, linked, missing-after-acceptance,
-malformed, or ambiguous state as blocking maintenance. Repository retry,
-runtime/portal dispatch, bounded preview rendering, and legacy-image decoder
-validation remain.
+malformed, or ambiguous state as blocking maintenance. The accepted-library
+repository now retains both the exact plan and path-free prepared bytes when a
+commit fails; Retry first resolves the
+journal/import intent, adopts an already accepted candidate or safely restages
+a rolled-back candidate, and never exposes the candidate's private content in
+debug output. The repository worker accepts a stable-note/revision/timestamp
+image action whose source path is redacted, performs prepare/decode and commit
+off GPUI, reports unsupported/malformed/oversized input as typed storage
+rejections, and publishes only an accepted attachment ID, dimensions, byte
+length, and snapshot. Import maintenance is projected separately from purge
+cleanup. Portal dispatch, the live Notes view, bounded managed-image preview,
+and legacy-image decoder validation still remain.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic

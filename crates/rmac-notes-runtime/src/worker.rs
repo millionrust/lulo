@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
+use std::path::PathBuf;
 use std::sync::mpsc::{
     self, Receiver, RecvError, RecvTimeoutError, SyncSender, TryRecvError, TrySendError,
 };
@@ -11,7 +12,7 @@ use std::time::{Duration, Instant};
 use rmac_notes_storage::{
     inspect_notes_startup, AcceptedCommit, AcceptedLibrary, CommitError, DraftError, DraftRecord,
     DraftStore, MigrationReview, MigrationWarning, NotesPaths, NotesStartup, PendingCommit,
-    PendingReason, RecoveryNotice, StartupError,
+    PendingReason, PreparedImageAttachment, RecoveryNotice, StartupError, StoreError,
 };
 use rmac_notes_store::{FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder};
 
@@ -53,6 +54,12 @@ pub enum LibraryAction {
         note_id: NoteId,
         expected_revision: u64,
     },
+    AttachImage {
+        note_id: NoteId,
+        expected_revision: u64,
+        modified_unix_ms: u64,
+        selected_path: PathBuf,
+    },
     DeleteNotePermanently {
         note_id: NoteId,
         expected_revision: u64,
@@ -74,6 +81,7 @@ impl fmt::Debug for LibraryAction {
             Self::SetSort(_) => "SetSort",
             Self::TrashNote { .. } => "TrashNote",
             Self::RestoreNote { .. } => "RestoreNote",
+            Self::AttachImage { .. } => "AttachImage([private source])",
             Self::DeleteNotePermanently { .. } => "DeleteNotePermanently",
             Self::EmptyTrash { .. } => "EmptyTrash",
         })
@@ -300,6 +308,13 @@ pub enum ActionResult {
     RestoredNote {
         folder_id: Option<FolderId>,
     },
+    AttachedImage {
+        note_id: NoteId,
+        attachment_id: rmac_notes_store::AttachmentId,
+        width: u32,
+        height: u32,
+        byte_len: u64,
+    },
     PermanentDeleteAccepted {
         note_id: NoteId,
         attachment_count: usize,
@@ -337,6 +352,7 @@ pub enum WorkerFailure {
     CommitPending,
     Scheduler(SchedulerError),
     Mutation(MutationError),
+    Storage(StoreError),
     Draft(DraftError),
     MissingDraft,
 }
@@ -1254,7 +1270,13 @@ fn commit_edit(
         result: ActionResult::Edited(note_id),
         draft: Some(draft),
     };
-    commit_transaction(ready, transaction, None, context, events)
+    commit_transaction(
+        ready,
+        transaction,
+        TransactionCommit::Ordinary,
+        context,
+        events,
+    )
 }
 
 fn commit_action(
@@ -1262,12 +1284,32 @@ fn commit_action(
     request: ActionRequest,
     events: &SyncSender<WorkerEvent>,
 ) -> CommitDisposition {
+    let request_id = request.request_id;
+    let action = match request.action {
+        LibraryAction::AttachImage {
+            note_id,
+            expected_revision,
+            modified_unix_ms,
+            selected_path,
+        } => {
+            return commit_attachment_action(
+                ready,
+                request_id,
+                note_id,
+                expected_revision,
+                modified_unix_ms,
+                selected_path,
+                events,
+            );
+        }
+        action => action,
+    };
     let mut transaction = match ready.library.begin() {
         Ok(transaction) => transaction,
-        Err(error) => return reject_mutation(events, request.request_id, None, error),
+        Err(error) => return reject_mutation(events, request_id, None, error),
     };
     let mut purge = None;
-    let result = match request.action {
+    let result = match action {
         LibraryAction::CreateNote(note) => {
             transaction.create_note(note).map(ActionResult::CreatedNote)
         }
@@ -1344,30 +1386,93 @@ fn commit_action(
                 purge = Some(plan);
                 result
             }),
+        LibraryAction::AttachImage { .. } => unreachable!("attachment action handled above"),
     };
     let result = match result {
         Ok(result) => result,
-        Err(error) => return reject_mutation(events, request.request_id, None, error),
+        Err(error) => return reject_mutation(events, request_id, None, error),
     };
     let context = RequestContext {
-        request_id: request.request_id,
+        request_id,
         generation: None,
         result,
         draft: None,
     };
-    commit_transaction(ready, transaction, purge, context, events)
+    let commit = purge.map_or(TransactionCommit::Ordinary, TransactionCommit::Purge);
+    commit_transaction(ready, transaction, commit, context, events)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn commit_attachment_action(
+    ready: &mut ReadyState,
+    request_id: u64,
+    note_id: NoteId,
+    expected_revision: u64,
+    modified_unix_ms: u64,
+    selected_path: PathBuf,
+    events: &SyncSender<WorkerEvent>,
+) -> CommitDisposition {
+    let prepared = match ready.library.prepare_image_attachment(&selected_path) {
+        Ok(prepared) => prepared,
+        Err(error) => return reject_storage(events, request_id, error),
+    };
+    let mut transaction = match ready.library.begin() {
+        Ok(transaction) => transaction,
+        Err(error) => return reject_mutation(events, request_id, None, error),
+    };
+    let plan = match transaction.add_attachment(
+        note_id,
+        expected_revision,
+        modified_unix_ms,
+        prepared.metadata(),
+    ) {
+        Ok(plan) => plan,
+        Err(error) => return reject_mutation(events, request_id, None, error),
+    };
+    let result = ActionResult::AttachedImage {
+        note_id,
+        attachment_id: plan.attachment_id,
+        width: prepared.width(),
+        height: prepared.height(),
+        byte_len: prepared.byte_len(),
+    };
+    let context = RequestContext {
+        request_id,
+        generation: None,
+        result,
+        draft: None,
+    };
+    commit_transaction(
+        ready,
+        transaction,
+        TransactionCommit::AttachmentImport { plan, prepared },
+        context,
+        events,
+    )
+}
+
+enum TransactionCommit {
+    Ordinary,
+    Purge(rmac_notes_store::PurgePlan),
+    AttachmentImport {
+        plan: rmac_notes_store::AttachmentImportPlan,
+        prepared: PreparedImageAttachment,
+    },
 }
 
 fn commit_transaction(
     ready: &mut ReadyState,
     transaction: rmac_notes_store::LibraryTransaction,
-    purge: Option<rmac_notes_store::PurgePlan>,
+    transaction_commit: TransactionCommit,
     context: RequestContext,
     events: &SyncSender<WorkerEvent>,
 ) -> CommitDisposition {
-    let outcome = match purge {
-        Some(plan) => ready.library.commit_purge(transaction, plan),
-        None => ready.library.commit(transaction),
+    let outcome = match transaction_commit {
+        TransactionCommit::Ordinary => ready.library.commit(transaction),
+        TransactionCommit::Purge(plan) => ready.library.commit_purge(transaction, plan),
+        TransactionCommit::AttachmentImport { plan, prepared } => ready
+            .library
+            .commit_attachment_import(transaction, plan, prepared),
     };
     match outcome {
         Ok(commit) => {
@@ -1416,6 +1521,25 @@ fn reject_mutation(
             request_id,
             generation,
             failure: WorkerFailure::Mutation(error),
+        }))
+        .is_ok()
+    {
+        CommitDisposition::Rejected
+    } else {
+        CommitDisposition::Stopped
+    }
+}
+
+fn reject_storage(
+    events: &SyncSender<WorkerEvent>,
+    request_id: u64,
+    error: StoreError,
+) -> CommitDisposition {
+    if events
+        .send(WorkerEvent::Rejected(RejectedEvent {
+            request_id,
+            generation: None,
+            failure: WorkerFailure::Storage(error),
         }))
         .is_ok()
     {
@@ -1496,7 +1620,8 @@ fn emit_request_rejected(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmac_notes_storage::PendingReason;
+    use image::ImageEncoder as _;
+    use rmac_notes_storage::{ErrorKind, PendingReason};
     use rmac_notes_store::{encode, LibraryTransaction, NewNote, NoteChanges};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1576,6 +1701,14 @@ mod tests {
         .unwrap()
     }
 
+    fn tiny_png() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut bytes)
+            .write_image(&[12, 34, 56, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        bytes
+    }
+
     #[test]
     fn worker_commits_actions_and_due_edits_without_idle_events() {
         let (container, paths) = roots("edit");
@@ -1622,6 +1755,88 @@ mod tests {
             WorkerEvent::Stopped { deadline_wakeups } => assert_eq!(deadline_wakeups, 1),
             event => panic!("expected stopped event, got {event:?}"),
         }
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn worker_imports_content_validated_image_without_exposing_source_path() {
+        let (container, paths) = roots("attachment");
+        std::fs::create_dir_all(&container).unwrap();
+        let source = container.join("private-source.untrusted-extension");
+        std::fs::write(&source, tiny_png()).unwrap();
+        let worker = NotesWorker::start(paths.clone()).unwrap();
+        ready(&worker);
+        let (note_id, _) = create_note(&worker, 1);
+        let action = LibraryAction::AttachImage {
+            note_id,
+            expected_revision: 1,
+            modified_unix_ms: 11,
+            selected_path: source.clone(),
+        };
+        let debug = format!("{action:?}");
+        assert!(!debug.contains("private-source"));
+        assert!(!debug.contains(container.to_string_lossy().as_ref()));
+
+        let accepted = match apply_action(&worker, 2, action) {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted image import, got {event:?}"),
+        };
+        let attachment_id = match accepted.result {
+            ActionResult::AttachedImage {
+                note_id: accepted_note_id,
+                attachment_id,
+                width,
+                height,
+                byte_len,
+            } => {
+                assert_eq!(accepted_note_id, note_id);
+                assert_eq!((width, height), (1, 1));
+                assert_eq!(byte_len, tiny_png().len() as u64);
+                attachment_id
+            }
+            result => panic!("unexpected action result {result:?}"),
+        };
+        assert!(!accepted.commit.maintenance_pending);
+        assert!(!accepted.commit.attachment_import_pending);
+        assert_eq!(accepted.accepted.snapshot.attachments.len(), 1);
+        assert_eq!(
+            accepted.accepted.snapshot.attachments[0].display_name,
+            "private-source.png"
+        );
+        assert_eq!(
+            std::fs::read(
+                paths
+                    .data_root()
+                    .join("attachments")
+                    .join(format!("{:020}.bin", attachment_id.get()))
+            )
+            .unwrap(),
+            tiny_png()
+        );
+
+        let invalid = container.join("private-invalid.png");
+        std::fs::write(&invalid, b"not an image").unwrap();
+        match apply_action(
+            &worker,
+            3,
+            LibraryAction::AttachImage {
+                note_id,
+                expected_revision: 2,
+                modified_unix_ms: 12,
+                selected_path: invalid,
+            },
+        ) {
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 3,
+                failure: WorkerFailure::Storage(error),
+                ..
+            }) => assert_eq!(error.kind, ErrorKind::UnsupportedAttachment),
+            event => panic!("expected rejected invalid image, got {event:?}"),
+        }
+
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
         drop(worker);
         std::fs::remove_dir_all(container).unwrap();
     }

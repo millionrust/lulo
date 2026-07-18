@@ -281,9 +281,24 @@ projection consumes those events without optimistic publish, preserves note
 selection by stable ID across reordered readback snapshots, normalizes deleted
 folder selection, provides deterministic pinned/folder/Trash ordering, reveals
 an accepted created note, and retains pending/conflict/rejection phases without
-debugging note content. The live Notes view wiring and draft recovery remain;
+debugging note content. The live Notes view wiring and draft lifecycle remain;
 the prototype's 1.5-second loop is still the running behavior until that
 integration lands and is validated.
+
+The storage layer now has the first complete draft-recovery foundation. Each
+versioned record is keyed by stable note ID and retains its base note revision,
+strict edit generation, update time, and complete bounded title/body/tag
+candidate. Saves create an owner-only directory, atomically replace a `0600`
+record, refuse final symlinks and multiply linked files on reread, and report
+success only after exact byte and decoded-record readback. Startup discovery is
+deterministic and bounded by scanned entries, retained records, individual
+bytes, and aggregate bytes; malformed, oversized, misnamed, linked, or
+identity-mismatched records are isolated without allowing one record to hide
+the others, while excess valid records are preserved for explicit attention.
+Errors and debug output contain operation/kind/count/identity information but
+not draft text, tags, or library paths. The repository worker does not yet
+schedule these draft writes or remove a matching record after an accepted
+library commit, so draft recovery is not yet a live application claim.
 
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned

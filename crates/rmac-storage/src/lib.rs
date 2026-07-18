@@ -91,6 +91,12 @@ pub trait Backend {
         Ok(bytes)
     }
 
+    /// Read a bounded private state file without following a substituted link.
+    /// The host implementation also rejects multiply linked files.
+    fn read_bounded_no_follow(&self, path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
+        self.read_bounded(path, maximum)
+    }
+
     fn write_atomic(&self, _path: &Path, _contents: &[u8]) -> io::Result<()> {
         Err(unsupported("write atomically"))
     }
@@ -106,6 +112,11 @@ pub trait Backend {
 
     fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
         Err(unsupported("create directory"))
+    }
+
+    /// Create or repair the final private state directory as owner-only.
+    fn create_dir_all_private(&self, path: &Path) -> io::Result<()> {
+        self.create_dir_all(path)
     }
 
     fn rename(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
@@ -145,23 +156,11 @@ impl Backend for FileSystem {
     }
 
     fn read_bounded(&self, path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
-        let file = File::open(path)?;
-        if file.metadata()?.len() > maximum as u64 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "file exceeds the configured size limit",
-            ));
-        }
-        let mut bytes = Vec::with_capacity(maximum.min(64 * 1024));
-        file.take(maximum.saturating_add(1) as u64)
-            .read_to_end(&mut bytes)?;
-        if bytes.len() > maximum {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "file exceeds the configured size limit",
-            ));
-        }
-        Ok(bytes)
+        read_open_file_bounded(File::open(path)?, maximum)
+    }
+
+    fn read_bounded_no_follow(&self, path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
+        read_bounded_no_follow(path, maximum)
     }
 
     fn write_atomic(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
@@ -180,6 +179,10 @@ impl Backend for FileSystem {
         std::fs::create_dir_all(path)
     }
 
+    fn create_dir_all_private(&self, path: &Path) -> io::Result<()> {
+        create_dir_all_private(path)
+    }
+
     fn rename(&self, source: &Path, destination: &Path) -> io::Result<()> {
         std::fs::rename(source, destination)
     }
@@ -195,6 +198,106 @@ impl Backend for FileSystem {
     fn copy(&self, source: &Path, destination: &Path) -> io::Result<u64> {
         copy_no_clobber(source, destination)
     }
+}
+
+fn read_open_file_bounded(file: File, maximum: usize) -> io::Result<Vec<u8>> {
+    if file.metadata()?.len() > maximum as u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "file exceeds the configured size limit",
+        ));
+    }
+    let mut bytes = Vec::with_capacity(maximum.min(64 * 1024));
+    file.take(maximum.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > maximum {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "file exceeds the configured size limit",
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Read a regular, singly linked file without following its final path.
+pub fn read_bounded_no_follow(path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    #[cfg(not(unix))]
+    {
+        let metadata = std::fs::symlink_metadata(path)?;
+        if metadata.file_type().is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "refusing to follow a private state link",
+            ));
+        }
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private state is not a regular file",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        if metadata.nlink() != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "private state has multiple filesystem links",
+            ));
+        }
+        // SAFETY: geteuid has no preconditions and does not mutate state.
+        if metadata.uid() != unsafe { libc::geteuid() } {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "private state is owned by another user",
+            ));
+        }
+    }
+    read_open_file_bounded(file, maximum)
+}
+
+/// Create the final app-owned state directory and enforce owner-only access.
+///
+/// The caller must already trust the parent authority. The final component is
+/// checked before and after creation so an existing link is never accepted as
+/// the private directory.
+pub fn create_dir_all_private(path: &Path) -> io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "private state directory is not a real directory",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(path)?;
+        }
+        Err(error) => return Err(error),
+    }
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private state directory changed during creation",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 /// Atomically replace `path` using a same-directory temporary file.
@@ -394,6 +497,68 @@ mod tests {
         assert_eq!(FileSystem.read_bounded(&target, 5).unwrap(), b"12345");
         assert_eq!(
             FileSystem.read_bounded(&target, 4).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_bounded_read_refuses_symlinks_and_hard_links() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_root("private-bounded-read");
+        std::fs::create_dir(&root).unwrap();
+        let regular = root.join("regular");
+        let symlink_path = root.join("symlink");
+        let hard_link = root.join("hard-link");
+        std::fs::write(&regular, b"private draft").unwrap();
+
+        assert_eq!(
+            read_bounded_no_follow(&regular, 64).unwrap(),
+            b"private draft"
+        );
+        symlink(&regular, &symlink_path).unwrap();
+        assert!(read_bounded_no_follow(&symlink_path, 64).is_err());
+        std::fs::hard_link(&regular, &hard_link).unwrap();
+        assert_eq!(
+            read_bounded_no_follow(&regular, 64).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            read_bounded_no_follow(&hard_link, 64).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_directory_is_owner_only_and_never_accepts_a_link() {
+        use std::os::unix::fs::{symlink, PermissionsExt as _};
+
+        let root = temp_root("private-directory");
+        std::fs::create_dir(&root).unwrap();
+        let private = root.join("drafts");
+        create_dir_all_private(&private).unwrap();
+        assert_eq!(
+            std::fs::metadata(&private).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_dir_all_private(&private).unwrap();
+        assert_eq!(
+            std::fs::metadata(&private).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        std::fs::remove_dir(&private).unwrap();
+        let elsewhere = root.join("elsewhere");
+        std::fs::create_dir(&elsewhere).unwrap();
+        symlink(&elsewhere, &private).unwrap();
+        assert_eq!(
+            create_dir_all_private(&private).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
         std::fs::remove_dir_all(root).unwrap();

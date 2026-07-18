@@ -17,11 +17,18 @@ use rmac_notes_store::{decode, encode, CodecError, LibrarySnapshot, MAX_LIBRARY_
 use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
+mod drafts;
 mod legacy_scan;
 mod migration;
 mod repository;
 mod startup;
 mod writer;
+
+pub use drafts::{
+    decode_draft, encode_draft, DraftCodecError, DraftDiscovery, DraftError, DraftErrorKind,
+    DraftOperation, DraftRecord, DraftStore, MAX_DISCOVERED_DRAFTS, MAX_DRAFT_DISCOVERY_BYTES,
+    MAX_DRAFT_RECORD_BYTES, MAX_SCANNED_DRAFT_ENTRIES,
+};
 
 pub use legacy_scan::{
     scan_legacy_library, LegacyScanError, LegacyScanErrorKind, LegacyScanOperation,

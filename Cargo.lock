@@ -5546,6 +5546,9 @@ dependencies = [
 [[package]]
 name = "rmac-storage"
 version = "0.1.0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "rmac-system-info"

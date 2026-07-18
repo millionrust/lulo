@@ -23,6 +23,14 @@ pub struct NoteChanges {
     pub tags: Vec<String>,
 }
 
+impl NoteChanges {
+    /// Validate content bounds and tag invariants without requiring a base
+    /// note. Storage-side recovery records use this before retaining a draft.
+    pub fn validate_content(&self) -> Result<(), MutationError> {
+        validate_note_content(&self.title, &self.body, &self.tags)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MutationError {
     InvalidBase(ValidationError),
@@ -201,7 +209,7 @@ impl LibraryTransaction {
         expected_revision: u64,
         changes: NoteChanges,
     ) -> Result<bool, MutationError> {
-        validate_note_content(&changes.title, &changes.body, &changes.tags)?;
+        changes.validate_content()?;
         let note = self.note_mut(id, expected_revision)?;
         if changes.modified_unix_ms < note.created_unix_ms {
             return Err(MutationError::InvalidCandidate(

@@ -12,6 +12,7 @@ use rmac_notes_store::{
 use rmac_storage::Backend;
 use sha2::{Digest as _, Sha256};
 
+use crate::attachment::validate_image_bytes;
 use crate::{managed_attachment_path, LoadedLibrary, NotesLibraryStore, StoreError};
 
 pub(super) const MAX_LEGACY_PATH_BYTES: usize = 4096;
@@ -326,6 +327,10 @@ pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPla
                 unsupported_references = unsupported_references.saturating_add(1);
                 continue;
             };
+            if validate_image_bytes(&attachment.bytes, kind).is_err() {
+                unsupported_references = unsupported_references.saturating_add(1);
+                continue;
+            }
             if attachment.bytes.len() as u64 > MAX_ATTACHMENT_BYTES
                 || attachment_ids.len() >= MAX_ATTACHMENTS_PER_NOTE
             {
@@ -905,9 +910,14 @@ fn digest(bytes: &[u8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::ImageEncoder as _;
 
     fn png() -> Vec<u8> {
-        b"\x89PNG\r\n\x1a\nfixture".to_vec()
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut bytes)
+            .write_image(&[12, 34, 56, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        bytes
     }
 
     fn fixture() -> LegacyLibraryInput {
@@ -1020,6 +1030,32 @@ mod tests {
             .recovery_files
             .iter()
             .any(|file| file.relative_path == "orphan.bin"));
+    }
+
+    #[test]
+    fn signature_only_or_unsupported_legacy_images_remain_recovery_files() {
+        let mut malformed = fixture();
+        malformed.attachments[0].bytes = b"\x89PNG\r\n\x1a\nnot-a-decodable-image".to_vec();
+        let plan = plan_legacy_library(malformed).unwrap();
+        assert!(plan.attachments.is_empty());
+        assert!(plan.snapshot.notes[1].attachments.is_empty());
+        assert!(plan
+            .warnings
+            .contains(&MigrationWarning::UnsupportedAttachmentReferences(1)));
+        assert!(plan
+            .recovery_files
+            .iter()
+            .any(|file| file.relative_path == "diagram.png"));
+
+        let mut gif = fixture();
+        gif.attachments[0].relative_path = "diagram.gif".into();
+        gif.attachments[0].bytes = b"GIF89a-not-a-reviewed-codec".to_vec();
+        gif.notes[0].bytes = b"Root\n![](diagram.gif)".to_vec();
+        let plan = plan_legacy_library(gif).unwrap();
+        assert!(plan.attachments.is_empty());
+        assert!(plan
+            .warnings
+            .contains(&MigrationWarning::UnsupportedAttachmentReferences(1)));
     }
 
     #[test]

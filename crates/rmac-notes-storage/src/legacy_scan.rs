@@ -502,6 +502,7 @@ fn unix_millis(time: SystemTime) -> Result<u64, LegacyScanError> {
 mod tests {
     use super::*;
     use crate::plan_legacy_library;
+    use image::ImageEncoder as _;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -525,7 +526,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(root.join("Projects/nested.md"), b"Nested\nBody").unwrap();
-        std::fs::write(root.join("diagram.png"), b"\x89PNG\r\n\x1a\nfixture").unwrap();
+        std::fs::write(root.join("diagram.png"), png()).unwrap();
         std::fs::write(root.join("Projects/unclaimed.bin"), b"keep nested").unwrap();
         std::fs::write(
             root.join(".pinned"),
@@ -534,6 +535,14 @@ mod tests {
         .unwrap();
         std::fs::write(root.join(".sort"), b"title").unwrap();
         root
+    }
+
+    fn png() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut bytes)
+            .write_image(&[12, 34, 56, 255], 1, 1, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        bytes
     }
 
     #[test]

@@ -456,23 +456,11 @@ pub(crate) fn prepare_image<B: Backend>(
         image::ImageFormat::WebP => AttachmentKind::WebP,
         _ => return Err(ImportError::Unsupported),
     };
-    let decoded = decode_bounded(&bytes, guessed_format).map_err(|error| match error {
+    let (width, height) = validate_image_bytes(&bytes, kind).map_err(|error| match error {
         PreviewError::TooLarge => ImportError::TooLarge,
+        PreviewError::Unsupported => ImportError::Unsupported,
         _ => ImportError::Malformed,
     })?;
-    let (width, height) = (decoded.width(), decoded.height());
-    let pixels = u64::from(width)
-        .checked_mul(u64::from(height))
-        .ok_or(ImportError::TooLarge)?;
-    if width == 0
-        || height == 0
-        || width > MAX_IMPORTED_IMAGE_DIMENSION
-        || height > MAX_IMPORTED_IMAGE_DIMENSION
-        || pixels > MAX_IMPORTED_IMAGE_PIXELS
-    {
-        return Err(ImportError::TooLarge);
-    }
-    drop(decoded);
     let display_name = canonical_display_name(selected_path.file_stem(), kind);
     let sha256 = digest(&bytes);
     Ok(PreparedImageAttachment {
@@ -483,6 +471,22 @@ pub(crate) fn prepare_image<B: Backend>(
         sha256,
         bytes,
     })
+}
+
+pub(crate) fn validate_image_bytes(
+    bytes: &[u8],
+    kind: AttachmentKind,
+) -> Result<(u32, u32), PreviewError> {
+    if bytes.is_empty() || bytes.len() > MAX_IMPORTED_IMAGE_BYTES {
+        return Err(PreviewError::TooLarge);
+    }
+    let expected_format = image_format(kind).ok_or(PreviewError::Unsupported)?;
+    let guessed_format = image::guess_format(bytes).map_err(|_| PreviewError::Decode)?;
+    if guessed_format != expected_format {
+        return Err(PreviewError::Changed);
+    }
+    let decoded = decode_bounded(bytes, expected_format)?;
+    Ok((decoded.width(), decoded.height()))
 }
 
 /// Verify and decode one authoritative managed attachment into bounded RGBA.

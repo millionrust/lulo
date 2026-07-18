@@ -1649,7 +1649,7 @@ mod tests {
             attachments: vec![
                 LegacyAttachmentInput {
                     relative_path: "diagram.png".into(),
-                    bytes: b"\x89PNG\r\n\x1a\nfixture".to_vec(),
+                    bytes: png_bytes(),
                 },
                 LegacyAttachmentInput {
                     relative_path: "unclaimed.bin".into(),

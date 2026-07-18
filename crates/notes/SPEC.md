@@ -291,8 +291,7 @@ A separate four-command/two-event preview worker keeps decode off both GPUI and
 the repository writer; generation, accepted-library revision, and attachment
 identity gate Started/Ready/Unavailable projection, a newer request cancels the
 old one, and diagnostics expose no names, paths, hashes, or pixels. Portal
-dispatch, the live Notes view, preview rendering/accessibility, and legacy-image
-decoder validation still remain.
+dispatch, the live Notes view, and preview rendering/accessibility still remain.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -308,16 +307,20 @@ byte, and publishes metadata last. A versioned private receipt retains the
 original relative-path/length/hash mapping; exact staged files are reusable on
 retry, conflicting files fail closed, metadata failure leaves recovery data
 intact, and an existing nonempty library is never overwritten. The prototype
-source is not mutated. Filesystem discovery, symlink-safe source traversal,
-full image-decoder validation, and Notes process integration remain. A bounded
-legacy discovery adapter now requires an absolute non-symlink source, sorts
+source is not mutated. A bounded legacy discovery adapter now requires an
+absolute non-symlink source, sorts
 every entry, opens regular files no-follow, caps entries and aggregate bytes,
 preserves empty folders and nested unclaimed files, normalizes only inside-root
 legacy absolute pins, and rejects links, deeper trees, invalid metadata/sort/
 timestamps, unreadable entries, and excessive files without partially
 importing them. Its deterministic output feeds the planner directly, so the
 application can scan once for review and scan again for the commit's exact-plan
-comparison. Full image decoding and Linux runtime wiring remain. The real store
+comparison. Every referenced PNG/JPEG/WebP candidate must now pass the same
+complete bounded decode as a new import during both review and fresh-reread
+planning; signature-only malformed data and GIF remain unchanged in raw
+recovery, keep their Markdown text, and produce an unsupported-reference
+warning instead of authoritative attachment metadata. Linux runtime wiring
+remains. The real store
 now canonicalizes an absolute app-owned root, makes it private, rejects
 symlink/hard-link lock substitution, and holds one nonblocking advisory writer
 lease across recovery, migration, and saves. Same-process duplicate stores and

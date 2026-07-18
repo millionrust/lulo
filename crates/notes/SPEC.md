@@ -196,6 +196,17 @@ journal remains preserved and blocks writes. This adapter is not yet wired to
 the Notes process, and process-wide single-writer ownership, attachment-file
 transactions, recovery drafts, and prototype migration remain required.
 
+The version-2 library schema now carries authoritative sort order and reads
+version 1 with the documented Date Edited default. A bounded deterministic
+legacy planner maps sorted prototype paths to stable IDs, preserves folder,
+pin, sort, tag, timestamp, note, and recognized image relationships, and emits
+exact source hashes plus warnings for stale pins, duplicate tags, unsupported
+references, and unclaimed files. It refuses traversal, duplicate paths,
+invalid UTF-8/timestamps/metadata, excessive input, and normalized folder
+collisions. Filesystem scanning, full image-decoder validation, recovery-copy
+placement, attachment persistence, and final transactional commit remain; the
+planner itself never changes the prototype library.
+
 Known gaps include path-based identity and pins, synchronous scans/reads on the
 UI thread, a permanent 1.5-second save loop, no versioned manifest/journal or
 aggregate bounds, no exact conflict preflight/readback, no recovery records,

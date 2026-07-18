@@ -52,6 +52,14 @@ pub enum AttachmentKind {
     WebP,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortOrder {
+    #[default]
+    Edited,
+    Created,
+    Title,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FolderRecord {
     pub id: FolderId,
@@ -92,6 +100,7 @@ pub struct NoteRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LibrarySnapshot {
     pub revision: u64,
+    pub sort_order: SortOrder,
     pub next_note_id: u64,
     pub next_folder_id: u64,
     pub next_attachment_id: u64,
@@ -104,6 +113,7 @@ impl Default for LibrarySnapshot {
     fn default() -> Self {
         Self {
             revision: 1,
+            sort_order: SortOrder::Edited,
             next_note_id: 1,
             next_folder_id: 1,
             next_attachment_id: 1,
@@ -311,6 +321,7 @@ mod tests {
         let attachment_id = AttachmentId::new(1).unwrap();
         LibrarySnapshot {
             revision: 4,
+            sort_order: SortOrder::Title,
             next_note_id: 2,
             next_folder_id: 2,
             next_attachment_id: 2,

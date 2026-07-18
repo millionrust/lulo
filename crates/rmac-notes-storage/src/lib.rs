@@ -16,6 +16,14 @@ use rmac_notes_store::{decode, encode, CodecError, LibrarySnapshot, MAX_LIBRARY_
 use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
+mod migration;
+
+pub use migration::{
+    plan_legacy_library, LegacyAttachmentInput, LegacyLibraryInput, LegacyNoteInput,
+    MigrationError, MigrationPlan, MigrationWarning, PlannedAttachment, PlannedNoteSource,
+    RecoveryFile,
+};
+
 const JOURNAL_MAGIC: &[u8; 8] = b"RMNJRN\0\0";
 const JOURNAL_VERSION: u16 = 1;
 const MAX_JOURNAL_BYTES: usize = MAX_LIBRARY_BYTES + 128;
@@ -941,6 +949,6 @@ mod tests {
         assert_eq!(&bytes[..8], JOURNAL_MAGIC);
         bytes[8..10].copy_from_slice(&(JOURNAL_VERSION + 1).to_le_bytes());
         assert!(Journal::decode(&bytes).is_err());
-        assert_eq!(rmac_notes_store::SCHEMA_VERSION, 1);
+        assert_eq!(rmac_notes_store::SCHEMA_VERSION, 2);
     }
 }

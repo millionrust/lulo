@@ -2,12 +2,12 @@ use std::fmt;
 
 use crate::{
     AttachmentId, AttachmentKind, AttachmentRecord, FolderId, FolderRecord, LibrarySnapshot,
-    NoteId, NoteRecord, ValidationError, MAX_ATTACHMENTS, MAX_ATTACHMENTS_PER_NOTE, MAX_FOLDERS,
-    MAX_NOTES, MAX_TAGS_PER_NOTE,
+    NoteId, NoteRecord, SortOrder, ValidationError, MAX_ATTACHMENTS, MAX_ATTACHMENTS_PER_NOTE,
+    MAX_FOLDERS, MAX_NOTES, MAX_TAGS_PER_NOTE,
 };
 
 const MAGIC: &[u8; 8] = b"RMNLIB\0\0";
-pub const SCHEMA_VERSION: u16 = 1;
+pub const SCHEMA_VERSION: u16 = 2;
 pub const MAX_LIBRARY_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +47,11 @@ pub fn encode(snapshot: &LibrarySnapshot) -> Result<Vec<u8>, CodecError> {
     put_u64(&mut output, snapshot.next_note_id);
     put_u64(&mut output, snapshot.next_folder_id);
     put_u64(&mut output, snapshot.next_attachment_id);
+    output.push(match snapshot.sort_order {
+        SortOrder::Edited => 0,
+        SortOrder::Created => 1,
+        SortOrder::Title => 2,
+    });
     put_count(&mut output, folders.len())?;
     put_count(&mut output, notes.len())?;
     put_count(&mut output, attachments.len())?;
@@ -108,13 +113,24 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
     if reader.take(MAGIC.len())? != MAGIC {
         return Err(CodecError::Malformed);
     }
-    if reader.u16()? != SCHEMA_VERSION {
+    let version = reader.u16()?;
+    if !matches!(version, 1 | SCHEMA_VERSION) {
         return Err(CodecError::UnsupportedVersion);
     }
     let revision = reader.u64()?;
     let next_note_id = reader.u64()?;
     let next_folder_id = reader.u64()?;
     let next_attachment_id = reader.u64()?;
+    let sort_order = if version == 1 {
+        SortOrder::Edited
+    } else {
+        match reader.byte()? {
+            0 => SortOrder::Edited,
+            1 => SortOrder::Created,
+            2 => SortOrder::Title,
+            _ => return Err(CodecError::Malformed),
+        }
+    };
     let folder_count = reader.count(MAX_FOLDERS)?;
     let note_count = reader.count(MAX_NOTES)?;
     let attachment_count = reader.count(MAX_ATTACHMENTS)?;
@@ -203,6 +219,7 @@ pub fn decode(bytes: &[u8]) -> Result<LibrarySnapshot, CodecError> {
     }
     let snapshot = LibrarySnapshot {
         revision,
+        sort_order,
         next_note_id,
         next_folder_id,
         next_attachment_id,
@@ -372,8 +389,21 @@ mod tests {
         assert_eq!(decode(&trailing), Err(CodecError::Malformed));
 
         let mut future = bytes;
-        future[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&2_u16.to_le_bytes());
+        future[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&(SCHEMA_VERSION + 1).to_le_bytes());
         assert_eq!(decode(&future), Err(CodecError::UnsupportedVersion));
+    }
+
+    #[test]
+    fn version_one_snapshot_migrates_with_edited_sort_default() {
+        let snapshot = fixture();
+        let mut legacy = encode(&snapshot).unwrap();
+        legacy[MAGIC.len()..MAGIC.len() + 2].copy_from_slice(&1_u16.to_le_bytes());
+        let sort_offset = MAGIC.len() + 2 + 8 * 4;
+        legacy.remove(sort_offset);
+
+        let mut expected = snapshot;
+        expected.sort_order = SortOrder::Edited;
+        assert_eq!(decode(&legacy).unwrap(), expected);
     }
 
     #[test]

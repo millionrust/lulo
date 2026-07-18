@@ -55,6 +55,14 @@ candidate to roll back a merely prepared save or finish backup/cleanup after an
 already committed primary. Ambiguous or malformed journals are preserved and
 block further writes rather than being guessed away. The application runtime
 still needs to enforce the single-writer process boundary before integration.
+The migration planner below that adapter takes a bounded, already-scanned
+prototype library and deterministically assigns stable IDs by source order. It
+carries folders, pins, sort order, tags, timestamps, and recognized attachment
+relationships into one validated candidate while retaining SHA-256 receipts
+for every source. Unsafe paths, case-colliding folders, malformed text, and
+invalid metadata stop the plan; stale or unsupported non-destructive data is
+reported for recovery-copy handling. Planning never deletes or rewrites the
+prototype source.
 
 `rmac-compositor` owns compositor-independent outputs, workspaces, windows,
 layer surfaces, focus, activation, urgency, snapshots, and incremental events.

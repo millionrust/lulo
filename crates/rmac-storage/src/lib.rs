@@ -99,6 +99,11 @@ pub trait Backend {
         Err(unsupported("write private data atomically"))
     }
 
+    /// Create a private file without ever replacing an existing path.
+    fn write_new_private(&self, _path: &Path, _contents: &[u8]) -> io::Result<()> {
+        Err(unsupported("write new private data"))
+    }
+
     fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
         Err(unsupported("create directory"))
     }
@@ -165,6 +170,10 @@ impl Backend for FileSystem {
 
     fn write_atomic_private(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
         atomic_write_private(path, contents)
+    }
+
+    fn write_new_private(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
+        write_new_private(path, contents)
     }
 
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
@@ -274,6 +283,49 @@ pub fn atomic_write_private(path: &Path, contents: &[u8]) -> io::Result<()> {
     result
 }
 
+/// Durably create a private state file and never replace an existing path.
+///
+/// On Unix, the destination is `0600` before any content is written. A write,
+/// permission, or sync failure removes only the file created by this call.
+/// Callers that retry after an error must still reread the path: an error can
+/// be reported after the directory entry became visible and cleanup itself is
+/// best effort.
+pub fn write_new_private(path: &Path, contents: &[u8]) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "target has no parent directory",
+        )
+    })?;
+    let mut created = false;
+    let result = (|| {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            options.mode(0o600);
+        }
+        let mut file = options.open(path)?;
+        created = true;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    })();
+
+    if result.is_err() && created {
+        let _ = std::fs::remove_file(path);
+    }
+    result
+}
+
 /// Copy to a newly created destination and never overwrite an existing path.
 /// A copy/sync/permission failure removes only the destination created by this
 /// invocation, leaving no partial attachment behind.
@@ -366,6 +418,27 @@ mod tests {
             0o600
         );
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_create_new_never_replaces_and_uses_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let root = temp_root("private-create-new");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("legacy-note.md");
+
+        write_new_private(&target, b"preserved source").unwrap();
+        let error = write_new_private(&target, b"replacement").unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&target).unwrap(), b"preserved source");
+        assert_eq!(
+            std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

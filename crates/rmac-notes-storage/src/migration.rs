@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use rmac_notes_store::{
     AttachmentId, AttachmentKind, AttachmentRecord, FolderId, FolderRecord, LibrarySnapshot,
@@ -7,10 +9,16 @@ use rmac_notes_store::{
     MAX_ATTACHMENT_BYTES, MAX_BODY_BYTES, MAX_FOLDERS, MAX_LIBRARY_BYTES, MAX_NAME_BYTES,
     MAX_NOTES, MAX_TAGS_PER_NOTE, MAX_TITLE_BYTES,
 };
+use rmac_storage::Backend;
 use sha2::{Digest as _, Sha256};
+
+use crate::{LoadedLibrary, NotesLibraryStore, StoreError};
 
 const MAX_LEGACY_PATH_BYTES: usize = 4096;
 const MAX_TOTAL_ATTACHMENT_BYTES: u64 = 1024 * 1024 * 1024;
+const MIGRATION_RECEIPT_MAGIC: &[u8; 8] = b"RMNMIG\0\0";
+const MIGRATION_RECEIPT_VERSION: u16 = 1;
+const MAX_MIGRATION_RECEIPT_BYTES: usize = MAX_LIBRARY_BYTES;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LegacyNoteInput {
@@ -74,6 +82,82 @@ pub struct MigrationPlan {
     pub attachments: Vec<PlannedAttachment>,
     pub recovery_files: Vec<RecoveryFile>,
     pub warnings: Vec<MigrationWarning>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MigrationCommitOperation {
+    ValidatePlan,
+    PrepareDirectory,
+    ReadStagedFile,
+    WriteStagedFile,
+    VerifyStagedFile,
+    EncodeReceipt,
+    CommitMetadata,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MigrationCommitErrorKind {
+    Plan(MigrationError),
+    PlanMismatch,
+    NonEmptyLibrary,
+    Io(io::ErrorKind),
+    DestinationConflict,
+    ReadbackMismatch,
+    ReceiptTooLarge,
+    Store(StoreError),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MigrationCommitError {
+    pub operation: MigrationCommitOperation,
+    pub kind: MigrationCommitErrorKind,
+}
+
+impl MigrationCommitError {
+    fn new(operation: MigrationCommitOperation, kind: MigrationCommitErrorKind) -> Self {
+        Self { operation, kind }
+    }
+
+    fn io(operation: MigrationCommitOperation, error: io::Error) -> Self {
+        Self::new(operation, MigrationCommitErrorKind::Io(error.kind()))
+    }
+}
+
+impl fmt::Display for MigrationCommitError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self.kind {
+            MigrationCommitErrorKind::Plan(_) | MigrationCommitErrorKind::PlanMismatch => {
+                "The legacy Notes library changed and needs to be reviewed again"
+            }
+            MigrationCommitErrorKind::NonEmptyLibrary => {
+                "Notes cannot import a legacy library over an existing library"
+            }
+            MigrationCommitErrorKind::Io(_) => {
+                "Notes could not preserve the legacy library in private storage"
+            }
+            MigrationCommitErrorKind::DestinationConflict => {
+                "Notes found conflicting data in the migration recovery area"
+            }
+            MigrationCommitErrorKind::ReadbackMismatch => {
+                "Notes could not verify preserved migration data"
+            }
+            MigrationCommitErrorKind::ReceiptTooLarge => {
+                "The legacy Notes migration receipt exceeds its safety limit"
+            }
+            MigrationCommitErrorKind::Store(_) => {
+                "Notes preserved the legacy files but could not commit the migrated library"
+            }
+        })
+    }
+}
+
+impl std::error::Error for MigrationCommitError {}
+
+#[derive(Clone, Debug)]
+pub struct MigrationCommitOutcome {
+    pub library: LoadedLibrary,
+    pub already_committed: bool,
+    pub maintenance_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -347,6 +431,288 @@ pub fn plan_legacy_library(mut input: LegacyLibraryInput) -> Result<MigrationPla
         recovery_files,
         warnings,
     })
+}
+
+pub(super) fn commit_legacy_migration_locked<B: Backend>(
+    store: &NotesLibraryStore<B>,
+    loaded: &LoadedLibrary,
+    reread: &LegacyLibraryInput,
+    reviewed_plan: &MigrationPlan,
+) -> Result<MigrationCommitOutcome, MigrationCommitError> {
+    let current_plan = plan_legacy_library(reread.clone()).map_err(|error| {
+        MigrationCommitError::new(
+            MigrationCommitOperation::ValidatePlan,
+            MigrationCommitErrorKind::Plan(error),
+        )
+    })?;
+    if &current_plan != reviewed_plan {
+        return Err(MigrationCommitError::new(
+            MigrationCommitOperation::ValidatePlan,
+            MigrationCommitErrorKind::PlanMismatch,
+        ));
+    }
+
+    let already_committed = loaded.snapshot() == &current_plan.snapshot;
+    if !already_committed && loaded.snapshot() != &LibrarySnapshot::default() {
+        return Err(MigrationCommitError::new(
+            MigrationCommitOperation::ValidatePlan,
+            MigrationCommitErrorKind::NonEmptyLibrary,
+        ));
+    }
+
+    let mut notes = reread.notes.iter().collect::<Vec<_>>();
+    notes.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    let mut attachments = reread.attachments.iter().collect::<Vec<_>>();
+    attachments.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    let attachment_by_path = attachments
+        .iter()
+        .map(|attachment| (attachment.relative_path.as_str(), *attachment))
+        .collect::<BTreeMap<_, _>>();
+
+    for (source, planned) in notes.iter().zip(&current_plan.note_sources) {
+        if source.relative_path != planned.relative_path {
+            return Err(MigrationCommitError::new(
+                MigrationCommitOperation::ValidatePlan,
+                MigrationCommitErrorKind::PlanMismatch,
+            ));
+        }
+        stage_exact(
+            store,
+            &recovery_note_path(store.root(), planned.note_id),
+            &source.bytes,
+        )?;
+    }
+    for (index, attachment) in attachments.iter().enumerate() {
+        stage_exact(
+            store,
+            &recovery_file_path(store.root(), index),
+            &attachment.bytes,
+        )?;
+    }
+    for planned in &current_plan.attachments {
+        let source = attachment_by_path
+            .get(planned.relative_path.as_str())
+            .ok_or_else(|| {
+                MigrationCommitError::new(
+                    MigrationCommitOperation::ValidatePlan,
+                    MigrationCommitErrorKind::PlanMismatch,
+                )
+            })?;
+        stage_exact(
+            store,
+            &managed_attachment_path(store.root(), planned.attachment_id),
+            &source.bytes,
+        )?;
+    }
+    let receipt = encode_receipt(&current_plan, &attachments)?;
+    stage_exact(store, &migration_receipt_path(store.root()), &receipt)?;
+
+    if already_committed {
+        return Ok(MigrationCommitOutcome {
+            library: loaded.clone(),
+            already_committed: true,
+            maintenance_pending: loaded
+                .notices()
+                .iter()
+                .any(|notice| matches!(notice, crate::RecoveryNotice::MaintenancePending)),
+        });
+    }
+
+    let outcome = store
+        .save_locked(loaded, &current_plan.snapshot)
+        .map_err(|error| {
+            MigrationCommitError::new(
+                MigrationCommitOperation::CommitMetadata,
+                MigrationCommitErrorKind::Store(error),
+            )
+        })?;
+    Ok(MigrationCommitOutcome {
+        library: outcome.library,
+        already_committed: false,
+        maintenance_pending: outcome.maintenance_pending,
+    })
+}
+
+fn stage_exact<B: Backend>(
+    store: &NotesLibraryStore<B>,
+    path: &Path,
+    bytes: &[u8],
+) -> Result<(), MigrationCommitError> {
+    match store.backend.read_bounded(path, bytes.len()) {
+        Ok(existing) if existing == bytes => return Ok(()),
+        Ok(_) => {
+            return Err(MigrationCommitError::new(
+                MigrationCommitOperation::ReadStagedFile,
+                MigrationCommitErrorKind::DestinationConflict,
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+            return Err(MigrationCommitError::new(
+                MigrationCommitOperation::ReadStagedFile,
+                MigrationCommitErrorKind::DestinationConflict,
+            ));
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(MigrationCommitError::io(
+                MigrationCommitOperation::ReadStagedFile,
+                error,
+            ));
+        }
+    }
+
+    let parent = path.parent().ok_or_else(|| {
+        MigrationCommitError::io(
+            MigrationCommitOperation::PrepareDirectory,
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "generated migration path has no parent",
+            ),
+        )
+    })?;
+    store.backend.create_dir_all(parent).map_err(|error| {
+        MigrationCommitError::io(MigrationCommitOperation::PrepareDirectory, error)
+    })?;
+    match store.backend.write_new_private(path, bytes) {
+        Ok(()) => verify_staged(store, path, bytes),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            match store.backend.read_bounded(path, bytes.len()) {
+                Ok(existing) if existing == bytes => Ok(()),
+                Ok(_) => Err(MigrationCommitError::new(
+                    MigrationCommitOperation::WriteStagedFile,
+                    MigrationCommitErrorKind::DestinationConflict,
+                )),
+                Err(read_error) if read_error.kind() == io::ErrorKind::InvalidData => {
+                    Err(MigrationCommitError::new(
+                        MigrationCommitOperation::WriteStagedFile,
+                        MigrationCommitErrorKind::DestinationConflict,
+                    ))
+                }
+                Err(read_error) => Err(MigrationCommitError::io(
+                    MigrationCommitOperation::ReadStagedFile,
+                    read_error,
+                )),
+            }
+        }
+        Err(write_error) => match store.backend.read_bounded(path, bytes.len()) {
+            Ok(existing) if existing == bytes => Ok(()),
+            Ok(_) => Err(MigrationCommitError::new(
+                MigrationCommitOperation::WriteStagedFile,
+                MigrationCommitErrorKind::DestinationConflict,
+            )),
+            Err(read_error) if read_error.kind() == io::ErrorKind::NotFound => Err(
+                MigrationCommitError::io(MigrationCommitOperation::WriteStagedFile, write_error),
+            ),
+            Err(read_error) if read_error.kind() == io::ErrorKind::InvalidData => {
+                Err(MigrationCommitError::new(
+                    MigrationCommitOperation::WriteStagedFile,
+                    MigrationCommitErrorKind::DestinationConflict,
+                ))
+            }
+            Err(_) => Err(MigrationCommitError::io(
+                MigrationCommitOperation::WriteStagedFile,
+                write_error,
+            )),
+        },
+    }
+}
+
+fn verify_staged<B: Backend>(
+    store: &NotesLibraryStore<B>,
+    path: &Path,
+    expected: &[u8],
+) -> Result<(), MigrationCommitError> {
+    let readback = match store.backend.read_bounded(path, expected.len()) {
+        Ok(readback) => readback,
+        Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+            return Err(MigrationCommitError::new(
+                MigrationCommitOperation::VerifyStagedFile,
+                MigrationCommitErrorKind::ReadbackMismatch,
+            ));
+        }
+        Err(error) => {
+            return Err(MigrationCommitError::io(
+                MigrationCommitOperation::VerifyStagedFile,
+                error,
+            ));
+        }
+    };
+    if readback != expected {
+        return Err(MigrationCommitError::new(
+            MigrationCommitOperation::VerifyStagedFile,
+            MigrationCommitErrorKind::ReadbackMismatch,
+        ));
+    }
+    Ok(())
+}
+
+fn encode_receipt(
+    plan: &MigrationPlan,
+    attachments: &[&LegacyAttachmentInput],
+) -> Result<Vec<u8>, MigrationCommitError> {
+    let mut bytes = Vec::new();
+    receipt_extend(&mut bytes, MIGRATION_RECEIPT_MAGIC)?;
+    receipt_extend(&mut bytes, &MIGRATION_RECEIPT_VERSION.to_le_bytes())?;
+    receipt_extend(&mut bytes, &(plan.note_sources.len() as u64).to_le_bytes())?;
+    receipt_extend(&mut bytes, &(attachments.len() as u64).to_le_bytes())?;
+    for source in &plan.note_sources {
+        receipt_extend(&mut bytes, &source.note_id.get().to_le_bytes())?;
+        receipt_string(&mut bytes, &source.relative_path)?;
+        receipt_extend(&mut bytes, &source.byte_len.to_le_bytes())?;
+        receipt_extend(&mut bytes, &source.sha256)?;
+    }
+    for (index, source) in attachments.iter().enumerate() {
+        receipt_extend(&mut bytes, &(index as u64).to_le_bytes())?;
+        receipt_string(&mut bytes, &source.relative_path)?;
+        receipt_extend(&mut bytes, &(source.bytes.len() as u64).to_le_bytes())?;
+        receipt_extend(&mut bytes, &digest(&source.bytes))?;
+    }
+    Ok(bytes)
+}
+
+fn receipt_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), MigrationCommitError> {
+    let length = u32::try_from(value.len()).map_err(|_| receipt_too_large())?;
+    receipt_extend(bytes, &length.to_le_bytes())?;
+    receipt_extend(bytes, value.as_bytes())
+}
+
+fn receipt_extend(bytes: &mut Vec<u8>, value: &[u8]) -> Result<(), MigrationCommitError> {
+    let length = bytes
+        .len()
+        .checked_add(value.len())
+        .filter(|length| *length <= MAX_MIGRATION_RECEIPT_BYTES)
+        .ok_or_else(receipt_too_large)?;
+    bytes.reserve(length.saturating_sub(bytes.len()));
+    bytes.extend_from_slice(value);
+    Ok(())
+}
+
+fn receipt_too_large() -> MigrationCommitError {
+    MigrationCommitError::new(
+        MigrationCommitOperation::EncodeReceipt,
+        MigrationCommitErrorKind::ReceiptTooLarge,
+    )
+}
+
+fn recovery_note_path(root: &Path, id: NoteId) -> PathBuf {
+    root.join("legacy-recovery")
+        .join("notes")
+        .join(format!("{:020}.md", id.get()))
+}
+
+fn recovery_file_path(root: &Path, index: usize) -> PathBuf {
+    root.join("legacy-recovery")
+        .join("files")
+        .join(format!("{index:020}.bin"))
+}
+
+fn managed_attachment_path(root: &Path, id: AttachmentId) -> PathBuf {
+    root.join("attachments")
+        .join(format!("{:020}.bin", id.get()))
+}
+
+fn migration_receipt_path(root: &Path) -> PathBuf {
+    root.join("legacy-recovery").join("receipt.bin")
 }
 
 #[derive(Clone, Debug)]

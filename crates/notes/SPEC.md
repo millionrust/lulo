@@ -203,9 +203,16 @@ pin, sort, tag, timestamp, note, and recognized image relationships, and emits
 exact source hashes plus warnings for stale pins, duplicate tags, unsupported
 references, and unclaimed files. It refuses traversal, duplicate paths,
 invalid UTF-8/timestamps/metadata, excessive input, and normalized folder
-collisions. Filesystem scanning, full image-decoder validation, recovery-copy
-placement, attachment persistence, and final transactional commit remain; the
-planner itself never changes the prototype library.
+collisions. The transaction adapter now compares a fresh bounded reread with
+that complete reviewed plan, create-new stages private raw copies of every
+legacy note and attachment plus managed attachment identities, verifies every
+byte, and publishes metadata last. A versioned private receipt retains the
+original relative-path/length/hash mapping; exact staged files are reusable on
+retry, conflicting files fail closed, metadata failure leaves recovery data
+intact, and an existing nonempty library is never overwritten. The prototype
+source is not mutated. Filesystem discovery, symlink-safe source traversal,
+full image-decoder validation, process-wide single-writer ownership, and Notes
+process integration remain.
 
 Known gaps include path-based identity and pins, synchronous scans/reads on the
 UI thread, a permanent 1.5-second save loop, no versioned manifest/journal or

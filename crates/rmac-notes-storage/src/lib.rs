@@ -20,8 +20,9 @@ mod migration;
 
 pub use migration::{
     plan_legacy_library, LegacyAttachmentInput, LegacyLibraryInput, LegacyNoteInput,
-    MigrationError, MigrationPlan, MigrationWarning, PlannedAttachment, PlannedNoteSource,
-    RecoveryFile,
+    MigrationCommitError, MigrationCommitErrorKind, MigrationCommitOperation,
+    MigrationCommitOutcome, MigrationError, MigrationPlan, MigrationWarning, PlannedAttachment,
+    PlannedNoteSource, RecoveryFile,
 };
 
 const JOURNAL_MAGIC: &[u8; 8] = b"RMNJRN\0\0";
@@ -187,6 +188,22 @@ impl<B: Backend> NotesLibraryStore<B> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.save_locked(loaded, candidate)
+    }
+
+    /// Preserve a freshly reread legacy library and publish its reviewed plan.
+    /// Raw recovery data and managed attachments are exact-readback verified
+    /// before the metadata transaction becomes authoritative.
+    pub fn commit_legacy_migration(
+        &self,
+        loaded: &LoadedLibrary,
+        reread: &LegacyLibraryInput,
+        reviewed_plan: &MigrationPlan,
+    ) -> Result<MigrationCommitOutcome, MigrationCommitError> {
+        let _guard = self
+            .transaction_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        migration::commit_legacy_migration_locked(self, loaded, reread, reviewed_plan)
     }
 
     fn load_locked(&self) -> Result<LoadedLibrary, StoreError> {
@@ -677,7 +694,7 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmac_notes_store::{NoteId, NoteRecord};
+    use rmac_notes_store::{NoteId, NoteRecord, SortOrder};
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -730,6 +747,19 @@ mod tests {
             Ok(())
         }
 
+        fn write_new_private(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
+            let mut state = self.0.lock().unwrap();
+            if state.fail_write.as_deref() == Some(path) {
+                state.fail_write = None;
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            if state.files.contains_key(path) {
+                return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+            }
+            state.files.insert(path.to_path_buf(), contents.to_vec());
+            Ok(())
+        }
+
         fn create_dir_all(&self, _path: &Path) -> io::Result<()> {
             Ok(())
         }
@@ -774,6 +804,29 @@ mod tests {
             NotesLibraryStore::with_backend(PathBuf::from("library"), backend.clone()),
             backend,
         )
+    }
+
+    fn legacy_fixture() -> LegacyLibraryInput {
+        LegacyLibraryInput {
+            notes: vec![LegacyNoteInput {
+                relative_path: "Projects/roadmap.md".into(),
+                bytes: b"Roadmap\nKeep every byte\n![](diagram.png)".to_vec(),
+                created_unix_ms: 10,
+                modified_unix_ms: 20,
+            }],
+            attachments: vec![
+                LegacyAttachmentInput {
+                    relative_path: "diagram.png".into(),
+                    bytes: b"\x89PNG\r\n\x1a\nfixture".to_vec(),
+                },
+                LegacyAttachmentInput {
+                    relative_path: "unclaimed.bin".into(),
+                    bytes: b"preserve unsupported bytes".to_vec(),
+                },
+            ],
+            pinned_note_paths: vec!["Projects/roadmap.md".into()],
+            sort_order: SortOrder::Title,
+        }
     }
 
     #[test]
@@ -950,5 +1003,140 @@ mod tests {
         bytes[8..10].copy_from_slice(&(JOURNAL_VERSION + 1).to_le_bytes());
         assert!(Journal::decode(&bytes).is_err());
         assert_eq!(rmac_notes_store::SCHEMA_VERSION, 2);
+    }
+
+    #[test]
+    fn migration_preserves_every_source_before_metadata_and_is_idempotent() {
+        let (store, backend) = store();
+        let loaded = store.load().unwrap();
+        let input = legacy_fixture();
+        let plan = plan_legacy_library(input.clone()).unwrap();
+
+        let outcome = store
+            .commit_legacy_migration(&loaded, &input, &plan)
+            .unwrap();
+
+        assert!(!outcome.already_committed);
+        assert!(!outcome.maintenance_pending);
+        assert_eq!(outcome.library.snapshot(), &plan.snapshot);
+        assert_eq!(
+            backend.get(&PathBuf::from(
+                "library/legacy-recovery/notes/00000000000000000001.md"
+            )),
+            Some(input.notes[0].bytes.clone())
+        );
+        assert_eq!(
+            backend.get(&PathBuf::from(
+                "library/legacy-recovery/files/00000000000000000000.bin"
+            )),
+            Some(input.attachments[0].bytes.clone())
+        );
+        assert_eq!(
+            backend.get(&PathBuf::from(
+                "library/legacy-recovery/files/00000000000000000001.bin"
+            )),
+            Some(input.attachments[1].bytes.clone())
+        );
+        assert_eq!(
+            backend.get(&PathBuf::from(
+                "library/attachments/00000000000000000001.bin"
+            )),
+            Some(input.attachments[0].bytes.clone())
+        );
+        assert!(backend
+            .get(&PathBuf::from("library/legacy-recovery/receipt.bin"))
+            .unwrap()
+            .starts_with(b"RMNMIG\0\0"));
+
+        let retry = store
+            .commit_legacy_migration(&outcome.library, &input, &plan)
+            .unwrap();
+        assert!(retry.already_committed);
+        assert_eq!(retry.library.snapshot(), &plan.snapshot);
+    }
+
+    #[test]
+    fn changed_reread_or_conflicting_recovery_data_never_publishes_metadata() {
+        let (store, backend) = store();
+        let loaded = store.load().unwrap();
+        let input = legacy_fixture();
+        let plan = plan_legacy_library(input.clone()).unwrap();
+        let mut changed = input.clone();
+        changed.notes[0].bytes = b"Changed after review".to_vec();
+
+        let changed_error = store
+            .commit_legacy_migration(&loaded, &changed, &plan)
+            .unwrap_err();
+        assert_eq!(changed_error.kind, MigrationCommitErrorKind::PlanMismatch);
+        assert_eq!(backend.get(&store.primary_path()), None);
+
+        backend.set(
+            PathBuf::from("library/legacy-recovery/notes/00000000000000000001.md"),
+            b"unrelated existing data".to_vec(),
+        );
+        let conflict = store
+            .commit_legacy_migration(&loaded, &input, &plan)
+            .unwrap_err();
+        assert_eq!(conflict.kind, MigrationCommitErrorKind::DestinationConflict);
+        assert_eq!(backend.get(&store.primary_path()), None);
+        assert_eq!(backend.get(&store.journal_path()), None);
+    }
+
+    #[test]
+    fn metadata_failure_leaves_verified_staging_for_a_safe_retry() {
+        let (store, backend) = store();
+        let loaded = store.load().unwrap();
+        let input = legacy_fixture();
+        let plan = plan_legacy_library(input.clone()).unwrap();
+        backend.fail_next_write(store.primary_path());
+
+        let error = store
+            .commit_legacy_migration(&loaded, &input, &plan)
+            .unwrap_err();
+        assert_eq!(error.operation, MigrationCommitOperation::CommitMetadata);
+        assert_eq!(
+            error.kind,
+            MigrationCommitErrorKind::Store(StoreError::new(
+                Operation::WritePrimary,
+                ErrorKind::Io(io::ErrorKind::PermissionDenied)
+            ))
+        );
+        assert!(backend
+            .get(&PathBuf::from("library/legacy-recovery/receipt.bin"))
+            .is_some());
+        assert!(backend
+            .get(&PathBuf::from(
+                "library/attachments/00000000000000000001.bin"
+            ))
+            .is_some());
+
+        let recovered = store.load().unwrap();
+        assert_eq!(recovered.snapshot(), &LibrarySnapshot::default());
+        let retry = store
+            .commit_legacy_migration(&recovered, &input, &plan)
+            .unwrap();
+        assert_eq!(retry.library.snapshot(), &plan.snapshot);
+        assert!(!retry.already_committed);
+    }
+
+    #[test]
+    fn migration_refuses_to_stage_over_a_nonempty_library() {
+        let (store, backend) = store();
+        let empty = store.load().unwrap();
+        let existing = candidate(empty.snapshot(), "Existing");
+        let loaded = store.save(&empty, &existing).unwrap().library;
+        let input = legacy_fixture();
+        let plan = plan_legacy_library(input.clone()).unwrap();
+
+        let error = store
+            .commit_legacy_migration(&loaded, &input, &plan)
+            .unwrap_err();
+
+        assert_eq!(error.kind, MigrationCommitErrorKind::NonEmptyLibrary);
+        assert_eq!(
+            backend.get(&PathBuf::from("library/legacy-recovery/receipt.bin")),
+            None
+        );
+        assert_eq!(store.load().unwrap().snapshot(), &existing);
     }
 }

@@ -5250,6 +5250,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-notes-storage"
+version = "0.1.0"
+dependencies = [
+ "rmac-notes-store",
+ "rmac-storage",
+ "sha2",
+]
+
+[[package]]
 name = "rmac-notes-store"
 version = "0.1.0"
 

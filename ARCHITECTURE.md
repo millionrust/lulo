@@ -46,6 +46,15 @@ versioned binary codec. It imports no GPUI, filesystem, portal, or async
 runtime. The forthcoming journal/storage adapter must validate and encode a
 complete candidate through this crate before changing durable state; the Notes
 view will eventually consume accepted snapshots rather than scan paths itself.
+`rmac-notes-storage` is the lower durable adapter. It serializes mutations per
+store instance, exact-preflights the loaded primary bytes, verifies a private
+write-ahead journal, atomically replaces and rereads the primary, refreshes the
+last-known-good copy, and removes the journal only after both durable records
+match. Startup uses the journal's previous SHA-256 identity and complete
+candidate to roll back a merely prepared save or finish backup/cleanup after an
+already committed primary. Ambiguous or malformed journals are preserved and
+block further writes rather than being guessed away. The application runtime
+still needs to enforce the single-writer process boundary before integration.
 
 `rmac-compositor` owns compositor-independent outputs, workspaces, windows,
 layer surfaces, focus, activation, urgency, snapshots, and incremental events.

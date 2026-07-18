@@ -187,6 +187,15 @@ does not yet provide the journal, filesystem adapter, migration, recovery,
 index, or application integration, so the existing prototype remains the live
 authority for now.
 
+The separate `rmac-notes-storage` adapter now provides the metadata transaction
+protocol: private primary/last-known-good/journal files, exact loaded-byte
+preflight, candidate and journal revalidation, atomic replacement, exact
+readback, committed-with-maintenance reporting, corrupt-primary restoration,
+and deterministic interrupted-save rollback/finish. A malformed or ambiguous
+journal remains preserved and blocks writes. This adapter is not yet wired to
+the Notes process, and process-wide single-writer ownership, attachment-file
+transactions, recovery drafts, and prototype migration remain required.
+
 Known gaps include path-based identity and pins, synchronous scans/reads on the
 UI thread, a permanent 1.5-second save loop, no versioned manifest/journal or
 aggregate bounds, no exact conflict preflight/readback, no recovery records,

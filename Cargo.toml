@@ -51,6 +51,7 @@ rmac-gtk-settings = { version = "=0.1.0", path = "crates/rmac-gtk-settings" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-notes-store = { version = "=0.1.0", path = "crates/rmac-notes-store" }
+rmac-notes-storage = { version = "=0.1.0", path = "crates/rmac-notes-storage" }
 rmac-notifications = { version = "=0.1.0", path = "crates/rmac-notifications" }
 rmac-notifications-linux = { version = "=0.1.0", path = "crates/rmac-notifications-linux" }
 rmac-notifications-runtime = { version = "=0.1.0", path = "crates/rmac-notifications-runtime" }
@@ -108,6 +109,7 @@ rust-embed = "8"
 rustix = { version = "=1.1.4", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10.9"
 sysinfo = "0.33"
 trash = "5"
 url = "2"

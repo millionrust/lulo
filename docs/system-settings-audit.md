@@ -14,7 +14,7 @@ equivalents rather than simulated.
 | VPN | Exact opaque profile identity; libnm-discovered reviewed import-capable plugins plus native WireGuard; portal-selected bounded temporary import with unchanged-file proof, autoconnect rejection, exact preview Save/Delete, and no secret-map rewrite; stable-version existing-profile deletion preview, exact active disconnect, post-disconnect revalidation and authoritative absence; non-lossy common name/account/persistence/timeout editing with stable-map preflight, partial official NetworkManager mutation, full typed/unrelated-field readback, and no secret reads or lossy rollback; exact confirmed plugin-only `ClearSecrets` with active-tunnel truth and an explicit native-WireGuard private-key exclusion; plugin-aware live state; bounded activation/deactivation; ownership-safe Stop/timeout cleanup; authoritative recovery and NetworkManager owner-loss/restart refresh | NetworkManager Settings, Settings.Connection, SecretAgent, ActiveConnection, VPN.Connection, libnm VPN editor plugins, native WireGuard, bounded argument-separated `nmcli`, and the desktop portal | Ubuntu secret-agent/plugin authentication, edit/import/deletion/interaction/accessibility evidence |
 | Battery | Real battery/AC state, health, time/rate, physical capacity/cycles/model, and advertised power profiles; coalesced UPower plus modern/legacy profile signals; owner-loss/restart recovery; generation-safe authoritative resampling with a retained post-mutation refresh; single-battery capability-gated optimized charging with private owner/device identity and verified readback; bounded authoritative 24-hour charge history with explicit unsupported/empty/error states | UPower and power-profiles-daemon | Linux threshold/history hardware, polkit, transition, hotplug, restart, suspend, interaction, scale, and accessibility evidence |
 | General/About | Typed bounded privacy-safe OS, kernel, architecture, hardware, DRM graphics, and session facts; validated hostname mutation with exact readback; coalesced property/service watching with generation-safe authoritative refresh; injection-safe redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs, DMI/DRM sysfs, XDG session environment | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname/service refresh, hardware facts, clipboard contents, and interaction/accessibility |
-| Software Update | Live bounded PackageKit update status with security/blocked classification, cached startup query, explicit freshness request, timeout, service/backend errors, and last-known-good refresh behavior | PackageKit system D-Bus over the Ubuntu APT backend | Trusted download/install transaction, progress/cancel, restart requirements, polkit outcomes, live signals, and Linux interaction evidence |
+| Software Update | Complete bounded PackageKit status; advertised install capability; trusted-only exact simulation and confirmation; destructive-plan warning; exact pre-install revalidation; interactive authorization; live download/install phase, percentage, package, remaining-time and capability-gated cancellation; restart requirements; privacy-safe typed failures; coalesced repository/service signals; generation-safe authoritative recovery with stale-state refusal | `rmac-updates`, `rmac-updates-linux`, modern PackageKit system D-Bus, polkit, and the Ubuntu APT backend | Ubuntu APT transaction, auth/cancel/failure/recovery/restart matrix plus keyboard, scale, performance, and accessibility evidence in `docs/software-update.md` |
 | Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Linux polkit/restart/scale/accessibility evidence |
@@ -163,20 +163,25 @@ by the official systemd
 [`org.freedesktop.hostname1` manual](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.hostname1.html).
 Linux reference-PC interaction evidence remains pending.
 
-Software Update now queries PackageKit directly instead of parsing `apt` output.
-The adapter creates a transaction, subscribes before starting it, sends bounded
-non-interactive cache-age hints, collects typed package/error/completion signals,
-and cancels after 45 seconds. Package identifiers and backend text are bounded
-before entering UI state. A failed refresh preserves the last successful list;
-an absent daemon is an explicit unavailable state. The current slice is status
-only: downloads, installation, restart handling, and authorization are still
-unavailable, and the pane directs people to Ubuntu Software Updater. This
-matches Ubuntu 26.04's documented updater path and PackageKit's official D-Bus
-transaction contract; applying changes will not be claimed until it has its own
-confirmation, polkit, progress, cancellation, and recovery slice.
+Software Update delegates package truth and mutation to modern PackageKit
+instead of parsing or constructing `apt` commands. A bounded snapshot exposes
+security, critical, blocked, normal, truncated, and backend-capability state.
+Install All first refreshes and simulates with PackageKit's trusted-only flag,
+then confirms the typed dependency/removal/downgrade and restart plan. After
+confirmation, rmac refreshes and reruns the simulation; any exact-plan change
+returns to review. The real trusted-only transaction permits the system polkit
+agent to authorize it and presents live phase, percentage, current package,
+remaining time, restart requirements, and cancellation only while PackageKit
+advertises `AllowCancel`.
 
-Authority references: [Ubuntu 26.04 Software Updater guidance](https://documentation.ubuntu.com/desktop/en/26.04/tutorial/install-ubuntu-desktop/)
-and the [PackageKit transaction API](https://packagekit.freedesktop.org/gtk-doc/Transaction.html).
+Repository and service signals coalesce into complete generation-safe reads.
+Every success, failure, cancellation, or timeout performs an independent fresh
+recovery read, and an unconfirmed current state clears the old list so it cannot
+enable a stale retry. Signing, trust, licence, media, authorization, low-space,
+database-change, and backend failures are typed without surfacing private
+backend strings. The exact contract and pending F10 reference-PC matrix are in
+[`software-update.md`](software-update.md), following PackageKit's current
+[`Transaction` interface](https://github.com/PackageKit/PackageKit/blob/main/src/org.freedesktop.PackageKit.Transaction.xml).
 
 Storage no longer parses `df` or invents a `Macintosh HD` label on Linux.
 `rmac-mounts` returns the system volume plus user-visible removable and network

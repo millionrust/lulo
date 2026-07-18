@@ -695,6 +695,16 @@ struct Settings {
     updates_loading: bool,
     updates_busy: bool,
     updates_error: Option<SharedString>,
+    updates_stream_error: Option<SharedString>,
+    updates_generation: u64,
+    updates_refresh_pending: bool,
+    updates_stream_refreshing: bool,
+    updates_preparing: bool,
+    updates_installing: bool,
+    updates_cancellation: Option<rmac_updates::Cancellation>,
+    updates_plan: Option<rmac_updates::InstallPlan>,
+    updates_progress: Option<rmac_updates::InstallProgress>,
+    updates_result: Option<rmac_updates::InstallResult>,
     updates: Option<rmac_updates::Snapshot>,
     time_loading: bool,
     time_busy: bool,
@@ -1116,6 +1126,15 @@ fn system_info_stream_snapshot_is_current(
     snapshot_generation == current_generation && !loading && !busy
 }
 
+fn update_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
 /// Read-only system data that is slow enough to keep off the first-frame path.
 struct SystemSnapshot {
     account: String,
@@ -1527,10 +1546,45 @@ impl Settings {
             let result = rmac_updates_linux::snapshot(rmac_updates::Request::cached()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_update_status(result);
+                this.run_pending_update_refresh(cx);
                 cx.notify();
             });
         })
         .detach();
+
+        #[cfg(target_os = "linux")]
+        {
+            let (update_events, update_event_rx) = async_channel::bounded(1);
+            cx.background_executor()
+                .spawn(async move {
+                    let _ = rmac_updates_linux::watch(update_events).await;
+                })
+                .detach();
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                while let Ok(event) = update_event_rx.recv().await {
+                    if this
+                        .update(cx, |this: &mut Settings, cx| {
+                            match event {
+                                rmac_updates::WatchEvent::Changed => {
+                                    this.queue_update_stream_refresh(cx);
+                                }
+                                rmac_updates::WatchEvent::Unavailable => {
+                                    this.updates_stream_error = Some(
+                                        "Live PackageKit updates are temporarily unavailable"
+                                            .into(),
+                                    );
+                                }
+                            }
+                            cx.notify();
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -2367,6 +2421,16 @@ impl Settings {
             updates_loading: true,
             updates_busy: false,
             updates_error: None,
+            updates_stream_error: None,
+            updates_generation: 0,
+            updates_refresh_pending: false,
+            updates_stream_refreshing: false,
+            updates_preparing: false,
+            updates_installing: false,
+            updates_cancellation: None,
+            updates_plan: None,
+            updates_progress: None,
+            updates_result: None,
             updates: None,
             time_loading: true,
             time_busy: false,
@@ -3367,10 +3431,62 @@ impl Settings {
             Ok(snapshot) => {
                 self.updates = Some(snapshot);
                 self.updates_error = None;
+                self.updates_stream_error = None;
             }
             Err(error) => {
                 self.updates_error = Some(format!("Could not check for updates: {error}").into());
             }
+        }
+    }
+
+    fn queue_update_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.updates_loading || self.updates_busy || self.updates_stream_refreshing {
+            self.updates_refresh_pending = true;
+            return;
+        }
+        self.updates_refresh_pending = false;
+        self.updates_stream_refreshing = true;
+        let generation = self.updates_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_updates_linux::snapshot(rmac_updates::Request::cached()).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.updates_stream_refreshing = false;
+                if update_stream_snapshot_is_current(
+                    generation,
+                    this.updates_generation,
+                    this.updates_loading,
+                    this.updates_busy,
+                ) {
+                    match result {
+                        Ok(snapshot) => {
+                            this.updates = Some(snapshot);
+                            this.updates_error = None;
+                            this.updates_stream_error = None;
+                            this.updates_plan = None;
+                        }
+                        Err(error) => {
+                            this.updates_stream_error = Some(
+                                format!("Could not refresh changed package state: {error}").into(),
+                            );
+                        }
+                    }
+                } else {
+                    this.updates_refresh_pending = true;
+                }
+                this.run_pending_update_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_update_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.updates_refresh_pending
+            && !self.updates_loading
+            && !self.updates_busy
+            && !self.updates_stream_refreshing
+        {
+            self.queue_update_stream_refresh(cx);
         }
     }
 
@@ -3379,12 +3495,166 @@ impl Settings {
             return;
         }
         self.updates_busy = true;
+        self.updates_generation = self.updates_generation.wrapping_add(1);
         self.updates_error = None;
+        self.updates_plan = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = rmac_updates_linux::snapshot(rmac_updates::Request::refresh()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_update_status(result);
+                this.run_pending_update_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn prepare_updates(&mut self, cx: &mut Context<Self>) {
+        if self.updates_loading || self.updates_busy {
+            return;
+        }
+        let Some(snapshot) = self.updates.as_ref() else {
+            return;
+        };
+        if !snapshot.can_prepare_install() {
+            return;
+        }
+        let cancellation = rmac_updates::Cancellation::default();
+        self.updates_busy = true;
+        self.updates_preparing = true;
+        self.updates_installing = false;
+        self.updates_generation = self.updates_generation.wrapping_add(1);
+        self.updates_error = None;
+        self.updates_plan = None;
+        self.updates_progress = None;
+        self.updates_result = None;
+        self.updates_cancellation = Some(cancellation.clone());
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_updates_linux::prepare(cancellation).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.updates_busy = false;
+                this.updates_preparing = false;
+                this.updates_cancellation = None;
+                match result {
+                    Ok((snapshot, plan)) => {
+                        this.updates = Some(snapshot);
+                        this.updates_plan = Some(plan);
+                        this.updates_error = None;
+                        this.updates_stream_error = None;
+                    }
+                    Err(error) => {
+                        this.updates_error =
+                            Some(format!("Could not prepare updates: {error}").into());
+                    }
+                }
+                this.run_pending_update_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn cancel_update_plan(&mut self, cx: &mut Context<Self>) {
+        if !self.updates_busy {
+            self.updates_plan = None;
+            cx.notify();
+        }
+    }
+
+    fn cancel_update_operation(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancellation) = &self.updates_cancellation {
+            cancellation.cancel();
+            cx.notify();
+        }
+    }
+
+    fn confirm_update_plan(&mut self, cx: &mut Context<Self>) {
+        if self.updates_busy {
+            return;
+        }
+        let Some(plan) = self.updates_plan.take() else {
+            return;
+        };
+        let cancellation = rmac_updates::Cancellation::default();
+        let (progress_sender, progress_receiver) = async_channel::bounded(8);
+        self.updates_busy = true;
+        self.updates_preparing = false;
+        self.updates_installing = true;
+        self.updates_generation = self.updates_generation.wrapping_add(1);
+        self.updates_error = None;
+        self.updates_progress = Some(rmac_updates::InstallProgress::default());
+        self.updates_result = None;
+        self.updates_cancellation = Some(cancellation.clone());
+        cx.notify();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(progress) = progress_receiver.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        if this.updates_installing {
+                            this.updates_progress = Some(progress);
+                            cx.notify();
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_updates_linux::install(plan, cancellation, progress_sender).await;
+            let recovery = rmac_updates_linux::snapshot(rmac_updates::Request::refresh()).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.updates_busy = false;
+                this.updates_installing = false;
+                this.updates_cancellation = None;
+                match result {
+                    Ok(result) => {
+                        match recovery {
+                            Ok(snapshot) => {
+                                this.updates_result = Some(result);
+                                this.updates = Some(snapshot);
+                                this.updates_error = None;
+                                this.updates_stream_error = None;
+                            }
+                            Err(error) => {
+                                this.updates_result = None;
+                                this.updates = None;
+                                this.updates_error = Some(
+                                    format!(
+                                        "Updates were installed, but remaining updates could not be confirmed: {error}"
+                                    )
+                                    .into(),
+                                );
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        match recovery {
+                            Ok(snapshot) => {
+                                this.updates = Some(snapshot);
+                                this.updates_error =
+                                    Some(format!("Could not install updates: {error}").into());
+                                this.updates_stream_error = None;
+                            }
+                            Err(recovery_error) => {
+                                this.updates = None;
+                                this.updates_error = Some(
+                                    format!(
+                                        "Could not install updates: {error}. The current package state could not be confirmed: {recovery_error}"
+                                    )
+                                    .into(),
+                                );
+                            }
+                        }
+                    }
+                }
+                this.run_pending_update_refresh(cx);
                 cx.notify();
             });
         })
@@ -14855,6 +15125,157 @@ impl Settings {
         )
     }
 
+    fn render_update_install_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let plan = self.updates_plan.as_ref()?;
+        let requested = plan.requested.len();
+        let changes = plan.changes.len();
+        let installs = plan.change_count(rmac_updates::ChangeKind::Install);
+        let removals = plan.change_count(rmac_updates::ChangeKind::Remove)
+            + plan.change_count(rmac_updates::ChangeKind::Obsolete);
+        let downgrades = plan.change_count(rmac_updates::ChangeKind::Downgrade);
+        let destructive_preview = plan
+            .changes
+            .iter()
+            .filter(|change| change.kind.is_destructive())
+            .take(8)
+            .map(|change| {
+                format!(
+                    "{} {} ({})",
+                    change.name,
+                    change.version,
+                    change.kind.label()
+                )
+            })
+            .collect::<Vec<_>>();
+        let hidden_destructive = removals + downgrades - destructive_preview.len();
+        let summary = format!(
+            "PackageKit will apply {requested} requested updates through {changes} verified package changes. Dependencies are included in this preview."
+        );
+        let mut rows = vec![
+            value_row(
+                "icons/refresh-cw.svg",
+                accent(),
+                "Requested updates".into(),
+                requested.to_string().into(),
+            ),
+            value_row(
+                "icons/database.svg",
+                secondary(),
+                "Additional installs".into(),
+                installs.to_string().into(),
+            ),
+        ];
+        if removals > 0 {
+            rows.push(value_row(
+                "icons/shield.svg",
+                hsl(0xff3b30),
+                "Removals or replacements".into(),
+                removals.to_string().into(),
+            ));
+        }
+        if downgrades > 0 {
+            rows.push(value_row(
+                "icons/info.svg",
+                hsl(0xff9500),
+                "Downgrades".into(),
+                downgrades.to_string().into(),
+            ));
+        }
+        let view = cx.entity();
+        let cancel_view = view.clone();
+        let install_view = view.clone();
+        let content = div()
+            .w(px(460.0))
+            .v_flex()
+            .gap_4()
+            .p_5()
+            .rounded(px(14.0))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child("Install system updates?"),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child(summary),
+                    ),
+            )
+            .child(card(rows))
+            .when(plan.has_destructive_changes(), |dialog| {
+                let mut warning = format!(
+                    "This verified plan changes packages destructively: {}.",
+                    destructive_preview.join(", ")
+                );
+                if hidden_destructive > 0 {
+                    warning.push_str(&format!(" Plus {hidden_destructive} more shown in the counts above."));
+                }
+                dialog.child(note_card(warning))
+            })
+            .when_some(plan.restart.label(), |dialog, restart| {
+                dialog.child(note_card(format!("Expected after installation: {restart}.")))
+            })
+            .child(note_card(
+                "rmac installs only the exact revalidated plan and keeps PackageKit's trusted-only flag enabled. Authorization may be requested.",
+            ))
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "update-install-cancel",
+                            "Cancel",
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(move |_, _, cx| {
+                            cancel_view
+                                .update(cx, |settings, cx| settings.cancel_update_plan(cx));
+                        }),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            "update-install-confirm",
+                            "Install Updates",
+                            rmac_ui::DialogButtonKind::Primary,
+                        )
+                        .on_click(move |_, _, cx| {
+                            install_view
+                                .update(cx, |settings, cx| settings.confirm_update_plan(cx));
+                        }),
+                    ),
+            );
+        Some(
+            rmac_ui::dialog("update-install-dialog", content)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.cancel_update_plan(cx);
+                        }
+                        "enter" => {
+                            cx.stop_propagation();
+                            this.confirm_update_plan(cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
+
     /// Direct per-volume capacity state from the mount service.
     fn storage_body(&self, cx: &Context<Self>) -> Div {
         let refresh_view = cx.entity();
@@ -15044,6 +15465,7 @@ impl Settings {
     fn software_update_body(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
+        let prepare_view = view.clone();
         let refresh = Button::new("refresh-update-status", "Check Again")
             .busy(self.updates_busy)
             .disabled(self.updates_loading || self.updates_busy)
@@ -15066,6 +15488,104 @@ impl Settings {
                 .child(refresh)
                 .into_any_element(),
         ]));
+
+        if self.updates_preparing {
+            let cancel_view = view.clone();
+            let cancel_requested = self
+                .updates_cancellation
+                .as_ref()
+                .is_some_and(rmac_updates::Cancellation::is_cancelled);
+            return body
+                .child(
+                    Progress::indeterminate()
+                        .label("Refreshing and simulating the trusted package plan…")
+                        .mb_3(),
+                )
+                .child(card(vec![row_base()
+                    .child(tile("icons/shield.svg", accent(), 22.0))
+                    .child(text_block(
+                        "Verifying dependencies".into(),
+                        Some("No package changes have started".into()),
+                    ))
+                    .child(
+                        Button::new(
+                            "cancel-update-preparation",
+                            if cancel_requested {
+                                "Cancelling…"
+                            } else {
+                                "Cancel"
+                            },
+                        )
+                        .busy(cancel_requested)
+                        .disabled(cancel_requested)
+                        .on_click(move |_, _, cx| {
+                            cancel_view
+                                .update(cx, |settings, cx| settings.cancel_update_operation(cx));
+                        }),
+                    )
+                    .into_any_element()]));
+        }
+
+        if self.updates_installing {
+            let progress = self.updates_progress.clone().unwrap_or_default();
+            let mut progress_label = progress.phase.label().to_string();
+            if let Some(package) = &progress.current_package {
+                progress_label.push_str(&format!(" · {package}"));
+            }
+            if let Some(remaining) = progress.remaining_seconds {
+                progress_label.push_str(&format!(
+                    " · about {}",
+                    format_power_duration(u64::from(remaining))
+                ));
+            }
+            let progress_element = match progress.percentage {
+                Some(percentage) => Progress::new(f32::from(percentage) / 100.0),
+                None => Progress::indeterminate(),
+            }
+            .label(progress_label)
+            .mb_3();
+            let cancel_requested = self
+                .updates_cancellation
+                .as_ref()
+                .is_some_and(rmac_updates::Cancellation::is_cancelled);
+            let cancel_view = view.clone();
+            return body.child(progress_element).child(card(vec![row_base()
+                .child(tile("icons/refresh-cw.svg", accent(), 22.0))
+                .child(text_block(
+                    "Installing trusted updates".into(),
+                    Some("PackageKit owns the transaction; do not turn off this computer".into()),
+                ))
+                .child(
+                    Button::new(
+                        "cancel-update-installation",
+                        if cancel_requested {
+                            "Cancelling…"
+                        } else {
+                            "Cancel"
+                        },
+                    )
+                    .busy(cancel_requested)
+                    .disabled(!progress.allow_cancel || cancel_requested)
+                    .on_click(move |_, _, cx| {
+                        cancel_view.update(cx, |settings, cx| settings.cancel_update_operation(cx));
+                    }),
+                )
+                .into_any_element()]));
+        }
+
+        if let Some(result) = &self.updates_result {
+            let subtitle = result
+                .restart
+                .label()
+                .map(str::to_owned)
+                .unwrap_or_else(|| "No restart was requested by PackageKit".into());
+            body = body.child(card(vec![value_row(
+                "icons/shield.svg",
+                hsl(0x34c759),
+                format!("{} packages updated", result.changed_packages).into(),
+                subtitle.into(),
+            )]));
+        }
 
         if self.updates_loading && self.updates.is_none() {
             return body.child(
@@ -15110,6 +15630,39 @@ impl Settings {
             status.into(),
         )]));
 
+        if snapshot.can_prepare_install() {
+            body = body.child(card(vec![row_base()
+                .child(tile("icons/shield.svg", accent(), 22.0))
+                .child(text_block(
+                    "Install all trusted updates".into(),
+                    Some("Refresh, simulate dependencies, then confirm the exact plan".into()),
+                ))
+                .child(
+                    Button::new("prepare-update-installation", "Install All…")
+                        .primary()
+                        .disabled(self.updates_busy)
+                        .on_click(move |_, _, cx| {
+                            prepare_view.update(cx, |settings, cx| settings.prepare_updates(cx));
+                        }),
+                )
+                .into_any_element()]));
+        } else if !snapshot.updates.is_empty() {
+            body = body.child(note_card(
+                snapshot
+                    .install_unavailable_reason
+                    .clone()
+                    .unwrap_or_else(|| {
+                        if snapshot.truncated {
+                            "The complete update set is too large to confirm safely.".into()
+                        } else if snapshot.installable_count() == 0 {
+                            "Every reported update is currently blocked by PackageKit.".into()
+                        } else {
+                            "The PackageKit backend cannot install updates on this system.".into()
+                        }
+                    }),
+            ));
+        }
+
         if !snapshot.updates.is_empty() {
             body = body.child(section_header("Available Updates"));
             let rows = snapshot
@@ -15150,11 +15703,11 @@ impl Settings {
         }
         if blocked > 0 {
             body = body.child(note_card(
-                "Some updates are blocked by package dependencies. Ubuntu Software Updater can show the dependency details.",
+                "Blocked updates are shown for awareness but are never included in rmac's installation plan.",
             ));
         }
         body.child(note_card(
-            "Checking is live. Download and installation are not connected in this build; use Ubuntu Software Updater to review and apply changes.",
+            "PackageKit refreshes, simulates, downloads, and installs without shell commands. rmac never retries with untrusted packages and always rereads remaining updates afterward.",
         ))
     }
 
@@ -15352,6 +15905,7 @@ impl Render for Settings {
             .clone()
             .or_else(|| self.system_data_stream_error.clone())
             .or_else(|| self.updates_error.clone())
+            .or_else(|| self.updates_stream_error.clone())
             .or_else(|| self.storage_error.clone())
             .or_else(|| self.time_error.clone())
             .or_else(|| self.time_stream_error.clone())
@@ -15391,13 +15945,18 @@ impl Render for Settings {
         let vpn_import_dialog = self.render_vpn_import_dialog(cx);
         let vpn_secret_clear_dialog = self.render_vpn_secret_clear_dialog(cx);
         let vpn_delete_dialog = self.render_vpn_delete_dialog(cx);
+        let update_install_dialog = self.render_update_install_dialog(cx);
         div()
             .size_full()
             .v_flex()
             .track_focus(&self.focus)
             .key_context("SystemSettings")
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape" && this.wifi_forget_confirmation.is_some() {
+                if event.keystroke.key == "escape" && this.updates_plan.is_some() {
+                    cx.stop_propagation();
+                    this.cancel_update_plan(cx);
+                } else if event.keystroke.key == "escape" && this.wifi_forget_confirmation.is_some()
+                {
                     cx.stop_propagation();
                     this.cancel_wifi_forget(cx);
                 } else if event.keystroke.key == "escape"
@@ -15442,6 +16001,17 @@ impl Render for Settings {
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                if this.updates_installing {
+                    return;
+                }
+                if this.updates_preparing {
+                    this.cancel_update_operation(cx);
+                    return;
+                }
+                if this.updates_plan.take().is_some() {
+                    cx.notify();
+                    return;
+                }
                 if let Some(cancellation) = &this.vpn_cancellation {
                     cancellation.cancel();
                     return;
@@ -15501,6 +16071,7 @@ impl Render for Settings {
                             this.system_data_error = None;
                             this.system_data_stream_error = None;
                             this.updates_error = None;
+                            this.updates_stream_error = None;
                             this.storage_error = None;
                             this.time_error = None;
                             this.time_stream_error = None;
@@ -15551,6 +16122,7 @@ impl Render for Settings {
             .when_some(vpn_import_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_secret_clear_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_delete_dialog, |root, dialog| root.child(dialog))
+            .when_some(update_install_dialog, |root, dialog| root.child(dialog))
     }
 }
 
@@ -17482,11 +18054,11 @@ mod tests {
         input_stream_snapshot_is_current, network_stream_snapshot_is_current,
         notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
         relative_display_position, render_wallpaper_preview, sample_battery_history,
-        system_info_stream_snapshot_is_current, vpn_stream_snapshot_is_current,
-        wallpaper_selection, wifi_stream_snapshot_is_current, DisplayPlacement, DockChange,
-        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
-        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
-        GENERAL_DESTINATIONS,
+        system_info_stream_snapshot_is_current, update_stream_snapshot_is_current,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
+        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
+        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+        WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -17586,6 +18158,14 @@ mod tests {
         assert!(!system_info_stream_snapshot_is_current(3, 4, false, false));
         assert!(!system_info_stream_snapshot_is_current(4, 4, true, false));
         assert!(!system_info_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn update_stream_snapshots_cannot_cross_install_transactions() {
+        assert!(update_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!update_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!update_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!update_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

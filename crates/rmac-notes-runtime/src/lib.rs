@@ -4,12 +4,18 @@
 //! debounce, background repository, and conflict state so the Notes view can
 //! remain a renderer of accepted snapshots rather than a filesystem authority.
 
+mod preview_worker;
 mod scheduler;
 mod search;
 mod search_worker;
 mod session;
 mod worker;
 
+pub use preview_worker::{
+    NotesPreviewSession, NotesPreviewWorker, PreviewCancellation, PreviewGeneration,
+    PreviewRequest, PreviewRequestError, PreviewState, PreviewWorkerEvent, PreviewWorkerSendError,
+    PreviewWorkerStartError, PREVIEW_COMMAND_CAPACITY, PREVIEW_EVENT_CAPACITY,
+};
 pub use scheduler::{
     EditGeneration, EditScheduler, ScheduleOutcome, ScheduledEdit, SchedulerError,
     DEFAULT_EDIT_DEBOUNCE, MAX_EDIT_DEBOUNCE,

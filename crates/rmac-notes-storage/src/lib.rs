@@ -32,8 +32,9 @@ use attachment::{ImportAuthority, ImportError, ImportIntent, MAX_IMPORT_INTENT_B
 use purge::{PurgeAuthority, PurgeError, PurgeIntent, MAX_PURGE_INTENT_BYTES};
 
 pub use attachment::{
-    PreparedImageAttachment, MAX_IMPORTED_IMAGE_BYTES, MAX_IMPORTED_IMAGE_DIMENSION,
-    MAX_IMPORTED_IMAGE_PIXELS,
+    load_managed_image_preview, DecodedImagePreview, PreparedImageAttachment, PreviewError,
+    PreviewSize, MAX_IMPORTED_IMAGE_BYTES, MAX_IMPORTED_IMAGE_DIMENSION, MAX_IMPORTED_IMAGE_PIXELS,
+    MAX_PREVIEW_DIMENSION, MAX_PREVIEW_PIXELS,
 };
 
 pub use drafts::{
@@ -1473,6 +1474,52 @@ mod tests {
         );
         assert_eq!(backend.get(&store.import_path()), None);
         assert_eq!(candidate.notes[0].attachments, vec![plan.attachment_id]);
+    }
+
+    #[test]
+    fn managed_preview_verifies_identity_and_returns_bounded_rgba() {
+        let (store, backend) = store();
+        let selected = PathBuf::from("/portal/private-plan.png");
+        let bytes = png_bytes();
+        backend.set(selected.clone(), bytes.clone());
+        let prepared = store.prepare_image_attachment(&selected).unwrap();
+        let (loaded, base, note_id) = install_attachment_base(&store);
+        let (candidate, plan) = attachment_candidate(&base, note_id, &prepared);
+        store
+            .save_attachment_import(&loaded, &candidate, &plan, &prepared)
+            .unwrap();
+        let target = PreviewSize::new(512, 512).unwrap();
+
+        let preview = attachment::load_managed_image_preview_with_backend(
+            store.root(),
+            &candidate.attachments[0],
+            target,
+            &backend,
+        )
+        .unwrap();
+
+        assert_eq!(preview.attachment_id(), plan.attachment_id);
+        assert_eq!((preview.width(), preview.height()), (1, 1));
+        assert_eq!(preview.rgba().as_ref(), &[12, 34, 56, 255]);
+        let debug = format!("{preview:?}");
+        assert!(!debug.contains("private-plan"));
+        assert!(!debug.contains("12, 34"));
+
+        let managed = managed_attachment_path(store.root(), plan.attachment_id);
+        backend.set(managed, b"changed managed image".to_vec());
+        assert_eq!(
+            attachment::load_managed_image_preview_with_backend(
+                store.root(),
+                &candidate.attachments[0],
+                target,
+                &backend,
+            ),
+            Err(PreviewError::Changed)
+        );
+        assert_eq!(
+            PreviewSize::new(MAX_PREVIEW_DIMENSION, MAX_PREVIEW_DIMENSION),
+            Err(PreviewError::InvalidRequest)
+        );
     }
 
     #[test]

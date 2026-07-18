@@ -12,3 +12,4 @@ rmac-notes-storage.workspace = true
 
 [dev-dependencies]
 image = { workspace = true, features = ["png"] }
+sha2.workspace = true

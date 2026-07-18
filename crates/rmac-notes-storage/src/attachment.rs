@@ -2,13 +2,14 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::io::{self, Cursor};
 use std::path::Path;
+use std::sync::Arc;
 
 use image::ImageReader;
 use rmac_notes_store::{
-    encode, AttachmentId, AttachmentImportPlan, AttachmentKind, LibrarySnapshot, NewAttachment,
-    NoteId, MAX_NAME_BYTES,
+    encode, AttachmentId, AttachmentImportPlan, AttachmentKind, AttachmentRecord, LibrarySnapshot,
+    NewAttachment, NoteId, MAX_NAME_BYTES,
 };
-use rmac_storage::{Backend, FileFingerprint};
+use rmac_storage::{Backend, FileFingerprint, FileSystem};
 use sha2::{Digest as _, Sha256};
 
 use crate::managed_attachment_path;
@@ -16,6 +17,8 @@ use crate::managed_attachment_path;
 pub const MAX_IMPORTED_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_IMPORTED_IMAGE_DIMENSION: u32 = 16_384;
 pub const MAX_IMPORTED_IMAGE_PIXELS: u64 = 40_000_000;
+pub const MAX_PREVIEW_DIMENSION: u32 = 4_096;
+pub const MAX_PREVIEW_PIXELS: u64 = 16_000_000;
 const MAX_DECODE_ALLOCATION_BYTES: u64 = MAX_IMPORTED_IMAGE_PIXELS * 4;
 const IMPORT_MAGIC: &[u8; 8] = b"RMNIMPT\0";
 const IMPORT_VERSION: u16 = 1;
@@ -31,6 +34,94 @@ pub struct PreparedImageAttachment {
     height: u32,
     sha256: [u8; 32],
     bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PreviewSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl PreviewSize {
+    pub fn new(width: u32, height: u32) -> Result<Self, PreviewError> {
+        let pixels = u64::from(width)
+            .checked_mul(u64::from(height))
+            .ok_or(PreviewError::InvalidRequest)?;
+        if width == 0
+            || height == 0
+            || width > MAX_PREVIEW_DIMENSION
+            || height > MAX_PREVIEW_DIMENSION
+            || pixels > MAX_PREVIEW_PIXELS
+        {
+            return Err(PreviewError::InvalidRequest);
+        }
+        Ok(Self { width, height })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreviewError {
+    InvalidRequest,
+    Missing,
+    Changed,
+    Unsupported,
+    TooLarge,
+    Decode,
+    Io(io::ErrorKind),
+}
+
+impl fmt::Display for PreviewError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::InvalidRequest => "The Notes image preview request is invalid",
+            Self::Missing => "The managed Notes image is missing",
+            Self::Changed => "The managed Notes image changed unexpectedly",
+            Self::Unsupported => "This Notes image format cannot be previewed",
+            Self::TooLarge => "The Notes image exceeds a preview safety limit",
+            Self::Decode => "Notes could not decode the managed image",
+            Self::Io(_) => "Notes could not read the managed image",
+        })
+    }
+}
+
+impl std::error::Error for PreviewError {}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct DecodedImagePreview {
+    attachment_id: AttachmentId,
+    width: u32,
+    height: u32,
+    rgba: Arc<[u8]>,
+}
+
+impl fmt::Debug for DecodedImagePreview {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DecodedImagePreview")
+            .field("attachment_id", &self.attachment_id)
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("rgba_bytes", &self.rgba.len())
+            .finish()
+    }
+}
+
+impl DecodedImagePreview {
+    pub fn attachment_id(&self) -> AttachmentId {
+        self.attachment_id
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn rgba(&self) -> &Arc<[u8]> {
+        &self.rgba
+    }
 }
 
 impl fmt::Debug for PreparedImageAttachment {
@@ -358,20 +449,17 @@ pub(crate) fn prepare_image<B: Backend>(
     if bytes.is_empty() {
         return Err(ImportError::Malformed);
     }
-    let image_format = image::guess_format(&bytes).map_err(|_| ImportError::Unsupported)?;
-    let (kind, image_format) = match image_format {
-        image::ImageFormat::Png => (AttachmentKind::Png, image::ImageFormat::Png),
-        image::ImageFormat::Jpeg => (AttachmentKind::Jpeg, image::ImageFormat::Jpeg),
-        image::ImageFormat::WebP => (AttachmentKind::WebP, image::ImageFormat::WebP),
+    let guessed_format = image::guess_format(&bytes).map_err(|_| ImportError::Unsupported)?;
+    let kind = match guessed_format {
+        image::ImageFormat::Png => AttachmentKind::Png,
+        image::ImageFormat::Jpeg => AttachmentKind::Jpeg,
+        image::ImageFormat::WebP => AttachmentKind::WebP,
         _ => return Err(ImportError::Unsupported),
     };
-    let mut reader = ImageReader::with_format(Cursor::new(bytes.as_slice()), image_format);
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(MAX_IMPORTED_IMAGE_DIMENSION);
-    limits.max_image_height = Some(MAX_IMPORTED_IMAGE_DIMENSION);
-    limits.max_alloc = Some(MAX_DECODE_ALLOCATION_BYTES);
-    reader.limits(limits);
-    let decoded = reader.decode().map_err(|_| ImportError::Malformed)?;
+    let decoded = decode_bounded(&bytes, guessed_format).map_err(|error| match error {
+        PreviewError::TooLarge => ImportError::TooLarge,
+        _ => ImportError::Malformed,
+    })?;
     let (width, height) = (decoded.width(), decoded.height());
     let pixels = u64::from(width)
         .checked_mul(u64::from(height))
@@ -395,6 +483,113 @@ pub(crate) fn prepare_image<B: Backend>(
         sha256,
         bytes,
     })
+}
+
+/// Verify and decode one authoritative managed attachment into bounded RGBA.
+///
+/// This is a read-only boundary and intentionally does not acquire the writer
+/// lease. Call it from a dedicated preview worker, never from GPUI.
+pub fn load_managed_image_preview(
+    root: &Path,
+    attachment: &AttachmentRecord,
+    target: PreviewSize,
+) -> Result<DecodedImagePreview, PreviewError> {
+    load_managed_image_preview_with_backend(root, attachment, target, &FileSystem)
+}
+
+pub(crate) fn load_managed_image_preview_with_backend<B: Backend>(
+    root: &Path,
+    attachment: &AttachmentRecord,
+    target: PreviewSize,
+    backend: &B,
+) -> Result<DecodedImagePreview, PreviewError> {
+    if !root.is_absolute()
+        || attachment.deleted
+        || attachment.byte_len == 0
+        || attachment.sha256 == [0; 32]
+    {
+        return Err(PreviewError::InvalidRequest);
+    }
+    if attachment.byte_len > MAX_IMPORTED_IMAGE_BYTES as u64 {
+        return Err(PreviewError::TooLarge);
+    }
+    let maximum = usize::try_from(attachment.byte_len).map_err(|_| PreviewError::TooLarge)?;
+    let path = managed_attachment_path(root, attachment.id);
+    let bytes = backend
+        .read_bounded_no_follow(&path, maximum)
+        .map_err(|error| match error.kind() {
+            io::ErrorKind::NotFound => PreviewError::Missing,
+            io::ErrorKind::InvalidData | io::ErrorKind::PermissionDenied => PreviewError::Changed,
+            kind => PreviewError::Io(kind),
+        })?;
+    if bytes.len() as u64 != attachment.byte_len || digest(&bytes) != attachment.sha256 {
+        return Err(PreviewError::Changed);
+    }
+    let expected_format = image_format(attachment.kind).ok_or(PreviewError::Unsupported)?;
+    let guessed_format = image::guess_format(&bytes).map_err(|_| PreviewError::Decode)?;
+    if guessed_format != expected_format {
+        return Err(PreviewError::Changed);
+    }
+    let decoded = decode_bounded(&bytes, expected_format)?;
+    let thumbnail = decoded
+        .thumbnail(
+            decoded.width().min(target.width),
+            decoded.height().min(target.height),
+        )
+        .into_rgba8();
+    let width = thumbnail.width();
+    let height = thumbnail.height();
+    let expected_rgba = u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or(PreviewError::TooLarge)?;
+    if width == 0
+        || height == 0
+        || u64::from(width) * u64::from(height) > MAX_PREVIEW_PIXELS
+        || expected_rgba != thumbnail.as_raw().len() as u64
+    {
+        return Err(PreviewError::TooLarge);
+    }
+    Ok(DecodedImagePreview {
+        attachment_id: attachment.id,
+        width,
+        height,
+        rgba: Arc::from(thumbnail.into_raw()),
+    })
+}
+
+fn decode_bounded(
+    bytes: &[u8],
+    format: image::ImageFormat,
+) -> Result<image::DynamicImage, PreviewError> {
+    let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMPORTED_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMPORTED_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOCATION_BYTES);
+    reader.limits(limits);
+    let decoded = reader.decode().map_err(|_| PreviewError::Decode)?;
+    let pixels = u64::from(decoded.width())
+        .checked_mul(u64::from(decoded.height()))
+        .ok_or(PreviewError::TooLarge)?;
+    if decoded.width() == 0
+        || decoded.height() == 0
+        || decoded.width() > MAX_IMPORTED_IMAGE_DIMENSION
+        || decoded.height() > MAX_IMPORTED_IMAGE_DIMENSION
+        || pixels > MAX_IMPORTED_IMAGE_PIXELS
+    {
+        return Err(PreviewError::TooLarge);
+    }
+    Ok(decoded)
+}
+
+fn image_format(kind: AttachmentKind) -> Option<image::ImageFormat> {
+    match kind {
+        AttachmentKind::Png => Some(image::ImageFormat::Png),
+        AttachmentKind::Jpeg => Some(image::ImageFormat::Jpeg),
+        AttachmentKind::WebP => Some(image::ImageFormat::WebP),
+        AttachmentKind::Gif => None,
+    }
 }
 
 fn canonical_display_name(stem: Option<&OsStr>, kind: AttachmentKind) -> String {

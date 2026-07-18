@@ -283,8 +283,16 @@ image action whose source path is redacted, performs prepare/decode and commit
 off GPUI, reports unsupported/malformed/oversized input as typed storage
 rejections, and publishes only an accepted attachment ID, dimensions, byte
 length, and snapshot. Import maintenance is projected separately from purge
-cleanup. Portal dispatch, the live Notes view, bounded managed-image preview,
-and legacy-image decoder validation still remain.
+cleanup. Managed preview now rereads only the stable-ID path through the
+owner/single-link/no-follow boundary, requires the authoritative length,
+SHA-256, and content kind, reuses the reviewed full-decode limits, and emits a
+non-upscaled RGBA thumbnail under 4,096-axis/16-million-pixel output limits.
+A separate four-command/two-event preview worker keeps decode off both GPUI and
+the repository writer; generation, accepted-library revision, and attachment
+identity gate Started/Ready/Unavailable projection, a newer request cancels the
+old one, and diagnostics expose no names, paths, hashes, or pixels. Portal
+dispatch, the live Notes view, preview rendering/accessibility, and legacy-image
+decoder validation still remain.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic

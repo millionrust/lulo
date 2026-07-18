@@ -189,9 +189,13 @@ The GPUI-free `rmac-notes-store` foundation now defines path-independent stable
 folder/note/attachment identities, bounded versioned records, canonical binary
 encoding, and strict cross-record validation for revisions, references,
 deletion, names, tags, timestamps, attachment ownership, sizes, and hashes. It
-does not yet provide the journal, filesystem adapter, migration, recovery,
-index, or application integration, so the existing prototype remains the live
-authority for now.
+now also provides complete validated transactions for stable-ID note/folder
+creation, editing, moving, pinning, sorting, folder deletion, and Notes Trash
+restore transitions. Exact per-record revisions reject stale commands, IDs and
+revisions are monotonic and bounded, invalid/no-op candidates cannot reach the
+storage adapter, and deleting a folder moves live notes without erasing a
+trashed note's restore context. The existing prototype remains the live
+authority until application integration is complete.
 
 The separate `rmac-notes-storage` adapter now provides the metadata transaction
 protocol: private primary/last-known-good/journal files, exact loaded-byte
@@ -223,7 +227,12 @@ symlink/hard-link lock substitution, and holds one nonblocking advisory writer
 lease across recovery, migration, and saves. Same-process duplicate stores and
 independent kernel descriptors are rejected; the persistent private rendezvous
 file is safely reusable after lease drop or process termination. Linux
-contention/crash evidence remains an integration gate.
+contention/crash evidence remains an integration gate. An accepted-library
+repository now exposes only readback-verified snapshots to its caller. Failed
+transactions retain the complete candidate while the previous durable snapshot
+stays authoritative; retry first resolves the journal, adopts a candidate that
+committed before an error was reported, retries a rolled-back candidate, or
+surfaces an unrelated durable change without overwrite.
 
 Known gaps include path-based identity and pins, synchronous scans/reads on the
 UI thread, a permanent 1.5-second save loop, no versioned manifest/journal or

@@ -18,6 +18,7 @@ use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
 mod migration;
+mod repository;
 mod writer;
 
 pub use migration::{
@@ -26,6 +27,7 @@ pub use migration::{
     MigrationCommitOutcome, MigrationError, MigrationPlan, MigrationWarning, PlannedAttachment,
     PlannedNoteSource, RecoveryFile,
 };
+pub use repository::{AcceptedCommit, AcceptedLibrary, CommitError, PendingCommit, PendingReason};
 pub use writer::{WriterLease, WriterLeaseError, WriterLeaseErrorKind, WriterLeaseOperation};
 
 const JOURNAL_MAGIC: &[u8; 8] = b"RMNJRN\0\0";
@@ -701,7 +703,7 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmac_notes_store::{NoteId, NoteRecord, SortOrder};
+    use rmac_notes_store::{NewNote, NoteId, NoteRecord, SortOrder};
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -709,6 +711,7 @@ mod tests {
     struct FakeState {
         files: BTreeMap<PathBuf, Vec<u8>>,
         fail_write: Option<PathBuf>,
+        fail_after_write: Option<PathBuf>,
         fail_remove: Option<PathBuf>,
     }
 
@@ -726,6 +729,10 @@ mod tests {
 
         fn fail_next_write(&self, path: PathBuf) {
             self.0.lock().unwrap().fail_write = Some(path);
+        }
+
+        fn fail_after_next_write(&self, path: PathBuf) {
+            self.0.lock().unwrap().fail_after_write = Some(path);
         }
 
         fn fail_next_remove(&self, path: PathBuf) {
@@ -751,6 +758,10 @@ mod tests {
                 return Err(io::Error::from(io::ErrorKind::PermissionDenied));
             }
             state.files.insert(path.to_path_buf(), contents.to_vec());
+            if state.fail_after_write.as_deref() == Some(path) {
+                state.fail_after_write = None;
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
             Ok(())
         }
 
@@ -1154,5 +1165,137 @@ mod tests {
             None
         );
         assert_eq!(store.load().unwrap().snapshot(), &existing);
+    }
+
+    #[test]
+    fn accepted_repository_publishes_only_verified_transactions() {
+        let (store, _backend) = store();
+        let mut repository = AcceptedLibrary::open(store).unwrap();
+        let mut transaction = repository.begin().unwrap();
+        let note_id = transaction
+            .create_note(NewNote {
+                created_unix_ms: 10,
+                title: "Accepted".into(),
+                body: "Durable body".into(),
+                tags: vec!["rmac".into()],
+                folder_id: None,
+            })
+            .unwrap();
+
+        let accepted = repository.commit(transaction).unwrap();
+
+        assert_eq!(accepted.revision, 2);
+        assert!(!accepted.maintenance_pending);
+        assert!(!accepted.recovered_after_error);
+        assert_eq!(repository.snapshot().notes[0].id, note_id);
+        assert_eq!(repository.snapshot().notes[0].title, "Accepted");
+    }
+
+    #[test]
+    fn failed_repository_commit_retains_candidate_and_retries_after_recovery() {
+        let (store, backend) = store();
+        let primary = store.primary_path();
+        let mut repository = AcceptedLibrary::open(store).unwrap();
+        let accepted_before = repository.snapshot().clone();
+        let mut transaction = repository.begin().unwrap();
+        transaction
+            .create_note(NewNote {
+                created_unix_ms: 10,
+                title: "Pending".into(),
+                body: "Never discard this".into(),
+                tags: Vec::new(),
+                folder_id: None,
+            })
+            .unwrap();
+        backend.fail_next_write(primary);
+
+        let CommitError::Pending(pending) = repository.commit(transaction).unwrap_err() else {
+            panic!("storage failure must return a pending candidate");
+        };
+        assert_eq!(repository.snapshot(), &accepted_before);
+        assert_eq!(pending.candidate().notes[0].title, "Pending");
+
+        let accepted = repository.retry(pending).unwrap();
+        assert!(accepted.recovered_after_error);
+        assert_eq!(repository.snapshot().notes[0].body, "Never discard this");
+    }
+
+    #[test]
+    fn repository_retry_adopts_a_candidate_committed_before_reported_failure() {
+        let (store, backend) = store();
+        let primary = store.primary_path();
+        let mut repository = AcceptedLibrary::open(store).unwrap();
+        let mut transaction = repository.begin().unwrap();
+        transaction
+            .create_note(NewNote {
+                created_unix_ms: 10,
+                title: "Committed during error".into(),
+                body: "Exact candidate".into(),
+                tags: Vec::new(),
+                folder_id: None,
+            })
+            .unwrap();
+        backend.fail_after_next_write(primary);
+
+        let CommitError::Pending(pending) = repository.commit(transaction).unwrap_err() else {
+            panic!("the reported write error must retain the candidate");
+        };
+        assert_eq!(repository.snapshot(), &LibrarySnapshot::default());
+
+        let accepted = repository.retry(pending).unwrap();
+
+        assert!(accepted.recovered_after_error);
+        assert_eq!(accepted.revision, 2);
+        assert_eq!(repository.snapshot().revision, 2);
+        assert_eq!(
+            repository.snapshot().notes[0].title,
+            "Committed during error"
+        );
+        assert!(repository
+            .recovery_notices()
+            .contains(&RecoveryNotice::FinishedInterruptedSave));
+    }
+
+    #[test]
+    fn repository_retry_surfaces_unrelated_durable_change_without_overwrite() {
+        let (store, backend) = store();
+        let primary = store.primary_path();
+        let mut repository = AcceptedLibrary::open(store).unwrap();
+        let mut transaction = repository.begin().unwrap();
+        transaction
+            .create_note(NewNote {
+                created_unix_ms: 10,
+                title: "Local".into(),
+                body: String::new(),
+                tags: Vec::new(),
+                folder_id: None,
+            })
+            .unwrap();
+        let external = candidate(repository.snapshot(), "External");
+        backend.set(primary, encode(&external).unwrap());
+
+        let CommitError::Pending(pending) = repository.commit(transaction).unwrap_err() else {
+            panic!("the exact preflight must retain the local candidate");
+        };
+        let pending = repository.retry(pending).unwrap_err();
+
+        assert_eq!(pending.reason, PendingReason::AcceptedStateChanged);
+        assert_eq!(pending.candidate().notes[0].title, "Local");
+        assert_eq!(repository.snapshot(), &external);
+        assert_eq!(repository.snapshot().notes[0].title, "External");
+    }
+
+    #[test]
+    fn repository_refuses_noop_transactions_without_writing() {
+        let (store, backend) = store();
+        let mut repository = AcceptedLibrary::open(store).unwrap();
+        let transaction = repository.begin().unwrap();
+
+        assert_eq!(
+            repository.commit(transaction).unwrap_err(),
+            CommitError::Mutation(rmac_notes_store::MutationError::NoChanges)
+        );
+        assert!(backend.0.lock().unwrap().files.is_empty());
+        assert_eq!(repository.snapshot(), &LibrarySnapshot::default());
     }
 }

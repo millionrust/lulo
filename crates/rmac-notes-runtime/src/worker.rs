@@ -11,8 +11,9 @@ use std::time::{Duration, Instant};
 
 use rmac_notes_storage::{
     inspect_notes_startup, AcceptedCommit, AcceptedLibrary, CommitError, DraftError, DraftRecord,
-    DraftStore, MigrationReview, MigrationWarning, NotesPaths, NotesStartup, PendingCommit,
-    PendingReason, PreparedImageAttachment, RecoveryNotice, StartupError, StoreError,
+    DraftStore, ImportedTextEncoding, MigrationReview, MigrationWarning, NotesPaths, NotesStartup,
+    PendingCommit, PendingReason, PreparedImageAttachment, RecoveryNotice, StartupError,
+    StoreError, TextImportError,
 };
 use rmac_notes_store::{FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder};
 
@@ -60,6 +61,11 @@ pub enum LibraryAction {
         modified_unix_ms: u64,
         selected_path: PathBuf,
     },
+    ImportTextNote {
+        created_unix_ms: u64,
+        folder_id: Option<FolderId>,
+        selected_path: PathBuf,
+    },
     DeleteNotePermanently {
         note_id: NoteId,
         expected_revision: u64,
@@ -82,6 +88,7 @@ impl fmt::Debug for LibraryAction {
             Self::TrashNote { .. } => "TrashNote",
             Self::RestoreNote { .. } => "RestoreNote",
             Self::AttachImage { .. } => "AttachImage([private source])",
+            Self::ImportTextNote { .. } => "ImportTextNote([private source])",
             Self::DeleteNotePermanently { .. } => "DeleteNotePermanently",
             Self::EmptyTrash { .. } => "EmptyTrash",
         })
@@ -315,6 +322,11 @@ pub enum ActionResult {
         height: u32,
         byte_len: u64,
     },
+    ImportedNote {
+        note_id: NoteId,
+        encoding: ImportedTextEncoding,
+        source_byte_len: u64,
+    },
     PermanentDeleteAccepted {
         note_id: NoteId,
         attachment_count: usize,
@@ -353,6 +365,7 @@ pub enum WorkerFailure {
     Scheduler(SchedulerError),
     Mutation(MutationError),
     Storage(StoreError),
+    TextImport(TextImportError),
     Draft(DraftError),
     MissingDraft,
 }
@@ -1302,6 +1315,20 @@ fn commit_action(
                 events,
             );
         }
+        LibraryAction::ImportTextNote {
+            created_unix_ms,
+            folder_id,
+            selected_path,
+        } => {
+            return commit_text_import_action(
+                ready,
+                request_id,
+                created_unix_ms,
+                folder_id,
+                selected_path,
+                events,
+            );
+        }
         action => action,
     };
     let mut transaction = match ready.library.begin() {
@@ -1387,6 +1414,7 @@ fn commit_action(
                 result
             }),
         LibraryAction::AttachImage { .. } => unreachable!("attachment action handled above"),
+        LibraryAction::ImportTextNote { .. } => unreachable!("text import handled above"),
     };
     let result = match result {
         Ok(result) => result,
@@ -1400,6 +1428,45 @@ fn commit_action(
     };
     let commit = purge.map_or(TransactionCommit::Ordinary, TransactionCommit::Purge);
     commit_transaction(ready, transaction, commit, context, events)
+}
+
+fn commit_text_import_action(
+    ready: &mut ReadyState,
+    request_id: u64,
+    created_unix_ms: u64,
+    folder_id: Option<FolderId>,
+    selected_path: PathBuf,
+    events: &SyncSender<WorkerEvent>,
+) -> CommitDisposition {
+    let prepared = match ready.library.prepare_text_note(&selected_path) {
+        Ok(prepared) => prepared,
+        Err(error) => return reject_text_import(events, request_id, error),
+    };
+    let mut transaction = match ready.library.begin() {
+        Ok(transaction) => transaction,
+        Err(error) => return reject_mutation(events, request_id, None, error),
+    };
+    let note_id = match transaction.create_note(prepared.new_note(created_unix_ms, folder_id)) {
+        Ok(note_id) => note_id,
+        Err(error) => return reject_mutation(events, request_id, None, error),
+    };
+    let context = RequestContext {
+        request_id,
+        generation: None,
+        result: ActionResult::ImportedNote {
+            note_id,
+            encoding: prepared.encoding(),
+            source_byte_len: prepared.source_byte_len(),
+        },
+        draft: None,
+    };
+    commit_transaction(
+        ready,
+        transaction,
+        TransactionCommit::Ordinary,
+        context,
+        events,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1540,6 +1607,25 @@ fn reject_storage(
             request_id,
             generation: None,
             failure: WorkerFailure::Storage(error),
+        }))
+        .is_ok()
+    {
+        CommitDisposition::Rejected
+    } else {
+        CommitDisposition::Stopped
+    }
+}
+
+fn reject_text_import(
+    events: &SyncSender<WorkerEvent>,
+    request_id: u64,
+    error: TextImportError,
+) -> CommitDisposition {
+    if events
+        .send(WorkerEvent::Rejected(RejectedEvent {
+            request_id,
+            generation: None,
+            failure: WorkerFailure::TextImport(error),
         }))
         .is_ok()
     {
@@ -1709,6 +1795,14 @@ mod tests {
         bytes
     }
 
+    fn utf16_be(text: &str) -> Vec<u8> {
+        let mut bytes = vec![0xfe, 0xff];
+        for unit in text.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_be_bytes());
+        }
+        bytes
+    }
+
     #[test]
     fn worker_commits_actions_and_due_edits_without_idle_events() {
         let (container, paths) = roots("edit");
@@ -1833,6 +1927,89 @@ mod tests {
                 ..
             }) => assert_eq!(error.kind, ErrorKind::UnsupportedAttachment),
             event => panic!("expected rejected invalid image, got {event:?}"),
+        }
+
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn worker_imports_strict_text_into_an_accepted_stable_note() {
+        let (container, paths) = roots("text-import");
+        std::fs::create_dir_all(&container).unwrap();
+        let source = container.join("Imported Plan.md");
+        let body = "First line\r\nनमस्ते 🦀\r\n";
+        let source_bytes = utf16_be(body);
+        std::fs::write(&source, &source_bytes).unwrap();
+        let worker = NotesWorker::start(paths).unwrap();
+        ready(&worker);
+        let folder_id = match apply_action(
+            &worker,
+            1,
+            LibraryAction::CreateFolder {
+                name: "Imports".into(),
+            },
+        ) {
+            WorkerEvent::Accepted(AcceptedEvent {
+                result: ActionResult::CreatedFolder(folder_id),
+                ..
+            }) => folder_id,
+            event => panic!("expected accepted folder, got {event:?}"),
+        };
+        let action = LibraryAction::ImportTextNote {
+            created_unix_ms: 20,
+            folder_id: Some(folder_id),
+            selected_path: source.clone(),
+        };
+        let debug = format!("{action:?}");
+        assert!(!debug.contains("Imported Plan"));
+        assert!(!debug.contains(container.to_string_lossy().as_ref()));
+
+        let accepted = match apply_action(&worker, 2, action) {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted text import, got {event:?}"),
+        };
+        let note_id = match accepted.result {
+            ActionResult::ImportedNote {
+                note_id,
+                encoding: ImportedTextEncoding::Utf16Be,
+                source_byte_len,
+            } => {
+                assert_eq!(source_byte_len, source_bytes.len() as u64);
+                note_id
+            }
+            result => panic!("unexpected text import result {result:?}"),
+        };
+        let imported = accepted
+            .accepted
+            .snapshot
+            .notes
+            .iter()
+            .find(|note| note.id == note_id)
+            .unwrap();
+        assert_eq!(imported.title, "Imported Plan");
+        assert_eq!(imported.body, body);
+        assert_eq!(imported.folder_id, Some(folder_id));
+
+        let invalid = container.join("invalid.txt");
+        std::fs::write(&invalid, [0xff]).unwrap();
+        match apply_action(
+            &worker,
+            3,
+            LibraryAction::ImportTextNote {
+                created_unix_ms: 21,
+                folder_id: None,
+                selected_path: invalid,
+            },
+        ) {
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 3,
+                failure: WorkerFailure::TextImport(TextImportError::InvalidUtf8),
+                ..
+            }) => {}
+            event => panic!("expected rejected invalid text, got {event:?}"),
         }
 
         worker.try_send(WorkerCommand::Shutdown).unwrap();

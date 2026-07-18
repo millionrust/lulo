@@ -224,7 +224,8 @@ impl NotesSession {
                     }
                 }
                 let (preferred, reveal_preferred) = match event.result {
-                    ActionResult::CreatedNote(note_id) => (Some(note_id), true),
+                    ActionResult::CreatedNote(note_id)
+                    | ActionResult::ImportedNote { note_id, .. } => (Some(note_id), true),
                     ActionResult::CreatedFolder(folder_id) => {
                         self.folder = FolderSelection::Folder(folder_id);
                         (None, false)

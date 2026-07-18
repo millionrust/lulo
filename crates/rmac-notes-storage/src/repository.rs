@@ -7,7 +7,8 @@ use rmac_notes_store::{
 use rmac_storage::{Backend, FileSystem};
 
 use crate::{
-    LoadedLibrary, NotesLibraryStore, PreparedImageAttachment, RecoveryNotice, StoreError,
+    LoadedLibrary, NotesLibraryStore, PreparedImageAttachment, PreparedTextNote, RecoveryNotice,
+    StoreError, TextImportError,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +163,13 @@ impl<B: Backend> AcceptedLibrary<B> {
         selected_path: &Path,
     ) -> Result<PreparedImageAttachment, StoreError> {
         self.store.prepare_image_attachment(selected_path)
+    }
+
+    pub fn prepare_text_note(
+        &self,
+        selected_path: &Path,
+    ) -> Result<PreparedTextNote, TextImportError> {
+        self.store.prepare_text_note(selected_path)
     }
 
     pub fn commit(

@@ -293,6 +293,18 @@ identity gate Started/Ready/Unavailable projection, a newer request cancels the
 old one, and diagnostics expose no names, paths, hashes, or pixels. Portal
 dispatch, the live Notes view, and preview rendering/accessibility still remain.
 
+The first ordinary-file note import path is now strict and path-free. Storage
+reads at most twice the 4 MiB decoded-body limit plus BOM allowance; accepts
+UTF-8, UTF-8 BOM, and BOM-marked UTF-16 LE/BE without lossy replacement;
+preserves Unicode and original line-ending sequences; rejects UTF-32, malformed
+UTF-8/UTF-16, NUL, and decoded overflow; and derives a bounded safe title from
+the source filename without retaining that path. Prepared debug output redacts
+title and body. A redacted worker action binds the requested creation time and
+stable folder, creates the complete candidate off GPUI, reports a typed source
+failure, and reveals only a durably accepted stable note with encoding and
+source-length summary. Portal dispatch, Markdown-construct review, bundle
+import, and all export paths remain.
+
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
 legacy planner maps sorted prototype paths to stable IDs, preserves folder,

@@ -23,6 +23,7 @@ mod attachment;
 mod drafts;
 mod legacy_scan;
 mod migration;
+mod note_import;
 mod purge;
 mod repository;
 mod startup;
@@ -51,6 +52,10 @@ pub use migration::{
     MigrationCommitError, MigrationCommitErrorKind, MigrationCommitOperation,
     MigrationCommitOutcome, MigrationError, MigrationPlan, MigrationWarning, PlannedAttachment,
     PlannedNoteSource, RecoveryFile,
+};
+pub use note_import::{
+    prepare_text_note, ImportedTextEncoding, PreparedTextNote, TextImportError,
+    MAX_IMPORTED_TEXT_SOURCE_BYTES,
 };
 pub use repository::{AcceptedCommit, AcceptedLibrary, CommitError, PendingCommit, PendingReason};
 pub use startup::{
@@ -264,6 +269,15 @@ impl<B: Backend> NotesLibraryStore<B> {
                 error,
             )
         })
+    }
+
+    /// Strictly decode one portal-selected Markdown/plain-text source into a
+    /// path-free note candidate. This never mutates or retains the source.
+    pub fn prepare_text_note(
+        &self,
+        selected_path: &Path,
+    ) -> Result<PreparedTextNote, TextImportError> {
+        note_import::prepare_text_note_with_backend(selected_path, &self.backend)
     }
 
     pub fn load(&self) -> Result<LoadedLibrary, StoreError> {

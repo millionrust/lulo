@@ -12,7 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub use codec::{decode, encode, CodecError, MAX_LIBRARY_BYTES, SCHEMA_VERSION};
-pub use mutation::{LibraryTransaction, MutationError, NewNote, NoteChanges, PurgePlan};
+pub use mutation::{
+    AttachmentImportPlan, LibraryTransaction, MutationError, NewAttachment, NewNote, NoteChanges,
+    PurgePlan,
+};
 
 pub const MAX_NOTES: usize = 100_000;
 pub const MAX_FOLDERS: usize = 10_000;
@@ -210,7 +213,10 @@ impl LibrarySnapshot {
 
         for attachment in &self.attachments {
             validate_name(&attachment.display_name)?;
-            if attachment.byte_len > MAX_ATTACHMENT_BYTES || attachment.sha256 == [0; 32] {
+            if attachment.byte_len == 0
+                || attachment.byte_len > MAX_ATTACHMENT_BYTES
+                || attachment.sha256 == [0; 32]
+            {
                 return Err(ValidationError::InvalidAttachment);
             }
             let owner = notes

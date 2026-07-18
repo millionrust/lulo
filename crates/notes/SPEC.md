@@ -256,6 +256,18 @@ and stale/live-note/empty/mixed requests remain typed rejections. The GPUI
 confirmation sheets, destructive-action wiring, and Linux failure evidence are
 still absent, so the running prototype does not yet expose these operations.
 
+The domain layer now also admits an image attachment only through an exclusive
+revision-checked import transaction. It validates the live note, display name,
+nonempty bounded byte identity, monotonic modification time, per-note/global
+limits, and fresh stable attachment ID before returning a complete candidate.
+Its private-safe import plan binds the exact base/candidate library and note
+revisions, attachment identity, recognized kind, byte length, and SHA-256; the
+plan can replay the ordinary mutation and prove that no unrelated metadata
+change entered the candidate. Raw bytes and source paths never enter the domain
+model, and names and hashes are redacted from debug output. Durable intent,
+managed-byte staging, decoded-image validation, retry/recovery, and runtime
+wiring remain storage/application work.
+
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
 legacy planner maps sorted prototype paths to stable IDs, preserves folder,

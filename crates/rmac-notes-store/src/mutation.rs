@@ -2,8 +2,10 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::{
-    validate_name, validate_tag, AttachmentId, FolderId, FolderRecord, LibrarySnapshot, NoteId,
-    NoteRecord, SortOrder, ValidationError, MAX_BODY_BYTES, MAX_TAGS_PER_NOTE, MAX_TITLE_BYTES,
+    validate_name, validate_tag, AttachmentId, AttachmentKind, AttachmentRecord, FolderId,
+    FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder, ValidationError, MAX_ATTACHMENTS,
+    MAX_ATTACHMENTS_PER_NOTE, MAX_ATTACHMENT_BYTES, MAX_BODY_BYTES, MAX_TAGS_PER_NOTE,
+    MAX_TITLE_BYTES,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +23,138 @@ pub struct NoteChanges {
     pub title: String,
     pub body: String,
     pub tags: Vec<String>,
+}
+
+/// Metadata for one fully read and validated image selected for import.
+///
+/// The source path and raw bytes deliberately do not enter the domain model.
+/// Storage must prove that the bytes it stages have this exact length and
+/// digest before publishing the resulting library candidate.
+#[derive(Clone, PartialEq, Eq)]
+pub struct NewAttachment {
+    pub display_name: String,
+    pub kind: AttachmentKind,
+    pub byte_len: u64,
+    pub sha256: [u8; 32],
+}
+
+impl fmt::Debug for NewAttachment {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NewAttachment")
+            .field("display_name", &"<redacted>")
+            .field("kind", &self.kind)
+            .field("byte_len", &self.byte_len)
+            .field("sha256", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Exact metadata boundary for one managed attachment import.
+///
+/// Import is an exclusive transaction. Storage persists this scope before it
+/// stages bytes, then publishes only the candidate that can be re-derived from
+/// the accepted base through this plan. The digest remains redacted from debug
+/// output because attachment bytes are private user data.
+#[derive(Clone, PartialEq, Eq)]
+pub struct AttachmentImportPlan {
+    pub base_library_revision: u64,
+    pub candidate_library_revision: u64,
+    pub note_id: NoteId,
+    pub base_note_revision: u64,
+    pub candidate_note_revision: u64,
+    pub attachment_id: AttachmentId,
+    pub kind: AttachmentKind,
+    pub byte_len: u64,
+    pub sha256: [u8; 32],
+}
+
+impl fmt::Debug for AttachmentImportPlan {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AttachmentImportPlan")
+            .field("base_library_revision", &self.base_library_revision)
+            .field(
+                "candidate_library_revision",
+                &self.candidate_library_revision,
+            )
+            .field("note_id", &self.note_id)
+            .field("base_note_revision", &self.base_note_revision)
+            .field("candidate_note_revision", &self.candidate_note_revision)
+            .field("attachment_id", &self.attachment_id)
+            .field("kind", &self.kind)
+            .field("byte_len", &self.byte_len)
+            .field("sha256", &"<redacted>")
+            .finish()
+    }
+}
+
+impl AttachmentImportPlan {
+    /// Prove that `candidate` is exactly `base` plus this one attachment.
+    ///
+    /// The display name and modified timestamp are recovered from the
+    /// candidate, then the ordinary mutation is replayed and compared in full.
+    /// This keeps storage from maintaining a second copy of domain invariants.
+    pub fn validate_candidate(
+        &self,
+        base: &LibrarySnapshot,
+        candidate: &LibrarySnapshot,
+    ) -> Result<(), MutationError> {
+        if base.revision != self.base_library_revision
+            || candidate.revision != self.candidate_library_revision
+        {
+            return Err(MutationError::RevisionConflict);
+        }
+        candidate
+            .validate()
+            .map_err(MutationError::InvalidCandidate)?;
+        let attachment = candidate
+            .attachments
+            .iter()
+            .find(|attachment| attachment.id == self.attachment_id)
+            .ok_or(MutationError::InvalidCandidate(
+                ValidationError::MissingReference,
+            ))?;
+        if attachment.note_id != self.note_id
+            || attachment.kind != self.kind
+            || attachment.byte_len != self.byte_len
+            || attachment.sha256 != self.sha256
+        {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InconsistentAttachment,
+            ));
+        }
+        let note = candidate
+            .notes
+            .iter()
+            .find(|note| note.id == self.note_id)
+            .ok_or(MutationError::InvalidCandidate(
+                ValidationError::MissingReference,
+            ))?;
+        if note.revision != self.candidate_note_revision {
+            return Err(MutationError::RevisionConflict);
+        }
+
+        let mut transaction = LibraryTransaction::begin(base)?;
+        let replayed = transaction.add_attachment(
+            self.note_id,
+            self.base_note_revision,
+            note.modified_unix_ms,
+            NewAttachment {
+                display_name: attachment.display_name.clone(),
+                kind: attachment.kind,
+                byte_len: attachment.byte_len,
+                sha256: attachment.sha256,
+            },
+        )?;
+        let expected = transaction.finish()?;
+        if replayed != *self || expected != *candidate {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InconsistentAttachment,
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Exact identities removed from one candidate library revision.
@@ -57,6 +191,7 @@ pub enum MutationError {
     DeletedFolder,
     DeletedNote,
     NoteNotTrashed,
+    AttachmentImportRequiresExclusiveTransaction,
     PurgeRequiresExclusiveTransaction,
     NoChanges,
 }
@@ -75,6 +210,9 @@ impl fmt::Display for MutationError {
             Self::DeletedFolder => "the selected Notes folder is in Notes Trash",
             Self::DeletedNote => "the selected note is in Notes Trash",
             Self::NoteNotTrashed => "the selected note is not in Notes Trash",
+            Self::AttachmentImportRequiresExclusiveTransaction => {
+                "an attachment import requires a separate Notes transaction"
+            }
             Self::PurgeRequiresExclusiveTransaction => {
                 "permanent deletion requires a separate Notes transaction"
             }
@@ -332,6 +470,90 @@ impl LibraryTransaction {
         Ok(folder_id)
     }
 
+    /// Attach one exact, already validated image to one live note.
+    ///
+    /// This mutation is exclusive because storage must stage the corresponding
+    /// bytes and persist a recovery intent before this exact metadata candidate
+    /// can become authoritative.
+    pub fn add_attachment(
+        &mut self,
+        note_id: NoteId,
+        expected_note_revision: u64,
+        modified_unix_ms: u64,
+        attachment: NewAttachment,
+    ) -> Result<AttachmentImportPlan, MutationError> {
+        if self.changed {
+            return Err(MutationError::AttachmentImportRequiresExclusiveTransaction);
+        }
+        validate_name(&attachment.display_name).map_err(MutationError::InvalidCandidate)?;
+        if attachment.byte_len == 0
+            || attachment.byte_len > MAX_ATTACHMENT_BYTES
+            || attachment.sha256 == [0; 32]
+        {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidAttachment,
+            ));
+        }
+        if self.candidate.attachments.len() >= MAX_ATTACHMENTS {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::CollectionLimit,
+            ));
+        }
+
+        let note_index = self
+            .candidate
+            .notes
+            .iter()
+            .position(|note| note.id == note_id)
+            .ok_or(MutationError::MissingNote)?;
+        let note = &self.candidate.notes[note_index];
+        require_revision(note.revision, expected_note_revision)?;
+        if note.deleted {
+            return Err(MutationError::DeletedNote);
+        }
+        if note.attachments.len() >= MAX_ATTACHMENTS_PER_NOTE {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::CollectionLimit,
+            ));
+        }
+        if modified_unix_ms < note.modified_unix_ms {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidTimestamp,
+            ));
+        }
+
+        let attachment_id = AttachmentId::new(self.candidate.next_attachment_id)
+            .ok_or(MutationError::IdentityExhausted)?;
+        self.candidate.next_attachment_id = next_identity(self.candidate.next_attachment_id)?;
+        let candidate_note_revision = next_revision(expected_note_revision)?;
+        let note = &mut self.candidate.notes[note_index];
+        note.revision = candidate_note_revision;
+        note.modified_unix_ms = modified_unix_ms;
+        note.attachments.push(attachment_id);
+        self.candidate.attachments.push(AttachmentRecord {
+            id: attachment_id,
+            revision: 1,
+            note_id,
+            display_name: attachment.display_name,
+            kind: attachment.kind,
+            byte_len: attachment.byte_len,
+            sha256: attachment.sha256,
+            deleted: false,
+        });
+        self.changed = true;
+        Ok(AttachmentImportPlan {
+            base_library_revision: self.base_revision,
+            candidate_library_revision: self.candidate.revision,
+            note_id,
+            base_note_revision: expected_note_revision,
+            candidate_note_revision,
+            attachment_id,
+            kind: attachment.kind,
+            byte_len: attachment.byte_len,
+            sha256: attachment.sha256,
+        })
+    }
+
     /// Remove one exact trashed note and all attachment records it owns.
     ///
     /// The returned plan does not authorize deleting managed bytes until this
@@ -537,7 +759,6 @@ fn next_identity(current: u64) -> Result<u64, MutationError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AttachmentKind, AttachmentRecord};
 
     fn snapshot() -> LibrarySnapshot {
         let folder_id = FolderId::new(1).unwrap();
@@ -661,6 +882,139 @@ mod tests {
         let restored = restore.finish().unwrap();
         assert!(!restored.notes[0].deleted);
         assert_eq!(restored.notes[0].revision, 5);
+    }
+
+    fn new_attachment() -> NewAttachment {
+        NewAttachment {
+            display_name: "private-roadmap.png".into(),
+            kind: AttachmentKind::Png,
+            byte_len: 4096,
+            sha256: [9; 32],
+        }
+    }
+
+    #[test]
+    fn attachment_import_is_one_exact_revision_checked_candidate() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let mut transaction = LibraryTransaction::begin(&base).unwrap();
+
+        let plan = transaction
+            .add_attachment(note_id, 3, 25, new_attachment())
+            .unwrap();
+        let candidate = transaction.finish().unwrap();
+
+        assert_eq!(plan.base_library_revision, 7);
+        assert_eq!(plan.candidate_library_revision, 8);
+        assert_eq!(plan.note_id, note_id);
+        assert_eq!(plan.base_note_revision, 3);
+        assert_eq!(plan.candidate_note_revision, 4);
+        assert_eq!(plan.attachment_id, AttachmentId::new(1).unwrap());
+        assert_eq!(plan.byte_len, 4096);
+        assert_eq!(candidate.next_attachment_id, 2);
+        assert_eq!(candidate.notes[0].revision, 4);
+        assert_eq!(candidate.notes[0].modified_unix_ms, 25);
+        assert_eq!(candidate.notes[0].attachments, vec![plan.attachment_id]);
+        assert_eq!(candidate.attachments.len(), 1);
+        assert_eq!(candidate.attachments[0].id, plan.attachment_id);
+        assert_eq!(candidate.attachments[0].note_id, note_id);
+        assert_eq!(candidate.attachments[0].display_name, "private-roadmap.png");
+        assert!(!candidate.attachments[0].deleted);
+        plan.validate_candidate(&base, &candidate).unwrap();
+    }
+
+    #[test]
+    fn attachment_import_rejects_stale_deleted_invalid_and_mixed_mutations() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+
+        let mut stale = LibraryTransaction::begin(&base).unwrap();
+        assert_eq!(
+            stale.add_attachment(note_id, 2, 25, new_attachment()),
+            Err(MutationError::RevisionConflict)
+        );
+        assert_eq!(stale.finish().unwrap_err(), MutationError::NoChanges);
+
+        let mut invalid_name = LibraryTransaction::begin(&base).unwrap();
+        let mut attachment = new_attachment();
+        attachment.display_name = "../private.png".into();
+        assert_eq!(
+            invalid_name.add_attachment(note_id, 3, 25, attachment),
+            Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidName
+            ))
+        );
+
+        let mut invalid_bytes = LibraryTransaction::begin(&base).unwrap();
+        let mut attachment = new_attachment();
+        attachment.byte_len = 0;
+        assert_eq!(
+            invalid_bytes.add_attachment(note_id, 3, 25, attachment),
+            Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidAttachment
+            ))
+        );
+
+        let mut backwards_time = LibraryTransaction::begin(&base).unwrap();
+        assert_eq!(
+            backwards_time.add_attachment(note_id, 3, 19, new_attachment()),
+            Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidTimestamp
+            ))
+        );
+
+        let mut deleted_base = base.clone();
+        deleted_base.notes[0].pinned = false;
+        deleted_base.notes[0].deleted = true;
+        let mut deleted = LibraryTransaction::begin(&deleted_base).unwrap();
+        assert_eq!(
+            deleted.add_attachment(note_id, 3, 25, new_attachment()),
+            Err(MutationError::DeletedNote)
+        );
+
+        let mut mixed = LibraryTransaction::begin(&base).unwrap();
+        assert!(mixed.set_sort_order(SortOrder::Title));
+        assert_eq!(
+            mixed.add_attachment(note_id, 3, 25, new_attachment()),
+            Err(MutationError::AttachmentImportRequiresExclusiveTransaction)
+        );
+    }
+
+    #[test]
+    fn attachment_import_plan_rederives_full_candidate_and_redacts_private_data() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let attachment = new_attachment();
+        let mut transaction = LibraryTransaction::begin(&base).unwrap();
+        let plan = transaction
+            .add_attachment(note_id, 3, 25, attachment.clone())
+            .unwrap();
+        let candidate = transaction.finish().unwrap();
+
+        let mut unrelated_change = candidate.clone();
+        unrelated_change.notes[0].title = "Changed too".into();
+        assert_eq!(
+            plan.validate_candidate(&base, &unrelated_change),
+            Err(MutationError::InvalidCandidate(
+                ValidationError::InconsistentAttachment
+            ))
+        );
+
+        let mut changed_bytes = candidate.clone();
+        changed_bytes.attachments[0].sha256 = [8; 32];
+        assert_eq!(
+            plan.validate_candidate(&base, &changed_bytes),
+            Err(MutationError::InvalidCandidate(
+                ValidationError::InconsistentAttachment
+            ))
+        );
+
+        let attachment_debug = format!("{attachment:?}");
+        let plan_debug = format!("{plan:?}");
+        assert!(!attachment_debug.contains("private-roadmap.png"));
+        assert!(!attachment_debug.contains("[9, 9"));
+        assert!(!plan_debug.contains("[9, 9"));
+        assert!(plan_debug.contains("attachment_id"));
     }
 
     #[test]

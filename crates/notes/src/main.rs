@@ -81,8 +81,11 @@ struct NotesView {
     folder_dialog: Option<FolderDialog>,
     purge_dialog: Option<PurgeDialog>,
     move_dialog: Option<MoveDialog>,
+    attachment_dialog: Option<AttachmentDialog>,
     attachment_chooser_open: bool,
     attachment_request_id: Option<u64>,
+    attachment_remove_request: Option<(u64, AttachmentId)>,
+    orphan_collection_request: Option<(u64, AttachmentId)>,
     search_shutdown_requested: bool,
     preview_shutdown_requested: bool,
     closing: bool,
@@ -121,6 +124,28 @@ struct MoveDialog {
     note_id: NoteId,
     note_revision: u64,
     current_folder: Option<FolderId>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AttachmentDialog {
+    Remove {
+        note_id: NoteId,
+        note_revision: u64,
+        attachment_id: AttachmentId,
+        attachment_revision: u64,
+        byte_len: u64,
+    },
+    CollectOrphan {
+        attachment_id: AttachmentId,
+        attachment_revision: u64,
+        byte_len: u64,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StatusActions {
+    Pending,
+    OrphanCleanup,
 }
 
 struct PreviewBridgeEvent {
@@ -201,8 +226,11 @@ impl NotesView {
             folder_dialog: None,
             purge_dialog: None,
             move_dialog: None,
+            attachment_dialog: None,
             attachment_chooser_open: false,
             attachment_request_id: None,
+            attachment_remove_request: None,
+            orphan_collection_request: None,
             search_shutdown_requested: false,
             preview_shutdown_requested: false,
             closing: false,
@@ -402,12 +430,44 @@ impl NotesView {
             },
             _ => None,
         };
+        let removed_attachment = match &event {
+            WorkerEvent::Accepted(accepted) => match accepted.result {
+                ActionResult::AttachmentReferenceRemoved { attachment_id, .. } => {
+                    Some((accepted.request_id, attachment_id))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let chain_orphan = removed_attachment.is_some_and(|(request_id, attachment_id)| {
+            self.attachment_remove_request == Some((request_id, attachment_id))
+        });
         if accepted_request_id
             .or(rejected_request_id)
             .is_some_and(|request_id| self.attachment_request_id == Some(request_id))
             || matches!(&event, WorkerEvent::Ready(_)) && self.attachment_request_id.is_some()
         {
             self.attachment_request_id = None;
+        }
+        if accepted_request_id
+            .or(rejected_request_id)
+            .is_some_and(|request_id| {
+                self.attachment_remove_request
+                    .is_some_and(|(pending, _)| pending == request_id)
+            })
+            || matches!(&event, WorkerEvent::Ready(_)) && self.attachment_remove_request.is_some()
+        {
+            self.attachment_remove_request = None;
+        }
+        if accepted_request_id
+            .or(rejected_request_id)
+            .is_some_and(|request_id| {
+                self.orphan_collection_request
+                    .is_some_and(|(pending, _)| pending == request_id)
+            })
+            || matches!(&event, WorkerEvent::Ready(_)) && self.orphan_collection_request.is_some()
+        {
+            self.orphan_collection_request = None;
         }
         if matches!(&event, WorkerEvent::DraftReview(_)) {
             self.recovery_notice_dismissed = false;
@@ -432,6 +492,11 @@ impl NotesView {
                 self.selected_attachment = Some(attachment_id);
             }
         }
+        let orphan_to_collect = chain_orphan.then(|| {
+            removed_attachment
+                .expect("a chained orphan comes from an accepted removal")
+                .1
+        });
         if let Some(accepted) = accepted_generation {
             if self
                 .latest_local_generation
@@ -482,6 +547,9 @@ impl NotesView {
         }
         if reveal_created {
             self.title.update(cx, |state, cx| state.focus(window, cx));
+        }
+        if let Some(attachment_id) = orphan_to_collect {
+            self.queue_current_orphan_collection(attachment_id, cx);
         }
         if refresh_search {
             self.dispatch_search(cx);
@@ -600,6 +668,224 @@ impl NotesView {
         self.sync_attachment_preview(true, cx);
     }
 
+    fn first_orphaned_attachment(&self) -> Option<&rmac_notes_store::AttachmentRecord> {
+        self.session
+            .snapshot()?
+            .attachments
+            .iter()
+            .find(|attachment| attachment.deleted)
+    }
+
+    fn begin_attachment_removal(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        if self.latest_local_generation.is_some() {
+            self.message =
+                Some("Wait for this note to finish saving before removing a photo".into());
+            cx.notify();
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| !note.deleted) else {
+            return;
+        };
+        let Some(attachment_id) = self.selected_attachment else {
+            return;
+        };
+        if !note.attachments.contains(&attachment_id) {
+            return;
+        }
+        let Some(attachment) = self.session.snapshot().and_then(|snapshot| {
+            snapshot.attachments.iter().find(|attachment| {
+                attachment.id == attachment_id
+                    && attachment.note_id == note.id
+                    && !attachment.deleted
+            })
+        }) else {
+            return;
+        };
+        self.attachment_dialog = Some(AttachmentDialog::Remove {
+            note_id: note.id,
+            note_revision: note.revision,
+            attachment_id,
+            attachment_revision: attachment.revision,
+            byte_len: attachment.byte_len,
+        });
+        cx.notify();
+    }
+
+    fn begin_orphan_cleanup(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(attachment) = self.first_orphaned_attachment() else {
+            return;
+        };
+        self.attachment_dialog = Some(AttachmentDialog::CollectOrphan {
+            attachment_id: attachment.id,
+            attachment_revision: attachment.revision,
+            byte_len: attachment.byte_len,
+        });
+        cx.notify();
+    }
+
+    fn confirm_attachment_dialog(&mut self, cx: &mut Context<Self>) {
+        let Some(dialog) = self.attachment_dialog.take() else {
+            return;
+        };
+        match dialog {
+            AttachmentDialog::Remove {
+                note_id,
+                note_revision,
+                attachment_id,
+                attachment_revision,
+                ..
+            } => self.queue_attachment_removal(
+                note_id,
+                note_revision,
+                attachment_id,
+                attachment_revision,
+                cx,
+            ),
+            AttachmentDialog::CollectOrphan {
+                attachment_id,
+                attachment_revision,
+                ..
+            } => self.queue_orphan_collection(attachment_id, attachment_revision, cx),
+        }
+    }
+
+    fn cancel_attachment_dialog(&mut self, cx: &mut Context<Self>) {
+        self.attachment_dialog = None;
+        cx.notify();
+    }
+
+    fn queue_attachment_removal(
+        &mut self,
+        note_id: NoteId,
+        expected_note_revision: u64,
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() || self.latest_local_generation.is_some() {
+            self.message = Some(
+                "The note changed before the image could be removed. Review the removal again."
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
+        let Some(note) = self
+            .session
+            .selected_note()
+            .filter(|note| note.id == note_id && !note.deleted)
+        else {
+            self.message = Some("The selected note is no longer available".into());
+            cx.notify();
+            return;
+        };
+        let modified_unix_ms = now_unix_ms()
+            .max(note.created_unix_ms)
+            .max(note.modified_unix_ms);
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let request = match ActionRequest::new(
+            request_id,
+            LibraryAction::RemoveAttachmentReference {
+                note_id,
+                expected_note_revision,
+                attachment_id,
+                expected_attachment_revision,
+                modified_unix_ms,
+            },
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::Apply(request), cx) {
+            self.attachment_remove_request = Some((request_id, attachment_id));
+            self.message = None;
+            cx.notify();
+        }
+    }
+
+    fn queue_current_orphan_collection(
+        &mut self,
+        attachment_id: AttachmentId,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(attachment_revision) = self
+            .session
+            .snapshot()
+            .and_then(|snapshot| {
+                snapshot
+                    .attachments
+                    .iter()
+                    .find(|attachment| attachment.id == attachment_id && attachment.deleted)
+            })
+            .map(|attachment| attachment.revision)
+        else {
+            cx.notify();
+            return;
+        };
+        self.queue_orphan_collection(attachment_id, attachment_revision, cx);
+    }
+
+    fn queue_orphan_collection(
+        &mut self,
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+        cx: &mut Context<Self>,
+    ) {
+        if !matches!(self.session.phase(), SessionPhase::Ready) || self.attachment_action_pending()
+        {
+            cx.notify();
+            return;
+        }
+        let exact_orphan_exists = self.session.snapshot().is_some_and(|snapshot| {
+            snapshot.attachments.iter().any(|attachment| {
+                attachment.id == attachment_id
+                    && attachment.deleted
+                    && attachment.revision == expected_attachment_revision
+            })
+        });
+        if !exact_orphan_exists {
+            self.message = Some(
+                "The removed attachment changed before cleanup. Review the cleanup again.".into(),
+            );
+            cx.notify();
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        let request = match ActionRequest::new(
+            request_id,
+            LibraryAction::CollectOrphanedAttachment {
+                attachment_id,
+                expected_attachment_revision,
+            },
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(WorkerCommand::Apply(request), cx) {
+            self.orphan_collection_request = Some((request_id, attachment_id));
+            self.message = None;
+            cx.notify();
+        }
+    }
+
     fn dispatch_search(&mut self, cx: &mut Context<Self>) {
         let query = self.search_query.read(cx).value().to_string();
         if query.trim().is_empty() {
@@ -643,8 +929,9 @@ impl NotesView {
         if self.folder_dialog.is_some()
             || self.purge_dialog.is_some()
             || self.move_dialog.is_some()
+            || self.attachment_dialog.is_some()
             || self.attachment_chooser_open
-            || self.attachment_request_id.is_some()
+            || self.attachment_action_pending()
         {
             return;
         }
@@ -857,8 +1144,15 @@ impl NotesView {
             && self.folder_dialog.is_none()
             && self.purge_dialog.is_none()
             && self.move_dialog.is_none()
+            && self.attachment_dialog.is_none()
             && !self.attachment_chooser_open
-            && self.attachment_request_id.is_none()
+            && !self.attachment_action_pending()
+    }
+
+    fn attachment_action_pending(&self) -> bool {
+        self.attachment_request_id.is_some()
+            || self.attachment_remove_request.is_some()
+            || self.orphan_collection_request.is_some()
     }
 
     fn recovery_review_is_blocking(&self) -> bool {
@@ -1424,7 +1718,12 @@ impl NotesView {
         let dismissed_folder_dialog = self.folder_dialog.take().is_some();
         let dismissed_purge_dialog = self.purge_dialog.take().is_some();
         let dismissed_move_dialog = self.move_dialog.take().is_some();
-        if dismissed_folder_dialog || dismissed_purge_dialog || dismissed_move_dialog {
+        let dismissed_attachment_dialog = self.attachment_dialog.take().is_some();
+        if dismissed_folder_dialog
+            || dismissed_purge_dialog
+            || dismissed_move_dialog
+            || dismissed_attachment_dialog
+        {
             cx.notify();
             return;
         }
@@ -1433,8 +1732,8 @@ impl NotesView {
             cx.notify();
             return;
         }
-        if self.attachment_request_id.is_some() {
-            self.message = Some("Wait for the selected image to finish importing".into());
+        if self.attachment_action_pending() {
+            self.message = Some("Wait for the current attachment operation to finish".into());
             cx.notify();
             return;
         }
@@ -1520,7 +1819,7 @@ impl NotesView {
         let deleted = selected.is_some_and(|note| note.deleted);
         let pinned = selected.is_some_and(|note| note.pinned);
         let note_save_pending = self.latest_local_generation.is_some();
-        let attachment_busy = self.attachment_chooser_open || self.attachment_request_id.is_some();
+        let attachment_busy = self.attachment_chooser_open || self.attachment_action_pending();
         let sort_order = self
             .session
             .snapshot()
@@ -1613,7 +1912,7 @@ impl NotesView {
                             .busy(attachment_busy)
                             .disabled(!ready || deleted || selected.is_none() || note_save_pending)
                             .tooltip(if attachment_busy {
-                                "Adding Photo…"
+                                "Updating Attachments…"
                             } else if note_save_pending {
                                 "Saving Note…"
                             } else {
@@ -2002,6 +2301,12 @@ impl NotesView {
             return None;
         }
         let selected = self.selected_attachment;
+        let can_remove = !note.deleted
+            && selected.is_some_and(|attachment_id| {
+                attachments
+                    .iter()
+                    .any(|attachment| attachment.id == attachment_id)
+            });
         let preview = match self.preview.state() {
             PreviewState::Loading { attachment_id, .. } if selected == Some(*attachment_id) => {
                 centered_attachment_state("Loading preview…", None, cx)
@@ -2077,13 +2382,34 @@ impl NotesView {
                 .child(div().w(px(260.0)).h_full().child(preview))
                 .child(
                     div()
-                        .id("attachment-list")
                         .flex_1()
                         .min_w(px(0.0))
-                        .overflow_y_scroll()
                         .v_flex()
                         .gap_1()
-                        .children(rows),
+                        .child(
+                            div()
+                                .id("attachment-list")
+                                .flex_1()
+                                .min_h(px(0.0))
+                                .overflow_y_scroll()
+                                .v_flex()
+                                .gap_1()
+                                .children(rows),
+                        )
+                        .when(can_remove, |element| {
+                            element.child(
+                                Button::new("remove-attachment", "Remove Photo…")
+                                    .destructive()
+                                    .xsmall()
+                                    .disabled(
+                                        !self.is_interactive_ready()
+                                            || self.latest_local_generation.is_some(),
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.begin_attachment_removal(cx)
+                                    })),
+                            )
+                        }),
                 )
                 .into_any_element(),
         )
@@ -2580,6 +2906,70 @@ impl NotesView {
         )
     }
 
+    fn render_attachment_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal};
+
+        let dialog = self.attachment_dialog?;
+        let (attachment_id, expected_revision, byte_len) = match dialog {
+            AttachmentDialog::Remove {
+                attachment_id,
+                attachment_revision,
+                byte_len,
+                ..
+            }
+            | AttachmentDialog::CollectOrphan {
+                attachment_id,
+                attachment_revision,
+                byte_len,
+            } => (attachment_id, attachment_revision, byte_len),
+        };
+        let name = self
+            .session
+            .snapshot()
+            .and_then(|snapshot| {
+                snapshot.attachments.iter().find(|attachment| {
+                    attachment.id == attachment_id && attachment.revision == expected_revision
+                })
+            })
+            .map_or_else(
+                || "this photo".to_string(),
+                |attachment| attachment.display_name.clone(),
+            );
+        let (title, message, confirm_label) = match dialog {
+            AttachmentDialog::Remove { .. } => (
+                "Remove this photo?",
+                format!(
+                    "Remove “{name}” ({}) from this note? Notes will first save the note without the reference, then delete its managed local copy in a separate verified cleanup. The original imported file is not changed.",
+                    format_storage_bytes(byte_len)
+                ),
+                "Remove Photo",
+            ),
+            AttachmentDialog::CollectOrphan { .. } => (
+                "Clean up this removed photo?",
+                format!(
+                    "“{name}” ({}) is no longer referenced by any note. Delete its managed local copy? The original imported file is not changed.",
+                    format_storage_bytes(byte_len)
+                ),
+                "Delete Managed Copy",
+            ),
+        };
+        Some(
+            rmac_ui::alert(
+                title,
+                message,
+                vec![
+                    rmac_ui::dialog_button("cancel-attachment-action", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_attachment_dialog(cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("confirm-attachment-action", confirm_label, Destructive)
+                        .on_click(cx.listener(|this, _, _, cx| this.confirm_attachment_dialog(cx)))
+                        .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
+    }
+
     fn render_move_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use rmac_ui::DialogButtonKind::Normal;
 
@@ -2645,10 +3035,12 @@ impl NotesView {
     }
 
     fn render_status_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let orphan_waiting =
+            !self.attachment_action_pending() && self.first_orphaned_attachment().is_some();
         let (message, actions) = match self.session.phase() {
             SessionPhase::Pending { reason, .. } => (
                 pending_message(*reason),
-                Some(("Retry", "Discard")),
+                Some(StatusActions::Pending),
             ),
             SessionPhase::Maintenance { .. } => (
                 "Notes recovered the library but maintenance still needs attention. Editing is paused."
@@ -2656,7 +3048,15 @@ impl NotesView {
                 None,
             ),
             _ => match &self.message {
-                Some(message) => (message.to_string(), None),
+                Some(message) => (
+                    message.to_string(),
+                    orphan_waiting.then_some(StatusActions::OrphanCleanup),
+                ),
+                None if orphan_waiting => (
+                    "A removed photo is still stored until its managed copy is cleaned up."
+                        .to_string(),
+                    Some(StatusActions::OrphanCleanup),
+                ),
                 None => return None,
             },
         };
@@ -2673,18 +3073,28 @@ impl NotesView {
             .text_size(rmac_ui::text_px(12.0))
             .text_color(mac::danger())
             .child(div().flex_1().child(message));
-        if let Some((retry, discard)) = actions {
-            banner = banner
-                .child(
-                    Button::new("retry-pending", retry)
+        match actions {
+            Some(StatusActions::Pending) => {
+                banner = banner
+                    .child(
+                        Button::new("retry-pending", "Retry")
+                            .xsmall()
+                            .on_click(cx.listener(|this, _, _, cx| this.retry_pending(cx))),
+                    )
+                    .child(
+                        Button::new("discard-pending", "Discard")
+                            .xsmall()
+                            .on_click(cx.listener(|this, _, _, cx| this.discard_pending(cx))),
+                    );
+            }
+            Some(StatusActions::OrphanCleanup) => {
+                banner = banner.child(
+                    Button::new("review-orphan-cleanup", "Clean Up…")
                         .xsmall()
-                        .on_click(cx.listener(|this, _, _, cx| this.retry_pending(cx))),
-                )
-                .child(
-                    Button::new("discard-pending", discard)
-                        .xsmall()
-                        .on_click(cx.listener(|this, _, _, cx| this.discard_pending(cx))),
+                        .on_click(cx.listener(|this, _, _, cx| this.begin_orphan_cleanup(cx))),
                 );
+            }
+            None => {}
         }
         Some(banner.into_any_element())
     }
@@ -2780,6 +3190,7 @@ impl Render for NotesView {
         let folder_dialog = self.render_folder_dialog(cx);
         let purge_dialog = self.render_purge_dialog(cx);
         let move_dialog = self.render_move_dialog(cx);
+        let attachment_dialog = self.render_attachment_dialog(cx);
 
         div()
             .track_focus(&self.focus)
@@ -2816,6 +3227,7 @@ impl Render for NotesView {
             .when_some(folder_dialog, |element, dialog| element.child(dialog))
             .when_some(purge_dialog, |element, dialog| element.child(dialog))
             .when_some(move_dialog, |element, dialog| element.child(dialog))
+            .when_some(attachment_dialog, |element, dialog| element.child(dialog))
     }
 }
 

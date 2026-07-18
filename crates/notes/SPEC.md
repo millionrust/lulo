@@ -331,9 +331,19 @@ durable unlink. Rollback never touches bytes; accepted and proven-descendant
 recovery is idempotent; changed, linked, malformed, ambiguous, or simultaneous
 cleanup state remains preserved and blocks writes. Repository Retry retains the
 plan, the worker reports `OrphanCollectionAccepted` rather than completed, and
-`orphan_collection_pending` projects separately into Maintenance. The GPUI
-review/confirmation surface remains absent. Permanent note purge continues to
-include all owned live and tombstoned attachments.
+`orphan_collection_pending` projects separately into Maintenance. The live
+attachment pane now exposes a reviewed Remove Photo action bound to the exact
+live note and attachment revisions plus checked byte length. Its explanation
+separates durable reference removal from managed-copy cleanup and states that
+the original imported source is unchanged. Only an accepted
+`AttachmentReferenceRemoved` result for that tracked request triggers the
+second exact-tombstone collection action. Backpressure, rejection, Pending
+Retry/Discard, restart, or an interrupted second step leaves the tombstone in
+the accepted snapshot; a persistent status banner then offers a second reviewed
+Clean Up action bound to its exact revision. Successful collection removes that
+one record, while maintenance continues to pause edits without claiming byte
+deletion completed. Permanent note purge continues to include all owned live
+and tombstoned attachments.
 
 The first ordinary-file note import path is now strict and path-free. Storage
 reads at most twice the 4 MiB decoded-body limit plus BOM allowance; accepts
@@ -520,7 +530,10 @@ stable folder, marks the current destination, treats choosing it as a no-op, and
 publishes a changed location only after accepted readback. Add Photo uses the
 Linux portal and accepted attachment transaction; the editor renders a bounded
 stable-ID list and cancellable managed preview with loading/failure/retry
-states. The old synchronous path scanner, direct note writes, path identity, and permanent
+states. Remove Photo reviews exact note/attachment revisions and checked bytes,
+publishes reference removal first, then collects only the accepted tombstone;
+an interrupted cleanup remains visible for a second review. The old synchronous
+path scanner, direct note writes, path identity, and permanent
 1.5-second save loop have been removed from the running app. Window close is
 refused when a Pending decision exists or when the bounded command queue cannot
 accept shutdown; an accepted shutdown flushes the complete scheduled edit
@@ -594,9 +607,8 @@ cancels the session and orders search-worker shutdown before dropping the view.
 Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
-Known live-app gaps now include formatted Markdown preview, reviewed attachment
-reference-removal and orphan-collection UI, XDG portal text/bundle import and
-export review/progress, rich search-match highlighting,
+Known live-app gaps now include formatted Markdown preview, XDG portal text/
+bundle import and export review/progress, rich search-match highlighting,
 richer conflict-resolution choices, semantic accessibility, and Linux runtime/
 visual evidence. The accepted store
 remains local-only and makes no cloud-sync claim.

@@ -5,7 +5,10 @@ use std::sync::Arc;
 use rmac_notes_storage::{PendingReason, StartupError};
 use rmac_notes_store::{FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder};
 
-use crate::{ActionResult, EditGeneration, MigrationReviewSummary, RejectedEvent, WorkerEvent};
+use crate::{
+    ActionResult, DraftRestoredEvent, DraftReviewSummary, EditGeneration, MigrationReviewSummary,
+    RejectedEvent, WorkerEvent,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FolderSelection {
@@ -35,6 +38,8 @@ pub struct NotesSession {
     folder: FolderSelection,
     selected_note: Option<NoteId>,
     last_rejection: Option<RejectedEvent>,
+    draft_review: Option<DraftReviewSummary>,
+    restored_draft: Option<DraftRestoredEvent>,
 }
 
 impl NotesSession {
@@ -45,6 +50,8 @@ impl NotesSession {
             folder: FolderSelection::All,
             selected_note: None,
             last_rejection: None,
+            draft_review: None,
+            restored_draft: None,
         }
     }
 
@@ -75,6 +82,14 @@ impl NotesSession {
 
     pub fn last_rejection(&self) -> Option<RejectedEvent> {
         self.last_rejection
+    }
+
+    pub fn draft_review(&self) -> Option<&DraftReviewSummary> {
+        self.draft_review.as_ref()
+    }
+
+    pub fn restored_draft(&self) -> Option<&DraftRestoredEvent> {
+        self.restored_draft.as_ref()
     }
 
     pub fn folders(&self) -> Vec<&FolderRecord> {
@@ -143,14 +158,66 @@ impl NotesSession {
                 self.snapshot = None;
                 self.selected_note = None;
                 self.last_rejection = None;
+                self.draft_review = None;
+                self.restored_draft = None;
             }
             WorkerEvent::Ready(event) => {
+                let entering_ready = matches!(
+                    self.phase,
+                    SessionPhase::Starting | SessionPhase::MigrationReview(_)
+                );
                 self.adopt_snapshot(event.snapshot, None, false);
                 self.phase = SessionPhase::Ready;
                 self.last_rejection = None;
+                if entering_ready {
+                    self.draft_review = None;
+                    self.restored_draft = None;
+                }
+            }
+            WorkerEvent::DraftReview(summary) => self.draft_review = Some(summary),
+            WorkerEvent::DraftRestored(event) => self.restored_draft = Some(event),
+            WorkerEvent::DraftDiscarded { note_id, .. } => {
+                if let Some(review) = self.draft_review.as_mut() {
+                    review.drafts.retain(|draft| draft.note_id != note_id);
+                }
+                if self
+                    .draft_review
+                    .as_ref()
+                    .is_some_and(|review| !review.requires_attention())
+                {
+                    self.draft_review = None;
+                }
+                if self
+                    .restored_draft
+                    .as_ref()
+                    .is_some_and(|event| event.draft.note_id == note_id)
+                {
+                    self.restored_draft = None;
+                }
             }
             WorkerEvent::Coalesced { .. } => {}
             WorkerEvent::Accepted(event) => {
+                if let ActionResult::Edited(note_id) = event.result {
+                    if !event.draft_cleanup_pending {
+                        if let Some(review) = self.draft_review.as_mut() {
+                            review.drafts.retain(|draft| draft.note_id != note_id);
+                        }
+                        if self
+                            .draft_review
+                            .as_ref()
+                            .is_some_and(|review| !review.requires_attention())
+                        {
+                            self.draft_review = None;
+                        }
+                        if self
+                            .restored_draft
+                            .as_ref()
+                            .is_some_and(|event| event.draft.note_id == note_id)
+                        {
+                            self.restored_draft = None;
+                        }
+                    }
+                }
                 let (preferred, reveal_preferred) = match event.result {
                     ActionResult::CreatedNote(note_id) => (Some(note_id), true),
                     ActionResult::CreatedFolder(folder_id) => {
@@ -177,6 +244,8 @@ impl NotesSession {
                 self.phase = SessionPhase::Failed(error);
                 self.snapshot = None;
                 self.selected_note = None;
+                self.draft_review = None;
+                self.restored_draft = None;
             }
             WorkerEvent::Stopped { .. } => self.phase = SessionPhase::Stopped,
         }
@@ -280,6 +349,11 @@ impl fmt::Debug for NotesSession {
             .field("folder", &self.folder)
             .field("selected_note", &self.selected_note)
             .field("last_rejection", &self.last_rejection)
+            .field(
+                "draft_review_count",
+                &self.draft_review.as_ref().map(|review| review.drafts.len()),
+            )
+            .field("restored_draft", &self.restored_draft)
             .finish()
     }
 }
@@ -298,10 +372,13 @@ fn compare_notes(sort_order: SortOrder, left: &NoteRecord, right: &NoteRecord) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmac_notes_storage::{AcceptedCommit, RecoveryNotice};
-    use rmac_notes_store::{FolderRecord, NoteRecord};
+    use rmac_notes_storage::{AcceptedCommit, DraftRecord, RecoveryNotice};
+    use rmac_notes_store::{FolderRecord, NoteChanges, NoteRecord};
 
-    use crate::{AcceptedEvent, ActionResult, PendingEvent, SnapshotEvent, WorkerFailure};
+    use crate::{
+        AcceptedEvent, ActionResult, DraftRecoveryKind, DraftRestoredEvent, DraftSummary,
+        PendingEvent, SnapshotEvent, WorkerFailure,
+    };
 
     fn folder(id: u64, name: &str) -> FolderRecord {
         FolderRecord {
@@ -336,6 +413,7 @@ mod tests {
                 recovered_after_error: false,
             },
             accepted: snapshot_event(created),
+            draft_cleanup_pending: false,
         }));
 
         assert_eq!(
@@ -472,6 +550,7 @@ mod tests {
             generation: EditGeneration::new(3),
             reason: PendingReason::AcceptedStateChanged,
             accepted: snapshot_event(snapshot.clone()),
+            draft_error: None,
         }));
         assert!(matches!(
             session.phase(),
@@ -501,6 +580,7 @@ mod tests {
                 recovered_after_error: false,
             },
             accepted: snapshot_event(snapshot),
+            draft_cleanup_pending: false,
         }));
         assert_eq!(session.phase(), &SessionPhase::Ready);
         assert_eq!(session.selected_note_id(), NoteId::new(3));
@@ -520,5 +600,56 @@ mod tests {
         assert!(!debug.contains("private-tag"));
         assert!(!debug.contains("Pinned"));
         assert!(debug.contains("note_count"));
+    }
+
+    #[test]
+    fn recovery_review_and_restored_content_clear_only_after_explicit_discard() {
+        let mut session = NotesSession::new();
+        session.apply(WorkerEvent::Ready(snapshot_event(snapshot(
+            SortOrder::Edited,
+        ))));
+        let note_id = NoteId::new(1).unwrap();
+        session.apply(WorkerEvent::DraftReview(DraftReviewSummary {
+            drafts: vec![DraftSummary {
+                note_id,
+                base_note_revision: 1,
+                edit_generation: 7,
+                updated_unix_ms: 50,
+                kind: DraftRecoveryKind::Applicable,
+            }],
+            ..DraftReviewSummary::default()
+        }));
+        assert_eq!(session.draft_review().unwrap().drafts.len(), 1);
+
+        session.apply(WorkerEvent::DraftRestored(DraftRestoredEvent {
+            request_id: 10,
+            draft: DraftRecord::new(
+                note_id,
+                1,
+                7,
+                50,
+                NoteChanges {
+                    modified_unix_ms: 50,
+                    title: "Recovered private title".into(),
+                    body: "Recovered private body".into(),
+                    tags: Vec::new(),
+                },
+            )
+            .unwrap(),
+        }));
+        assert_eq!(
+            session.restored_draft().unwrap().draft.changes.body,
+            "Recovered private body"
+        );
+        let debug = format!("{session:?}");
+        assert!(!debug.contains("Recovered private title"));
+        assert!(!debug.contains("Recovered private body"));
+
+        session.apply(WorkerEvent::DraftDiscarded {
+            request_id: 11,
+            note_id,
+        });
+        assert_eq!(session.draft_review(), None);
+        assert!(session.restored_draft().is_none());
     }
 }

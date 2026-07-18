@@ -14,7 +14,8 @@ pub use scheduler::{
 };
 pub use session::{FolderSelection, NotesSession, SessionPhase};
 pub use worker::{
-    AcceptedEvent, ActionRequest, ActionResult, LibraryAction, MigrationReviewSummary, NotesWorker,
+    AcceptedEvent, ActionRequest, ActionResult, DraftRecoveryKind, DraftRestoredEvent,
+    DraftReviewSummary, DraftSummary, LibraryAction, MigrationReviewSummary, NotesWorker,
     NotesWorkerClient, NotesWorkerEvents, PendingEvent, RejectedEvent, SnapshotEvent,
     WorkerCommand, WorkerEvent, WorkerFailure, WorkerSendError, WorkerStartError, COMMAND_CAPACITY,
     EVENT_CAPACITY,

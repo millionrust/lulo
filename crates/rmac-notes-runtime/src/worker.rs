@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
 use std::sync::mpsc::{
@@ -8,9 +9,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rmac_notes_storage::{
-    inspect_notes_startup, AcceptedCommit, AcceptedLibrary, CommitError, MigrationReview,
-    MigrationWarning, NotesPaths, NotesStartup, PendingCommit, PendingReason, RecoveryNotice,
-    StartupError,
+    inspect_notes_startup, AcceptedCommit, AcceptedLibrary, CommitError, DraftError, DraftRecord,
+    DraftStore, MigrationReview, MigrationWarning, NotesPaths, NotesStartup, PendingCommit,
+    PendingReason, RecoveryNotice, StartupError,
 };
 use rmac_notes_store::{FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder};
 
@@ -106,6 +107,8 @@ pub enum WorkerCommand {
     Flush { request_id: u64 },
     RetryPending,
     DiscardPending { request_id: u64 },
+    RestoreDraft { request_id: u64, note_id: NoteId },
+    DiscardDraft { request_id: u64, note_id: NoteId },
     Shutdown,
 }
 
@@ -115,7 +118,9 @@ impl WorkerCommand {
             Self::AcceptMigration { request_id }
             | Self::StartEmpty { request_id }
             | Self::Flush { request_id }
-            | Self::DiscardPending { request_id } => (*request_id, None),
+            | Self::DiscardPending { request_id }
+            | Self::RestoreDraft { request_id, .. }
+            | Self::DiscardDraft { request_id, .. } => (*request_id, None),
             Self::ScheduleEdit(edit) => (edit.request_id(), Some(edit.generation())),
             Self::Apply(request) => (request.request_id(), None),
             Self::RetryPending | Self::Shutdown => (0, None),
@@ -144,6 +149,22 @@ impl fmt::Debug for WorkerCommand {
                 .debug_struct("DiscardPending")
                 .field("request_id", request_id)
                 .finish(),
+            Self::RestoreDraft {
+                request_id,
+                note_id,
+            } => formatter
+                .debug_struct("RestoreDraft")
+                .field("request_id", request_id)
+                .field("note_id", note_id)
+                .finish(),
+            Self::DiscardDraft {
+                request_id,
+                note_id,
+            } => formatter
+                .debug_struct("DiscardDraft")
+                .field("request_id", request_id)
+                .field("note_id", note_id)
+                .finish(),
             Self::RetryPending => formatter.write_str("RetryPending"),
             Self::Shutdown => formatter.write_str("Shutdown"),
         }
@@ -171,6 +192,59 @@ impl MigrationReviewSummary {
             recovery_files: plan.recovery_files.len(),
             warnings: plan.warnings.clone(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DraftRecoveryKind {
+    Applicable,
+    Conflict,
+    Orphaned,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DraftSummary {
+    pub note_id: NoteId,
+    pub base_note_revision: u64,
+    pub edit_generation: u64,
+    pub updated_unix_ms: u64,
+    pub kind: DraftRecoveryKind,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DraftReviewSummary {
+    pub drafts: Vec<DraftSummary>,
+    pub malformed: usize,
+    pub quarantined: usize,
+    pub cleanup_pending: usize,
+    pub excessive: bool,
+    pub unavailable: bool,
+}
+
+impl DraftReviewSummary {
+    pub(crate) fn requires_attention(&self) -> bool {
+        !self.drafts.is_empty()
+            || self.malformed != 0
+            || self.quarantined != 0
+            || self.cleanup_pending != 0
+            || self.excessive
+            || self.unavailable
+    }
+}
+
+#[derive(Clone)]
+pub struct DraftRestoredEvent {
+    pub request_id: u64,
+    pub draft: DraftRecord,
+}
+
+impl fmt::Debug for DraftRestoredEvent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DraftRestoredEvent")
+            .field("request_id", &self.request_id)
+            .field("draft", &self.draft)
+            .finish()
     }
 }
 
@@ -222,6 +296,7 @@ pub struct AcceptedEvent {
     pub result: ActionResult,
     pub commit: AcceptedCommit,
     pub accepted: SnapshotEvent,
+    pub draft_cleanup_pending: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -230,6 +305,7 @@ pub struct PendingEvent {
     pub generation: Option<EditGeneration>,
     pub reason: PendingReason,
     pub accepted: SnapshotEvent,
+    pub draft_error: Option<DraftError>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,6 +314,8 @@ pub enum WorkerFailure {
     CommitPending,
     Scheduler(SchedulerError),
     Mutation(MutationError),
+    Draft(DraftError),
+    MissingDraft,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -250,6 +328,12 @@ pub struct RejectedEvent {
 pub enum WorkerEvent {
     MigrationReview(MigrationReviewSummary),
     Ready(SnapshotEvent),
+    DraftReview(DraftReviewSummary),
+    DraftRestored(DraftRestoredEvent),
+    DraftDiscarded {
+        request_id: u64,
+        note_id: NoteId,
+    },
     Coalesced {
         request_id: u64,
         generation: EditGeneration,
@@ -272,6 +356,20 @@ impl fmt::Debug for WorkerEvent {
                 .field(summary)
                 .finish(),
             Self::Ready(snapshot) => formatter.debug_tuple("Ready").field(snapshot).finish(),
+            Self::DraftReview(summary) => {
+                formatter.debug_tuple("DraftReview").field(summary).finish()
+            }
+            Self::DraftRestored(event) => {
+                formatter.debug_tuple("DraftRestored").field(event).finish()
+            }
+            Self::DraftDiscarded {
+                request_id,
+                note_id,
+            } => formatter
+                .debug_struct("DraftDiscarded")
+                .field("request_id", request_id)
+                .field("note_id", note_id)
+                .finish(),
             Self::Coalesced {
                 request_id,
                 generation,
@@ -514,6 +612,68 @@ fn try_send_command(
 struct ReadyState {
     library: Box<AcceptedLibrary>,
     scheduler: EditScheduler,
+    drafts: DraftStore,
+    recoverable_drafts: BTreeMap<NoteId, DraftRecord>,
+}
+
+impl ReadyState {
+    fn new(
+        library: Box<AcceptedLibrary>,
+        scheduler: EditScheduler,
+    ) -> (Self, Option<DraftReviewSummary>) {
+        let drafts = DraftStore::for_library(library.root());
+        let discovery = drafts.discover();
+        let mut recoverable_drafts = BTreeMap::new();
+        let mut summary = DraftReviewSummary {
+            malformed: discovery.malformed,
+            quarantined: discovery.quarantined,
+            excessive: discovery.excessive,
+            unavailable: discovery.unavailable,
+            ..DraftReviewSummary::default()
+        };
+        for draft in discovery.drafts {
+            let note = library
+                .snapshot()
+                .notes
+                .iter()
+                .find(|note| note.id == draft.note_id);
+            if note.is_some_and(|note| draft_matches_note(&draft, note)) {
+                if drafts.remove(draft.note_id).is_err() {
+                    summary.cleanup_pending = summary.cleanup_pending.saturating_add(1);
+                }
+                continue;
+            }
+            let kind = match note {
+                Some(note)
+                    if !note.deleted
+                        && note.revision == draft.base_note_revision
+                        && draft.changes.modified_unix_ms >= note.created_unix_ms =>
+                {
+                    DraftRecoveryKind::Applicable
+                }
+                Some(note) if !note.deleted => DraftRecoveryKind::Conflict,
+                Some(_) | None => DraftRecoveryKind::Orphaned,
+            };
+            summary.drafts.push(DraftSummary {
+                note_id: draft.note_id,
+                base_note_revision: draft.base_note_revision,
+                edit_generation: draft.edit_generation,
+                updated_unix_ms: draft.updated_unix_ms,
+                kind,
+            });
+            recoverable_drafts.insert(draft.note_id, draft);
+        }
+        let review = summary.requires_attention().then_some(summary);
+        (
+            Self {
+                library,
+                scheduler,
+                drafts,
+                recoverable_drafts,
+            },
+            review,
+        )
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -521,6 +681,14 @@ struct RequestContext {
     request_id: u64,
     generation: Option<EditGeneration>,
     result: ActionResult,
+    draft: Option<DraftContext>,
+}
+
+#[derive(Clone, Copy)]
+struct DraftContext {
+    note_id: NoteId,
+    persisted: bool,
+    error: Option<DraftError>,
 }
 
 struct PendingState {
@@ -549,15 +717,11 @@ fn run_worker(
 ) {
     let mut phase = match inspect_notes_startup(&paths) {
         Ok(NotesStartup::Ready(library)) => {
-            if events
-                .send(WorkerEvent::Ready(SnapshotEvent::from_library(
-                    &library, None,
-                )))
-                .is_err()
-            {
+            let phase = enter_ready(library, scheduler, None, &events);
+            if matches!(phase, Phase::Stopped) {
                 return;
             }
-            Phase::Ready(ReadyState { library, scheduler })
+            phase
         }
         Ok(NotesStartup::MigrationReview(review)) => {
             if events
@@ -597,6 +761,31 @@ fn run_worker(
 
 fn elapsed_millis(origin: Instant) -> u64 {
     u64::try_from(origin.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+fn enter_ready(
+    library: Box<AcceptedLibrary>,
+    scheduler: EditScheduler,
+    request_id: Option<u64>,
+    events: &SyncSender<WorkerEvent>,
+) -> Phase {
+    let (ready, draft_review) = ReadyState::new(library, scheduler);
+    if !emit_ready(events, &ready.library, request_id) {
+        return Phase::Stopped;
+    }
+    if let Some(summary) = draft_review {
+        if events.send(WorkerEvent::DraftReview(summary)).is_err() {
+            return Phase::Stopped;
+        }
+    }
+    Phase::Ready(ready)
+}
+
+fn draft_matches_note(draft: &DraftRecord, note: &rmac_notes_store::NoteRecord) -> bool {
+    note.title == draft.changes.title
+        && note.body == draft.changes.body
+        && note.tags == draft.changes.tags
+        && note.modified_unix_ms == draft.changes.modified_unix_ms
 }
 
 fn wait_for_command(
@@ -647,17 +836,12 @@ fn process_command(
         (_, WorkerCommand::Shutdown) => Phase::Stopped,
         (Phase::Review(review), WorkerCommand::AcceptMigration { request_id }) => {
             match review.review.accept() {
-                Ok(library) => {
-                    let library = Box::new(library);
-                    if emit_ready(events, &library, Some(request_id)) {
-                        Phase::Ready(ReadyState {
-                            library,
-                            scheduler: review.scheduler,
-                        })
-                    } else {
-                        Phase::Stopped
-                    }
-                }
+                Ok(library) => enter_ready(
+                    Box::new(library),
+                    review.scheduler,
+                    Some(request_id),
+                    events,
+                ),
                 Err(error) => {
                     let _ = events.send(WorkerEvent::StartupFailed(error));
                     Phase::Stopped
@@ -666,14 +850,7 @@ fn process_command(
         }
         (Phase::Review(review), WorkerCommand::StartEmpty { request_id }) => {
             let library = Box::new(review.review.start_empty());
-            if emit_ready(events, &library, Some(request_id)) {
-                Phase::Ready(ReadyState {
-                    library,
-                    scheduler: review.scheduler,
-                })
-            } else {
-                Phase::Stopped
-            }
+            enter_ready(library, review.scheduler, Some(request_id), events)
         }
         (Phase::Review(review), command) => {
             if emit_rejected(events, command, WorkerFailure::WrongPhase) {
@@ -823,6 +1000,81 @@ fn process_command(
                 Phase::Stopped
             }
         }
+        (
+            Phase::Ready(ready),
+            WorkerCommand::RestoreDraft {
+                request_id,
+                note_id,
+            },
+        ) => {
+            let Some(draft) = ready.recoverable_drafts.get(&note_id).cloned() else {
+                return if emit_request_rejected(
+                    events,
+                    request_id,
+                    None,
+                    WorkerFailure::MissingDraft,
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            };
+            if events
+                .send(WorkerEvent::DraftRestored(DraftRestoredEvent {
+                    request_id,
+                    draft,
+                }))
+                .is_ok()
+            {
+                Phase::Ready(ready)
+            } else {
+                Phase::Stopped
+            }
+        }
+        (
+            Phase::Ready(mut ready),
+            WorkerCommand::DiscardDraft {
+                request_id,
+                note_id,
+            },
+        ) => {
+            if !ready.recoverable_drafts.contains_key(&note_id) {
+                return if emit_request_rejected(
+                    events,
+                    request_id,
+                    None,
+                    WorkerFailure::MissingDraft,
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            if let Err(error) = ready.drafts.remove(note_id) {
+                return if emit_request_rejected(
+                    events,
+                    request_id,
+                    None,
+                    WorkerFailure::Draft(error),
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            ready.recoverable_drafts.remove(&note_id);
+            if events
+                .send(WorkerEvent::DraftDiscarded {
+                    request_id,
+                    note_id,
+                })
+                .is_ok()
+            {
+                Phase::Ready(ready)
+            } else {
+                Phase::Stopped
+            }
+        }
         (Phase::Ready(ready), command) => {
             if emit_rejected(events, command, WorkerFailure::WrongPhase) {
                 Phase::Ready(ready)
@@ -842,6 +1094,10 @@ fn process_command(
                             &pending.ready.library,
                             Some(pending.context.request_id),
                         ),
+                        draft_cleanup_pending: cleanup_draft(
+                            &mut pending.ready,
+                            pending.context.draft,
+                        ),
                     };
                     if events.send(WorkerEvent::Accepted(event)).is_ok() {
                         Phase::Ready(pending.ready)
@@ -859,7 +1115,31 @@ fn process_command(
                 }
             }
         }
-        (Phase::Pending(pending), WorkerCommand::DiscardPending { request_id }) => {
+        (Phase::Pending(mut pending), WorkerCommand::DiscardPending { request_id }) => {
+            if let Some(draft) = pending.context.draft.filter(|draft| draft.persisted) {
+                if let Err(error) = pending.ready.drafts.remove(draft.note_id) {
+                    return if emit_request_rejected(
+                        events,
+                        request_id,
+                        None,
+                        WorkerFailure::Draft(error),
+                    ) {
+                        Phase::Pending(pending)
+                    } else {
+                        Phase::Stopped
+                    };
+                }
+                pending.ready.recoverable_drafts.remove(&draft.note_id);
+                if events
+                    .send(WorkerEvent::DraftDiscarded {
+                        request_id,
+                        note_id: draft.note_id,
+                    })
+                    .is_err()
+                {
+                    return Phase::Stopped;
+                }
+            }
             if emit_ready(events, &pending.ready.library, Some(request_id)) {
                 Phase::Ready(pending.ready)
             } else {
@@ -919,13 +1199,37 @@ fn commit_edit(
         Ok(transaction) => transaction,
         Err(error) => return reject_mutation(events, request_id, Some(generation), error),
     };
-    if let Err(error) = transaction.edit_note(note_id, current_revision, edit.into_changes()) {
+    let changes = edit.changes().clone();
+    if let Err(error) = transaction.edit_note(note_id, current_revision, changes.clone()) {
         return reject_mutation(events, request_id, Some(generation), error);
     }
+    let record = DraftRecord {
+        note_id,
+        base_note_revision: current_revision,
+        edit_generation: generation.get(),
+        updated_unix_ms: changes.modified_unix_ms,
+        changes,
+    };
+    let draft = match ready.drafts.save(&record) {
+        Ok(()) => {
+            ready.recoverable_drafts.insert(note_id, record);
+            DraftContext {
+                note_id,
+                persisted: true,
+                error: None,
+            }
+        }
+        Err(error) => DraftContext {
+            note_id,
+            persisted: false,
+            error: Some(error),
+        },
+    };
     let context = RequestContext {
         request_id,
         generation: Some(generation),
         result: ActionResult::Edited(note_id),
+        draft: Some(draft),
     };
     commit_transaction(ready, transaction, context, events)
 }
@@ -998,6 +1302,7 @@ fn commit_action(
         request_id: request.request_id,
         generation: None,
         result,
+        draft: None,
     };
     commit_transaction(ready, transaction, context, events)
 }
@@ -1016,6 +1321,7 @@ fn commit_transaction(
                 result: context.result,
                 commit,
                 accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                draft_cleanup_pending: cleanup_draft(ready, context.draft),
             };
             if events.send(WorkerEvent::Accepted(event)).is_ok() {
                 CommitDisposition::Ready
@@ -1032,6 +1338,7 @@ fn commit_transaction(
                 generation: context.generation,
                 reason: pending.reason,
                 accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
+                draft_error: context.draft.and_then(|draft| draft.error),
             };
             if events.send(WorkerEvent::Pending(event)).is_ok() {
                 CommitDisposition::Pending(pending, context)
@@ -1084,8 +1391,20 @@ fn emit_pending(events: &SyncSender<WorkerEvent>, pending: &PendingState) -> boo
                 &pending.ready.library,
                 Some(pending.context.request_id),
             ),
+            draft_error: pending.context.draft.and_then(|draft| draft.error),
         }))
         .is_ok()
+}
+
+fn cleanup_draft(ready: &mut ReadyState, draft: Option<DraftContext>) -> bool {
+    let Some(draft) = draft.filter(|draft| draft.persisted) else {
+        return false;
+    };
+    if ready.drafts.remove(draft.note_id).is_err() {
+        return true;
+    }
+    ready.recoverable_drafts.remove(&draft.note_id);
+    false
 }
 
 fn emit_rejected(
@@ -1195,7 +1514,8 @@ mod tests {
     #[test]
     fn worker_commits_actions_and_due_edits_without_idle_events() {
         let (container, paths) = roots("edit");
-        let worker = NotesWorker::start_with_debounce(paths, Duration::from_millis(30)).unwrap();
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_millis(30)).unwrap();
         assert_eq!(ready(&worker).snapshot.revision, 1);
         let (note_id, created) = create_note(&worker, 1);
         assert_eq!(created.snapshot.notes[0].revision, 1);
@@ -1220,6 +1540,13 @@ mod tests {
         assert_eq!(accepted.request_id, 2);
         assert_eq!(accepted.generation, EditGeneration::new(1));
         assert_eq!(accepted.accepted.snapshot.notes[0].body, "Newest body");
+        assert!(!accepted.draft_cleanup_pending);
+        assert_eq!(
+            DraftStore::for_library(paths.data_root())
+                .load(note_id)
+                .unwrap(),
+            None
+        );
 
         assert!(matches!(
             worker.recv_timeout(Duration::from_millis(80)),
@@ -1359,6 +1686,190 @@ mod tests {
     }
 
     #[test]
+    fn startup_reviews_restores_and_discards_recoverable_drafts_explicitly() {
+        let (container, paths) = roots("draft-review");
+        let worker = NotesWorker::start(paths.clone()).unwrap();
+        ready(&worker);
+        let (note_id, _) = create_note(&worker, 1);
+        let (conflict_id, _) = create_note(&worker, 2);
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+
+        let drafts = DraftStore::for_library(paths.data_root());
+        drafts
+            .save(
+                &DraftRecord::new(
+                    note_id,
+                    1,
+                    7,
+                    99,
+                    NoteChanges {
+                        modified_unix_ms: 99,
+                        title: "Recovered title".into(),
+                        body: "Recovered private body".into(),
+                        tags: vec!["recovered".into()],
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let orphan_id = NoteId::new(99).unwrap();
+        drafts
+            .save(
+                &DraftRecord::new(
+                    conflict_id,
+                    2,
+                    8,
+                    98,
+                    NoteChanges {
+                        modified_unix_ms: 98,
+                        title: "Conflicting title".into(),
+                        body: "Conflicting private body".into(),
+                        tags: Vec::new(),
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        drafts
+            .save(
+                &DraftRecord::new(
+                    orphan_id,
+                    1,
+                    9,
+                    97,
+                    NoteChanges {
+                        modified_unix_ms: 98,
+                        title: "Orphaned title".into(),
+                        body: "Orphaned private body".into(),
+                        tags: Vec::new(),
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let worker = NotesWorker::start(paths).unwrap();
+        ready(&worker);
+        let review = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::DraftReview(summary) => summary,
+            event => panic!("expected draft review, got {event:?}"),
+        };
+        assert_eq!(review.drafts.len(), 3);
+        assert_eq!(review.drafts[0].note_id, note_id);
+        assert_eq!(review.drafts[0].kind, DraftRecoveryKind::Applicable);
+        assert_eq!(review.drafts[1].note_id, conflict_id);
+        assert_eq!(review.drafts[1].kind, DraftRecoveryKind::Conflict);
+        assert_eq!(review.drafts[2].note_id, orphan_id);
+        assert_eq!(review.drafts[2].kind, DraftRecoveryKind::Orphaned);
+
+        worker
+            .try_send(WorkerCommand::RestoreDraft {
+                request_id: 2,
+                note_id,
+            })
+            .unwrap();
+        let restored = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::DraftRestored(event) => event,
+            event => panic!("expected restored draft, got {event:?}"),
+        };
+        assert_eq!(restored.request_id, 2);
+        assert_eq!(restored.draft.changes.body, "Recovered private body");
+        assert!(!format!("{restored:?}").contains("Recovered private body"));
+
+        worker
+            .try_send(WorkerCommand::DiscardDraft {
+                request_id: 3,
+                note_id,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::DraftDiscarded {
+                request_id: 3,
+                note_id: discarded,
+            } if discarded == note_id
+        ));
+        assert_eq!(drafts.load(note_id).unwrap(), None);
+
+        worker
+            .try_send(WorkerCommand::DiscardDraft {
+                request_id: 4,
+                note_id,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 4,
+                failure: WorkerFailure::MissingDraft,
+                ..
+            })
+        ));
+        worker
+            .try_send(WorkerCommand::DiscardDraft {
+                request_id: 5,
+                note_id: conflict_id,
+            })
+            .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker
+            .try_send(WorkerCommand::DiscardDraft {
+                request_id: 6,
+                note_id: orphan_id,
+            })
+            .unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn startup_prunes_a_draft_identical_to_the_durable_note() {
+        let (container, paths) = roots("draft-prune");
+        let worker = NotesWorker::start(paths.clone()).unwrap();
+        ready(&worker);
+        let (note_id, _) = create_note(&worker, 1);
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+
+        let drafts = DraftStore::for_library(paths.data_root());
+        drafts
+            .save(
+                &DraftRecord::new(
+                    note_id,
+                    1,
+                    1,
+                    10,
+                    NoteChanges {
+                        modified_unix_ms: 10,
+                        title: "Private title".into(),
+                        body: "Initial body".into(),
+                        tags: Vec::new(),
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        let worker = NotesWorker::start(paths).unwrap();
+        ready(&worker);
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_millis(50)),
+            Err(RecvTimeoutError::Timeout)
+        ));
+        assert_eq!(drafts.load(note_id).unwrap(), None);
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
     fn unrelated_durable_change_keeps_local_candidate_pending_until_discard() {
         let (container, paths) = roots("pending");
         let worker =
@@ -1389,7 +1900,13 @@ mod tests {
         };
         assert_eq!(pending.request_id, 2);
         assert!(matches!(pending.reason, PendingReason::Store(_)));
+        assert_eq!(pending.draft_error, None);
         assert_eq!(pending.accepted.snapshot.notes[0].body, "Initial body");
+        let draft_store = DraftStore::for_library(paths.data_root());
+        let retained = draft_store.load(note_id).unwrap().unwrap();
+        assert_eq!(retained.base_note_revision, 1);
+        assert_eq!(retained.edit_generation, 1);
+        assert_eq!(retained.changes.body, "Local pending body");
 
         worker.try_send(WorkerCommand::RetryPending).unwrap();
         let conflict = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
@@ -1399,15 +1916,86 @@ mod tests {
         assert_eq!(conflict.request_id, 2);
         assert_eq!(conflict.generation, EditGeneration::new(1));
         assert_eq!(conflict.reason, PendingReason::AcceptedStateChanged);
+        assert_eq!(conflict.draft_error, None);
         assert_eq!(conflict.accepted.snapshot.sort_order, SortOrder::Title);
         assert_eq!(conflict.accepted.snapshot.notes[0].body, "Initial body");
+        assert!(draft_store.load(note_id).unwrap().is_some());
 
         worker
             .try_send(WorkerCommand::DiscardPending { request_id: 3 })
             .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::DraftDiscarded {
+                request_id: 3,
+                note_id: discarded,
+            } if discarded == note_id
+        ));
         let discarded = ready(&worker);
         assert_eq!(discarded.request_id, Some(3));
         assert_eq!(discarded.snapshot, conflict.accepted.snapshot);
+        assert_eq!(draft_store.load(note_id).unwrap(), None);
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pending_commit_discloses_when_private_draft_storage_is_unavailable() {
+        use std::os::unix::fs::symlink;
+
+        let (container, paths) = roots("draft-unavailable");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_millis(20)).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+        let mut external = LibraryTransaction::begin(&created.snapshot).unwrap();
+        external.set_sort_order(SortOrder::Title);
+        let external = external.finish().unwrap();
+        std::fs::write(
+            paths.data_root().join("library.bin"),
+            encode(&external).unwrap(),
+        )
+        .unwrap();
+        let outside = container.join("outside-drafts");
+        std::fs::create_dir(&outside).unwrap();
+        symlink(&outside, paths.data_root().join("drafts")).unwrap();
+
+        worker
+            .try_send(WorkerCommand::ScheduleEdit(scheduled_edit(
+                2,
+                1,
+                note_id,
+                1,
+                "Memory-only pending body",
+            )))
+            .unwrap();
+
+        let pending = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Pending(event) => event,
+            event => panic!("expected pending save, got {event:?}"),
+        };
+        let error = pending
+            .draft_error
+            .expect("the unavailable draft store must remain visible");
+        assert_eq!(
+            error.operation,
+            rmac_notes_storage::DraftOperation::PrepareDirectory
+        );
+        assert!(matches!(
+            error.kind,
+            rmac_notes_storage::DraftErrorKind::Io(io::ErrorKind::InvalidData)
+        ));
+
+        worker
+            .try_send(WorkerCommand::DiscardPending { request_id: 3 })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Ready(_)
+        ));
         worker.try_send(WorkerCommand::Shutdown).unwrap();
         let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
         drop(worker);

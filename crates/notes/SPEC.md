@@ -296,9 +296,19 @@ bytes, and aggregate bytes; malformed, oversized, misnamed, linked, or
 identity-mismatched records are isolated without allowing one record to hide
 the others, while excess valid records are preserved for explicit attention.
 Errors and debug output contain operation/kind/count/identity information but
-not draft text, tags, or library paths. The repository worker does not yet
-schedule these draft writes or remove a matching record after an accepted
-library commit, so draft recovery is not yet a live application claim.
+not draft text, tags, or library paths. The repository worker now writes the
+complete draft at the same debounced boundary before attempting the library
+transaction. Verified acceptance removes only its matching record; a store
+failure or unrelated durable change retains both the candidate and draft;
+explicit pending discard must remove the draft first; save and cleanup failures
+remain visible in typed events. Startup prunes a record already identical to
+the durable note, and classifies remaining records as directly applicable,
+conflicting, or orphaned using stable identity and exact revisions. The UI
+receives only bounded summaries until it explicitly requests Restore, while
+Discard removes and verifies the exact stable-ID record. The session projection
+keeps review/restored state until accepted cleanup or explicit discard. Live
+recovery dialogs and editor restoration remain, so draft recovery is not yet a
+complete application claim.
 
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned

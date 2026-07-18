@@ -188,8 +188,11 @@ pub enum MutationError {
     RevisionConflict,
     MissingFolder,
     MissingNote,
+    MissingAttachment,
     DeletedFolder,
     DeletedNote,
+    AttachmentNotOwned,
+    AttachmentAlreadyRemoved,
     NoteNotTrashed,
     AttachmentImportRequiresExclusiveTransaction,
     PurgeRequiresExclusiveTransaction,
@@ -207,8 +210,13 @@ impl fmt::Display for MutationError {
             Self::RevisionConflict => "the note or folder changed before this edit was accepted",
             Self::MissingFolder => "the selected Notes folder no longer exists",
             Self::MissingNote => "the selected note no longer exists",
+            Self::MissingAttachment => "the selected note attachment no longer exists",
             Self::DeletedFolder => "the selected Notes folder is in Notes Trash",
             Self::DeletedNote => "the selected note is in Notes Trash",
+            Self::AttachmentNotOwned => "the selected attachment does not belong to this note",
+            Self::AttachmentAlreadyRemoved => {
+                "the selected attachment reference was already removed"
+            }
             Self::NoteNotTrashed => "the selected note is not in Notes Trash",
             Self::AttachmentImportRequiresExclusiveTransaction => {
                 "an attachment import requires a separate Notes transaction"
@@ -552,6 +560,67 @@ impl LibraryTransaction {
             byte_len: attachment.byte_len,
             sha256: attachment.sha256,
         })
+    }
+
+    /// Remove one exact live attachment reference and retain its bytes as an
+    /// authoritative orphan tombstone.
+    ///
+    /// This transaction never authorizes filesystem deletion. A separate
+    /// storage-backed collection operation must review the accepted tombstone
+    /// before the managed bytes or record can be removed.
+    pub fn remove_attachment_reference(
+        &mut self,
+        note_id: NoteId,
+        expected_note_revision: u64,
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+        modified_unix_ms: u64,
+    ) -> Result<(), MutationError> {
+        let note_index = self
+            .candidate
+            .notes
+            .iter()
+            .position(|note| note.id == note_id)
+            .ok_or(MutationError::MissingNote)?;
+        let attachment_index = self
+            .candidate
+            .attachments
+            .iter()
+            .position(|attachment| attachment.id == attachment_id)
+            .ok_or(MutationError::MissingAttachment)?;
+        let note = &self.candidate.notes[note_index];
+        let attachment = &self.candidate.attachments[attachment_index];
+        require_revision(note.revision, expected_note_revision)?;
+        require_revision(attachment.revision, expected_attachment_revision)?;
+        if note.deleted {
+            return Err(MutationError::DeletedNote);
+        }
+        if attachment.note_id != note_id {
+            return Err(MutationError::AttachmentNotOwned);
+        }
+        if attachment.deleted {
+            return Err(MutationError::AttachmentAlreadyRemoved);
+        }
+        if !note.attachments.contains(&attachment_id) {
+            return Err(MutationError::AttachmentNotOwned);
+        }
+        if modified_unix_ms < note.modified_unix_ms {
+            return Err(MutationError::InvalidCandidate(
+                ValidationError::InvalidTimestamp,
+            ));
+        }
+        let note_revision = next_revision(note.revision)?;
+        let attachment_revision = next_revision(attachment.revision)?;
+
+        let note = &mut self.candidate.notes[note_index];
+        note.revision = note_revision;
+        note.modified_unix_ms = modified_unix_ms;
+        note.attachments.retain(|id| *id != attachment_id);
+        let attachment = &mut self.candidate.attachments[attachment_index];
+        attachment.revision = attachment_revision;
+        attachment.deleted = true;
+        self.changed = true;
+        Ok(())
     }
 
     /// Remove one exact trashed note and all attachment records it owns.
@@ -1015,6 +1084,92 @@ mod tests {
         assert!(!attachment_debug.contains("[9, 9"));
         assert!(!plan_debug.contains("[9, 9"));
         assert!(plan_debug.contains("attachment_id"));
+    }
+
+    #[test]
+    fn attachment_reference_removal_tombstones_metadata_without_losing_identity() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let mut import = LibraryTransaction::begin(&base).unwrap();
+        let plan = import
+            .add_attachment(note_id, 3, 25, new_attachment())
+            .unwrap();
+        let attached = import.finish().unwrap();
+        let mut remove = LibraryTransaction::begin(&attached).unwrap();
+
+        remove
+            .remove_attachment_reference(note_id, 4, plan.attachment_id, 1, 30)
+            .unwrap();
+        let detached = remove.finish().unwrap();
+
+        assert_eq!(detached.revision, attached.revision + 1);
+        assert_eq!(detached.notes[0].revision, 5);
+        assert_eq!(detached.notes[0].modified_unix_ms, 30);
+        assert!(detached.notes[0].attachments.is_empty());
+        assert_eq!(detached.attachments.len(), 1);
+        assert_eq!(detached.attachments[0].id, plan.attachment_id);
+        assert_eq!(detached.attachments[0].revision, 2);
+        assert!(detached.attachments[0].deleted);
+        assert_eq!(detached.next_attachment_id, 2);
+        detached.validate().unwrap();
+
+        let mut repeated = LibraryTransaction::begin(&detached).unwrap();
+        assert_eq!(
+            repeated.remove_attachment_reference(note_id, 5, plan.attachment_id, 2, 31),
+            Err(MutationError::AttachmentAlreadyRemoved)
+        );
+        assert_eq!(repeated.finish().unwrap_err(), MutationError::NoChanges);
+    }
+
+    #[test]
+    fn attachment_reference_removal_rejects_stale_wrong_owner_and_trash() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+        let mut import = LibraryTransaction::begin(&base).unwrap();
+        let plan = import
+            .add_attachment(note_id, 3, 25, new_attachment())
+            .unwrap();
+        let attached = import.finish().unwrap();
+
+        let mut stale_note = LibraryTransaction::begin(&attached).unwrap();
+        assert_eq!(
+            stale_note.remove_attachment_reference(note_id, 3, plan.attachment_id, 1, 30),
+            Err(MutationError::RevisionConflict)
+        );
+        let mut stale_attachment = LibraryTransaction::begin(&attached).unwrap();
+        assert_eq!(
+            stale_attachment.remove_attachment_reference(note_id, 4, plan.attachment_id, 2, 30),
+            Err(MutationError::RevisionConflict)
+        );
+
+        let mut second_note = attached.clone();
+        let mut other = second_note.notes[0].clone();
+        other.id = NoteId::new(2).unwrap();
+        other.revision = 1;
+        other.attachments.clear();
+        second_note.notes.push(other);
+        second_note.next_note_id = 3;
+        second_note.validate().unwrap();
+        let mut wrong_owner = LibraryTransaction::begin(&second_note).unwrap();
+        assert_eq!(
+            wrong_owner.remove_attachment_reference(
+                NoteId::new(2).unwrap(),
+                1,
+                plan.attachment_id,
+                1,
+                30,
+            ),
+            Err(MutationError::AttachmentNotOwned)
+        );
+
+        let mut trash = LibraryTransaction::begin(&attached).unwrap();
+        trash.trash_note(note_id, 4).unwrap();
+        let trashed = trash.finish().unwrap();
+        let mut remove_from_trash = LibraryTransaction::begin(&trashed).unwrap();
+        assert_eq!(
+            remove_from_trash.remove_attachment_reference(note_id, 5, plan.attachment_id, 1, 30,),
+            Err(MutationError::DeletedNote)
+        );
     }
 
     #[test]

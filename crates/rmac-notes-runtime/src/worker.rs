@@ -15,7 +15,9 @@ use rmac_notes_storage::{
     PendingCommit, PendingReason, PreparedImageAttachment, RecoveryNotice, StartupError,
     StoreError, TextImportError,
 };
-use rmac_notes_store::{FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder};
+use rmac_notes_store::{
+    AttachmentId, FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder,
+};
 
 use crate::{EditGeneration, EditScheduler, ScheduledEdit, SchedulerError, DEFAULT_EDIT_DEBOUNCE};
 
@@ -66,6 +68,13 @@ pub enum LibraryAction {
         folder_id: Option<FolderId>,
         selected_path: PathBuf,
     },
+    RemoveAttachmentReference {
+        note_id: NoteId,
+        expected_note_revision: u64,
+        attachment_id: AttachmentId,
+        expected_attachment_revision: u64,
+        modified_unix_ms: u64,
+    },
     DeleteNotePermanently {
         note_id: NoteId,
         expected_revision: u64,
@@ -89,6 +98,7 @@ impl fmt::Debug for LibraryAction {
             Self::RestoreNote { .. } => "RestoreNote",
             Self::AttachImage { .. } => "AttachImage([private source])",
             Self::ImportTextNote { .. } => "ImportTextNote([private source])",
+            Self::RemoveAttachmentReference { .. } => "RemoveAttachmentReference",
             Self::DeleteNotePermanently { .. } => "DeleteNotePermanently",
             Self::EmptyTrash { .. } => "EmptyTrash",
         })
@@ -326,6 +336,10 @@ pub enum ActionResult {
         note_id: NoteId,
         encoding: ImportedTextEncoding,
         source_byte_len: u64,
+    },
+    AttachmentReferenceRemoved {
+        note_id: NoteId,
+        attachment_id: AttachmentId,
     },
     PermanentDeleteAccepted {
         note_id: NoteId,
@@ -1386,6 +1400,24 @@ fn commit_action(
         } => transaction
             .restore_note(note_id, expected_revision)
             .map(|folder_id| ActionResult::RestoredNote { folder_id }),
+        LibraryAction::RemoveAttachmentReference {
+            note_id,
+            expected_note_revision,
+            attachment_id,
+            expected_attachment_revision,
+            modified_unix_ms,
+        } => transaction
+            .remove_attachment_reference(
+                note_id,
+                expected_note_revision,
+                attachment_id,
+                expected_attachment_revision,
+                modified_unix_ms,
+            )
+            .map(|()| ActionResult::AttachmentReferenceRemoved {
+                note_id,
+                attachment_id,
+            }),
         LibraryAction::DeleteNotePermanently {
             note_id,
             expected_revision,
@@ -1898,31 +1930,52 @@ mod tests {
             accepted.accepted.snapshot.attachments[0].display_name,
             "private-source.png"
         );
+        let managed_path = paths
+            .data_root()
+            .join("attachments")
+            .join(format!("{:020}.bin", attachment_id.get()));
+        assert_eq!(std::fs::read(&managed_path).unwrap(), tiny_png());
+
+        let removed = match apply_action(
+            &worker,
+            3,
+            LibraryAction::RemoveAttachmentReference {
+                note_id,
+                expected_note_revision: 2,
+                attachment_id,
+                expected_attachment_revision: 1,
+                modified_unix_ms: 12,
+            },
+        ) {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted reference removal, got {event:?}"),
+        };
         assert_eq!(
-            std::fs::read(
-                paths
-                    .data_root()
-                    .join("attachments")
-                    .join(format!("{:020}.bin", attachment_id.get()))
-            )
-            .unwrap(),
-            tiny_png()
+            removed.result,
+            ActionResult::AttachmentReferenceRemoved {
+                note_id,
+                attachment_id,
+            }
         );
+        assert!(removed.accepted.snapshot.notes[0].attachments.is_empty());
+        assert!(removed.accepted.snapshot.attachments[0].deleted);
+        assert_eq!(removed.accepted.snapshot.attachments[0].revision, 2);
+        assert_eq!(std::fs::read(&managed_path).unwrap(), tiny_png());
 
         let invalid = container.join("private-invalid.png");
         std::fs::write(&invalid, b"not an image").unwrap();
         match apply_action(
             &worker,
-            3,
+            4,
             LibraryAction::AttachImage {
                 note_id,
-                expected_revision: 2,
-                modified_unix_ms: 12,
+                expected_revision: 3,
+                modified_unix_ms: 13,
                 selected_path: invalid,
             },
         ) {
             WorkerEvent::Rejected(RejectedEvent {
-                request_id: 3,
+                request_id: 4,
                 failure: WorkerFailure::Storage(error),
                 ..
             }) => assert_eq!(error.kind, ErrorKind::UnsupportedAttachment),

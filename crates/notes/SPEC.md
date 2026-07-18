@@ -293,6 +293,17 @@ identity gate Started/Ready/Unavailable projection, a newer request cancels the
 old one, and diagnostics expose no names, paths, hashes, or pixels. Portal
 dispatch, the live Notes view, and preview rendering/accessibility still remain.
 
+Removing an attachment reference is now a separate ordinary metadata
+transaction: it requires the exact live-note and attachment revisions, verifies
+ownership and monotonic modification time, removes the stable ID from the note,
+increments both records, and retains the attachment as a deleted orphan
+tombstone with its byte identity intact. The worker result is explicitly
+`AttachmentReferenceRemoved`; tests prove the managed file remains unchanged,
+and search/preview omit the tombstone. No path claims physical deletion.
+Reviewed orphan collection and its crash-recoverable cleanup intent remain a
+later, separately durable operation (permanent note purge already includes all
+owned live and tombstoned attachments).
+
 The first ordinary-file note import path is now strict and path-free. Storage
 reads at most twice the 4 MiB decoded-body limit plus BOM allowance; accepts
 UTF-8, UTF-8 BOM, and BOM-marked UTF-16 LE/BE without lossy replacement;

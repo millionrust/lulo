@@ -660,5 +660,12 @@ mod tests {
             Err(PreviewWorkerStartError::InvalidRoot)
         ));
         assert_eq!(PreviewSize::new(0, 10), Err(PreviewError::InvalidRequest));
+        let bytes = png();
+        let mut deleted = attachment(&bytes);
+        deleted.deleted = true;
+        assert!(matches!(
+            NotesPreviewSession::new().request(1, deleted, PreviewSize::new(10, 10).unwrap()),
+            Err(PreviewRequestError::InvalidRequest)
+        ));
     }
 }

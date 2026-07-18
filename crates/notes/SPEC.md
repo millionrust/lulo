@@ -254,6 +254,16 @@ the user then commits a new library, restart never reoffers an already migrated
 library, and blocking journal maintenance takes priority over a migration the
 store cannot accept.
 
+The new GPUI-free `rmac-notes-runtime` begins the event-driven application
+boundary. Its bounded 500 ms edit scheduler has no idle timer or synthetic
+save: a newer generation for the same stable note replaces the older complete
+edit, changing notes returns the previous edit for ordered flush, and only an
+exact pending generation can be cancelled. Stale generations and deadline/
+configuration overflow fail without replacing pending content, and debug
+output redacts titles, bodies, and tags. The background repository worker and
+live Notes view wiring remain; the prototype's 1.5-second loop is still the
+running behavior until that integration lands and is validated.
+
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
 manifest/journal or aggregate bounds, no exact conflict preflight/readback, no

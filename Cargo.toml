@@ -52,6 +52,7 @@ rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-notes-store = { version = "=0.1.0", path = "crates/rmac-notes-store" }
 rmac-notes-storage = { version = "=0.1.0", path = "crates/rmac-notes-storage" }
+rmac-notes-runtime = { version = "=0.1.0", path = "crates/rmac-notes-runtime" }
 rmac-notifications = { version = "=0.1.0", path = "crates/rmac-notifications" }
 rmac-notifications-linux = { version = "=0.1.0", path = "crates/rmac-notifications-linux" }
 rmac-notifications-runtime = { version = "=0.1.0", path = "crates/rmac-notifications-runtime" }

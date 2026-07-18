@@ -1045,6 +1045,29 @@ mod tests {
     }
 
     #[test]
+    fn moving_a_note_uses_stable_ids_and_the_exact_record_revision() {
+        let base = snapshot();
+        let note_id = NoteId::new(1).unwrap();
+
+        let mut move_to_all_notes = LibraryTransaction::begin(&base).unwrap();
+        assert!(move_to_all_notes.move_note(note_id, 3, None).unwrap());
+        let moved = move_to_all_notes.finish().unwrap();
+        assert_eq!(moved.notes[0].folder_id, None);
+        assert_eq!(moved.notes[0].revision, 4);
+
+        let mut unchanged = LibraryTransaction::begin(&moved).unwrap();
+        assert!(!unchanged.move_note(note_id, 4, None).unwrap());
+        assert_eq!(unchanged.finish().unwrap_err(), MutationError::NoChanges);
+
+        let mut stale = LibraryTransaction::begin(&moved).unwrap();
+        assert_eq!(
+            stale.move_note(note_id, 3, Some(FolderId::new(1).unwrap())),
+            Err(MutationError::RevisionConflict)
+        );
+        assert_eq!(stale.finish().unwrap_err(), MutationError::NoChanges);
+    }
+
+    #[test]
     fn deleting_a_folder_moves_live_notes_but_retains_trashed_restore_context() {
         let mut base = snapshot();
         let folder_id = FolderId::new(1).unwrap();

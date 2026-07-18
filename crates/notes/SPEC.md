@@ -497,7 +497,10 @@ before the accepted folder tombstone publishes. A compact tag field edits the
 same complete scheduled candidate as title/body, accepts comma-separated input,
 strips presentation `#` prefixes, bounds individual/count input, and preserves
 the first spelling while deduplicating case-insensitively. Tag changes become
-searchable only after accepted readback. The old synchronous path scanner,
+searchable only after accepted readback. A Move Note sheet binds the selected
+stable note ID and exact accepted revision, lists All Notes plus every live
+stable folder, marks the current destination, treats choosing it as a no-op, and
+publishes a changed location only after accepted readback. The old synchronous path scanner,
 direct note writes, path identity, and permanent
 1.5-second save loop have been removed from the running app. Window close is
 refused when a Pending decision exists or when the bounded command queue cannot

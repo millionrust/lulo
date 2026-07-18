@@ -70,6 +70,7 @@ struct NotesView {
     recovery_copy_pending: Option<(u64, NoteId)>,
     folder_dialog: Option<FolderDialog>,
     purge_dialog: Option<PurgeDialog>,
+    move_dialog: Option<MoveDialog>,
     search_shutdown_requested: bool,
     closing: bool,
 }
@@ -100,6 +101,13 @@ enum PurgeDialog {
         attachment_count: usize,
         attachment_bytes: u64,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MoveDialog {
+    note_id: NoteId,
+    note_revision: u64,
+    current_folder: Option<FolderId>,
 }
 
 impl NotesView {
@@ -170,6 +178,7 @@ impl NotesView {
             recovery_copy_pending: None,
             folder_dialog: None,
             purge_dialog: None,
+            move_dialog: None,
             search_shutdown_requested: false,
             closing: false,
         };
@@ -434,7 +443,8 @@ impl NotesView {
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.folder_dialog.is_some() || self.purge_dialog.is_some() {
+        if self.folder_dialog.is_some() || self.purge_dialog.is_some() || self.move_dialog.is_some()
+        {
             return;
         }
         self.search_query
@@ -645,6 +655,7 @@ impl NotesView {
             && !self.recovery_review_is_blocking()
             && self.folder_dialog.is_none()
             && self.purge_dialog.is_none()
+            && self.move_dialog.is_none()
     }
 
     fn recovery_review_is_blocking(&self) -> bool {
@@ -990,6 +1001,45 @@ impl NotesView {
         cx.notify();
     }
 
+    fn begin_move_note(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| !note.deleted) else {
+            return;
+        };
+        self.move_dialog = Some(MoveDialog {
+            note_id: note.id,
+            note_revision: note.revision,
+            current_folder: note.folder_id,
+        });
+        cx.notify();
+    }
+
+    fn move_note_to(&mut self, folder_id: Option<FolderId>, cx: &mut Context<Self>) {
+        let Some(dialog) = self.move_dialog.take() else {
+            return;
+        };
+        if dialog.current_folder == folder_id {
+            cx.notify();
+            return;
+        }
+        self.send_action(
+            LibraryAction::MoveNote {
+                note_id: dialog.note_id,
+                expected_revision: dialog.note_revision,
+                folder_id,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    fn cancel_move_note(&mut self, cx: &mut Context<Self>) {
+        self.move_dialog = None;
+        cx.notify();
+    }
+
     fn toggle_pin(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -1089,7 +1139,8 @@ impl NotesView {
     fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let dismissed_folder_dialog = self.folder_dialog.take().is_some();
         let dismissed_purge_dialog = self.purge_dialog.take().is_some();
-        if dismissed_folder_dialog || dismissed_purge_dialog {
+        let dismissed_move_dialog = self.move_dialog.take().is_some();
+        if dismissed_folder_dialog || dismissed_purge_dialog || dismissed_move_dialog {
             cx.notify();
             return;
         }
@@ -1228,6 +1279,15 @@ impl NotesView {
                                     .small()
                                     .disabled(self.session.snapshot().is_none()),
                             ),
+                    )
+                    .child(
+                        Button::new("move-note", "")
+                            .icon(IconName::Folder)
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .disabled(!ready || deleted || selected.is_none())
+                            .tooltip("Move Note…")
+                            .on_click(cx.listener(|this, _, _, cx| this.begin_move_note(cx))),
                     )
                     .child(
                         Button::new("pin", "")
@@ -2084,6 +2144,70 @@ impl NotesView {
         )
     }
 
+    fn render_move_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::Normal;
+
+        let dialog = self.move_dialog?;
+        let note_title = self
+            .session
+            .snapshot()
+            .and_then(|snapshot| snapshot.notes.iter().find(|note| note.id == dialog.note_id))
+            .map_or_else(|| "Note".into(), |note| display_title(&note.title));
+        let mut rows = vec![Button::new("move-to-all", "All Notes")
+            .selected(dialog.current_folder.is_none())
+            .w_full()
+            .on_click(cx.listener(|this, _, _, cx| this.move_note_to(None, cx)))
+            .into_any_element()];
+        rows.extend(self.session.folders().into_iter().map(|folder| {
+            let folder_id = folder.id;
+            Button::new(("move-to-folder", folder_id.get()), folder.name.clone())
+                .selected(dialog.current_folder == Some(folder_id))
+                .w_full()
+                .on_click(cx.listener(move |this, _, _, cx| this.move_note_to(Some(folder_id), cx)))
+                .into_any_element()
+        }));
+        let card = div()
+            .w(px(380.0))
+            .max_h(px(480.0))
+            .p(px(20.0))
+            .v_flex()
+            .gap_3()
+            .rounded(px(12.0))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(15.0))
+                    .font_weight(mac::BOLD)
+                    .child("Move Note"),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(mac::text_secondary())
+                    .truncate()
+                    .child(note_title),
+            )
+            .child(
+                div()
+                    .id("move-note-destinations")
+                    .max_h(px(330.0))
+                    .overflow_y_scroll()
+                    .v_flex()
+                    .gap_1()
+                    .children(rows),
+            )
+            .child(
+                div().flex().justify_end().child(
+                    rmac_ui::dialog_button("cancel-move-note", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_move_note(cx))),
+                ),
+            );
+        Some(rmac_ui::dialog("move-note-dialog", card).into_any_element())
+    }
+
     fn render_status_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let (message, actions) = match self.session.phase() {
             SessionPhase::Pending { reason, .. } => (
@@ -2205,6 +2329,7 @@ impl Render for NotesView {
         };
         let folder_dialog = self.render_folder_dialog(cx);
         let purge_dialog = self.render_purge_dialog(cx);
+        let move_dialog = self.render_move_dialog(cx);
 
         div()
             .track_focus(&self.focus)
@@ -2240,6 +2365,7 @@ impl Render for NotesView {
             .child(content)
             .when_some(folder_dialog, |element, dialog| element.child(dialog))
             .when_some(purge_dialog, |element, dialog| element.child(dialog))
+            .when_some(move_dialog, |element, dialog| element.child(dialog))
     }
 }
 

@@ -134,12 +134,13 @@ ordinary files enter or leave it only through explicit import and export.
 ## Search and organization
 
 - Search work runs off the UI thread, is generation-cancelled, bounded by result
-  and work limits, and ranks exact title, title prefix, tag, body, then
-  attachment-name matches deterministically. Stable identifiers—not list
-  indices or paths—carry selection through refresh and sorting.
+  and work limits, and ranks exact title, title prefix, tag, title-contains,
+  body, then attachment-name matches deterministically. Stable identifiers—not
+  list indices or paths—carry selection through refresh and sorting.
 - The index stores only the minimum local data required for search, is private,
   versioned, and rebuilt from authoritative records after mismatch or damage.
-  Indexing status is truthful; stale results cannot replace a newer query.
+  Indexing status is truthful; stale query generations and results from an
+  older accepted library revision cannot replace current results.
 - Tags are normalized with documented Unicode/case/whitespace rules while
   preserving user-visible spelling. Duplicate folder names, invalid control
   characters, excessive names/tags, and reserved internal names fail before
@@ -203,8 +204,8 @@ preflight, candidate and journal revalidation, atomic replacement, exact
 readback, committed-with-maintenance reporting, corrupt-primary restoration,
 and deterministic interrupted-save rollback/finish. A malformed or ambiguous
 journal remains preserved and blocks writes. This adapter is not yet wired to
-the Notes process; attachment mutation transactions, recovery drafts, and live
-application integration remain required.
+the Notes process; attachment mutation transactions and live application
+integration remain required.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -281,9 +282,9 @@ projection consumes those events without optimistic publish, preserves note
 selection by stable ID across reordered readback snapshots, normalizes deleted
 folder selection, provides deterministic pinned/folder/Trash ordering, reveals
 an accepted created note, and retains pending/conflict/rejection phases without
-debugging note content. The live Notes view wiring and draft lifecycle remain;
-the prototype's 1.5-second loop is still the running behavior until that
-integration lands and is validated.
+debugging note content. The live Notes view wiring remains; the prototype's
+1.5-second loop is still the running behavior until that integration lands and
+is validated.
 
 The storage layer now has the first complete draft-recovery foundation. Each
 versioned record is keyed by stable note ID and retains its base note revision,
@@ -310,14 +311,31 @@ keeps review/restored state until accepted cleanup or explicit discard. Live
 recovery dialogs and editor restoration remain, so draft recovery is not yet a
 complete application claim.
 
+The GPUI-free runtime now also provides a disposable version-1 search index
+built from an exact accepted library revision. It indexes only live notes and
+their live attachment names; lowercases Unicode without changing the original
+display text; returns stable note/attachment identities and original-byte
+highlight spans; and deterministically ranks exact title, title prefix, tag,
+title-contains, body, then attachment name with modified time and stable ID as
+ties. Queries are limited to 1 KiB, results to 500, matches per result to 16,
+and normalized index/search work to 128 MiB. Index building and searching check
+cancellation at bounded intervals. The session has distinct empty, indexing,
+results, no-match, and unavailable states, retains a selected stable ID when it
+survives, and rejects both late generations and batches from a different
+library revision. Debug output contains counts, revisions, IDs, and states but
+not queries, note text, tags, or attachment names. The index is intentionally
+not persisted. The background worker must still rebuild it after accepted
+snapshots and the live Notes view must dispatch work and render these states.
+
 Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
 manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
 recovery records, silent scan/decode failures, permanent file/folder deletion,
 attachment copies outside a note transaction, no orphan policy, no safe import/
-export/bundle format, no derived cancellable index, and no Linux accessibility/runtime
-evidence. Migration must preserve every readable existing note and attachment;
-it must not delete the prototype library after a partial import.
+export/bundle format, no consumption of the derived cancellable index, and no
+Linux accessibility/runtime evidence. Migration must preserve every readable
+existing note and attachment; it must not delete the prototype library after a
+partial import.
 
 ## Acceptance evidence
 

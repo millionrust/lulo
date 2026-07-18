@@ -5,12 +5,19 @@
 //! remain a renderer of accepted snapshots rather than a filesystem authority.
 
 mod scheduler;
+mod search;
 mod session;
 mod worker;
 
 pub use scheduler::{
     EditGeneration, EditScheduler, ScheduleOutcome, ScheduledEdit, SchedulerError,
     DEFAULT_EDIT_DEBOUNCE, MAX_EDIT_DEBOUNCE,
+};
+pub use search::{
+    NotesSearchIndex, NotesSearchSession, SearchBatch, SearchCancellation, SearchError,
+    SearchField, SearchGeneration, SearchHit, SearchMatch, SearchRank, SearchRequest, SearchState,
+    TextSpan, MAX_SEARCH_INDEX_TEXT_BYTES, MAX_SEARCH_MATCHES_PER_RESULT, MAX_SEARCH_QUERY_BYTES,
+    MAX_SEARCH_RESULTS, SEARCH_INDEX_VERSION,
 };
 pub use session::{FolderSelection, NotesSession, SessionPhase};
 pub use worker::{

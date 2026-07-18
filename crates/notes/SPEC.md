@@ -260,8 +260,21 @@ save: a newer generation for the same stable note replaces the older complete
 edit, changing notes returns the previous edit for ordered flush, and only an
 exact pending generation can be cancelled. Stale generations and deadline/
 configuration overflow fail without replacing pending content, and debug
-output redacts titles, bodies, and tags. The background repository worker and
-live Notes view wiring remain; the prototype's 1.5-second loop is still the
+output redacts titles, bodies, and tags. A dedicated repository worker now owns
+startup inspection, the explicit migration-review decision, the writer lease,
+accepted snapshots, transactions, and delayed edit commits off the UI thread.
+Its strict review/ready/pending phases prevent mutation before migration is
+resolved and prevent a second mutation from overtaking a failed durable
+candidate. It executes stable-ID note/folder creation, rename, folder deletion,
+move, pin, sort, trash, restore, explicit flush, retry, and explicit discard;
+every accepted event carries the exact readback-verified snapshot. Same-note
+edits coalesce, switching notes flushes the previous edit without dropping the
+new note when the previous edit is rejected, and a failed store commit retains
+the complete candidate while an unrelated durable change becomes an explicit
+conflict. Fixed 64-command and 16-event queues apply visible backpressure
+instead of unbounded growth, and an idle worker blocks without a timer. Event
+debug output reports revisions/counts but not note content. The live Notes view
+wiring and draft recovery remain; the prototype's 1.5-second loop is still the
 running behavior until that integration lands and is validated.
 
 Known live-prototype gaps include path-based identity and pins, synchronous

@@ -5270,6 +5270,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "libc",
+ "markdown",
  "rmac-notes-store",
  "rmac-storage",
  "sha2",

@@ -35,6 +35,7 @@ pub enum TextImportError {
     InvalidUtf8,
     InvalidUtf16,
     InvalidText,
+    InvalidMarkdown,
 }
 
 impl fmt::Display for TextImportError {
@@ -46,11 +47,38 @@ impl fmt::Display for TextImportError {
             Self::InvalidUtf8 => "The selected file is not valid UTF-8 or BOM-marked UTF-16",
             Self::InvalidUtf16 => "The selected UTF-16 text file is malformed",
             Self::InvalidText => "The selected file contains text Notes cannot store safely",
+            Self::InvalidMarkdown => "Notes could not review the selected Markdown safely",
         })
     }
 }
 
 impl std::error::Error for TextImportError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MarkdownImportReview {
+    pub encoding: ImportedTextEncoding,
+    pub source_bytes: u64,
+    pub decoded_bytes: u64,
+    pub heading_count: usize,
+    pub link_count: usize,
+    pub image_count: usize,
+    pub raw_html_count: usize,
+    pub table_count: usize,
+    pub task_count: usize,
+    pub footnote_count: usize,
+    pub frontmatter_count: usize,
+}
+
+impl MarkdownImportReview {
+    pub fn attention_count(self) -> usize {
+        self.image_count
+            .saturating_add(self.raw_html_count)
+            .saturating_add(self.table_count)
+            .saturating_add(self.task_count)
+            .saturating_add(self.footnote_count)
+            .saturating_add(self.frontmatter_count)
+    }
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct PreparedTextNote {
@@ -58,6 +86,7 @@ pub struct PreparedTextNote {
     body: String,
     encoding: ImportedTextEncoding,
     source_byte_len: u64,
+    markdown_review: Option<MarkdownImportReview>,
 }
 
 impl fmt::Debug for PreparedTextNote {
@@ -69,6 +98,7 @@ impl fmt::Debug for PreparedTextNote {
             .field("encoding", &self.encoding)
             .field("source_byte_len", &self.source_byte_len)
             .field("decoded_body_bytes", &self.body.len())
+            .field("markdown_review", &self.markdown_review)
             .finish()
     }
 }
@@ -84,6 +114,10 @@ impl PreparedTextNote {
 
     pub fn decoded_body_bytes(&self) -> usize {
         self.body.len()
+    }
+
+    pub fn markdown_review(&self) -> Option<MarkdownImportReview> {
+        self.markdown_review
     }
 
     pub fn new_note(&self, created_unix_ms: u64, folder_id: Option<FolderId>) -> NewNote {
@@ -120,12 +154,79 @@ pub(crate) fn prepare_text_note_with_backend<B: Backend>(
             TextImportError::InvalidText
         });
     }
+    let markdown_review = is_markdown_path(path)
+        .then(|| analyze_markdown(&body, encoding, source_byte_len))
+        .transpose()?;
     Ok(PreparedTextNote {
         title: import_title(path.file_stem()),
         body,
         encoding,
         source_byte_len,
+        markdown_review,
     })
+}
+
+fn is_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| {
+            extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("markdown")
+        })
+}
+
+fn analyze_markdown(
+    body: &str,
+    encoding: ImportedTextEncoding,
+    source_bytes: u64,
+) -> Result<MarkdownImportReview, TextImportError> {
+    use markdown::mdast::Node;
+
+    let mut options = markdown::ParseOptions::gfm();
+    options.constructs.frontmatter = true;
+    let tree = markdown::to_mdast(body, &options).map_err(|_| TextImportError::InvalidMarkdown)?;
+    let mut review = MarkdownImportReview {
+        encoding,
+        source_bytes,
+        decoded_bytes: body.len() as u64,
+        heading_count: 0,
+        link_count: 0,
+        image_count: 0,
+        raw_html_count: 0,
+        table_count: 0,
+        task_count: 0,
+        footnote_count: 0,
+        frontmatter_count: 0,
+    };
+    let mut pending = vec![&tree];
+    while let Some(node) = pending.pop() {
+        match node {
+            Node::Heading(_) => review.heading_count = review.heading_count.saturating_add(1),
+            Node::Link(_) | Node::LinkReference(_) | Node::Definition(_) => {
+                review.link_count = review.link_count.saturating_add(1);
+            }
+            Node::Image(_) | Node::ImageReference(_) => {
+                review.image_count = review.image_count.saturating_add(1);
+            }
+            Node::Html(_) => {
+                review.raw_html_count = review.raw_html_count.saturating_add(1);
+            }
+            Node::Table(_) => review.table_count = review.table_count.saturating_add(1),
+            Node::ListItem(item) if item.checked.is_some() => {
+                review.task_count = review.task_count.saturating_add(1);
+            }
+            Node::FootnoteDefinition(_) | Node::FootnoteReference(_) => {
+                review.footnote_count = review.footnote_count.saturating_add(1);
+            }
+            Node::Yaml(_) | Node::Toml(_) => {
+                review.frontmatter_count = review.frontmatter_count.saturating_add(1);
+            }
+            _ => {}
+        }
+        if let Some(children) = node.children() {
+            pending.extend(children);
+        }
+    }
+    Ok(review)
 }
 
 fn decode(bytes: Vec<u8>) -> Result<(ImportedTextEncoding, String), TextImportError> {
@@ -256,6 +357,56 @@ mod tests {
             assert_eq!(note.title, "Private Plan");
             assert_eq!(note.body, "hello 🦀\r\n");
         }
+    }
+
+    #[test]
+    fn markdown_review_counts_constructs_without_exposing_content_or_urls() {
+        let backend = FakeBackend::default();
+        let path = Path::new("/portal/Private Plan.MARKDOWN");
+        let body = concat!(
+            "---\nprivate: metadata\n---\n",
+            "# Private heading\n\n",
+            "[private link](https://private.invalid/path)\n\n",
+            "![private image](private-image.png)\n\n",
+            "<div>private html</div>\n\n",
+            "| A | B |\n| - | - |\n| C | D |\n\n",
+            "- [x] private task\n\n",
+            "private footnote[^private]\n\n[^private]: private definition\n",
+        );
+        backend.set(path, body.as_bytes().to_vec());
+
+        let prepared = prepare_text_note_with_backend(path, &backend).unwrap();
+        let review = prepared.markdown_review().unwrap();
+        assert_eq!(review.encoding, ImportedTextEncoding::Utf8);
+        assert_eq!(review.source_bytes, body.len() as u64);
+        assert_eq!(review.decoded_bytes, body.len() as u64);
+        assert_eq!(review.heading_count, 1);
+        assert_eq!(review.link_count, 1);
+        assert_eq!(review.image_count, 1);
+        assert_eq!(review.raw_html_count, 1);
+        assert_eq!(review.table_count, 1);
+        assert_eq!(review.task_count, 1);
+        assert_eq!(review.footnote_count, 2);
+        assert_eq!(review.frontmatter_count, 1);
+        assert_eq!(review.attention_count(), 7);
+        let debug = format!("{prepared:?}");
+        assert!(!debug.contains("private"));
+        assert!(!debug.contains("https://"));
+        assert!(!debug.contains("/portal"));
+    }
+
+    #[test]
+    fn plain_text_does_not_claim_markdown_constructs() {
+        let backend = FakeBackend::default();
+        let path = Path::new("/portal/private.txt");
+        backend.set(path, b"# literal heading\n![literal](image.png)".to_vec());
+
+        let prepared = prepare_text_note_with_backend(path, &backend).unwrap();
+        assert_eq!(prepared.markdown_review(), None);
+        assert_eq!(
+            prepared.new_note(10, None).body,
+            "# literal heading\n![literal](image.png)"
+        );
     }
 
     #[test]

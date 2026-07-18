@@ -68,8 +68,8 @@ pub use migration::{
     PlannedNoteSource, RecoveryFile,
 };
 pub use note_import::{
-    prepare_text_note, ImportedTextEncoding, PreparedTextNote, TextImportError,
-    MAX_IMPORTED_TEXT_SOURCE_BYTES,
+    prepare_text_note, ImportedTextEncoding, MarkdownImportReview, PreparedTextNote,
+    TextImportError, MAX_IMPORTED_TEXT_SOURCE_BYTES,
 };
 pub use repository::{AcceptedCommit, AcceptedLibrary, CommitError, PendingCommit, PendingReason};
 pub use startup::{

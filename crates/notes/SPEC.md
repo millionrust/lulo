@@ -360,7 +360,22 @@ results, and blocks editing while the chooser/request owns the current action.
 On return it targets the current accepted stable folder (or All Notes), sends
 only the redacted source action, and reveals/focuses the new note only after
 accepted readback. Pending edit flush, source validation, decoding, and commit
-remain off GPUI. Markdown-construct review and Linux portal evidence remain.
+remain off GPUI. Plain-text files continue directly through that path. A
+case-insensitive `.md`/`.markdown` source instead passes through a bounded GFM
+plus frontmatter syntax-tree review after strict decoding and before any
+transaction. The path-free review exposes encoding and source/decoded sizes
+plus counts for headings, links, linked images, raw HTML, tables, task-list
+items, footnotes, and frontmatter; it never exposes content, URLs, or the
+selected path. The worker retains the complete decoded candidate under its
+exact request and accepted-library revision. Wrong or stale acceptance cannot
+consume it, Cancel discards that exact private candidate, and only a matching
+accept command creates the note. The live review explains that all decoded
+Markdown characters and line endings remain editable source while linked
+images are not downloaded, raw HTML is not executed, frontmatter is not
+metadata, richer constructs are not activated, and the original file remains
+unchanged. Editing and close actions stay blocked through review/accept/discard;
+Pending returns to the normal Retry/Discard surface. Linux portal evidence
+remains.
 
 Export now begins from a path-free, immutable plan derived from one exact
 accepted library revision. A single-note plan binds the exact note revision; a

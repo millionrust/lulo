@@ -30,8 +30,8 @@ use rmac_notes_runtime::{
     PREVIEW_EVENT_CAPACITY, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{
-    resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, PendingReason,
-    PreviewSize,
+    resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, MarkdownImportReview,
+    PendingReason, PreviewSize,
 };
 use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, NewNote,
@@ -92,6 +92,8 @@ struct NotesView {
     orphan_collection_request: Option<(u64, AttachmentId)>,
     note_import_chooser_open: bool,
     note_import_request_id: Option<u64>,
+    markdown_import_review: Option<(u64, u64, MarkdownImportReview)>,
+    markdown_import_action_request_id: Option<u64>,
     export_dialog: Option<ExportDialog>,
     export_chooser_open: bool,
     export_request_id: Option<u64>,
@@ -273,6 +275,8 @@ impl NotesView {
             orphan_collection_request: None,
             note_import_chooser_open: false,
             note_import_request_id: None,
+            markdown_import_review: None,
+            markdown_import_action_request_id: None,
             export_dialog: None,
             export_chooser_open: false,
             export_request_id: None,
@@ -478,6 +482,17 @@ impl NotesView {
             WorkerEvent::BundleImportReviewed(reviewed) => Some(*reviewed),
             _ => None,
         };
+        let markdown_reviewed = match &event {
+            WorkerEvent::MarkdownImportReviewed(reviewed) => Some(*reviewed),
+            _ => None,
+        };
+        let markdown_review_discarded = match &event {
+            WorkerEvent::MarkdownImportReviewDiscarded {
+                request_id,
+                review_request_id,
+            } => Some((*request_id, *review_request_id)),
+            _ => None,
+        };
         let bundle_review_discarded = match &event {
             WorkerEvent::BundleImportReviewDiscarded {
                 request_id,
@@ -559,9 +574,9 @@ impl NotesView {
         if accepted_request_id
             .or(rejected_request_id)
             .is_some_and(|request_id| self.note_import_request_id == Some(request_id))
-            || matches!(&event, WorkerEvent::Ready(_)) && self.note_import_request_id.is_some()
         {
             self.note_import_request_id = None;
+            self.markdown_import_review = None;
         }
         let tracked_export =
             exported.is_some_and(|exported| self.export_request_id == Some(exported.request_id));
@@ -579,6 +594,22 @@ impl NotesView {
             });
         let tracked_bundle_import = imported_bundle
             .is_some_and(|(request_id, _)| self.bundle_action_request_id == Some(request_id));
+        let tracked_markdown_discard =
+            markdown_review_discarded.is_some_and(|(request_id, review_request_id)| {
+                self.markdown_import_action_request_id == Some(request_id)
+                    && self.note_import_request_id == Some(review_request_id)
+            });
+        let tracked_markdown_import = matches!(
+            &event,
+            WorkerEvent::Accepted(accepted)
+                if self.markdown_import_action_request_id == Some(accepted.request_id)
+                    && matches!(accepted.result, ActionResult::ImportedNote { .. })
+        );
+        if rejected_request_id
+            .is_some_and(|request_id| self.markdown_import_action_request_id == Some(request_id))
+        {
+            self.markdown_import_action_request_id = None;
+        }
         if rejected_request_id
             .is_some_and(|request_id| self.bundle_action_request_id == Some(request_id))
         {
@@ -609,6 +640,28 @@ impl NotesView {
             _ => None,
         };
         self.session.apply(event);
+        if let Some(reviewed) = markdown_reviewed
+            .filter(|reviewed| self.note_import_request_id == Some(reviewed.request_id))
+        {
+            self.markdown_import_review = Some((
+                reviewed.request_id,
+                reviewed.base_library_revision,
+                reviewed.review,
+            ));
+        }
+        if tracked_markdown_discard || tracked_markdown_import {
+            self.note_import_request_id = None;
+            self.markdown_import_review = None;
+            self.markdown_import_action_request_id = None;
+        }
+        if worker_ready
+            && self.markdown_import_action_request_id.is_some()
+            && self.note_import_request_id.is_some()
+        {
+            self.note_import_request_id = None;
+            self.markdown_import_review = None;
+            self.markdown_import_action_request_id = None;
+        }
         if let Some(reviewed) = bundle_reviewed
             .filter(|reviewed| self.bundle_review_request_id == Some(reviewed.request_id))
         {
@@ -1097,6 +1150,8 @@ impl NotesView {
             || self.attachment_chooser_open
             || self.note_import_chooser_open
             || self.note_import_request_id.is_some()
+            || self.markdown_import_review.is_some()
+            || self.markdown_import_action_request_id.is_some()
             || self.export_chooser_open
             || self.export_request_id.is_some()
             || self.bundle_chooser_open
@@ -1322,6 +1377,8 @@ impl NotesView {
             && !self.attachment_chooser_open
             && !self.note_import_chooser_open
             && self.note_import_request_id.is_none()
+            && self.markdown_import_review.is_none()
+            && self.markdown_import_action_request_id.is_none()
             && !self.export_chooser_open
             && self.export_request_id.is_none()
             && !self.bundle_chooser_open
@@ -1867,6 +1924,81 @@ impl NotesView {
         }
     }
 
+    fn accept_markdown_import(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.session.phase(), SessionPhase::Ready)
+            || self.markdown_import_action_request_id.is_some()
+        {
+            return;
+        }
+        let Some(review_request_id) = self.note_import_request_id else {
+            return;
+        };
+        let Some((reviewed_request_id, base_library_revision, _)) = self.markdown_import_review
+        else {
+            return;
+        };
+        if reviewed_request_id != review_request_id {
+            return;
+        }
+        if self
+            .session
+            .snapshot()
+            .is_none_or(|snapshot| snapshot.revision != base_library_revision)
+        {
+            self.message = Some(
+                "The Notes library changed. Cancel this review and choose the Markdown file again."
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        if self.send(
+            WorkerCommand::AcceptMarkdownImport {
+                request_id,
+                review_request_id,
+            },
+            cx,
+        ) {
+            self.markdown_import_action_request_id = Some(request_id);
+            self.message = None;
+            cx.notify();
+        }
+    }
+
+    fn discard_markdown_import_review(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.session.phase(), SessionPhase::Ready)
+            || self.markdown_import_action_request_id.is_some()
+        {
+            return;
+        }
+        let Some(review_request_id) = self.note_import_request_id else {
+            return;
+        };
+        if self
+            .markdown_import_review
+            .is_none_or(|(request_id, _, _)| request_id != review_request_id)
+        {
+            return;
+        }
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        if self.send(
+            WorkerCommand::DiscardMarkdownImportReview {
+                request_id,
+                review_request_id,
+            },
+            cx,
+        ) {
+            self.markdown_import_action_request_id = Some(request_id);
+            self.message = None;
+            cx.notify();
+        }
+    }
+
     fn choose_bundle_import(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -2375,8 +2507,17 @@ impl NotesView {
             cx.notify();
             return;
         }
+        if self.markdown_import_action_request_id.is_some() {
+            self.message = Some("Wait for the current Markdown import action to finish".into());
+            cx.notify();
+            return;
+        }
         if self.note_import_request_id.is_some() {
-            self.message = Some("Wait for the selected note file to finish importing".into());
+            self.message = Some(if self.markdown_import_review.is_some() {
+                "Import or cancel the reviewed Markdown file before closing Notes.".into()
+            } else {
+                "Wait for the selected note file to finish its private review.".into()
+            });
             cx.notify();
             return;
         }
@@ -2499,8 +2640,9 @@ impl NotesView {
         let pinned = selected.is_some_and(|note| note.pinned);
         let note_save_pending = self.latest_local_generation.is_some();
         let attachment_busy = self.attachment_chooser_open || self.attachment_action_pending();
-        let note_import_busy =
-            self.note_import_chooser_open || self.note_import_request_id.is_some();
+        let note_import_busy = self.note_import_chooser_open
+            || self.note_import_request_id.is_some()
+            || self.markdown_import_action_request_id.is_some();
         let export_busy = self.export_chooser_open || self.export_request_id.is_some();
         let bundle_import_busy = self.bundle_chooser_open
             || self.bundle_review_request_id.is_some()
@@ -3896,6 +4038,143 @@ impl NotesView {
         }
     }
 
+    fn render_markdown_import_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use rmac_ui::DialogButtonKind::{Normal, Primary};
+
+        let review_request_id = self.note_import_request_id?;
+        if self.markdown_import_action_request_id.is_some() {
+            if matches!(self.session.phase(), SessionPhase::Pending { .. }) {
+                return None;
+            }
+            let card = div()
+                .w(px(420.0))
+                .p(px(20.0))
+                .v_flex()
+                .gap_3()
+                .rounded(px(12.0))
+                .bg(mac::window())
+                .border_1()
+                .border_color(mac::separator())
+                .shadow_xl()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(17.0))
+                        .font_weight(mac::BOLD)
+                        .child("Importing Markdown note…"),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child(
+                            "Notes is committing the exact reviewed text candidate and verifying durable readback.",
+                        ),
+                );
+            return Some(rmac_ui::dialog("markdown-import-progress", card).into_any_element());
+        }
+
+        let (reviewed_request_id, base_library_revision, review) = self.markdown_import_review?;
+        if reviewed_request_id != review_request_id {
+            return None;
+        }
+        let attention = if review.attention_count() == 0 {
+            "No linked images, raw HTML, tables, tasks, footnotes, or frontmatter were recognized."
+                .to_string()
+        } else {
+            format!(
+                "Review found {} linked {}, {} raw HTML {}, {} {}, {} task-list {}, {} footnote {}, and {} frontmatter {}.",
+                review.image_count,
+                if review.image_count == 1 { "image" } else { "images" },
+                review.raw_html_count,
+                if review.raw_html_count == 1 { "construct" } else { "constructs" },
+                review.table_count,
+                if review.table_count == 1 { "table" } else { "tables" },
+                review.task_count,
+                if review.task_count == 1 { "item" } else { "items" },
+                review.footnote_count,
+                if review.footnote_count == 1 { "construct" } else { "constructs" },
+                review.frontmatter_count,
+                if review.frontmatter_count == 1 { "block" } else { "blocks" },
+            )
+        };
+        let card = div()
+            .w(px(470.0))
+            .p(px(20.0))
+            .v_flex()
+            .gap_3()
+            .rounded(px(12.0))
+            .bg(mac::window())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_xl()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(17.0))
+                    .font_weight(mac::BOLD)
+                    .child("Import Markdown Note"),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(format!(
+                        "This review is bound to Notes library revision {base_library_revision}. The selected source decoded as {}.",
+                        review.encoding.label()
+                    )),
+            )
+            .child(
+                div()
+                    .p_3()
+                    .rounded(px(8.0))
+                    .bg(mac::control_fill())
+                    .v_flex()
+                    .gap_1()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(format!(
+                        "{} source; {} decoded text; {} {}; {} {}",
+                        format_storage_bytes(review.source_bytes),
+                        format_storage_bytes(review.decoded_bytes),
+                        review.heading_count,
+                        if review.heading_count == 1 { "heading" } else { "headings" },
+                        review.link_count,
+                        if review.link_count == 1 { "link" } else { "links" },
+                    ))
+                    .child(attention),
+            )
+            .child(
+                div()
+                    .p_3()
+                    .rounded(px(8.0))
+                    .bg(mac::control_fill())
+                    .text_size(rmac_ui::text_px(12.0))
+                    .child(
+                        "Import preserves the decoded Markdown characters and line endings as editable note source. Notes does not download linked images, execute raw HTML, or turn frontmatter, tables, tasks, or footnotes into active data. The original file is unchanged.",
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button("cancel-markdown-import", "Cancel", Normal)
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.discard_markdown_import_review(cx)
+                            })),
+                    )
+                    .child(
+                        rmac_ui::dialog_button(
+                            ("accept-markdown-import", review_request_id),
+                            "Import as Markdown Source",
+                            Primary,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.accept_markdown_import(cx))),
+                    ),
+            );
+        Some(rmac_ui::dialog("markdown-import-review", card).into_any_element())
+    }
+
     fn render_bundle_import_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use rmac_ui::DialogButtonKind::{Normal, Primary};
 
@@ -4336,6 +4615,7 @@ impl Render for NotesView {
         let move_dialog = self.render_move_dialog(cx);
         let attachment_dialog = self.render_attachment_dialog(cx);
         let export_dialog = self.render_export_dialog(cx);
+        let markdown_import_dialog = self.render_markdown_import_dialog(cx);
         let bundle_import_dialog = self.render_bundle_import_dialog(cx);
 
         div()
@@ -4376,6 +4656,9 @@ impl Render for NotesView {
             .when_some(move_dialog, |element, dialog| element.child(dialog))
             .when_some(attachment_dialog, |element, dialog| element.child(dialog))
             .when_some(export_dialog, |element, dialog| element.child(dialog))
+            .when_some(markdown_import_dialog, |element, dialog| {
+                element.child(dialog)
+            })
             .when_some(bundle_import_dialog, |element, dialog| {
                 element.child(dialog)
             })
@@ -4578,6 +4861,9 @@ fn worker_failure_message(failure: WorkerFailure) -> String {
         WorkerFailure::BundlePlan(error) => error.to_string(),
         WorkerFailure::MissingBundleImportReview => {
             "Review the selected Notes bundle again before importing".into()
+        }
+        WorkerFailure::MissingMarkdownImportReview => {
+            "Review the selected Markdown file again before importing".into()
         }
     }
 }

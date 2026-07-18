@@ -2,14 +2,15 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
-use rmac_notes_storage::{PendingReason, RecoveryNotice, StartupError};
+use rmac_notes_storage::{MarkdownImportReview, PendingReason, RecoveryNotice, StartupError};
 use rmac_notes_store::{
     BundleImportReview, FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder,
 };
 
 use crate::{
     ActionResult, BundleImportReviewedEvent, DraftRestoredEvent, DraftReviewSummary,
-    EditGeneration, MigrationReviewSummary, RejectedEvent, WorkerEvent,
+    EditGeneration, MarkdownImportReviewedEvent, MigrationReviewSummary, RejectedEvent,
+    WorkerEvent,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -49,6 +50,7 @@ pub struct NotesSession {
     draft_review: Option<DraftReviewSummary>,
     restored_draft: Option<DraftRestoredEvent>,
     bundle_import_review: Option<BundleImportReviewedEvent>,
+    markdown_import_review: Option<MarkdownImportReviewedEvent>,
 }
 
 impl NotesSession {
@@ -62,6 +64,7 @@ impl NotesSession {
             draft_review: None,
             restored_draft: None,
             bundle_import_review: None,
+            markdown_import_review: None,
         }
     }
 
@@ -96,6 +99,10 @@ impl NotesSession {
 
     pub fn bundle_import_review(&self) -> Option<BundleImportReview> {
         self.bundle_import_review.map(|event| event.review)
+    }
+
+    pub fn markdown_import_review(&self) -> Option<MarkdownImportReview> {
+        self.markdown_import_review.map(|event| event.review)
     }
 
     pub fn draft_review(&self) -> Option<&DraftReviewSummary> {
@@ -174,6 +181,8 @@ impl NotesSession {
                 self.last_rejection = None;
                 self.draft_review = None;
                 self.restored_draft = None;
+                self.bundle_import_review = None;
+                self.markdown_import_review = None;
             }
             WorkerEvent::Ready(event) => {
                 let entering_ready = matches!(
@@ -187,6 +196,8 @@ impl NotesSession {
                 if entering_ready {
                     self.draft_review = None;
                     self.restored_draft = None;
+                    self.bundle_import_review = None;
+                    self.markdown_import_review = None;
                 }
             }
             WorkerEvent::DraftReview(summary) => self.draft_review = Some(summary),
@@ -258,6 +269,9 @@ impl NotesSession {
                 if matches!(event.result, ActionResult::ImportedBundle { .. }) {
                     self.bundle_import_review = None;
                 }
+                if matches!(event.result, ActionResult::ImportedNote { .. }) {
+                    self.markdown_import_review = None;
+                }
             }
             WorkerEvent::Exported(_) => {
                 self.last_rejection = None;
@@ -274,6 +288,21 @@ impl NotesSession {
                     .is_some_and(|review| review.request_id == review_request_id)
                 {
                     self.bundle_import_review = None;
+                }
+                self.last_rejection = None;
+            }
+            WorkerEvent::MarkdownImportReviewed(event) => {
+                self.markdown_import_review = Some(event);
+                self.last_rejection = None;
+            }
+            WorkerEvent::MarkdownImportReviewDiscarded {
+                review_request_id, ..
+            } => {
+                if self
+                    .markdown_import_review
+                    .is_some_and(|review| review.request_id == review_request_id)
+                {
+                    self.markdown_import_review = None;
                 }
                 self.last_rejection = None;
             }
@@ -294,6 +323,7 @@ impl NotesSession {
                 self.draft_review = None;
                 self.restored_draft = None;
                 self.bundle_import_review = None;
+                self.markdown_import_review = None;
             }
             WorkerEvent::Stopped { .. } => self.phase = SessionPhase::Stopped,
         }
@@ -456,6 +486,13 @@ impl fmt::Debug for NotesSession {
                 "bundle_import_review_request_id",
                 &self
                     .bundle_import_review
+                    .as_ref()
+                    .map(|review| review.request_id),
+            )
+            .field(
+                "markdown_import_review_request_id",
+                &self
+                    .markdown_import_review
                     .as_ref()
                     .map(|review| review.request_id),
             )
@@ -845,6 +882,47 @@ mod tests {
                 bundle_import_pending: true,
             }
         );
+    }
+
+    #[test]
+    fn markdown_import_review_is_request_bound_and_content_free() {
+        let mut session = NotesSession::new();
+        session.apply(WorkerEvent::Ready(snapshot_event(snapshot(
+            SortOrder::Edited,
+        ))));
+        let review = MarkdownImportReview {
+            encoding: rmac_notes_storage::ImportedTextEncoding::Utf8,
+            source_bytes: 40,
+            decoded_bytes: 40,
+            heading_count: 1,
+            link_count: 2,
+            image_count: 1,
+            raw_html_count: 0,
+            table_count: 0,
+            task_count: 0,
+            footnote_count: 0,
+            frontmatter_count: 0,
+        };
+        session.apply(WorkerEvent::MarkdownImportReviewed(
+            MarkdownImportReviewedEvent {
+                request_id: 51,
+                base_library_revision: 4,
+                review,
+            },
+        ));
+
+        assert_eq!(session.markdown_import_review(), Some(review));
+        assert!(format!("{session:?}").contains("markdown_import_review_request_id: Some(51)"));
+        session.apply(WorkerEvent::MarkdownImportReviewDiscarded {
+            request_id: 52,
+            review_request_id: 99,
+        });
+        assert_eq!(session.markdown_import_review(), Some(review));
+        session.apply(WorkerEvent::MarkdownImportReviewDiscarded {
+            request_id: 53,
+            review_request_id: 51,
+        });
+        assert_eq!(session.markdown_import_review(), None);
     }
 
     #[test]

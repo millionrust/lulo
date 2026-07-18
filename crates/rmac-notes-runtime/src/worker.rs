@@ -12,9 +12,10 @@ use std::time::{Duration, Instant};
 use rmac_notes_storage::{
     inspect_notes_startup, AcceptedCommit, AcceptedLibrary, BundleImportError, CommitError,
     DraftError, DraftRecord, DraftStore, ExportFailure, ExportFormat, ExportOutcome,
-    ImportedTextEncoding, MigrationReview, MigrationWarning, NotesPaths, NotesStartup,
-    PendingCommit, PendingReason, PreparedBundleImport, PreparedExportDestination,
-    PreparedImageAttachment, RecoveryNotice, StartupError, StoreError, TextImportError,
+    ImportedTextEncoding, MarkdownImportReview, MigrationReview, MigrationWarning, NotesPaths,
+    NotesStartup, PendingCommit, PendingReason, PreparedBundleImport, PreparedExportDestination,
+    PreparedImageAttachment, PreparedTextNote, RecoveryNotice, StartupError, StoreError,
+    TextImportError,
 };
 use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, BundlePlanError, ExportError,
@@ -257,6 +258,14 @@ pub enum WorkerCommand {
         request_id: u64,
         review_request_id: u64,
     },
+    AcceptMarkdownImport {
+        request_id: u64,
+        review_request_id: u64,
+    },
+    DiscardMarkdownImportReview {
+        request_id: u64,
+        review_request_id: u64,
+    },
     Flush {
         request_id: u64,
     },
@@ -284,7 +293,9 @@ impl WorkerCommand {
             | Self::DiscardPending { request_id }
             | Self::RestoreDraft { request_id, .. }
             | Self::DiscardDraft { request_id, .. }
-            | Self::DiscardBundleImportReview { request_id, .. } => (*request_id, None),
+            | Self::DiscardBundleImportReview { request_id, .. }
+            | Self::AcceptMarkdownImport { request_id, .. }
+            | Self::DiscardMarkdownImportReview { request_id, .. } => (*request_id, None),
             Self::ScheduleEdit(edit) => (edit.request_id(), Some(edit.generation())),
             Self::Apply(request) => (request.request_id(), None),
             Self::Export(request) => (request.request_id(), None),
@@ -346,6 +357,22 @@ impl fmt::Debug for WorkerCommand {
                 review_request_id,
             } => formatter
                 .debug_struct("DiscardBundleImportReview")
+                .field("request_id", request_id)
+                .field("review_request_id", review_request_id)
+                .finish(),
+            Self::AcceptMarkdownImport {
+                request_id,
+                review_request_id,
+            } => formatter
+                .debug_struct("AcceptMarkdownImport")
+                .field("request_id", request_id)
+                .field("review_request_id", review_request_id)
+                .finish(),
+            Self::DiscardMarkdownImportReview {
+                request_id,
+                review_request_id,
+            } => formatter
+                .debug_struct("DiscardMarkdownImportReview")
                 .field("request_id", request_id)
                 .field("review_request_id", review_request_id)
                 .finish(),
@@ -547,6 +574,7 @@ pub enum WorkerFailure {
     BundleImport(BundleImportError),
     BundlePlan(BundlePlanError),
     MissingBundleImportReview,
+    MissingMarkdownImportReview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -559,6 +587,13 @@ pub struct ExportedEvent {
 pub struct BundleImportReviewedEvent {
     pub request_id: u64,
     pub review: BundleImportReview,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MarkdownImportReviewedEvent {
+    pub request_id: u64,
+    pub base_library_revision: u64,
+    pub review: MarkdownImportReview,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -586,6 +621,11 @@ pub enum WorkerEvent {
     Exported(ExportedEvent),
     BundleImportReviewed(BundleImportReviewedEvent),
     BundleImportReviewDiscarded {
+        request_id: u64,
+        review_request_id: u64,
+    },
+    MarkdownImportReviewed(MarkdownImportReviewedEvent),
+    MarkdownImportReviewDiscarded {
         request_id: u64,
         review_request_id: u64,
     },
@@ -640,6 +680,18 @@ impl fmt::Debug for WorkerEvent {
                 review_request_id,
             } => formatter
                 .debug_struct("BundleImportReviewDiscarded")
+                .field("request_id", request_id)
+                .field("review_request_id", review_request_id)
+                .finish(),
+            Self::MarkdownImportReviewed(event) => formatter
+                .debug_tuple("MarkdownImportReviewed")
+                .field(event)
+                .finish(),
+            Self::MarkdownImportReviewDiscarded {
+                request_id,
+                review_request_id,
+            } => formatter
+                .debug_struct("MarkdownImportReviewDiscarded")
                 .field("request_id", request_id)
                 .field("review_request_id", review_request_id)
                 .finish(),
@@ -858,10 +910,23 @@ fn try_send_command(
     command: WorkerCommand,
 ) -> Result<(), WorkerSendError> {
     let (request_id, _) = command.request_context();
+    let invalid_review_id = matches!(
+        &command,
+        WorkerCommand::DiscardBundleImportReview {
+            review_request_id: 0,
+            ..
+        } | WorkerCommand::AcceptMarkdownImport {
+            review_request_id: 0,
+            ..
+        } | WorkerCommand::DiscardMarkdownImportReview {
+            review_request_id: 0,
+            ..
+        }
+    );
     if !matches!(
-        command,
+        &command,
         WorkerCommand::RetryPending | WorkerCommand::Shutdown
-    ) && request_id == 0
+    ) && (request_id == 0 || invalid_review_id)
     {
         return Err(WorkerSendError::InvalidRequest);
     }
@@ -877,12 +942,21 @@ struct ReadyState {
     drafts: DraftStore,
     recoverable_drafts: BTreeMap<NoteId, DraftRecord>,
     bundle_import_review: Option<PendingBundleImportReview>,
+    markdown_import_review: Option<PendingMarkdownImportReview>,
 }
 
 struct PendingBundleImportReview {
     request_id: u64,
     prepared: PreparedBundleImport,
     review: BundleImportReview,
+}
+
+struct PendingMarkdownImportReview {
+    request_id: u64,
+    base_library_revision: u64,
+    created_unix_ms: u64,
+    folder_id: Option<FolderId>,
+    prepared: PreparedTextNote,
 }
 
 impl ReadyState {
@@ -940,6 +1014,7 @@ impl ReadyState {
                 drafts,
                 recoverable_drafts,
                 bundle_import_review: None,
+                markdown_import_review: None,
             },
             review,
         )
@@ -1552,6 +1627,134 @@ fn process_command(
                 Phase::Stopped
             }
         }
+        (
+            Phase::Ready(mut ready),
+            WorkerCommand::AcceptMarkdownImport {
+                request_id,
+                review_request_id,
+            },
+        ) => {
+            if let Some(edit) = ready.scheduler.flush() {
+                match commit_edit(&mut ready, edit, events) {
+                    CommitDisposition::Ready => {}
+                    CommitDisposition::Pending(pending, context) => {
+                        if !emit_request_rejected(
+                            events,
+                            request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            return Phase::Stopped;
+                        }
+                        return Phase::Pending(PendingState {
+                            ready,
+                            pending,
+                            context,
+                        });
+                    }
+                    CommitDisposition::Rejected => {
+                        return if emit_request_rejected(
+                            events,
+                            request_id,
+                            None,
+                            WorkerFailure::CommitPending,
+                        ) {
+                            Phase::Ready(ready)
+                        } else {
+                            Phase::Stopped
+                        };
+                    }
+                    CommitDisposition::Stopped => return Phase::Stopped,
+                }
+            }
+            if ready
+                .markdown_import_review
+                .as_ref()
+                .is_none_or(|review| review.request_id != review_request_id)
+            {
+                return if emit_request_rejected(
+                    events,
+                    request_id,
+                    None,
+                    WorkerFailure::MissingMarkdownImportReview,
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            if ready.markdown_import_review.as_ref().is_some_and(|review| {
+                review.base_library_revision != ready.library.snapshot().revision
+            }) {
+                return if emit_request_rejected(
+                    events,
+                    request_id,
+                    None,
+                    WorkerFailure::Mutation(MutationError::RevisionConflict),
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            let reviewed = ready
+                .markdown_import_review
+                .take()
+                .expect("matching Markdown review checked above");
+            match commit_prepared_text_import(
+                &mut ready,
+                request_id,
+                reviewed.created_unix_ms,
+                reviewed.folder_id,
+                reviewed.prepared,
+                events,
+            ) {
+                CommitDisposition::Ready => Phase::Ready(ready),
+                CommitDisposition::Pending(pending, context) => Phase::Pending(PendingState {
+                    ready,
+                    pending,
+                    context,
+                }),
+                CommitDisposition::Rejected => Phase::Ready(ready),
+                CommitDisposition::Stopped => Phase::Stopped,
+            }
+        }
+        (
+            Phase::Ready(mut ready),
+            WorkerCommand::DiscardMarkdownImportReview {
+                request_id,
+                review_request_id,
+            },
+        ) => {
+            if ready
+                .markdown_import_review
+                .as_ref()
+                .is_none_or(|review| review.request_id != review_request_id)
+            {
+                return if emit_request_rejected(
+                    events,
+                    request_id,
+                    None,
+                    WorkerFailure::MissingMarkdownImportReview,
+                ) {
+                    Phase::Ready(ready)
+                } else {
+                    Phase::Stopped
+                };
+            }
+            ready.markdown_import_review = None;
+            if events
+                .send(WorkerEvent::MarkdownImportReviewDiscarded {
+                    request_id,
+                    review_request_id,
+                })
+                .is_ok()
+            {
+                Phase::Ready(ready)
+            } else {
+                Phase::Stopped
+            }
+        }
         (Phase::Ready(mut ready), WorkerCommand::Flush { request_id }) => {
             if let Some(edit) = ready.scheduler.flush() {
                 match commit_edit(&mut ready, edit, events) {
@@ -2022,6 +2225,54 @@ fn commit_text_import_action(
         Ok(prepared) => prepared,
         Err(error) => return reject_text_import(events, request_id, error),
     };
+    if let Some(review) = prepared.markdown_review() {
+        let mut validation = match ready.library.begin() {
+            Ok(transaction) => transaction,
+            Err(error) => return reject_mutation(events, request_id, None, error),
+        };
+        if let Err(error) = validation.create_note(prepared.new_note(created_unix_ms, folder_id)) {
+            return reject_mutation(events, request_id, None, error);
+        }
+        ready.markdown_import_review = Some(PendingMarkdownImportReview {
+            request_id,
+            base_library_revision: ready.library.snapshot().revision,
+            created_unix_ms,
+            folder_id,
+            prepared,
+        });
+        return if events
+            .send(WorkerEvent::MarkdownImportReviewed(
+                MarkdownImportReviewedEvent {
+                    request_id,
+                    base_library_revision: ready.library.snapshot().revision,
+                    review,
+                },
+            ))
+            .is_ok()
+        {
+            CommitDisposition::Ready
+        } else {
+            CommitDisposition::Stopped
+        };
+    }
+    commit_prepared_text_import(
+        ready,
+        request_id,
+        created_unix_ms,
+        folder_id,
+        prepared,
+        events,
+    )
+}
+
+fn commit_prepared_text_import(
+    ready: &mut ReadyState,
+    request_id: u64,
+    created_unix_ms: u64,
+    folder_id: Option<FolderId>,
+    prepared: PreparedTextNote,
+    events: &SyncSender<WorkerEvent>,
+) -> CommitDisposition {
     let mut transaction = match ready.library.begin() {
         Ok(transaction) => transaction,
         Err(error) => return reject_mutation(events, request_id, None, error),
@@ -2849,7 +3100,7 @@ mod tests {
     }
 
     #[test]
-    fn worker_imports_strict_text_into_an_accepted_stable_note() {
+    fn worker_reviews_markdown_then_imports_exact_text_into_a_stable_note() {
         let (container, paths) = roots("text-import");
         std::fs::create_dir_all(&container).unwrap();
         let source = container.join("Imported Plan.md");
@@ -2880,7 +3131,37 @@ mod tests {
         assert!(!debug.contains("Imported Plan"));
         assert!(!debug.contains(container.to_string_lossy().as_ref()));
 
-        let accepted = match apply_action(&worker, 2, action) {
+        let reviewed = match apply_action(&worker, 2, action) {
+            WorkerEvent::MarkdownImportReviewed(event) => event,
+            event => panic!("expected Markdown import review, got {event:?}"),
+        };
+        assert_eq!(reviewed.request_id, 2);
+        assert_eq!(reviewed.base_library_revision, 2);
+        assert_eq!(reviewed.review.encoding, ImportedTextEncoding::Utf16Be);
+        assert_eq!(reviewed.review.source_bytes, source_bytes.len() as u64);
+        assert_eq!(reviewed.review.attention_count(), 0);
+        std::fs::write(&source, "changed after review").unwrap();
+        worker
+            .try_send(WorkerCommand::AcceptMarkdownImport {
+                request_id: 3,
+                review_request_id: 999,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 3,
+                failure: WorkerFailure::MissingMarkdownImportReview,
+                ..
+            })
+        ));
+        worker
+            .try_send(WorkerCommand::AcceptMarkdownImport {
+                request_id: 4,
+                review_request_id: 2,
+            })
+            .unwrap();
+        let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
             WorkerEvent::Accepted(event) => event,
             event => panic!("expected accepted text import, got {event:?}"),
         };
@@ -2910,7 +3191,7 @@ mod tests {
         std::fs::write(&invalid, [0xff]).unwrap();
         match apply_action(
             &worker,
-            3,
+            5,
             LibraryAction::ImportTextNote {
                 created_unix_ms: 21,
                 folder_id: None,
@@ -2918,12 +3199,104 @@ mod tests {
             },
         ) {
             WorkerEvent::Rejected(RejectedEvent {
-                request_id: 3,
+                request_id: 5,
                 failure: WorkerFailure::TextImport(TextImportError::InvalidUtf8),
                 ..
             }) => {}
             event => panic!("expected rejected invalid text, got {event:?}"),
         }
+
+        let discarded_source = container.join("discarded.md");
+        std::fs::write(&discarded_source, "# Do not import\n").unwrap();
+        assert!(matches!(
+            apply_action(
+                &worker,
+                6,
+                LibraryAction::ImportTextNote {
+                    created_unix_ms: 22,
+                    folder_id: None,
+                    selected_path: discarded_source,
+                },
+            ),
+            WorkerEvent::MarkdownImportReviewed(MarkdownImportReviewedEvent { request_id: 6, .. })
+        ));
+        assert!(matches!(
+            apply_action(
+                &worker,
+                7,
+                LibraryAction::CreateFolder {
+                    name: "Changed after review".into(),
+                },
+            ),
+            WorkerEvent::Accepted(AcceptedEvent {
+                request_id: 7,
+                result: ActionResult::CreatedFolder(_),
+                ..
+            })
+        ));
+        worker
+            .try_send(WorkerCommand::AcceptMarkdownImport {
+                request_id: 8,
+                review_request_id: 6,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 8,
+                failure: WorkerFailure::Mutation(MutationError::RevisionConflict),
+                ..
+            })
+        ));
+        worker
+            .try_send(WorkerCommand::DiscardMarkdownImportReview {
+                request_id: 9,
+                review_request_id: 6,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::MarkdownImportReviewDiscarded {
+                request_id: 9,
+                review_request_id: 6,
+            }
+        ));
+        worker
+            .try_send(WorkerCommand::AcceptMarkdownImport {
+                request_id: 10,
+                review_request_id: 6,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 10,
+                failure: WorkerFailure::MissingMarkdownImportReview,
+                ..
+            })
+        ));
+
+        let plain_source = container.join("plain.txt");
+        std::fs::write(&plain_source, "# literal plain text\n").unwrap();
+        assert!(matches!(
+            apply_action(
+                &worker,
+                11,
+                LibraryAction::ImportTextNote {
+                    created_unix_ms: 23,
+                    folder_id: None,
+                    selected_path: plain_source,
+                },
+            ),
+            WorkerEvent::Accepted(AcceptedEvent {
+                request_id: 11,
+                result: ActionResult::ImportedNote {
+                    encoding: ImportedTextEncoding::Utf8,
+                    ..
+                },
+                ..
+            })
+        ));
 
         worker.try_send(WorkerCommand::Shutdown).unwrap();
         let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();

@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 image = { workspace = true, features = ["jpeg", "png", "webp"] }
 libc.workspace = true
+markdown.workspace = true
 rmac-notes-store.workspace = true
 rmac-storage.workspace = true
 sha2.workspace = true

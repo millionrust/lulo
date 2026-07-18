@@ -21,6 +21,7 @@ use gpui::{
     Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
+use notify::Watcher as _;
 use rmac_ui::{
     mac, Button, InputEvent, InputState, Position, RopeExt as _, SearchField, TextField,
 };
@@ -87,11 +88,25 @@ enum ActiveAlert {
     ConfirmSave(Pending),
     /// The opened document no longer matches its retained exact revision.
     Conflict,
+    /// The external bytes reviewed immediately before an explicit overwrite.
+    ConfirmOverwrite { reviewed_revision: Vec<u8> },
     /// A document open/save error — title + message + OK.
     Error {
         title: &'static str,
         message: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExternalChange {
+    Modified,
+    Missing,
+    Unreadable,
+}
+
+enum DocumentWatchEvent {
+    Changed,
+    Unavailable,
 }
 
 #[derive(Clone)]
@@ -114,6 +129,7 @@ enum LoadedFile {
 enum SaveFailure {
     Codec(document::CodecError),
     Storage(storage::SaveDocumentError),
+    ConflictingCopyDestination,
 }
 
 impl std::fmt::Display for SaveFailure {
@@ -121,6 +137,9 @@ impl std::fmt::Display for SaveFailure {
         match self {
             Self::Codec(error) => error.fmt(formatter),
             Self::Storage(error) => error.fmt(formatter),
+            Self::ConflictingCopyDestination => formatter.write_str(
+                "Save a Copy requires a different file; the conflicting source was not changed",
+            ),
         }
     }
 }
@@ -161,8 +180,14 @@ struct EditorView {
     recovery_path: PathBuf,
     recovery_cleanup_paths: Vec<PathBuf>,
     recovery_clock: RecoveryClock,
+    recovery_loading: bool,
     recovery_error: Option<SharedString>,
     recovery_notice: Option<SharedString>,
+    document_generation: u64,
+    external_change: Option<ExternalChange>,
+    document_watch_warning: bool,
+    watched_directory: Option<PathBuf>,
+    document_watcher: Option<notify::RecommendedWatcher>,
     /// The modal alert currently shown, if any (shared `rmac_ui::alert`).
     alert: Option<ActiveAlert>,
     _subscriptions: Vec<Subscription>,
@@ -357,6 +382,58 @@ fn save_document(
     document::decode(encoded).map_err(SaveFailure::Codec)
 }
 
+fn same_file_identity(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    let (Ok(left_metadata), Ok(right_metadata)) =
+        (std::fs::metadata(left), std::fs::metadata(right))
+    else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        left_metadata.dev() == right_metadata.dev() && left_metadata.ino() == right_metadata.ino()
+    }
+    #[cfg(not(unix))]
+    {
+        match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+            (Ok(left), Ok(right)) => left == right,
+            _ => false,
+        }
+    }
+}
+
+fn save_document_copy(
+    path: &Path,
+    forbidden_destination: Option<&Path>,
+    text: &str,
+    format: document::TextFormat,
+) -> Result<document::DecodedDocument, SaveFailure> {
+    if forbidden_destination.is_some_and(|source| same_file_identity(source, path)) {
+        Err(SaveFailure::ConflictingCopyDestination)
+    } else {
+        save_document(path, None, text, format)
+    }
+}
+
+fn inspect_external_revision(path: &Path, expected: &[u8]) -> Option<ExternalChange> {
+    match storage::read_bounded(
+        &storage::RealStorage,
+        storage::Operation::ValidateDocumentRevision,
+        path,
+        document::MAX_DOCUMENT_BYTES,
+    ) {
+        Ok(current) if current == expected => None,
+        Ok(_) => Some(ExternalChange::Modified),
+        Err(failure) if failure.error_kind == std::io::ErrorKind::NotFound => {
+            Some(ExternalChange::Missing)
+        }
+        Err(_) => Some(ExternalChange::Unreadable),
+    }
+}
+
 fn recovery_failure_message() -> SharedString {
     "Text Editor could not safely update its private recovery data. The current buffer remains open; save the document before closing."
         .into()
@@ -367,6 +444,17 @@ impl EditorView {
         let input = rmac_editor::multiline("", window, cx);
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
+        let (document_events, document_event_rx) = async_channel::bounded(4);
+        let document_watcher =
+            notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+                let event = match result {
+                    Ok(event) if matches!(event.kind, notify::EventKind::Access(_)) => return,
+                    Ok(_) => DocumentWatchEvent::Changed,
+                    Err(_) => DocumentWatchEvent::Unavailable,
+                };
+                let _ = document_events.try_send(event);
+            })
+            .ok();
 
         // Dirty tracking + live match refresh + autosave on every edit.
         let sub_main = cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| {
@@ -405,12 +493,103 @@ impl EditorView {
             KeyBinding::new("cmd-w", CloseWindow, Some(CTX)),
         ]);
 
-        let recovery = startup_recovery();
-        let alert = recovery.prompt.map(ActiveAlert::Recover);
-        let recovery_error = recovery.warning.then(recovery_failure_message);
+        // Recovery discovery can inspect bounded records totaling up to 128
+        // MiB. Present the first frame immediately and keep the document gated
+        // until the background result establishes this window's recovery
+        // identity and any required Restore/Discard decision.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let recovery = cx
+                .background_executor()
+                .spawn(async { startup_recovery() })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.recovery_directory = recovery.directory;
+                this.recovery_path = recovery.active_path;
+                this.recovery_cleanup_paths = recovery.cleanup_paths;
+                this.recovery_loading = false;
+                this.recovery_error = recovery.warning.then(recovery_failure_message);
+                this.alert = recovery.prompt.map(ActiveAlert::Recover);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        // Native events are hints only. Coalesce bursts from atomic rename and
+        // metadata activity, then compare the complete bounded file bytes with
+        // the exact revision retained at open/last-save.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = document_event_rx.recv().await {
+                if matches!(event, DocumentWatchEvent::Unavailable) {
+                    if this
+                        .update(cx, |this, cx| {
+                            this.document_watch_warning = this.path.is_some();
+                            cx.notify();
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                    continue;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_millis(150))
+                    .await;
+                let mut unavailable = false;
+                while let Ok(event) = document_event_rx.try_recv() {
+                    unavailable |= matches!(event, DocumentWatchEvent::Unavailable);
+                }
+                if unavailable
+                    && this
+                        .update(cx, |this, cx| {
+                            this.document_watch_warning = this.path.is_some();
+                            cx.notify();
+                        })
+                        .is_err()
+                {
+                    break;
+                }
+                let snapshot = this
+                    .update(cx, |this, _| {
+                        this.path
+                            .clone()
+                            .zip(this.saved_bytes.clone())
+                            .map(|(path, expected)| (path, expected, this.document_generation))
+                    })
+                    .ok()
+                    .flatten();
+                let Some((path, expected, generation)) = snapshot else {
+                    continue;
+                };
+                let checked_path = path.clone();
+                let state = cx
+                    .background_executor()
+                    .spawn(async move { inspect_external_revision(&checked_path, &expected) })
+                    .await;
+                if this
+                    .update(cx, |this, cx| {
+                        if this.document_generation == generation
+                            && this.path.as_deref() == Some(path.as_path())
+                        {
+                            this.external_change = state;
+                            if !unavailable {
+                                this.document_watch_warning = false;
+                            }
+                            cx.notify();
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        let recovery_directory = std::env::temp_dir().join("rmac-text-editor-recovery-pending");
+        let recovery_path = recovery::fresh_record_path(&recovery_directory);
 
         Self {
-            alert,
+            alert: None,
             input,
             path: None,
             saved_bytes: None,
@@ -428,12 +607,18 @@ impl EditorView {
             font_size: 15.0,
             rtf_runs: None,
             focus: cx.focus_handle(),
-            recovery_directory: recovery.directory,
-            recovery_path: recovery.active_path,
-            recovery_cleanup_paths: recovery.cleanup_paths,
+            recovery_directory,
+            recovery_path,
+            recovery_cleanup_paths: Vec::new(),
             recovery_clock: RecoveryClock::default(),
-            recovery_error,
+            recovery_loading: true,
+            recovery_error: None,
             recovery_notice: None,
+            document_generation: 0,
+            external_change: None,
+            document_watch_warning: false,
+            watched_directory: None,
+            document_watcher,
             _subscriptions: vec![sub_main, sub_find],
         }
     }
@@ -449,8 +634,38 @@ impl EditorView {
         }
     }
 
-    fn recovery_decision_pending(&self) -> bool {
-        matches!(self.alert, Some(ActiveAlert::Recover(_)))
+    fn file_action_blocked(&self) -> bool {
+        self.recovery_loading || self.alert.is_some()
+    }
+
+    fn reset_document_watch(&mut self) {
+        self.document_generation = self.document_generation.wrapping_add(1);
+        self.external_change = None;
+        let next_directory = self
+            .path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf);
+        if self.watched_directory != next_directory {
+            if let (Some(watcher), Some(directory)) = (
+                self.document_watcher.as_mut(),
+                self.watched_directory.take(),
+            ) {
+                let _ = watcher.unwatch(&directory);
+            }
+            if let (Some(watcher), Some(directory)) =
+                (self.document_watcher.as_mut(), next_directory.as_ref())
+            {
+                if watcher
+                    .watch(directory, notify::RecursiveMode::NonRecursive)
+                    .is_ok()
+                {
+                    self.watched_directory = Some(directory.clone());
+                }
+            }
+        }
+        self.document_watch_warning =
+            self.path.is_some() && self.watched_directory != next_directory;
     }
 
     // ── Dirty + autosave ────────────────────────────────────────────────
@@ -562,14 +777,14 @@ impl EditorView {
     // ── File operations ─────────────────────────────────────────────────
 
     fn new_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy || self.recovery_decision_pending() {
+        if self.file_busy || self.file_action_blocked() {
             return;
         }
         self.guarded(Pending::New, window, cx);
     }
 
     fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy || self.recovery_decision_pending() {
+        if self.file_busy || self.file_action_blocked() {
             return;
         }
         self.guarded(Pending::Open, window, cx);
@@ -581,6 +796,7 @@ impl EditorView {
         self.saved_bytes = None;
         self.text_format = document::TextFormat::default();
         self.rtf_runs = None;
+        self.reset_document_watch();
         self.mark_clean(String::new(), cx);
         cx.notify();
     }
@@ -593,6 +809,7 @@ impl EditorView {
             self.path = None;
             self.saved_bytes = None;
             self.text_format = document::TextFormat::default();
+            self.reset_document_watch();
             self.dirty = true; // an unsaved derived document
             self.schedule_autosave(cx);
             cx.notify();
@@ -651,6 +868,7 @@ impl EditorView {
                         this.saved_bytes = Some(document.original_bytes);
                         this.text_format = document.format;
                         this.rtf_runs = None;
+                        this.reset_document_watch();
                         this.mark_clean(document.text, cx);
                     }
                     Ok(LoadedFile::RichText { text, runs }) => {
@@ -660,6 +878,7 @@ impl EditorView {
                         this.saved_bytes = None;
                         this.text_format = document::TextFormat::default();
                         this.rtf_runs = Some(runs);
+                        this.reset_document_watch();
                         this.mark_clean(text, cx);
                     }
                     Err(message) => {
@@ -676,18 +895,18 @@ impl EditorView {
     }
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy || self.recovery_decision_pending() {
+        if self.file_busy || self.file_action_blocked() {
             return;
         }
         self.save_with(None, window, cx);
     }
 
     fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy || self.rtf_runs.is_some() || self.recovery_decision_pending() {
+        if self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked() {
             return;
         }
         let content = self.input.read(cx).value().to_string();
-        self.save_to_new_path(content, self.text_format, None, window, cx);
+        self.save_to_new_path(content, self.text_format, None, None, window, cx);
     }
 
     /// Save the buffer; if `then` is set, run that pending action only **after**
@@ -736,7 +955,7 @@ impl EditorView {
             .detach();
             return;
         }
-        self.save_to_new_path(content, self.text_format, then, window, cx);
+        self.save_to_new_path(content, self.text_format, then, None, window, cx);
     }
 
     fn save_to_new_path(
@@ -744,6 +963,7 @@ impl EditorView {
         content: String,
         format: document::TextFormat,
         then: Option<Pending>,
+        forbidden_destination: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -785,7 +1005,14 @@ impl EditorView {
                 .spawn({
                     let path = path.clone();
                     let content = content.clone();
-                    async move { save_document(&path, None, &content, format) }
+                    async move {
+                        save_document_copy(
+                            &path,
+                            forbidden_destination.as_deref(),
+                            &content,
+                            format,
+                        )
+                    }
                 })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -816,6 +1043,7 @@ impl EditorView {
                 }
                 self.saved_bytes = Some(saved.original_bytes);
                 self.text_format = saved.format;
+                self.reset_document_watch();
                 let recovery_cleared = self.mark_clean(saved.text, cx);
                 if recovery_cleared {
                     if let Some(pending) = then {
@@ -824,6 +1052,12 @@ impl EditorView {
                 }
             }
             Err(error) => {
+                if matches!(
+                    &error,
+                    SaveFailure::Storage(storage::SaveDocumentError::Conflict)
+                ) {
+                    self.external_change = Some(ExternalChange::Modified);
+                }
                 self.alert = Some(
                     if matches!(
                         &error,
@@ -842,9 +1076,158 @@ impl EditorView {
         cx.notify();
     }
 
+    fn show_external_conflict(&mut self, cx: &mut Context<Self>) {
+        if !self.file_busy && !self.file_action_blocked() && self.external_change.is_some() {
+            self.alert = Some(ActiveAlert::Conflict);
+            cx.notify();
+        }
+    }
+
+    fn reload_conflicting_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
+        let Some(path) = self.path.clone() else {
+            self.alert = None;
+            return;
+        };
+        self.alert = None;
+        self.file_busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let loaded = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move { load_selected_document(&path) }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.file_busy = false;
+                match loaded {
+                    Ok(LoadedFile::Plain(document)) => {
+                        this.input.update(cx, |state, cx| {
+                            state.set_value(document.text.clone(), window, cx)
+                        });
+                        this.saved_bytes = Some(document.original_bytes);
+                        this.text_format = document.format;
+                        this.rtf_runs = None;
+                        this.reset_document_watch();
+                        this.mark_clean(document.text, cx);
+                    }
+                    Ok(LoadedFile::RichText { text, runs }) => {
+                        this.input
+                            .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+                        this.saved_bytes = None;
+                        this.text_format = document::TextFormat::default();
+                        this.rtf_runs = Some(runs);
+                        this.reset_document_watch();
+                        this.mark_clean(text, cx);
+                    }
+                    Err(message) => {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Could not reload the document.",
+                            message,
+                        });
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn save_conflicting_copy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy || self.rtf_runs.is_some() {
+            return;
+        }
+        self.alert = None;
+        let content = self.input.read(cx).value().to_string();
+        self.save_to_new_path(
+            content,
+            self.text_format,
+            None,
+            self.path.clone(),
+            window,
+            cx,
+        );
+    }
+
+    fn review_conflict_overwrite(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
+        let Some(path) = self.path.clone() else {
+            self.alert = None;
+            return;
+        };
+        self.alert = None;
+        self.file_busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let reviewed = cx
+                .background_executor()
+                .spawn(async move {
+                    storage::read_bounded(
+                        &storage::RealStorage,
+                        storage::Operation::ValidateDocumentRevision,
+                        &path,
+                        document::MAX_DOCUMENT_BYTES,
+                    )
+                })
+                .await;
+            let _ = this.update_in(cx, |this, _, cx| {
+                this.file_busy = false;
+                this.alert = Some(match reviewed {
+                    Ok(reviewed_revision) => ActiveAlert::ConfirmOverwrite { reviewed_revision },
+                    Err(_) => ActiveAlert::Error {
+                        title: "Could not review the external document.",
+                        message: "The document is missing, inaccessible, or no longer within Text Editor’s safety limit. Your local buffer remains open; save a copy instead."
+                            .into(),
+                    },
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn overwrite_conflicting_document(
+        &mut self,
+        reviewed_revision: Vec<u8>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.file_busy || self.rtf_runs.is_some() {
+            return;
+        }
+        let Some(path) = self.path.clone() else {
+            self.alert = None;
+            return;
+        };
+        self.alert = None;
+        self.file_busy = true;
+        let content = self.input.read(cx).value().to_string();
+        let format = self.text_format;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let save_content = content.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    save_document(&path, Some(&reviewed_revision), &save_content, format)
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.finish_document_save(result, content, None, window, cx);
+            });
+        })
+        .detach();
+    }
+
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.
     fn guarded(&mut self, pending: Pending, window: &mut Window, cx: &mut Context<Self>) {
-        if self.file_busy || self.recovery_decision_pending() {
+        if self.file_busy || self.file_action_blocked() {
             return;
         }
         if !self.dirty {
@@ -885,7 +1268,10 @@ impl EditorView {
                 self.on_buffer_changed(cx);
             }
             Some(ActiveAlert::ConfirmSave(pending)) => self.save_with(Some(pending), window, cx),
-            Some(ActiveAlert::Conflict) => self.save_as(window, cx),
+            Some(ActiveAlert::Conflict) => self.save_conflicting_copy(window, cx),
+            Some(ActiveAlert::ConfirmOverwrite { reviewed_revision }) => {
+                self.overwrite_conflicting_document(reviewed_revision, window, cx);
+            }
             Some(ActiveAlert::Error { .. }) | None => {}
         }
         cx.notify();
@@ -1082,7 +1468,7 @@ impl EditorView {
                             .icon(Icon::new(IconName::File).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
-                            .disabled(self.file_busy || self.recovery_decision_pending())
+                            .disabled(self.file_busy || self.file_action_blocked())
                             .tooltip("New")
                             .on_click(cx.listener(|this, _, window, cx| this.new_file(window, cx))),
                     )
@@ -1091,7 +1477,7 @@ impl EditorView {
                             .icon(Icon::new(IconName::FolderOpen).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
-                            .disabled(self.file_busy || self.recovery_decision_pending())
+                            .disabled(self.file_busy || self.file_action_blocked())
                             .tooltip("Open")
                             .on_click(cx.listener(|this, _, window, cx| this.open(window, cx))),
                     )
@@ -1164,7 +1550,7 @@ impl EditorView {
                             .disabled(
                                 self.file_busy
                                     || self.rtf_runs.is_some()
-                                    || self.recovery_decision_pending(),
+                                    || self.file_action_blocked(),
                             )
                             .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                     ),
@@ -1454,15 +1840,50 @@ impl EditorView {
             ),
             ActiveAlert::Conflict => (
                 "The document changed in another application.",
-                "Text Editor did not overwrite the external version. Save this buffer as a separate copy or cancel and inspect the other version."
+                "Text Editor did not overwrite the external version. Reload discards this local buffer, Save a Copy preserves it at a new location, and Overwrite requires a fresh review plus another exact preflight."
                     .into(),
                 vec![
                     rmac_ui::dialog_button("alert-cancel", "Cancel", Normal)
                         .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
                         .into_any_element(),
-                    rmac_ui::dialog_button("alert-save-copy", "Save a Copy…", Primary)
-                        .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
+                    rmac_ui::dialog_button("alert-reload", "Discard & Reload", Destructive)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.reload_conflicting_document(window, cx);
+                        }))
                         .into_any_element(),
+                    rmac_ui::dialog_button("alert-save-copy", "Save a Copy…", Primary)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.save_conflicting_copy(window, cx);
+                        }))
+                        .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "alert-review-overwrite",
+                        "Overwrite Anyway…",
+                        Destructive,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.review_conflict_overwrite(window, cx);
+                    }))
+                    .into_any_element(),
+                ],
+            ),
+            ActiveAlert::ConfirmOverwrite { .. } => (
+                "Overwrite the external document?",
+                "Text Editor reread the complete external revision. Overwrite will run a second exact preflight and stop if the document changes again. This cannot preserve the external edits."
+                    .into(),
+                vec![
+                    rmac_ui::dialog_button("alert-cancel-overwrite", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "alert-confirm-overwrite",
+                        "Overwrite Anyway",
+                        Destructive,
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.alert_confirm(window, cx);
+                    }))
+                    .into_any_element(),
                 ],
             ),
             ActiveAlert::Error { title, message } => (
@@ -1485,8 +1906,11 @@ impl Render for EditorView {
             rmac_ui::UI_FONT
         };
         let size = self.font_size;
+        let recovery_loading = self.recovery_loading;
         let recovery_error = self.recovery_error.clone();
         let recovery_notice = self.recovery_notice.clone();
+        let external_change = self.external_change;
+        let document_watch_warning = self.document_watch_warning;
 
         div()
             .size_full()
@@ -1518,6 +1942,23 @@ impl Render for EditorView {
             .bg(mac::window())
             .text_color(mac::text())
             .child(self.render_toolbar(cx))
+            .when(recovery_loading, |editor| {
+                editor.child(
+                    div()
+                        .id("recovery-loading")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .px_3()
+                        .bg(mac::chrome())
+                        .border_b_1()
+                        .border_color(mac::separator())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child("Checking for unsaved drafts…"),
+                )
+            })
             .when_some(recovery_error, |editor, message| {
                 editor.child(
                     div()
@@ -1566,6 +2007,61 @@ impl Render for EditorView {
                         })),
                 )
             })
+            .when_some(external_change, |editor, change| {
+                let message = match change {
+                    ExternalChange::Modified => {
+                        "This document changed outside Text Editor. Your buffer was not replaced."
+                    }
+                    ExternalChange::Missing => {
+                        "This document was moved or deleted outside Text Editor. Your buffer remains open."
+                    }
+                    ExternalChange::Unreadable => {
+                        "Text Editor can no longer verify the external document. Your buffer remains open."
+                    }
+                };
+                editor.child(
+                    div()
+                        .id("external-change")
+                        .h(px(40.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(mac::warning_background())
+                        .border_b_1()
+                        .border_color(mac::warning_border())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text())
+                        .child(div().flex_1().child(message))
+                        .child(
+                            Button::new("external-change-review", "Review…")
+                                .with_size(Size::Small)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.show_external_conflict(cx);
+                                })),
+                        ),
+                )
+            })
+            .when(document_watch_warning && external_change.is_none(), |editor| {
+                editor.child(
+                    div()
+                        .id("document-watch-warning")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .px_3()
+                        .bg(mac::chrome())
+                        .border_b_1()
+                        .border_color(mac::separator())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::text_secondary())
+                        .child(
+                            "Live document monitoring is unavailable. Saves still recheck the complete file before writing.",
+                        ),
+                )
+            })
             .when(self.find_open, |d| d.child(self.render_find_bar(cx)))
             .child(if self.rtf_runs.is_some() {
                 self.render_rtf_preview(cx).into_any_element()
@@ -1578,7 +2074,12 @@ impl Render for EditorView {
                     .font_family(font_family)
                     .text_size(px(size))
                     .line_height(px(size * 1.5))
-                    .child(TextField::new(&self.input).h_full().appearance(false))
+                    .child(
+                        TextField::new(&self.input)
+                            .h_full()
+                            .appearance(false)
+                            .disabled(recovery_loading),
+                    )
                     .into_any_element()
             })
             .when(self.rtf_runs.is_none(), |d| {
@@ -1598,7 +2099,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{recovery_path_for_platform, RecoveryClock};
+    use super::{
+        document, recovery_path_for_platform, same_file_identity, save_document_copy,
+        RecoveryClock, SaveFailure,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -1656,5 +2160,54 @@ mod tests {
             macos,
             PathBuf::from("/Users/user/Library/Application Support/rmac-text-editor/recovery.txt")
         );
+    }
+
+    #[test]
+    fn identical_copy_destination_is_rejected_even_before_it_exists() {
+        let path = PathBuf::from("document.txt");
+        assert!(same_file_identity(&path, &path));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hard_link_copy_destination_is_the_same_file_identity() {
+        let directory = std::env::temp_dir().join(format!(
+            "rmac-text-editor-copy-identity-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let source = directory.join("source.txt");
+        let link = directory.join("link.txt");
+        std::fs::write(&source, b"external revision").unwrap();
+        std::fs::hard_link(&source, &link).unwrap();
+
+        assert!(same_file_identity(&source, &link));
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn save_copy_never_replaces_its_forbidden_source() {
+        let directory = std::env::temp_dir().join(format!(
+            "rmac-text-editor-copy-protection-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let source = directory.join("source.txt");
+        std::fs::write(&source, b"external revision").unwrap();
+
+        let error = save_document_copy(
+            &source,
+            Some(&source),
+            "local buffer",
+            document::TextFormat::default(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, SaveFailure::ConflictingCopyDestination));
+        assert_eq!(std::fs::read(&source).unwrap(), b"external revision");
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

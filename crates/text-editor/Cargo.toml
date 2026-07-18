@@ -10,8 +10,10 @@ name = "rmac-text-editor"
 path = "src/main.rs"
 
 [dependencies]
+async-channel.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+notify.workspace = true
 rmac-ui.workspace = true
 rmac-editor.workspace = true
 rmac-storage.workspace = true

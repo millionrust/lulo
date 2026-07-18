@@ -489,6 +489,31 @@ mod tests {
     }
 
     #[test]
+    fn reviewed_overwrite_stops_when_the_external_revision_changes_again() {
+        let path = Path::new("document.txt");
+        let storage = MemoryStorage::with_file(path, "external revision reviewed by user");
+        let reviewed = storage.read(path).unwrap();
+        storage.files.borrow_mut().insert(
+            path.to_path_buf(),
+            b"newer edit after confirmation".to_vec(),
+        );
+
+        let error = write_document_if_unchanged(
+            &storage,
+            path,
+            Some(&reviewed),
+            b"local overwrite request",
+        )
+        .unwrap_err();
+
+        assert_eq!(error, SaveDocumentError::Conflict);
+        assert_eq!(
+            storage.files.borrow().get(path).unwrap(),
+            b"newer edit after confirmation"
+        );
+    }
+
+    #[test]
     fn ineffective_atomic_write_fails_authoritative_readback() {
         let path = Path::new("document.txt");
         let mut storage = MemoryStorage::with_file(path, "before");

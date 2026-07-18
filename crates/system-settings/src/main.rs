@@ -743,6 +743,11 @@ struct Settings {
     storage: Vec<rmac_mounts::Volume>,
     storage_busy: bool,
     storage_error: Option<SharedString>,
+    storage_stream_error: Option<SharedString>,
+    storage_generation: u64,
+    storage_refresh_pending: bool,
+    storage_stream_refreshing: bool,
+    storage_action_busy: Option<String>,
     audio: rmac_audio::Snapshot,
     input: rmac_input::Snapshot,
     gtk_text: Option<rmac_gtk_settings::Snapshot>,
@@ -1135,6 +1140,15 @@ fn update_stream_snapshot_is_current(
     snapshot_generation == current_generation && !loading && !busy
 }
 
+fn storage_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
 /// Read-only system data that is slow enough to keep off the first-frame path.
 struct SystemSnapshot {
     account: String,
@@ -1312,6 +1326,7 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.apply_system_snapshot(snapshot);
                 this.run_pending_system_info_refresh(cx);
+                this.run_pending_storage_refresh(cx);
                 cx.notify();
             });
         })
@@ -1336,6 +1351,40 @@ impl Settings {
                                 rmac_system_info::WatchEvent::Unavailable => {
                                     this.system_data_stream_error = Some(
                                         "Live hostname updates are temporarily unavailable".into(),
+                                    );
+                                }
+                            }
+                            cx.notify();
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let (storage_updates, storage_update_rx) = async_channel::bounded(1);
+            cx.background_executor()
+                .spawn(async move {
+                    let _ = rmac_mounts::watch(storage_updates).await;
+                })
+                .detach();
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                while let Ok(event) = storage_update_rx.recv().await {
+                    if this
+                        .update(cx, |this: &mut Settings, cx| {
+                            match event {
+                                rmac_mounts::WatchEvent::Changed => {
+                                    this.queue_storage_stream_refresh(cx);
+                                }
+                                rmac_mounts::WatchEvent::Unavailable => {
+                                    this.storage_stream_error = Some(
+                                        "Live mounted-volume updates are temporarily unavailable"
+                                            .into(),
                                     );
                                 }
                             }
@@ -2469,6 +2518,11 @@ impl Settings {
             storage: Vec::new(),
             storage_busy: false,
             storage_error: None,
+            storage_stream_error: None,
+            storage_generation: 0,
+            storage_refresh_pending: false,
+            storage_stream_refreshing: false,
+            storage_action_busy: None,
             audio: rmac_audio::Snapshot::default(),
             input: rmac_input::Snapshot::default(),
             gtk_text: None,
@@ -3238,6 +3292,7 @@ impl Settings {
             Ok(storage) => {
                 self.storage = storage;
                 self.storage_error = None;
+                self.storage_stream_error = None;
             }
             Err(error) => {
                 self.storage_error =
@@ -3661,11 +3716,64 @@ impl Settings {
         .detach();
     }
 
+    fn queue_storage_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.system_data_loading || self.storage_busy || self.storage_stream_refreshing {
+            self.storage_refresh_pending = true;
+            return;
+        }
+        self.storage_refresh_pending = false;
+        self.storage_stream_refreshing = true;
+        let generation = self.storage_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_mounts::volumes() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.storage_stream_refreshing = false;
+                if storage_stream_snapshot_is_current(
+                    generation,
+                    this.storage_generation,
+                    this.system_data_loading,
+                    this.storage_busy,
+                ) {
+                    match result {
+                        Ok(storage) => {
+                            this.storage = storage;
+                            this.storage_error = None;
+                            this.storage_stream_error = None;
+                        }
+                        Err(_) => {
+                            this.storage_stream_error =
+                                Some("Could not refresh the changed mounted-volume state".into());
+                        }
+                    }
+                } else {
+                    this.storage_refresh_pending = true;
+                }
+                this.run_pending_storage_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_storage_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.storage_refresh_pending
+            && !self.system_data_loading
+            && !self.storage_busy
+            && !self.storage_stream_refreshing
+        {
+            self.queue_storage_stream_refresh(cx);
+        }
+    }
+
     fn refresh_storage(&mut self, cx: &mut Context<Self>) {
-        if self.storage_busy {
+        if self.system_data_loading || self.storage_busy {
             return;
         }
         self.storage_busy = true;
+        self.storage_generation = self.storage_generation.wrapping_add(1);
         self.storage_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -3679,12 +3787,50 @@ impl Settings {
                     Ok(volumes) => {
                         this.storage = volumes;
                         this.storage_error = None;
+                        this.storage_stream_error = None;
                     }
                     Err(error) => {
                         this.storage_error =
                             Some(format!("Could not refresh storage volumes: {error}").into());
                     }
                 }
+                this.run_pending_storage_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn open_storage_volume(&mut self, identity: String, cx: &mut Context<Self>) {
+        if self.storage_action_busy.is_some() {
+            return;
+        }
+        let Some(mount) = self
+            .storage
+            .iter()
+            .find(|volume| volume.mount.identity == identity)
+            .map(|volume| volume.mount.clone())
+        else {
+            self.storage_refresh_pending = true;
+            self.run_pending_storage_refresh(cx);
+            return;
+        };
+        let name = mount.name.clone();
+        self.storage_action_busy = Some(identity);
+        self.storage_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = match blocking::unblock(move || rmac_mounts::revalidate(&mount)).await {
+                Ok(current) => rmac_portal::open_item(&current.path).await.map_err(|_| ()),
+                Err(_) => Err(()),
+            };
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.storage_action_busy = None;
+                if result.is_err() {
+                    this.storage_error = Some(format!("Could not open {name} in Files").into());
+                    this.storage_refresh_pending = true;
+                }
+                this.run_pending_storage_refresh(cx);
                 cx.notify();
             });
         })
@@ -15278,17 +15424,18 @@ impl Settings {
 
     /// Direct per-volume capacity state from the mount service.
     fn storage_body(&self, cx: &Context<Self>) -> Div {
-        let refresh_view = cx.entity();
+        let view = cx.entity();
+        let refresh_view = view.clone();
         let mut body = div().v_flex().child(card(vec![row_base()
             .child(tile("icons/hard-drive.svg", accent(), 22.0))
             .child(text_block(
                 "Mounted volumes".into(),
-                Some("System and user-visible removable volumes".into()),
+                Some("System, removable, and network volumes".into()),
             ))
             .child(
                 Button::new("refresh-storage", "Refresh")
-                    .busy(self.storage_busy)
-                    .disabled(self.storage_busy)
+                    .busy(self.storage_busy || self.storage_stream_refreshing)
+                    .disabled(self.system_data_loading || self.storage_busy)
                     .on_click(move |_, _, cx| {
                         refresh_view.update(cx, |settings, cx| settings.refresh_storage(cx));
                     }),
@@ -15299,11 +15446,15 @@ impl Settings {
             return body.child(
                 EmptyState::new("No storage volumes available")
                     .message("Refresh after the mount service becomes available")
-                    .error(self.storage_error.is_some()),
+                    .error(self.storage_error.is_some() || self.storage_stream_error.is_some()),
             );
         }
 
-        for volume in &self.storage {
+        for (index, volume) in self.storage.iter().enumerate() {
+            let identity = volume.mount.identity.clone();
+            let action_busy = self.storage_action_busy.as_deref() == Some(identity.as_str());
+            let action_disabled = self.storage_action_busy.is_some() || self.storage_busy;
+            let action_view = view.clone();
             body = body.child(section_header(volume.mount.name.clone()));
             let Some(usage) = volume.usage else {
                 body = body.child(card(vec![row_base()
@@ -15312,9 +15463,21 @@ impl Settings {
                         volume.mount.name.clone().into(),
                         volume.usage_error.clone().map(Into::into),
                     ))
+                    .child(
+                        Button::new(("open-storage-volume", index), "Review in Files")
+                            .busy(action_busy)
+                            .disabled(action_disabled)
+                            .on_click(move |_, _, cx| {
+                                action_view.update(cx, |settings, cx| {
+                                    settings.open_storage_volume(identity.clone(), cx);
+                                });
+                            }),
+                    )
                     .into_any_element()]));
                 continue;
             };
+            let identity = volume.mount.identity.clone();
+            let action_view = view.clone();
             let available_color = if usage.is_low_space() {
                 hsl(0xff3b30)
             } else {
@@ -15339,7 +15502,7 @@ impl Settings {
                             div()
                                 .h_flex()
                                 .justify_between()
-                                .items_baseline()
+                                .items_center()
                                 .child(
                                     div()
                                         .text_size(rmac_ui::text_px(15.0))
@@ -15349,13 +15512,37 @@ impl Settings {
                                 )
                                 .child(
                                     div()
-                                        .text_size(rmac_ui::text_px(13.0))
-                                        .text_color(secondary())
-                                        .child(format!(
-                                            "{} available of {}",
-                                            fmt_gb(usage.available),
-                                            fmt_gb(usage.total)
-                                        )),
+                                        .h_flex()
+                                        .items_center()
+                                        .gap_3()
+                                        .child(
+                                            div()
+                                                .text_size(rmac_ui::text_px(13.0))
+                                                .text_color(secondary())
+                                                .child(format!(
+                                                    "{} available of {}",
+                                                    fmt_gb(usage.available),
+                                                    fmt_gb(usage.total)
+                                                )),
+                                        )
+                                        .child(
+                                            Button::new(
+                                                ("open-storage-volume", index),
+                                                "Review in Files",
+                                            )
+                                            .busy(action_busy)
+                                            .disabled(action_disabled)
+                                            .on_click(
+                                                move |_, _, cx| {
+                                                    action_view.update(cx, |settings, cx| {
+                                                        settings.open_storage_volume(
+                                                            identity.clone(),
+                                                            cx,
+                                                        );
+                                                    });
+                                                },
+                                            ),
+                                        ),
                                 ),
                         )
                         .child(
@@ -15404,7 +15591,7 @@ impl Settings {
             }
         }
         body.child(note_card(
-            "Storage categories and cleanup actions stay hidden until they can be measured and reversed safely.",
+            "Review in Files opens only a currently revalidated mounted volume. Storage categories and destructive cleanup actions stay hidden until they can be measured and reversed safely.",
         ))
     }
 
@@ -15907,6 +16094,7 @@ impl Render for Settings {
             .or_else(|| self.updates_error.clone())
             .or_else(|| self.updates_stream_error.clone())
             .or_else(|| self.storage_error.clone())
+            .or_else(|| self.storage_stream_error.clone())
             .or_else(|| self.time_error.clone())
             .or_else(|| self.time_stream_error.clone())
             .or_else(|| self.locale_error.clone())
@@ -16073,6 +16261,7 @@ impl Render for Settings {
                             this.updates_error = None;
                             this.updates_stream_error = None;
                             this.storage_error = None;
+                            this.storage_stream_error = None;
                             this.time_error = None;
                             this.time_stream_error = None;
                             this.locale_error = None;
@@ -18054,11 +18243,11 @@ mod tests {
         input_stream_snapshot_is_current, network_stream_snapshot_is_current,
         notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
         relative_display_position, render_wallpaper_preview, sample_battery_history,
-        system_info_stream_snapshot_is_current, update_stream_snapshot_is_current,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
-        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
-        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-        WallpaperTarget, GENERAL_DESTINATIONS,
+        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
+        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
+        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
+        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
+        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -18166,6 +18355,14 @@ mod tests {
         assert!(!update_stream_snapshot_is_current(3, 4, false, false));
         assert!(!update_stream_snapshot_is_current(4, 4, true, false));
         assert!(!update_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn storage_stream_snapshots_cannot_cross_manual_refreshes() {
+        assert!(storage_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!storage_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!storage_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!storage_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

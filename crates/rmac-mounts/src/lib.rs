@@ -3,11 +3,23 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::io;
+#[cfg(not(target_os = "macos"))]
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[cfg(not(target_os = "macos"))]
+const MAX_MOUNTINFO_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_MOUNTS: usize = 256;
+const MAX_DISPLAY_NAME_BYTES: usize = 256;
+#[cfg(target_os = "linux")]
+const MOUNT_WATCH_TIMEOUT_SECONDS: i64 = 5;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Mount {
+    /// Opaque identity used only to revalidate a selection against the current
+    /// mount namespace. It is not a filesystem path or a display label.
+    pub identity: String,
     pub name: String,
     pub path: PathBuf,
     pub ejectable: bool,
@@ -51,6 +63,12 @@ pub struct Volume {
     pub usage_error: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    Changed,
+    Unavailable,
+}
+
 #[derive(Debug)]
 pub enum Error {
     Io {
@@ -62,6 +80,16 @@ pub enum Error {
         program: &'static str,
         path: PathBuf,
         message: String,
+    },
+    TooLarge {
+        path: PathBuf,
+        limit: u64,
+    },
+    TooManyMounts {
+        limit: usize,
+    },
+    Stale {
+        name: String,
     },
 }
 
@@ -86,6 +114,20 @@ impl fmt::Display for Error {
                 "{program} could not unmount {}: {message}",
                 path.display()
             ),
+            Self::TooLarge { path, limit } => write!(
+                formatter,
+                "{} exceeds the {limit}-byte safety limit",
+                path.display()
+            ),
+            Self::TooManyMounts { limit } => {
+                write!(formatter, "more than {limit} mounted volumes were reported")
+            }
+            Self::Stale { name } => {
+                write!(
+                    formatter,
+                    "the mounted volume “{name}” is no longer available"
+                )
+            }
         }
     }
 }
@@ -94,7 +136,10 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            Self::Command { .. } => None,
+            Self::Command { .. }
+            | Self::TooLarge { .. }
+            | Self::TooManyMounts { .. }
+            | Self::Stale { .. } => None,
         }
     }
 }
@@ -107,12 +152,13 @@ pub fn discover() -> Result<Vec<Mount>, Error> {
     #[cfg(not(target_os = "macos"))]
     {
         let path = Path::new("/proc/self/mountinfo");
-        let contents = std::fs::read_to_string(path).map_err(|source| Error::Io {
-            operation: "read mount table",
-            path: path.to_path_buf(),
-            source,
-        })?;
-        Ok(parse_mountinfo(&contents))
+        let contents = read_bounded_text(path, MAX_MOUNTINFO_BYTES)?;
+        let (mounts, truncated) = parse_mountinfo(&contents);
+        if truncated {
+            Err(Error::TooManyMounts { limit: MAX_MOUNTS })
+        } else {
+            Ok(mounts)
+        }
     }
 }
 
@@ -120,6 +166,7 @@ pub fn discover() -> Result<Vec<Mount>, Error> {
 /// capacity results. A broken or disconnected mount never hides healthy ones.
 pub fn volumes() -> Result<Vec<Volume>, Error> {
     let mut mounts = vec![Mount {
+        identity: "system:/".into(),
         name: "System Volume".into(),
         path: PathBuf::from("/"),
         ejectable: false,
@@ -143,6 +190,111 @@ pub fn volumes() -> Result<Vec<Volume>, Error> {
             },
         })
         .collect())
+}
+
+/// Re-read the current mount namespace and return the exact still-mounted
+/// volume selected by the UI. Paths and visible names are never identities.
+pub fn revalidate(expected: &Mount) -> Result<Mount, Error> {
+    if expected.identity == "system:/" && expected.path == Path::new("/") && !expected.ejectable {
+        return Ok(Mount {
+            identity: "system:/".into(),
+            name: "System Volume".into(),
+            path: PathBuf::from("/"),
+            ejectable: false,
+        });
+    }
+    revalidated_mount(expected, discover()?).ok_or_else(|| Error::Stale {
+        name: expected.name.clone(),
+    })
+}
+
+fn revalidated_mount(expected: &Mount, current: Vec<Mount>) -> Option<Mount> {
+    current.into_iter().find(|candidate| {
+        candidate.identity == expected.identity
+            && candidate.path == expected.path
+            && candidate.ejectable == expected.ejectable
+    })
+}
+
+/// Watch the caller's Linux mount namespace. `/proc/self/mounts` implements
+/// `POLLPRI` for mount and unmount changes; each event is only a hint and
+/// consumers must take a complete fresh `volumes()` snapshot.
+pub async fn watch(sender: async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    #[cfg(target_os = "linux")]
+    {
+        let worker_sender = sender.clone();
+        let result = blocking::unblock(move || watch_mount_changes(&worker_sender)).await;
+        if let Err(error) = result {
+            let _ = sender.send(WatchEvent::Unavailable).await;
+            return Err(error);
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = sender.send(WatchEvent::Unavailable).await;
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn watch_mount_changes(sender: &async_channel::Sender<WatchEvent>) -> Result<(), Error> {
+    use rustix::event::{poll, PollFd, PollFlags, Timespec};
+
+    let path = Path::new("/proc/self/mounts");
+    let file = std::fs::File::open(path).map_err(|source| Error::Io {
+        operation: "watch mount table",
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let timeout = Timespec {
+        tv_sec: MOUNT_WATCH_TIMEOUT_SECONDS,
+        tv_nsec: 0,
+    };
+    while !sender.is_closed() {
+        let mut descriptors = [PollFd::new(&file, PollFlags::PRI | PollFlags::ERR)];
+        let ready = poll(&mut descriptors, Some(&timeout)).map_err(|source| Error::Io {
+            operation: "watch mount table",
+            path: path.to_path_buf(),
+            source: io::Error::from(source),
+        })?;
+        if ready > 0
+            && descriptors[0]
+                .revents()
+                .intersects(PollFlags::PRI | PollFlags::ERR)
+        {
+            let _ = sender.try_send(WatchEvent::Changed);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_bounded_text(path: &Path, limit: u64) -> Result<String, Error> {
+    let file = std::fs::File::open(path).map_err(|source| Error::Io {
+        operation: "open mount table",
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|source| Error::Io {
+            operation: "read mount table",
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if bytes.len() as u64 > limit {
+        return Err(Error::TooLarge {
+            path: path.to_path_buf(),
+            limit,
+        });
+    }
+    String::from_utf8(bytes).map_err(|source| Error::Io {
+        operation: "decode mount table",
+        path: path.to_path_buf(),
+        source: io::Error::new(io::ErrorKind::InvalidData, source),
+    })
 }
 
 fn volume_usage(path: &Path) -> io::Result<Usage> {
@@ -218,39 +370,50 @@ fn discover_macos() -> Result<Vec<Mount>, Error> {
         .filter(|entry| entry.path().is_dir())
         .filter_map(|entry| {
             let path = entry.path();
-            let name = entry.file_name().to_string_lossy().into_owned();
-            (name != "Macintosh HD" && !name.starts_with('.')).then_some(Mount {
-                name,
-                path,
-                ejectable: true,
-            })
+            let name = sanitize_display_name(&entry.file_name().to_string_lossy());
+            (!name.is_empty() && name != "Macintosh HD" && !name.starts_with('.')).then_some(
+                Mount {
+                    identity: format!("macos:{}", path.to_string_lossy()),
+                    name,
+                    path,
+                    ejectable: true,
+                },
+            )
         })
         .collect::<Vec<_>>();
     sort_and_deduplicate(&mut mounts);
+    if mounts.len() > MAX_MOUNTS {
+        return Err(Error::TooManyMounts { limit: MAX_MOUNTS });
+    }
     Ok(mounts)
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
-fn parse_mountinfo(contents: &str) -> Vec<Mount> {
+fn parse_mountinfo(contents: &str) -> (Vec<Mount>, bool) {
     let mut mounts = contents
         .lines()
         .filter_map(parse_mountinfo_line)
         .filter(|mount| user_visible_mount(&mount.path))
         .collect::<Vec<_>>();
     sort_and_deduplicate(&mut mounts);
-    mounts
+    let truncated = mounts.len() > MAX_MOUNTS;
+    mounts.truncate(MAX_MOUNTS);
+    (mounts, truncated)
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
 fn parse_mountinfo_line(line: &str) -> Option<Mount> {
     let (mount_fields, _filesystem_fields) = line.split_once(" - ")?;
-    let encoded_path = mount_fields.split_whitespace().nth(4)?;
+    let mut fields = mount_fields.split_whitespace();
+    let mount_id = fields.next()?;
+    if mount_id.is_empty() || !mount_id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let encoded_path = fields.nth(3)?;
     let path = PathBuf::from(decode_mount_field(encoded_path)?);
-    let name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .filter(|name| !name.is_empty())?;
+    let name = mount_display_name(&path)?;
     Some(Mount {
+        identity: format!("linux:{mount_id}"),
         name,
         path,
         ejectable: true,
@@ -297,6 +460,46 @@ fn user_visible_mount(path: &Path) -> bool {
         && components[4] == "gvfs"
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
+fn mount_display_name(path: &Path) -> Option<String> {
+    let raw = path.file_name()?.to_string_lossy();
+    if path.starts_with("/run/user")
+        && path
+            .components()
+            .any(|component| component.as_os_str() == "gvfs")
+    {
+        if let Some(share) = raw
+            .split(',')
+            .find_map(|field| field.strip_prefix("share="))
+            .map(sanitize_display_name)
+            .filter(|name| !name.is_empty())
+        {
+            return Some(share);
+        }
+        return Some("Remote Volume".into());
+    }
+    let name = sanitize_display_name(&raw);
+    (!name.is_empty()).then_some(name)
+}
+
+fn sanitize_display_name(value: &str) -> String {
+    let normalized = value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let mut end = normalized.len().min(MAX_DISPLAY_NAME_BYTES);
+    while !normalized.is_char_boundary(end) {
+        end -= 1;
+    }
+    normalized[..end].trim().to_string()
+}
+
 fn sort_and_deduplicate(mounts: &mut Vec<Mount>) {
     mounts.sort_by(|left, right| {
         left.name
@@ -319,15 +522,17 @@ mod tests {
                         38 25 0:5 / /proc rw - proc proc rw\n\
                         39 25 8:2 / /mnt/Backup rw shared:7 - ext4 /dev/sdc1 rw\n";
 
-        let mounts = parse_mountinfo(contents);
+        let (mounts, truncated) = parse_mountinfo(contents);
 
+        assert!(!truncated);
         assert_eq!(mounts.len(), 3);
         assert!(mounts
             .iter()
             .any(|mount| mount.path == Path::new("/media/alice/My Drive")));
+        assert!(mounts.iter().any(|mount| mount.name == "docs"));
         assert!(mounts
             .iter()
-            .any(|mount| mount.name == "smb-share:server=nas,share=docs"));
+            .all(|mount| mount.identity.starts_with("linux:")));
         assert!(!mounts.iter().any(|mount| mount.path == Path::new("/proc")));
     }
 
@@ -336,13 +541,18 @@ mod tests {
         assert_eq!(decode_mount_field("My\\040Drive"), Some("My Drive".into()));
         assert_eq!(decode_mount_field("bad\\999escape"), None);
         assert!(parse_mountinfo_line("not mountinfo").is_none());
+        assert!(
+            parse_mountinfo_line("bad-id 25 8:1 / /media/alice/Drive rw - vfat /dev/sdb1 rw")
+                .is_none()
+        );
     }
 
     #[test]
     fn duplicate_mount_points_are_removed() {
         let line = "36 25 8:1 / /media/alice/Drive rw - vfat /dev/sdb1 rw\n";
-        let mounts = parse_mountinfo(&format!("{line}{line}"));
+        let (mounts, truncated) = parse_mountinfo(&format!("{line}{line}"));
         assert_eq!(mounts.len(), 1);
+        assert!(!truncated);
     }
 
     #[test]
@@ -367,5 +577,63 @@ mod tests {
         assert!(usage.total > 0);
         assert!(usage.available <= usage.total);
         assert_eq!(usage.used, usage.total - usage.available);
+    }
+
+    #[test]
+    fn display_names_are_bounded_and_cannot_inject_controls_or_remote_identity() {
+        let control =
+            parse_mountinfo_line("36 25 8:1 / /media/alice/Evil\\012Name rw - vfat /dev/sdb1 rw")
+                .unwrap();
+        assert_eq!(control.name, "Evil Name");
+        assert!(!control.name.chars().any(char::is_control));
+
+        let remote = parse_mountinfo_line(
+            "37 25 0:42 / /run/user/1000/gvfs/google-drive:host=example,user=private rw - fuse.gvfsd-fuse gvfsd-fuse rw",
+        )
+        .unwrap();
+        assert_eq!(remote.name, "Remote Volume");
+        assert!(!remote.name.contains("private"));
+
+        let long = sanitize_display_name(&"x".repeat(MAX_DISPLAY_NAME_BYTES + 50));
+        assert_eq!(long.len(), MAX_DISPLAY_NAME_BYTES);
+    }
+
+    #[test]
+    fn discovery_is_bounded_to_the_supported_visible_volume_count() {
+        let contents = (0..MAX_MOUNTS + 20)
+            .map(|index| {
+                format!(
+                    "{} 25 8:1 / /media/alice/Drive-{index} rw - vfat /dev/sdb1 rw",
+                    index + 1
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (mounts, truncated) = parse_mountinfo(&contents);
+        assert_eq!(mounts.len(), MAX_MOUNTS);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn revalidation_requires_identity_path_and_mount_class() {
+        let expected = Mount {
+            identity: "linux:42".into(),
+            name: "Backup".into(),
+            path: PathBuf::from("/media/alice/Backup"),
+            ejectable: true,
+        };
+        let replacement = Mount {
+            identity: "linux:43".into(),
+            name: "Backup".into(),
+            path: expected.path.clone(),
+            ejectable: true,
+        };
+        assert!(revalidated_mount(&expected, vec![replacement]).is_none());
+
+        let exact = expected.clone();
+        assert_eq!(
+            revalidated_mount(&expected, vec![exact.clone()]),
+            Some(exact)
+        );
     }
 }

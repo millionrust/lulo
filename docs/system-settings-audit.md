@@ -15,7 +15,7 @@ equivalents rather than simulated.
 | Battery | Real battery/AC state, health, time/rate, physical capacity/cycles/model, and advertised power profiles; coalesced UPower plus modern/legacy profile signals; owner-loss/restart recovery; generation-safe authoritative resampling with a retained post-mutation refresh; single-battery capability-gated optimized charging with private owner/device identity and verified readback; bounded authoritative 24-hour charge history with explicit unsupported/empty/error states | UPower and power-profiles-daemon | Linux threshold/history hardware, polkit, transition, hotplug, restart, suspend, interaction, scale, and accessibility evidence |
 | General/About | Typed bounded privacy-safe OS, kernel, architecture, hardware, DRM graphics, and session facts; validated hostname mutation with exact readback; coalesced property/service watching with generation-safe authoritative refresh; injection-safe redacted clipboard report; Apple-only rows removed | `rmac-system-info`, systemd-hostnamed D-Bus/polkit, os-release, procfs, DMI/DRM sysfs, XDG session environment | Linux runtime evidence for successful/cancelled/denied polkit flows, external hostname/service refresh, hardware facts, clipboard contents, and interaction/accessibility |
 | Software Update | Complete bounded PackageKit status; advertised install capability; trusted-only exact simulation and confirmation; destructive-plan warning; exact pre-install revalidation; interactive authorization; live download/install phase, percentage, package, remaining-time and capability-gated cancellation; restart requirements; privacy-safe typed failures; coalesced repository/service signals; generation-safe authoritative recovery with stale-state refusal | `rmac-updates`, `rmac-updates-linux`, modern PackageKit system D-Bus, polkit, and the Ubuntu APT backend | Ubuntu APT transaction, auth/cancel/failure/recovery/restart matrix plus keyboard, scale, performance, and accessibility evidence in `docs/software-update.md` |
-| Storage | Direct `statvfs` usage for the system volume and user-visible removable/network mounts; per-volume capacity failures; authoritative refresh; low-space state and conservative cleanup guidance | `rmac-mounts`, proc mount table, `statvfs` | Live mount events, measured categories where supportable, reviewed reversible cleanup actions, and Linux scale/accessibility evidence |
+| Storage | Bounded current-namespace system/removable/network inventory; privacy-safe display names and opaque identities; independent saturating `statvfs` capacity; low-space state; kernel-poll live refresh with generation-safe coalescing; exact revalidated portal-backed Review in Files; no guessed categories or destructive cleanup | `rmac-mounts`, `/proc/self/mountinfo`, pollable `/proc/self/mounts`, `statvfs`, and the desktop OpenURI portal | Ubuntu filesystem/mount/hotplug/portal matrix, a reviewed reversible cleanup design, and keyboard/scale/performance/accessibility evidence in `docs/storage.md` |
 | Date & Time | Real timedated timezone inventory/current zone, clock and RTC state, NTP capability/enabled/synchronized state, validated timezone and automatic-time mutations with interactive polkit, property-change/restart stream with reconnect, refresh, and last-known-good failures | `rmac-time`, `rmac-time-linux`, `org.freedesktop.timedate1` | Manual clock editing with confirmation plus Linux polkit/restart/scale/accessibility evidence |
 | Language & Region | Real locale1 assignments and installed-locale inventory; validated LANG mutation preserving every LC_* override; deterministic native date/time, number, and currency examples; validated multi-layout XKB source/variant editing when niri follows localed; exact locale and keyboard rollback; property-change/restart stream with reconnect; authoritative refresh; explicit sign-out requirement | `rmac-locale`, `rmac-locale-linux`, `rmac-input`, POSIX locale objects, `org.freedesktop.locale1`, `locale -a`, `localectl` layout inventory | Linux polkit/restart/scale/accessibility evidence |
 | Login Items | Effective bounded XDG autostart enumeration with config-directory precedence, desktop-session applicability, atomic `Hidden` overrides, malformed-entry visibility, portal-selected validated add/replace, Trash-backed user-entry removal, and portal-backed reveal; bounded systemd user unit-file inventory with persistent enable/disable, protected rmac infrastructure, explicit runtime/masked/static states, and resolvable-file reveal; filtered filesystem plus user-manager signal stream with restart/reconnect; authoritative refresh and partial-authority failures | `rmac-login-items`, `rmac-login-items-linux`, `rmac-portal`, XDG specifications, freedesktop Trash, `org.freedesktop.systemd1` user manager | Linux interaction/scale/accessibility evidence |
@@ -184,12 +184,21 @@ backend strings. The exact contract and pending F10 reference-PC matrix are in
 [`Transaction` interface](https://github.com/PackageKit/PackageKit/blob/main/src/org.freedesktop.PackageKit.Transaction.xml).
 
 Storage no longer parses `df` or invents a `Macintosh HD` label on Linux.
-`rmac-mounts` returns the system volume plus user-visible removable and network
-mounts, then measures each independently with `statvfs`. One inaccessible or
-disconnected volume reports its own failure without hiding healthy volumes.
-The pane flags low space, refreshes off the UI thread, and offers conservative
-guidance. It does not fabricate storage categories or expose cleanup buttons
-until category measurement and reversible deletion plans exist.
+`rmac-mounts` performs a size-bounded current-namespace mountinfo read, admits
+only the system disk and user-visible removable/network roots, rejects an
+unbounded volume set, and separates opaque mount identity from a bounded
+control-free label. GVfs host and account fields are not displayed. Each
+volume is measured independently with saturating `statvfs`; one inaccessible
+or disconnected volume reports its own failure without hiding healthy ones.
+
+Linux mount changes arrive through the kernel's pollable mount table and drive
+coalesced complete generation-safe reads. Review in Files revalidates the exact
+opaque identity/path/class immediately before using the desktop portal, so a
+stale label or replaced mount is never opened as authority. The pane flags low
+space and offers conservative guidance, but it does not fabricate storage
+categories or expose destructive cleanup until measurements and a reversible
+transaction exist. The full F11 contract and remaining reference-PC evidence
+are recorded in [`storage.md`](storage.md).
 
 Date & Time reads typed properties and the bounded `ListTimezones()` inventory
 from systemd-timedated. Time-zone and automatic-time changes validate locally,

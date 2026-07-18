@@ -12,26 +12,30 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Div,
-    Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit,
+    actions, div, font, img, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context,
+    Div, Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit,
     ParentElement, Render, RenderImage, SharedString, Stateful, StatefulInteractiveElement as _,
-    Styled, StyledImage as _, Window,
+    StrikethroughStyle, Styled, StyledImage as _, StyledText, TextRun, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
     ActionRequest, ActionResult, BundleImportAcceptRequest, BundleImportReviewRequest,
-    DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction, NotesPreviewSession,
-    NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents, NotesSearchSession,
-    NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents, NotesSession, NotesWorker,
-    NotesWorkerClient, NotesWorkerEvents, PreviewState, PreviewWorkerEvent, PreviewWorkerSendError,
-    ScheduledEdit, SearchState, SearchWorkerEvent, SearchWorkerSendError, SessionPhase,
-    WorkerCommand, WorkerEvent, WorkerFailure, WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS,
+    DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction, MarkdownPreviewState,
+    MarkdownPreviewWorkerEvent, MarkdownPreviewWorkerSendError, NotesMarkdownPreviewSession,
+    NotesMarkdownPreviewWorker, NotesMarkdownPreviewWorkerClient, NotesMarkdownPreviewWorkerEvents,
+    NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
+    NotesSearchSession, NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents,
+    NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PreviewState,
+    PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchState, SearchWorkerEvent,
+    SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent, WorkerFailure,
+    WorkerSendError, EVENT_CAPACITY, MARKDOWN_PREVIEW_EVENT_CAPACITY, MAX_SEARCH_RESULTS,
     PREVIEW_EVENT_CAPACITY, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{
     resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, MarkdownImportReview,
-    PendingReason, PreviewSize,
+    MarkdownPreviewBlock, MarkdownPreviewBlockKind, MarkdownPreviewDocument, PendingReason,
+    PreviewSize,
 };
 use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, NewNote,
@@ -63,9 +67,12 @@ struct NotesView {
     worker: Option<NotesWorkerClient>,
     search_worker: Option<NotesSearchWorkerClient>,
     preview_worker: Option<NotesPreviewWorkerClient>,
+    markdown_preview_worker: Option<NotesMarkdownPreviewWorkerClient>,
     session: NotesSession,
     search: NotesSearchSession,
     preview: NotesPreviewSession,
+    markdown_preview: NotesMarkdownPreviewSession,
+    markdown_preview_visible: bool,
     preview_image: Option<Arc<RenderImage>>,
     selected_attachment: Option<AttachmentId>,
     search_query: Entity<InputState>,
@@ -104,6 +111,7 @@ struct NotesView {
     bundle_import_completion: Option<BundleImportCompletion>,
     search_shutdown_requested: bool,
     preview_shutdown_requested: bool,
+    markdown_preview_shutdown_requested: bool,
     closing: bool,
 }
 
@@ -246,9 +254,12 @@ impl NotesView {
             worker: None,
             search_worker: None,
             preview_worker: None,
+            markdown_preview_worker: None,
             session: NotesSession::new(),
             search: NotesSearchSession::new(),
             preview: NotesPreviewSession::new(),
+            markdown_preview: NotesMarkdownPreviewSession::new(),
+            markdown_preview_visible: false,
             preview_image: None,
             selected_attachment: None,
             search_query,
@@ -287,6 +298,7 @@ impl NotesView {
             bundle_import_completion: None,
             search_shutdown_requested: false,
             preview_shutdown_requested: false,
+            markdown_preview_shutdown_requested: false,
             closing: false,
         };
 
@@ -350,6 +362,39 @@ impl NotesView {
                     }
                 })
                 .detach();
+            }
+        }
+
+        match NotesMarkdownPreviewWorker::start()
+            .map_err(|error| error.to_string())
+            .and_then(|worker| {
+                let (client, events) = worker.into_parts();
+                bridge_markdown_preview_events(events)
+                    .map(|receiver| (client, receiver))
+                    .map_err(|error| {
+                        format!("Notes could not start its Markdown preview bridge: {error}")
+                    })
+            }) {
+            Ok((client, receiver)) => {
+                view.markdown_preview_worker = Some(client);
+                cx.spawn_in(window, async move |this, cx| {
+                    while let Ok(event) = receiver.recv().await {
+                        if this
+                            .update_in(cx, |this, _window, cx| {
+                                this.apply_markdown_preview_event(event, cx)
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                })
+                .detach();
+            }
+            Err(message) => {
+                if view.message.is_none() {
+                    view.message = Some(message.into());
+                }
             }
         }
 
@@ -436,6 +481,27 @@ impl NotesView {
         }
         if bridged.event.project(&mut self.preview) {
             self.preview_image = bridged.rendered;
+            cx.notify();
+        }
+    }
+
+    fn apply_markdown_preview_event(
+        &mut self,
+        event: MarkdownPreviewWorkerEvent,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(&event, MarkdownPreviewWorkerEvent::Stopped { .. }) {
+            let unexpected = !self.closing && !self.markdown_preview_shutdown_requested;
+            self.markdown_preview.clear();
+            self.markdown_preview_shutdown_requested = true;
+            self.markdown_preview_worker = None;
+            if unexpected {
+                self.message = Some("Notes Markdown preview stopped unexpectedly".into());
+            }
+            cx.notify();
+            return;
+        }
+        if event.project(&mut self.markdown_preview) {
             cx.notify();
         }
     }
@@ -788,6 +854,73 @@ impl NotesView {
             .update(cx, |state, cx| state.set_value(body, window, cx));
         self.applying_snapshot = false;
         self.sync_attachment_preview(false, cx);
+        self.sync_markdown_preview(cx);
+    }
+
+    fn sync_markdown_preview(&mut self, cx: &mut Context<Self>) {
+        if !self.markdown_preview_visible {
+            self.markdown_preview.clear();
+            return;
+        }
+        let Some(snapshot) = self.session.snapshot() else {
+            self.markdown_preview.clear();
+            return;
+        };
+        let Some(note) = self.session.selected_note() else {
+            self.markdown_preview.clear();
+            return;
+        };
+        let Some(worker) = self.markdown_preview_worker.clone() else {
+            self.markdown_preview.clear();
+            self.message = Some("Notes Markdown preview is unavailable".into());
+            cx.notify();
+            return;
+        };
+        let request = match self.markdown_preview.request(
+            snapshot.revision,
+            note.id,
+            note.revision,
+            Arc::<str>::from(note.body.as_str()),
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.markdown_preview.clear();
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if let Err(error) = worker.try_run(request) {
+            self.markdown_preview.clear();
+            self.message = Some(error.to_string().into());
+        }
+        cx.notify();
+    }
+
+    fn toggle_markdown_preview(&mut self, cx: &mut Context<Self>) {
+        if self.markdown_preview_visible {
+            self.markdown_preview_visible = false;
+            self.markdown_preview.clear();
+            cx.notify();
+            return;
+        }
+        if !self.is_interactive_ready() || self.session.selected_note().is_none() {
+            return;
+        }
+        if self.latest_local_generation.is_some() {
+            self.message = Some("Wait for this note to finish saving before previewing it".into());
+            cx.notify();
+            return;
+        }
+        self.markdown_preview_visible = true;
+        self.message = None;
+        self.sync_markdown_preview(cx);
+    }
+
+    fn retry_markdown_preview(&mut self, cx: &mut Context<Self>) {
+        if self.markdown_preview_visible {
+            self.sync_markdown_preview(cx);
+        }
     }
 
     fn sync_attachment_preview(&mut self, force: bool, cx: &mut Context<Self>) {
@@ -2562,6 +2695,9 @@ impl NotesView {
             cx.notify();
             return;
         }
+        if !self.request_markdown_preview_shutdown(cx) {
+            return;
+        }
         if !self.request_preview_shutdown(cx) {
             return;
         }
@@ -2581,6 +2717,32 @@ impl NotesView {
         }
         self.closing = true;
         window.remove_window();
+    }
+
+    fn request_markdown_preview_shutdown(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.markdown_preview_shutdown_requested {
+            return true;
+        }
+        self.markdown_preview.clear();
+        let result = self
+            .markdown_preview_worker
+            .as_ref()
+            .ok_or(MarkdownPreviewWorkerSendError::Closed)
+            .and_then(NotesMarkdownPreviewWorkerClient::try_shutdown);
+        match result {
+            Ok(()) | Err(MarkdownPreviewWorkerSendError::Closed) => {
+                self.markdown_preview_shutdown_requested = true;
+                true
+            }
+            Err(error) => {
+                self.message = Some(
+                    format!("Notes Markdown preview is still finishing: {error}. Try again.")
+                        .into(),
+                );
+                cx.notify();
+                false
+            }
+        }
     }
 
     fn request_preview_shutdown(&mut self, cx: &mut Context<Self>) -> bool {
@@ -3296,10 +3458,31 @@ impl NotesView {
         let Some(note) = self.session.selected_note() else {
             return centered_state("No Note Selected", "Choose a note or create a new one.");
         };
-        let editable = self.is_interactive_ready() && !note.deleted;
+        let editable =
+            self.is_interactive_ready() && !note.deleted && !self.markdown_preview_visible;
         let words = self.body.read(cx).value().split_whitespace().count();
         let characters = self.body.read(cx).value().chars().count();
         let attachments = self.render_attachments(note, cx);
+        let body = if self.markdown_preview_visible {
+            self.render_markdown_preview(cx)
+        } else {
+            div()
+                .flex_1()
+                .min_h(px(0.0))
+                .px(px(44.0))
+                .pt_2()
+                .pb_4()
+                .text_size(px(16.0))
+                .line_height(px(24.0))
+                .text_color(mac::text())
+                .child(
+                    TextField::new(&self.body)
+                        .h_full()
+                        .appearance(false)
+                        .disabled(!editable),
+                )
+                .into_any_element()
+        };
         div()
             .size_full()
             .v_flex()
@@ -3309,10 +3492,47 @@ impl NotesView {
                     .pt_3()
                     .pb_1()
                     .flex()
-                    .justify_center()
+                    .items_center()
+                    .justify_between()
+                    .px(px(44.0))
                     .text_size(rmac_ui::text_px(11.0))
                     .text_color(mac::text_secondary())
-                    .child(date_label(note.modified_unix_ms)),
+                    .child(date_label(note.modified_unix_ms))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                Button::new("edit-markdown", "Edit")
+                                    .xsmall()
+                                    .selected(!self.markdown_preview_visible)
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        if this.markdown_preview_visible {
+                                            this.toggle_markdown_preview(cx)
+                                        }
+                                    })),
+                            )
+                            .child(
+                                Button::new("preview-markdown", "Preview")
+                                    .xsmall()
+                                    .selected(self.markdown_preview_visible)
+                                    .busy(matches!(
+                                        self.markdown_preview.state(),
+                                        MarkdownPreviewState::Loading { .. }
+                                    ))
+                                    .disabled(
+                                        !self.markdown_preview_visible
+                                            && (!self.is_interactive_ready()
+                                                || self.latest_local_generation.is_some()),
+                                    )
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        if !this.markdown_preview_visible {
+                                            this.toggle_markdown_preview(cx)
+                                        }
+                                    })),
+                            ),
+                    ),
             )
             .child(
                 div()
@@ -3354,23 +3574,7 @@ impl NotesView {
             .when_some(attachments, |element, attachments| {
                 element.child(attachments)
             })
-            .child(
-                div()
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .px(px(44.0))
-                    .pt_2()
-                    .pb_4()
-                    .text_size(px(16.0))
-                    .line_height(px(24.0))
-                    .text_color(mac::text())
-                    .child(
-                        TextField::new(&self.body)
-                            .h_full()
-                            .appearance(false)
-                            .disabled(!editable),
-                    ),
-            )
+            .child(body)
             .child(
                 div()
                     .h(px(24.0))
@@ -3388,6 +3592,217 @@ impl NotesView {
                     .child(format!("{characters} characters")),
             )
             .into_any_element()
+    }
+
+    fn render_markdown_preview(&self, cx: &mut Context<Self>) -> AnyElement {
+        match self.markdown_preview.state() {
+            MarkdownPreviewState::Empty => centered_state(
+                "Preview unavailable",
+                "Switch back to Edit, then try Preview again.",
+            ),
+            MarkdownPreviewState::Loading { .. } => centered_state(
+                "Formatting preview…",
+                "Parsing this exact saved note without loading linked content.",
+            ),
+            MarkdownPreviewState::Unavailable { error, .. } => div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .v_flex()
+                        .items_center()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(14.0))
+                                .font_weight(mac::BOLD)
+                                .child("Preview unavailable"),
+                        )
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(mac::text_secondary())
+                                .child(error.to_string()),
+                        )
+                        .child(
+                            Button::new("retry-markdown-preview", "Try Again")
+                                .small()
+                                .on_click(
+                                    cx.listener(|this, _, _, cx| this.retry_markdown_preview(cx)),
+                                ),
+                        ),
+                )
+                .into_any_element(),
+            MarkdownPreviewState::Ready { document, .. } => self.render_markdown_document(document),
+        }
+    }
+
+    fn render_markdown_document(&self, document: &MarkdownPreviewDocument) -> AnyElement {
+        if document.blocks().is_empty() {
+            return centered_state(
+                "Empty Note",
+                "This note has no Markdown content to preview.",
+            );
+        }
+        div()
+            .id("markdown-preview")
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
+            .px(px(44.0))
+            .pt_2()
+            .pb_6()
+            .v_flex()
+            .gap_3()
+            .when(document.truncated(), |element| {
+                element.child(
+                    div()
+                        .p_3()
+                        .rounded(px(8.0))
+                        .bg(mac::warning_background())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(mac::warning_text())
+                        .child(
+                            "Preview stopped at its safety limit. The saved note remains complete in Edit mode.",
+                        ),
+                )
+            })
+            .children(
+                document
+                    .blocks()
+                    .iter()
+                    .map(|block| self.render_markdown_block(block)),
+            )
+            .into_any_element()
+    }
+
+    fn render_markdown_block(&self, block: &MarkdownPreviewBlock) -> AnyElement {
+        if matches!(block.kind(), MarkdownPreviewBlockKind::ThematicBreak) {
+            return div()
+                .h(px(1.0))
+                .w_full()
+                .my_2()
+                .bg(mac::separator())
+                .into_any_element();
+        }
+        let mut text_runs = Vec::with_capacity(block.runs().len());
+        for run in block.runs() {
+            let style = run.style();
+            let mut text_font = font(if style.code {
+                rmac_ui::MONO_FONT
+            } else {
+                rmac_ui::UI_FONT
+            });
+            if style.bold {
+                text_font = text_font.bold();
+            }
+            if style.italic {
+                text_font = text_font.italic();
+            }
+            let range = run.range();
+            text_runs.push(TextRun {
+                len: range.len(),
+                font: text_font,
+                color: if style.inert_placeholder {
+                    mac::text_secondary()
+                } else if style.link_label {
+                    mac::notes_accent()
+                } else {
+                    mac::text()
+                },
+                background_color: style.code.then(mac::control_fill),
+                underline: None,
+                strikethrough: style.strikethrough.then(|| StrikethroughStyle {
+                    thickness: px(1.0),
+                    color: None,
+                }),
+            });
+        }
+        let styled = StyledText::new(block.text().to_string()).with_runs(text_runs);
+        let content = div()
+            .text_size(rmac_ui::text_px(16.0))
+            .line_height(rmac_ui::text_px(24.0))
+            .child(styled);
+        match block.kind() {
+            MarkdownPreviewBlockKind::Paragraph => content.into_any_element(),
+            MarkdownPreviewBlockKind::Heading(depth) => content
+                .text_size(rmac_ui::text_px(match depth {
+                    1 => 28.0,
+                    2 => 23.0,
+                    3 => 20.0,
+                    _ => 17.0,
+                }))
+                .line_height(rmac_ui::text_px(match depth {
+                    1 => 34.0,
+                    2 => 29.0,
+                    3 => 26.0,
+                    _ => 23.0,
+                }))
+                .font_weight(mac::BOLD)
+                .into_any_element(),
+            MarkdownPreviewBlockKind::BlockQuote => div()
+                .pl_3()
+                .border_l_2()
+                .border_color(mac::separator())
+                .text_color(mac::text_secondary())
+                .child(content)
+                .into_any_element(),
+            MarkdownPreviewBlockKind::ListItem {
+                depth,
+                ordered_index,
+                checked,
+            } => {
+                let marker = checked.map_or_else(
+                    || ordered_index.map_or_else(|| "•".to_string(), |index| format!("{index}.")),
+                    |checked| if checked { "☑".into() } else { "☐".into() },
+                );
+                div()
+                    .pl(px(f32::from(depth) * 18.0))
+                    .flex()
+                    .items_start()
+                    .gap_2()
+                    .child(
+                        div()
+                            .w(px(24.0))
+                            .text_color(mac::text_secondary())
+                            .child(marker),
+                    )
+                    .child(div().flex_1().child(content))
+                    .into_any_element()
+            }
+            MarkdownPreviewBlockKind::CodeBlock => div()
+                .p_3()
+                .rounded(px(8.0))
+                .bg(mac::control_fill())
+                .child(content)
+                .into_any_element(),
+            MarkdownPreviewBlockKind::TableRow { header } => div()
+                .px_3()
+                .py_2()
+                .border_b_1()
+                .border_color(mac::separator())
+                .when(header, |element| {
+                    element.bg(mac::control_fill()).font_weight(mac::BOLD)
+                })
+                .child(content)
+                .into_any_element(),
+            MarkdownPreviewBlockKind::Footnote => div()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(mac::text_secondary())
+                .child(content)
+                .into_any_element(),
+            MarkdownPreviewBlockKind::InertNotice => div()
+                .p_3()
+                .rounded(px(8.0))
+                .bg(mac::control_fill())
+                .text_size(rmac_ui::text_px(12.0))
+                .text_color(mac::text_secondary())
+                .child(content)
+                .into_any_element(),
+            MarkdownPreviewBlockKind::ThematicBreak => unreachable!("handled above"),
+        }
     }
 
     fn render_migration_review(
@@ -4526,6 +4941,20 @@ impl NotesView {
 impl Drop for NotesView {
     fn drop(&mut self) {
         if !self.closing {
+            self.markdown_preview.clear();
+            if let Some(markdown_preview_worker) = &self.markdown_preview_worker {
+                if matches!(
+                    markdown_preview_worker.try_shutdown(),
+                    Err(MarkdownPreviewWorkerSendError::Full)
+                ) {
+                    let markdown_preview_worker = markdown_preview_worker.clone();
+                    let _ = thread::Builder::new()
+                        .name("rmac-notes-markdown-preview-close".into())
+                        .spawn(move || {
+                            let _ = markdown_preview_worker.shutdown_blocking();
+                        });
+                }
+            }
             self.preview.clear();
             if let Some(preview_worker) = &self.preview_worker {
                 if matches!(
@@ -4713,6 +5142,22 @@ fn bridge_preview_events(
                     .send_blocking(PreviewBridgeEvent { event, rendered })
                     .is_err()
                 {
+                    break;
+                }
+            }
+        })?;
+    Ok(receiver)
+}
+
+fn bridge_markdown_preview_events(
+    events: NotesMarkdownPreviewWorkerEvents,
+) -> io::Result<async_channel::Receiver<MarkdownPreviewWorkerEvent>> {
+    let (sender, receiver) = async_channel::bounded(MARKDOWN_PREVIEW_EVENT_CAPACITY);
+    thread::Builder::new()
+        .name("rmac-notes-ui-markdown-preview-events".into())
+        .spawn(move || {
+            while let Ok(event) = events.recv() {
+                if sender.send_blocking(event).is_err() {
                     break;
                 }
             }

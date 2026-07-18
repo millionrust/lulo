@@ -4,6 +4,7 @@
 //! debounce, background repository, and conflict state so the Notes view can
 //! remain a renderer of accepted snapshots rather than a filesystem authority.
 
+mod markdown_preview_worker;
 mod preview_worker;
 mod scheduler;
 mod search;
@@ -11,6 +12,13 @@ mod search_worker;
 mod session;
 mod worker;
 
+pub use markdown_preview_worker::{
+    MarkdownPreviewRequest, MarkdownPreviewRequestError, MarkdownPreviewState,
+    MarkdownPreviewWorkerEvent, MarkdownPreviewWorkerSendError, MarkdownPreviewWorkerStartError,
+    NotesMarkdownPreviewSession, NotesMarkdownPreviewWorker, NotesMarkdownPreviewWorkerClient,
+    NotesMarkdownPreviewWorkerEvents, MARKDOWN_PREVIEW_COMMAND_CAPACITY,
+    MARKDOWN_PREVIEW_EVENT_CAPACITY,
+};
 pub use preview_worker::{
     NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
     PreviewCancellation, PreviewGeneration, PreviewRequest, PreviewRequestError, PreviewState,

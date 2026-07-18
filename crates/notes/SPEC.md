@@ -654,10 +654,22 @@ cancels the session and orders search-worker shutdown before dropping the view.
 Rendering the returned field-level byte spans as highlighted title/body/tag/
 attachment fragments and Linux search performance evidence still remain.
 
-Known live-app gaps now include formatted Markdown preview, rich search-match
-highlighting, richer conflict-resolution choices, semantic accessibility, and
-Linux runtime/visual evidence. The accepted store
-remains local-only and makes no cloud-sync claim.
+A live Edit/Preview control now formats only the exact readback-accepted note
+revision. A dedicated bounded worker parses GFM plus frontmatter outside GPUI;
+each request carries the accepted library revision, stable note identity, note
+revision, generation, private source, and cancellation token. The session
+rejects late or mismatched output, exposes typed Loading/Ready/Unavailable
+states, and orders cancellation and worker shutdown during close and drop. The
+GPUI-free preview document caps source, output, nesting, blocks, and styled
+runs. It retains readable headings, emphasis, lists, task state, quotes, code,
+tables, and footnotes while discarding link and image URLs, replacing linked
+images/raw HTML/frontmatter with inert text, and exposing no clickable or
+network-loading element. Safety-limit truncation is explicit and never changes
+the editable source.
+
+Known live-app gaps now include rich search-match highlighting, richer
+conflict-resolution choices, semantic accessibility, and Linux runtime/visual
+evidence. The accepted store remains local-only and makes no cloud-sync claim.
 Migration must preserve every readable existing note and attachment; it must
 not delete the prototype library after a partial import.
 

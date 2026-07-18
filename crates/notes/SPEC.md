@@ -242,8 +242,19 @@ Startup removes a rolled-back intent without touching attachments, resumes an
 accepted or proven-descendant cleanup idempotently, preserves changed or linked
 files, and blocks later writes on malformed, ambiguous, or incomplete cleanup.
 Repository retry retains the purge plan, and `AcceptedCommit` reports purge
-cleanup independently from general maintenance. The runtime permanent-delete
-actions and confirmation UI are still intentionally absent.
+cleanup independently from general maintenance.
+
+The repository worker now exposes separate one-note permanent-delete and Empty
+Trash requests only through `commit_purge`. It retains the exact note or
+library revision in the action, reports stable counts and checked bytes as
+`PermanentDeleteAccepted`/`EmptyTrashAccepted` rather than claiming completion,
+and carries `purge_cleanup_pending` on the accepted commit. Startup notices or
+an accepted purge with unfinished cleanup project to a distinct Maintenance
+session phase, so the view cannot present ordinary Ready state or permit later
+writes silently. Pending metadata commits keep the purge plan through Retry,
+and stale/live-note/empty/mixed requests remain typed rejections. The GPUI
+confirmation sheets, destructive-action wiring, and Linux failure evidence are
+still absent, so the running prototype does not yet expose these operations.
 
 The version-2 library schema now carries authoritative sort order and reads
 version 1 with the documented Date Edited default. A bounded deterministic
@@ -382,7 +393,7 @@ Known live-prototype gaps include path-based identity and pins, synchronous
 scans/reads on the UI thread, a permanent 1.5-second save loop, no versioned
 manifest/journal or aggregate bounds, no exact conflict preflight/readback, no
 recovery records, silent scan/decode failures, no live permanent file/folder
-deletion UI,
+deletion confirmation/action UI,
 attachment copies outside a note transaction, no orphan policy, no safe import/
 export/bundle format, no consumption of the derived cancellable index, and no
 Linux accessibility/runtime evidence. Migration must preserve every readable

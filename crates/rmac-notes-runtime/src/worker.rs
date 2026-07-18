@@ -53,6 +53,13 @@ pub enum LibraryAction {
         note_id: NoteId,
         expected_revision: u64,
     },
+    DeleteNotePermanently {
+        note_id: NoteId,
+        expected_revision: u64,
+    },
+    EmptyTrash {
+        expected_library_revision: u64,
+    },
 }
 
 impl fmt::Debug for LibraryAction {
@@ -67,6 +74,8 @@ impl fmt::Debug for LibraryAction {
             Self::SetSort(_) => "SetSort",
             Self::TrashNote { .. } => "TrashNote",
             Self::RestoreNote { .. } => "RestoreNote",
+            Self::DeleteNotePermanently { .. } => "DeleteNotePermanently",
+            Self::EmptyTrash { .. } => "EmptyTrash",
         })
     }
 }
@@ -285,8 +294,22 @@ pub enum ActionResult {
     CreatedNote(NoteId),
     CreatedFolder(FolderId),
     Changed,
-    DeletedFolder { moved_notes: usize },
-    RestoredNote { folder_id: Option<FolderId> },
+    DeletedFolder {
+        moved_notes: usize,
+    },
+    RestoredNote {
+        folder_id: Option<FolderId>,
+    },
+    PermanentDeleteAccepted {
+        note_id: NoteId,
+        attachment_count: usize,
+        attachment_bytes: u64,
+    },
+    EmptyTrashAccepted {
+        note_count: usize,
+        attachment_count: usize,
+        attachment_bytes: u64,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -1231,7 +1254,7 @@ fn commit_edit(
         result: ActionResult::Edited(note_id),
         draft: Some(draft),
     };
-    commit_transaction(ready, transaction, context, events)
+    commit_transaction(ready, transaction, None, context, events)
 }
 
 fn commit_action(
@@ -1243,6 +1266,7 @@ fn commit_action(
         Ok(transaction) => transaction,
         Err(error) => return reject_mutation(events, request.request_id, None, error),
     };
+    let mut purge = None;
     let result = match request.action {
         LibraryAction::CreateNote(note) => {
             transaction.create_note(note).map(ActionResult::CreatedNote)
@@ -1293,6 +1317,33 @@ fn commit_action(
         } => transaction
             .restore_note(note_id, expected_revision)
             .map(|folder_id| ActionResult::RestoredNote { folder_id }),
+        LibraryAction::DeleteNotePermanently {
+            note_id,
+            expected_revision,
+        } => transaction
+            .purge_trashed_note(note_id, expected_revision)
+            .map(|plan| {
+                let result = ActionResult::PermanentDeleteAccepted {
+                    note_id,
+                    attachment_count: plan.attachment_ids.len(),
+                    attachment_bytes: plan.attachment_bytes,
+                };
+                purge = Some(plan);
+                result
+            }),
+        LibraryAction::EmptyTrash {
+            expected_library_revision,
+        } => transaction
+            .empty_trash(expected_library_revision)
+            .map(|plan| {
+                let result = ActionResult::EmptyTrashAccepted {
+                    note_count: plan.note_ids.len(),
+                    attachment_count: plan.attachment_ids.len(),
+                    attachment_bytes: plan.attachment_bytes,
+                };
+                purge = Some(plan);
+                result
+            }),
     };
     let result = match result {
         Ok(result) => result,
@@ -1304,16 +1355,21 @@ fn commit_action(
         result,
         draft: None,
     };
-    commit_transaction(ready, transaction, context, events)
+    commit_transaction(ready, transaction, purge, context, events)
 }
 
 fn commit_transaction(
     ready: &mut ReadyState,
     transaction: rmac_notes_store::LibraryTransaction,
+    purge: Option<rmac_notes_store::PurgePlan>,
     context: RequestContext,
     events: &SyncSender<WorkerEvent>,
 ) -> CommitDisposition {
-    match ready.library.commit(transaction) {
+    let outcome = match purge {
+        Some(plan) => ready.library.commit_purge(transaction, plan),
+        None => ready.library.commit(transaction),
+    };
+    match outcome {
         Ok(commit) => {
             let event = AcceptedEvent {
                 request_id: context.request_id,
@@ -1487,6 +1543,15 @@ mod tests {
             },
             event => panic!("expected accepted create, got {event:?}"),
         }
+    }
+
+    fn apply_action(worker: &NotesWorker, request_id: u64, action: LibraryAction) -> WorkerEvent {
+        worker
+            .try_send(WorkerCommand::Apply(
+                ActionRequest::new(request_id, action).unwrap(),
+            ))
+            .unwrap();
+        worker.recv_timeout(Duration::from_secs(2)).unwrap()
     }
 
     fn scheduled_edit(
@@ -1998,6 +2063,141 @@ mod tests {
         ));
         worker.try_send(WorkerCommand::Shutdown).unwrap();
         let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn permanent_delete_requires_exact_trash_revision_and_verified_cleanup() {
+        let (container, paths) = roots("permanent-delete");
+        let worker = NotesWorker::start(paths).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+
+        assert!(matches!(
+            apply_action(
+                &worker,
+                2,
+                LibraryAction::DeleteNotePermanently {
+                    note_id,
+                    expected_revision: 1,
+                },
+            ),
+            WorkerEvent::Rejected(RejectedEvent {
+                failure: WorkerFailure::Mutation(MutationError::NoteNotTrashed),
+                ..
+            })
+        ));
+        let trashed = match apply_action(
+            &worker,
+            3,
+            LibraryAction::TrashNote {
+                note_id,
+                expected_revision: created.snapshot.notes[0].revision,
+            },
+        ) {
+            WorkerEvent::Accepted(event) => event.accepted,
+            event => panic!("expected accepted Trash transition, got {event:?}"),
+        };
+        assert!(trashed.snapshot.notes[0].deleted);
+
+        let deleted = match apply_action(
+            &worker,
+            4,
+            LibraryAction::DeleteNotePermanently {
+                note_id,
+                expected_revision: trashed.snapshot.notes[0].revision,
+            },
+        ) {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted permanent delete, got {event:?}"),
+        };
+        assert_eq!(
+            deleted.result,
+            ActionResult::PermanentDeleteAccepted {
+                note_id,
+                attachment_count: 0,
+                attachment_bytes: 0,
+            }
+        );
+        assert!(!deleted.commit.purge_cleanup_pending);
+        assert!(deleted.accepted.snapshot.notes.is_empty());
+
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn empty_trash_never_sweeps_a_newer_library_revision() {
+        let (container, paths) = roots("empty-trash");
+        let worker = NotesWorker::start(paths).unwrap();
+        ready(&worker);
+        let (first, first_created) = create_note(&worker, 1);
+        let (second, second_created) = create_note(&worker, 2);
+        let first_trashed = match apply_action(
+            &worker,
+            3,
+            LibraryAction::TrashNote {
+                note_id: first,
+                expected_revision: first_created.snapshot.notes[0].revision,
+            },
+        ) {
+            WorkerEvent::Accepted(event) => event.accepted,
+            event => panic!("expected first Trash transition, got {event:?}"),
+        };
+        let second_revision = second_created
+            .snapshot
+            .notes
+            .iter()
+            .find(|note| note.id == second)
+            .unwrap()
+            .revision;
+        let second_trashed = match apply_action(
+            &worker,
+            4,
+            LibraryAction::TrashNote {
+                note_id: second,
+                expected_revision: second_revision,
+            },
+        ) {
+            WorkerEvent::Accepted(event) => event.accepted,
+            event => panic!("expected second Trash transition, got {event:?}"),
+        };
+
+        assert!(matches!(
+            apply_action(
+                &worker,
+                5,
+                LibraryAction::EmptyTrash {
+                    expected_library_revision: first_trashed.snapshot.revision,
+                },
+            ),
+            WorkerEvent::Rejected(RejectedEvent {
+                failure: WorkerFailure::Mutation(MutationError::RevisionConflict),
+                ..
+            })
+        ));
+        let emptied = match apply_action(
+            &worker,
+            6,
+            LibraryAction::EmptyTrash {
+                expected_library_revision: second_trashed.snapshot.revision,
+            },
+        ) {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted Empty Trash, got {event:?}"),
+        };
+        assert_eq!(
+            emptied.result,
+            ActionResult::EmptyTrashAccepted {
+                note_count: 2,
+                attachment_count: 0,
+                attachment_bytes: 0,
+            }
+        );
+        assert!(!emptied.commit.purge_cleanup_pending);
+        assert!(emptied.accepted.snapshot.notes.is_empty());
+
         drop(worker);
         std::fs::remove_dir_all(container).unwrap();
     }

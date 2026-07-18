@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
-use rmac_notes_storage::{PendingReason, StartupError};
+use rmac_notes_storage::{PendingReason, RecoveryNotice, StartupError};
 use rmac_notes_store::{FolderId, FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder};
 
 use crate::{
@@ -23,6 +23,9 @@ pub enum SessionPhase {
     Starting,
     MigrationReview(MigrationReviewSummary),
     Ready,
+    Maintenance {
+        purge_cleanup_pending: bool,
+    },
     Pending {
         request_id: u64,
         generation: Option<EditGeneration>,
@@ -166,8 +169,9 @@ impl NotesSession {
                     self.phase,
                     SessionPhase::Starting | SessionPhase::MigrationReview(_)
                 );
+                let phase = phase_from_notices(&event.notices);
                 self.adopt_snapshot(event.snapshot, None, false);
-                self.phase = SessionPhase::Ready;
+                self.phase = phase;
                 self.last_rejection = None;
                 if entering_ready {
                     self.draft_review = None;
@@ -226,8 +230,15 @@ impl NotesSession {
                     }
                     _ => (self.selected_note, false),
                 };
+                let phase = if event.commit.maintenance_pending {
+                    SessionPhase::Maintenance {
+                        purge_cleanup_pending: event.commit.purge_cleanup_pending,
+                    }
+                } else {
+                    SessionPhase::Ready
+                };
                 self.adopt_snapshot(event.accepted.snapshot, preferred, reveal_preferred);
-                self.phase = SessionPhase::Ready;
+                self.phase = phase;
                 self.last_rejection = None;
             }
             WorkerEvent::Pending(event) => {
@@ -323,6 +334,30 @@ impl NotesSession {
     }
 }
 
+fn phase_from_notices(notices: &[RecoveryNotice]) -> SessionPhase {
+    let maintenance_pending = notices.iter().any(|notice| {
+        matches!(
+            notice,
+            RecoveryNotice::MaintenancePending
+                | RecoveryNotice::CorruptJournalPreserved
+                | RecoveryNotice::CorruptPurgePreserved
+                | RecoveryNotice::PurgeCleanupPending
+        )
+    });
+    if maintenance_pending {
+        SessionPhase::Maintenance {
+            purge_cleanup_pending: notices.iter().any(|notice| {
+                matches!(
+                    notice,
+                    RecoveryNotice::CorruptPurgePreserved | RecoveryNotice::PurgeCleanupPending
+                )
+            }),
+        }
+    } else {
+        SessionPhase::Ready
+    }
+}
+
 impl Default for NotesSession {
     fn default() -> Self {
         Self::new()
@@ -410,6 +445,7 @@ mod tests {
             commit: AcceptedCommit {
                 revision: created.revision,
                 maintenance_pending: false,
+                purge_cleanup_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(created),
@@ -577,6 +613,7 @@ mod tests {
             commit: AcceptedCommit {
                 revision: 4,
                 maintenance_pending: false,
+                purge_cleanup_pending: false,
                 recovered_after_error: false,
             },
             accepted: snapshot_event(snapshot),
@@ -600,6 +637,44 @@ mod tests {
         assert!(!debug.contains("private-tag"));
         assert!(!debug.contains("Pinned"));
         assert!(debug.contains("note_count"));
+    }
+
+    #[test]
+    fn purge_cleanup_attention_is_not_projected_as_ordinary_ready() {
+        let mut session = NotesSession::new();
+        let mut event = snapshot_event(snapshot(SortOrder::Edited));
+        event.notices = vec![RecoveryNotice::PurgeCleanupPending];
+
+        session.apply(WorkerEvent::Ready(event));
+
+        assert_eq!(
+            session.phase(),
+            &SessionPhase::Maintenance {
+                purge_cleanup_pending: true,
+            }
+        );
+        assert!(session.snapshot().is_some());
+
+        let accepted = snapshot(SortOrder::Edited);
+        session.apply(WorkerEvent::Accepted(AcceptedEvent {
+            request_id: 90,
+            generation: None,
+            result: ActionResult::Changed,
+            commit: AcceptedCommit {
+                revision: accepted.revision,
+                maintenance_pending: true,
+                purge_cleanup_pending: true,
+                recovered_after_error: false,
+            },
+            accepted: snapshot_event(accepted),
+            draft_cleanup_pending: false,
+        }));
+        assert_eq!(
+            session.phase(),
+            &SessionPhase::Maintenance {
+                purge_cleanup_pending: true,
+            }
+        );
     }
 
     #[test]

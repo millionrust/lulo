@@ -12,9 +12,11 @@ pub(crate) enum Operation {
     LoadRecovery,
     MigrateRecovery,
     RemoveRecovery,
+    ReadbackDocument,
     ResolveRecoveryPath,
     SaveDocument,
     SaveRecovery,
+    ValidateDocumentRevision,
 }
 
 impl fmt::Display for Operation {
@@ -25,12 +27,33 @@ impl fmt::Display for Operation {
             Self::LoadRecovery => "load recovery data",
             Self::MigrateRecovery => "migrate recovery data",
             Self::RemoveRecovery => "remove recovery data",
+            Self::ReadbackDocument => "read back the saved document",
             Self::ResolveRecoveryPath => "resolve the recovery path",
             Self::SaveDocument => "save document",
             Self::SaveRecovery => "save recovery data",
+            Self::ValidateDocumentRevision => "validate the document revision",
         })
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SaveDocumentError {
+    Conflict,
+    Io(Failure),
+    ReadbackMismatch,
+}
+
+impl fmt::Display for SaveDocumentError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Conflict => "the document changed outside Text Editor; reload it or save a copy",
+            Self::Io(_) => "the document could not be written or verified",
+            Self::ReadbackMismatch => "the saved document did not match during readback",
+        })
+    }
+}
+
+impl std::error::Error for SaveDocumentError {}
 
 pub(crate) fn read(
     storage: &impl Storage,
@@ -42,11 +65,27 @@ pub(crate) fn read(
         .map_err(|error| Failure::from_io(operation, path, error))
 }
 
+pub(crate) fn read_bounded(
+    storage: &impl Storage,
+    operation: Operation,
+    path: &Path,
+    maximum: usize,
+) -> Result<Vec<u8>, Failure> {
+    storage
+        .read_bounded(path, maximum)
+        .map_err(|error| Failure::from_io(operation, path, error))
+}
+
 pub(crate) fn load_recovery(
     storage: &impl Storage,
     path: &Path,
 ) -> Result<Option<String>, Failure> {
-    match read(storage, Operation::LoadRecovery, path) {
+    match read_bounded(
+        storage,
+        Operation::LoadRecovery,
+        path,
+        crate::document::MAX_DOCUMENT_BYTES,
+    ) {
         Ok(bytes) if bytes.is_empty() => Ok(None),
         Ok(bytes) => String::from_utf8(bytes).map(Some).map_err(|error| {
             Failure::from_io(
@@ -69,6 +108,41 @@ pub(crate) fn write(
     storage
         .write_atomic(path, contents.as_ref())
         .map_err(|error| Failure::from_io(operation, path, error))
+}
+
+/// Replace an opened document only when its complete bytes still match the
+/// revision retained at open/last-save, then require exact authoritative
+/// readback. `None` is reserved for a chooser-approved new destination.
+pub(crate) fn write_document_if_unchanged(
+    storage: &impl Storage,
+    path: &Path,
+    expected: Option<&[u8]>,
+    contents: &[u8],
+) -> Result<(), SaveDocumentError> {
+    if let Some(expected) = expected {
+        let current = read_bounded(
+            storage,
+            Operation::ValidateDocumentRevision,
+            path,
+            crate::document::MAX_DOCUMENT_BYTES,
+        )
+        .map_err(SaveDocumentError::Io)?;
+        if current != expected {
+            return Err(SaveDocumentError::Conflict);
+        }
+    }
+    write(storage, Operation::SaveDocument, path, contents).map_err(SaveDocumentError::Io)?;
+    let readback = read_bounded(
+        storage,
+        Operation::ReadbackDocument,
+        path,
+        crate::document::MAX_DOCUMENT_BYTES,
+    )
+    .map_err(SaveDocumentError::Io)?;
+    if readback != contents {
+        return Err(SaveDocumentError::ReadbackMismatch);
+    }
+    Ok(())
 }
 
 pub(crate) fn save_recovery(
@@ -238,6 +312,7 @@ mod tests {
     struct MemoryStorage {
         files: RefCell<HashMap<PathBuf, Vec<u8>>>,
         fail_write: bool,
+        ignore_write: bool,
         fail_remove: Option<PathBuf>,
     }
 
@@ -271,6 +346,9 @@ mod tests {
                     io::ErrorKind::PermissionDenied,
                     "injected migration failure",
                 ));
+            }
+            if self.ignore_write {
+                return Ok(());
             }
             self.files
                 .borrow_mut()
@@ -384,5 +462,34 @@ mod tests {
         assert_eq!(failure.operation, Operation::RemoveRecovery);
         assert!(storage.files.borrow().contains_key(primary));
         assert!(!storage.files.borrow().contains_key(legacy));
+    }
+
+    #[test]
+    fn exact_revision_save_writes_and_requires_exact_readback() {
+        let path = Path::new("document.txt");
+        let storage = MemoryStorage::with_file(path, "before");
+        write_document_if_unchanged(&storage, path, Some(b"before"), b"after").unwrap();
+        assert_eq!(storage.files.borrow().get(path).unwrap(), b"after");
+    }
+
+    #[test]
+    fn external_change_is_refused_without_overwriting_authority() {
+        let path = Path::new("document.txt");
+        let storage = MemoryStorage::with_file(path, "external edit");
+        let error =
+            write_document_if_unchanged(&storage, path, Some(b"opened revision"), b"local edit")
+                .unwrap_err();
+        assert_eq!(error, SaveDocumentError::Conflict);
+        assert_eq!(storage.files.borrow().get(path).unwrap(), b"external edit");
+    }
+
+    #[test]
+    fn ineffective_atomic_write_fails_authoritative_readback() {
+        let path = Path::new("document.txt");
+        let mut storage = MemoryStorage::with_file(path, "before");
+        storage.ignore_write = true;
+        let error =
+            write_document_if_unchanged(&storage, path, Some(b"before"), b"after").unwrap_err();
+        assert_eq!(error, SaveDocumentError::ReadbackMismatch);
     }
 }

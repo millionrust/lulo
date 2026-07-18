@@ -6,6 +6,7 @@
 //! autosave to a recovery file, and a Format affordance (monospace + font
 //! size). Shares the editing configuration with Notes via `rmac-editor`.
 
+mod document;
 mod rtf;
 mod storage;
 
@@ -31,6 +32,7 @@ actions!(
         NewFile,
         OpenFile,
         SaveFile,
+        SaveFileAs,
         ToggleFind,
         ToggleReplace,
         FindNext,
@@ -78,6 +80,8 @@ enum ActiveAlert {
     Recover(String),
     /// The buffer is dirty before `Pending` — Save / Don't Save / Cancel.
     ConfirmSave(Pending),
+    /// The opened document no longer matches its retained exact revision.
+    Conflict,
     /// A document open/save error — title + message + OK.
     Error {
         title: &'static str,
@@ -85,12 +89,40 @@ enum ActiveAlert {
     },
 }
 
+enum LoadedFile {
+    Plain(document::DecodedDocument),
+    RichText {
+        text: String,
+        runs: Vec<rtf::RtfRun>,
+    },
+}
+
+#[derive(Debug)]
+enum SaveFailure {
+    Codec(document::CodecError),
+    Storage(storage::SaveDocumentError),
+}
+
+impl std::fmt::Display for SaveFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Codec(error) => error.fmt(formatter),
+            Self::Storage(error) => error.fmt(formatter),
+        }
+    }
+}
+
 struct EditorView {
     input: Entity<InputState>,
     path: Option<PathBuf>,
+    /// Complete bytes read at open or exact successful save readback. Existing
+    /// document saves must still match this revision immediately before write.
+    saved_bytes: Option<Vec<u8>>,
+    text_format: document::TextFormat,
     /// Text as last saved (or opened/new) — the dirty baseline.
     saved_value: String,
     dirty: bool,
+    file_busy: bool,
 
     // Find / replace bar
     find_open: bool,
@@ -154,6 +186,48 @@ fn recovery_path_for_platform(
     }
 }
 
+fn load_selected_document(path: &Path) -> Result<LoadedFile, String> {
+    let bytes = storage::read_bounded(
+        &storage::RealStorage,
+        storage::Operation::LoadDocument,
+        path,
+        document::MAX_DOCUMENT_BYTES,
+    )
+    .map_err(|_| "Text Editor could not read the selected document".to_string())?;
+    let is_rtf = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"));
+    if is_rtf {
+        let runs = rtf::parse_rtf(&bytes)
+            .ok_or_else(|| "the RTF document could not be decoded safely".to_string())?;
+        let text = runs.iter().map(|run| run.text.as_str()).collect();
+        Ok(LoadedFile::RichText { text, runs })
+    } else {
+        document::decode(bytes)
+            .map(LoadedFile::Plain)
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn save_document(
+    path: &Path,
+    expected: Option<&[u8]>,
+    text: &str,
+    format: document::TextFormat,
+) -> Result<document::DecodedDocument, SaveFailure> {
+    let encoded = document::encode(text, format).map_err(SaveFailure::Codec)?;
+    storage::write_document_if_unchanged(&storage::RealStorage, path, expected, &encoded)
+        .map_err(SaveFailure::Storage)?;
+    // Encoding a valid Rust string through a supported format is guaranteed to
+    // decode. Keeping this fallible preserves the invariant without panicking.
+    document::decode(encoded).map_err(SaveFailure::Codec)
+}
+
+fn recovery_failure_message() -> SharedString {
+    "Text Editor could not safely update its private recovery data. The current buffer remains open; save the document before closing."
+        .into()
+}
+
 impl EditorView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input = rmac_editor::multiline("", window, cx);
@@ -184,6 +258,7 @@ impl EditorView {
             KeyBinding::new("cmd-n", NewFile, Some(CTX)),
             KeyBinding::new("cmd-o", OpenFile, Some(CTX)),
             KeyBinding::new("cmd-s", SaveFile, Some(CTX)),
+            KeyBinding::new("cmd-shift-s", SaveFileAs, Some(CTX)),
             KeyBinding::new("cmd-f", ToggleFind, Some(CTX)),
             KeyBinding::new("cmd-shift-f", ToggleReplace, Some(CTX)),
             KeyBinding::new("cmd-g", FindNext, Some(CTX)),
@@ -221,16 +296,17 @@ impl EditorView {
             }
         };
         let alert = loaded.content.map(ActiveAlert::Recover);
-        let recovery_error = loaded
-            .warning
-            .map(|failure| SharedString::from(failure.to_string()));
+        let recovery_error = loaded.warning.map(|_| recovery_failure_message());
 
         Self {
             alert,
             input,
             path: None,
+            saved_bytes: None,
+            text_format: document::TextFormat::default(),
             saved_value: String::new(),
             dirty: false,
+            file_busy: false,
             find_open: false,
             replace_mode: false,
             find_input,
@@ -301,8 +377,8 @@ impl EditorView {
         .detach();
     }
 
-    fn record_recovery_failure(&mut self, failure: storage::Failure, cx: &mut Context<Self>) {
-        self.recovery_error = Some(failure.to_string().into());
+    fn record_recovery_failure(&mut self, _failure: storage::Failure, cx: &mut Context<Self>) {
+        self.recovery_error = Some(recovery_failure_message());
         cx.notify();
     }
 
@@ -334,16 +410,24 @@ impl EditorView {
     // ── File operations ─────────────────────────────────────────────────
 
     fn new_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
         self.guarded(Pending::New, window, cx);
     }
 
     fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
         self.guarded(Pending::Open, window, cx);
     }
 
     fn do_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.input.update(cx, |s, cx| s.set_value("", window, cx));
         self.path = None;
+        self.saved_bytes = None;
+        self.text_format = document::TextFormat::default();
         self.rtf_runs = None;
         self.mark_clean(String::new(), cx);
         cx.notify();
@@ -355,6 +439,8 @@ impl EditorView {
     fn edit_as_plain_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.rtf_runs.take().is_some() {
             self.path = None;
+            self.saved_bytes = None;
+            self.text_format = document::TextFormat::default();
             self.dirty = true; // an unsaved derived document
             self.schedule_autosave(cx);
             cx.notify();
@@ -362,6 +448,11 @@ impl EditorView {
     }
 
     fn do_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
+        self.file_busy = true;
+        cx.notify();
         let rx = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -369,45 +460,63 @@ impl EditorView {
             prompt: None,
         });
         cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(paths))) = rx.await else {
+            let picker = rx.await;
+            let Ok(Ok(Some(paths))) = picker else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.file_busy = false;
+                    if !matches!(picker, Ok(Ok(None))) {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Could not open the file chooser.",
+                            message: "The desktop file chooser is temporarily unavailable.".into(),
+                        });
+                    }
+                    cx.notify();
+                });
                 return;
             };
             let Some(path) = paths.into_iter().next() else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.file_busy = false;
+                    cx.notify();
+                });
                 return;
             };
-            let bytes = match storage::read(
-                &storage::RealStorage,
-                storage::Operation::LoadDocument,
-                &path,
-            ) {
-                Ok(bytes) => bytes,
-                Err(failure) => {
-                    let _ = this.update_in(cx, |this, _, cx| {
+            let loaded = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move { load_selected_document(&path) }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.file_busy = false;
+                match loaded {
+                    Ok(LoadedFile::Plain(document)) => {
+                        this.input.update(cx, |state, cx| {
+                            state.set_value(document.text.clone(), window, cx)
+                        });
+                        this.path = Some(path);
+                        this.saved_bytes = Some(document.original_bytes);
+                        this.text_format = document.format;
+                        this.rtf_runs = None;
+                        this.mark_clean(document.text, cx);
+                    }
+                    Ok(LoadedFile::RichText { text, runs }) => {
+                        this.input
+                            .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+                        this.path = Some(path);
+                        this.saved_bytes = None;
+                        this.text_format = document::TextFormat::default();
+                        this.rtf_runs = Some(runs);
+                        this.mark_clean(text, cx);
+                    }
+                    Err(message) => {
                         this.alert = Some(ActiveAlert::Error {
                             title: "Failed to open the file.",
-                            message: failure.to_string(),
+                            message,
                         });
-                        cx.notify();
-                    });
-                    return;
+                    }
                 }
-            };
-            // `.rtf` files open as a read-only formatted preview; the editable
-            // body holds the extracted plain text.
-            let is_rtf = path
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("rtf"));
-            let rtf_runs = if is_rtf { rtf::parse_rtf(&bytes) } else { None };
-            let content = match &rtf_runs {
-                Some(runs) => runs.iter().map(|r| r.text.as_str()).collect::<String>(),
-                None => String::from_utf8_lossy(&bytes).into_owned(),
-            };
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.input
-                    .update(cx, |s, cx| s.set_value(content.clone(), window, cx));
-                this.path = Some(path);
-                this.rtf_runs = rtf_runs;
-                this.mark_clean(content, cx);
                 cx.notify();
             });
         })
@@ -415,7 +524,18 @@ impl EditorView {
     }
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
         self.save_with(None, window, cx);
+    }
+
+    fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy || self.rtf_runs.is_some() {
+            return;
+        }
+        let content = self.input.read(cx).value().to_string();
+        self.save_to_new_path(content, self.text_format, None, window, cx);
     }
 
     /// Save the buffer; if `then` is set, run that pending action only **after**
@@ -426,74 +546,155 @@ impl EditorView {
         if self.rtf_runs.is_some() {
             return;
         }
-        let content = self.input.read(cx).value().to_string();
-        if let Some(path) = self.path.clone() {
-            match storage::write(
-                &storage::RealStorage,
-                storage::Operation::SaveDocument,
-                &path,
-                &content,
-            ) {
-                Ok(()) => {
-                    let recovery_cleared = self.mark_clean(content, cx);
-                    cx.notify();
-                    if recovery_cleared {
-                        if let Some(pending) = then {
-                            self.perform(pending, window, cx);
-                        }
-                    }
-                }
-                Err(failure) => {
-                    // Write failed: keep dirty state and do NOT run the pending
-                    // (destructive) action, so unsaved changes are preserved.
-                    self.alert = Some(ActiveAlert::Error {
-                        title: "Failed to save the file.",
-                        message: failure.to_string(),
-                    });
-                    cx.notify();
-                }
+        if self.file_busy {
+            return;
+        }
+        if !self.dirty && self.path.is_some() {
+            if let Some(pending) = then {
+                self.perform(pending, window, cx);
             }
             return;
         }
-        let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let rx = cx.prompt_for_new_path(&dir, Some("Untitled.txt"));
+        let content = self.input.read(cx).value().to_string();
+        if let Some(path) = self.path.clone() {
+            let Some(expected) = self.saved_bytes.clone() else {
+                self.alert = Some(ActiveAlert::Error {
+                    title: "Failed to save the file.",
+                    message: "Text Editor could not validate the opened document revision. Save a copy instead."
+                        .into(),
+                });
+                cx.notify();
+                return;
+            };
+            let format = self.text_format;
+            self.file_busy = true;
+            cx.notify();
+            cx.spawn_in(window, async move |this, cx| {
+                let save_content = content.clone();
+                let result = cx
+                    .background_executor()
+                    .spawn(
+                        async move { save_document(&path, Some(&expected), &save_content, format) },
+                    )
+                    .await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.finish_document_save(result, content, then, window, cx);
+                });
+            })
+            .detach();
+            return;
+        }
+        self.save_to_new_path(content, self.text_format, then, window, cx);
+    }
+
+    fn save_to_new_path(
+        &mut self,
+        content: String,
+        format: document::TextFormat,
+        then: Option<Pending>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let dir = self
+            .path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let suggested_name = self
+            .path
+            .as_deref()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .unwrap_or("Untitled.txt");
+        self.file_busy = true;
+        cx.notify();
+        let rx = cx.prompt_for_new_path(&dir, Some(suggested_name));
         cx.spawn_in(window, async move |this, cx| {
             // Save-As was cancelled or failed: do NOT run the pending action,
             // so unsaved changes are preserved instead of silently discarded.
-            let Ok(Ok(Some(path))) = rx.await else { return };
-            let write_result = storage::write(
-                &storage::RealStorage,
-                storage::Operation::SaveDocument,
-                &path,
-                &content,
-            );
-            let _ = this.update_in(cx, |this, window, cx| match write_result {
-                Ok(()) => {
-                    this.path = Some(path);
-                    let recovery_cleared = this.mark_clean(content, cx);
-                    cx.notify();
-                    if recovery_cleared {
-                        if let Some(pending) = then {
-                            this.perform(pending, window, cx);
-                        }
+            let picker = rx.await;
+            let Ok(Ok(Some(path))) = picker else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.file_busy = false;
+                    if !matches!(picker, Ok(Ok(None))) {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Could not open the save dialog.",
+                            message: "The desktop file chooser is temporarily unavailable.".into(),
+                        });
                     }
-                }
-                Err(failure) => {
-                    // Write failed: keep dirty state and do NOT run the pending
-                    // (destructive) action, so unsaved changes are preserved.
-                    this.alert = Some(ActiveAlert::Error {
-                        title: "Failed to save the file.",
-                        message: failure.to_string(),
-                    });
                     cx.notify();
+                });
+                return;
+            };
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    let content = content.clone();
+                    async move { save_document(&path, None, &content, format) }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if result.is_ok() {
+                    this.path = Some(path);
                 }
+                this.finish_document_save(result, content, then, window, cx);
             });
         })
         .detach();
     }
 
+    fn finish_document_save(
+        &mut self,
+        result: Result<document::DecodedDocument, SaveFailure>,
+        requested_text: String,
+        then: Option<Pending>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.file_busy = false;
+        match result {
+            Ok(saved) => {
+                if saved.text != requested_text {
+                    self.input.update(cx, |state, cx| {
+                        state.set_value(saved.text.clone(), window, cx)
+                    });
+                }
+                self.saved_bytes = Some(saved.original_bytes);
+                self.text_format = saved.format;
+                let recovery_cleared = self.mark_clean(saved.text, cx);
+                if recovery_cleared {
+                    if let Some(pending) = then {
+                        self.perform(pending, window, cx);
+                    }
+                }
+            }
+            Err(error) => {
+                self.alert = Some(
+                    if matches!(
+                        &error,
+                        SaveFailure::Storage(storage::SaveDocumentError::Conflict)
+                    ) {
+                        ActiveAlert::Conflict
+                    } else {
+                        ActiveAlert::Error {
+                            title: "Failed to save the file.",
+                            message: error.to_string(),
+                        }
+                    },
+                );
+            }
+        }
+        cx.notify();
+    }
+
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.
     fn guarded(&mut self, pending: Pending, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
         if !self.dirty {
             if self.clear_recovery(cx) {
                 self.perform(pending, window, cx);
@@ -515,6 +716,7 @@ impl EditorView {
                 self.on_buffer_changed(cx);
             }
             Some(ActiveAlert::ConfirmSave(pending)) => self.save_with(Some(pending), window, cx),
+            Some(ActiveAlert::Conflict) => self.save_as(window, cx),
             Some(ActiveAlert::Error { .. }) | None => {}
         }
         cx.notify();
@@ -711,6 +913,7 @@ impl EditorView {
                             .icon(Icon::new(IconName::File).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
+                            .disabled(self.file_busy)
                             .tooltip("New")
                             .on_click(cx.listener(|this, _, window, cx| this.new_file(window, cx))),
                     )
@@ -719,6 +922,7 @@ impl EditorView {
                             .icon(Icon::new(IconName::FolderOpen).text_color(mac::text()))
                             .ghost()
                             .with_size(Size::Medium)
+                            .disabled(self.file_busy)
                             .tooltip("Open")
                             .on_click(cx.listener(|this, _, window, cx| this.open(window, cx))),
                     )
@@ -787,6 +991,8 @@ impl EditorView {
                         Button::new("save", "Save")
                             .primary()
                             .with_size(Size::Small)
+                            .busy(self.file_busy)
+                            .disabled(self.file_busy || self.rtf_runs.is_some())
                             .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                     ),
             );
@@ -1008,6 +1214,7 @@ impl EditorView {
                     .flex()
                     .items_center()
                     .gap_3()
+                    .child(cell(self.text_format.status()))
                     .child(cell(format!(
                         "{} {}",
                         words,
@@ -1056,6 +1263,19 @@ impl EditorView {
                         .into_any_element(),
                 ],
             ),
+            ActiveAlert::Conflict => (
+                "The document changed in another application.",
+                "Text Editor did not overwrite the external version. Save this buffer as a separate copy or cancel and inspect the other version."
+                    .into(),
+                vec![
+                    rmac_ui::dialog_button("alert-cancel", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("alert-save-copy", "Save a Copy…", Primary)
+                        .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
+                        .into_any_element(),
+                ],
+            ),
             ActiveAlert::Error { title, message } => (
                 title,
                 message,
@@ -1086,6 +1306,7 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &NewFile, window, cx| this.new_file(window, cx)))
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| this.open(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFile, window, cx| this.save(window, cx)))
+            .on_action(cx.listener(|this, _: &SaveFileAs, window, cx| this.save_as(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleFind, window, cx| this.toggle_find(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleReplace, window, cx| this.toggle_replace(window, cx)),

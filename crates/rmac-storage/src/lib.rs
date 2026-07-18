@@ -7,7 +7,7 @@
 
 use std::fmt;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Write as _};
+use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -76,6 +76,21 @@ pub trait Backend {
         Err(unsupported("read text"))
     }
 
+    /// Read at most `maximum` bytes. The default keeps small injectable
+    /// backends simple; the host filesystem override rejects by metadata and
+    /// streams only `maximum + 1` bytes so an untrusted file cannot force an
+    /// unbounded allocation.
+    fn read_bounded(&self, path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
+        let bytes = self.read(path)?;
+        if bytes.len() > maximum {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file exceeds the configured size limit",
+            ));
+        }
+        Ok(bytes)
+    }
+
     fn write_atomic(&self, _path: &Path, _contents: &[u8]) -> io::Result<()> {
         Err(unsupported("write atomically"))
     }
@@ -118,6 +133,26 @@ impl Backend for FileSystem {
 
     fn read_to_string(&self, path: &Path) -> io::Result<String> {
         std::fs::read_to_string(path)
+    }
+
+    fn read_bounded(&self, path: &Path, maximum: usize) -> io::Result<Vec<u8>> {
+        let file = File::open(path)?;
+        if file.metadata()?.len() > maximum as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file exceeds the configured size limit",
+            ));
+        }
+        let mut bytes = Vec::with_capacity(maximum.min(64 * 1024));
+        file.take(maximum.saturating_add(1) as u64)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > maximum {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file exceeds the configured size limit",
+            ));
+        }
+        Ok(bytes)
     }
 
     fn write_atomic(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
@@ -286,6 +321,21 @@ mod tests {
 
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "after");
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bounded_read_rejects_a_file_before_returning_excess_bytes() {
+        let root = temp_root("bounded-read");
+        std::fs::create_dir(&root).unwrap();
+        let target = root.join("document.txt");
+        std::fs::write(&target, b"12345").unwrap();
+
+        assert_eq!(FileSystem.read_bounded(&target, 5).unwrap(), b"12345");
+        assert_eq!(
+            FileSystem.read_bounded(&target, 4).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

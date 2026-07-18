@@ -5253,6 +5253,7 @@ dependencies = [
 name = "rmac-notes-storage"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "rmac-notes-store",
  "rmac-storage",
  "sha2",

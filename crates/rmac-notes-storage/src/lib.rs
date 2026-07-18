@@ -1,11 +1,12 @@
 //! Durable single-writer transaction adapter for `rmac-notes-store`.
 //!
-//! A caller retains the [`LoadedLibrary`] token returned by `load`/`save` and
-//! serializes mutations through one store instance. Every save performs an
-//! exact primary-file preflight, writes and verifies a private journal, writes
-//! and verifies the primary, refreshes last-known-good, then removes the
-//! journal. Startup deterministically rolls back an uncommitted prepared
-//! journal or finishes maintenance for a primary that already matches it.
+//! Opening the real store first acquires one canonical, kernel-backed writer
+//! lease for the library. A caller then retains the [`LoadedLibrary`] token
+//! returned by `load`/`save`; every save performs an exact primary-file
+//! preflight, writes and verifies a private journal, writes and verifies the
+//! primary, refreshes last-known-good, then removes the journal. Startup
+//! deterministically rolls back an uncommitted prepared journal or finishes
+//! maintenance for a primary that already matches it.
 
 use std::fmt;
 use std::io;
@@ -17,6 +18,7 @@ use rmac_storage::{Backend, FileSystem};
 use sha2::{Digest as _, Sha256};
 
 mod migration;
+mod writer;
 
 pub use migration::{
     plan_legacy_library, LegacyAttachmentInput, LegacyLibraryInput, LegacyNoteInput,
@@ -24,6 +26,7 @@ pub use migration::{
     MigrationCommitOutcome, MigrationError, MigrationPlan, MigrationWarning, PlannedAttachment,
     PlannedNoteSource, RecoveryFile,
 };
+pub use writer::{WriterLease, WriterLeaseError, WriterLeaseErrorKind, WriterLeaseOperation};
 
 const JOURNAL_MAGIC: &[u8; 8] = b"RMNJRN\0\0";
 const JOURNAL_VERSION: u16 = 1;
@@ -148,20 +151,24 @@ impl std::error::Error for StoreError {}
 pub struct NotesLibraryStore<B = FileSystem> {
     root: PathBuf,
     backend: B,
+    _writer_lease: WriterLease,
     transaction_lock: Mutex<()>,
 }
 
 impl NotesLibraryStore<FileSystem> {
-    pub fn new(root: PathBuf) -> Self {
-        Self::with_backend(root, FileSystem)
+    pub fn new(root: PathBuf) -> Result<Self, WriterLeaseError> {
+        let writer_lease = WriterLease::acquire(&root)?;
+        Ok(Self::with_backend(FileSystem, writer_lease))
     }
 }
 
 impl<B: Backend> NotesLibraryStore<B> {
-    pub fn with_backend(root: PathBuf, backend: B) -> Self {
+    pub fn with_backend(backend: B, writer_lease: WriterLease) -> Self {
+        let root = writer_lease.root().to_path_buf();
         Self {
             root,
             backend,
+            _writer_lease: writer_lease,
             transaction_lock: Mutex::new(()),
         }
     }
@@ -801,7 +808,10 @@ mod tests {
     fn store() -> (NotesLibraryStore<FakeBackend>, FakeBackend) {
         let backend = FakeBackend::default();
         (
-            NotesLibraryStore::with_backend(PathBuf::from("library"), backend.clone()),
+            NotesLibraryStore::with_backend(
+                backend.clone(),
+                WriterLease::for_fake_backend(PathBuf::from("/virtual/library")),
+            ),
             backend,
         )
     }
@@ -1021,30 +1031,32 @@ mod tests {
         assert_eq!(outcome.library.snapshot(), &plan.snapshot);
         assert_eq!(
             backend.get(&PathBuf::from(
-                "library/legacy-recovery/notes/00000000000000000001.md"
+                "/virtual/library/legacy-recovery/notes/00000000000000000001.md"
             )),
             Some(input.notes[0].bytes.clone())
         );
         assert_eq!(
             backend.get(&PathBuf::from(
-                "library/legacy-recovery/files/00000000000000000000.bin"
+                "/virtual/library/legacy-recovery/files/00000000000000000000.bin"
             )),
             Some(input.attachments[0].bytes.clone())
         );
         assert_eq!(
             backend.get(&PathBuf::from(
-                "library/legacy-recovery/files/00000000000000000001.bin"
+                "/virtual/library/legacy-recovery/files/00000000000000000001.bin"
             )),
             Some(input.attachments[1].bytes.clone())
         );
         assert_eq!(
             backend.get(&PathBuf::from(
-                "library/attachments/00000000000000000001.bin"
+                "/virtual/library/attachments/00000000000000000001.bin"
             )),
             Some(input.attachments[0].bytes.clone())
         );
         assert!(backend
-            .get(&PathBuf::from("library/legacy-recovery/receipt.bin"))
+            .get(&PathBuf::from(
+                "/virtual/library/legacy-recovery/receipt.bin",
+            ))
             .unwrap()
             .starts_with(b"RMNMIG\0\0"));
 
@@ -1071,7 +1083,7 @@ mod tests {
         assert_eq!(backend.get(&store.primary_path()), None);
 
         backend.set(
-            PathBuf::from("library/legacy-recovery/notes/00000000000000000001.md"),
+            PathBuf::from("/virtual/library/legacy-recovery/notes/00000000000000000001.md"),
             b"unrelated existing data".to_vec(),
         );
         let conflict = store
@@ -1102,11 +1114,13 @@ mod tests {
             ))
         );
         assert!(backend
-            .get(&PathBuf::from("library/legacy-recovery/receipt.bin"))
+            .get(&PathBuf::from(
+                "/virtual/library/legacy-recovery/receipt.bin",
+            ))
             .is_some());
         assert!(backend
             .get(&PathBuf::from(
-                "library/attachments/00000000000000000001.bin"
+                "/virtual/library/attachments/00000000000000000001.bin"
             ))
             .is_some());
 
@@ -1134,7 +1148,9 @@ mod tests {
 
         assert_eq!(error.kind, MigrationCommitErrorKind::NonEmptyLibrary);
         assert_eq!(
-            backend.get(&PathBuf::from("library/legacy-recovery/receipt.bin")),
+            backend.get(&PathBuf::from(
+                "/virtual/library/legacy-recovery/receipt.bin"
+            )),
             None
         );
         assert_eq!(store.load().unwrap().snapshot(), &existing);

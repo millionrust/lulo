@@ -7,6 +7,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+libc.workspace = true
 rmac-notes-store.workspace = true
 rmac-storage.workspace = true
 sha2.workspace = true

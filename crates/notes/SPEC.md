@@ -37,6 +37,12 @@ ordinary files enter or leave it only through explicit import and export.
   is app-owned state, not a loose collection of user-edited Markdown files.
   The root path must be absolute, private where supported, and resolved without
   falling back to the process working directory.
+- Opening the writable library acquires one private, canonical, kernel-backed
+  nonblocking writer lease. A second store instance or process opens no writer;
+  the persistent lock file itself has no authority, remains after shutdown,
+  and cannot be used to infer a stale owner. Descriptor close or process death
+  releases the lease. Recovery, migration, and every mutation require the same
+  live lease.
 - XDG FileChooser is the only Linux authority for importing attachments or
   notes and selecting export destinations. Cancellation is a normal result.
   Returned paths and file descriptors are revalidated at the storage boundary.
@@ -211,8 +217,13 @@ original relative-path/length/hash mapping; exact staged files are reusable on
 retry, conflicting files fail closed, metadata failure leaves recovery data
 intact, and an existing nonempty library is never overwritten. The prototype
 source is not mutated. Filesystem discovery, symlink-safe source traversal,
-full image-decoder validation, process-wide single-writer ownership, and Notes
-process integration remain.
+full image-decoder validation, and Notes process integration remain. The real
+store now canonicalizes an absolute app-owned root, makes it private, rejects
+symlink/hard-link lock substitution, and holds one nonblocking advisory writer
+lease across recovery, migration, and saves. Same-process duplicate stores and
+independent kernel descriptors are rejected; the persistent private rendezvous
+file is safely reusable after lease drop or process termination. Linux
+contention/crash evidence remains an integration gate.
 
 Known gaps include path-based identity and pins, synchronous scans/reads on the
 UI thread, a permanent 1.5-second save loop, no versioned manifest/journal or

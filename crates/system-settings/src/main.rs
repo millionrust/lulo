@@ -920,6 +920,9 @@ struct Settings {
     privacy_loading: bool,
     privacy_busy: Option<(rmac_privacy::PortalResource, String)>,
     privacy_reset_confirmation: Option<rmac_privacy::PortalDecision>,
+    privacy_generation: u64,
+    privacy_refresh_pending: bool,
+    privacy_stream_refreshing: bool,
     security_coverage_loading: bool,
 
     // Sound
@@ -1224,6 +1227,15 @@ fn theme_stream_snapshot_is_current(
     snapshot_generation == current_generation && !loading && !busy
 }
 
+fn privacy_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
 fn current_system_time_usec() -> Option<u64> {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
     u64::try_from(elapsed.as_micros()).ok()
@@ -1514,39 +1526,24 @@ impl Settings {
             .detach();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while let Ok(event) = privacy_update_rx.recv().await {
-                match event {
-                    rmac_privacy::WatchEvent::Changed => {
-                        let result = cx
-                            .background_executor()
-                            .spawn(async { rmac_privacy_linux::snapshot() })
-                            .await;
-                        if this
-                            .update(cx, |this: &mut Settings, cx| {
-                                if this.privacy_busy.is_none() && !this.privacy_loading {
-                                    this.finish_privacy_update(result);
-                                    this.privacy_stream_error = None;
-                                    cx.notify();
-                                }
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    rmac_privacy::WatchEvent::Unavailable => {
-                        if this
-                            .update(cx, |this: &mut Settings, cx| {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        match event {
+                            rmac_privacy::WatchEvent::Changed => {
+                                this.queue_privacy_stream_refresh(cx);
+                            }
+                            rmac_privacy::WatchEvent::Unavailable => {
                                 this.privacy_stream_error = Some(
                                     "Live portal permission updates are temporarily unavailable"
                                         .into(),
                                 );
-                                cx.notify();
-                            })
-                            .is_err()
-                        {
-                            break;
+                            }
                         }
-                    }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
                 }
             }
         })
@@ -2315,6 +2312,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_privacy_update(result);
+                this.run_pending_privacy_refresh(cx);
                 cx.notify();
             });
         })
@@ -2927,6 +2925,9 @@ impl Settings {
             privacy_loading: true,
             privacy_busy: None,
             privacy_reset_confirmation: None,
+            privacy_generation: 0,
+            privacy_refresh_pending: false,
+            privacy_stream_refreshing: false,
             security_coverage_loading: true,
 
             audio_loading: true,
@@ -7767,10 +7768,59 @@ impl Settings {
         .detach();
     }
 
-    fn refresh_privacy(&mut self, cx: &mut Context<Self>) {
-        if self.privacy_loading || self.privacy_busy.is_some() {
+    fn queue_privacy_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.privacy_loading || self.privacy_busy.is_some() || self.privacy_stream_refreshing {
+            self.privacy_refresh_pending = true;
             return;
         }
+        self.privacy_refresh_pending = false;
+        self.privacy_stream_refreshing = true;
+        let generation = self.privacy_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_privacy_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.privacy_stream_refreshing = false;
+                if privacy_stream_snapshot_is_current(
+                    generation,
+                    this.privacy_generation,
+                    this.privacy_loading,
+                    this.privacy_busy.is_some(),
+                ) {
+                    match result {
+                        Ok(snapshot) => {
+                            this.finish_privacy_update(Ok(snapshot));
+                            this.privacy_stream_error = None;
+                        }
+                        Err(error) => this.finish_privacy_update(Err(error)),
+                    }
+                } else {
+                    this.privacy_refresh_pending = true;
+                }
+                this.run_pending_privacy_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_privacy_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.privacy_refresh_pending
+            && !self.privacy_loading
+            && self.privacy_busy.is_none()
+            && !self.privacy_stream_refreshing
+        {
+            self.queue_privacy_stream_refresh(cx);
+        }
+    }
+
+    fn refresh_privacy(&mut self, cx: &mut Context<Self>) {
+        if self.privacy_loading || self.privacy_busy.is_some() || self.privacy_stream_refreshing {
+            return;
+        }
+        self.privacy_generation = self.privacy_generation.wrapping_add(1);
         self.privacy_loading = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -7780,6 +7830,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_privacy_update(result);
+                this.run_pending_privacy_refresh(cx);
                 cx.notify();
             });
         })
@@ -7812,10 +7863,11 @@ impl Settings {
         cx: &mut Context<Self>,
     ) {
         if self.privacy_busy.is_none()
-            && self
-                .privacy
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.can_reset)
+            && !self.privacy_loading
+            && !self.privacy_stream_refreshing
+            && self.privacy.as_ref().is_some_and(|snapshot| {
+                snapshot.can_reset && snapshot.decisions.contains(&decision)
+            })
         {
             self.privacy_reset_confirmation = Some(decision);
             cx.notify();
@@ -7829,23 +7881,25 @@ impl Settings {
     }
 
     fn confirm_privacy_reset(&mut self, cx: &mut Context<Self>) {
+        if self.privacy_loading || self.privacy_busy.is_some() || self.privacy_stream_refreshing {
+            return;
+        }
         let Some(decision) = self.privacy_reset_confirmation.take() else {
             return;
         };
-        if self.privacy_busy.is_some() {
-            return;
-        }
         let resource = decision.resource;
-        let app_id = decision.app_id;
+        let app_id = decision.app_id.clone();
+        self.privacy_generation = self.privacy_generation.wrapping_add(1);
         self.privacy_busy = Some((resource, app_id.clone()));
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move { rmac_privacy_linux::reset_decision(resource, &app_id) })
+                .spawn(async move { rmac_privacy_linux::reset_decision(&decision) })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_privacy_update(result);
+                this.run_pending_privacy_refresh(cx);
                 cx.notify();
             });
         })
@@ -12428,8 +12482,12 @@ impl Settings {
             ))
             .child(
                 Button::new("privacy-refresh", "Refresh")
-                    .busy(self.privacy_loading)
-                    .disabled(self.privacy_loading || self.privacy_busy.is_some())
+                    .busy(self.privacy_loading || self.privacy_stream_refreshing)
+                    .disabled(
+                        self.privacy_loading
+                            || self.privacy_busy.is_some()
+                            || self.privacy_stream_refreshing,
+                    )
                     .on_click(move |_, _, cx| {
                         refresh_view.update(cx, |settings, cx| settings.refresh_privacy(cx));
                     }),
@@ -12500,7 +12558,11 @@ impl Settings {
                                         "Reset",
                                     )
                                     .busy(busy)
-                                    .disabled(!snapshot.can_reset || self.privacy_busy.is_some())
+                                    .disabled(
+                                        !snapshot.can_reset
+                                            || self.privacy_busy.is_some()
+                                            || self.privacy_stream_refreshing,
+                                    )
                                     .on_click(
                                         move |_, _, cx| {
                                             reset_view.update(cx, |settings, cx| {
@@ -12547,6 +12609,11 @@ impl Settings {
                         "privacy-reset-confirm",
                         "Reset Decision",
                         rmac_ui::DialogButtonKind::Destructive,
+                    )
+                    .disabled(
+                        self.privacy_loading
+                            || self.privacy_busy.is_some()
+                            || self.privacy_stream_refreshing,
                     )
                     .on_click(move |_, _, cx| {
                         confirm_view.update(cx, |settings, cx| settings.confirm_privacy_reset(cx));
@@ -12647,8 +12714,8 @@ impl Settings {
                         "Ubuntu archive".into(),
                         format!(
                             "{} Main/Restricted · {} Universe/Multiverse",
-                            sources.main + sources.restricted,
-                            sources.universe + sources.multiverse
+                            sources.main.saturating_add(sources.restricted),
+                            sources.universe.saturating_add(sources.multiverse)
                         )
                         .into(),
                     ),
@@ -12797,7 +12864,10 @@ impl Settings {
             "Application source counts cover the live desktop-entry catalog. Flatpak and Snap use their exported desktop-entry paths; AppImage uses integration IDs or the launch executable. System and user desktop entries are not claimed to be APT-owned, and command-line-only packages are outside this inventory.",
         ));
         cards.push(note_card(
-            "Reset removes only the selected stored portal decision through PermissionStore version 2. Permission tokens are displayed verbatim because the store does not interpret them. Package and application source counts describe provenance signals, not repository trust or the security state of individual applications.",
+            "Reset revalidates the selected version-2 application/resource tokens immediately before DeletePermission and proves absence afterward. PermissionStore has no atomic compare-and-delete operation, so a change after that preflight cannot be excluded. Tokens remain uninterpreted because the store does not define their meaning.",
+        ));
+        cards.push(note_card(
+            "Ubuntu coverage and automatic-update values are read-only until a polkit-aware, rollback-safe APT policy editor is reviewed. Package and application source counts describe provenance signals, not repository trust, vulnerability status, coverage, or the security of an individual application.",
         ));
         self.pane(cards)
     }
@@ -19355,14 +19425,14 @@ mod tests {
         gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
         locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
         network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
-        power_stream_snapshot_is_current, relative_display_position, render_wallpaper_preview,
-        sample_battery_history, storage_stream_snapshot_is_current,
-        system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
-        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
-        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
-        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-        WallpaperTarget, GENERAL_DESTINATIONS,
+        power_stream_snapshot_is_current, privacy_stream_snapshot_is_current,
+        relative_display_position, render_wallpaper_preview, sample_battery_history,
+        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
+        theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
+        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
+        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
+        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
+        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -19518,6 +19588,14 @@ mod tests {
         assert!(!theme_stream_snapshot_is_current(3, 4, false, false));
         assert!(!theme_stream_snapshot_is_current(4, 4, true, false));
         assert!(!theme_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn privacy_stream_snapshots_cannot_cross_reset_generations() {
+        assert!(privacy_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!privacy_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!privacy_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!privacy_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

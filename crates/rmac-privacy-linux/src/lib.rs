@@ -20,6 +20,12 @@ const DEVICE_TABLE: &str = "devices";
 const NOT_FOUND: &str = "org.freedesktop.portal.Error.NotFound";
 const RESOURCES: [PortalResource; 2] = [PortalResource::Camera, PortalResource::Microphone];
 const MAX_HELPER_OUTPUT_BYTES: usize = 1024 * 1024;
+const MAX_DECISIONS: usize = 512;
+const MAX_PERMISSIONS_PER_DECISION: usize = 32;
+const MAX_PERMISSION_TOKEN_BYTES: usize = 256;
+const MAX_PERMISSION_SUMMARY_BYTES: usize = 512;
+const MAX_ERROR_BYTES: usize = 512;
+const MAX_SECURITY_LIST_ITEMS: usize = 64;
 const HELPER_TIMEOUT: Duration = Duration::from_secs(15);
 #[cfg(target_os = "linux")]
 const RECONNECT_DELAY: Duration = Duration::from_secs(1);
@@ -34,7 +40,7 @@ impl Error {
     fn new(operation: &'static str, detail: impl Into<String>) -> Self {
         Self {
             operation,
-            detail: detail.into(),
+            detail: bounded_text(&detail.into(), MAX_ERROR_BYTES),
         }
     }
 }
@@ -56,13 +62,18 @@ trait Store {
     fn version(&self) -> Result<u32, String>;
     fn lookup(&self, resource: PortalResource)
         -> Result<HashMap<String, Vec<String>>, LookupError>;
+    fn get_permission(
+        &self,
+        resource: PortalResource,
+        app_id: &str,
+    ) -> Result<Vec<String>, LookupError>;
     fn delete_permission(&self, resource: PortalResource, app_id: &str) -> Result<(), String>;
 }
 
 impl Store for Proxy<'_> {
     fn version(&self) -> Result<u32, String> {
         self.get_property("version")
-            .map_err(|error| error.to_string())
+            .map_err(|_| "PermissionStore did not provide its interface version".to_string())
     }
 
     fn lookup(
@@ -78,33 +89,49 @@ impl Store for Proxy<'_> {
             zbus::Error::MethodError(name, _, _) if name.as_str() == NOT_FOUND => {
                 LookupError::NotFound
             }
-            error => LookupError::Failed(error.to_string()),
+            _ => LookupError::Failed(
+                "PermissionStore could not read a device decision table".to_string(),
+            ),
         })
+    }
+
+    fn get_permission(
+        &self,
+        resource: PortalResource,
+        app_id: &str,
+    ) -> Result<Vec<String>, LookupError> {
+        self.call("GetPermission", &(DEVICE_TABLE, resource.id(), app_id))
+            .map_err(|error| match error {
+                zbus::Error::MethodError(name, _, _) if name.as_str() == NOT_FOUND => {
+                    LookupError::NotFound
+                }
+                _ => LookupError::Failed(
+                    "PermissionStore could not read the selected decision".to_string(),
+                ),
+            })
     }
 
     fn delete_permission(&self, resource: PortalResource, app_id: &str) -> Result<(), String> {
         self.call("DeletePermission", &(DEVICE_TABLE, resource.id(), app_id))
-            .map_err(|error| error.to_string())
+            .map_err(|_| "PermissionStore rejected the decision reset".to_string())
     }
 }
 
 pub fn snapshot() -> Result<Snapshot, Error> {
     let connection = match Connection::session() {
         Ok(connection) => connection,
-        Err(error) => {
+        Err(_) => {
             return Ok(Snapshot {
-                detail: Some(format!("The session D-Bus is unavailable: {error}")),
+                detail: Some("The session D-Bus is unavailable.".into()),
                 ..Snapshot::default()
             });
         }
     };
     let proxy = match Proxy::new(&connection, DESTINATION, PATH, INTERFACE) {
         Ok(proxy) => proxy,
-        Err(error) => {
+        Err(_) => {
             return Ok(Snapshot {
-                detail: Some(format!(
-                    "The portal PermissionStore is unavailable: {error}"
-                )),
+                detail: Some("The portal PermissionStore is unavailable.".into()),
                 ..Snapshot::default()
             });
         }
@@ -112,13 +139,21 @@ pub fn snapshot() -> Result<Snapshot, Error> {
     snapshot_with(&proxy)
 }
 
-pub fn reset_decision(resource: PortalResource, app_id: &str) -> Result<Snapshot, Error> {
-    validate_app_id(app_id)?;
-    let connection = Connection::session()
-        .map_err(|error| Error::new("connect to the portal PermissionStore", error.to_string()))?;
-    let proxy = Proxy::new(&connection, DESTINATION, PATH, INTERFACE)
-        .map_err(|error| Error::new("open the portal PermissionStore", error.to_string()))?;
-    reset_with(&proxy, resource, app_id)
+pub fn reset_decision(expected: &PortalDecision) -> Result<Snapshot, Error> {
+    validate_decision(expected)?;
+    let connection = Connection::session().map_err(|_| {
+        Error::new(
+            "connect to the portal PermissionStore",
+            "session D-Bus is unavailable",
+        )
+    })?;
+    let proxy = Proxy::new(&connection, DESTINATION, PATH, INTERFACE).map_err(|_| {
+        Error::new(
+            "open the portal PermissionStore",
+            "PermissionStore is unavailable",
+        )
+    })?;
+    reset_with(&proxy, expected)
 }
 
 #[cfg(target_os = "linux")]
@@ -129,7 +164,13 @@ pub async fn watch(sender: async_channel::Sender<rmac_privacy::WatchEvent>) -> R
             Ok(()) => {}
             Err(_) if sender.is_closed() => return Ok(()),
             Err(_) => {
-                let _ = sender.try_send(rmac_privacy::WatchEvent::Unavailable);
+                if sender
+                    .send(rmac_privacy::WatchEvent::Unavailable)
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
             }
         }
         async_io::Timer::after(RECONNECT_DELAY).await;
@@ -154,6 +195,8 @@ async fn watch_once(sender: &async_channel::Sender<rmac_privacy::WatchEvent>) ->
         .map_err(|error| Error::new("watch portal permissions", error.to_string()))?;
     let changed_rule = MatchRule::builder()
         .msg_type(Type::Signal)
+        .sender(DESTINATION)
+        .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
         .path(PATH)
         .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
         .interface(INTERFACE)
@@ -180,6 +223,11 @@ async fn watch_once(sender: &async_channel::Sender<rmac_privacy::WatchEvent>) ->
         .await
         .map_err(|error| Error::new("watch portal permissions", error.to_string()))?
         .fuse();
+
+    sender
+        .send(rmac_privacy::WatchEvent::Changed)
+        .await
+        .map_err(|_| Error::new("watch portal permissions", "the watcher closed"))?;
 
     loop {
         let closed = sender.closed().fuse();
@@ -255,7 +303,13 @@ fn run_bounded(program: &str, arguments: &[&str], label: &str) -> Result<Vec<u8>
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("could not run {label}: {error}"))?;
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => format!("{label} is not installed"),
+            std::io::ErrorKind::PermissionDenied => {
+                format!("permission was denied while starting {label}")
+            }
+            _ => format!("{label} could not be started"),
+        })?;
     let stdout = child
         .stdout
         .take()
@@ -271,10 +325,10 @@ fn run_bounded(program: &str, arguments: &[&str], label: &str) -> Result<Vec<u8>
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {}
-            Err(error) => {
+            Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(format!("could not wait for {label}: {error}"));
+                return Err(format!("{label} could not be inspected"));
             }
         }
         if Instant::now() >= deadline {
@@ -284,38 +338,38 @@ fn run_bounded(program: &str, arguments: &[&str], label: &str) -> Result<Vec<u8>
         }
         std::thread::sleep(Duration::from_millis(25));
     };
-    let stdout = stdout_reader
+    let (stdout, stdout_excessive) = stdout_reader
         .join()
         .map_err(|_| format!("{label} output reader failed"))??;
-    let stderr = stderr_reader
+    let (_, stderr_excessive) = stderr_reader
         .join()
         .map_err(|_| format!("{label} error reader failed"))??;
-    if stdout.len() > MAX_HELPER_OUTPUT_BYTES || stderr.len() > MAX_HELPER_OUTPUT_BYTES {
+    if stdout_excessive || stderr_excessive {
         return Err(format!("{label} output exceeded the 1 MiB safety limit"));
     }
     if !status.success() {
-        let detail = String::from_utf8_lossy(&stderr).trim().to_string();
-        return Err(if detail.is_empty() {
-            format!("{label} exited with {status}")
-        } else {
-            detail
-        });
+        return Err(format!("{label} reported a failure"));
     }
     Ok(stdout)
 }
 
-fn read_bounded(reader: impl Read) -> Result<Vec<u8>, String> {
+fn read_bounded(mut reader: impl Read) -> Result<(Vec<u8>, bool), String> {
     let mut output = Vec::new();
     reader
+        .by_ref()
         .take((MAX_HELPER_OUTPUT_BYTES + 1) as u64)
         .read_to_end(&mut output)
-        .map_err(|error| format!("could not read helper output: {error}"))?;
-    Ok(output)
+        .map_err(|_| "could not read helper output".to_string())?;
+    let excessive = output.len() > MAX_HELPER_OUTPUT_BYTES;
+    output.truncate(MAX_HELPER_OUTPUT_BYTES);
+    std::io::copy(&mut reader, &mut std::io::sink())
+        .map_err(|_| "could not drain helper output".to_string())?;
+    Ok((output, excessive))
 }
 
 fn ubuntu_series() -> Result<String, String> {
     let os_release = std::fs::read_to_string("/etc/os-release")
-        .map_err(|error| format!("could not read /etc/os-release: {error}"))?;
+        .map_err(|_| "could not read /etc/os-release".to_string())?;
     let fields = os_release
         .lines()
         .filter_map(|line| line.split_once('='))
@@ -425,17 +479,8 @@ fn api_attributes(runner: &impl SecurityRunner, endpoint: &'static str) -> Resul
         .ok_or_else(|| "Ubuntu Pro Client response omitted data.attributes".into())
 }
 
-fn api_error_summary(envelope: &Value) -> String {
-    envelope
-        .get("errors")
-        .and_then(Value::as_array)
-        .and_then(|errors| errors.first())
-        .and_then(|error| error.get("title"))
-        .and_then(Value::as_str)
-        .unwrap_or("Ubuntu Pro Client reported a failed result")
-        .chars()
-        .take(256)
-        .collect()
+fn api_error_summary(_envelope: &Value) -> String {
+    "Ubuntu Pro Client reported a failed result".to_string()
 }
 
 fn parse_package_sources(attributes: Value) -> Result<PackageSources, String> {
@@ -456,13 +501,15 @@ fn parse_package_sources(attributes: Value) -> Result<PackageSources, String> {
 }
 
 fn parse_pro_attachment(attached: Value) -> Result<ProStatus, String> {
+    let contract_status = attached
+        .get("contract_status")
+        .and_then(Value::as_str)
+        .map(|status| validated_text(status, 64, "contract status"))
+        .transpose()?;
     Ok(ProStatus {
         attached: boolean(&attached, "is_attached")?,
         contract_valid: boolean(&attached, "is_attached_and_contract_valid")?,
-        contract_status: attached
-            .get("contract_status")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        contract_status,
         contract_remaining_days: attached
             .get("contract_remaining_days")
             .and_then(Value::as_i64)
@@ -472,40 +519,52 @@ fn parse_pro_attachment(attached: Value) -> Result<ProStatus, String> {
 }
 
 fn parse_enabled_services(services: Value) -> Result<Vec<String>, String> {
-    services
+    let services = services
         .get("enabled_services")
         .and_then(Value::as_array)
-        .ok_or_else(|| "response omitted enabled_services".to_string())?
+        .ok_or_else(|| "response omitted enabled_services".to_string())?;
+    if services.len() > MAX_SECURITY_LIST_ITEMS {
+        return Err("response contained too many enabled services".to_string());
+    }
+    services
         .iter()
         .map(|service| {
             service
                 .get("name")
                 .and_then(Value::as_str)
-                .filter(|name| !name.is_empty() && name.len() <= 128)
-                .map(str::to_string)
-                .ok_or_else(|| "response contained an invalid service name".to_string())
+                .ok_or_else(|| "response omitted a service name".to_string())
+                .and_then(|name| validated_text(name, 128, "service name"))
         })
         .collect::<Result<Vec<_>, _>>()
 }
 
 fn parse_automatic_updates(attributes: Value) -> Result<AutomaticUpdates, String> {
-    let allowed_origins = attributes
+    let allowed_origin_values = attributes
         .get("unattended_upgrades_allowed_origins")
         .and_then(Value::as_array)
-        .ok_or_else(|| "response omitted unattended_upgrades_allowed_origins".to_string())?
+        .ok_or_else(|| "response omitted unattended_upgrades_allowed_origins".to_string())?;
+    if allowed_origin_values.len() > MAX_SECURITY_LIST_ITEMS {
+        return Err("response contained too many allowed origins".to_string());
+    }
+    let allowed_origins = allowed_origin_values
         .iter()
         .map(|origin| {
             origin
                 .as_str()
-                .filter(|origin| origin.len() <= 256 && !origin.chars().any(char::is_control))
-                .map(str::to_string)
                 .ok_or_else(|| "response contained an invalid allowed origin".to_string())
+                .and_then(|origin| validated_text(origin, 256, "allowed origin"))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let disabled_reason = attributes
         .pointer("/unattended_upgrades_disabled_reason/msg")
         .and_then(Value::as_str)
-        .map(|reason| reason.chars().take(256).collect());
+        .map(|reason| validated_text(reason, 256, "disabled reason"))
+        .transpose()?;
+    let last_run = attributes
+        .get("unattended_upgrades_last_run")
+        .and_then(Value::as_str)
+        .map(|value| validated_text(value, 128, "last-run value"))
+        .transpose()?;
     Ok(AutomaticUpdates {
         running: boolean(&attributes, "unattended_upgrades_running")?,
         apt_timer_enabled: boolean(&attributes, "systemd_apt_timer_enabled")?,
@@ -513,10 +572,7 @@ fn parse_automatic_updates(attributes: Value) -> Result<AutomaticUpdates, String
         package_list_frequency_days: unsigned(&attributes, "package_lists_refresh_frequency_days")?,
         upgrade_frequency_days: unsigned(&attributes, "unattended_upgrades_frequency_days")?,
         allowed_origins,
-        last_run: attributes
-            .get("unattended_upgrades_last_run")
-            .and_then(Value::as_str)
-            .map(str::to_string),
+        last_run,
         disabled_reason,
     })
 }
@@ -535,6 +591,31 @@ fn boolean(value: &Value, key: &str) -> Result<bool, String> {
         .ok_or_else(|| format!("response omitted {key}"))
 }
 
+fn validated_text(value: &str, maximum_bytes: usize, label: &str) -> Result<String, String> {
+    if value.is_empty() || value.len() > maximum_bytes || value.chars().any(char::is_control) {
+        return Err(format!("response contained an invalid {label}"));
+    }
+    Ok(value.to_string())
+}
+
+fn bounded_text(value: &str, maximum_bytes: usize) -> String {
+    let normalized = value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    let mut end = normalized.len().min(maximum_bytes);
+    while !normalized.is_char_boundary(end) {
+        end -= 1;
+    }
+    normalized[..end].trim().to_string()
+}
+
 fn snapshot_with(store: &impl Store) -> Result<Snapshot, Error> {
     let version = store
         .version()
@@ -543,15 +624,21 @@ fn snapshot_with(store: &impl Store) -> Result<Snapshot, Error> {
     for resource in RESOURCES {
         match store.lookup(resource) {
             Ok(entries) => {
-                decisions.extend(
-                    entries
-                        .into_iter()
-                        .map(|(app_id, permissions)| PortalDecision {
-                            resource,
-                            app_id,
-                            permissions,
-                        }),
-                )
+                if decisions.len().saturating_add(entries.len()) > MAX_DECISIONS {
+                    return Err(Error::new(
+                        "read portal device permissions",
+                        "PermissionStore returned too many decisions",
+                    ));
+                }
+                for (app_id, permissions) in entries {
+                    let decision = PortalDecision {
+                        resource,
+                        app_id,
+                        permissions,
+                    };
+                    validate_decision(&decision)?;
+                    decisions.push(decision);
+                }
             }
             Err(LookupError::NotFound) => {}
             Err(LookupError::Failed(error)) => {
@@ -572,11 +659,8 @@ fn snapshot_with(store: &impl Store) -> Result<Snapshot, Error> {
     })
 }
 
-fn reset_with(
-    store: &impl Store,
-    resource: PortalResource,
-    app_id: &str,
-) -> Result<Snapshot, Error> {
+fn reset_with(store: &impl Store, expected: &PortalDecision) -> Result<Snapshot, Error> {
+    validate_decision(expected)?;
     let version = store
         .version()
         .map_err(|error| Error::new("read PermissionStore version", error))?;
@@ -586,10 +670,46 @@ fn reset_with(
             "PermissionStore version 2 is required",
         ));
     }
+    let current_permissions = match store.get_permission(expected.resource, &expected.app_id) {
+        Ok(permissions) => permissions,
+        Err(LookupError::NotFound) => {
+            return Err(Error::new(
+                "reset portal permission",
+                "the selected decision no longer exists; refresh and try again",
+            ));
+        }
+        Err(LookupError::Failed(_)) => {
+            return Err(Error::new(
+                "reset portal permission",
+                "the selected decision could not be revalidated",
+            ));
+        }
+    };
+    let current = PortalDecision {
+        resource: expected.resource,
+        app_id: expected.app_id.clone(),
+        permissions: current_permissions,
+    };
+    validate_decision(&current)?;
+    if current != *expected {
+        return Err(Error::new(
+            "reset portal permission",
+            "the selected decision changed before reset; refresh and try again",
+        ));
+    }
     store
-        .delete_permission(resource, app_id)
+        .delete_permission(expected.resource, &expected.app_id)
         .map_err(|error| Error::new("reset portal permission", error))?;
-    snapshot_with(store)
+    let snapshot = snapshot_with(store)?;
+    if snapshot.decisions.iter().any(|decision| {
+        decision.resource == expected.resource && decision.app_id == expected.app_id
+    }) {
+        return Err(Error::new(
+            "reset portal permission",
+            "the selected decision remained after reset",
+        ));
+    }
+    Ok(snapshot)
 }
 
 fn validate_app_id(app_id: &str) -> Result<(), Error> {
@@ -597,6 +717,29 @@ fn validate_app_id(app_id: &str) -> Result<(), Error> {
         return Err(Error::new(
             "validate portal application ID",
             "the application ID is empty, too long, or contains control characters",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_decision(decision: &PortalDecision) -> Result<(), Error> {
+    validate_app_id(&decision.app_id)?;
+    if decision.permissions.len() > MAX_PERMISSIONS_PER_DECISION
+        || decision
+            .permissions
+            .iter()
+            .map(String::len)
+            .fold(0_usize, usize::saturating_add)
+            .saturating_add(decision.permissions.len().saturating_sub(1) * 2)
+            > MAX_PERMISSION_SUMMARY_BYTES
+        || decision.permissions.iter().any(|permission| {
+            permission.len() > MAX_PERMISSION_TOKEN_BYTES
+                || permission.chars().any(char::is_control)
+        })
+    {
+        return Err(Error::new(
+            "validate portal decision",
+            "the permission tokens exceed the safe display bounds",
         ));
     }
     Ok(())
@@ -612,6 +755,7 @@ mod tests {
         version: u32,
         entries: RefCell<HashMap<PortalResource, HashMap<String, Vec<String>>>>,
         deleted: RefCell<Vec<(PortalResource, String)>>,
+        delete_effective: bool,
     }
 
     impl Store for FakeStore {
@@ -630,12 +774,27 @@ mod tests {
                 .ok_or(LookupError::NotFound)
         }
 
+        fn get_permission(
+            &self,
+            resource: PortalResource,
+            app_id: &str,
+        ) -> Result<Vec<String>, LookupError> {
+            self.entries
+                .borrow()
+                .get(&resource)
+                .and_then(|entries| entries.get(app_id))
+                .cloned()
+                .ok_or(LookupError::NotFound)
+        }
+
         fn delete_permission(&self, resource: PortalResource, app_id: &str) -> Result<(), String> {
             self.deleted
                 .borrow_mut()
                 .push((resource, app_id.to_string()));
-            if let Some(entries) = self.entries.borrow_mut().get_mut(&resource) {
-                entries.remove(app_id);
+            if self.delete_effective {
+                if let Some(entries) = self.entries.borrow_mut().get_mut(&resource) {
+                    entries.remove(app_id);
+                }
             }
             Ok(())
         }
@@ -655,6 +814,7 @@ mod tests {
                 ),
             ])),
             deleted: RefCell::new(Vec::new()),
+            delete_effective: true,
         }
     }
 
@@ -679,7 +839,8 @@ mod tests {
     #[test]
     fn reset_deletes_only_the_selected_app_resource_pair_and_resamples() {
         let store = store(2);
-        let snapshot = reset_with(&store, PortalResource::Camera, "org.example.Camera").unwrap();
+        let expected = snapshot_with(&store).unwrap().decisions[0].clone();
+        let snapshot = reset_with(&store, &expected).unwrap();
         assert_eq!(
             store.deleted.borrow().as_slice(),
             &[(PortalResource::Camera, "org.example.Camera".into())]
@@ -690,9 +851,45 @@ mod tests {
 
     #[test]
     fn reset_requires_version_two_and_a_bounded_app_id() {
-        assert!(reset_with(&store(1), PortalResource::Camera, "org.example.Camera").is_err());
+        let expected = PortalDecision {
+            resource: PortalResource::Camera,
+            app_id: "org.example.Camera".into(),
+            permissions: vec!["yes".into()],
+        };
+        assert!(reset_with(&store(1), &expected).is_err());
         assert!(validate_app_id("").is_err());
         assert!(validate_app_id("org.example\nBad").is_err());
+    }
+
+    #[test]
+    fn reset_refuses_a_decision_changed_after_confirmation() {
+        let store = store(2);
+        let mut expected = snapshot_with(&store).unwrap().decisions[0].clone();
+        expected.permissions = vec!["no".into()];
+        let error = reset_with(&store, &expected).unwrap_err();
+        assert!(error.to_string().contains("changed before reset"));
+        assert!(store.deleted.borrow().is_empty());
+    }
+
+    #[test]
+    fn reset_requires_authoritative_absence_after_delete() {
+        let mut store = store(2);
+        store.delete_effective = false;
+        let expected = snapshot_with(&store).unwrap().decisions[0].clone();
+        let error = reset_with(&store, &expected).unwrap_err();
+        assert!(error.to_string().contains("remained after reset"));
+    }
+
+    #[test]
+    fn snapshot_rejects_unbounded_or_control_bearing_decisions() {
+        let store = store(2);
+        store
+            .entries
+            .borrow_mut()
+            .get_mut(&PortalResource::Camera)
+            .unwrap()
+            .insert("org.example\nBad".into(), vec!["yes".into()]);
+        assert!(snapshot_with(&store).is_err());
     }
 
     struct FakeSecurityRunner {
@@ -830,6 +1027,32 @@ mod tests {
             .issues
             .iter()
             .any(|issue| issue.starts_with("Ubuntu release lifecycle:")));
+    }
+
+    #[test]
+    fn control_bearing_security_status_is_not_renderable() {
+        let mut runner = complete_pro_runner();
+        runner.responses.insert(
+            "u.pro.status.is_attached.v1",
+            Ok(json!({
+                "contract_remaining_days": 1,
+                "contract_status": "active\nprivate",
+                "is_attached": true,
+                "is_attached_and_contract_valid": false
+            })),
+        );
+        let snapshot = security_coverage_with(&runner, Ok("resolute".into()));
+        assert!(snapshot.pro.is_none());
+        assert!(snapshot.issues.iter().any(
+            |issue| issue == "Ubuntu Pro status: response contained an invalid contract status"
+        ));
+    }
+
+    #[test]
+    fn public_errors_are_bounded_and_control_normalized() {
+        let error = Error::new("test", format!("{}\nprivate", "x".repeat(600)));
+        assert!(error.to_string().len() <= MAX_ERROR_BYTES + "test: ".len());
+        assert!(!error.to_string().contains('\n'));
     }
 
     #[test]

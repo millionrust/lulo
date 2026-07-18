@@ -121,13 +121,19 @@ item. The generated files and unchecked items are not passing evidence.
 - [ ] Camera entries match the raw `devices/camera` PermissionStore lookup
 - [ ] Microphone entries match the raw `devices/microphone` lookup
 - [ ] Unknown permission tokens are shown verbatim and do not select invented policy
+- [ ] Excessive/control-bearing IDs or tokens fail the complete read without partial hiding
 - [ ] PermissionStore version 1 is read-only; version 2 enables per-app reset
 - [ ] Reset requires explicit confirmation and deletes only the selected app/resource pair
-- [ ] Reset completion resamples both resources and the next portal request may ask again
+- [ ] Changed or missing selected tokens are refused by the exact preflight
+- [ ] Reset completion proves selected-pair absence and resamples both resources
+- [ ] An external change during reset cannot overwrite newer transaction readback
+- [ ] The documented no-compare-and-delete race is not presented as atomic revocation
 - [ ] An external portal decision appears without pressing Refresh
+- [ ] Signal bursts during Refresh or Reset leave one complete pending resample
 - [ ] PermissionStore restart preserves last-known-good state, reports disruption, and reconnects
 - [ ] Active capture and native application access are never presented as revoked
 - [ ] Missing session bus, portal service, and resource each have truthful distinct states
+- [ ] Failures expose no raw D-Bus diagnostics, unique peers, or private paths
 
 ## Ubuntu lifecycle and updates
 
@@ -138,6 +144,8 @@ item. The generated files and unchecked items are not passing evidence.
 - [ ] Allowed origins, disabled reason, frequency, and last run match the unattended-upgrades API
 - [ ] PackageKit security count remains separate from lifecycle and coverage status
 - [ ] A missing or old helper leaves other successful authorities visible
+- [ ] Malformed, oversized, control-bearing, timed-out, and failing helper output is bounded
+- [ ] Helper stderr and arbitrary Pro API error titles never reach the Settings UI
 
 ## Application provenance
 
@@ -150,6 +158,7 @@ item. The generated files and unchecked items are not passing evidence.
 ## Interaction and accessibility
 
 - [ ] Refresh buttons expose loading and cannot launch duplicate work
+- [ ] Last-known-good decisions remain visible during stream and read failure
 - [ ] Long labels/tokens remain readable at every supported scale through 200%
 - [ ] Keyboard focus reaches Refresh, Open, Reset, Cancel, and confirmation in logical order
 - [ ] Orca announces section names, values, busy states, warnings, and destructive confirmation

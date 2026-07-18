@@ -33,7 +33,7 @@ equivalents rather than simulated.
 | Focus | Live service-backed state/configuration, desktop-entry names/icons, manual mode/duration activation, urgent and per-app allow-list policy, plus create/edit/enable/delete schedule controls | `org.rmac.Focus1`, `org.rmac.NotificationCenter1`, and live XDG app catalog | Scoped GPUI build and Linux/niri interaction/accessibility evidence |
 | Screen Time | Hidden from production navigation | No service selected | Usage model only after a local-first privacy design |
 | Lock Screen | Real live lock and capability-gated automatic-suspend choices; truthful Hidden preview state; secure manual/logind/pre-sleep and idle paths | `org.rmac.LockScreen1`, provider security state machine, bounded action-free notification projection, logind `CanSuspend`/`Suspend(false)`, niri `ext-session-lock-v1`, PAM-enabled swaylock, and delay inhibitor | Reviewed Wayland/PAM adapter and rmac presentation, preview controls, scoped build, and Linux security/accessibility evidence |
-| Privacy & Security | Confirmed XDG PermissionStore camera/microphone decisions with raw tokens, version-gated reset, external-change and service-restart watching; PackageKit security-update summary; Ubuntu lifecycle plus Pro package-origin/contract/service/unattended-upgrades authorities; live Flatpak/Snap/AppImage desktop source inventory; explicit provenance limits | `rmac-privacy`, `rmac-privacy-linux`, `rmac-apps`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit, `ubuntu-distro-info`, Ubuntu Pro Client offline API | Package ownership/trust drill-down, supported automatic-update mutation, and Linux revoke/access/restart evidence |
+| Privacy & Security | Bounded XDG PermissionStore camera/microphone decisions with uninterpreted tokens; version-gated confirmed reset with exact `GetPermission` preflight and post-delete absence proof; reconnecting generation-safe live recovery; PackageKit security-update summary; bounded privacy-safe Ubuntu lifecycle and Pro package-origin/contract/service/unattended-upgrades authorities; live Flatpak/Snap/AppImage desktop provenance; explicit access, trust, and coverage limits | `rmac-privacy`, `rmac-privacy-linux`, `rmac-apps`, `org.freedesktop.impl.portal.PermissionStore`, PackageKit, `ubuntu-distro-info`, Ubuntu Pro Client offline API | Ubuntu/niri reset/concurrency/restart, helper failure, provenance, interaction, scaling, performance, and accessibility matrix in `docs/privacy-security.md`; automatic-update mutation requires a reviewed polkit/rollback design |
 
 ## Delivery order
 
@@ -393,13 +393,23 @@ permission slice reads only the PermissionStore `devices` table's `camera` and
 instead of translating them into invented policy. Missing resources are empty
 states, store/interface failures remain visible, and interface version 1 stays
 read-only. Version 2 decisions can be reset per application only after explicit
-confirmation through `DeletePermission`; completion is followed by a complete
-authoritative resample. Reset is described as removing a stored decision so the
-next portal request may ask again, never as terminating active capture or
-revoking native-application access. The pane also reuses the cached PackageKit
-security-update count and opens the full Software Update destination, while
+confirmation. The retained resource, application ID, and uninterpreted tokens
+must match an immediate `GetPermission` preflight before `DeletePermission`;
+completion requires complete authoritative resampling and selected-pair
+absence. Missing or changed preflight state is refused. The interface has no
+compare-and-delete operation, so the pane documents that narrow concurrency
+limit rather than attempting a lossy rollback. Reset is described as removing a
+stored decision so the next portal request may ask again, never as terminating
+active capture or revoking native-application access. The pane also reuses the
+cached PackageKit security-update count and opens the full Software Update
+destination, while
 keeping Ubuntu security coverage and repository trust explicitly separate.
-PermissionStore `Changed` signals now trigger a complete resample, and
+PermissionStore `Changed` signals now trigger a complete resample after the
+subscribed watcher publishes an initial refresh. Bounded, control-free IDs,
+tokens, and complete inventory limits prevent authority payloads from becoming
+unbounded UI. Settings generations retain one pending refresh across a manual
+read or reset, so an older stream result cannot replace newer transaction
+readback. Raw bus diagnostics and peers never reach presentation. Filtered
 well-known-name loss/reappearance reports a temporary live-update failure then
 resamples without discarding the last known good decisions. Signal storms are
 coalesced through a bounded channel, while explicit mutation completion remains
@@ -418,7 +428,9 @@ release support, or Flatpak/Snap/AppImage/manual-install status from those
 values. Standard release support is queried separately from the installed
 `distro-info-data` authority through `ubuntu-distro-info --days=eol`, after
 validating Ubuntu and its series from `/etc/os-release`. Both helpers have a
-15-second timeout and 1 MiB output limit. Authority references:
+15-second timeout and 1 MiB output limit, drain both bounded pipes, validate
+every rendered string/list, and replace raw stderr/API failure titles with fixed
+privacy-safe capability failures. Authority references:
 [ubuntu-distro-info](https://manpages.ubuntu.com/manpages/questing/man1/ubuntu-distro-info.1.html),
 [Ubuntu Pro Client API](https://documentation.ubuntu.com/pro-client/en/docs/references/api/),
 and [unattended-upgrade](https://manpages.ubuntu.com/manpages/noble/man8/unattended-upgrade.8.html).

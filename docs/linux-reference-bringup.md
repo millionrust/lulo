@@ -310,6 +310,27 @@ screen curtain remain described as unavailable. Then run the upstream
 accessibility probe below and record the precise rmac AT-SPI failure;
 environment readiness is not application accessibility proof.
 
+For Privacy & Security, first compare the pane with the ignored
+`permission-store.txt` capture. Use a disposable test application and portal
+decision, never a personal application's entry. Confirm unknown tokens remain
+uninterpreted, Reset names the exact application/resource, cancellation changes
+nothing, and success removes only that pair. Change or remove the disposable
+decision after opening confirmation and before confirming; Settings must refuse
+the stale reset. Generate an external change during an in-flight Refresh and
+Reset, then confirm the final complete authority wins. Restart PermissionStore
+and the session bus separately: last-known-good rows must stay visible, the
+stream error must be separate, and reappearance must resample without Refresh.
+Do not commit the raw capture or application IDs.
+
+Compare the PackageKit security-update count, `ubuntu-distro-info` lifecycle,
+each ignored Pro API response, and the desktop source inventory independently.
+Temporarily exercise missing, old, malformed, oversized, timed-out, and failing
+helpers with an isolated fixture or PATH; successful authorities must remain
+visible and no helper stderr, API error title, bus peer, or private path may
+reach Settings. Add/remove disposable Flatpak, Snap, and integrated AppImage
+desktop entries and confirm live provenance changes without any APT ownership,
+repository-trust, sandbox, vulnerability, or coverage claim.
+
 Run the evidence collector again, then launch the current-upstream probes:
 
 ```sh

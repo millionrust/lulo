@@ -13,4 +13,5 @@ rmac-time.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 async-io.workspace = true
 futures-util.workspace = true
+rustix = { workspace = true, features = ["time"] }
 zbus.workspace = true

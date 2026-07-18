@@ -5641,6 +5641,7 @@ dependencies = [
  "async-io",
  "futures-util",
  "rmac-time",
+ "rustix 1.1.4",
  "zbus",
 ]
 

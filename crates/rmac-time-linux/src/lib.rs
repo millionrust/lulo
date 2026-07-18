@@ -1,6 +1,6 @@
 //! Linux systemd-timedated adapter.
 
-use rmac_time::{Error, ErrorKind, Service, Snapshot};
+use rmac_time::{ClockTarget, Error, ErrorKind, Service, Snapshot};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemService;
@@ -11,15 +11,69 @@ impl Service for SystemService {
     }
 
     fn set_ntp(&self, enabled: bool) -> Result<Snapshot, Error> {
+        let before = self.snapshot()?;
+        if !before.can_ntp {
+            return Err(Error::new(
+                ErrorKind::Unavailable,
+                "no compatible network time service is installed",
+            ));
+        }
+        if before.ntp_enabled == enabled {
+            return Ok(before);
+        }
         system_set_ntp(enabled)?;
-        self.snapshot()
+        let after = self.snapshot()?;
+        if after.ntp_enabled != enabled {
+            return Err(Error::new(
+                ErrorKind::Mismatch,
+                "timedated did not confirm the requested automatic-time state",
+            ));
+        }
+        Ok(after)
     }
 
     fn set_timezone(&self, timezone: &str) -> Result<Snapshot, Error> {
         let snapshot = self.snapshot()?;
         snapshot.validate_timezone(timezone)?;
+        if snapshot.timezone == timezone {
+            return Ok(snapshot);
+        }
         system_set_timezone(timezone)?;
-        self.snapshot()
+        let after = self.snapshot()?;
+        if after.timezone != timezone {
+            return Err(Error::new(
+                ErrorKind::Mismatch,
+                "timedated did not confirm the requested time zone",
+            ));
+        }
+        Ok(after)
+    }
+
+    fn set_time(&self, target: &ClockTarget) -> Result<Snapshot, Error> {
+        let before = self.snapshot()?;
+        if before.ntp_enabled {
+            return Err(Error::new(
+                ErrorKind::Conflict,
+                "turn off automatic time before setting the clock manually",
+            ));
+        }
+        system_set_time(target.time_usec())?;
+        // Interactive authorization can take arbitrarily long and occurs
+        // before timedated applies the clock. Only account for time spent
+        // obtaining the authoritative post-mutation snapshot.
+        let started = std::time::Instant::now();
+        let after = self.snapshot()?;
+        if !rmac_time::clock_readback_matches(
+            target.time_usec(),
+            after.time_usec,
+            started.elapsed(),
+        ) {
+            return Err(Error::new(
+                ErrorKind::Mismatch,
+                "timedated did not confirm the requested system time",
+            ));
+        }
+        Ok(after)
     }
 }
 
@@ -33,6 +87,10 @@ pub fn set_ntp(enabled: bool) -> Result<Snapshot, Error> {
 
 pub fn set_timezone(timezone: &str) -> Result<Snapshot, Error> {
     SystemService.set_timezone(timezone)
+}
+
+pub fn set_time(target: &ClockTarget) -> Result<Snapshot, Error> {
+    SystemService.set_time(target)
 }
 
 #[cfg(target_os = "linux")]
@@ -74,12 +132,16 @@ async fn watch_once(sender: &async_channel::Sender<rmac_time::WatchEvent>) -> Re
     })?;
     let properties_rule = MatchRule::builder()
         .msg_type(Type::Signal)
+        .sender("org.freedesktop.timedate1")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid timedated signal sender"))?
         .path("/org/freedesktop/timedate1")
         .map_err(|_| Error::new(ErrorKind::Protocol, "invalid timedated event path"))?
         .interface("org.freedesktop.DBus.Properties")
         .map_err(|_| Error::new(ErrorKind::Protocol, "invalid properties interface"))?
         .member("PropertiesChanged")
         .map_err(|_| Error::new(ErrorKind::Protocol, "invalid properties signal"))?
+        .add_arg("org.freedesktop.timedate1")
+        .map_err(|_| Error::new(ErrorKind::Protocol, "invalid timedated property filter"))?
         .build();
     let owner_rule = MatchRule::builder()
         .msg_type(Type::Signal)
@@ -100,10 +162,13 @@ async fn watch_once(sender: &async_channel::Sender<rmac_time::WatchEvent>) -> Re
         .await
         .map_err(|_| Error::new(ErrorKind::Unavailable, "could not watch timedated restarts"))?
         .fuse();
+    let clock = clock_change_detector()?;
 
     loop {
         let closed = sender.closed().fuse();
+        let clock_changed = wait_for_clock_change(&clock).fuse();
         futures_util::pin_mut!(closed);
+        futures_util::pin_mut!(clock_changed);
         let changed = futures_util::select! {
             message = properties.next() => {
                 message
@@ -114,12 +179,112 @@ async fn watch_once(sender: &async_channel::Sender<rmac_time::WatchEvent>) -> Re
             message = owners.next() => {
                 owner_reappeared(message)?
             },
+            result = clock_changed => {
+                result?;
+                true
+            },
             _ = closed => return Ok(()),
         };
         if changed {
             let _ = sender.try_send(rmac_time::WatchEvent::Changed);
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn clock_change_detector() -> Result<async_io::Async<rustix::fd::OwnedFd>, Error> {
+    use rustix::time::{timerfd_create, TimerfdClockId, TimerfdFlags};
+
+    let descriptor = timerfd_create(
+        TimerfdClockId::Realtime,
+        TimerfdFlags::CLOEXEC | TimerfdFlags::NONBLOCK,
+    )
+    .map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "could not watch discontinuous system-clock changes",
+        )
+    })?;
+    arm_clock_change_detector(&descriptor)?;
+    async_io::Async::new(descriptor).map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "could not register the system-clock change detector",
+        )
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn arm_clock_change_detector(descriptor: &rustix::fd::OwnedFd) -> Result<(), Error> {
+    use rustix::time::{timerfd_settime, Itimerspec, TimerfdTimerFlags, Timespec};
+
+    // A finite rolling deadline avoids overflowing the kernel's internal
+    // nanosecond range. Natural expiry causes one harmless annual refresh and
+    // rearm; a discontinuous CLOCK_REALTIME change cancels it immediately.
+    const ONE_YEAR_SECONDS: u64 = 365 * 24 * 60 * 60;
+    const KTIME_MAX_SECONDS: u64 = i64::MAX as u64 / 1_000_000_000;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| {
+            Error::new(
+                ErrorKind::Unavailable,
+                "could not read the realtime clock for change detection",
+            )
+        })?
+        .as_secs();
+    let deadline = now
+        .checked_add(ONE_YEAR_SECONDS)
+        .filter(|deadline| *deadline <= KTIME_MAX_SECONDS)
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unavailable,
+                "the realtime clock is outside the safe change-detection range",
+            )
+        })? as i64;
+    let far_future = Itimerspec {
+        it_interval: Timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        },
+        it_value: Timespec {
+            tv_sec: deadline,
+            tv_nsec: 0,
+        },
+    };
+    timerfd_settime(
+        descriptor,
+        TimerfdTimerFlags::ABSTIME | TimerfdTimerFlags::CANCEL_ON_SET,
+        &far_future,
+    )
+    .map(|_| ())
+    .map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "could not arm the system-clock change detector",
+        )
+    })
+}
+
+#[cfg(target_os = "linux")]
+async fn wait_for_clock_change(
+    detector: &async_io::Async<rustix::fd::OwnedFd>,
+) -> Result<(), Error> {
+    detector
+        .read_with(|descriptor| {
+            let mut value = [0_u8; 8];
+            match rustix::io::read(descriptor, &mut value) {
+                Ok(_) | Err(rustix::io::Errno::CANCELED) => Ok(()),
+                Err(error) => Err(std::io::Error::from(error)),
+            }
+        })
+        .await
+        .map_err(|_| {
+            Error::new(
+                ErrorKind::Unavailable,
+                "the system-clock change detector failed",
+            )
+        })?;
+    arm_clock_change_detector(detector.get_ref())
 }
 
 #[cfg(target_os = "linux")]
@@ -144,6 +309,12 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     let connection = system_connection()?;
     let proxy = timedate_proxy(&connection)?;
     let timezone = property::<String>(&proxy, "Timezone")?;
+    rmac_time::validate_timezone_syntax(&timezone).map_err(|_| {
+        Error::new(
+            ErrorKind::Protocol,
+            "timedated returned an invalid current time zone",
+        )
+    })?;
     let local_rtc = property::<bool>(&proxy, "LocalRTC")?;
     let can_ntp = property::<bool>(&proxy, "CanNTP")?;
     let ntp_enabled = property::<bool>(&proxy, "NTP")?;
@@ -152,7 +323,21 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     let timezones = proxy
         .call::<_, _, Vec<String>>("ListTimezones", &())
         .map_err(|_| Error::new(ErrorKind::Protocol, "could not list system time zones"))?;
-    let (timezones, timezones_truncated) = rmac_time::normalize_timezones(timezones);
+    if !timezones.iter().any(|candidate| candidate == &timezone) {
+        return Err(Error::new(
+            ErrorKind::Protocol,
+            "the current time zone is missing from timedated's inventory",
+        ));
+    }
+    let (mut timezones, timezones_truncated) = rmac_time::normalize_timezones(timezones);
+    if !timezones.iter().any(|candidate| candidate == &timezone) {
+        // The complete authority contained the current zone, but it sorted
+        // beyond the bounded UI inventory. Retain it so an unchanged edit can
+        // still validate without expanding the public bound.
+        timezones.pop();
+        timezones.push(timezone.clone());
+        timezones.sort_unstable();
+    }
     Ok(Snapshot {
         timezone,
         local_rtc,
@@ -204,6 +389,29 @@ fn system_set_timezone(_timezone: &str) -> Result<(), Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
         "time-zone changes are available in the supported Linux session",
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn system_set_time(time_usec: u64) -> Result<(), Error> {
+    let time_usec = i64::try_from(time_usec).map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidTime,
+            "the requested system time is outside timedated's supported range",
+        )
+    })?;
+    let connection = system_connection()?;
+    let proxy = timedate_proxy(&connection)?;
+    proxy
+        .call::<_, _, ()>("SetTime", &(time_usec, false, true))
+        .map_err(mutation_error)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn system_set_time(_time_usec: u64) -> Result<(), Error> {
+    Err(Error::new(
+        ErrorKind::Unavailable,
+        "manual system time is available in the supported Linux session",
     ))
 }
 
@@ -261,7 +469,10 @@ fn mutation_error(error: zbus::Error) -> Error {
             "authorization was denied or cancelled",
         )
     } else {
-        Error::new(ErrorKind::Mutation, detail)
+        Error::new(
+            ErrorKind::Mutation,
+            "timedated rejected the requested date and time change",
+        )
     }
 }
 

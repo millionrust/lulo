@@ -10,7 +10,7 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
@@ -710,6 +710,12 @@ struct Settings {
     time_busy: bool,
     time_error: Option<SharedString>,
     time_stream_error: Option<SharedString>,
+    time_generation: u64,
+    time_refresh_pending: bool,
+    time_stream_refreshing: bool,
+    clock_editor: Option<Entity<InputState>>,
+    clock_confirmation: Option<rmac_time::ClockTarget>,
+    clock_setting: bool,
     time: Option<rmac_time::Snapshot>,
     timezone_editor: Option<Entity<InputState>>,
     locale_loading: bool,
@@ -1149,6 +1155,20 @@ fn storage_stream_snapshot_is_current(
     snapshot_generation == current_generation && !loading && !busy
 }
 
+fn time_stream_snapshot_is_current(
+    snapshot_generation: u64,
+    current_generation: u64,
+    loading: bool,
+    busy: bool,
+) -> bool {
+    snapshot_generation == current_generation && !loading && !busy
+}
+
+fn current_system_time_usec() -> Option<u64> {
+    let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    u64::try_from(elapsed.as_micros()).ok()
+}
+
 /// Read-only system data that is slow enough to keep off the first-frame path.
 struct SystemSnapshot {
     account: String,
@@ -1512,17 +1532,10 @@ impl Settings {
             while let Ok(event) = time_update_rx.recv().await {
                 match event {
                     rmac_time::WatchEvent::Changed => {
-                        let result = cx
-                            .background_executor()
-                            .spawn(async { rmac_time_linux::snapshot() })
-                            .await;
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                if !this.time_busy {
-                                    this.finish_time_update(result);
-                                    this.time_stream_error = None;
-                                    cx.notify();
-                                }
+                                this.queue_time_stream_refresh(cx);
+                                cx.notify();
                             })
                             .is_err()
                         {
@@ -1591,6 +1604,25 @@ impl Settings {
         })
         .detach();
 
+        // Keep the visible clock current without putting System Settings on a
+        // frame-rate loop. Two low-frequency wakeups per minute are enough for
+        // the minute-resolution label and stop redrawing when another pane is
+        // selected.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            async_io::Timer::after(std::time::Duration::from_secs(30)).await;
+            if this
+                .update(cx, |this: &mut Settings, cx| {
+                    if this.nav.is_empty() && this.current().name.as_ref() == "Date & Time" {
+                        cx.notify();
+                    }
+                })
+                .is_err()
+            {
+                break;
+            }
+        })
+        .detach();
+
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = rmac_updates_linux::snapshot(rmac_updates::Request::cached()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -1642,6 +1674,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_time_update(result);
+                this.run_pending_time_refresh(cx);
                 cx.notify();
             });
         })
@@ -2485,6 +2518,12 @@ impl Settings {
             time_busy: false,
             time_error: None,
             time_stream_error: None,
+            time_generation: 0,
+            time_refresh_pending: false,
+            time_stream_refreshing: false,
+            clock_editor: None,
+            clock_confirmation: None,
+            clock_setting: false,
             time: None,
             timezone_editor: None,
             locale_loading: true,
@@ -3845,12 +3884,73 @@ impl Settings {
         self.time_busy = false;
         match result {
             Ok(snapshot) => {
+                if snapshot.ntp_enabled {
+                    self.clock_editor = None;
+                    self.clock_confirmation = None;
+                }
                 self.time = Some(snapshot);
                 self.time_error = None;
+                self.time_stream_error = None;
             }
             Err(error) => {
                 self.time_error = Some(format!("Could not update date and time: {error}").into());
             }
+        }
+    }
+
+    fn queue_time_stream_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.time_loading || self.time_busy || self.time_stream_refreshing {
+            self.time_refresh_pending = true;
+            return;
+        }
+        self.time_refresh_pending = false;
+        self.time_stream_refreshing = true;
+        let generation = self.time_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_time_linux::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.time_stream_refreshing = false;
+                if time_stream_snapshot_is_current(
+                    generation,
+                    this.time_generation,
+                    this.time_loading,
+                    this.time_busy,
+                ) {
+                    match result {
+                        Ok(snapshot) => {
+                            if snapshot.ntp_enabled {
+                                this.clock_editor = None;
+                                this.clock_confirmation = None;
+                            }
+                            this.time = Some(snapshot);
+                            this.time_error = None;
+                            this.time_stream_error = None;
+                        }
+                        Err(_) => {
+                            this.time_stream_error =
+                                Some("Could not refresh the changed date and time state".into());
+                        }
+                    }
+                } else {
+                    this.time_refresh_pending = true;
+                }
+                this.run_pending_time_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn run_pending_time_refresh(&mut self, cx: &mut Context<Self>) {
+        if self.time_refresh_pending
+            && !self.time_loading
+            && !self.time_busy
+            && !self.time_stream_refreshing
+        {
+            self.queue_time_stream_refresh(cx);
         }
     }
 
@@ -3859,6 +3959,7 @@ impl Settings {
             return;
         }
         self.time_busy = true;
+        self.time_generation = self.time_generation.wrapping_add(1);
         self.time_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -3868,6 +3969,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_time_update(result);
+                this.run_pending_time_refresh(cx);
                 cx.notify();
             });
         })
@@ -3875,10 +3977,11 @@ impl Settings {
     }
 
     fn set_automatic_time(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        if self.time_busy {
+        if self.time_loading || self.time_busy {
             return;
         }
         self.time_busy = true;
+        self.time_generation = self.time_generation.wrapping_add(1);
         self.time_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -3888,6 +3991,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_time_update(result);
+                this.run_pending_time_refresh(cx);
                 cx.notify();
             });
         })
@@ -3895,7 +3999,11 @@ impl Settings {
     }
 
     fn start_timezone_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.time_busy || self.timezone_editor.is_some() {
+        if self.time_busy
+            || self.timezone_editor.is_some()
+            || self.clock_editor.is_some()
+            || self.clock_confirmation.is_some()
+        {
             return;
         }
         let Some(snapshot) = &self.time else {
@@ -3936,6 +4044,7 @@ impl Settings {
             return;
         }
         self.time_busy = true;
+        self.time_generation = self.time_generation.wrapping_add(1);
         self.time_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -3948,6 +4057,116 @@ impl Settings {
                     this.timezone_editor = None;
                 }
                 this.finish_time_update(result);
+                this.run_pending_time_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn start_clock_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.time_busy
+            || self.clock_editor.is_some()
+            || self.timezone_editor.is_some()
+            || self.clock_confirmation.is_some()
+        {
+            return;
+        }
+        let Some(snapshot) = &self.time else {
+            return;
+        };
+        if snapshot.ntp_enabled {
+            self.time_error =
+                Some("Turn off automatic time before setting the clock manually".into());
+            cx.notify();
+            return;
+        }
+        let current = current_system_time_usec().unwrap_or(snapshot.time_usec);
+        let Some(value) = snapshot.clock_input_at(current) else {
+            self.time_error = Some("The current system time could not be edited safely".into());
+            cx.notify();
+            return;
+        };
+        let editor = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(value)
+                .placeholder("2026-07-18 11:30:00 +05:30")
+        });
+        let focus = editor.read(cx).focus_handle(cx);
+        window.focus(&focus);
+        self.clock_editor = Some(editor);
+        self.clock_confirmation = None;
+        self.time_error = None;
+        cx.notify();
+    }
+
+    fn cancel_clock_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.time_busy {
+            self.clock_editor = None;
+            self.clock_confirmation = None;
+            self.time_error = None;
+            cx.notify();
+        }
+    }
+
+    fn cancel_clock_confirmation(&mut self, cx: &mut Context<Self>) {
+        if !self.time_busy {
+            self.clock_confirmation = None;
+            cx.notify();
+        }
+    }
+
+    fn prepare_clock_change(&mut self, cx: &mut Context<Self>) {
+        if self.time_busy {
+            return;
+        }
+        let (Some(editor), Some(snapshot)) = (&self.clock_editor, &self.time) else {
+            return;
+        };
+        if snapshot.ntp_enabled {
+            self.time_error =
+                Some("Turn off automatic time before setting the clock manually".into());
+            cx.notify();
+            return;
+        }
+        match rmac_time::ClockTarget::parse(&editor.read(cx).value()) {
+            Ok(target) => {
+                self.clock_confirmation = Some(target);
+                self.time_error = None;
+            }
+            Err(error) => {
+                self.time_error = Some(error.to_string().into());
+            }
+        }
+        cx.notify();
+    }
+
+    fn confirm_clock_change(&mut self, cx: &mut Context<Self>) {
+        if self.time_busy {
+            return;
+        }
+        let Some(target) = self.clock_confirmation.clone() else {
+            return;
+        };
+        self.time_busy = true;
+        self.clock_setting = true;
+        self.time_generation = self.time_generation.wrapping_add(1);
+        self.time_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_time_linux::set_time(&target) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.clock_setting = false;
+                this.clock_confirmation = None;
+                if result.is_ok() {
+                    this.clock_editor = None;
+                }
+                this.finish_time_update(result);
+                this.time_refresh_pending = true;
+                this.run_pending_time_refresh(cx);
                 cx.notify();
             });
         })
@@ -9863,6 +10082,49 @@ impl Settings {
         )
     }
 
+    fn render_clock_confirmation(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let target = self.clock_confirmation.as_ref()?;
+        let current = self
+            .time
+            .as_ref()
+            .map(|snapshot| {
+                snapshot.formatted_local_time_at(
+                    current_system_time_usec().unwrap_or(snapshot.time_usec),
+                )
+            })
+            .unwrap_or_else(|| "Unavailable".into());
+        let target_display = target.display().to_string();
+        Some(
+            rmac_ui::alert(
+                "Set the System Clock?",
+                format!(
+                    "Current time: {current}\n\nNew time: {target_display}\n\nChanging the clock can affect certificates, file dates, and scheduled work. systemd-timedated also updates the hardware clock, and Linux may ask you to authorize this change."
+                ),
+                vec![
+                    rmac_ui::dialog_button(
+                        "clock-change-cancel",
+                        "Cancel",
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .disabled(self.clock_setting)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.cancel_clock_confirmation(cx)
+                    }))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "clock-change-confirm",
+                        "Set Clock",
+                        rmac_ui::DialogButtonKind::Primary,
+                    )
+                    .disabled(self.clock_setting)
+                    .on_click(cx.listener(|this, _, _, cx| this.confirm_clock_change(cx)))
+                    .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
+    }
+
     // ---- General ------------------------------------------------------
 
     fn render_general(&self, cx: &Context<Self>) -> Div {
@@ -9907,8 +10169,8 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let refresh = Button::new("refresh-date-time", "Refresh")
-            .busy(self.time_busy)
-            .disabled(self.time_loading || self.time_busy)
+            .busy(self.time_busy || self.time_stream_refreshing)
+            .disabled(self.time_loading || self.time_busy || self.time_stream_refreshing)
             .on_click(move |_, _, cx| {
                 refresh_view.update(cx, |settings, cx| settings.refresh_time(cx));
             });
@@ -9973,10 +10235,74 @@ impl Settings {
                         .child(snapshot.timezone.clone()),
                 )
                 .child(
-                    Button::new("timezone-edit", "Edit").on_click(move |_, window, cx| {
-                        edit_view
-                            .update(cx, |settings, cx| settings.start_timezone_edit(window, cx));
-                    }),
+                    Button::new("timezone-edit", "Edit")
+                        .disabled(
+                            self.time_busy
+                                || self.clock_editor.is_some()
+                                || self.clock_confirmation.is_some(),
+                        )
+                        .on_click(move |_, window, cx| {
+                            edit_view.update(cx, |settings, cx| {
+                                settings.start_timezone_edit(window, cx)
+                            });
+                        }),
+                )
+                .into_any_element()
+        };
+
+        let clock_row = if let Some(editor) = &self.clock_editor {
+            let review_view = view.clone();
+            let cancel_view = view.clone();
+            row_base()
+                .child(tile("icons/clock.svg", accent(), 22.0))
+                .child(text_block(
+                    "Set date and time".into(),
+                    Some("Use YYYY-MM-DD HH:MM:SS ±HH:MM".into()),
+                ))
+                .child(div().w(px(250.0)).child(TextField::new(editor).small()))
+                .child(
+                    Button::new("clock-edit-cancel", "Cancel")
+                        .disabled(self.time_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| settings.cancel_clock_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new("clock-edit-review", "Review…")
+                        .primary()
+                        .disabled(self.time_busy)
+                        .on_click(move |_, _, cx| {
+                            review_view
+                                .update(cx, |settings, cx| settings.prepare_clock_change(cx));
+                        }),
+                )
+                .into_any_element()
+        } else {
+            let edit_view = view.clone();
+            row_base()
+                .child(tile("icons/clock.svg", accent(), 22.0))
+                .child(text_block(
+                    "Set date and time".into(),
+                    Some(
+                        if snapshot.ntp_enabled {
+                            "Turn off automatic time to edit the system clock"
+                        } else {
+                            "Authorization may be required"
+                        }
+                        .into(),
+                    ),
+                ))
+                .child(
+                    Button::new("clock-edit", "Edit")
+                        .disabled(
+                            self.time_busy
+                                || snapshot.ntp_enabled
+                                || self.timezone_editor.is_some(),
+                        )
+                        .on_click(move |_, window, cx| {
+                            edit_view
+                                .update(cx, |settings, cx| settings.start_clock_edit(window, cx));
+                        }),
                 )
                 .into_any_element()
         };
@@ -10003,7 +10329,11 @@ impl Settings {
                     "icons/clock.svg",
                     secondary(),
                     "Current time".into(),
-                    snapshot.formatted_local_time().into(),
+                    snapshot
+                        .formatted_local_time_at(
+                            current_system_time_usec().unwrap_or(snapshot.time_usec),
+                        )
+                        .into(),
                 ),
                 value_row(
                     "icons/refresh-cw.svg",
@@ -10027,6 +10357,7 @@ impl Settings {
                     ))
                     .child(automatic)
                     .into_any_element(),
+                clock_row,
             ]),
             card(vec![timezone_row]),
             card(vec![
@@ -10057,7 +10388,7 @@ impl Settings {
             ));
         }
         cards.push(note_card(
-            "Manual clock setting is not connected yet. The hardware clock remains read-only because UTC is the recommended Linux configuration.",
+            "Manual input includes a numeric UTC offset so daylight-saving transitions are never guessed. The hardware-clock mode remains read-only; UTC is the recommended Linux configuration.",
         ));
         self.pane(cards)
     }
@@ -16130,6 +16461,7 @@ impl Render for Settings {
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
         let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
         let bluetooth_forget_dialog = self.render_bluetooth_forget_dialog(cx);
+        let clock_confirmation_dialog = self.render_clock_confirmation(cx);
         let vpn_import_dialog = self.render_vpn_import_dialog(cx);
         let vpn_secret_clear_dialog = self.render_vpn_secret_clear_dialog(cx);
         let vpn_delete_dialog = self.render_vpn_delete_dialog(cx);
@@ -16140,7 +16472,16 @@ impl Render for Settings {
             .track_focus(&self.focus)
             .key_context("SystemSettings")
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape" && this.updates_plan.is_some() {
+                if event.keystroke.key == "enter"
+                    && this.clock_confirmation.is_some()
+                    && !this.clock_setting
+                {
+                    cx.stop_propagation();
+                    this.confirm_clock_change(cx);
+                } else if event.keystroke.key == "escape" && this.clock_confirmation.is_some() {
+                    cx.stop_propagation();
+                    this.cancel_clock_confirmation(cx);
+                } else if event.keystroke.key == "escape" && this.updates_plan.is_some() {
                     cx.stop_propagation();
                     this.cancel_update_plan(cx);
                 } else if event.keystroke.key == "escape" && this.wifi_forget_confirmation.is_some()
@@ -16189,6 +16530,18 @@ impl Render for Settings {
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                if this.clock_setting {
+                    return;
+                }
+                if this.clock_confirmation.take().is_some() {
+                    cx.notify();
+                    return;
+                }
+                if this.clock_editor.take().is_some() {
+                    this.time_error = None;
+                    cx.notify();
+                    return;
+                }
                 if this.updates_installing {
                     return;
                 }
@@ -16308,6 +16661,7 @@ impl Render for Settings {
             .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_forget_dialog, |root, dialog| root.child(dialog))
+            .when_some(clock_confirmation_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_import_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_secret_clear_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_delete_dialog, |root, dialog| root.child(dialog))
@@ -18244,10 +18598,11 @@ mod tests {
         notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
         relative_display_position, render_wallpaper_preview, sample_battery_history,
         storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
-        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
-        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
-        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
+        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
+        DisplayPlacement, DockChange, NotificationPolicyChange, ScreenReaderCapability,
+        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+        WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -18363,6 +18718,14 @@ mod tests {
         assert!(!storage_stream_snapshot_is_current(3, 4, false, false));
         assert!(!storage_stream_snapshot_is_current(4, 4, true, false));
         assert!(!storage_stream_snapshot_is_current(4, 4, false, true));
+    }
+
+    #[test]
+    fn time_stream_snapshots_cannot_cross_clock_transactions() {
+        assert!(time_stream_snapshot_is_current(4, 4, false, false));
+        assert!(!time_stream_snapshot_is_current(3, 4, false, false));
+        assert!(!time_stream_snapshot_is_current(4, 4, true, false));
+        assert!(!time_stream_snapshot_is_current(4, 4, false, true));
     }
 
     #[test]

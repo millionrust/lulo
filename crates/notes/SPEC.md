@@ -535,7 +535,13 @@ survives, and rejects both late generations and batches from a different
 library revision. Debug output contains counts, revisions, IDs, and states but
 not queries, note text, tags, or attachment names. The index is intentionally
 not persisted and must be rebuilt after accepted snapshot changes. The live
-Notes view must still dispatch work and render these states.
+toolbar now provides a compact Search field and Command-F focus action. Every
+nonempty query begins a new generation against the exact current accepted
+snapshot; clearing or replacing it cancels the previous generation, and every
+accepted library revision redispatches the private query. The note column
+renders Indexing, Results, No Matches, Unavailable, truncation, stable
+selection, and global live-note results without searching recovery drafts or
+Trash.
 
 A dedicated search worker now keeps that work outside both GPUI and the
 single-writer repository thread. Each job carries one exact accepted snapshot,
@@ -546,16 +552,19 @@ The session projection accepts those events only while the exact generation and
 revision remain pending. Fixed 8-command and 16-event channels expose
 backpressure instead of growing, cancelled queued jobs publish nothing, and
 dropping the event endpoint cancels active work and deterministically joins the
-thread even while command clients remain. The live view still needs to submit
-the current accepted snapshot on each query/revision change and render the
-projected states; live search still uses no derived-index behavior yet.
+thread even while command clients remain. A bounded UI bridge now projects only
+current worker events; selecting or receiving the first result reveals its
+stable note without replacing a newer queued editor generation. App shutdown
+cancels the session and orders search-worker shutdown before dropping the view.
+Rendering the returned field-level byte spans as highlighted title/body/tag/
+attachment fragments and Linux search performance evidence still remain.
 
 Known live-app gaps now include folder rename/delete review, tag editing,
 formatted Markdown preview, image attach/preview/reference-removal UI, reviewed
 permanent file/folder deletion, XDG portal text/bundle import and export review/
-progress, consumption of the derived cancellable search index, richer
-conflict-resolution choices, semantic accessibility, and Linux runtime/visual
-evidence. The accepted store remains local-only and makes no cloud-sync claim.
+progress, rich search-match highlighting, richer conflict-resolution choices,
+semantic accessibility, and Linux runtime/visual evidence. The accepted store
+remains local-only and makes no cloud-sync claim.
 Migration must preserve every readable existing note and attachment; it must
 not delete the prototype library after a partial import.
 

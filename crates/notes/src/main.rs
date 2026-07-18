@@ -17,9 +17,11 @@ use gpui::{
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
-    ActionRequest, ActionResult, DraftRecoveryKind, EditGeneration, LibraryAction, NotesSession,
-    NotesWorker, NotesWorkerClient, NotesWorkerEvents, ScheduledEdit, SessionPhase, WorkerCommand,
-    WorkerEvent, WorkerFailure, WorkerSendError, EVENT_CAPACITY,
+    ActionRequest, ActionResult, DraftRecoveryKind, EditGeneration, LibraryAction,
+    NotesSearchSession, NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents,
+    NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, ScheduledEdit, SearchState,
+    SearchWorkerEvent, SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent,
+    WorkerFailure, WorkerSendError, EVENT_CAPACITY, MAX_SEARCH_RESULTS, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{resolve_notes_paths, PendingReason};
 use rmac_notes_store::{NewNote, NoteChanges, NoteId, SortOrder};
@@ -37,13 +39,17 @@ actions!(
         TogglePin,
         SortByEdited,
         SortByCreated,
-        SortByTitle
+        SortByTitle,
+        FocusSearch
     ]
 );
 
 struct NotesView {
     worker: Option<NotesWorkerClient>,
+    search_worker: Option<NotesSearchWorkerClient>,
     session: NotesSession,
+    search: NotesSearchSession,
+    search_query: Entity<InputState>,
     title: Entity<InputState>,
     body: Entity<InputState>,
     focus: FocusHandle,
@@ -55,6 +61,7 @@ struct NotesView {
     recovery_notice_dismissed: bool,
     recovery_decision: Option<(NoteId, RecoveryDecision)>,
     recovery_copy_pending: Option<(u64, NoteId)>,
+    search_shutdown_requested: bool,
     closing: bool,
 }
 
@@ -70,8 +77,10 @@ impl NotesView {
             KeyBinding::new("cmd-n", ComposeNote, Some("Notes")),
             KeyBinding::new("shift-cmd-n", CreateFolder, Some("Notes")),
             KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
+            KeyBinding::new("cmd-f", FocusSearch, Some("Notes")),
         ]);
 
+        let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
         let body = rmac_editor::multiline("Note", window, cx);
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
@@ -86,12 +95,21 @@ impl NotesView {
             }
         })
         .detach();
+        cx.subscribe(&search_query, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.dispatch_search(cx);
+            }
+        })
+        .detach();
 
         let focus = cx.focus_handle();
         window.focus(&focus);
         let mut view = Self {
             worker: None,
+            search_worker: None,
             session: NotesSession::new(),
+            search: NotesSearchSession::new(),
+            search_query,
             title,
             body,
             focus,
@@ -103,6 +121,7 @@ impl NotesView {
             recovery_notice_dismissed: false,
             recovery_decision: None,
             recovery_copy_pending: None,
+            search_shutdown_requested: false,
             closing: false,
         };
 
@@ -134,7 +153,72 @@ impl NotesView {
             Err(message) => view.message = Some(message.into()),
         }
 
+        match NotesSearchWorker::start()
+            .map_err(|error| error.to_string())
+            .and_then(|worker| {
+                let (client, events) = worker.into_parts();
+                bridge_search_events(events)
+                    .map(|receiver| (client, receiver))
+                    .map_err(|error| format!("Notes could not start its search bridge: {error}"))
+            }) {
+            Ok((client, receiver)) => {
+                view.search_worker = Some(client);
+                cx.spawn_in(window, async move |this, cx| {
+                    while let Ok(event) = receiver.recv().await {
+                        if this
+                            .update_in(cx, |this, window, cx| {
+                                this.apply_search_event(event, window, cx)
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                })
+                .detach();
+            }
+            Err(message) => {
+                if view.message.is_none() {
+                    view.message = Some(message.into());
+                }
+            }
+        }
+
         view
+    }
+
+    fn apply_search_event(
+        &mut self,
+        event: SearchWorkerEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(&event, SearchWorkerEvent::Stopped { .. }) {
+            self.search.cancel();
+            let unexpected = !self.closing && !self.search_shutdown_requested;
+            self.search_shutdown_requested = true;
+            self.search_worker = None;
+            if unexpected {
+                self.message = Some("Notes search stopped unexpectedly".into());
+            }
+            cx.notify();
+            return;
+        }
+        if event.project(&mut self.search) {
+            if self.search.state() == SearchState::Results && self.is_interactive_ready() {
+                if let Some(note_id) = self.search.selected() {
+                    let previous = self.session.selected_note_id();
+                    self.session
+                        .select_folder(rmac_notes_runtime::FolderSelection::All);
+                    if self.session.select_note(note_id)
+                        && (previous != Some(note_id) || self.latest_local_generation.is_none())
+                    {
+                        self.sync_editor(window, cx);
+                    }
+                }
+            }
+            cx.notify();
+        }
     }
 
     fn apply_worker_event(
@@ -147,6 +231,7 @@ impl NotesView {
             WorkerEvent::Accepted(accepted) => accepted.generation,
             _ => None,
         };
+        let refresh_search = matches!(&event, WorkerEvent::Ready(_) | WorkerEvent::Accepted(_));
         let sync_editor = match &event {
             WorkerEvent::Ready(_) => self.latest_local_generation.is_none(),
             WorkerEvent::Accepted(accepted) => match accepted.generation {
@@ -238,6 +323,9 @@ impl NotesView {
         if reveal_created {
             self.title.update(cx, |state, cx| state.focus(window, cx));
         }
+        if refresh_search {
+            self.dispatch_search(cx);
+        }
         cx.notify();
     }
 
@@ -253,6 +341,70 @@ impl NotesView {
         self.body
             .update(cx, |state, cx| state.set_value(body, window, cx));
         self.applying_snapshot = false;
+    }
+
+    fn dispatch_search(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_query.read(cx).value().to_string();
+        if query.trim().is_empty() {
+            self.search.cancel();
+            cx.notify();
+            return;
+        }
+        let Some(snapshot) = self.session.snapshot().cloned() else {
+            self.search.cancel();
+            return;
+        };
+        let Some(worker) = self.search_worker.clone() else {
+            self.search.cancel();
+            self.message = Some("Notes search is unavailable".into());
+            cx.notify();
+            return;
+        };
+        let request = match self
+            .search
+            .begin(query, MAX_SEARCH_RESULTS, snapshot.revision)
+        {
+            Ok(Some(request)) => request,
+            Ok(None) => {
+                cx.notify();
+                return;
+            }
+            Err(error) => {
+                self.message = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        if let Err(error) = worker.try_run(snapshot, request) {
+            self.search.cancel();
+            self.message = Some(error.to_string().into());
+        }
+        cx.notify();
+    }
+
+    fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_query
+            .update(cx, |state, cx| state.focus(window, cx));
+    }
+
+    fn select_search_result(
+        &mut self,
+        note_id: NoteId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() || !self.search.select(note_id) {
+            return;
+        }
+        let previous = self.session.selected_note_id();
+        self.session
+            .select_folder(rmac_notes_runtime::FolderSelection::All);
+        if self.session.select_note(note_id)
+            && (previous != Some(note_id) || self.latest_local_generation.is_none())
+        {
+            self.sync_editor(window, cx);
+        }
+        cx.notify();
     }
 
     fn schedule_current_edit(&mut self, cx: &mut Context<Self>) {
@@ -482,8 +634,11 @@ impl NotesView {
         if !self.is_interactive_ready() {
             return;
         }
+        let previous = self.session.selected_note_id();
         self.session.select_folder(folder);
-        self.sync_editor(window, cx);
+        if self.session.selected_note_id() != previous || self.latest_local_generation.is_none() {
+            self.sync_editor(window, cx);
+        }
         cx.notify();
     }
 
@@ -491,8 +646,11 @@ impl NotesView {
         if !self.is_interactive_ready() {
             return;
         }
+        let previous = self.session.selected_note_id();
         if self.session.select_note(note_id) {
-            self.sync_editor(window, cx);
+            if previous != Some(note_id) || self.latest_local_generation.is_none() {
+                self.sync_editor(window, cx);
+            }
             cx.notify();
         }
     }
@@ -654,20 +812,46 @@ impl NotesView {
             cx.notify();
             return;
         }
-        self.closing = true;
+        if !self.request_search_shutdown(cx) {
+            return;
+        }
         let shutdown = self
             .worker
             .as_ref()
             .ok_or(WorkerSendError::Closed)
             .and_then(|worker| worker.try_send(WorkerCommand::Shutdown));
         if let Err(error) = shutdown {
-            self.closing = false;
             self.message =
                 Some(format!("Notes could not safely close yet: {error}. Try again.").into());
             cx.notify();
             return;
         }
+        self.closing = true;
         window.remove_window();
+    }
+
+    fn request_search_shutdown(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.search_shutdown_requested {
+            return true;
+        }
+        self.search.cancel();
+        let result = self
+            .search_worker
+            .as_ref()
+            .ok_or(SearchWorkerSendError::Closed)
+            .and_then(NotesSearchWorkerClient::try_shutdown);
+        match result {
+            Ok(()) | Err(SearchWorkerSendError::Closed) => {
+                self.search_shutdown_requested = true;
+                true
+            }
+            Err(error) => {
+                self.message =
+                    Some(format!("Notes search is still finishing: {error}. Try again.").into());
+                cx.notify();
+                false
+            }
+        }
     }
 
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -736,6 +920,29 @@ impl NotesView {
                     .justify_end()
                     .gap_1()
                     .pr_4()
+                    .child(
+                        div()
+                            .w(px(220.0))
+                            .h(px(28.0))
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .px_2()
+                            .rounded(px(7.0))
+                            .bg(mac::control_fill())
+                            .child(
+                                Icon::new(IconName::Search)
+                                    .with_size(Size::XSmall)
+                                    .text_color(mac::text_tertiary()),
+                            )
+                            .child(
+                                TextField::new(&self.search_query)
+                                    .appearance(false)
+                                    .cleanable(true)
+                                    .small()
+                                    .disabled(self.session.snapshot().is_none()),
+                            ),
+                    )
                     .child(
                         Button::new("pin", "")
                             .icon(IconName::Star)
@@ -850,8 +1057,30 @@ impl NotesView {
     }
 
     fn render_note_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let selected = self.session.selected_note_id();
-        let notes = self.session.visible_notes();
+        let search_active = !self.search_query.read(cx).value().trim().is_empty();
+        let selected = if search_active {
+            self.search.selected()
+        } else {
+            self.session.selected_note_id()
+        };
+        let notes = if search_active && self.search.state() == SearchState::Results {
+            self.session.snapshot().map_or_else(Vec::new, |snapshot| {
+                self.search
+                    .hits()
+                    .iter()
+                    .filter_map(|hit| {
+                        snapshot
+                            .notes
+                            .iter()
+                            .find(|note| note.id == hit.note_id && !note.deleted)
+                    })
+                    .collect()
+            })
+        } else if search_active {
+            Vec::new()
+        } else {
+            self.session.visible_notes()
+        };
         let note_count = notes.len();
         let mut items = Vec::<AnyElement>::new();
         for note in notes {
@@ -928,30 +1157,40 @@ impl NotesView {
                                 )
                             }),
                     )
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| {
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if search_active {
+                            this.select_search_result(note_id, window, cx)
+                        } else {
                             this.select_note(note_id, window, cx)
-                        }),
-                    )
+                        }
+                    }))
                     .into_any_element(),
             );
         }
         if items.is_empty() {
+            let empty_message: SharedString = if search_active {
+                match self.search.state() {
+                    SearchState::Indexing => "Searching…".into(),
+                    SearchState::NoMatches => "No matching notes".into(),
+                    SearchState::Unavailable => self.search.failure().map_or_else(
+                        || "Search is unavailable".into(),
+                        |error| error.to_string().into(),
+                    ),
+                    SearchState::Empty | SearchState::Results => "Search is unavailable".into(),
+                }
+            } else if self.session.folder_selection() == rmac_notes_runtime::FolderSelection::Trash
+            {
+                "Recently Deleted is empty".into()
+            } else {
+                "No notes in this folder".into()
+            };
             items.push(
                 div()
                     .px_4()
                     .py_6()
                     .text_size(rmac_ui::text_px(13.0))
                     .text_color(mac::text_tertiary())
-                    .child(
-                        if self.session.folder_selection()
-                            == rmac_notes_runtime::FolderSelection::Trash
-                        {
-                            "Recently Deleted is empty"
-                        } else {
-                            "No notes in this folder"
-                        },
-                    )
+                    .child(empty_message)
                     .into_any_element(),
             );
         }
@@ -974,7 +1213,17 @@ impl NotesView {
                     .text_color(mac::text_secondary())
                     .child(format!(
                         "{note_count} {}",
-                        if note_count == 1 { "Note" } else { "Notes" }
+                        if search_active {
+                            if note_count == 1 {
+                                "Result"
+                            } else {
+                                "Results"
+                            }
+                        } else if note_count == 1 {
+                            "Note"
+                        } else {
+                            "Notes"
+                        }
                     )),
             )
             .child(
@@ -984,6 +1233,19 @@ impl NotesView {
                     .overflow_y_scroll()
                     .py_1()
                     .children(items),
+            )
+            .when(
+                search_active && self.search.results_truncated(),
+                |element| {
+                    element.child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .text_size(rmac_ui::text_px(10.0))
+                            .text_color(mac::text_tertiary())
+                            .child("Showing the first 500 results"),
+                    )
+                },
             )
     }
 
@@ -1382,6 +1644,20 @@ impl NotesView {
 impl Drop for NotesView {
     fn drop(&mut self) {
         if !self.closing {
+            self.search.cancel();
+            if let Some(search_worker) = &self.search_worker {
+                if matches!(
+                    search_worker.try_shutdown(),
+                    Err(SearchWorkerSendError::Full)
+                ) {
+                    let search_worker = search_worker.clone();
+                    let _ = thread::Builder::new()
+                        .name("rmac-notes-search-close".into())
+                        .spawn(move || {
+                            let _ = search_worker.shutdown_blocking();
+                        });
+                }
+            }
             if let Some(worker) = &self.worker {
                 let _ = worker.try_send(WorkerCommand::Shutdown);
             }
@@ -1455,6 +1731,9 @@ impl Render for NotesView {
             .on_action(
                 cx.listener(|this, _: &SortByTitle, _, cx| this.set_sort(SortOrder::Title, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.request_close(window, cx)
             }))
@@ -1471,6 +1750,22 @@ fn bridge_worker_events(
     let (sender, receiver) = async_channel::bounded(EVENT_CAPACITY);
     thread::Builder::new()
         .name("rmac-notes-ui-events".into())
+        .spawn(move || {
+            while let Ok(event) = events.recv() {
+                if sender.send_blocking(event).is_err() {
+                    break;
+                }
+            }
+        })?;
+    Ok(receiver)
+}
+
+fn bridge_search_events(
+    events: NotesSearchWorkerEvents,
+) -> io::Result<async_channel::Receiver<SearchWorkerEvent>> {
+    let (sender, receiver) = async_channel::bounded(SEARCH_EVENT_CAPACITY);
+    thread::Builder::new()
+        .name("rmac-notes-ui-search-events".into())
         .spawn(move || {
             while let Ok(event) = events.recv() {
                 if sender.send_blocking(event).is_err() {

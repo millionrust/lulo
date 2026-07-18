@@ -157,6 +157,26 @@ impl NotesSearchWorkerClient {
     ) -> Result<(), SearchWorkerSendError> {
         try_send_job(&self.commands, SearchJob::new(snapshot, request)?)
     }
+
+    /// Nonblockingly asks the search thread to stop. Callers should cancel
+    /// their active [`NotesSearchSession`] first, then retry if bounded command
+    /// backpressure reports [`SearchWorkerSendError::Full`].
+    pub fn try_shutdown(&self) -> Result<(), SearchWorkerSendError> {
+        self.commands
+            .try_send(SearchWorkerCommand::Shutdown)
+            .map_err(|error| match error {
+                TrySendError::Full(_) => SearchWorkerSendError::Full,
+                TrySendError::Disconnected(_) => SearchWorkerSendError::Closed,
+            })
+    }
+
+    /// Requests shutdown after bounded queue space becomes available. This is
+    /// intended for a background teardown helper, not an interactive UI path.
+    pub fn shutdown_blocking(&self) -> Result<(), SearchWorkerSendError> {
+        self.commands
+            .send(SearchWorkerCommand::Shutdown)
+            .map_err(|_| SearchWorkerSendError::Closed)
+    }
 }
 
 impl fmt::Debug for NotesSearchWorkerClient {
@@ -569,6 +589,20 @@ mod tests {
             client.try_run(snapshot(1), request),
             Err(SearchWorkerSendError::Closed)
         );
+    }
+
+    #[test]
+    fn split_client_can_request_ordered_shutdown() {
+        let worker = NotesSearchWorker::start().unwrap();
+        let (client, events) = worker.into_parts();
+        client.try_shutdown().unwrap();
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(2)).unwrap(),
+            SearchWorkerEvent::Stopped {
+                jobs_started: 0,
+                index_rebuilds: 0,
+            }
+        ));
     }
 
     #[test]

@@ -61,6 +61,12 @@ pub fn snapshot() -> Result<Snapshot, Error> {
     SystemService.snapshot()
 }
 
+/// Return the system locale's authoritative hour cycle without enumerating
+/// installed locales or keyboard layouts.
+pub fn hour_cycle() -> Result<rmac_locale::HourCycle, Error> {
+    system_hour_cycle()
+}
+
 pub fn set_locale(assignments: &[String]) -> Result<Snapshot, Error> {
     SystemService.set_locale(assignments)
 }
@@ -228,6 +234,13 @@ async fn watch_once(sender: &async_channel::Sender<rmac_locale::WatchEvent>) -> 
         .map_err(|_| Error::new(ErrorKind::Unavailable, "could not watch localed restarts"))?
         .fuse();
 
+    // The subscription is live before this refresh hint is published. A
+    // consumer can now read a snapshot without losing a change between its
+    // initial read and signal subscription.
+    if sender.send(rmac_locale::WatchEvent::Changed).await.is_err() {
+        return Ok(());
+    }
+
     loop {
         let closed = sender.closed().fuse();
         futures_util::pin_mut!(closed);
@@ -294,6 +307,16 @@ fn system_snapshot() -> Result<Snapshot, Error> {
         x11_options: property(&proxy, "X11Options")?,
         console_keymap: property(&proxy, "VConsoleKeymap")?,
     })
+}
+
+#[cfg(target_os = "linux")]
+fn system_hour_cycle() -> Result<rmac_locale::HourCycle, Error> {
+    let connection = system_connection()?;
+    let proxy = locale_proxy(&connection)?;
+    let locale = rmac_locale::normalize_assignments(property(&proxy, "Locale")?)?;
+    let language = assignment(&locale, "LANG").unwrap_or("C");
+    let date_locale = assignment(&locale, "LC_TIME").unwrap_or(language);
+    NativeLocale::new(date_locale)?.hour_cycle()
 }
 
 #[cfg(target_os = "linux")]
@@ -405,6 +428,16 @@ impl NativeLocale {
         })
     }
 
+    fn hour_cycle(&self) -> Result<rmac_locale::HourCycle, Error> {
+        let format = self.langinfo(libc::T_FMT)?;
+        hour_cycle_from_time_format(&format).ok_or_else(|| {
+            Error::new(
+                ErrorKind::Protocol,
+                "the locale did not disclose a supported hour cycle",
+            )
+        })
+    }
+
     fn currency(&self) -> Result<String, Error> {
         let format = std::ffi::CString::new("%n").expect("static format has no NUL");
         let mut output = [0_u8; 256];
@@ -433,6 +466,29 @@ impl NativeLocale {
             )
         })
     }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn hour_cycle_from_time_format(format: &str) -> Option<rmac_locale::HourCycle> {
+    let mut characters = format.chars();
+    while let Some(character) = characters.next() {
+        if character != '%' {
+            continue;
+        }
+        let mut directive = characters.next()?;
+        if directive == '%' {
+            continue;
+        }
+        if matches!(directive, 'E' | 'O') {
+            directive = characters.next()?;
+        }
+        match directive {
+            'I' | 'l' | 'r' => return Some(rmac_locale::HourCycle::TwelveHour),
+            'H' | 'k' | 'R' | 'T' => return Some(rmac_locale::HourCycle::TwentyFourHour),
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(target_os = "linux")]
@@ -476,6 +532,14 @@ fn system_snapshot() -> Result<Snapshot, Error> {
     Err(Error::new(
         ErrorKind::Unavailable,
         "language and region settings are available in the supported Linux session",
+    ))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn system_hour_cycle() -> Result<rmac_locale::HourCycle, Error> {
+    Err(Error::new(
+        ErrorKind::Unavailable,
+        "locale hour-cycle settings are available in the supported Linux session",
     ))
 }
 
@@ -673,5 +737,18 @@ mod tests {
     fn number_example_follows_locale_separators() {
         let number = grouped_number(" ", ",");
         assert_eq!(number, "1 234,56");
+    }
+
+    #[test]
+    fn hour_cycle_comes_from_the_locale_time_format() {
+        assert_eq!(
+            hour_cycle_from_time_format("%r"),
+            Some(rmac_locale::HourCycle::TwelveHour)
+        );
+        assert_eq!(
+            hour_cycle_from_time_format("%OH:%M:%S"),
+            Some(rmac_locale::HourCycle::TwentyFourHour)
+        );
+        assert_eq!(hour_cycle_from_time_format("%% %Z"), None);
     }
 }

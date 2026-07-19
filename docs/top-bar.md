@@ -46,11 +46,27 @@ The clock returns exactly one deadline at the next minute boundary, or at the
 next second boundary when the user explicitly enables seconds. It never asks
 for a continuous frame loop.
 
+`rmac-top-bar-runtime` is the process-facing coordinator. It waits until the
+shell stream, locale subscription, and discontinuous-clock detector are all
+ready before publishing its first projection. The locale adapter reads the
+system `LC_TIME` hour directive directly instead of guessing from a country or
+environment-variable spelling. If that authority becomes unavailable, the
+runtime preserves the last accepted cycle; only cold-start failure uses the
+documented 24-hour fallback.
+
+After startup, shell changes replace the current coherent snapshot, locale and
+timedated changes resample their authorities, and the sole one-shot timer is
+an absolute Linux realtime deadline that advances during suspend. It is
+cancelled and rearmed whenever the clock policy changes. Clock jumps, time-zone
+changes, watcher reconnection, and resume therefore recalculate the deadline.
+Only a changed presentation crosses to the renderer, so health-only events and
+unchanged resamples do not request a frame.
+
 ## Remaining acceptance work
 
-The product still needs the real upstream-GPUI layer-shell executable, output
-hotplug reconciliation, original icon assets, Quick Settings and Notification
-Center invocation/focus routing, and semantic toolbar/status nodes. D1/D2 stay
-open until the Ubuntu/niri reference PC proves placement, exclusive zone,
-mixed/fractional scale, focus, fullscreen, hotplug, Orca, clock changes,
-service restarts, idle behavior, and 60/120 Hz performance.
+The product still needs the real upstream-GPUI layer-shell executable, original
+icon assets, Quick Settings and Notification Center invocation/focus routing,
+and semantic toolbar/status nodes. D1/D2 stay open until the Ubuntu/niri
+reference PC proves placement, exclusive zone, mixed/fractional scale, focus,
+fullscreen, hotplug, Orca, clock changes, service restarts, idle behavior, and
+60/120 Hz performance.

@@ -5715,6 +5715,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-top-bar-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "rmac-locale",
+ "rmac-locale-linux",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-time",
+ "rmac-time-linux",
+ "rmac-top-bar",
+]
+
+[[package]]
 name = "rmac-ui"
 version = "0.1.0"
 dependencies = [

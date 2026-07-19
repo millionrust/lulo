@@ -42,6 +42,12 @@ pub enum WatchEvent {
     Unavailable,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HourCycle {
+    TwelveHour,
+    TwentyFourHour,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Assignment {
     pub key: String,

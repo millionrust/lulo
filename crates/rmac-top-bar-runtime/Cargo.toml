@@ -1,0 +1,22 @@
+[package]
+name = "rmac-top-bar-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+async-channel.workspace = true
+async-io.workspace = true
+blocking.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+rmac-locale.workspace = true
+rmac-locale-linux.workspace = true
+rmac-shell-runtime.workspace = true
+rmac-shell-settings.workspace = true
+rmac-shell-status.workspace = true
+rmac-time.workspace = true
+rmac-time-linux.workspace = true
+rmac-top-bar.workspace = true

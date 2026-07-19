@@ -111,6 +111,63 @@ pub async fn watch(sender: async_channel::Sender<rmac_time::WatchEvent>) -> Resu
     }
 }
 
+/// Wait for an absolute realtime deadline.
+///
+/// Unlike a monotonic userspace sleep, this deadline advances during suspend.
+/// Dropping the future closes its timer descriptor, so callers can replace an
+/// obsolete deadline immediately after a clock or time-zone event.
+#[cfg(target_os = "linux")]
+pub async fn wait_until_realtime(deadline: std::time::SystemTime) -> Result<(), Error> {
+    use rustix::time::{timerfd_create, timerfd_settime, Itimerspec, TimerfdClockId, TimerfdFlags};
+
+    let (seconds, nanoseconds) = realtime_parts(deadline)?;
+    let descriptor = timerfd_create(
+        TimerfdClockId::Realtime,
+        TimerfdFlags::CLOEXEC | TimerfdFlags::NONBLOCK,
+    )
+    .map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "could not create a realtime deadline",
+        )
+    })?;
+    timerfd_settime(
+        &descriptor,
+        rustix::time::TimerfdTimerFlags::ABSTIME,
+        &Itimerspec {
+            it_interval: rustix::time::Timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            },
+            it_value: rustix::time::Timespec {
+                tv_sec: seconds,
+                tv_nsec: nanoseconds,
+            },
+        },
+    )
+    .map_err(|_| Error::new(ErrorKind::Unavailable, "could not arm a realtime deadline"))?;
+    async_io::Async::new(descriptor)
+        .map_err(|_| {
+            Error::new(
+                ErrorKind::Unavailable,
+                "could not register a realtime deadline",
+            )
+        })?
+        .read_with(|descriptor| {
+            let mut value = [0_u8; 8];
+            match rustix::io::read(descriptor, &mut value) {
+                Ok(8) => Ok(()),
+                Ok(_) => Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "incomplete realtime deadline event",
+                )),
+                Err(error) => Err(std::io::Error::from(error)),
+            }
+        })
+        .await
+        .map_err(|_| Error::new(ErrorKind::Unavailable, "the realtime deadline failed"))
+}
+
 #[cfg(not(target_os = "linux"))]
 pub async fn watch(sender: async_channel::Sender<rmac_time::WatchEvent>) -> Result<(), Error> {
     sender
@@ -163,6 +220,13 @@ async fn watch_once(sender: &async_channel::Sender<rmac_time::WatchEvent>) -> Re
         .map_err(|_| Error::new(ErrorKind::Unavailable, "could not watch timedated restarts"))?
         .fuse();
     let clock = clock_change_detector()?;
+
+    // Publish only after every subscription and the discontinuous-clock
+    // detector are armed. Consumers can take their initial wall-clock sample
+    // without a snapshot-before-watch race.
+    if sender.send(rmac_time::WatchEvent::Changed).await.is_err() {
+        return Ok(());
+    }
 
     loop {
         let closed = sender.closed().fuse();
@@ -302,6 +366,25 @@ fn owner_reappeared(message: Option<Result<zbus::Message, zbus::Error>>) -> Resu
 #[cfg(any(target_os = "linux", test))]
 fn owner_change_reappeared(name: &str, new_owner: &str) -> bool {
     name == "org.freedesktop.timedate1" && !new_owner.is_empty()
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn realtime_parts(deadline: std::time::SystemTime) -> Result<(i64, i64), Error> {
+    let deadline = deadline
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| {
+            Error::new(
+                ErrorKind::InvalidTime,
+                "realtime deadline predates the epoch",
+            )
+        })?;
+    let seconds = i64::try_from(deadline.as_secs()).map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidTime,
+            "realtime deadline exceeds the kernel clock range",
+        )
+    })?;
+    Ok((seconds, i64::from(deadline.subsec_nanos())))
 }
 
 #[cfg(target_os = "linux")]
@@ -488,5 +571,16 @@ mod tests {
             ":1.42"
         ));
         assert!(!owner_change_reappeared("org.example.Other", ":1.42"));
+    }
+
+    #[test]
+    fn realtime_deadlines_preserve_nanosecond_precision() {
+        let deadline = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(1_234)
+            + std::time::Duration::from_nanos(567_890_123);
+        assert_eq!(realtime_parts(deadline).unwrap(), (1_234, 567_890_123));
+        assert!(
+            realtime_parts(std::time::UNIX_EPOCH - std::time::Duration::from_nanos(1)).is_err()
+        );
     }
 }

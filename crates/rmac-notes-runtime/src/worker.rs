@@ -4187,6 +4187,83 @@ mod tests {
     }
 
     #[test]
+    fn overwrite_rebases_local_fields_after_another_durable_change() {
+        let (container, paths) = roots("conflict-overwrite-rebase");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_millis(20)).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+        let conflict = enter_edit_conflict(&worker, &paths, note_id, &created, "Local body");
+
+        let mut second_external = LibraryTransaction::begin(&conflict.accepted.snapshot).unwrap();
+        second_external.set_sort_order(SortOrder::Title);
+        std::fs::write(
+            paths.data_root().join("library.bin"),
+            encode(&second_external.finish().unwrap()).unwrap(),
+        )
+        .unwrap();
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 3,
+                pending_request_id: conflict.request_id,
+                resolution: PendingConflictResolution::OverwriteDurable,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Pending(PendingEvent {
+                request_id: 3,
+                reason: PendingReason::Store(_),
+                conflict: None,
+                ..
+            })
+        ));
+
+        worker.try_send(WorkerCommand::RetryPending).unwrap();
+        let rebased = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Pending(event) => event,
+            event => panic!("expected rebased overwrite conflict, got {event:?}"),
+        };
+        let review = rebased
+            .conflict
+            .expect("the local overwrite remains reviewable");
+        assert_eq!(review.note_id, note_id);
+        assert_eq!(review.durable_note_revision, Some(2));
+        assert_eq!(review.local_note_revision, 3);
+
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 4,
+                pending_request_id: rebased.request_id,
+                resolution: PendingConflictResolution::OverwriteDurable,
+            })
+            .unwrap();
+        let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted rebased overwrite, got {event:?}"),
+        };
+        assert_eq!(accepted.accepted.snapshot.sort_order, SortOrder::Title);
+        assert_eq!(accepted.accepted.snapshot.notes.len(), 1);
+        let overwritten = &accepted.accepted.snapshot.notes[0];
+        assert_eq!(overwritten.id, note_id);
+        assert_eq!(overwritten.revision, 3);
+        assert_eq!(overwritten.title, "Private title");
+        assert_eq!(overwritten.body, "Local body");
+        assert!(overwritten.tags.is_empty());
+        assert_eq!(
+            DraftStore::for_library(paths.data_root())
+                .load(note_id)
+                .unwrap(),
+            None
+        );
+
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
     fn edit_conflict_overwrite_is_request_bound_and_preserves_unrelated_durable_state() {
         let (container, paths) = roots("conflict-overwrite");
         let worker =

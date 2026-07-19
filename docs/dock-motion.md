@@ -18,6 +18,20 @@ instead of oscillating around a moving hit target. Tests cover symmetry,
 maximum scale, finite/range validation, gap preservation, deterministic replay,
 and the unscaled/reduced-motion path.
 
+The content projection supplies one explicit gap per neighboring pair. Normal
+icons keep an 8-logical-pixel gap while the application/place boundary keeps a
+24-pixel gap for one noninteractive separator; no fake item enters keyboard,
+pointer, activation, or accessibility order. The output layout centers stable
+base geometry, converts the pointer from output coordinates only once, then
+magnifies from those unchanged centers. If magnified content approaches an
+output edge, the completed shelf shifts only enough to stay inside its 8-pixel
+axis inset. That final shift never feeds the next scale calculation.
+
+Every rendered slot retains its typed application or place identity for hit
+testing. Gaps and the separator remain noninteractive. Nonfinite/out-of-output
+pointer coordinates, invalid output axes, invalid gap vectors, and content that
+cannot fit are explicit errors rather than clipped or overlapping controls.
+
 The layout is one-dimensional and applies equally to bottom, left, and right
 placement; the renderer maps its axis to screen coordinates. Reduced motion
 sets every scale to one rather than replacing magnification with a different
@@ -65,6 +79,6 @@ boolean changes.
 This model is not D6 completion. Niri 26.4 does not expose real fullscreen state
 on its IPC `Window`, so the project does not guess it; real fullscreen behavior
 must come from niri's layer-shell stacking and reference-PC proof. Layer-surface
-pressure behavior, pointer capture, live reduced-motion renderer proof, 60/120
-Hz frame evidence, combined-shell idle measurements, and multi-output hardware
-validation remain pending.
+pressure behavior, pointer capture and event translation, crowded-Dock fitting,
+live reduced-motion renderer proof, 60/120 Hz frame evidence, combined-shell
+idle measurements, and multi-output hardware validation remain pending.

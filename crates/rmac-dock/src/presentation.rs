@@ -3,7 +3,10 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use crate::{Item, Model, SpecialItem, SpecialItemKind};
+use crate::{motion, Item, Model, SpecialItem, SpecialItemKind, SurfaceDescription};
+
+pub const SHELF_AXIS_PADDING: f32 = 8.0;
+pub const GROUP_GAP: f32 = 24.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BuiltinIcon {
@@ -78,6 +81,68 @@ pub struct ShelfContent {
     pub places: Vec<Entry>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Slot {
+    pub id: EntryId,
+    pub center: f32,
+    pub size: f32,
+    pub scale: f32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShelfLayout {
+    pub slots: Vec<Slot>,
+    pub start: f32,
+    pub end: f32,
+    /// Center of the noninteractive separator between applications and places.
+    pub separator_axis: Option<f32>,
+}
+
+impl ShelfLayout {
+    pub fn hit_test(&self, axis: f32) -> Option<&EntryId> {
+        axis.is_finite().then_some(())?;
+        self.slots
+            .iter()
+            .find(|slot| (axis - slot.center).abs() <= slot.size / 2.0)
+            .map(|slot| &slot.id)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LayoutError {
+    InvalidAxis,
+    InvalidPointer,
+    DoesNotFit { required: f32, available: f32 },
+    Magnification(motion::ConfigError),
+}
+
+impl fmt::Display for LayoutError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidAxis => formatter.write_str("Dock output axis is invalid"),
+            Self::InvalidPointer => formatter.write_str("Dock pointer coordinate is invalid"),
+            Self::DoesNotFit {
+                required,
+                available,
+            } => write!(
+                formatter,
+                "Dock content requires {required} logical pixels but only {available} are available"
+            ),
+            Self::Magnification(error) => {
+                write!(formatter, "invalid Dock magnification: {error:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LayoutError {}
+
+impl From<motion::ConfigError> for LayoutError {
+    fn from(error: motion::ConfigError) -> Self {
+        Self::Magnification(error)
+    }
+}
+
 impl ShelfContent {
     pub fn project(model: &Model) -> Self {
         Self {
@@ -88,6 +153,106 @@ impl ShelfContent {
 
     pub fn has_separator(&self) -> bool {
         !self.applications.is_empty() && !self.places.is_empty()
+    }
+
+    /// Produce output-axis geometry from stable base centers. Pointer distance
+    /// never uses a previously rendered center, including when the final shelf
+    /// is shifted just enough to remain inside a physical output edge.
+    pub fn layout(
+        &self,
+        surface: &SurfaceDescription,
+        pointer_axis: Option<f32>,
+    ) -> Result<ShelfLayout, LayoutError> {
+        if !surface.output_axis_length.is_finite()
+            || surface.output_axis_length <= 0.0
+            || surface.output_axis_length > f32::MAX as f64
+        {
+            return Err(LayoutError::InvalidAxis);
+        }
+        let axis = surface.output_axis_length as f32;
+        if pointer_axis
+            .is_some_and(|pointer| !pointer.is_finite() || !(0.0..=axis).contains(&pointer))
+        {
+            return Err(LayoutError::InvalidPointer);
+        }
+        let entries = self
+            .applications
+            .iter()
+            .chain(self.places.iter())
+            .collect::<Vec<_>>();
+        if entries.is_empty() {
+            return Ok(ShelfLayout {
+                start: axis / 2.0,
+                end: axis / 2.0,
+                ..Default::default()
+            });
+        }
+
+        let mut gaps = vec![surface.magnification.gap; entries.len().saturating_sub(1)];
+        if self.has_separator() {
+            gaps[self.applications.len() - 1] = GROUP_GAP;
+        }
+        let base = motion::magnified_layout_with_gaps(
+            entries.len(),
+            &gaps,
+            None,
+            false,
+            false,
+            surface.magnification,
+        )?;
+        let available = axis - 2.0 * SHELF_AXIS_PADDING;
+        if available <= 0.0 {
+            return Err(LayoutError::InvalidAxis);
+        }
+        ensure_fits(base.extent(), available)?;
+
+        let desired_shift = (axis - base.extent()) / 2.0 - base.start;
+        let relative_pointer = pointer_axis.map(|pointer| pointer - desired_shift);
+        let layout = motion::magnified_layout_with_gaps(
+            entries.len(),
+            &gaps,
+            relative_pointer,
+            surface.magnification_enabled,
+            !surface.animate,
+            surface.magnification,
+        )?;
+        ensure_fits(layout.extent(), available)?;
+
+        let minimum_shift = SHELF_AXIS_PADDING - layout.start;
+        let maximum_shift = axis - SHELF_AXIS_PADDING - layout.end;
+        let shift = desired_shift.clamp(minimum_shift, maximum_shift);
+        let slots = entries
+            .into_iter()
+            .zip(layout.items)
+            .map(|(entry, geometry)| Slot {
+                id: entry.id.clone(),
+                center: geometry.center + shift,
+                size: geometry.size,
+                scale: geometry.scale,
+            })
+            .collect::<Vec<_>>();
+        let separator_axis = self.has_separator().then(|| {
+            let left = &slots[self.applications.len() - 1];
+            let right = &slots[self.applications.len()];
+            ((left.center + left.size / 2.0) + (right.center - right.size / 2.0)) / 2.0
+        });
+        Ok(ShelfLayout {
+            start: layout.start + shift,
+            end: layout.end + shift,
+            slots,
+            separator_axis,
+        })
+    }
+}
+
+fn ensure_fits(required: f32, available: f32) -> Result<(), LayoutError> {
+    if required <= available {
+        Ok(())
+    } else {
+        Err(LayoutError::DoesNotFit {
+            required,
+            available,
+        })
     }
 }
 
@@ -313,5 +478,92 @@ mod tests {
             assert!(!svg.contains("Gradient"));
             assert!(!svg.contains("<filter"));
         }
+    }
+
+    fn surface(axis: f64, reduced_motion: bool) -> SurfaceDescription {
+        SurfaceDescription {
+            output: rmac_compositor::OutputId::from("eDP-1"),
+            placement: rmac_shell_settings::DockPlacement::Bottom,
+            output_axis_length: axis,
+            output_scale: 2.0,
+            base_thickness: 64.0,
+            maximum_thickness: if reduced_motion { 64.0 } else { 88.0 },
+            exclusive_zone: 64.0,
+            reveal_edge_thickness: 0.0,
+            keyboard_interactive: false,
+            autohide: false,
+            overview_visible: false,
+            magnification_enabled: !reduced_motion,
+            animate: !reduced_motion,
+            magnification: motion::MagnificationConfig::default(),
+        }
+    }
+
+    fn grouped_content() -> ShelfContent {
+        ShelfContent::project(&Model {
+            items: vec![item("Finder"), item("Terminal")],
+            special_items: vec![
+                special(SpecialItemKind::Downloads, "Downloads", true, None),
+                special(SpecialItemKind::Trash, "Trash", true, Some(3)),
+            ],
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn layout_centers_groups_and_preserves_a_real_separator_gap() {
+        let content = grouped_content();
+        let layout = content.layout(&surface(800.0, false), None).unwrap();
+
+        assert_eq!(layout.start, 284.0);
+        assert_eq!(layout.end, 516.0);
+        assert_eq!(layout.separator_axis, Some(400.0));
+        assert_eq!(layout.slots[0].center, 308.0);
+        assert_eq!(layout.slots[1].center, 364.0);
+        assert_eq!(layout.slots[2].center, 436.0);
+        assert_eq!(layout.slots[3].center, 492.0);
+        assert_eq!(
+            layout.hit_test(364.0),
+            Some(&EntryId::Application("terminal.desktop".into()))
+        );
+        assert_eq!(layout.hit_test(400.0), None);
+    }
+
+    #[test]
+    fn pointer_magnification_uses_stable_output_coordinates() {
+        let content = grouped_content();
+        let surface = surface(800.0, false);
+        let first = content.layout(&surface, Some(364.0)).unwrap();
+        let replay = content.layout(&surface, Some(364.0)).unwrap();
+
+        assert_eq!(first, replay);
+        assert_eq!(first.slots[1].center, 364.0);
+        assert_eq!(first.slots[1].scale, 1.5);
+        assert!(first.start >= SHELF_AXIS_PADDING);
+        assert!(first.end <= 800.0 - SHELF_AXIS_PADDING);
+    }
+
+    #[test]
+    fn reduced_motion_layout_never_scales_and_invalid_geometry_fails_closed() {
+        let content = grouped_content();
+        let layout = content.layout(&surface(800.0, true), Some(364.0)).unwrap();
+        assert!(layout.slots.iter().all(|slot| slot.scale == 1.0));
+        assert!(layout.slots.iter().all(|slot| slot.size == 48.0));
+
+        assert_eq!(
+            content.layout(&surface(100.0, false), None),
+            Err(LayoutError::DoesNotFit {
+                required: 232.0,
+                available: 84.0,
+            })
+        );
+        assert_eq!(
+            content.layout(&surface(800.0, false), Some(f32::NAN)),
+            Err(LayoutError::InvalidPointer)
+        );
+        assert_eq!(
+            content.layout(&surface(f64::INFINITY, false), None),
+            Err(LayoutError::InvalidAxis)
+        );
     }
 }

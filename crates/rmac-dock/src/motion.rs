@@ -87,14 +87,43 @@ pub fn magnified_layout(
     reduced_motion: bool,
     config: MagnificationConfig,
 ) -> Result<MagnifiedLayout, ConfigError> {
+    let gaps = vec![config.gap; item_count.saturating_sub(1)];
+    magnified_layout_with_gaps(item_count, &gaps, pointer, enabled, reduced_motion, config)
+}
+
+/// The same stable-center layout with an explicit logical gap between each
+/// neighboring pair. This lets the Dock reserve a wider application/place
+/// separator without inserting a fake interactive item.
+pub fn magnified_layout_with_gaps(
+    item_count: usize,
+    gaps: &[f32],
+    pointer: Option<f32>,
+    enabled: bool,
+    reduced_motion: bool,
+    config: MagnificationConfig,
+) -> Result<MagnifiedLayout, ConfigError> {
     let config = config.validate()?;
+    if gaps.len() != item_count.saturating_sub(1)
+        || !gaps
+            .iter()
+            .all(|gap| gap.is_finite() && (0.0..=32.0).contains(gap))
+    {
+        return Err(ConfigError::Gap);
+    }
     if item_count == 0 {
         return Ok(MagnifiedLayout::default());
     }
-    let stride = config.icon_size + config.gap;
-    let base_centers: Vec<_> = (0..item_count)
-        .map(|index| config.icon_size / 2.0 + index as f32 * stride)
-        .collect();
+    let mut base_centers = Vec::with_capacity(item_count);
+    base_centers.push(config.icon_size / 2.0);
+    for gap in gaps {
+        let next = base_centers
+            .last()
+            .copied()
+            .expect("a nonempty layout has a previous center")
+            + config.icon_size
+            + gap;
+        base_centers.push(next);
+    }
     let magnifies = enabled && !reduced_motion;
     let scales: Vec<_> = base_centers
         .iter()
@@ -130,11 +159,11 @@ pub fn magnified_layout(
     centers[anchor] = base_centers[anchor];
     for index in anchor + 1..item_count {
         centers[index] =
-            centers[index - 1] + sizes[index - 1] / 2.0 + config.gap + sizes[index] / 2.0;
+            centers[index - 1] + sizes[index - 1] / 2.0 + gaps[index - 1] + sizes[index] / 2.0;
     }
     for index in (0..anchor).rev() {
         centers[index] =
-            centers[index + 1] - sizes[index + 1] / 2.0 - config.gap - sizes[index] / 2.0;
+            centers[index + 1] - sizes[index + 1] / 2.0 - gaps[index] - sizes[index] / 2.0;
     }
     let items: Vec<_> = centers
         .into_iter()
@@ -337,6 +366,25 @@ mod tests {
             let right_edge = pair[1].center - pair[1].size / 2.0;
             assert!(right_edge - left_edge >= config.gap - f32::EPSILON);
         }
+    }
+
+    #[test]
+    fn explicit_group_gap_is_preserved_during_magnification() {
+        let config = MagnificationConfig::default();
+        let gaps = [config.gap, 24.0, config.gap];
+        let pointer = config.icon_size / 2.0 + config.icon_size + config.gap;
+        let layout =
+            magnified_layout_with_gaps(4, &gaps, Some(pointer), true, false, config).unwrap();
+
+        for (pair, gap) in layout.items.windows(2).zip(gaps) {
+            let rendered_gap =
+                pair[1].center - pair[1].size / 2.0 - (pair[0].center + pair[0].size / 2.0);
+            assert!((rendered_gap - gap).abs() < f32::EPSILON);
+        }
+        assert_eq!(
+            magnified_layout_with_gaps(4, &gaps[..2], None, true, false, config),
+            Err(ConfigError::Gap)
+        );
     }
 
     #[test]

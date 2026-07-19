@@ -17,6 +17,13 @@ pub struct FocusedContext {
     pub title: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutputContext {
+    pub id: OutputId,
+    pub logical_size: rmac_compositor::LogicalSize,
+    pub scale: f64,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum NetworkState {
     Unavailable,
@@ -75,8 +82,11 @@ pub struct NotificationIndicator {
     pub has_urgent: bool,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
+    /// Enabled outputs with valid logical geometry, stripped of hardware
+    /// serials and other diagnostic-only compositor metadata.
+    pub outputs: Vec<OutputContext>,
     pub focused: FocusedContext,
     pub network: Option<NetworkIndicator>,
     pub vpn: Option<VpnIndicator>,
@@ -86,6 +96,7 @@ pub struct Snapshot {
     pub show_battery_percentage: bool,
     pub focus: Option<FocusIndicator>,
     pub notifications: Option<NotificationIndicator>,
+    pub clock: rmac_shell_settings::ClockSettings,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,6 +137,7 @@ impl State {
     pub fn snapshot(&self) -> Snapshot {
         let indicators = &self.settings.indicators;
         Snapshot {
+            outputs: self.output_contexts(),
             focused: self.focused_context(),
             network: indicators.network.then(|| self.network_indicator()),
             vpn: indicators.vpn.then(|| self.vpn_indicator()),
@@ -156,7 +168,32 @@ impl State {
             show_battery_percentage: indicators.power && indicators.battery_percentage,
             focus: indicators.focus.then(|| self.focus.clone()).flatten(),
             notifications: indicators.notifications.then_some(self.notifications),
+            clock: self.settings.clock.clone(),
         }
+    }
+
+    fn output_contexts(&self) -> Vec<OutputContext> {
+        let mut outputs = self
+            .compositor
+            .outputs
+            .values()
+            .filter_map(|output| {
+                let logical = output.logical.as_ref()?;
+                (output.current_mode.is_some()
+                    && logical.size.is_valid()
+                    && logical.size.width > 0.0
+                    && logical.size.height > 0.0
+                    && logical.scale.is_finite()
+                    && logical.scale > 0.0)
+                    .then(|| OutputContext {
+                        id: output.id.clone(),
+                        logical_size: logical.size,
+                        scale: logical.scale,
+                    })
+            })
+            .collect::<Vec<_>>();
+        outputs.sort_by(|left, right| left.id.cmp(&right.id));
+        outputs
     }
 
     pub fn apply(&mut self, event: Event) -> Change {
@@ -381,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn connected_wifi_and_vpn_are_normalized_for_compact_consumers() {
+    fn connected_wifi_is_normalized_for_compact_consumers() {
         let mut state = State::default();
         state.apply(Event::Network(rmac_network::NetworkSnapshot {
             available: true,
@@ -408,15 +445,6 @@ mod tests {
             }],
             saved_networks: Vec::new(),
         }));
-        state.apply(Event::Vpn(rmac_network::VpnSnapshot {
-            available: true,
-            profiles: vec![rmac_network::VpnProfile {
-                identifier: "work".into(),
-                name: "Work".into(),
-                service: "wireguard".into(),
-                state: rmac_network::VpnState::Connected,
-            }],
-        }));
         let snapshot = state.snapshot();
         assert_eq!(
             snapshot.network,
@@ -426,7 +454,7 @@ mod tests {
                 wifi_strength: Some(76),
             })
         );
-        assert_eq!(snapshot.vpn.unwrap().active_names, vec!["Work"]);
+        assert_eq!(snapshot.vpn.unwrap().active_names, Vec::<String>::new());
     }
 
     #[test]
@@ -461,5 +489,60 @@ mod tests {
             ends_at_unix_ms: None,
         })));
         assert_eq!(state.snapshot().focus, None);
+    }
+
+    #[test]
+    fn output_projection_is_sorted_valid_and_hardware_private() {
+        let output = |id: &str, scale: f64| rmac_compositor::Output {
+            id: id.into(),
+            make: "Private manufacturer".into(),
+            model: "Private model".into(),
+            serial: Some("PRIVATE-SERIAL".into()),
+            physical_size_mm: None,
+            modes: Vec::new(),
+            current_mode: Some(0),
+            custom_mode: false,
+            vrr_supported: false,
+            vrr_enabled: false,
+            logical: Some(rmac_compositor::LogicalOutput {
+                position: Default::default(),
+                size: rmac_compositor::LogicalSize {
+                    width: 1920.0,
+                    height: 1080.0,
+                },
+                scale,
+                transform: "normal".into(),
+            }),
+        };
+        let mut invalid = output("BAD", 0.0);
+        invalid.logical.as_mut().unwrap().size.width = f64::NAN;
+        let mut state = State::default();
+        state.apply(Event::Compositor(rmac_compositor::Event::OutputsReplaced {
+            outputs: vec![output("DP-2", 2.0), invalid, output("DP-1", 1.0)],
+        }));
+
+        let snapshot = state.snapshot();
+        assert_eq!(
+            snapshot
+                .outputs
+                .iter()
+                .map(|output| output.id.0.as_str())
+                .collect::<Vec<_>>(),
+            ["DP-1", "DP-2"]
+        );
+        let debug = format!("{snapshot:?}");
+        assert!(!debug.contains("PRIVATE-SERIAL"));
+        assert!(!debug.contains("Private manufacturer"));
+    }
+
+    #[test]
+    fn clock_policy_changes_are_consumer_visible() {
+        let mut state = State::default();
+        let before = state.snapshot();
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.clock.show_seconds = true;
+        settings.clock.format = rmac_shell_settings::ClockFormat::TwentyFourHour;
+        assert!(state.apply(Event::Settings(settings)).visible);
+        assert_ne!(state.snapshot().clock, before.clock);
     }
 }

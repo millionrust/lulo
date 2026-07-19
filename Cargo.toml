@@ -98,6 +98,7 @@ rmac-thumbnails = { version = "=0.1.0", path = "crates/rmac-thumbnails" }
 rmac-theme = { version = "=0.1.0", path = "crates/rmac-theme" }
 rmac-time = { version = "=0.1.0", path = "crates/rmac-time" }
 rmac-time-linux = { version = "=0.1.0", path = "crates/rmac-time-linux" }
+rmac-top-bar = { version = "=0.1.0", path = "crates/rmac-top-bar" }
 rmac-ui = { version = "=0.1.0", path = "crates/rmac-ui" }
 rmac-updates = { version = "=0.1.0", path = "crates/rmac-updates" }
 rmac-updates-linux = { version = "=0.1.0", path = "crates/rmac-updates-linux" }

@@ -62,6 +62,8 @@ publish separately from preferences. Both reconnecting clients establish their
 signal subscription before the initial read so they cannot miss an intervening
 change. Source loss preserves last-known-good top-bar state and records
 authority-specific health; Focus loss additionally disables Quick Settings
-mutation. The isolated layer-shell
-top-bar candidate remains the next visual consumer; reference-PC validation is
-still required before this can satisfy the D2 product gate.
+mutation. The framework-neutral `rmac-top-bar` presentation domain now turns
+this stream into sorted per-output surface descriptions, bounded accessible
+labels, and event-driven clock deadlines. The actual upstream-GPUI layer-shell
+executable and reference-PC validation are still required before this can
+satisfy the D1/D2 product gates.

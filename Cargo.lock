@@ -5705,6 +5705,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-top-bar"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+]
+
+[[package]]
 name = "rmac-ui"
 version = "0.1.0"
 dependencies = [

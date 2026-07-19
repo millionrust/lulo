@@ -1,0 +1,13 @@
+[package]
+name = "rmac-top-bar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+chrono.workspace = true
+rmac-compositor.workspace = true
+rmac-shell-settings.workspace = true
+rmac-shell-status.workspace = true

@@ -42,9 +42,16 @@ Reduced motion keeps identical timing/visibility semantics but marks visual
 transitions non-animated. The UI must cancel obsolete scheduled deadlines and
 must not create a polling or unconditional frame loop.
 
+The Dock runtime now subscribes before its first presentation to both sources
+of the effective rmac motion preference: the host Settings portal and the
+writable rmac theme store. It resolves `Automatic`, `Full`, or `Reduced` using
+the same `rmac-theme` authority as applications, retains the last accepted
+value across either source failure, and requests a frame only when the effective
+boolean changes.
+
 This model is not D6 completion. Niri 26.4 does not expose real fullscreen state
 on its IPC `Window`, so the project does not guess it; real fullscreen behavior
 must come from niri's layer-shell stacking and reference-PC proof. Layer-surface
 pressure behavior, pointer capture, autohide reservation policy, live reduced-
-motion wiring, 60/120 Hz frame evidence, combined-shell idle measurements, and
-multi-output hardware validation remain pending.
+motion renderer proof, 60/120 Hz frame evidence, combined-shell idle
+measurements, and multi-output hardware validation remain pending.

@@ -44,6 +44,7 @@ pub struct HealthSnapshot {
     pub catalog: SourceHealth,
     pub displays: SourceHealth,
     pub places: SourceHealth,
+    pub appearance: SourceHealth,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -53,6 +54,9 @@ pub struct Snapshot {
     /// Authoritative niri overview state consumed by each output's D6
     /// visibility machine. This is not inferred from focus or window geometry.
     pub overview_visible: bool,
+    /// Effective rmac preference after resolving the host portal value through
+    /// the writable theme authority.
+    pub reduced_motion: bool,
     pub health: HealthSnapshot,
 }
 
@@ -92,6 +96,7 @@ pub struct Coordinator {
     catalog: Vec<rmac_apps::Application>,
     places: Option<rmac_places::Snapshot>,
     primary_output: Option<rmac_compositor::OutputId>,
+    reduced_motion: bool,
     health: HealthSnapshot,
 }
 
@@ -125,6 +130,7 @@ impl Coordinator {
                 self.primary_output.as_ref(),
             ),
             overview_visible: compositor.overview_visible,
+            reduced_motion: self.reduced_motion,
             health: self.health.clone(),
         }
     }
@@ -134,6 +140,7 @@ impl Coordinator {
             && !matches!(self.health.settings, SourceHealth::Starting)
             && !matches!(self.health.catalog, SourceHealth::Starting)
             && !matches!(self.health.places, SourceHealth::Starting)
+            && !matches!(self.health.appearance, SourceHealth::Starting)
             && (!matches!(
                 self.settings.dock.outputs,
                 rmac_shell_settings::OutputScope::Primary
@@ -206,6 +213,18 @@ impl Coordinator {
         before != self.snapshot()
     }
 
+    pub fn apply_appearance(&mut self, result: Result<bool, String>) -> bool {
+        let before = self.snapshot();
+        match result {
+            Ok(reduced_motion) => {
+                self.reduced_motion = reduced_motion;
+                self.health.appearance = SourceHealth::Healthy;
+            }
+            Err(detail) => self.health.appearance = SourceHealth::Unavailable { detail },
+        }
+        before != self.snapshot()
+    }
+
     pub fn set_primary_output(&mut self, output: Option<rmac_compositor::OutputId>) -> bool {
         let before = self.snapshot();
         self.primary_output = output;
@@ -234,6 +253,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (settings_tx, settings_rx) = async_channel::bounded(2);
     let (catalog_tx, catalog_rx) = async_channel::bounded(2);
     let (places_tx, places_rx) = async_channel::bounded(2);
+    let (appearance_tx, appearance_rx) = async_channel::bounded(2);
 
     let compositor = async {
         rmac_compositor_niri::watch(compositor_tx)
@@ -243,9 +263,139 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let settings = watch_settings(settings_tx);
     let catalog = watch_catalog(catalog_tx);
     let places = watch_places(places_tx);
-    let consumer = consume(sender, compositor_rx, settings_rx, catalog_rx, places_rx);
-    let (_, _, _, _, _) = futures_util::try_join!(compositor, settings, catalog, places, consumer)?;
+    let appearance = watch_appearance(appearance_tx);
+    let consumer = consume(
+        sender,
+        compositor_rx,
+        settings_rx,
+        catalog_rx,
+        places_rx,
+        appearance_rx,
+    );
+    let (_, _, _, _, _, _) =
+        futures_util::try_join!(compositor, settings, catalog, places, appearance, consumer)?;
     Ok(())
+}
+
+async fn watch_appearance(sender: Sender<Result<bool, String>>) -> Result<(), Error> {
+    loop {
+        let setup = blocking::unblock(|| {
+            let store = rmac_theme::ThemeStore::from_environment()?;
+            let watcher = store.watch()?;
+            Ok::<_, rmac_theme::Error>((store, watcher))
+        })
+        .await;
+        let (store, watcher) = match setup {
+            Ok(setup) => setup,
+            Err(_) => {
+                if sender
+                    .send(Err("the rmac appearance authority is unavailable".into()))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                wait_or_closed(&sender, Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+
+        let (portal_tx, portal_rx) = async_channel::bounded(2);
+        let portal = async {
+            rmac_appearance_portal::watch(portal_tx.clone())
+                .await
+                .map_err(|_| Error::new("watch host appearance", "portal watcher stopped"))?;
+            // The non-Linux adapter publishes one truthful unavailable
+            // snapshot and returns. Keep its sender alive so the consumer can
+            // still service theme-store changes and close deterministically.
+            portal_tx.closed().await;
+            Ok::<(), Error>(())
+        };
+        let consumer = consume_appearance(sender.clone(), store, watcher, portal_rx);
+        let portal = futures_util::FutureExt::fuse(portal);
+        let consumer = futures_util::FutureExt::fuse(consumer);
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(portal, consumer, closed);
+        futures_util::select! {
+            _ = portal => {},
+            _ = consumer => {},
+            _ = closed => return Ok(()),
+        }
+        if sender.is_closed() {
+            return Ok(());
+        }
+        if sender
+            .send(Err("the live appearance authority disconnected".into()))
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+        wait_or_closed(&sender, Duration::from_secs(1)).await;
+    }
+}
+
+async fn consume_appearance(
+    sender: Sender<Result<bool, String>>,
+    mut store: rmac_theme::ThemeStore,
+    watcher: rmac_theme::ThemeWatcher,
+    portal: async_channel::Receiver<rmac_appearance::Event>,
+) -> Result<(), Error> {
+    let mut host = None;
+    loop {
+        let portal_event = futures_util::FutureExt::fuse(portal.recv());
+        let store_event = futures_util::FutureExt::fuse(watcher.recv());
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(portal_event, store_event, closed);
+        match futures_util::select! {
+            event = portal_event => AppearanceInput::Portal(event),
+            event = store_event => AppearanceInput::Store(event),
+            _ = closed => return Ok(()),
+        } {
+            AppearanceInput::Portal(Ok(rmac_appearance::Event::Snapshot(snapshot))) => {
+                host = Some(snapshot);
+            }
+            AppearanceInput::Portal(Ok(rmac_appearance::Event::Unavailable(_))) => {
+                if sender
+                    .send(Err("the host appearance portal is unavailable".into()))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                continue;
+            }
+            AppearanceInput::Portal(Err(_)) => {
+                return Err(Error::new("receive host appearance", "watcher stopped"));
+            }
+            AppearanceInput::Store(Ok(rmac_theme::StoreEvent::Changed)) => {}
+            AppearanceInput::Store(Ok(rmac_theme::StoreEvent::WatchError(_)))
+            | AppearanceInput::Store(Err(_)) => {
+                return Err(Error::new("watch rmac appearance", "watcher stopped"));
+            }
+        }
+
+        let Some(current_host) = host.clone() else {
+            continue;
+        };
+        let (returned_store, resolved) = blocking::unblock(move || {
+            let resolved = store.load(&current_host);
+            (store, resolved)
+        })
+        .await;
+        store = returned_store;
+        let result = resolved
+            .map(|snapshot| snapshot.effective.motion == rmac_appearance::MotionPreference::Reduced)
+            .map_err(|_| "the rmac appearance preference could not be resolved".into());
+        if sender.send(result).await.is_err() {
+            return Ok(());
+        }
+    }
+}
+
+enum AppearanceInput {
+    Portal(Result<rmac_appearance::Event, async_channel::RecvError>),
+    Store(Result<rmac_theme::StoreEvent, async_channel::RecvError>),
 }
 
 async fn watch_places(
@@ -502,6 +652,7 @@ async fn consume(
     settings: async_channel::Receiver<Result<rmac_shell_settings::ShellSettings, String>>,
     catalog: async_channel::Receiver<Result<Vec<rmac_apps::Application>, String>>,
     places: async_channel::Receiver<Result<rmac_places_system::Report, String>>,
+    appearance: async_channel::Receiver<Result<bool, String>>,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
     let mut published = None;
@@ -510,12 +661,14 @@ async fn consume(
         let settings_event = futures_util::FutureExt::fuse(settings.recv());
         let catalog_event = futures_util::FutureExt::fuse(catalog.recv());
         let places_event = futures_util::FutureExt::fuse(places.recv());
+        let appearance_event = futures_util::FutureExt::fuse(appearance.recv());
         let closed = futures_util::FutureExt::fuse(sender.closed());
         futures_util::pin_mut!(
             compositor_event,
             settings_event,
             catalog_event,
             places_event,
+            appearance_event,
             closed
         );
         futures_util::select! {
@@ -539,6 +692,10 @@ async fn consume(
             event = places_event => {
                 let event = event.map_err(|_| Error::new("receive Dock user places", "watcher stopped"))?;
                 coordinator.apply_places(event);
+            },
+            event = appearance_event => {
+                let event = event.map_err(|_| Error::new("receive Dock appearance", "watcher stopped"))?;
+                coordinator.apply_appearance(event);
             },
             _ = closed => return Ok(()),
         }
@@ -589,6 +746,7 @@ fn publication(previous: Option<&Snapshot>, next: Snapshot) -> Update {
             previous.model != next.model
                 || previous.outputs != next.outputs
                 || previous.overview_visible != next.overview_visible
+                || previous.reduced_motion != next.reduced_motion
         }),
         snapshot: next,
     }
@@ -653,6 +811,8 @@ mod tests {
         });
         assert!(!coordinator.ready());
         coordinator.apply_places(Err("places unavailable".into()));
+        assert!(!coordinator.ready());
+        coordinator.apply_appearance(Err("appearance unavailable".into()));
         assert!(coordinator.ready());
     }
 
@@ -664,6 +824,7 @@ mod tests {
         coordinator.apply_settings(Ok(settings));
         coordinator.apply_catalog(Ok(Vec::new()));
         coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
+        coordinator.apply_appearance(Ok(false));
         coordinator.apply_compositor(rmac_compositor::Event::OutputsReplaced {
             outputs: vec![output("eDP-1"), output("DP-1")],
         });
@@ -807,6 +968,28 @@ mod tests {
         let after = coordinator.snapshot();
         assert!(after.overview_visible);
         assert!(publication(Some(&before), after).visible);
+    }
+
+    #[test]
+    fn reduced_motion_is_authoritative_and_failure_retains_last_known_good() {
+        let mut coordinator = Coordinator::default();
+        let before = coordinator.snapshot();
+        assert!(!before.reduced_motion);
+
+        coordinator.apply_appearance(Ok(true));
+        let reduced = coordinator.snapshot();
+        assert!(reduced.reduced_motion);
+        assert!(publication(Some(&before), reduced.clone()).visible);
+
+        coordinator.apply_appearance(Err("private portal diagnostic".into()));
+        let failed = coordinator.snapshot();
+        assert!(failed.reduced_motion);
+        assert!(!publication(Some(&reduced), failed.clone()).visible);
+        assert!(matches!(
+            failed.health.appearance,
+            SourceHealth::Unavailable { .. }
+        ));
+        assert!(!format!("{:?}", failed.health).contains("private portal"));
     }
 
     #[test]

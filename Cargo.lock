@@ -4976,6 +4976,8 @@ dependencies = [
  "async-io",
  "blocking",
  "futures-util",
+ "rmac-appearance",
+ "rmac-appearance-portal",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -4984,6 +4986,7 @@ dependencies = [
  "rmac-places",
  "rmac-places-system",
  "rmac-shell-settings",
+ "rmac-theme",
 ]
 
 [[package]]

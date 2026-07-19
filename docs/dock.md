@@ -83,23 +83,29 @@ authority is complete.
 ## Live runtime
 
 `rmac-dock-runtime` watches the installed-application catalog, the versioned
-shell settings, the direct niri event stream, and the persisted Main Display
-authority exposed by `rmac-display`. The catalog watcher is
+shell settings, the direct niri event stream, the persisted Main Display
+authority exposed by `rmac-display`, and effective appearance resolved from the
+subscribed Settings portal through the watched writable rmac theme store. The
+catalog watcher is
 established before initial discovery, and its bounded signal channel coalesces
 filesystem bursts. Failed setup/discovery and settings watchers retry without
 discarding their last-known-good values; niri reconnect remains owned by the
 compositor adapter.
 
-The first Dock snapshot is withheld until the three always-required sources are
-either healthy or explicitly unavailable. Primary-output scope additionally
-waits until display authority has resolved. This prevents a flash of default
-pins, an empty running-app shelf, or a surface on a guessed output during
-ordinary startup. Later health-only changes remain
+The first Dock snapshot is withheld until every always-required source,
+including appearance and user places, is either healthy or explicitly
+unavailable. Primary-output scope additionally waits until display authority
+has resolved. This prevents a flash of default pins, an empty running-app
+shelf, animated motion against an already-known reduced-motion preference, or
+a surface on a guessed output during ordinary startup. Later health-only changes remain
 available to diagnostics but do not request a Dock frame. Catalog, settings,
 focus/urgency/window, and output-hotplug changes rebuild the authoritative
 model and enabled-output candidates without polling. The exact initial/live
 niri overview state crosses the same coherent snapshot and requests a Dock
 frame when it changes, ready for each output's D6 visibility machine.
+Effective reduced motion crosses that boundary as one boolean. Portal or theme
+watch failures preserve its last-known-good value and update only redacted
+source health; a real preference change requests one Dock frame.
 
 ## Outputs
 

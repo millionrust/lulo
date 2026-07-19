@@ -445,6 +445,8 @@ pub struct Snapshot {
     pub layer_surfaces: Vec<LayerSurface>,
     pub focus: FocusState,
     pub activation: Option<Activation>,
+    #[serde(default)]
+    pub overview_visible: bool,
 }
 
 /// Adapter-neutral events. `Unknown` is intentionally data-bearing so adapters
@@ -488,6 +490,9 @@ pub enum Event {
     },
     ActivationChanged {
         activation: Option<Activation>,
+    },
+    OverviewChanged {
+        visible: bool,
     },
     ConnectionChanged {
         state: ConnectionState,
@@ -540,6 +545,7 @@ pub struct State {
     pub layer_surfaces: BTreeMap<LayerSurfaceId, LayerSurface>,
     pub focus: FocusState,
     pub activation: Option<Activation>,
+    pub overview_visible: bool,
     pub connection: ConnectionState,
     pub unknown_events_seen: u64,
 }
@@ -553,6 +559,7 @@ impl State {
             layer_surfaces: self.layer_surfaces.values().cloned().collect(),
             focus: self.focus.clone(),
             activation: self.activation.clone(),
+            overview_visible: self.overview_visible,
         }
     }
 
@@ -565,6 +572,7 @@ impl State {
                 self.layer_surfaces = keyed(snapshot.layer_surfaces, |surface| surface.id.clone());
                 self.focus = snapshot.focus;
                 self.activation = snapshot.activation;
+                self.overview_visible = snapshot.overview_visible;
                 self.apply_focus_flags();
                 Change {
                     visible: true,
@@ -680,6 +688,13 @@ impl State {
             Event::ActivationChanged { activation } => {
                 let changed = self.activation != activation;
                 self.activation = activation;
+                Change {
+                    visible: changed,
+                    ..Change::default()
+                }
+            }
+            Event::OverviewChanged { visible } => {
+                let changed = replace_bool(&mut self.overview_visible, visible);
                 Change {
                     visible: changed,
                     ..Change::default()
@@ -886,6 +901,17 @@ mod tests {
 
         assert!(first.urgency);
         assert_eq!(second, Change::default());
+    }
+
+    #[test]
+    fn overview_updates_are_idempotent_and_survive_snapshot_projection() {
+        let mut state = State::default();
+        let opened = state.apply(Event::OverviewChanged { visible: true });
+        let duplicate = state.apply(Event::OverviewChanged { visible: true });
+
+        assert!(opened.visible);
+        assert_eq!(duplicate, Change::default());
+        assert!(state.snapshot().overview_visible);
     }
 
     #[test]

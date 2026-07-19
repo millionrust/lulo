@@ -33,14 +33,18 @@ pointer is outside, and overview is closed.
 A hidden shelf requires 150 ms of continuous reveal-edge pressure. Leaving the
 pressure edge resets the dwell. Pointer entry reveals immediately. Overview
 forces the Dock visible; fullscreen applies hide policy even when ordinary
-autohide is off. Ending fullscreen restores the configured policy.
+autohide is off. Ending fullscreen restores the configured policy. The direct
+niri adapter and `rmac-dock-runtime` now carry typed initial/live overview state
+into the renderer boundary without focus or geometry inference.
 
 State changes and visual hidden-boundary changes are reported separately.
 Reduced motion keeps identical timing/visibility semantics but marks visual
 transitions non-animated. The UI must cancel obsolete scheduled deadlines and
 must not create a polling or unconditional frame loop.
 
-This model is not D6 completion. Real niri fullscreen/overview wiring, layer
-surface pressure behavior, pointer capture, autohide reservation policy,
-60/120 Hz frame evidence, combined-shell idle measurements, and multi-output
-hardware validation remain pending.
+This model is not D6 completion. Niri 26.4 does not expose real fullscreen state
+on its IPC `Window`, so the project does not guess it; real fullscreen behavior
+must come from niri's layer-shell stacking and reference-PC proof. Layer-surface
+pressure behavior, pointer capture, autohide reservation policy, live reduced-
+motion wiring, 60/120 Hz frame evidence, combined-shell idle measurements, and
+multi-output hardware validation remain pending.

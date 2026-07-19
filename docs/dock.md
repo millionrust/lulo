@@ -97,7 +97,9 @@ pins, an empty running-app shelf, or a surface on a guessed output during
 ordinary startup. Later health-only changes remain
 available to diagnostics but do not request a Dock frame. Catalog, settings,
 focus/urgency/window, and output-hotplug changes rebuild the authoritative
-model and enabled-output candidates without polling.
+model and enabled-output candidates without polling. The exact initial/live
+niri overview state crosses the same coherent snapshot and requests a Dock
+frame when it changes, ready for each output's D6 visibility machine.
 
 ## Outputs
 

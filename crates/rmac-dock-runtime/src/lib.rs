@@ -50,6 +50,9 @@ pub struct HealthSnapshot {
 pub struct Snapshot {
     pub model: rmac_dock::Model,
     pub outputs: Vec<rmac_compositor::OutputId>,
+    /// Authoritative niri overview state consumed by each output's D6
+    /// visibility machine. This is not inferred from focus or window geometry.
+    pub overview_visible: bool,
     pub health: HealthSnapshot,
 }
 
@@ -121,6 +124,7 @@ impl Coordinator {
                 &self.settings.dock.outputs,
                 self.primary_output.as_ref(),
             ),
+            overview_visible: compositor.overview_visible,
             health: self.health.clone(),
         }
     }
@@ -582,7 +586,9 @@ fn primary_output() -> Result<Option<rmac_compositor::OutputId>, String> {
 fn publication(previous: Option<&Snapshot>, next: Snapshot) -> Update {
     Update {
         visible: previous.is_none_or(|previous| {
-            previous.model != next.model || previous.outputs != next.outputs
+            previous.model != next.model
+                || previous.outputs != next.outputs
+                || previous.overview_visible != next.overview_visible
         }),
         snapshot: next,
     }
@@ -789,6 +795,18 @@ mod tests {
             outputs: Vec::new(),
         });
         assert!(coordinator.snapshot().outputs.is_empty());
+    }
+
+    #[test]
+    fn overview_state_crosses_the_runtime_boundary_and_requests_a_frame() {
+        let mut coordinator = Coordinator::default();
+        let before = coordinator.snapshot();
+        assert!(!before.overview_visible);
+
+        coordinator.apply_compositor(rmac_compositor::Event::OverviewChanged { visible: true });
+        let after = coordinator.snapshot();
+        assert!(after.overview_visible);
+        assert!(publication(Some(&before), after).visible);
     }
 
     #[test]

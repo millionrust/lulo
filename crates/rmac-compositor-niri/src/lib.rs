@@ -64,7 +64,7 @@ impl fmt::Display for Error {
             Self::InitialStateIncomplete => {
                 write!(
                     formatter,
-                    "niri event stream omitted its initial workspace/window state"
+                    "niri event stream omitted its initial workspace/window/overview state"
                 )
             }
             Self::ConsumerClosed => write!(formatter, "compositor event consumer closed"),
@@ -261,6 +261,7 @@ pub async fn stream_once(path: &Path, sender: &Sender<domain::Event>) -> Result<
     });
     let mut initial_workspaces = false;
     let mut initial_windows = false;
+    let mut initial_overview = false;
     let mut ready = false;
     let mut pending_unknown = Vec::new();
 
@@ -269,6 +270,7 @@ pub async fn stream_once(path: &Path, sender: &Sender<domain::Event>) -> Result<
         let decoded = decode_event(&line)?;
         initial_workspaces |= decoded.initial_workspaces;
         initial_windows |= decoded.initial_windows;
+        initial_overview |= decoded.initial_overview;
         for event in translate(decoded.event, decoded.source_kind, decoded.payload, &state) {
             state.apply(event.clone());
             if ready {
@@ -278,7 +280,7 @@ pub async fn stream_once(path: &Path, sender: &Sender<domain::Event>) -> Result<
             }
         }
 
-        if !ready && initial_workspaces && initial_windows {
+        if !ready && initial_workspaces && initial_windows && initial_overview {
             ready = true;
             send(
                 sender,
@@ -376,6 +378,7 @@ struct DecodedEvent {
     payload: Value,
     initial_workspaces: bool,
     initial_windows: bool,
+    initial_overview: bool,
 }
 
 fn decode_event(line: &str) -> Result<DecodedEvent, Error> {
@@ -399,6 +402,7 @@ fn decode_event(line: &str) -> Result<DecodedEvent, Error> {
         payload,
         initial_workspaces: source_kind == "WorkspacesChanged",
         initial_windows: source_kind == "WindowsChanged",
+        initial_overview: source_kind == "OverviewOpenedOrClosed",
     })
 }
 
@@ -416,6 +420,7 @@ fn is_known_event(kind: &str) -> bool {
             | "WindowFocusTimestampChanged"
             | "WindowUrgencyChanged"
             | "WindowLayoutsChanged"
+            | "OverviewOpenedOrClosed"
     )
 }
 
@@ -542,6 +547,9 @@ fn translate(
                     })
             })
             .collect(),
+        NiriEvent::OverviewOpenedOrClosed { is_open } => {
+            vec![domain::Event::OverviewChanged { visible: is_open }]
+        }
     }
 }
 
@@ -866,6 +874,9 @@ mod wire {
         WindowLayoutsChanged {
             changes: Vec<(u64, WindowLayout)>,
         },
+        OverviewOpenedOrClosed {
+            is_open: bool,
+        },
     }
 
     #[derive(Debug, Deserialize)]
@@ -980,6 +991,21 @@ mod tests {
     fn known_event_rejects_malformed_payload() {
         let error = decode_event(r#"{"WindowClosed":{"id":"wrong"}}"#).unwrap_err();
         assert!(matches!(error, Error::Json(_)));
+    }
+
+    #[test]
+    fn overview_event_is_typed_and_marks_initial_authority_ready() {
+        let decoded = decode_event(r#"{"OverviewOpenedOrClosed":{"is_open":true}}"#).unwrap();
+        assert!(decoded.initial_overview);
+        assert_eq!(
+            translate(
+                decoded.event,
+                decoded.source_kind,
+                decoded.payload,
+                &domain::State::default(),
+            ),
+            [domain::Event::OverviewChanged { visible: true }]
+        );
     }
 
     #[test]
@@ -1114,7 +1140,7 @@ mod tests {
         let events: Vec<_> = std::iter::from_fn(|| receiver.try_recv().ok()).collect();
         assert!(matches!(
             events.first(),
-            Some(domain::Event::Snapshot { .. })
+            Some(domain::Event::Snapshot { snapshot }) if snapshot.overview_visible
         ));
         assert!(matches!(
             events.get(1),
@@ -1159,6 +1185,9 @@ mod tests {
             .unwrap();
         stream
             .write_all(b"{\"WindowsChanged\":{\"windows\":[]}}\n")
+            .unwrap();
+        stream
+            .write_all(b"{\"OverviewOpenedOrClosed\":{\"is_open\":true}}\n")
             .unwrap();
         stream
             .write_all(b"{\"WindowUrgencyChanged\":{\"id\":7,\"urgent\":true}}\n")

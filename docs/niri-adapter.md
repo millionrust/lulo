@@ -12,8 +12,9 @@ connection state through the same domain event channel as compositor state:
 2. open the event-stream socket and complete its `Handled` handshake;
 3. while that stream buffers events, query outputs and layer surfaces on two
    independent request sockets;
-4. reduce incoming events privately until both authoritative
-   `WorkspacesChanged` and `WindowsChanged` initial events have arrived;
+4. reduce incoming events privately until the authoritative
+   `WorkspacesChanged`, `WindowsChanged`, and `OverviewOpenedOrClosed` initial
+   events have arrived;
 5. publish one coherent `Snapshot`, then `Connected`, then any unknown events
    observed during initialization;
 6. publish translated incremental events until the socket closes;
@@ -56,6 +57,12 @@ retain their kind and payload as `rmac_compositor::Event::Unknown`, including
 when they arrive before the initial snapshot. This makes newer niri additions
 non-fatal without silently pretending to understand their semantics.
 
+Overview state uses niri's typed initial/live `OverviewOpenedOrClosed` event.
+The documented 26.4 `Window` record does not expose real fullscreen state, so
+the adapter does not guess it from tile dimensions or focus. Fullscreen Dock
+behavior remains governed by niri's layer-shell stacking and must be proven on
+the reference PC unless a future reviewed IPC field provides authority.
+
 The domain deliberately allows temporary dangling window/workspace/output
 references because niri documents non-atomic ordering across collections.
 Replacement events remain authoritative only for their own collection.
@@ -64,11 +71,12 @@ Replacement events remain authoritative only for their own collection.
 
 Unit tests use a real temporary Unix-domain listener rather than a mocked
 function call. The fixture verifies the event-stream, outputs, and layers
-requests use separate connections; the initial snapshot precedes connection
-readiness; a future event survives initialization; and a subsequent urgency
-event is delivered incrementally. Additional tests cover malformed known JSON
-and bounded reconnect delay. Action contract tests assert exact wire JSON and
-distinguish handled, compositor-rejected, and transport-failure results.
+requests use separate connections; the overview-inclusive initial snapshot
+precedes connection readiness; a future event survives initialization; and a
+subsequent urgency event is delivered incrementally. Additional tests cover
+typed overview translation, malformed known JSON, and bounded reconnect delay.
+Action contract tests assert exact wire JSON and distinguish handled,
+compositor-rejected, and transport-failure results.
 
 This is deterministic protocol evidence on the development host, not Linux
 hardware evidence. The Linux reference-PC gate must still verify a real niri

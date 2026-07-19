@@ -20,6 +20,8 @@ expose niri/Wayland types.
 - focus is explicit across output, workspace, window, and layer-surface targets.
   Activation has its own request identity and pending/confirmed/rejected state.
 - urgency is independently addressable for workspaces and windows.
+- overview visibility is explicit snapshot state with idempotent incremental
+  updates; consumers never infer it from focus or layer geometry.
 - `Event::Unknown` retains a source kind and JSON payload, increments a bounded
   diagnostic counter, and never causes visible state churn.
 
@@ -53,6 +55,7 @@ The model was checked against the official niri IPC 26.4 documentation:
 - <https://docs.rs/niri-ipc/latest/niri_ipc/struct.Output.html>
 - <https://docs.rs/niri-ipc/latest/niri_ipc/struct.Workspace.html>
 - <https://docs.rs/niri-ipc/latest/niri_ipc/struct.WindowLayout.html>
+- <https://docs.rs/niri-ipc/latest/niri_ipc/struct.Overview.html>
 - <https://docs.rs/niri-ipc/latest/niri_ipc/struct.LayerSurface.html>
 
 The official contract says the event stream provides complete initial
@@ -69,5 +72,5 @@ forward-compatible path without linking the GPL-licensed helper crate.
 `State::validate` reports multiple focused windows/workspaces, invalid output
 scale/size, and invalid current-mode indices. It deliberately does not reject
 dangling cross-object references permitted by event ordering. Tests cover focus
-canonicalization, replacement ordering, safe window removal, idempotent urgency,
-unknown events, and malformed output values.
+canonicalization, replacement ordering, safe window removal, idempotent urgency
+and overview state, unknown events, and malformed output values.

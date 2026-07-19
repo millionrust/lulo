@@ -19,7 +19,7 @@ use rmac_notes_storage::{
 };
 use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, BundlePlanError, ExportError,
-    ExportScope, FolderId, LibrarySnapshot, MutationError, NewNote, NoteId, SortOrder,
+    ExportScope, FolderId, LibrarySnapshot, MutationError, NewNote, NoteChanges, NoteId, SortOrder,
 };
 
 use crate::{EditGeneration, EditScheduler, ScheduledEdit, SchedulerError, DEFAULT_EDIT_DEBOUNCE};
@@ -273,6 +273,11 @@ pub enum WorkerCommand {
     DiscardPending {
         request_id: u64,
     },
+    ResolvePendingConflict {
+        request_id: u64,
+        pending_request_id: u64,
+        resolution: PendingConflictResolution,
+    },
     RestoreDraft {
         request_id: u64,
         note_id: NoteId,
@@ -291,6 +296,7 @@ impl WorkerCommand {
             | Self::StartEmpty { request_id }
             | Self::Flush { request_id }
             | Self::DiscardPending { request_id }
+            | Self::ResolvePendingConflict { request_id, .. }
             | Self::RestoreDraft { request_id, .. }
             | Self::DiscardDraft { request_id, .. }
             | Self::DiscardBundleImportReview { request_id, .. }
@@ -335,6 +341,16 @@ impl fmt::Debug for WorkerCommand {
             Self::DiscardPending { request_id } => formatter
                 .debug_struct("DiscardPending")
                 .field("request_id", request_id)
+                .finish(),
+            Self::ResolvePendingConflict {
+                request_id,
+                pending_request_id,
+                resolution,
+            } => formatter
+                .debug_struct("ResolvePendingConflict")
+                .field("request_id", request_id)
+                .field("pending_request_id", pending_request_id)
+                .field("resolution", resolution)
                 .finish(),
             Self::RestoreDraft {
                 request_id,
@@ -557,12 +573,54 @@ pub struct PendingEvent {
     pub reason: PendingReason,
     pub accepted: SnapshotEvent,
     pub draft_error: Option<DraftError>,
+    pub conflict: Option<PendingConflictSummary>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PendingConflictResolution {
+    PreserveAsNew,
+    OverwriteDurable,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PendingConflictSummary {
+    pub note_id: NoteId,
+    pub durable_library_revision: u64,
+    pub durable_note_revision: Option<u64>,
+    pub local_note_revision: u64,
+    pub recovery_record_available: bool,
+}
+
+impl PendingConflictSummary {
+    pub fn can_overwrite(self) -> bool {
+        self.durable_note_revision.is_some()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PendingConflictError {
+    NotAnEditConflict,
+    StaleReview,
+    LocalCandidateMissing,
+    DurableNoteUnavailable,
+}
+
+impl fmt::Display for PendingConflictError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::NotAnEditConflict => "that pending Notes change is not an editable conflict",
+            Self::StaleReview => "the reviewed Notes conflict is no longer current",
+            Self::LocalCandidateMissing => "the retained local note candidate is unavailable",
+            Self::DurableNoteUnavailable => "the durable note cannot be overwritten safely",
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WorkerFailure {
     WrongPhase,
     CommitPending,
+    PendingConflict(PendingConflictError),
     Scheduler(SchedulerError),
     Mutation(MutationError),
     Storage(StoreError),
@@ -1915,36 +1973,16 @@ fn process_command(
                 }
             }
         }
-        (Phase::Pending(mut pending), WorkerCommand::DiscardPending { request_id }) => {
-            if let Some(draft) = pending.context.draft.filter(|draft| draft.persisted) {
-                if let Err(error) = pending.ready.drafts.remove(draft.note_id) {
-                    return if emit_request_rejected(
-                        events,
-                        request_id,
-                        None,
-                        WorkerFailure::Draft(error),
-                    ) {
-                        Phase::Pending(pending)
-                    } else {
-                        Phase::Stopped
-                    };
-                }
-                pending.ready.recoverable_drafts.remove(&draft.note_id);
-                if events
-                    .send(WorkerEvent::DraftDiscarded {
-                        request_id,
-                        note_id: draft.note_id,
-                    })
-                    .is_err()
-                {
-                    return Phase::Stopped;
-                }
-            }
-            if emit_ready(events, &pending.ready.library, Some(request_id)) {
-                Phase::Ready(pending.ready)
-            } else {
-                Phase::Stopped
-            }
+        (
+            Phase::Pending(pending),
+            WorkerCommand::ResolvePendingConflict {
+                request_id,
+                pending_request_id,
+                resolution,
+            },
+        ) => resolve_pending_conflict(pending, request_id, pending_request_id, resolution, events),
+        (Phase::Pending(pending), WorkerCommand::DiscardPending { request_id }) => {
+            discard_pending_state(pending, request_id, events)
         }
         (Phase::Pending(pending), command) => {
             if emit_rejected(events, command, WorkerFailure::CommitPending) {
@@ -1954,6 +1992,204 @@ fn process_command(
             }
         }
         (Phase::Stopped, _) => Phase::Stopped,
+    }
+}
+
+fn resolve_pending_conflict(
+    mut pending: PendingState,
+    request_id: u64,
+    pending_request_id: u64,
+    resolution: PendingConflictResolution,
+    events: &SyncSender<WorkerEvent>,
+) -> Phase {
+    if pending.context.request_id != pending_request_id {
+        return reject_pending_conflict(
+            pending,
+            request_id,
+            PendingConflictError::StaleReview,
+            events,
+        );
+    }
+    let Some(summary) = pending_conflict_summary(&pending) else {
+        return reject_pending_conflict(
+            pending,
+            request_id,
+            PendingConflictError::NotAnEditConflict,
+            events,
+        );
+    };
+    let Some(local) = pending
+        .pending
+        .candidate()
+        .notes
+        .iter()
+        .find(|note| note.id == summary.note_id && !note.deleted)
+        .cloned()
+    else {
+        return reject_pending_conflict(
+            pending,
+            request_id,
+            PendingConflictError::LocalCandidateMissing,
+            events,
+        );
+    };
+    let mut transaction = match pending.ready.library.begin() {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            return if emit_request_rejected(
+                events,
+                request_id,
+                pending.context.generation,
+                WorkerFailure::Mutation(error),
+            ) {
+                Phase::Pending(pending)
+            } else {
+                Phase::Stopped
+            };
+        }
+    };
+    let result = match resolution {
+        PendingConflictResolution::PreserveAsNew => {
+            let folder_id = local.folder_id.filter(|folder_id| {
+                pending
+                    .ready
+                    .library
+                    .snapshot()
+                    .folders
+                    .iter()
+                    .any(|folder| folder.id == *folder_id && !folder.deleted)
+            });
+            transaction
+                .create_note(NewNote {
+                    created_unix_ms: local.modified_unix_ms.max(1),
+                    title: local.title,
+                    body: local.body,
+                    tags: local.tags,
+                    folder_id,
+                })
+                .map(ActionResult::CreatedNote)
+        }
+        PendingConflictResolution::OverwriteDurable => {
+            let Some(durable) = pending
+                .ready
+                .library
+                .snapshot()
+                .notes
+                .iter()
+                .find(|note| note.id == summary.note_id && !note.deleted)
+            else {
+                return reject_pending_conflict(
+                    pending,
+                    request_id,
+                    PendingConflictError::DurableNoteUnavailable,
+                    events,
+                );
+            };
+            if durable.title == local.title
+                && durable.body == local.body
+                && durable.tags == local.tags
+            {
+                return discard_pending_state(pending, request_id, events);
+            }
+            transaction
+                .edit_note(
+                    summary.note_id,
+                    durable.revision,
+                    NoteChanges {
+                        modified_unix_ms: local.modified_unix_ms.max(durable.modified_unix_ms),
+                        title: local.title,
+                        body: local.body,
+                        tags: local.tags,
+                    },
+                )
+                .map(|_| ActionResult::Edited(summary.note_id))
+        }
+    };
+    let result = match result {
+        Ok(result) => result,
+        Err(error) => {
+            return if emit_request_rejected(
+                events,
+                request_id,
+                pending.context.generation,
+                WorkerFailure::Mutation(error),
+            ) {
+                Phase::Pending(pending)
+            } else {
+                Phase::Stopped
+            };
+        }
+    };
+    let context = RequestContext {
+        request_id,
+        generation: pending.context.generation,
+        result,
+        draft: pending.context.draft,
+    };
+    match commit_transaction(
+        &mut pending.ready,
+        transaction,
+        TransactionCommit::Ordinary,
+        context,
+        events,
+    ) {
+        CommitDisposition::Ready => Phase::Ready(pending.ready),
+        CommitDisposition::Pending(next, context) => Phase::Pending(PendingState {
+            ready: pending.ready,
+            pending: next,
+            context,
+        }),
+        CommitDisposition::Rejected => Phase::Pending(pending),
+        CommitDisposition::Stopped => Phase::Stopped,
+    }
+}
+
+fn reject_pending_conflict(
+    pending: PendingState,
+    request_id: u64,
+    error: PendingConflictError,
+    events: &SyncSender<WorkerEvent>,
+) -> Phase {
+    if emit_request_rejected(
+        events,
+        request_id,
+        pending.context.generation,
+        WorkerFailure::PendingConflict(error),
+    ) {
+        Phase::Pending(pending)
+    } else {
+        Phase::Stopped
+    }
+}
+
+fn discard_pending_state(
+    mut pending: PendingState,
+    request_id: u64,
+    events: &SyncSender<WorkerEvent>,
+) -> Phase {
+    if let Some(draft) = pending.context.draft.filter(|draft| draft.persisted) {
+        if let Err(error) = pending.ready.drafts.remove(draft.note_id) {
+            return if emit_request_rejected(events, request_id, None, WorkerFailure::Draft(error)) {
+                Phase::Pending(pending)
+            } else {
+                Phase::Stopped
+            };
+        }
+        pending.ready.recoverable_drafts.remove(&draft.note_id);
+        if events
+            .send(WorkerEvent::DraftDiscarded {
+                request_id,
+                note_id: draft.note_id,
+            })
+            .is_err()
+        {
+            return Phase::Stopped;
+        }
+    }
+    if emit_ready(events, &pending.ready.library, Some(request_id)) {
+        Phase::Ready(pending.ready)
+    } else {
+        Phase::Stopped
     }
 }
 
@@ -2392,6 +2628,7 @@ fn commit_bundle_import(
                 reason: pending.reason,
                 accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
                 draft_error: None,
+                conflict: None,
             };
             if events.send(WorkerEvent::Pending(event)).is_ok() {
                 CommitDisposition::Pending(pending, context)
@@ -2445,6 +2682,7 @@ fn commit_transaction(
                 reason: pending.reason,
                 accepted: SnapshotEvent::from_library(&ready.library, Some(context.request_id)),
                 draft_error: context.draft.and_then(|draft| draft.error),
+                conflict: None,
             };
             if events.send(WorkerEvent::Pending(event)).is_ok() {
                 CommitDisposition::Pending(pending, context)
@@ -2536,8 +2774,40 @@ fn emit_pending(events: &SyncSender<WorkerEvent>, pending: &PendingState) -> boo
                 Some(pending.context.request_id),
             ),
             draft_error: pending.context.draft.and_then(|draft| draft.error),
+            conflict: pending_conflict_summary(pending),
         }))
         .is_ok()
+}
+
+fn pending_conflict_summary(pending: &PendingState) -> Option<PendingConflictSummary> {
+    if pending.pending.reason != PendingReason::AcceptedStateChanged
+        || !pending.pending.is_ordinary()
+    {
+        return None;
+    }
+    let ActionResult::Edited(note_id) = pending.context.result else {
+        return None;
+    };
+    let local = pending
+        .pending
+        .candidate()
+        .notes
+        .iter()
+        .find(|note| note.id == note_id && !note.deleted)?;
+    let durable = pending
+        .ready
+        .library
+        .snapshot()
+        .notes
+        .iter()
+        .find(|note| note.id == note_id && !note.deleted);
+    Some(PendingConflictSummary {
+        note_id,
+        durable_library_revision: pending.ready.library.snapshot().revision,
+        durable_note_revision: durable.map(|note| note.revision),
+        local_note_revision: local.revision,
+        recovery_record_available: pending.context.draft.is_some_and(|draft| draft.persisted),
+    })
 }
 
 fn cleanup_draft(ready: &mut ReadyState, draft: Option<DraftContext>) -> bool {
@@ -2663,6 +2933,53 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    fn enter_edit_conflict(
+        worker: &NotesWorker,
+        paths: &NotesPaths,
+        note_id: NoteId,
+        created: &SnapshotEvent,
+        local_body: &str,
+    ) -> PendingEvent {
+        let mut external = LibraryTransaction::begin(&created.snapshot).unwrap();
+        external
+            .edit_note(
+                note_id,
+                1,
+                NoteChanges {
+                    modified_unix_ms: 20,
+                    title: "External title".into(),
+                    body: "External body".into(),
+                    tags: vec!["external".into()],
+                },
+            )
+            .unwrap();
+        std::fs::write(
+            paths.data_root().join("library.bin"),
+            encode(&external.finish().unwrap()).unwrap(),
+        )
+        .unwrap();
+        worker
+            .try_send(WorkerCommand::ScheduleEdit(scheduled_edit(
+                2, 1, note_id, 1, local_body,
+            )))
+            .unwrap();
+        let pending = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Pending(event) => event,
+            event => panic!("expected pending save, got {event:?}"),
+        };
+        assert!(matches!(pending.reason, PendingReason::Store(_)));
+        assert_eq!(pending.conflict, None);
+        worker.try_send(WorkerCommand::RetryPending).unwrap();
+        match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Pending(event) => {
+                assert_eq!(event.reason, PendingReason::AcceptedStateChanged);
+                assert!(event.conflict.is_some());
+                event
+            }
+            event => panic!("expected edit conflict, got {event:?}"),
+        }
     }
 
     fn tiny_png() -> Vec<u8> {
@@ -3662,6 +3979,18 @@ mod tests {
         assert_eq!(conflict.draft_error, None);
         assert_eq!(conflict.accepted.snapshot.sort_order, SortOrder::Title);
         assert_eq!(conflict.accepted.snapshot.notes[0].body, "Initial body");
+        let summary = conflict
+            .conflict
+            .expect("an ordinary edit conflict is reviewed");
+        assert_eq!(summary.note_id, note_id);
+        assert_eq!(
+            summary.durable_library_revision,
+            conflict.accepted.snapshot.revision
+        );
+        assert_eq!(summary.durable_note_revision, Some(1));
+        assert_eq!(summary.local_note_revision, 2);
+        assert!(summary.recovery_record_available);
+        assert!(summary.can_overwrite());
         assert!(draft_store.load(note_id).unwrap().is_some());
 
         worker
@@ -3678,6 +4007,217 @@ mod tests {
         assert_eq!(discarded.request_id, Some(3));
         assert_eq!(discarded.snapshot, conflict.accepted.snapshot);
         assert_eq!(draft_store.load(note_id).unwrap(), None);
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn edit_conflict_can_preserve_local_content_as_a_new_note() {
+        let (container, paths) = roots("conflict-keep-both");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_millis(20)).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+        let conflict = enter_edit_conflict(&worker, &paths, note_id, &created, "Local body");
+        let review = conflict.conflict.unwrap();
+
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 3,
+                pending_request_id: conflict.request_id,
+                resolution: PendingConflictResolution::PreserveAsNew,
+            })
+            .unwrap();
+        let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted preserved copy, got {event:?}"),
+        };
+        let ActionResult::CreatedNote(copy_id) = accepted.result else {
+            panic!("expected a created conflict copy")
+        };
+        assert_eq!(accepted.request_id, 3);
+        assert_eq!(accepted.generation, EditGeneration::new(1));
+        assert_eq!(accepted.accepted.snapshot.notes.len(), 2);
+        let durable = accepted
+            .accepted
+            .snapshot
+            .notes
+            .iter()
+            .find(|note| note.id == review.note_id)
+            .unwrap();
+        assert_eq!(durable.title, "External title");
+        assert_eq!(durable.body, "External body");
+        assert_eq!(durable.tags, ["external"]);
+        let copy = accepted
+            .accepted
+            .snapshot
+            .notes
+            .iter()
+            .find(|note| note.id == copy_id)
+            .unwrap();
+        assert_eq!(copy.title, "Private title");
+        assert_eq!(copy.body, "Local body");
+        assert!(copy.tags.is_empty());
+        assert_eq!(
+            DraftStore::for_library(paths.data_root())
+                .load(note_id)
+                .unwrap(),
+            None
+        );
+
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn edit_conflict_overwrite_is_request_bound_and_preserves_unrelated_durable_state() {
+        let (container, paths) = roots("conflict-overwrite");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_millis(20)).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+        let conflict = enter_edit_conflict(&worker, &paths, note_id, &created, "Local body");
+
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 3,
+                pending_request_id: conflict.request_id + 1,
+                resolution: PendingConflictResolution::OverwriteDurable,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 3,
+                failure: WorkerFailure::PendingConflict(PendingConflictError::StaleReview),
+                ..
+            })
+        ));
+
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 4,
+                pending_request_id: conflict.request_id,
+                resolution: PendingConflictResolution::OverwriteDurable,
+            })
+            .unwrap();
+        let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted conflict overwrite, got {event:?}"),
+        };
+        assert_eq!(accepted.request_id, 4);
+        assert_eq!(accepted.generation, EditGeneration::new(1));
+        assert_eq!(accepted.result, ActionResult::Edited(note_id));
+        assert_eq!(accepted.accepted.snapshot.notes.len(), 1);
+        let overwritten = &accepted.accepted.snapshot.notes[0];
+        assert_eq!(overwritten.id, note_id);
+        assert_eq!(overwritten.revision, 3);
+        assert_eq!(overwritten.modified_unix_ms, 20);
+        assert_eq!(overwritten.title, "Private title");
+        assert_eq!(overwritten.body, "Local body");
+        assert!(overwritten.tags.is_empty());
+        assert_eq!(
+            DraftStore::for_library(paths.data_root())
+                .load(note_id)
+                .unwrap(),
+            None
+        );
+
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn missing_durable_note_disables_overwrite_but_still_allows_keep_both() {
+        let (container, paths) = roots("conflict-missing-note");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_millis(20)).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+        let mut external = LibraryTransaction::begin(&created.snapshot).unwrap();
+        external.trash_note(note_id, 1).unwrap();
+        std::fs::write(
+            paths.data_root().join("library.bin"),
+            encode(&external.finish().unwrap()).unwrap(),
+        )
+        .unwrap();
+        worker
+            .try_send(WorkerCommand::ScheduleEdit(scheduled_edit(
+                2,
+                1,
+                note_id,
+                1,
+                "Local body",
+            )))
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Pending(PendingEvent {
+                reason: PendingReason::Store(_),
+                ..
+            })
+        ));
+        worker.try_send(WorkerCommand::RetryPending).unwrap();
+        let conflict = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Pending(event) => event,
+            event => panic!("expected missing-note conflict, got {event:?}"),
+        };
+        let review = conflict.conflict.unwrap();
+        assert_eq!(review.durable_note_revision, None);
+        assert!(!review.can_overwrite());
+
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 3,
+                pending_request_id: conflict.request_id,
+                resolution: PendingConflictResolution::OverwriteDurable,
+            })
+            .unwrap();
+        assert!(matches!(
+            worker.recv_timeout(Duration::from_secs(2)).unwrap(),
+            WorkerEvent::Rejected(RejectedEvent {
+                request_id: 3,
+                failure: WorkerFailure::PendingConflict(
+                    PendingConflictError::DurableNoteUnavailable
+                ),
+                ..
+            })
+        ));
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 4,
+                pending_request_id: conflict.request_id,
+                resolution: PendingConflictResolution::PreserveAsNew,
+            })
+            .unwrap();
+        let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected preserved missing-note copy, got {event:?}"),
+        };
+        assert!(matches!(accepted.result, ActionResult::CreatedNote(_)));
+        assert_eq!(
+            accepted
+                .accepted
+                .snapshot
+                .notes
+                .iter()
+                .filter(|note| !note.deleted)
+                .count(),
+            1
+        );
+        assert!(accepted
+            .accepted
+            .snapshot
+            .notes
+            .iter()
+            .any(|note| !note.deleted && note.body == "Local body"));
+
         worker.try_send(WorkerCommand::Shutdown).unwrap();
         let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
         drop(worker);

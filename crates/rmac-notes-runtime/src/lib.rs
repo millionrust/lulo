@@ -46,6 +46,7 @@ pub use worker::{
     BundleImportReviewRequest, BundleImportReviewedEvent, DraftRecoveryKind, DraftRestoredEvent,
     DraftReviewSummary, DraftSummary, ExportRequest, ExportedEvent, LibraryAction,
     MarkdownImportReviewedEvent, MigrationReviewSummary, NotesWorker, NotesWorkerClient,
-    NotesWorkerEvents, PendingEvent, RejectedEvent, SnapshotEvent, WorkerCommand, WorkerEvent,
-    WorkerFailure, WorkerSendError, WorkerStartError, COMMAND_CAPACITY, EVENT_CAPACITY,
+    NotesWorkerEvents, PendingConflictError, PendingConflictResolution, PendingConflictSummary,
+    PendingEvent, RejectedEvent, SnapshotEvent, WorkerCommand, WorkerEvent, WorkerFailure,
+    WorkerSendError, WorkerStartError, COMMAND_CAPACITY, EVENT_CAPACITY,
 };

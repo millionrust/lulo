@@ -66,6 +66,10 @@ impl PendingCommit {
         &self.candidate
     }
 
+    pub fn is_ordinary(&self) -> bool {
+        matches!(self.operation, PendingOperation::Ordinary)
+    }
+
     pub fn into_candidate(self) -> LibrarySnapshot {
         *self.candidate
     }

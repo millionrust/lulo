@@ -9,8 +9,8 @@ use rmac_notes_store::{
 
 use crate::{
     ActionResult, BundleImportReviewedEvent, DraftRestoredEvent, DraftReviewSummary,
-    EditGeneration, MarkdownImportReviewedEvent, MigrationReviewSummary, RejectedEvent,
-    WorkerEvent,
+    EditGeneration, MarkdownImportReviewedEvent, MigrationReviewSummary, PendingConflictSummary,
+    RejectedEvent, WorkerEvent,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -36,6 +36,7 @@ pub enum SessionPhase {
         request_id: u64,
         generation: Option<EditGeneration>,
         reason: PendingReason,
+        conflict: Option<PendingConflictSummary>,
     },
     Failed(StartupError),
     Stopped,
@@ -312,6 +313,7 @@ impl NotesSession {
                     request_id: event.request_id,
                     generation: event.generation,
                     reason: event.reason,
+                    conflict: event.conflict,
                 };
                 self.last_rejection = None;
             }
@@ -692,20 +694,29 @@ mod tests {
 
         let snapshot = snapshot(SortOrder::Edited);
         session.apply(WorkerEvent::Ready(snapshot_event(snapshot.clone())));
+        let conflict = PendingConflictSummary {
+            note_id: NoteId::new(1).unwrap(),
+            durable_library_revision: snapshot.revision,
+            durable_note_revision: Some(1),
+            local_note_revision: 2,
+            recovery_record_available: true,
+        };
         session.apply(WorkerEvent::Pending(PendingEvent {
             request_id: 9,
             generation: EditGeneration::new(3),
             reason: PendingReason::AcceptedStateChanged,
             accepted: snapshot_event(snapshot.clone()),
             draft_error: None,
+            conflict: Some(conflict),
         }));
         assert!(matches!(
             session.phase(),
             SessionPhase::Pending {
                 request_id: 9,
                 reason: PendingReason::AcceptedStateChanged,
+                conflict: Some(projected),
                 ..
-            }
+            } if *projected == conflict
         ));
 
         let rejection = RejectedEvent {

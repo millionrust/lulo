@@ -107,6 +107,27 @@ Effective reduced motion crosses that boundary as one boolean. Portal or theme
 watch failures preserve its last-known-good value and update only redacted
 source health; a real preference change requests one Dock frame.
 
+## Renderer content and original assets
+
+The same snapshot publishes two explicit groups: applications, then places.
+The renderer inserts the familiar Dock separator only when both groups are
+present. Every entry has a stable typed identity, visible label, path-free
+accessible label, enabled state, exact active/running indicator, urgent state,
+icon source, and an authoritative badge where one exists. A running app remains
+actionable even if its desktop entry disappears; a missing non-running pin
+remains visibly unavailable. Accessible labels announce active/running state,
+attention, exact window count, unavailable state, and exact Trash count without
+disclosing window titles, commands, or local paths.
+
+Desktop-entry icons retain their resolved Linux icon file. Apps without one use
+an original embedded rmac application tile. Files, Downloads, empty Trash, and
+full Trash also use original self-contained 64-unit SVG assets embedded in the
+crate, so session startup cannot race an installation path. The full Trash icon
+and badge appear only from an authoritative positive count; empty and unknown
+state never invent a badge. External icon paths have a redacted debug
+representation. The future renderer remains responsible for bounded decoding
+and accessible button semantics.
+
 Each coherent runtime snapshot also contains a renderer-ready `surface_plan`.
 For every selected output it fixes the edge, valid logical axis length, scale,
 base and maximum thickness, exclusive-zone reservation, hidden-edge reveal
@@ -128,6 +149,7 @@ Output/configuration refresh hints resample that authority off-thread. A failed
 resample retains the last-known Main ID, reports separate display-source health,
 and never guesses from connector order.
 
-The current slice is not D4 completion. The layer-shell view, icons/assets,
-pointer/keyboard semantics, surface hotplug execution, persistence UI,
-niri/reference-PC evidence, and performance gates remain pending.
+The current slice is not D4 completion. The layer-shell view, bounded external
+icon decoding, pointer/keyboard semantics, surface hotplug execution,
+persistence UI, niri/reference-PC evidence, and performance gates remain
+pending.

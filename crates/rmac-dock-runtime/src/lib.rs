@@ -50,6 +50,8 @@ pub struct HealthSnapshot {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     pub model: rmac_dock::Model,
+    /// Renderer-facing item groups, icons, indicators, badges, and semantics.
+    pub content: rmac_dock::presentation::ShelfContent,
     pub outputs: Vec<rmac_compositor::OutputId>,
     /// Complete renderer-facing policy for every selected valid output.
     pub surface_plan: Result<Vec<rmac_dock::SurfaceDescription>, rmac_dock::motion::ConfigError>,
@@ -66,6 +68,7 @@ impl Default for Snapshot {
     fn default() -> Self {
         Self {
             model: rmac_dock::Model::default(),
+            content: rmac_dock::presentation::ShelfContent::default(),
             outputs: Vec::new(),
             surface_plan: Ok(Vec::new()),
             overview_visible: false,
@@ -148,8 +151,10 @@ impl Coordinator {
             self.primary_output.as_ref(),
             self.reduced_motion,
         );
+        let content = rmac_dock::presentation::ShelfContent::project(&model);
         Snapshot {
             model,
+            content,
             outputs,
             surface_plan,
             overview_visible: compositor.overview_visible,
@@ -767,6 +772,7 @@ fn publication(previous: Option<&Snapshot>, next: Snapshot) -> Update {
     Update {
         visible: previous.is_none_or(|previous| {
             previous.model != next.model
+                || previous.content != next.content
                 || previous.outputs != next.outputs
                 || previous.surface_plan != next.surface_plan
                 || previous.overview_visible != next.overview_visible
@@ -914,6 +920,10 @@ mod tests {
         };
         coordinator.apply_settings(Ok(settings));
         assert!(!coordinator.snapshot().model.items[0].running);
+        assert_eq!(
+            coordinator.snapshot().content.applications[0].activity,
+            rmac_dock::presentation::ActivityIndicator::None
+        );
 
         coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
             windows: vec![rmac_compositor::Window {
@@ -940,6 +950,14 @@ mod tests {
         });
         assert!(coordinator.snapshot().model.items[0].running);
         assert!(coordinator.snapshot().model.items[0].active);
+        assert_eq!(
+            coordinator.snapshot().content.applications[0].activity,
+            rmac_dock::presentation::ActivityIndicator::Active
+        );
+        assert_eq!(
+            coordinator.snapshot().content.applications[0].accessible_label,
+            "terminal, active, 1 window"
+        );
     }
 
     fn output(id: &str) -> rmac_compositor::Output {

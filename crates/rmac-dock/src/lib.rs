@@ -1,6 +1,7 @@
 //! Framework-neutral Dock application and activation model.
 
 pub mod motion;
+pub mod presentation;
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};

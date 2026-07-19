@@ -107,16 +107,27 @@ Effective reduced motion crosses that boundary as one boolean. Portal or theme
 watch failures preserve its last-known-good value and update only redacted
 source health; a real preference change requests one Dock frame.
 
+Each coherent runtime snapshot also contains a renderer-ready `surface_plan`.
+For every selected output it fixes the edge, valid logical axis length, scale,
+base and maximum thickness, exclusive-zone reservation, hidden-edge reveal
+sensor, overview state, magnification policy, motion policy, and non-keyboard-
+interactive layer-shell behavior. The renderer must apply that plan rather than
+re-deriving settings or output policy. Changes such as moving the Dock from the
+bottom to the left, enabling autohide, changing magnification, or disabling
+reservation request a frame even when the application items and output IDs are
+unchanged. Invalid magnification policy is an explicit plan error rather than a
+clamped or partly rendered Dock.
+
 ## Outputs
 
-The model creates candidates only for enabled compositor outputs. `all` returns
-every enabled stable output ID, `named` requires that exact enabled output, and
-`primary` uses the single persisted `focus-at-startup` owner from the validated
-rmac display include. Output/configuration refresh hints resample that authority
-off-thread. A failed resample retains the last-known Main ID, reports separate
-display-source health, and never guesses from connector order.
+The model creates candidates only for enabled compositor outputs with finite,
+positive logical geometry and scale. `all` returns every valid stable output
+ID, `named` requires that exact valid output, and `primary` uses the single
+persisted `focus-at-startup` owner from the validated rmac display include.
+Output/configuration refresh hints resample that authority off-thread. A failed
+resample retains the last-known Main ID, reports separate display-source health,
+and never guesses from connector order.
 
 The current slice is not D4 completion. The layer-shell view, icons/assets,
-pointer/keyboard semantics, surface hotplug
-execution, persistence UI, niri/reference-PC evidence, and performance gates
-remain pending.
+pointer/keyboard semantics, surface hotplug execution, persistence UI,
+niri/reference-PC evidence, and performance gates remain pending.

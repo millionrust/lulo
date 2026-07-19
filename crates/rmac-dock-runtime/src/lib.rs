@@ -47,10 +47,12 @@ pub struct HealthSnapshot {
     pub appearance: SourceHealth,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     pub model: rmac_dock::Model,
     pub outputs: Vec<rmac_compositor::OutputId>,
+    /// Complete renderer-facing policy for every selected valid output.
+    pub surface_plan: Result<Vec<rmac_dock::SurfaceDescription>, rmac_dock::motion::ConfigError>,
     /// Authoritative niri overview state consumed by each output's D6
     /// visibility machine. This is not inferred from focus or window geometry.
     pub overview_visible: bool,
@@ -60,7 +62,20 @@ pub struct Snapshot {
     pub health: HealthSnapshot,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+impl Default for Snapshot {
+    fn default() -> Self {
+        Self {
+            model: rmac_dock::Model::default(),
+            outputs: Vec::new(),
+            surface_plan: Ok(Vec::new()),
+            overview_visible: false,
+            reduced_motion: false,
+            health: HealthSnapshot::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Update {
     pub snapshot: Snapshot,
     pub visible: bool,
@@ -122,13 +137,21 @@ impl Coordinator {
                 )
             },
         );
+        let outputs = rmac_dock::surface_outputs(
+            &compositor,
+            &self.settings.dock.outputs,
+            self.primary_output.as_ref(),
+        );
+        let surface_plan = rmac_dock::surface_descriptions(
+            &compositor,
+            &self.settings.dock,
+            self.primary_output.as_ref(),
+            self.reduced_motion,
+        );
         Snapshot {
             model,
-            outputs: rmac_dock::surface_outputs(
-                &compositor,
-                &self.settings.dock.outputs,
-                self.primary_output.as_ref(),
-            ),
+            outputs,
+            surface_plan,
             overview_visible: compositor.overview_visible,
             reduced_motion: self.reduced_motion,
             health: self.health.clone(),
@@ -745,6 +768,7 @@ fn publication(previous: Option<&Snapshot>, next: Snapshot) -> Update {
         visible: previous.is_none_or(|previous| {
             previous.model != next.model
                 || previous.outputs != next.outputs
+                || previous.surface_plan != next.surface_plan
                 || previous.overview_visible != next.overview_visible
                 || previous.reduced_motion != next.reduced_motion
         }),
@@ -956,6 +980,39 @@ mod tests {
             outputs: Vec::new(),
         });
         assert!(coordinator.snapshot().outputs.is_empty());
+    }
+
+    #[test]
+    fn renderer_policy_changes_request_a_frame_without_changing_dock_items() {
+        let mut coordinator = Coordinator::default();
+        coordinator.apply_compositor(rmac_compositor::Event::OutputsReplaced {
+            outputs: vec![output("eDP-1")],
+        });
+        let before = coordinator.snapshot();
+
+        let mut settings = rmac_shell_settings::ShellSettings::default();
+        settings.dock.placement = rmac_shell_settings::DockPlacement::Left;
+        settings.dock.autohide = true;
+        settings.dock.reserve_space = false;
+        settings.dock.magnification_scale = 2.0;
+        coordinator.apply_settings(Ok(settings));
+        let after = coordinator.snapshot();
+
+        assert_eq!(after.model, before.model);
+        assert_eq!(after.outputs, before.outputs);
+        assert_ne!(after.surface_plan, before.surface_plan);
+        assert!(publication(Some(&before), after.clone()).visible);
+        let surface = &after
+            .surface_plan
+            .expect("valid settings produce a surface plan")[0];
+        assert_eq!(surface.output, rmac_compositor::OutputId::from("eDP-1"));
+        assert_eq!(surface.placement, rmac_shell_settings::DockPlacement::Left);
+        assert_eq!(surface.output_axis_length, 1080.0);
+        assert_eq!(surface.exclusive_zone, 0.0);
+        assert_eq!(
+            surface.reveal_edge_thickness,
+            rmac_dock::HIDDEN_EDGE_THICKNESS
+        );
     }
 
     #[test]

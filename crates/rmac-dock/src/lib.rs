@@ -659,6 +659,108 @@ fn latest_focus_timestamp(windows: &[WindowItem]) -> (u64, u32) {
         .unwrap_or_default()
 }
 
+pub const SHELF_PADDING: f32 = 8.0;
+pub const HIDDEN_EDGE_THICKNESS: f32 = 2.0;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SurfaceDescription {
+    pub output: rmac_compositor::OutputId,
+    pub placement: rmac_shell_settings::DockPlacement,
+    /// Length along the Dock's item axis in logical pixels.
+    pub output_axis_length: f64,
+    pub output_scale: f64,
+    pub base_thickness: f32,
+    pub maximum_thickness: f32,
+    /// A stable work-area reservation. It never grows during magnification.
+    pub exclusive_zone: f32,
+    pub reveal_edge_thickness: f32,
+    pub keyboard_interactive: bool,
+    pub autohide: bool,
+    pub overview_visible: bool,
+    pub magnification_enabled: bool,
+    pub animate: bool,
+    pub magnification: motion::MagnificationConfig,
+}
+
+pub fn surface_descriptions(
+    compositor: &rmac_compositor::Snapshot,
+    settings: &rmac_shell_settings::DockSettings,
+    primary: Option<&rmac_compositor::OutputId>,
+    reduced_motion: bool,
+) -> Result<Vec<SurfaceDescription>, motion::ConfigError> {
+    let magnification = motion::MagnificationConfig {
+        maximum_scale: settings.magnification_scale,
+        ..Default::default()
+    }
+    .validate()?;
+    let selected: BTreeSet<_> = surface_outputs(compositor, &settings.outputs, primary)
+        .into_iter()
+        .collect();
+    let magnification_enabled = settings.magnification && !reduced_motion;
+    let base_thickness = magnification.icon_size + 2.0 * SHELF_PADDING;
+    let maximum_thickness = if magnification_enabled {
+        magnification.icon_size * magnification.maximum_scale + 2.0 * SHELF_PADDING
+    } else {
+        base_thickness
+    };
+    let exclusive_zone = if settings.reserve_space {
+        base_thickness
+    } else {
+        0.0
+    };
+    let reveal_edge_thickness = if settings.autohide {
+        HIDDEN_EDGE_THICKNESS
+    } else {
+        0.0
+    };
+    let mut surfaces = compositor
+        .outputs
+        .iter()
+        .filter(|output| selected.contains(&output.id))
+        .filter_map(|output| {
+            let logical = renderable_logical_output(output)?;
+            let output_axis_length = match settings.placement {
+                rmac_shell_settings::DockPlacement::Bottom => logical.size.width,
+                rmac_shell_settings::DockPlacement::Left
+                | rmac_shell_settings::DockPlacement::Right => logical.size.height,
+            };
+            Some(SurfaceDescription {
+                output: output.id.clone(),
+                placement: settings.placement,
+                output_axis_length,
+                output_scale: logical.scale,
+                base_thickness,
+                maximum_thickness,
+                exclusive_zone,
+                reveal_edge_thickness,
+                keyboard_interactive: false,
+                autohide: settings.autohide,
+                overview_visible: compositor.overview_visible,
+                magnification_enabled,
+                animate: !reduced_motion,
+                magnification,
+            })
+        })
+        .collect::<Vec<_>>();
+    surfaces.sort_by(|left, right| left.output.cmp(&right.output));
+    Ok(surfaces)
+}
+
+fn renderable_logical_output(
+    output: &rmac_compositor::Output,
+) -> Option<&rmac_compositor::LogicalOutput> {
+    if !output.enabled() {
+        return None;
+    }
+    let logical = output.logical.as_ref()?;
+    (logical.size.is_valid()
+        && logical.size.width > 0.0
+        && logical.size.height > 0.0
+        && logical.scale.is_finite()
+        && logical.scale > 0.0)
+        .then_some(logical)
+}
+
 pub fn surface_outputs(
     compositor: &rmac_compositor::Snapshot,
     scope: &rmac_shell_settings::OutputScope,
@@ -667,7 +769,7 @@ pub fn surface_outputs(
     let enabled: BTreeSet<_> = compositor
         .outputs
         .iter()
-        .filter(|output| output.enabled())
+        .filter(|output| renderable_logical_output(output).is_some())
         .map(|output| output.id.clone())
         .collect();
     match scope {
@@ -856,7 +958,13 @@ mod tests {
         ));
     }
 
-    fn output(id: &str, enabled: bool) -> rmac_compositor::Output {
+    fn output_with_geometry(
+        id: &str,
+        enabled: bool,
+        width: f64,
+        height: f64,
+        scale: f64,
+    ) -> rmac_compositor::Output {
         rmac_compositor::Output {
             id: id.into(),
             make: String::new(),
@@ -870,14 +978,15 @@ mod tests {
             vrr_enabled: false,
             logical: enabled.then_some(rmac_compositor::LogicalOutput {
                 position: Default::default(),
-                size: rmac_compositor::LogicalSize {
-                    width: 1920.0,
-                    height: 1080.0,
-                },
-                scale: 1.0,
+                size: rmac_compositor::LogicalSize { width, height },
+                scale,
                 transform: "normal".into(),
             }),
         }
+    }
+
+    fn output(id: &str, enabled: bool) -> rmac_compositor::Output {
+        output_with_geometry(id, enabled, 1920.0, 1080.0, 1.0)
     }
 
     #[test]
@@ -909,6 +1018,140 @@ mod tests {
                 Some(&rmac_compositor::OutputId::from("eDP-1")),
             ),
             [rmac_compositor::OutputId::from("eDP-1")]
+        );
+    }
+
+    #[test]
+    fn surface_plan_is_sorted_scaled_and_rejects_unrenderable_outputs() {
+        let compositor = rmac_compositor::Snapshot {
+            outputs: vec![
+                output_with_geometry("eDP-1", true, 1512.0, 982.0, 2.0),
+                output_with_geometry("DP-2", true, 2560.0, 1440.0, 1.25),
+                output_with_geometry("DP-1", true, 0.0, 1440.0, 1.0),
+                output_with_geometry("HDMI-A-1", true, 1920.0, 1080.0, f64::NAN),
+            ],
+            ..Default::default()
+        };
+        let bottom = surface_descriptions(
+            &compositor,
+            &rmac_shell_settings::DockSettings::default(),
+            None,
+            false,
+        )
+        .expect("default surface policy is valid");
+
+        assert_eq!(
+            bottom
+                .iter()
+                .map(|surface| surface.output.0.as_str())
+                .collect::<Vec<_>>(),
+            ["DP-2", "eDP-1"]
+        );
+        assert_eq!(bottom[0].output_axis_length, 2560.0);
+        assert_eq!(bottom[0].output_scale, 1.25);
+        assert_eq!(bottom[1].output_axis_length, 1512.0);
+        assert_eq!(bottom[1].output_scale, 2.0);
+
+        let settings = rmac_shell_settings::DockSettings {
+            placement: rmac_shell_settings::DockPlacement::Left,
+            ..Default::default()
+        };
+        let side = surface_descriptions(&compositor, &settings, None, false)
+            .expect("side surface policy is valid");
+        assert_eq!(side[0].output_axis_length, 1440.0);
+        assert_eq!(side[1].output_axis_length, 982.0);
+        assert_eq!(
+            surface_outputs(&compositor, &settings.outputs, None).len(),
+            2
+        );
+    }
+
+    #[test]
+    fn surface_plan_keeps_reservation_stable_across_magnification_and_autohide() {
+        let compositor = rmac_compositor::Snapshot {
+            outputs: vec![output("eDP-1", true)],
+            overview_visible: true,
+            ..Default::default()
+        };
+        let settings = rmac_shell_settings::DockSettings {
+            autohide: true,
+            magnification_scale: 1.5,
+            reserve_space: true,
+            ..Default::default()
+        };
+        let surface = surface_descriptions(&compositor, &settings, None, false)
+            .expect("surface policy is valid")
+            .remove(0);
+
+        assert_eq!(surface.base_thickness, 64.0);
+        assert_eq!(surface.maximum_thickness, 88.0);
+        assert_eq!(surface.exclusive_zone, 64.0);
+        assert_eq!(surface.reveal_edge_thickness, HIDDEN_EDGE_THICKNESS);
+        assert!(!surface.keyboard_interactive);
+        assert!(surface.autohide);
+        assert!(surface.overview_visible);
+        assert!(surface.magnification_enabled);
+        assert!(surface.animate);
+
+        let layout = motion::magnified_layout(
+            3,
+            Some(24.0),
+            surface.magnification_enabled,
+            false,
+            surface.magnification,
+        )
+        .expect("surface-provided magnification is valid");
+        assert!(layout.items[0].size > surface.magnification.icon_size);
+        assert_eq!(surface.exclusive_zone, surface.base_thickness);
+
+        let no_reservation = surface_descriptions(
+            &compositor,
+            &rmac_shell_settings::DockSettings {
+                reserve_space: false,
+                ..settings
+            },
+            None,
+            false,
+        )
+        .expect("surface policy is valid")
+        .remove(0);
+        assert_eq!(no_reservation.exclusive_zone, 0.0);
+        assert_eq!(no_reservation.reveal_edge_thickness, HIDDEN_EDGE_THICKNESS);
+    }
+
+    #[test]
+    fn reduced_motion_disables_dock_scaling_and_animation() {
+        let compositor = rmac_compositor::Snapshot {
+            outputs: vec![output("eDP-1", true)],
+            ..Default::default()
+        };
+        let surface = surface_descriptions(
+            &compositor,
+            &rmac_shell_settings::DockSettings::default(),
+            None,
+            true,
+        )
+        .expect("surface policy is valid")
+        .remove(0);
+
+        assert!(!surface.magnification_enabled);
+        assert!(!surface.animate);
+        assert_eq!(surface.maximum_thickness, surface.base_thickness);
+    }
+
+    #[test]
+    fn invalid_magnification_policy_fails_before_any_surface_is_described() {
+        let compositor = rmac_compositor::Snapshot {
+            outputs: vec![output("eDP-1", true)],
+            ..Default::default()
+        };
+        let invalid = rmac_shell_settings::DockSettings {
+            magnification_scale: f32::NAN,
+            ..Default::default()
+        };
+        assert_eq!(
+            surface_descriptions(&compositor, &invalid, None, false),
+            Err(motion::ConfigError::NonFinite)
         );
     }
 

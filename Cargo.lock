@@ -4997,6 +4997,8 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-dock",
+ "rmac-places",
+ "rmac-places-system",
  "rmac-portal",
  "rmac-shell-settings",
 ]
@@ -5352,6 +5354,7 @@ dependencies = [
  "notify",
  "rmac-places",
  "rmac-portal",
+ "sha2",
  "trash",
 ]
 

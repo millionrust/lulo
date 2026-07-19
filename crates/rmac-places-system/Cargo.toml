@@ -10,4 +10,5 @@ publish = false
 notify.workspace = true
 rmac-places.workspace = true
 rmac-portal.workspace = true
+sha2.workspace = true
 trash.workspace = true

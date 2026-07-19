@@ -15,6 +15,8 @@ pub enum Operation {
     UpdatePins,
     Resolve,
     OpenPlace,
+    ReviewTrash,
+    EmptyTrash,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,6 +54,8 @@ impl fmt::Display for Operation {
             Self::UpdatePins => "update pinned applications",
             Self::Resolve => "resolve Dock activation",
             Self::OpenPlace => "open Dock place",
+            Self::ReviewTrash => "review Empty Trash",
+            Self::EmptyTrash => "empty Trash",
         })
     }
 }
@@ -113,6 +117,9 @@ pub enum Outcome {
     },
     PlaceOpened {
         kind: rmac_dock::SpecialItemKind,
+    },
+    TrashEmptied {
+        remaining_items: usize,
     },
     NoAction,
 }
@@ -397,8 +404,67 @@ fn special_item_id(kind: rmac_dock::SpecialItemKind) -> &'static str {
     }
 }
 
+/// Revalidate the count projected into the context menu and retain the exact,
+/// path-free Trash identities that may be deleted after explicit confirmation.
+/// This is blocking filesystem work and belongs on a worker thread.
+pub fn prepare_special_context(
+    action: &rmac_dock::SpecialContextAction,
+    backend: &impl rmac_places_system::Backend,
+) -> Result<rmac_places_system::EmptyTrashReview, Error> {
+    match action {
+        rmac_dock::SpecialContextAction::EmptyTrash {
+            expected_item_count,
+        } => {
+            let snapshot = rmac_places::TrashSnapshot {
+                available: true,
+                empty: *expected_item_count == 0,
+                item_count: *expected_item_count,
+            };
+            rmac_places_system::prepare_empty_trash(&snapshot, backend)
+                .map_err(|_| {
+                    Error::new(
+                        Operation::ReviewTrash,
+                        FailureKind::Rejected,
+                        "Trash",
+                        "Trash changed before the deletion review",
+                    )
+                })?
+                .ok_or_else(|| {
+                    Error::new(
+                        Operation::ReviewTrash,
+                        FailureKind::Rejected,
+                        "Trash",
+                        "Trash is already empty",
+                    )
+                })
+        }
+    }
+}
+
+/// Permanently delete only the exact identities retained by the confirmed
+/// review. Items added later remain in Trash. This is blocking filesystem work
+/// and belongs on a worker thread.
+pub fn execute_empty_trash(
+    confirmation: rmac_places_system::EmptyTrashConfirmation,
+    backend: &impl rmac_places_system::Backend,
+) -> Result<Outcome, Error> {
+    rmac_places_system::empty_trash(confirmation, backend)
+        .map(|snapshot| Outcome::TrashEmptied {
+            remaining_items: snapshot.item_count,
+        })
+        .map_err(|_| {
+            Error::new(
+                Operation::EmptyTrash,
+                FailureKind::Rejected,
+                "Trash",
+                "Trash changed or could not be emptied",
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io;
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -408,6 +474,51 @@ mod tests {
     struct FakeBackend {
         calls: Mutex<Vec<String>>,
         failure: Mutex<Option<BackendError>>,
+    }
+
+    #[derive(Default)]
+    struct FakeTrashBackend {
+        entries: Mutex<Vec<rmac_places_system::TrashEntryId>>,
+        purged: Mutex<Vec<rmac_places_system::TrashEntryId>>,
+    }
+
+    impl rmac_places_system::Backend for FakeTrashBackend {
+        fn home(&self) -> Option<std::path::PathBuf> {
+            Some("/home/alex".into())
+        }
+
+        fn config_home(&self) -> Option<std::path::PathBuf> {
+            None
+        }
+
+        fn read_optional(&self, _: &Path) -> io::Result<Option<String>> {
+            Ok(None)
+        }
+
+        fn exists(&self, _: &Path) -> io::Result<bool> {
+            Ok(true)
+        }
+
+        fn trash_count(&self) -> Result<usize, String> {
+            Ok(self.entries.lock().expect("entries lock").len())
+        }
+
+        fn trash_entries(&self) -> Result<Vec<rmac_places_system::TrashEntryId>, String> {
+            Ok(self.entries.lock().expect("entries lock").clone())
+        }
+
+        fn purge_trash(&self, reviewed: &[rmac_places_system::TrashEntryId]) -> Result<(), String> {
+            let mut entries = self.entries.lock().expect("entries lock");
+            if reviewed.iter().any(|reviewed| !entries.contains(reviewed)) {
+                return Err("Trash changed after review".into());
+            }
+            self.purged
+                .lock()
+                .expect("purged lock")
+                .extend_from_slice(reviewed);
+            entries.retain(|entry| !reviewed.contains(entry));
+            Ok(())
+        }
     }
 
     impl FakeBackend {
@@ -702,6 +813,57 @@ mod tests {
         assert_eq!(error.operation, Operation::Resolve);
         assert_eq!(error.app_id, "Downloads");
         assert!(backend.calls.into_inner().expect("calls").is_empty());
+    }
+
+    #[test]
+    fn empty_trash_execution_deletes_only_the_reviewed_authority() {
+        let reviewed = [
+            rmac_places_system::TrashEntryId::from_authority_bytes(b"first"),
+            rmac_places_system::TrashEntryId::from_authority_bytes(b"second"),
+        ];
+        let backend = FakeTrashBackend {
+            entries: Mutex::new(reviewed.to_vec()),
+            ..Default::default()
+        };
+        let review = prepare_special_context(
+            &rmac_dock::SpecialContextAction::EmptyTrash {
+                expected_item_count: 2,
+            },
+            &backend,
+        )
+        .expect("exact review prepares");
+        assert_eq!(review.item_count(), 2);
+
+        let added = rmac_places_system::TrashEntryId::from_authority_bytes(b"added later");
+        backend.entries.lock().expect("entries lock").push(added);
+        let outcome = execute_empty_trash(
+            rmac_places_system::confirm_empty_trash(review, true).expect("confirmed"),
+            &backend,
+        )
+        .expect("reviewed entries purge");
+        assert_eq!(outcome, Outcome::TrashEmptied { remaining_items: 1 });
+        assert_eq!(*backend.entries.lock().expect("entries lock"), [added]);
+        assert_eq!(backend.purged.lock().expect("purged lock").len(), 2);
+    }
+
+    #[test]
+    fn changed_trash_count_refuses_review_without_private_diagnostics() {
+        let backend = FakeTrashBackend {
+            entries: Mutex::new(vec![
+                rmac_places_system::TrashEntryId::from_authority_bytes(b"only item"),
+            ]),
+            ..Default::default()
+        };
+        let error = prepare_special_context(
+            &rmac_dock::SpecialContextAction::EmptyTrash {
+                expected_item_count: 2,
+            },
+            &backend,
+        )
+        .expect_err("stale menu count is rejected");
+        assert_eq!(error.operation, Operation::ReviewTrash);
+        assert_eq!(error.app_id, "Trash");
+        assert_eq!(error.detail(), "Trash changed before the deletion review");
     }
 
     #[test]

@@ -81,6 +81,19 @@ pub struct SpecialItem {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SpecialContextAction {
+    EmptyTrash { expected_item_count: usize },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SpecialContextMenu {
+    pub kind: SpecialItemKind,
+    pub open: SpecialActivation,
+    /// Present only for an available, authoritatively nonempty Trash.
+    pub empty_trash: Option<SpecialContextAction>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Activation {
     Launch {
         app_id: String,
@@ -276,6 +289,22 @@ impl Model {
                 kind,
                 detail: "the place is not present in the Dock".into(),
             })
+    }
+
+    pub fn special_context_menu(&self, kind: SpecialItemKind) -> Option<SpecialContextMenu> {
+        let item = self.special_items.iter().find(|item| item.kind == kind)?;
+        Some(SpecialContextMenu {
+            kind,
+            open: item.activation.clone(),
+            empty_trash: match (kind, item.available, item.item_count) {
+                (SpecialItemKind::Trash, true, Some(item_count)) if item_count > 0 => {
+                    Some(SpecialContextAction::EmptyTrash {
+                        expected_item_count: item_count,
+                    })
+                }
+                _ => None,
+            },
+        })
     }
 
     pub fn activate(&self, app_id: &str) -> Activation {
@@ -1013,6 +1042,44 @@ mod tests {
         assert!(debug.contains("<private>"));
         assert!(!debug.contains("alex"));
         assert!(!debug.contains("Tax"));
+    }
+
+    #[test]
+    fn only_authoritatively_nonempty_trash_offers_destructive_review() {
+        let model = Model::build_with_places(
+            &[],
+            &Default::default(),
+            &[],
+            &Default::default(),
+            &places("/home/alex/Downloads", true, 4),
+        );
+        assert_eq!(
+            model
+                .special_context_menu(SpecialItemKind::Trash)
+                .expect("Trash menu")
+                .empty_trash,
+            Some(SpecialContextAction::EmptyTrash {
+                expected_item_count: 4
+            })
+        );
+        assert!(model
+            .special_context_menu(SpecialItemKind::Files)
+            .expect("Files menu")
+            .empty_trash
+            .is_none());
+
+        let empty = Model::build_with_places(
+            &[],
+            &Default::default(),
+            &[],
+            &Default::default(),
+            &places("/home/alex/Downloads", true, 0),
+        );
+        assert!(empty
+            .special_context_menu(SpecialItemKind::Trash)
+            .expect("Trash menu")
+            .empty_trash
+            .is_none());
     }
 
     #[test]

@@ -5,6 +5,16 @@ use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use sha2::Digest as _;
+
+#[cfg(all(
+    unix,
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+    not(target_os = "android")
+))]
+use std::ffi::OsStr;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operation {
     ResolveHome,
@@ -80,6 +90,27 @@ pub struct Report {
     pub warnings: Vec<Error>,
 }
 
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub struct TrashEntryId([u8; 32]);
+
+impl TrashEntryId {
+    /// Derive a stable, path-free identity from the platform Trash authority.
+    /// Callers never receive the original identifier bytes.
+    pub fn from_authority_bytes(bytes: &[u8]) -> Self {
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(b"rmac-trash-entry-v1\0");
+        hasher.update((bytes.len() as u64).to_le_bytes());
+        hasher.update(bytes);
+        Self(hasher.finalize().into())
+    }
+}
+
+impl fmt::Debug for TrashEntryId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("TrashEntryId(<private>)")
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub enum WatchEvent {
     Changed,
@@ -108,7 +139,8 @@ pub trait Backend {
     fn read_optional(&self, path: &Path) -> io::Result<Option<String>>;
     fn exists(&self, path: &Path) -> io::Result<bool>;
     fn trash_count(&self) -> Result<usize, String>;
-    fn purge_trash(&self) -> Result<(), String>;
+    fn trash_entries(&self) -> Result<Vec<TrashEntryId>, String>;
+    fn purge_trash(&self, reviewed: &[TrashEntryId]) -> Result<(), String>;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -166,7 +198,7 @@ impl Backend for SystemBackend {
         }
     }
 
-    fn purge_trash(&self) -> Result<(), String> {
+    fn trash_entries(&self) -> Result<Vec<TrashEntryId>, String> {
         #[cfg(all(
             unix,
             not(target_os = "macos"),
@@ -174,8 +206,9 @@ impl Backend for SystemBackend {
             not(target_os = "android")
         ))]
         {
-            let items = trash::os_limited::list().map_err(|error| error.to_string())?;
-            trash::os_limited::purge_all(items).map_err(|error| error.to_string())
+            trash::os_limited::list()
+                .map(|items| items.iter().map(|item| trash_entry_id(&item.id)).collect())
+                .map_err(|error| error.to_string())
         }
         #[cfg(not(all(
             unix,
@@ -184,9 +217,59 @@ impl Backend for SystemBackend {
             not(target_os = "android")
         )))]
         {
+            Err("Trash enumeration is not available on this development platform".into())
+        }
+    }
+
+    fn purge_trash(&self, reviewed: &[TrashEntryId]) -> Result<(), String> {
+        #[cfg(all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        ))]
+        {
+            use std::collections::BTreeMap;
+
+            let current = trash::os_limited::list().map_err(|error| error.to_string())?;
+            let mut by_id = BTreeMap::new();
+            for item in current {
+                if by_id.insert(trash_entry_id(&item.id), item).is_some() {
+                    return Err("the Trash authority returned a duplicate item identity".into());
+                }
+            }
+            let mut selected = Vec::with_capacity(reviewed.len());
+            for id in reviewed {
+                let Some(item) = by_id.remove(id) else {
+                    return Err("Trash changed after the deletion review".into());
+                };
+                selected.push(item);
+            }
+            trash::os_limited::purge_all(selected).map_err(|error| error.to_string())
+        }
+        #[cfg(not(all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        )))]
+        {
+            let _ = reviewed;
             Err("Empty Trash is not available on this development platform".into())
         }
     }
+}
+
+#[cfg(all(
+    unix,
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+    not(target_os = "android")
+))]
+fn trash_entry_id(value: &OsStr) -> TrashEntryId {
+    use std::os::unix::ffi::OsStrExt as _;
+
+    TrashEntryId::from_authority_bytes(value.as_bytes())
 }
 
 pub fn snapshot(backend: &impl Backend) -> Result<Report, Error> {
@@ -414,19 +497,85 @@ pub async fn open_downloads(snapshot: &rmac_places::Snapshot) -> Result<(), Erro
         })
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct EmptyTrashConfirmation(());
+#[derive(Clone, Eq, PartialEq)]
+pub struct EmptyTrashReview {
+    entries: Vec<TrashEntryId>,
+}
 
-pub fn confirm_empty_trash(confirmed: bool) -> Option<EmptyTrashConfirmation> {
-    confirmed.then_some(EmptyTrashConfirmation(()))
+impl EmptyTrashReview {
+    pub fn item_count(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+impl fmt::Debug for EmptyTrashReview {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EmptyTrashReview")
+            .field("item_count", &self.item_count())
+            .field("entries", &"<private>")
+            .finish()
+    }
+}
+
+/// Prepare the exact set of Trash identities represented by the accepted
+/// snapshot. A changed count refuses review and asks the caller to refresh.
+pub fn prepare_empty_trash(
+    snapshot: &rmac_places::TrashSnapshot,
+    backend: &impl Backend,
+) -> Result<Option<EmptyTrashReview>, Error> {
+    if !snapshot.available {
+        return Err(Error::message(
+            Operation::InspectTrash,
+            None,
+            "Trash is unavailable",
+        ));
+    }
+    if snapshot.empty || snapshot.item_count == 0 {
+        return Ok(None);
+    }
+    let mut entries = backend
+        .trash_entries()
+        .map_err(|detail| Error::message(Operation::InspectTrash, None, detail))?;
+    entries.sort_unstable();
+    let before_deduplication = entries.len();
+    entries.dedup();
+    if entries.len() != before_deduplication || entries.len() != snapshot.item_count {
+        return Err(Error::message(
+            Operation::InspectTrash,
+            None,
+            "Trash changed before the deletion review",
+        ));
+    }
+    Ok(Some(EmptyTrashReview { entries }))
+}
+
+#[derive(Eq, PartialEq)]
+pub struct EmptyTrashConfirmation(EmptyTrashReview);
+
+impl fmt::Debug for EmptyTrashConfirmation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EmptyTrashConfirmation")
+            .field("item_count", &self.0.item_count())
+            .field("entries", &"<private>")
+            .finish()
+    }
+}
+
+pub fn confirm_empty_trash(
+    review: EmptyTrashReview,
+    confirmed: bool,
+) -> Option<EmptyTrashConfirmation> {
+    confirmed.then_some(EmptyTrashConfirmation(review))
 }
 
 pub fn empty_trash(
-    _: EmptyTrashConfirmation,
+    confirmation: EmptyTrashConfirmation,
     backend: &impl Backend,
 ) -> Result<rmac_places::TrashSnapshot, Error> {
     backend
-        .purge_trash()
+        .purge_trash(&confirmation.0.entries)
         .map_err(|detail| Error::message(Operation::EmptyTrash, None, detail))?;
     let item_count = backend
         .trash_count()
@@ -440,7 +589,7 @@ pub fn empty_trash(
 
 #[cfg(test)]
 mod tests {
-    use std::cell::{Cell, RefCell};
+    use std::cell::RefCell;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
@@ -450,8 +599,8 @@ mod tests {
         config_home: Option<PathBuf>,
         user_dirs: RefCell<io::Result<Option<String>>>,
         existing: Vec<PathBuf>,
-        trash_count: Cell<Result<usize, &'static str>>,
-        purged: Cell<bool>,
+        trash_entries: RefCell<Result<Vec<TrashEntryId>, &'static str>>,
+        purged: RefCell<Vec<TrashEntryId>>,
     }
 
     impl Default for FakeBackend {
@@ -464,8 +613,8 @@ mod tests {
                     PathBuf::from("/home/alex"),
                     PathBuf::from("/home/alex/Downloads"),
                 ],
-                trash_count: Cell::new(Ok(0)),
-                purged: Cell::new(false),
+                trash_entries: RefCell::new(Ok(Vec::new())),
+                purged: RefCell::new(Vec::new()),
             }
         }
     }
@@ -488,14 +637,37 @@ mod tests {
         }
 
         fn trash_count(&self) -> Result<usize, String> {
-            self.trash_count.get().map_err(str::to_owned)
+            self.trash_entries
+                .borrow()
+                .as_ref()
+                .map(Vec::len)
+                .map_err(|error| (*error).to_owned())
         }
 
-        fn purge_trash(&self) -> Result<(), String> {
-            self.purged.set(true);
-            self.trash_count.set(Ok(0));
+        fn trash_entries(&self) -> Result<Vec<TrashEntryId>, String> {
+            self.trash_entries
+                .borrow()
+                .as_ref()
+                .cloned()
+                .map_err(|error| (*error).to_owned())
+        }
+
+        fn purge_trash(&self, reviewed: &[TrashEntryId]) -> Result<(), String> {
+            let mut inventory = self.trash_entries.borrow_mut();
+            let entries = inventory.as_mut().map_err(|error| (*error).to_owned())?;
+            if reviewed.iter().any(|reviewed| !entries.contains(reviewed)) {
+                return Err("Trash changed after the deletion review".into());
+            }
+            self.purged.borrow_mut().extend_from_slice(reviewed);
+            entries.retain(|entry| !reviewed.contains(entry));
             Ok(())
         }
+    }
+
+    fn trash_entries(count: u8) -> RefCell<Result<Vec<TrashEntryId>, &'static str>> {
+        RefCell::new(Ok((0..count)
+            .map(|index| TrashEntryId::from_authority_bytes(&[index]))
+            .collect()))
     }
 
     #[test]
@@ -506,7 +678,7 @@ mod tests {
                 PathBuf::from("/home/alex"),
                 PathBuf::from("/home/alex/Transfers"),
             ],
-            trash_count: Cell::new(Ok(3)),
+            trash_entries: trash_entries(3),
             ..Default::default()
         };
         let report = snapshot(&backend).expect("snapshot succeeds");
@@ -538,7 +710,7 @@ mod tests {
     #[test]
     fn trash_failure_does_not_hide_other_places() {
         let backend = FakeBackend {
-            trash_count: Cell::new(Err("mount disappeared")),
+            trash_entries: RefCell::new(Err("mount disappeared")),
             ..Default::default()
         };
         let report = snapshot(&backend).expect("places remain available");
@@ -552,16 +724,114 @@ mod tests {
 
     #[test]
     fn empty_trash_requires_confirmation_and_refreshes_authority() {
-        assert!(confirm_empty_trash(false).is_none());
         let backend = FakeBackend {
-            trash_count: Cell::new(Ok(2)),
+            trash_entries: trash_entries(2),
             ..Default::default()
         };
-        let confirmation = confirm_empty_trash(true).expect("user confirmed");
+        let snapshot = rmac_places::TrashSnapshot {
+            available: true,
+            empty: false,
+            item_count: 2,
+        };
+        let review = prepare_empty_trash(&snapshot, &backend)
+            .expect("review prepares")
+            .expect("nonempty review");
+        assert_eq!(review.item_count(), 2);
+        assert!(confirm_empty_trash(review.clone(), false).is_none());
+        let confirmation = confirm_empty_trash(review, true).expect("user confirmed");
         let refreshed = empty_trash(confirmation, &backend).expect("purge succeeds");
-        assert!(backend.purged.get());
+        assert_eq!(backend.purged.borrow().len(), 2);
         assert!(refreshed.empty);
         assert_eq!(refreshed.item_count, 0);
+    }
+
+    #[test]
+    fn items_added_after_review_are_never_purged() {
+        let backend = FakeBackend {
+            trash_entries: trash_entries(2),
+            ..Default::default()
+        };
+        let snapshot = rmac_places::TrashSnapshot {
+            available: true,
+            empty: false,
+            item_count: 2,
+        };
+        let review = prepare_empty_trash(&snapshot, &backend)
+            .expect("review prepares")
+            .expect("nonempty review");
+        let added = TrashEntryId::from_authority_bytes(b"added after confirmation");
+        backend
+            .trash_entries
+            .borrow_mut()
+            .as_mut()
+            .expect("inventory")
+            .push(added);
+
+        let refreshed = empty_trash(
+            confirm_empty_trash(review, true).expect("confirmed"),
+            &backend,
+        )
+        .expect("only reviewed entries purge");
+        assert_eq!(backend.purged.borrow().len(), 2);
+        assert_eq!(backend.trash_entries().unwrap(), [added]);
+        assert_eq!(refreshed.item_count, 1);
+        assert!(!refreshed.empty);
+    }
+
+    #[test]
+    fn stale_or_duplicate_review_authority_fails_closed() {
+        let backend = FakeBackend {
+            trash_entries: trash_entries(2),
+            ..Default::default()
+        };
+        let snapshot = rmac_places::TrashSnapshot {
+            available: true,
+            empty: false,
+            item_count: 2,
+        };
+        let review = prepare_empty_trash(&snapshot, &backend)
+            .expect("review prepares")
+            .expect("nonempty review");
+        backend
+            .trash_entries
+            .borrow_mut()
+            .as_mut()
+            .expect("inventory")
+            .pop();
+        assert!(empty_trash(
+            confirm_empty_trash(review, true).expect("confirmed"),
+            &backend,
+        )
+        .is_err());
+        assert!(backend.purged.borrow().is_empty());
+
+        let duplicate = TrashEntryId::from_authority_bytes(b"same");
+        let backend = FakeBackend {
+            trash_entries: RefCell::new(Ok(vec![duplicate, duplicate])),
+            ..Default::default()
+        };
+        assert!(prepare_empty_trash(&snapshot, &backend).is_err());
+    }
+
+    #[test]
+    fn empty_trash_review_debug_redacts_entry_authority() {
+        let backend = FakeBackend {
+            trash_entries: trash_entries(1),
+            ..Default::default()
+        };
+        let review = prepare_empty_trash(
+            &rmac_places::TrashSnapshot {
+                available: true,
+                empty: false,
+                item_count: 1,
+            },
+            &backend,
+        )
+        .unwrap()
+        .unwrap();
+        let debug = format!("{review:?}");
+        assert!(debug.contains("<private>"));
+        assert!(!debug.contains("TrashEntryId"));
     }
 
     #[test]

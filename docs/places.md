@@ -45,11 +45,16 @@ dependency, which implements the freedesktop home and mounted-filesystem trash
 contract. The adapter does not scan only one directory. Downloads opens through
 the shared desktop-portal boundary and fails clearly if its directory is absent.
 
-Permanent purge requires an `EmptyTrashConfirmation` that can only be created
-from an affirmative confirmation result. After purge, the adapter enumerates
-again and returns the authoritative empty/count state; errors remain typed as
-empty-versus-inspect failures. macOS remains a build host and reports Trash
-enumeration unavailable rather than fabricating Linux-equivalent state.
+Permanent purge first converts every platform Trash identity into a stable
+path-free digest and requires that complete set to match the count shown by the
+Dock. An `EmptyTrashConfirmation` can only consume that exact review after an
+affirmative decision. Execution relists the authority, fails closed if a
+reviewed identity disappeared, and passes only the reviewed entries to the
+purge API; items added after confirmation remain in Trash. After purge, the
+adapter enumerates again and returns the authoritative remaining count. Errors
+remain typed as empty-versus-inspect failures. macOS remains a build host and
+reports Trash enumeration unavailable rather than fabricating Linux-equivalent
+state.
 
 ## Live Dock projection
 
@@ -77,5 +82,7 @@ form. Files and Downloads open through the desktop portal, and Trash opens the
 standard `trash:///` desktop URI, with typed success/failure receipts that do
 not mutate the model optimistically.
 
-The layer-surface renderer, reviewed Empty Trash menu flow, and Linux/niri
-interaction evidence remain before D5 special-item acceptance.
+The Dock domain now exposes Empty Trash only for an available, authoritatively
+nonempty Trash and binds the menu count into the exact system review. The
+layer-surface renderer must still present that review and its result, and
+Linux/niri interaction evidence remains before D5 special-item acceptance.

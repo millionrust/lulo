@@ -1085,6 +1085,7 @@ struct RequestContext {
     generation: Option<EditGeneration>,
     result: ActionResult,
     draft: Option<DraftContext>,
+    conflict: Option<PendingConflictContext>,
 }
 
 #[derive(Clone, Copy)]
@@ -1092,6 +1093,12 @@ struct DraftContext {
     note_id: NoteId,
     persisted: bool,
     error: Option<DraftError>,
+}
+
+#[derive(Clone, Copy)]
+struct PendingConflictContext {
+    durable_note_id: NoteId,
+    local_candidate_note_id: NoteId,
 }
 
 struct PendingState {
@@ -1637,6 +1644,7 @@ fn process_command(
                     attachment_bytes: reviewed.review.attachment_bytes,
                 },
                 draft: None,
+                conflict: None,
             };
             match commit_bundle_import(&mut ready, planned, reviewed.prepared, context, events) {
                 CommitDisposition::Ready => Phase::Ready(ready),
@@ -2018,12 +2026,16 @@ fn resolve_pending_conflict(
             events,
         );
     };
+    let conflict = pending
+        .context
+        .conflict
+        .expect("a conflict summary has an exact private context");
     let Some(local) = pending
         .pending
         .candidate()
         .notes
         .iter()
-        .find(|note| note.id == summary.note_id && !note.deleted)
+        .find(|note| note.id == conflict.local_candidate_note_id && !note.deleted)
         .cloned()
     else {
         return reject_pending_conflict(
@@ -2125,6 +2137,13 @@ fn resolve_pending_conflict(
         generation: pending.context.generation,
         result,
         draft: pending.context.draft,
+        conflict: Some(PendingConflictContext {
+            durable_note_id: summary.note_id,
+            local_candidate_note_id: match result {
+                ActionResult::CreatedNote(note_id) | ActionResult::Edited(note_id) => note_id,
+                _ => summary.note_id,
+            },
+        }),
     };
     match commit_transaction(
         &mut pending.ready,
@@ -2266,6 +2285,10 @@ fn commit_edit(
         generation: Some(generation),
         result: ActionResult::Edited(note_id),
         draft: Some(draft),
+        conflict: Some(PendingConflictContext {
+            durable_note_id: note_id,
+            local_candidate_note_id: note_id,
+        }),
     };
     commit_transaction(
         ready,
@@ -2441,6 +2464,7 @@ fn commit_action(
         generation: None,
         result,
         draft: None,
+        conflict: None,
     };
     let commit = orphan_collection.map_or_else(
         || purge.map_or(TransactionCommit::Ordinary, TransactionCommit::Purge),
@@ -2526,6 +2550,7 @@ fn commit_prepared_text_import(
             source_byte_len: prepared.source_byte_len(),
         },
         draft: None,
+        conflict: None,
     };
     commit_transaction(
         ready,
@@ -2575,6 +2600,7 @@ fn commit_attachment_action(
         generation: None,
         result,
         draft: None,
+        conflict: None,
     };
     commit_transaction(
         ready,
@@ -2785,24 +2811,22 @@ fn pending_conflict_summary(pending: &PendingState) -> Option<PendingConflictSum
     {
         return None;
     }
-    let ActionResult::Edited(note_id) = pending.context.result else {
-        return None;
-    };
+    let conflict = pending.context.conflict?;
     let local = pending
         .pending
         .candidate()
         .notes
         .iter()
-        .find(|note| note.id == note_id && !note.deleted)?;
+        .find(|note| note.id == conflict.local_candidate_note_id && !note.deleted)?;
     let durable = pending
         .ready
         .library
         .snapshot()
         .notes
         .iter()
-        .find(|note| note.id == note_id && !note.deleted);
+        .find(|note| note.id == conflict.durable_note_id && !note.deleted);
     Some(PendingConflictSummary {
-        note_id,
+        note_id: conflict.durable_note_id,
         durable_library_revision: pending.ready.library.snapshot().revision,
         durable_note_revision: durable.map(|note| note.revision),
         local_note_revision: local.revision,
@@ -4060,6 +4084,95 @@ mod tests {
         assert_eq!(copy.title, "Private title");
         assert_eq!(copy.body, "Local body");
         assert!(copy.tags.is_empty());
+        assert_eq!(
+            DraftStore::for_library(paths.data_root())
+                .load(note_id)
+                .unwrap(),
+            None
+        );
+
+        worker.try_send(WorkerCommand::Shutdown).unwrap();
+        let _ = worker.recv_timeout(Duration::from_secs(2)).unwrap();
+        drop(worker);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn keep_both_rebases_the_local_copy_after_another_durable_change() {
+        let (container, paths) = roots("conflict-keep-both-rebase");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_millis(20)).unwrap();
+        ready(&worker);
+        let (note_id, created) = create_note(&worker, 1);
+        let conflict = enter_edit_conflict(&worker, &paths, note_id, &created, "Local body");
+
+        let mut second_external = LibraryTransaction::begin(&conflict.accepted.snapshot).unwrap();
+        second_external.set_sort_order(SortOrder::Title);
+        std::fs::write(
+            paths.data_root().join("library.bin"),
+            encode(&second_external.finish().unwrap()).unwrap(),
+        )
+        .unwrap();
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 3,
+                pending_request_id: conflict.request_id,
+                resolution: PendingConflictResolution::PreserveAsNew,
+            })
+            .unwrap();
+        let pending_copy = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Pending(event) => event,
+            event => panic!("expected pending conflict copy, got {event:?}"),
+        };
+        assert_eq!(pending_copy.request_id, 3);
+        assert!(matches!(pending_copy.reason, PendingReason::Store(_)));
+        assert_eq!(pending_copy.conflict, None);
+
+        worker.try_send(WorkerCommand::RetryPending).unwrap();
+        let rebased = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Pending(event) => event,
+            event => panic!("expected rebased conflict copy, got {event:?}"),
+        };
+        let review = rebased.conflict.expect("the local copy remains reviewable");
+        assert_eq!(review.note_id, note_id);
+        assert_eq!(review.durable_note_revision, Some(2));
+        assert_eq!(review.local_note_revision, 1);
+        assert!(review.recovery_record_available);
+
+        worker
+            .try_send(WorkerCommand::ResolvePendingConflict {
+                request_id: 4,
+                pending_request_id: rebased.request_id,
+                resolution: PendingConflictResolution::PreserveAsNew,
+            })
+            .unwrap();
+        let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
+            WorkerEvent::Accepted(event) => event,
+            event => panic!("expected accepted rebased copy, got {event:?}"),
+        };
+        assert_eq!(accepted.accepted.snapshot.sort_order, SortOrder::Title);
+        assert_eq!(
+            accepted
+                .accepted
+                .snapshot
+                .notes
+                .iter()
+                .filter(|note| !note.deleted)
+                .count(),
+            2
+        );
+        assert!(accepted
+            .accepted
+            .snapshot
+            .notes
+            .iter()
+            .any(|note| note.id == note_id && note.body == "External body"));
+        assert!(accepted
+            .accepted
+            .snapshot
+            .notes
+            .iter()
+            .any(|note| note.id != note_id && note.body == "Local body"));
         assert_eq!(
             DraftStore::for_library(paths.data_root())
                 .load(note_id)

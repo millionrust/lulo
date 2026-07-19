@@ -491,6 +491,37 @@ pub async fn open_item(path: &Path) -> Result<(), Error> {
     }
 }
 
+/// Open the freedesktop Trash location through the desktop portal, with the
+/// standard desktop URI fallback used by ordinary Linux file managers.
+pub async fn open_trash() -> Result<(), Error> {
+    let target = Path::new("Trash");
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::open_uri::OpenFileRequest;
+
+        let uri = url::Url::parse("trash:///").expect("the fixed Trash URI is valid");
+        if let Ok(request) = OpenFileRequest::default().send_uri(&uri).await {
+            return request
+                .response()
+                .map_err(|error| failure(Operation::Open, target, error));
+        }
+        Command::new("xdg-open")
+            .arg("trash:///")
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| failure(Operation::Open, target, error))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Open,
+            path: target.to_path_buf(),
+            detail: "the freedesktop Trash location is available in the supported Linux session"
+                .into(),
+        })
+    }
+}
+
 #[cfg(target_os = "linux")]
 async fn show_item_portal(path: &Path) -> Result<(), Error> {
     use std::os::fd::AsFd as _;

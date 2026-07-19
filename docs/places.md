@@ -51,5 +51,31 @@ again and returns the authoritative empty/count state; errors remain typed as
 empty-versus-inspect failures. macOS remains a build host and reports Trash
 enumeration unavailable rather than fabricating Linux-equivalent state.
 
-The live places watcher and Dock projection remain the next slice. Until they
-land, this adapter does not claim D5 special-item completion.
+## Live Dock projection
+
+`rmac-dock-runtime` now treats places as an independent last-known-good
+authority alongside niri, shell settings, the application catalog, and the
+display Main-output authority. It does not publish the first coherent Dock
+snapshot until places have either loaded or failed explicitly. Later failures
+retain the last accepted place model and update health without blanking the
+Dock.
+
+The live adapter watches the XDG user-directory configuration root, Home,
+the resolved Downloads parent, every currently discoverable freedesktop Trash
+`files` and `info` directory, the user data Trash root, and the Linux mount
+table. Every notification is only a hint: the worker performs a complete
+off-thread resample, recreates the watch set, and publishes only a changed
+model. A 60-second reconciliation catches mount backends that do not emit a
+usable filesystem notification; identical results never request a Dock frame.
+
+The Dock model projects a fixed Files, Downloads, Trash order after a
+renderer-owned separator. These entries never enter application pin ordering.
+Missing or explicitly disabled Downloads remains visible but unavailable;
+Trash displays a count only when enumeration is authoritative. Private paths
+are retained only in activation values and redacted from their default debug
+form. Files and Downloads open through the desktop portal, and Trash opens the
+standard `trash:///` desktop URI, with typed success/failure receipts that do
+not mutate the model optimistically.
+
+The layer-surface renderer, reviewed Empty Trash menu flow, and Linux/niri
+interaction evidence remain before D5 special-item acceptance.

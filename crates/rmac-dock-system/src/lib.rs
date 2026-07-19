@@ -2,6 +2,7 @@
 
 use std::fmt;
 use std::future::Future;
+use std::path::Path;
 use std::pin::Pin;
 
 pub type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -13,6 +14,7 @@ pub enum Operation {
     Close,
     UpdatePins,
     Resolve,
+    OpenPlace,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -49,6 +51,7 @@ impl fmt::Display for Operation {
             Self::Close => "close application window",
             Self::UpdatePins => "update pinned applications",
             Self::Resolve => "resolve Dock activation",
+            Self::OpenPlace => "open Dock place",
         })
     }
 }
@@ -108,6 +111,9 @@ pub enum Outcome {
     PinsUpdated {
         pinned: Vec<rmac_shell_settings::AppId>,
     },
+    PlaceOpened {
+        kind: rmac_dock::SpecialItemKind,
+    },
     NoAction,
 }
 
@@ -133,6 +139,10 @@ pub trait Backend: Send + Sync + 'static {
         &self,
         command: &rmac_dock::PinCommand,
     ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>>;
+
+    fn open_directory(&self, path: &Path) -> BackendFuture<'_, Result<(), BackendError>>;
+
+    fn open_trash(&self) -> BackendFuture<'_, Result<(), BackendError>>;
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -202,6 +212,26 @@ impl Backend for SystemBackend {
                 update_pins_in_store(&store, &command)
             })
             .await
+        })
+    }
+
+    fn open_directory(&self, path: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
+        let path = path.to_path_buf();
+        Box::pin(async move {
+            rmac_portal::show_item(&path).await.map_err(|_| {
+                BackendError::new(
+                    FailureKind::Other,
+                    "the desktop portal could not open the selected directory",
+                )
+            })
+        })
+    }
+
+    fn open_trash(&self) -> BackendFuture<'_, Result<(), BackendError>> {
+        Box::pin(async move {
+            rmac_portal::open_trash().await.map_err(|_| {
+                BackendError::new(FailureKind::Other, "the desktop could not open Trash")
+            })
         })
     }
 }
@@ -316,6 +346,57 @@ pub async fn execute_context(
     }
 }
 
+/// Execute an already-projected Files, Downloads, or Trash activation. The
+/// activation retains private paths, while receipts and default Debug output
+/// contain only the public special-item identity.
+pub async fn execute_special(
+    activation: &rmac_dock::SpecialActivation,
+    backend: &impl Backend,
+) -> Result<Outcome, Error> {
+    match activation {
+        rmac_dock::SpecialActivation::OpenDirectory { kind, path } => backend
+            .open_directory(path)
+            .await
+            .map(|()| Outcome::PlaceOpened { kind: *kind })
+            .map_err(|error| {
+                Error::new(
+                    Operation::OpenPlace,
+                    error.kind,
+                    special_item_id(*kind),
+                    error.detail,
+                )
+            }),
+        rmac_dock::SpecialActivation::OpenTrash => backend
+            .open_trash()
+            .await
+            .map(|()| Outcome::PlaceOpened {
+                kind: rmac_dock::SpecialItemKind::Trash,
+            })
+            .map_err(|error| {
+                Error::new(
+                    Operation::OpenPlace,
+                    error.kind,
+                    special_item_id(rmac_dock::SpecialItemKind::Trash),
+                    error.detail,
+                )
+            }),
+        rmac_dock::SpecialActivation::Unavailable { kind, detail } => Err(Error::new(
+            Operation::Resolve,
+            FailureKind::Unavailable,
+            special_item_id(*kind),
+            detail,
+        )),
+    }
+}
+
+fn special_item_id(kind: rmac_dock::SpecialItemKind) -> &'static str {
+    match kind {
+        rmac_dock::SpecialItemKind::Files => "Files",
+        rmac_dock::SpecialItemKind::Downloads => "Downloads",
+        rmac_dock::SpecialItemKind::Trash => "Trash",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
@@ -396,6 +477,26 @@ mod tests {
                 self.result(vec![rmac_shell_settings::AppId(
                     command.app_id().to_owned(),
                 )])
+            })
+        }
+
+        fn open_directory(&self, _: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .expect("calls lock")
+                    .push("open directory <private>".into());
+                self.result(())
+            })
+        }
+
+        fn open_trash(&self) -> BackendFuture<'_, Result<(), BackendError>> {
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .expect("calls lock")
+                    .push("open Trash".into());
+                self.result(())
             })
         }
     }
@@ -550,6 +651,57 @@ mod tests {
             backend.calls.into_inner().expect("calls"),
             [format!("pins {command:?}")]
         );
+    }
+
+    #[test]
+    fn special_places_open_exact_authority_without_disclosing_paths() {
+        let backend = FakeBackend::default();
+        let outcome = futures_lite::future::block_on(execute_special(
+            &rmac_dock::SpecialActivation::OpenDirectory {
+                kind: rmac_dock::SpecialItemKind::Downloads,
+                path: "/home/alex/Private/Downloads".into(),
+            },
+            &backend,
+        ))
+        .expect("Downloads opens");
+        assert_eq!(
+            outcome,
+            Outcome::PlaceOpened {
+                kind: rmac_dock::SpecialItemKind::Downloads
+            }
+        );
+        assert_eq!(
+            backend.calls.into_inner().expect("calls"),
+            ["open directory <private>"]
+        );
+
+        let backend = FakeBackend::default();
+        assert_eq!(
+            futures_lite::future::block_on(execute_special(
+                &rmac_dock::SpecialActivation::OpenTrash,
+                &backend,
+            )),
+            Ok(Outcome::PlaceOpened {
+                kind: rmac_dock::SpecialItemKind::Trash
+            })
+        );
+        assert_eq!(backend.calls.into_inner().expect("calls"), ["open Trash"]);
+    }
+
+    #[test]
+    fn unavailable_special_place_never_touches_platform_services() {
+        let backend = FakeBackend::default();
+        let error = futures_lite::future::block_on(execute_special(
+            &rmac_dock::SpecialActivation::Unavailable {
+                kind: rmac_dock::SpecialItemKind::Downloads,
+                detail: "the Downloads directory is unavailable".into(),
+            },
+            &backend,
+        ))
+        .expect_err("unavailable place is rejected");
+        assert_eq!(error.operation, Operation::Resolve);
+        assert_eq!(error.app_id, "Downloads");
+        assert!(backend.calls.into_inner().expect("calls").is_empty());
     }
 
     #[test]

@@ -4964,6 +4964,7 @@ version = "0.1.0"
 dependencies = [
  "rmac-apps",
  "rmac-compositor",
+ "rmac-places",
  "rmac-shell-settings",
 ]
 
@@ -4980,6 +4981,8 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-display",
  "rmac-dock",
+ "rmac-places",
+ "rmac-places-system",
  "rmac-shell-settings",
 ]
 
@@ -4994,6 +4997,7 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-dock",
+ "rmac-portal",
  "rmac-shell-settings",
 ]
 
@@ -5345,6 +5349,7 @@ version = "0.1.0"
 name = "rmac-places-system"
 version = "0.1.0"
 dependencies = [
+ "notify",
  "rmac-places",
  "rmac-portal",
  "trash",
@@ -5364,6 +5369,7 @@ name = "rmac-portal"
 version = "0.1.0"
 dependencies = [
  "ashpd 0.12.3",
+ "url",
 ]
 
 [[package]]

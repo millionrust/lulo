@@ -9,4 +9,5 @@ publish = false
 [dependencies]
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
+rmac-places.workspace = true
 rmac-shell-settings.workspace = true

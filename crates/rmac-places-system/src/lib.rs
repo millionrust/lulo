@@ -1,5 +1,6 @@
 //! Filesystem, portal, and freedesktop Trash adapter for user places.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -12,6 +13,7 @@ pub enum Operation {
     InspectTrash,
     OpenDownloads,
     EmptyTrash,
+    WatchPlaces,
 }
 
 impl fmt::Display for Operation {
@@ -23,6 +25,7 @@ impl fmt::Display for Operation {
             Self::InspectTrash => "inspect Trash",
             Self::OpenDownloads => "open Downloads",
             Self::EmptyTrash => "empty Trash",
+            Self::WatchPlaces => "watch user places",
         })
     }
 }
@@ -77,6 +80,28 @@ pub struct Report {
     pub warnings: Vec<Error>,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub enum WatchEvent {
+    Changed,
+    Failed { detail: String },
+}
+
+impl fmt::Debug for WatchEvent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Changed => formatter.write_str("Changed"),
+            Self::Failed { .. } => formatter
+                .debug_struct("Failed")
+                .field("detail", &"<redacted>")
+                .finish(),
+        }
+    }
+}
+
+pub struct Watcher {
+    _watcher: notify::RecommendedWatcher,
+}
+
 pub trait Backend {
     fn home(&self) -> Option<PathBuf>;
     fn config_home(&self) -> Option<PathBuf>;
@@ -112,7 +137,7 @@ impl Backend for SystemBackend {
 
     fn exists(&self, path: &Path) -> io::Result<bool> {
         match std::fs::metadata(path) {
-            Ok(_) => Ok(true),
+            Ok(metadata) => Ok(metadata.is_dir()),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error),
         }
@@ -234,6 +259,132 @@ pub fn snapshot(backend: &impl Backend) -> Result<Report, Error> {
     })
 }
 
+/// Watch every currently known authority that can change the projected Dock
+/// places. The caller resamples a complete snapshot after any hint and then
+/// recreates this watcher, so a changed XDG Downloads path or mounted Trash
+/// set cannot leave stale watch registrations behind.
+pub fn watch(
+    report: &Report,
+    mut callback: impl FnMut(WatchEvent) + Send + 'static,
+) -> Result<Watcher, Error> {
+    use notify::Watcher as _;
+
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        let event = match event {
+            // Complete resampling reads the watched authorities. Access-only
+            // hints must not recursively trigger another resample.
+            Ok(event) if matches!(event.kind, notify::EventKind::Access(_)) => return,
+            Ok(_) => WatchEvent::Changed,
+            Err(error) => WatchEvent::Failed {
+                detail: error.to_string(),
+            },
+        };
+        callback(event);
+    })
+    .map_err(|error| Error::message(Operation::WatchPlaces, None, error.to_string()))?;
+
+    let targets = system_watch_targets(report);
+    let mut watched = 0usize;
+    let mut last_error = None;
+    for target in targets {
+        match watcher.watch(&target, notify::RecursiveMode::NonRecursive) {
+            Ok(()) => watched += 1,
+            Err(error) => last_error = Some(error.to_string()),
+        }
+    }
+    if watched == 0 {
+        return Err(Error::message(
+            Operation::WatchPlaces,
+            None,
+            last_error.unwrap_or_else(|| "no place authority was available to watch".into()),
+        ));
+    }
+    Ok(Watcher { _watcher: watcher })
+}
+
+fn system_watch_targets(report: &Report) -> Vec<PathBuf> {
+    let home = &report.snapshot.home.path;
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home.join(".config"));
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home.join(".local/share"));
+    #[cfg(all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    ))]
+    let trash_folders = trash::os_limited::trash_folders()
+        .map(|folders| folders.into_iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+    #[cfg(not(all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )))]
+    let trash_folders = Vec::new();
+    candidate_watch_targets(
+        report,
+        &config_home,
+        &data_home,
+        &trash_folders,
+        cfg!(target_os = "linux").then_some(Path::new("/proc/self/mounts")),
+    )
+}
+
+fn candidate_watch_targets(
+    report: &Report,
+    config_home: &Path,
+    data_home: &Path,
+    trash_folders: &[PathBuf],
+    mounts_file: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut candidates = vec![
+        config_home.to_path_buf(),
+        report.snapshot.home.path.clone(),
+        report
+            .snapshot
+            .downloads
+            .path
+            .parent()
+            .unwrap_or(&report.snapshot.home.path)
+            .to_path_buf(),
+        data_home.join("Trash"),
+    ];
+    for folder in trash_folders {
+        candidates.push(folder.join("files"));
+        candidates.push(folder.join("info"));
+    }
+    if let Some(mounts_file) = mounts_file {
+        candidates.push(mounts_file.to_path_buf());
+    }
+
+    candidates
+        .into_iter()
+        .filter_map(nearest_existing_authority)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn nearest_existing_authority(mut path: PathBuf) -> Option<PathBuf> {
+    loop {
+        if path.exists() {
+            return Some(path);
+        }
+        if !path.pop() || path == Path::new("/") {
+            return None;
+        }
+    }
+}
+
 fn inspect_place(backend: &impl Backend, path: &Path, warnings: &mut Vec<Error>) -> bool {
     match backend.exists(path) {
         Ok(exists) => exists,
@@ -290,6 +441,7 @@ pub fn empty_trash(
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
 
@@ -410,5 +562,73 @@ mod tests {
         assert!(backend.purged.get());
         assert!(refreshed.empty);
         assert_eq!(refreshed.item_count, 0);
+    }
+
+    #[test]
+    fn watch_targets_cover_config_place_parents_and_every_known_trash_bin() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("rmac-places-watch-{}-{unique}", std::process::id()));
+        let home = root.join("home");
+        let config = home.join(".config");
+        let data = home.join(".local/share");
+        let downloads_parent = root.join("media");
+        let trash = root.join("mounted/.Trash-1000");
+        for path in [&config, &data, &downloads_parent, &trash] {
+            std::fs::create_dir_all(path).unwrap();
+        }
+        std::fs::create_dir_all(trash.join("files")).unwrap();
+        std::fs::create_dir_all(trash.join("info")).unwrap();
+        let mounts = root.join("mounts");
+        std::fs::write(&mounts, []).unwrap();
+        let report = Report {
+            snapshot: rmac_places::Snapshot {
+                home: rmac_places::Place {
+                    path: home.clone(),
+                    exists: true,
+                },
+                downloads: rmac_places::Place {
+                    path: downloads_parent.join("Downloads"),
+                    exists: false,
+                },
+                downloads_configured: true,
+                trash: rmac_places::TrashSnapshot::default(),
+            },
+            warnings: Vec::new(),
+        };
+
+        let targets = candidate_watch_targets(
+            &report,
+            &config,
+            &data,
+            std::slice::from_ref(&trash),
+            Some(&mounts),
+        );
+        for expected in [
+            config,
+            home,
+            downloads_parent,
+            data,
+            trash.join("files"),
+            trash.join("info"),
+            mounts,
+        ] {
+            assert!(targets.contains(&expected), "missing {expected:?}");
+        }
+        assert_eq!(targets.iter().collect::<BTreeSet<_>>().len(), targets.len());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn watch_failure_debug_redacts_backend_diagnostics() {
+        let event = WatchEvent::Failed {
+            detail: "/home/alex/private mount failed".into(),
+        };
+        let debug = format!("{event:?}");
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("alex"));
     }
 }

@@ -31,6 +31,55 @@ pub struct Item {
     launch: Option<rmac_apps::LaunchSpec>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum SpecialItemKind {
+    Files,
+    Downloads,
+    Trash,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum SpecialActivation {
+    OpenDirectory {
+        kind: SpecialItemKind,
+        path: PathBuf,
+    },
+    OpenTrash,
+    Unavailable {
+        kind: SpecialItemKind,
+        detail: String,
+    },
+}
+
+impl fmt::Debug for SpecialActivation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OpenDirectory { kind, .. } => formatter
+                .debug_struct("OpenDirectory")
+                .field("kind", kind)
+                .field("path", &"<private>")
+                .finish(),
+            Self::OpenTrash => formatter.write_str("OpenTrash"),
+            Self::Unavailable { kind, detail } => formatter
+                .debug_struct("Unavailable")
+                .field("kind", kind)
+                .field("detail", detail)
+                .finish(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SpecialItem {
+    pub kind: SpecialItemKind,
+    pub name: &'static str,
+    pub available: bool,
+    /// Present only for an authoritative Trash snapshot. Renderers may use it
+    /// for an item-count badge but must not infer availability from the count.
+    pub item_count: Option<usize>,
+    activation: SpecialActivation,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Activation {
     Launch {
@@ -138,6 +187,9 @@ impl std::error::Error for PinError {}
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Model {
     pub items: Vec<Item>,
+    /// Files, Downloads, and Trash are kept after a renderer-owned separator;
+    /// they are not application identities and cannot enter pinned ordering.
+    pub special_items: Vec<SpecialItem>,
     repeated_click: rmac_shell_settings::RepeatedClickBehavior,
 }
 
@@ -147,6 +199,26 @@ impl Model {
         settings: &rmac_shell_settings::DockSettings,
         catalog: &[rmac_apps::Application],
         compositor: &rmac_compositor::Snapshot,
+    ) -> Self {
+        Self::build_inner(pinned, settings, catalog, compositor, None)
+    }
+
+    pub fn build_with_places(
+        pinned: &[rmac_shell_settings::AppId],
+        settings: &rmac_shell_settings::DockSettings,
+        catalog: &[rmac_apps::Application],
+        compositor: &rmac_compositor::Snapshot,
+        places: &rmac_places::Snapshot,
+    ) -> Self {
+        Self::build_inner(pinned, settings, catalog, compositor, Some(places))
+    }
+
+    fn build_inner(
+        pinned: &[rmac_shell_settings::AppId],
+        settings: &rmac_shell_settings::DockSettings,
+        catalog: &[rmac_apps::Application],
+        compositor: &rmac_compositor::Snapshot,
+        places: Option<&rmac_places::Snapshot>,
     ) -> Self {
         let applications = catalog_index(catalog);
         let mut windows = window_groups(compositor);
@@ -190,8 +262,20 @@ impl Model {
 
         Self {
             items,
+            special_items: places.map(project_special_items).unwrap_or_default(),
             repeated_click: settings.repeated_click,
         }
+    }
+
+    pub fn activate_special(&self, kind: SpecialItemKind) -> SpecialActivation {
+        self.special_items
+            .iter()
+            .find(|item| item.kind == kind)
+            .map(|item| item.activation.clone())
+            .unwrap_or_else(|| SpecialActivation::Unavailable {
+                kind,
+                detail: "the place is not present in the Dock".into(),
+            })
     }
 
     pub fn activate(&self, app_id: &str) -> Activation {
@@ -309,6 +393,64 @@ impl Model {
             }),
         })
     }
+}
+
+fn project_special_items(places: &rmac_places::Snapshot) -> Vec<SpecialItem> {
+    let files = SpecialItem {
+        kind: SpecialItemKind::Files,
+        name: "Files",
+        available: places.home.exists,
+        item_count: None,
+        activation: if places.home.exists {
+            SpecialActivation::OpenDirectory {
+                kind: SpecialItemKind::Files,
+                path: places.home.path.clone(),
+            }
+        } else {
+            SpecialActivation::Unavailable {
+                kind: SpecialItemKind::Files,
+                detail: "the home directory is unavailable".into(),
+            }
+        },
+    };
+    let downloads_available = places.downloads.exists && places.downloads.path != places.home.path;
+    let downloads = SpecialItem {
+        kind: SpecialItemKind::Downloads,
+        name: "Downloads",
+        available: downloads_available,
+        item_count: None,
+        activation: if downloads_available {
+            SpecialActivation::OpenDirectory {
+                kind: SpecialItemKind::Downloads,
+                path: places.downloads.path.clone(),
+            }
+        } else {
+            SpecialActivation::Unavailable {
+                kind: SpecialItemKind::Downloads,
+                detail: if places.downloads.path == places.home.path {
+                    "the Downloads user directory is disabled"
+                } else {
+                    "the Downloads directory is unavailable"
+                }
+                .into(),
+            }
+        },
+    };
+    let trash = SpecialItem {
+        kind: SpecialItemKind::Trash,
+        name: "Trash",
+        available: places.trash.available,
+        item_count: places.trash.available.then_some(places.trash.item_count),
+        activation: if places.trash.available {
+            SpecialActivation::OpenTrash
+        } else {
+            SpecialActivation::Unavailable {
+                kind: SpecialItemKind::Trash,
+                detail: "the desktop Trash authority is unavailable".into(),
+            }
+        },
+    };
+    vec![files, downloads, trash]
 }
 
 pub fn apply_pin_command(
@@ -519,6 +661,8 @@ pub fn surface_outputs(
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     fn application(id: &str, name: &str) -> rmac_apps::Application {
@@ -774,6 +918,101 @@ mod tests {
         );
         assert!(menu.move_left.is_none());
         assert!(menu.move_right.is_none());
+    }
+
+    fn places(
+        downloads: &str,
+        downloads_exists: bool,
+        trash_count: usize,
+    ) -> rmac_places::Snapshot {
+        rmac_places::Snapshot {
+            home: rmac_places::Place {
+                path: PathBuf::from("/home/alex"),
+                exists: true,
+            },
+            downloads: rmac_places::Place {
+                path: PathBuf::from(downloads),
+                exists: downloads_exists,
+            },
+            downloads_configured: true,
+            trash: rmac_places::TrashSnapshot {
+                available: true,
+                empty: trash_count == 0,
+                item_count: trash_count,
+            },
+        }
+    }
+
+    #[test]
+    fn places_project_after_applications_without_becoming_pins() {
+        let places = places("/home/alex/Transfers", true, 7);
+        let model = Model::build_with_places(
+            &[rmac_shell_settings::AppId("finder.desktop".into())],
+            &Default::default(),
+            &[application("finder.desktop", "Finder")],
+            &Default::default(),
+            &places,
+        );
+
+        assert_eq!(model.items.len(), 1);
+        assert_eq!(model.items[0].id, "finder.desktop");
+        assert_eq!(
+            model
+                .special_items
+                .iter()
+                .map(|item| (item.kind, item.name, item.available, item.item_count))
+                .collect::<Vec<_>>(),
+            [
+                (SpecialItemKind::Files, "Files", true, None),
+                (SpecialItemKind::Downloads, "Downloads", true, None),
+                (SpecialItemKind::Trash, "Trash", true, Some(7)),
+            ]
+        );
+        assert!(matches!(
+            model.activate_special(SpecialItemKind::Downloads),
+            SpecialActivation::OpenDirectory {
+                kind: SpecialItemKind::Downloads,
+                path
+            } if path == Path::new("/home/alex/Transfers")
+        ));
+    }
+
+    #[test]
+    fn disabled_or_missing_places_remain_visible_and_truthfully_unavailable() {
+        let mut places = places("/home/alex", true, 0);
+        places.home.exists = false;
+        let model =
+            Model::build_with_places(&[], &Default::default(), &[], &Default::default(), &places);
+
+        assert!(!model.special_items[0].available);
+        assert!(matches!(
+            model.activate_special(SpecialItemKind::Files),
+            SpecialActivation::Unavailable {
+                kind: SpecialItemKind::Files,
+                ..
+            }
+        ));
+        assert!(!model.special_items[1].available);
+        assert!(matches!(
+            model.activate_special(SpecialItemKind::Downloads),
+            SpecialActivation::Unavailable {
+                kind: SpecialItemKind::Downloads,
+                ..
+            }
+        ));
+        assert_eq!(model.special_items[2].item_count, Some(0));
+    }
+
+    #[test]
+    fn special_activation_debug_never_discloses_private_paths() {
+        let activation = SpecialActivation::OpenDirectory {
+            kind: SpecialItemKind::Files,
+            path: PathBuf::from("/home/alex/Private/Tax"),
+        };
+        let debug = format!("{activation:?}");
+        assert!(debug.contains("<private>"));
+        assert!(!debug.contains("alex"));
+        assert!(!debug.contains("Tax"));
     }
 
     #[test]

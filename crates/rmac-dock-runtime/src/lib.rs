@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use async_channel::Sender;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub enum SourceHealth {
     #[default]
     Starting,
@@ -15,12 +15,35 @@ pub enum SourceHealth {
     },
 }
 
+impl fmt::Debug for SourceHealth {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Starting => formatter.write_str("Starting"),
+            Self::Healthy => formatter.write_str("Healthy"),
+            Self::Unavailable { .. } => formatter
+                .debug_struct("Unavailable")
+                .field("detail", &"<redacted>")
+                .finish(),
+        }
+    }
+}
+
+impl SourceHealth {
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            Self::Unavailable { detail } => Some(detail),
+            Self::Starting | Self::Healthy => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HealthSnapshot {
     pub compositor: SourceHealth,
     pub settings: SourceHealth,
     pub catalog: SourceHealth,
     pub displays: SourceHealth,
+    pub places: SourceHealth,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -64,6 +87,7 @@ pub struct Coordinator {
     compositor: rmac_compositor::State,
     settings: rmac_shell_settings::ShellSettings,
     catalog: Vec<rmac_apps::Application>,
+    places: Option<rmac_places::Snapshot>,
     primary_output: Option<rmac_compositor::OutputId>,
     health: HealthSnapshot,
 }
@@ -71,13 +95,27 @@ pub struct Coordinator {
 impl Coordinator {
     pub fn snapshot(&self) -> Snapshot {
         let compositor = self.compositor.snapshot();
+        let model = self.places.as_ref().map_or_else(
+            || {
+                rmac_dock::Model::build(
+                    &self.settings.pinned_apps,
+                    &self.settings.dock,
+                    &self.catalog,
+                    &compositor,
+                )
+            },
+            |places| {
+                rmac_dock::Model::build_with_places(
+                    &self.settings.pinned_apps,
+                    &self.settings.dock,
+                    &self.catalog,
+                    &compositor,
+                    places,
+                )
+            },
+        );
         Snapshot {
-            model: rmac_dock::Model::build(
-                &self.settings.pinned_apps,
-                &self.settings.dock,
-                &self.catalog,
-                &compositor,
-            ),
+            model,
             outputs: rmac_dock::surface_outputs(
                 &compositor,
                 &self.settings.dock.outputs,
@@ -91,6 +129,7 @@ impl Coordinator {
         !matches!(self.health.compositor, SourceHealth::Starting)
             && !matches!(self.health.settings, SourceHealth::Starting)
             && !matches!(self.health.catalog, SourceHealth::Starting)
+            && !matches!(self.health.places, SourceHealth::Starting)
             && (!matches!(
                 self.settings.dock.outputs,
                 rmac_shell_settings::OutputScope::Primary
@@ -145,6 +184,24 @@ impl Coordinator {
         before != self.snapshot()
     }
 
+    pub fn apply_places(&mut self, result: Result<rmac_places_system::Report, String>) -> bool {
+        let before = self.snapshot();
+        match result {
+            Ok(report) => {
+                self.places = Some(report.snapshot);
+                self.health.places = if report.warnings.is_empty() {
+                    SourceHealth::Healthy
+                } else {
+                    SourceHealth::Unavailable {
+                        detail: "one or more user-place authorities are unavailable".into(),
+                    }
+                };
+            }
+            Err(detail) => self.health.places = SourceHealth::Unavailable { detail },
+        }
+        before != self.snapshot()
+    }
+
     pub fn set_primary_output(&mut self, output: Option<rmac_compositor::OutputId>) -> bool {
         let before = self.snapshot();
         self.primary_output = output;
@@ -172,6 +229,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
     let (catalog_tx, catalog_rx) = async_channel::bounded(2);
+    let (places_tx, places_rx) = async_channel::bounded(2);
 
     let compositor = async {
         rmac_compositor_niri::watch(compositor_tx)
@@ -180,9 +238,119 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     };
     let settings = watch_settings(settings_tx);
     let catalog = watch_catalog(catalog_tx);
-    let consumer = consume(sender, compositor_rx, settings_rx, catalog_rx);
-    let (_, _, _, _) = futures_util::try_join!(compositor, settings, catalog, consumer)?;
+    let places = watch_places(places_tx);
+    let consumer = consume(sender, compositor_rx, settings_rx, catalog_rx, places_rx);
+    let (_, _, _, _, _) = futures_util::try_join!(compositor, settings, catalog, places, consumer)?;
     Ok(())
+}
+
+async fn watch_places(
+    sender: Sender<Result<rmac_places_system::Report, String>>,
+) -> Result<(), Error> {
+    loop {
+        let loaded =
+            blocking::unblock(|| rmac_places_system::snapshot(&rmac_places_system::SystemBackend))
+                .await;
+        let report = match loaded {
+            Ok(report) => report,
+            Err(error) => {
+                if sender.send(Err(place_failure(&error))).await.is_err() {
+                    return Ok(());
+                }
+                wait_or_closed(&sender, Duration::from_secs(1)).await;
+                if sender.is_closed() {
+                    return Ok(());
+                }
+                continue;
+            }
+        };
+
+        let (changed_tx, changed_rx) = async_channel::bounded(1);
+        let watch_report = report.clone();
+        let watcher = blocking::unblock(move || {
+            let callback_tx = changed_tx.clone();
+            rmac_places_system::watch(&watch_report, move |event| {
+                let _ = callback_tx.try_send(event);
+            })
+        })
+        .await;
+        let _watcher = match watcher {
+            Ok(watcher) => watcher,
+            Err(_) => {
+                if sender.send(Ok(report)).await.is_err()
+                    || sender
+                        .send(Err("the user-place watcher is unavailable".into()))
+                        .await
+                        .is_err()
+                {
+                    return Ok(());
+                }
+                wait_or_closed(&sender, Duration::from_secs(1)).await;
+                if sender.is_closed() {
+                    return Ok(());
+                }
+                continue;
+            }
+        };
+
+        // Close the snapshot-before-watch race. Once the watcher is installed,
+        // verify the complete authority again; a mismatch restarts with a watch
+        // set derived from the newer paths before anything is published.
+        let verified =
+            blocking::unblock(|| rmac_places_system::snapshot(&rmac_places_system::SystemBackend))
+                .await;
+        let verified = match verified {
+            Ok(verified) if verified == report => verified,
+            Ok(_) => continue,
+            Err(error) => {
+                if sender.send(Ok(report)).await.is_err()
+                    || sender.send(Err(place_failure(&error))).await.is_err()
+                {
+                    return Ok(());
+                }
+                wait_or_closed(&sender, Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+        if sender.send(Ok(verified)).await.is_err() {
+            return Ok(());
+        }
+
+        // Filesystem notifications cover ordinary mutations. A slow bounded
+        // reconciliation also catches mount-table backends that do not emit a
+        // usable notification; unchanged snapshots never request a Dock frame.
+        let changed = futures_util::FutureExt::fuse(changed_rx.recv());
+        let reconcile =
+            futures_util::FutureExt::fuse(async_io::Timer::after(Duration::from_secs(60)));
+        let closed = futures_util::FutureExt::fuse(sender.closed());
+        futures_util::pin_mut!(changed, reconcile, closed);
+        futures_util::select! {
+            event = changed => {
+                if matches!(event, Ok(rmac_places_system::WatchEvent::Failed { .. }))
+                    && sender.send(Err("the user-place watcher stopped unexpectedly".into())).await.is_err()
+                {
+                    return Ok(());
+                }
+            },
+            _ = reconcile => {},
+            _ = closed => return Ok(()),
+        }
+    }
+}
+
+fn place_failure(error: &rmac_places_system::Error) -> String {
+    match error.operation {
+        rmac_places_system::Operation::ResolveHome => "the home directory authority is unavailable",
+        rmac_places_system::Operation::ReadUserDirs => {
+            "the XDG user-directory authority is unavailable"
+        }
+        rmac_places_system::Operation::InspectPlace => "a configured user directory is unavailable",
+        rmac_places_system::Operation::InspectTrash => "the desktop Trash authority is unavailable",
+        rmac_places_system::Operation::WatchPlaces => "the user-place watcher is unavailable",
+        rmac_places_system::Operation::OpenDownloads
+        | rmac_places_system::Operation::EmptyTrash => "a Dock place operation failed",
+    }
+    .into()
 }
 
 async fn watch_settings(
@@ -329,6 +497,7 @@ async fn consume(
     compositor: async_channel::Receiver<rmac_compositor::Event>,
     settings: async_channel::Receiver<Result<rmac_shell_settings::ShellSettings, String>>,
     catalog: async_channel::Receiver<Result<Vec<rmac_apps::Application>, String>>,
+    places: async_channel::Receiver<Result<rmac_places_system::Report, String>>,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
     let mut published = None;
@@ -336,8 +505,15 @@ async fn consume(
         let compositor_event = futures_util::FutureExt::fuse(compositor.recv());
         let settings_event = futures_util::FutureExt::fuse(settings.recv());
         let catalog_event = futures_util::FutureExt::fuse(catalog.recv());
+        let places_event = futures_util::FutureExt::fuse(places.recv());
         let closed = futures_util::FutureExt::fuse(sender.closed());
-        futures_util::pin_mut!(compositor_event, settings_event, catalog_event, closed);
+        futures_util::pin_mut!(
+            compositor_event,
+            settings_event,
+            catalog_event,
+            places_event,
+            closed
+        );
         futures_util::select! {
             event = compositor_event => {
                 let event = event.map_err(|_| Error::new("receive Dock compositor state", "watcher stopped"))?;
@@ -355,6 +531,10 @@ async fn consume(
             event = catalog_event => {
                 let event = event.map_err(|_| Error::new("receive application catalog", "watcher stopped"))?;
                 coordinator.apply_catalog(event);
+            },
+            event = places_event => {
+                let event = event.map_err(|_| Error::new("receive Dock user places", "watcher stopped"))?;
+                coordinator.apply_places(event);
             },
             _ = closed => return Ok(()),
         }
@@ -433,6 +613,28 @@ mod tests {
         }
     }
 
+    fn places_report(downloads: &str, trash_count: usize) -> rmac_places_system::Report {
+        rmac_places_system::Report {
+            snapshot: rmac_places::Snapshot {
+                home: rmac_places::Place {
+                    path: PathBuf::from("/home/alex"),
+                    exists: true,
+                },
+                downloads: rmac_places::Place {
+                    path: PathBuf::from(downloads),
+                    exists: true,
+                },
+                downloads_configured: true,
+                trash: rmac_places::TrashSnapshot {
+                    available: true,
+                    empty: trash_count == 0,
+                    item_count: trash_count,
+                },
+            },
+            warnings: Vec::new(),
+        }
+    }
+
     #[test]
     fn coordinator_waits_for_every_source_to_resolve() {
         let mut coordinator = Coordinator::default();
@@ -443,6 +645,8 @@ mod tests {
         coordinator.apply_compositor(rmac_compositor::Event::ConnectionChanged {
             state: rmac_compositor::ConnectionState::Disconnected,
         });
+        assert!(!coordinator.ready());
+        coordinator.apply_places(Err("places unavailable".into()));
         assert!(coordinator.ready());
     }
 
@@ -453,6 +657,7 @@ mod tests {
         settings.dock.outputs = rmac_shell_settings::OutputScope::Primary;
         coordinator.apply_settings(Ok(settings));
         coordinator.apply_catalog(Ok(Vec::new()));
+        coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
         coordinator.apply_compositor(rmac_compositor::Event::OutputsReplaced {
             outputs: vec![output("eDP-1"), output("DP-1")],
         });
@@ -595,6 +800,30 @@ mod tests {
         };
         let update = publication(Some(&previous), next);
         assert!(!update.visible);
+    }
+
+    #[test]
+    fn place_changes_rebuild_special_items_and_failures_keep_last_known_good() {
+        let mut coordinator = Coordinator::default();
+        coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 2)));
+        let before = coordinator.snapshot();
+        assert_eq!(before.model.special_items[2].item_count, Some(2));
+
+        coordinator.apply_places(Err("/home/alex/private trash failed".into()));
+        let failed = coordinator.snapshot();
+        assert_eq!(failed.model.special_items, before.model.special_items);
+        assert!(matches!(
+            failed.health.places,
+            SourceHealth::Unavailable { .. }
+        ));
+        let debug = format!("{:?}", failed.health);
+        assert!(!debug.contains("alex"));
+
+        coordinator.apply_places(Ok(places_report("/home/alex/Transfers", 0)));
+        let refreshed = coordinator.snapshot();
+        assert_eq!(refreshed.model.special_items[2].item_count, Some(0));
+        assert_ne!(refreshed.model.special_items, before.model.special_items);
+        assert!(publication(Some(&before), refreshed).visible);
     }
 
     #[test]

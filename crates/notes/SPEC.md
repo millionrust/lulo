@@ -651,8 +651,13 @@ thread even while command clients remain. A bounded UI bridge now projects only
 current worker events; selecting or receiving the first result reveals its
 stable note without replacing a newer queued editor generation. App shutdown
 cancels the session and orders search-worker shutdown before dropping the view.
-Rendering the returned field-level byte spans as highlighted title/body/tag/
-attachment fragments and Linux search performance evidence still remain.
+The live note list now maps returned original-byte spans into highlighted title,
+body, tag, and attachment-name fragments from that same accepted snapshot.
+Unicode boundaries are validated before slicing; title, context, tag, and
+attachment fragments have fixed character caps; body context scans only a
+bounded window around its match; whitespace is compacted; malformed spans fall
+back to unhighlighted bounded text; diagnostics redact content; and a per-note
+notice discloses the 16-match cap. Linux search performance evidence remains.
 
 A live Edit/Preview control now formats only the exact readback-accepted note
 revision. A dedicated bounded worker parses GFM plus frontmatter outside GPUI;
@@ -667,9 +672,9 @@ images/raw HTML/frontmatter with inert text, and exposing no clickable or
 network-loading element. Safety-limit truncation is explicit and never changes
 the editable source.
 
-Known live-app gaps now include rich search-match highlighting, richer
-conflict-resolution choices, semantic accessibility, and Linux runtime/visual
-evidence. The accepted store remains local-only and makes no cloud-sync claim.
+Known live-app gaps now include richer conflict-resolution choices, semantic
+accessibility, and Linux runtime/visual evidence. The accepted store remains
+local-only and makes no cloud-sync claim.
 Migration must preserve every readable existing note and attachment; it must
 not delete the prototype library after a partial import.
 

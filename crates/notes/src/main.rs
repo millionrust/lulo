@@ -4,6 +4,8 @@
 //! writes the library directly. Stable IDs, accepted snapshots, recovery, and
 //! the single writer remain authoritative off the UI thread.
 
+mod search_highlight;
+
 use std::collections::BTreeSet;
 use std::io;
 use std::sync::Arc;
@@ -27,10 +29,10 @@ use rmac_notes_runtime::{
     NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
     NotesSearchSession, NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents,
     NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PreviewState,
-    PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchState, SearchWorkerEvent,
-    SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent, WorkerFailure,
-    WorkerSendError, EVENT_CAPACITY, MARKDOWN_PREVIEW_EVENT_CAPACITY, MAX_SEARCH_RESULTS,
-    PREVIEW_EVENT_CAPACITY, SEARCH_EVENT_CAPACITY,
+    PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchField, SearchHit, SearchState,
+    SearchWorkerEvent, SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent,
+    WorkerFailure, WorkerSendError, EVENT_CAPACITY, MARKDOWN_PREVIEW_EVENT_CAPACITY,
+    MAX_SEARCH_RESULTS, PREVIEW_EVENT_CAPACITY, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{
     resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, MarkdownImportReview,
@@ -42,6 +44,12 @@ use rmac_notes_store::{
     NoteChanges, NoteId, NoteRecord, SortOrder, MAX_TAGS_PER_NOTE, MAX_TAG_BYTES,
 };
 use rmac_ui::{mac, Button, InputEvent, TextField};
+
+use search_highlight::{
+    matched_search_fragment, plain_search_fragment, SearchTextFragment,
+    MAX_SEARCH_DETAIL_FRAGMENT_CHARS, MAX_SEARCH_LABEL_FRAGMENT_CHARS,
+    MAX_SEARCH_TITLE_FRAGMENT_CHARS,
+};
 
 const FOLDERS_W: f32 = 210.0;
 const LIST_W: f32 = 310.0;
@@ -3124,29 +3132,125 @@ impl NotesView {
         } else {
             self.session.selected_note_id()
         };
-        let notes = if search_active && self.search.state() == SearchState::Results {
-            self.session.snapshot().map_or_else(Vec::new, |snapshot| {
-                self.search
-                    .hits()
-                    .iter()
-                    .filter_map(|hit| {
-                        snapshot
-                            .notes
-                            .iter()
-                            .find(|note| note.id == hit.note_id && !note.deleted)
-                    })
+        let notes: Vec<(&NoteRecord, Option<&SearchHit>)> =
+            if search_active && self.search.state() == SearchState::Results {
+                self.session.snapshot().map_or_else(Vec::new, |snapshot| {
+                    self.search
+                        .hits()
+                        .iter()
+                        .filter_map(|hit| {
+                            snapshot
+                                .notes
+                                .iter()
+                                .find(|note| note.id == hit.note_id && !note.deleted)
+                                .map(|note| (note, Some(hit)))
+                        })
+                        .collect()
+                })
+            } else if search_active {
+                Vec::new()
+            } else {
+                self.session
+                    .visible_notes()
+                    .into_iter()
+                    .map(|note| (note, None))
                     .collect()
-            })
-        } else if search_active {
-            Vec::new()
-        } else {
-            self.session.visible_notes()
-        };
+            };
         let note_count = notes.len();
         let mut items = Vec::<AnyElement>::new();
-        for note in notes {
+        for (note, search_hit) in notes {
             let note_id = note.id;
-            let tags = note.tags.clone();
+            let title_source = if note.title.trim().is_empty() {
+                "New Note"
+            } else {
+                note.title.as_str()
+            };
+            let title_match = search_hit.and_then(|hit| {
+                hit.matches
+                    .iter()
+                    .find(|search_match| matches!(search_match.field, SearchField::Title))
+            });
+            let title_fragment = title_match
+                .and_then(|search_match| {
+                    matched_search_fragment(
+                        title_source,
+                        search_match.span.start_byte..search_match.span.end_byte,
+                        MAX_SEARCH_TITLE_FRAGMENT_CHARS,
+                    )
+                })
+                .unwrap_or_else(|| {
+                    plain_search_fragment(title_source, MAX_SEARCH_TITLE_FRAGMENT_CHARS)
+                });
+            let body_match = search_hit.and_then(|hit| {
+                hit.matches
+                    .iter()
+                    .find(|search_match| matches!(search_match.field, SearchField::Body))
+            });
+            let mut body_fragment = body_match
+                .and_then(|search_match| {
+                    matched_search_fragment(
+                        &note.body,
+                        search_match.span.start_byte..search_match.span.end_byte,
+                        MAX_SEARCH_DETAIL_FRAGMENT_CHARS,
+                    )
+                })
+                .unwrap_or_else(|| {
+                    plain_search_fragment(&note.body, MAX_SEARCH_DETAIL_FRAGMENT_CHARS)
+                });
+            if body_fragment.text().trim().is_empty() {
+                body_fragment =
+                    plain_search_fragment("No additional text", MAX_SEARCH_DETAIL_FRAGMENT_CHARS);
+            }
+            let tags = note
+                .tags
+                .iter()
+                .enumerate()
+                .map(|(index, tag)| {
+                    let matched = search_hit.and_then(|hit| {
+                        hit.matches.iter().find(|search_match| {
+                            matches!(search_match.field, SearchField::Tag { index: found } if found == index)
+                        })
+                    });
+                    matched
+                        .and_then(|search_match| {
+                            matched_search_fragment(
+                                tag,
+                                search_match.span.start_byte..search_match.span.end_byte,
+                                MAX_SEARCH_LABEL_FRAGMENT_CHARS,
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            plain_search_fragment(tag, MAX_SEARCH_LABEL_FRAGMENT_CHARS)
+                        })
+                        .with_prefix("#")
+                })
+                .collect::<Vec<_>>();
+            let attachment_matches = search_hit.map_or_else(Vec::new, |hit| {
+                let Some(snapshot) = self.session.snapshot() else {
+                    return Vec::new();
+                };
+                hit.matches
+                    .iter()
+                    .filter_map(|search_match| {
+                        let SearchField::AttachmentName { attachment_id } = search_match.field
+                        else {
+                            return None;
+                        };
+                        let attachment = snapshot.attachments.iter().find(|attachment| {
+                            attachment.id == attachment_id
+                                && attachment.note_id == note.id
+                                && !attachment.deleted
+                        })?;
+                        matched_search_fragment(
+                            &attachment.display_name,
+                            search_match.span.start_byte..search_match.span.end_byte,
+                            MAX_SEARCH_LABEL_FRAGMENT_CHARS,
+                        )
+                        .map(|fragment| fragment.with_prefix("Photo: "))
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let matches_truncated = search_hit.is_some_and(|hit| hit.matches_truncated);
             items.push(
                 div()
                     .id(("note", note.id.get()))
@@ -3183,7 +3287,11 @@ impl NotesView {
                                             .font_weight(mac::SEMIBOLD)
                                             .text_color(mac::text())
                                             .truncate()
-                                            .child(display_title(&note.title)),
+                                            .child(styled_search_fragment(
+                                                title_fragment,
+                                                false,
+                                                true,
+                                            )),
                                     ),
                             )
                             .child(
@@ -3204,7 +3312,11 @@ impl NotesView {
                                             .text_size(rmac_ui::text_px(12.0))
                                             .text_color(mac::text_secondary())
                                             .truncate()
-                                            .child(snippet(&note.body)),
+                                            .child(styled_search_fragment(
+                                                body_fragment,
+                                                true,
+                                                false,
+                                            )),
                                     ),
                             )
                             .when(!tags.is_empty(), |element| {
@@ -3215,6 +3327,20 @@ impl NotesView {
                                         .gap_1()
                                         .pt_0p5()
                                         .children(tags.into_iter().map(tag_pill)),
+                                )
+                            })
+                            .when(!attachment_matches.is_empty(), |element| {
+                                element.child(div().v_flex().gap_0p5().pt_0p5().children(
+                                    attachment_matches.into_iter().map(attachment_match_row),
+                                ))
+                            })
+                            .when(matches_truncated, |element| {
+                                element.child(
+                                    div()
+                                        .pt_0p5()
+                                        .text_size(rmac_ui::text_px(10.0))
+                                        .text_color(mac::text_tertiary())
+                                        .child("More matches in this note"),
                                 )
                             }),
                     )
@@ -5416,16 +5542,45 @@ fn safe_export_stem(label: &str) -> String {
     }
 }
 
-fn snippet(body: &str) -> SharedString {
-    let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    if compact.is_empty() {
-        "No additional text".into()
-    } else {
-        compact.chars().take(90).collect::<String>().into()
+fn styled_search_fragment(fragment: SearchTextFragment, secondary: bool, bold: bool) -> StyledText {
+    let mut text_font = font(rmac_ui::UI_FONT);
+    if bold {
+        text_font = text_font.bold();
     }
+    let base_color = if secondary {
+        mac::text_secondary()
+    } else {
+        mac::text()
+    };
+    let text_len = fragment.text().len();
+    let mut runs = Vec::with_capacity(3);
+    let mut push_run = |len: usize, highlighted: bool| {
+        if len == 0 {
+            return;
+        }
+        runs.push(TextRun {
+            len,
+            font: text_font.clone(),
+            color: if highlighted { mac::text() } else { base_color },
+            background_color: highlighted.then(mac::accent_subtle),
+            underline: None,
+            strikethrough: None,
+        });
+    };
+    if let Some(highlight) = fragment
+        .highlight()
+        .filter(|range| range.start < range.end && range.end <= text_len)
+    {
+        push_run(highlight.start, false);
+        push_run(highlight.end - highlight.start, true);
+        push_run(text_len - highlight.end, false);
+    } else {
+        push_run(text_len, false);
+    }
+    StyledText::new(fragment.text().to_string()).with_runs(runs)
 }
 
-fn tag_pill(tag: String) -> impl IntoElement {
+fn tag_pill(fragment: SearchTextFragment) -> impl IntoElement {
     div()
         .px_1p5()
         .py_0p5()
@@ -5433,7 +5588,22 @@ fn tag_pill(tag: String) -> impl IntoElement {
         .bg(mac::control_fill())
         .text_size(rmac_ui::text_px(10.0))
         .text_color(mac::text_secondary())
-        .child(format!("#{tag}"))
+        .child(styled_search_fragment(fragment, true, false))
+}
+
+fn attachment_match_row(fragment: SearchTextFragment) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .text_size(rmac_ui::text_px(10.0))
+        .text_color(mac::text_secondary())
+        .child(
+            Icon::new(IconName::File)
+                .with_size(Size::XSmall)
+                .text_color(mac::text_tertiary()),
+        )
+        .child(styled_search_fragment(fragment, true, false))
 }
 
 fn format_storage_bytes(bytes: u64) -> String {
@@ -5508,6 +5678,5 @@ mod tests {
     #[test]
     fn empty_note_metadata_has_private_safe_fallbacks() {
         assert_eq!(display_title(""), SharedString::from("New Note"));
-        assert_eq!(snippet("  \n"), SharedString::from("No additional text"));
     }
 }

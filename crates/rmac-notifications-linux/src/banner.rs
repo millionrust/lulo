@@ -310,6 +310,26 @@ impl BannerSession {
         self.icons.get(&id)
     }
 
+    /// Builds one exact worker input from the retained card identity and icon.
+    /// A missing card is inert; callers never reconstruct application identity
+    /// from visible text.
+    pub fn icon_source(
+        &self,
+        id: NotificationId,
+        request: crate::icon::Request,
+    ) -> Result<Option<crate::icon_worker::Source>, crate::icon_worker::RequestError> {
+        let Some(card) = self.presenter.cards().iter().find(|card| card.id == id) else {
+            return Ok(None);
+        };
+        crate::icon_worker::Source::new(
+            id,
+            card.app_id.clone(),
+            self.icons.get(&id).cloned(),
+            request,
+        )
+        .map(Some)
+    }
+
     pub fn focused(&self) -> Option<ControlId> {
         self.presenter.focused()
     }
@@ -923,6 +943,16 @@ mod tests {
         assert_eq!(session.frame().cards.len(), 1);
         assert_eq!(session.frame().cards[0].title, "Private title");
         assert!(matches!(session.icon(id), Some(Icon::Themed(_))));
+        let source = session
+            .icon_source(id, crate::icon::Request::new(40, 1.25).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(source.key().notification(), id);
+        assert_eq!(source.key().logical_edge(), 40);
+        assert_eq!(source.key().pixel_edge(), 50);
+        let diagnostics = format!("{source:?}");
+        assert!(!diagnostics.contains("org.example.Chat"));
+        assert!(!diagnostics.contains("private-icon"));
         assert_eq!(update.sounds, vec![SoundCue::Default(id)]);
         assert_eq!(update.announcements.len(), 1);
 

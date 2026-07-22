@@ -16,6 +16,7 @@ use zbus::zvariant::{serialized::Context, to_bytes, Endian, OwnedValue};
 pub mod banner;
 pub mod center;
 pub mod icon;
+pub mod icon_worker;
 pub mod media;
 pub mod service;
 

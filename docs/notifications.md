@@ -231,9 +231,26 @@ both are byte bounded, serialize decoding, redact sources and pixels from
 diagnostics, and can be refreshed when the theme or application catalog
 changes. A replaced notification cannot reuse the old frozen image, a declared
 format mismatch fails closed, and retiring cards release their portal cache
-entries. Resolution is synchronous by contract, so the Linux surface host must
-call it on its bounded icon worker and upload only the returned renderer-ready
-pixels.
+entries.
+
+`rmac_notifications_linux::icon_worker` is the off-UI execution boundary for
+that synchronous resolver. `BannerSession::icon_source` constructs each job
+from the retained card's exact authenticated app ID and media; the host never
+reconstructs identity from visible text. A batch contains at most 500 unique
+notification/logical-size/physical-size keys, 16 MiB of frozen source data, and
+32 MiB of possible output. Two-slot command and event queues make backpressure
+explicit, while one serial worker owns both caches. Theme refresh,
+application-catalog replacement, and live-notification cache pruning are typed
+commands whose diagnostics expose no source identity.
+
+Each request generation cancels its predecessor between icons. The renderer
+session applies only the exact current generation, cardinality, key order, and
+logical/physical pixel dimensions; stale, partial, reordered, or malformed
+completion cannot replace current artwork. Matching last-accepted pixels stay
+visible during refresh and return on cancellation. Worker shutdown cancels
+active work and closes the result receiver before joining, including when the
+bounded event queue was full. The Linux surface host therefore only submits a
+current frame's jobs and uploads accepted renderer-ready RGBA pixels.
 
 Pointer/touch and keyboard activation share the presenter's exact stable
 control IDs. The session maps those IDs to default, original button position,
@@ -243,8 +260,8 @@ and redacted. The bounded event receiver must continue draining while a service
 request executes; action/close events may lawfully arrive before the operation
 future completes, and the session reconciles either ordering without restarting
 terminal motion or unlocking a different control. The remaining Linux host
-must render the frame, submit retained icons to the ready icon worker, upload
-the returned RGBA pixels, play each emitted sound cue through the
+must render the frame, submit its exact icon jobs to the ready worker, upload
+only accepted RGBA pixels, play each emitted sound cue through the
 single-admission `SoundPlayer`, and surface operation failures. The player uses
 an original bounded default cue or the validated custom bytes,
 passes a sealed seekable `memfd` to `pw-play` without a temporary pathname, and

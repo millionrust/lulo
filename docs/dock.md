@@ -117,6 +117,23 @@ late completion from a cancelled surface cannot clear newer work or create a
 stale error. Success removes busy state but never changes the Dock model—the
 catalog, niri, settings, and places watchers remain authoritative.
 
+`rmac-dock-system::dispatch` now closes the gap between an accepted menu row
+and those asynchronous executors. It revalidates every application intent
+against the newest coherent model before issuing a ticket: launch-new adopts
+the current catalog launch specification, a focus or close action requires its
+exact window ID to still exist, and pin/unpin/reorder requires the same command
+to remain valid instead of silently becoming its opposite. A focused
+single-window activation remains an explicit no-op, malformed entry identities
+fail before ticketing, and stale but well-formed actions become private-safe
+rejected feedback without touching a platform service.
+
+The prepared action owns its exact target and operation as it enters the busy
+state. Its pending value then owns the monotonic ticket throughout asynchronous
+execution, and only its completion can finish that ticket. This prevents a
+menu that was open during catalog, compositor, or settings changes from
+executing stale authority, while preserving the rule that successful receipts
+never mutate the visible model directly.
+
 Failures retain only the public target, intended operation, and a semantic
 reason such as permission denied, unavailable service, lost connection,
 rejected, unsupported, or failed. Raw backend details, commands, paths, and
@@ -124,8 +141,8 @@ window titles never enter the presentation snapshot. The fallback accessible
 message is therefore safe for a toast/status node, and feedback is explicitly
 dismissible. State is bounded to 64 simultaneous targets and the 16 newest
 feedback records, published chronologically; retry clears the target's previous
-feedback. The real renderer still needs to connect tickets to its async action
-tasks, show busy/error visuals, and restore menu focus.
+feedback. The real renderer still needs to invoke this dispatch boundary from
+its menu nodes, show busy/error visuals, and restore menu focus.
 
 ## Live runtime
 

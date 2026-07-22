@@ -1,5 +1,6 @@
 //! Typed launch and niri-focus execution for Dock activation outcomes.
 
+pub mod dispatch;
 pub mod interaction;
 
 use std::fmt;

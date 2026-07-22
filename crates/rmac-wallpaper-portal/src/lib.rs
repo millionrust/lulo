@@ -7,6 +7,7 @@
 
 pub mod broker;
 pub mod dbus;
+pub mod preview;
 
 use std::collections::BTreeSet;
 use std::fmt;

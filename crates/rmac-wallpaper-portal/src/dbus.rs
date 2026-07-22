@@ -9,7 +9,7 @@ use zbus::message::Header;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::{interface, Connection};
 
-use crate::broker::{Broker, Cancellation, PreviewRequest};
+use crate::broker::{Broker, Cancellation, PreviewEvent};
 use crate::{Consent, Importer, PortalResponse, RequestId};
 
 pub const BUS_NAME: &str = "org.freedesktop.impl.portal.desktop.rmac.wallpaper";
@@ -170,7 +170,7 @@ impl fmt::Debug for ServiceHandle {
 /// the supervised UI process must drain for the service to become useful.
 pub async fn serve(
     importer: Importer,
-) -> Result<(ServiceHandle, async_channel::Receiver<PreviewRequest>), ServiceError> {
+) -> Result<(ServiceHandle, async_channel::Receiver<PreviewEvent>), ServiceError> {
     let (broker, previews) = Broker::new(importer);
     let connection = Builder::session()
         .map_err(|_| ServiceError::Bus)?

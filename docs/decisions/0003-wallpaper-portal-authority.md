@@ -84,6 +84,22 @@ unknown `set-on` values are rejected. The service uses a separate
 `org.freedesktop.impl.portal.desktop.rmac.wallpaper` bus name so future image/UI
 failures cannot take down the notification backend.
 
+The preview stream is an ordered Open/Close lifecycle rather than a fire-and-
+forget image queue. Each terminal Close retains its admission lease until the
+UI consumes or drops it, so a stalled preview process applies backpressure and
+cannot lose the event that dismisses a visible dialog. Frontend `Close()`, a
+user decision, a dropped request future, and an internal failure all converge
+on that same terminal event.
+
+The framework-neutral presenter serializes the eight admitted interactions
+into one focused modal and a FIFO queue. It renders the proposed image with the
+same exact Fill geometry, discloses that the change affects every display and
+replaces per-display choices, and exposes stable dialog/preview/button labels.
+Set Wallpaper is the default focus; Tab, reverse Tab, left/right, Enter, Space,
+Escape, explicit Cancel, and window close have deterministic behavior. A
+decision enters a disabled resolving phase until terminal Close, preventing a
+second activation or exposing the next request during a durable commit.
+
 The GPUI preview/confirmation window, supervised executable, installed backend
 descriptor, and `rmac-portals.conf` selection entry remain future
 implementation work. Installation must not advertise this backend before the

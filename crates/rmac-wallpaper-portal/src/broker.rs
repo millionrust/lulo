@@ -12,6 +12,7 @@ pub const MAX_PENDING_REQUESTS: usize = 8;
 pub const MAX_PENDING_PREVIEW_BYTES: usize = 256 * 1024 * 1024;
 pub const MAX_PARENT_WINDOW_BYTES: usize = 1_024;
 pub const MAX_URI_BYTES: usize = 64 * 1024;
+const MAX_PREVIEW_EVENTS: usize = MAX_PENDING_REQUESTS * 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CancellationState {
@@ -104,6 +105,24 @@ pub struct PreviewRequest {
 }
 
 impl PreviewRequest {
+    pub(crate) fn new(
+        id: RequestId,
+        app_id: String,
+        parent_window: String,
+        image: Arc<rmac_wallpaper_image::Decoded>,
+        source_bytes: u64,
+        format: rmac_wallpaper_system::ImageFormat,
+    ) -> Self {
+        Self {
+            id,
+            app_id,
+            parent_window,
+            image,
+            source_bytes,
+            format,
+        }
+    }
+
     pub fn id(&self) -> RequestId {
         self.id
     }
@@ -145,6 +164,52 @@ impl fmt::Debug for PreviewRequest {
     }
 }
 
+/// Public payload of one ordered presentation lifecycle event.
+#[derive(Clone, Debug)]
+pub enum PreviewEventKind {
+    Open(PreviewRequest),
+    Close { id: RequestId },
+}
+
+/// An event retains the request's admission lease through terminal Close
+/// delivery. A stalled consumer therefore stops new admission instead of
+/// allowing old dismissal events to be overwritten.
+#[derive(Clone)]
+pub struct PreviewEvent {
+    kind: PreviewEventKind,
+    _close_lease: Option<Arc<CloseLease>>,
+}
+
+impl PreviewEvent {
+    pub fn kind(&self) -> &PreviewEventKind {
+        &self.kind
+    }
+
+    pub fn into_kind(self) -> PreviewEventKind {
+        self.kind
+    }
+
+    pub(crate) fn open(request: PreviewRequest) -> Self {
+        Self {
+            kind: PreviewEventKind::Open(request),
+            _close_lease: None,
+        }
+    }
+
+    fn close(id: RequestId, permit: Permit) -> Self {
+        Self {
+            kind: PreviewEventKind::Close { id },
+            _close_lease: Some(Arc::new(CloseLease { _permit: permit })),
+        }
+    }
+}
+
+impl fmt::Debug for PreviewEvent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.kind.fmt(formatter)
+    }
+}
+
 struct Pending {
     prepared: Prepared,
     decision: Option<Sender<Consent>>,
@@ -159,7 +224,7 @@ struct PendingState {
 
 struct Inner {
     importer: Importer,
-    previews: Sender<PreviewRequest>,
+    previews: Sender<PreviewEvent>,
     permits: Sender<()>,
     available_permits: Receiver<()>,
     // Decoding one source at a time prevents several maximum-size images from
@@ -175,8 +240,10 @@ pub struct Broker {
 }
 
 impl Broker {
-    pub fn new(importer: Importer) -> (Self, Receiver<PreviewRequest>) {
-        let (previews, receiver) = async_channel::bounded(MAX_PENDING_REQUESTS);
+    pub fn new(importer: Importer) -> (Self, Receiver<PreviewEvent>) {
+        // One Open and one terminal Close can be retained for every admitted
+        // request without making cancellation wait for a stalled UI process.
+        let (previews, receiver) = async_channel::bounded(MAX_PREVIEW_EVENTS);
         let (permits, available_permits) = async_channel::bounded(MAX_PENDING_REQUESTS);
         for () in std::iter::repeat_n((), MAX_PENDING_REQUESTS) {
             permits
@@ -213,7 +280,7 @@ impl Broker {
         let Ok(()) = self.inner.available_permits.try_recv() else {
             return PortalResponse::Other;
         };
-        let _permit = Permit {
+        let permit = Permit {
             sender: self.inner.permits.clone(),
         };
         if cancellation.is_cancelled() {
@@ -253,14 +320,14 @@ impl Broker {
             if total > MAX_PENDING_PREVIEW_BYTES || pending.requests.contains_key(&id) {
                 return PortalResponse::Other;
             }
-            let preview = PreviewRequest {
+            let preview = PreviewRequest::new(
                 id,
-                app_id: prepared.app_id().to_owned(),
+                prepared.app_id().to_owned(),
                 parent_window,
-                image: prepared.image().clone(),
-                source_bytes: prepared.byte_len(),
-                format: prepared.format(),
-            };
+                prepared.image().clone(),
+                prepared.byte_len(),
+                prepared.format(),
+            );
             pending.preview_bytes = total;
             pending.requests.insert(
                 id,
@@ -270,9 +337,15 @@ impl Broker {
                     preview_bytes,
                 },
             );
-            // The queue and request permits have equal bounds, so publication
-            // cannot fail from fullness while every retained request is live.
-            if self.inner.previews.try_send(preview).is_err() {
+            // The event queue reserves both an Open and terminal Close slot for
+            // each retained admission lease. Only receiver shutdown can make
+            // this initial publication fail while the invariant holds.
+            if self
+                .inner
+                .previews
+                .try_send(PreviewEvent::open(preview))
+                .is_err()
+            {
                 remove_pending(&mut pending, id);
                 return PortalResponse::Other;
             }
@@ -281,6 +354,7 @@ impl Broker {
         let mut guard = PendingGuard {
             inner: self.inner.clone(),
             id: Some(id),
+            permit: Some(permit),
         };
         enum Wake {
             Decision(Result<Consent, async_channel::RecvError>),
@@ -340,22 +414,38 @@ struct Permit {
 
 impl Drop for Permit {
     fn drop(&mut self) {
-        self.sender
-            .try_send(())
-            .expect("one consumed request permit must have room to return");
+        // Service shutdown can drop the receiving authority before a queued UI
+        // event releases its lease. Losing that final token is harmless because
+        // the broker is already gone; Drop must never panic during teardown.
+        let _ = self.sender.try_send(());
     }
+}
+
+struct CloseLease {
+    _permit: Permit,
 }
 
 struct PendingGuard {
     inner: Arc<Inner>,
     id: Option<RequestId>,
+    permit: Option<Permit>,
 }
 
 impl PendingGuard {
     fn take(&mut self) -> Option<Prepared> {
         let id = self.id.take()?;
         let mut pending = lock(&self.inner.pending);
-        remove_pending(&mut pending, id).map(|request| request.prepared)
+        let request = remove_pending(&mut pending, id)?;
+        drop(pending);
+        let permit = self
+            .permit
+            .take()
+            .expect("a live pending request owns one admission permit");
+        let _ = self
+            .inner
+            .previews
+            .try_send(PreviewEvent::close(id, permit));
+        Some(request.prepared)
     }
 }
 
@@ -364,7 +454,17 @@ impl Drop for PendingGuard {
         let Some(id) = self.id.take() else {
             return;
         };
-        remove_pending(&mut lock(&self.inner.pending), id);
+        let removed = remove_pending(&mut lock(&self.inner.pending), id).is_some();
+        if removed {
+            let permit = self
+                .permit
+                .take()
+                .expect("a live pending request owns one admission permit");
+            let _ = self
+                .inner
+                .previews
+                .try_send(PreviewEvent::close(id, permit));
+        }
     }
 }
 

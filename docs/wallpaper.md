@@ -140,6 +140,18 @@ removed when the method returns. Missing `set-on` selects background, while
 lock-screen/both remain explicit non-success until the secure lock authority
 can apply them truthfully.
 
+Presentation consumes ordered Open and terminal Close events. The terminal
+event retains the request's admission lease until consumed, so a stalled UI
+stops new requests instead of losing a dismissal. The portable presenter shows
+one modal at a time and queues the rest FIFO. It validates exact RGBA bounds,
+uses the shared Fill geometry for a 16:9 desktop preview, discloses the whole-
+desktop/per-output consequence, and keeps source paths out of semantics and
+diagnostics. Set Wallpaper receives default focus; Tab/reverse Tab, arrow keys,
+Enter, Space, Escape, pointer activation, and window close are explicit. Once a
+decision is delivered the dialog becomes resolving and stays noninteractive
+until terminal Close; frontend cancellation removes a visible or queued dialog
+without inventing consent.
+
 System Settings now reads this authority, offers default and stable-output
 overrides, and follows the direct niri output stream so unplugged choices remain
 explicit and reappear by ID. Its local-file chooser is portal-mediated, and a

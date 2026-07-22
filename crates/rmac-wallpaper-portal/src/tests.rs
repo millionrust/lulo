@@ -36,6 +36,26 @@ fn importer(root: &Path) -> Importer {
     Importer::new(root.join("managed"), root.join("config/shell.json")).unwrap()
 }
 
+fn recv_event(events: &async_channel::Receiver<broker::PreviewEvent>) -> broker::PreviewEvent {
+    futures_lite::future::block_on(events.recv()).unwrap()
+}
+
+fn recv_open(events: &async_channel::Receiver<broker::PreviewEvent>) -> broker::PreviewRequest {
+    match recv_event(events).into_kind() {
+        broker::PreviewEventKind::Open(request) => request,
+        broker::PreviewEventKind::Close { id } => panic!("expected Open before Close for {id:?}"),
+    }
+}
+
+fn recv_close(events: &async_channel::Receiver<broker::PreviewEvent>, expected: RequestId) {
+    match recv_event(events).into_kind() {
+        broker::PreviewEventKind::Close { id } => assert_eq!(id, expected),
+        broker::PreviewEventKind::Open(request) => {
+            panic!("expected Close before Open for {:?}", request.id())
+        }
+    }
+}
+
 fn visible_entries(root: &Path) -> Vec<String> {
     let mut entries = std::fs::read_dir(root)
         .unwrap()
@@ -283,7 +303,7 @@ fn broker_requires_preview_and_applies_one_exact_decision() {
         })
     };
 
-    let preview = futures_lite::future::block_on(previews.recv()).unwrap();
+    let preview = recv_open(&previews);
     assert_eq!(preview.app_id(), "org.example.Photos");
     assert_eq!(preview.parent_window(), "wayland:private-parent");
     assert_eq!(preview.image().physical_size().width, 8);
@@ -291,6 +311,7 @@ fn broker_requires_preview_and_applies_one_exact_decision() {
     assert!(!format!("{preview:?}").contains("private-parent"));
     assert!(broker.decide(preview.id(), Consent::Accept));
     assert!(!broker.decide(preview.id(), Consent::Decline));
+    recv_close(&previews, preview.id());
     assert_eq!(worker.join().unwrap(), PortalResponse::Success);
     assert_eq!(broker.pending_count(), 0);
     assert!(root.join("config/shell.json").exists());
@@ -319,8 +340,9 @@ fn close_and_decline_are_private_safe_and_replay_is_inert() {
             ))
         })
     };
-    let decline_preview = futures_lite::future::block_on(previews.recv()).unwrap();
+    let decline_preview = recv_open(&previews);
     assert!(broker.decide(decline_preview.id(), Consent::Decline));
+    recv_close(&previews, decline_preview.id());
     assert_eq!(declined.join().unwrap(), PortalResponse::Cancelled);
 
     let cancellation = broker::Cancellation::new();
@@ -332,17 +354,32 @@ fn close_and_decline_are_private_safe_and_replay_is_inert() {
             futures_lite::future::block_on(broker.request(request, "".into(), cancellation))
         })
     };
-    let cancel_preview = futures_lite::future::block_on(previews.recv()).unwrap();
+    let mut presenter = preview::Presenter::default();
+    let cancel_open = recv_event(&previews);
+    let cancel_id = match cancel_open.kind() {
+        broker::PreviewEventKind::Open(request) => request.id(),
+        broker::PreviewEventKind::Close { id } => panic!("unexpected Close for {id:?}"),
+    };
+    assert_eq!(
+        presenter.apply(cancel_open),
+        preview::Update::Opened { id: cancel_id }
+    );
     assert!(cancellation.cancel());
     assert!(!cancellation.cancel());
+    assert_eq!(
+        presenter.apply(recv_event(&previews)),
+        preview::Update::Closed {
+            id: cancel_id,
+            next: None,
+        }
+    );
     assert_eq!(cancelled.join().unwrap(), PortalResponse::Cancelled);
-    assert!(!broker.decide(cancel_preview.id(), Consent::Accept));
+    assert!(!broker.decide(cancel_id, Consent::Accept));
     assert_eq!(broker.pending_count(), 0);
     assert!(!root.join("config/shell.json").exists());
     assert!(visible_entries(&root.join("managed")).is_empty());
 
     drop(decline_preview);
-    drop(cancel_preview);
     drop(previews);
     drop(broker);
     std::fs::remove_dir_all(root).unwrap();
@@ -366,7 +403,7 @@ fn broker_admission_is_bounded_before_additional_decode() {
         workers.push(std::thread::spawn(move || {
             futures_lite::future::block_on(broker.request(request, "".into(), cancellation))
         }));
-        preview_requests.push(futures_lite::future::block_on(previews.recv()).unwrap());
+        preview_requests.push(recv_open(&previews));
     }
     assert_eq!(broker.pending_count(), broker::MAX_PENDING_REQUESTS);
 
@@ -383,6 +420,27 @@ fn broker_admission_is_bounded_before_additional_decode() {
     }
     for worker in workers {
         assert_eq!(worker.join().unwrap(), PortalResponse::Cancelled);
+    }
+    // Terminal events retain all admission leases until the UI consumes them.
+    assert_eq!(
+        futures_lite::future::block_on(broker.request(
+            request(&source),
+            "".into(),
+            broker::Cancellation::new(),
+        )),
+        PortalResponse::Other
+    );
+    let mut closing = preview_requests
+        .iter()
+        .map(broker::PreviewRequest::id)
+        .collect::<std::collections::BTreeSet<_>>();
+    while !closing.is_empty() {
+        match recv_event(&previews).into_kind() {
+            broker::PreviewEventKind::Close { id } => assert!(closing.remove(&id)),
+            broker::PreviewEventKind::Open(request) => {
+                panic!("unexpected extra Open for {:?}", request.id())
+            }
+        }
     }
     assert_eq!(broker.pending_count(), 0);
     assert!(visible_entries(&root.join("managed")).is_empty());
@@ -424,6 +482,180 @@ fn unavailable_preview_consumer_and_invalid_parent_fail_without_mutation() {
 
     drop(broker);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn consent_presenter_serializes_dialogs_and_waits_for_terminal_close() {
+    let root = root("presenter-flow");
+    let source = fixture(&root, "selected.png", [120, 121, 122, 255]);
+    let importer = importer(&root);
+    let (broker, previews) = broker::Broker::new(importer);
+    let mut presenter = preview::Presenter::default();
+
+    let first_worker = {
+        let broker = broker.clone();
+        let request = request(&source);
+        std::thread::spawn(move || {
+            futures_lite::future::block_on(broker.request(
+                request,
+                "wayland:first-private-parent".into(),
+                broker::Cancellation::new(),
+            ))
+        })
+    };
+    let first_event = recv_event(&previews);
+    let first_id = match first_event.kind() {
+        broker::PreviewEventKind::Open(request) => request.id(),
+        broker::PreviewEventKind::Close { id } => panic!("unexpected Close for {id:?}"),
+    };
+    assert_eq!(
+        presenter.apply(first_event),
+        preview::Update::Opened { id: first_id }
+    );
+
+    let second_worker = {
+        let broker = broker.clone();
+        let request = request(&source);
+        std::thread::spawn(move || {
+            futures_lite::future::block_on(broker.request(
+                request,
+                "wayland:second-private-parent".into(),
+                broker::Cancellation::new(),
+            ))
+        })
+    };
+    let second_event = recv_event(&previews);
+    let second_id = match second_event.kind() {
+        broker::PreviewEventKind::Open(request) => request.id(),
+        broker::PreviewEventKind::Close { id } => panic!("unexpected Close for {id:?}"),
+    };
+    assert_eq!(
+        presenter.apply(second_event),
+        preview::Update::Queued {
+            id: second_id,
+            position: 1,
+        }
+    );
+    assert_eq!(presenter.queued_count(), 1);
+
+    let dialog = presenter.active().unwrap();
+    assert_eq!(dialog.id(), first_id);
+    assert_eq!(dialog.focused(), preview::Control::Accept);
+    assert_eq!(dialog.phase(), preview::Phase::AwaitingDecision);
+    assert_eq!(dialog.layout().destination.height, preview::PREVIEW_HEIGHT);
+    let semantics = dialog.semantics();
+    assert_eq!(semantics.title, "Change Wallpaper?");
+    assert_eq!(semantics.accept_label, "Set Wallpaper");
+    assert!(semantics.description.contains("every display"));
+    assert!(semantics.description.contains("per-display"));
+    assert!(!format!("{dialog:?}").contains("first-private-parent"));
+
+    assert_eq!(
+        presenter.input(preview::Key::Tab),
+        preview::InputOutcome::FocusChanged(preview::Control::Cancel)
+    );
+    let first_decision = match presenter.input(preview::Key::Enter) {
+        preview::InputOutcome::Decision(decision) => decision,
+        outcome => panic!("expected first decision, got {outcome:?}"),
+    };
+    assert_eq!(first_decision.id, first_id);
+    assert_eq!(first_decision.consent, Consent::Decline);
+    assert!(broker.decide(first_decision.id, first_decision.consent));
+    assert!(presenter
+        .decision_delivery(first_decision.id, true)
+        .is_none());
+    assert_eq!(
+        presenter.active().unwrap().phase(),
+        preview::Phase::Resolving
+    );
+    assert_eq!(
+        presenter.input(preview::Key::Escape),
+        preview::InputOutcome::Ignored
+    );
+
+    let first_close = recv_event(&previews);
+    assert_eq!(
+        presenter.apply(first_close),
+        preview::Update::Closed {
+            id: first_id,
+            next: Some(second_id),
+        }
+    );
+    assert_eq!(presenter.active().unwrap().id(), second_id);
+    assert_eq!(presenter.queued_count(), 0);
+
+    let second_decision = match presenter.window_closed() {
+        preview::InputOutcome::Decision(decision) => decision,
+        outcome => panic!("expected window-close decision, got {outcome:?}"),
+    };
+    assert_eq!(second_decision.consent, Consent::Cancel);
+    assert!(broker.decide(second_decision.id, second_decision.consent));
+    let second_close = recv_event(&previews);
+    assert_eq!(
+        presenter.apply(second_close),
+        preview::Update::Closed {
+            id: second_id,
+            next: None,
+        }
+    );
+    assert!(presenter.active().is_none());
+    assert_eq!(first_worker.join().unwrap(), PortalResponse::Cancelled);
+    assert_eq!(second_worker.join().unwrap(), PortalResponse::Cancelled);
+
+    drop(previews);
+    drop(broker);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn consent_presenter_rejects_duplicate_malformed_and_excess_events() {
+    fn synthetic(id: u64, rgba: Vec<u8>) -> broker::PreviewRequest {
+        broker::PreviewRequest::new(
+            RequestId(id),
+            "org.example.Photos".into(),
+            "".into(),
+            std::sync::Arc::new(rmac_wallpaper_image::Decoded {
+                width: 2,
+                height: 2,
+                rgba: rgba.into(),
+            }),
+            16,
+            rmac_wallpaper_system::ImageFormat::Png,
+        )
+    }
+
+    let mut presenter = preview::Presenter::default();
+    let first = synthetic(1, vec![0; 16]);
+    assert_eq!(
+        presenter.apply(broker::PreviewEvent::open(first.clone())),
+        preview::Update::Opened { id: RequestId(1) }
+    );
+    assert_eq!(
+        presenter.apply(broker::PreviewEvent::open(first)),
+        preview::Update::Rejected {
+            id: RequestId(1),
+            reason: preview::RejectReason::Duplicate,
+        }
+    );
+    assert_eq!(
+        presenter.apply(broker::PreviewEvent::open(synthetic(2, vec![0; 15]))),
+        preview::Update::Rejected {
+            id: RequestId(2),
+            reason: preview::RejectReason::InvalidImage,
+        }
+    );
+    for id in 2..=broker::MAX_PENDING_REQUESTS as u64 {
+        let update = presenter.apply(broker::PreviewEvent::open(synthetic(id, vec![0; 16])));
+        assert!(matches!(update, preview::Update::Queued { .. }));
+    }
+    assert_eq!(presenter.queued_count(), broker::MAX_PENDING_REQUESTS - 1);
+    assert_eq!(
+        presenter.apply(broker::PreviewEvent::open(synthetic(99, vec![0; 16]))),
+        preview::Update::Rejected {
+            id: RequestId(99),
+            reason: preview::RejectReason::Capacity,
+        }
+    );
 }
 
 #[test]

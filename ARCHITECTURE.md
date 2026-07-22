@@ -437,7 +437,10 @@ Changed plans and selected-file events are resolved, decoded, and laid out on
 the blocking pool, then published as ready RGBA surfaces. Health-only changes
 publish diagnostics without reopening files, decoding images, or requesting a
 wallpaper frame. Default runtime `Debug` and errors redact source details and
-file paths.
+file paths. Its bounded physical-surface registry validates complete plan and
+raster transactions, retains last-known-good frames across partial failure,
+and serializes acknowledged Create, Present, and Remove operations without
+letting stale completions mutate newer desired state.
 
 Wallpaper motion is an event-driven crossfade state in
 `rmac-wallpaper::transition`. Its smoothstep is bounded to two seconds and asks
@@ -448,10 +451,17 @@ motion presents immediately, including when enabled mid-transition.
 
 The session settings store—not the XDG Wallpaper portal—is the readable
 wallpaper authority. Portal v1 is a sandboxed-app mutation API with no state,
-output, or fit model. rmac will eventually implement its desktop backend for
-confirmed local background requests; rmac Settings never consumes its own
-portal. Remote fetching and lock-screen targets remain explicit failures until
-an isolated importer and E5 secure-lock authority exist. See ADR 0003.
+output, or fit model. `rmac-wallpaper-portal` is the durable backend transaction
+core: one exclusive authority stages the frontend-provided local document in a
+private directory, validates it through the same bounded decoder before
+mandatory confirmation, content-addresses the accepted copy, and commits one
+whole-desktop Fill choice while clearing hidden output overrides. Decline,
+cancellation, decode failure, settings failure, and crash recovery remove only
+unreferenced recognized transaction files; unrelated files and concurrently
+referenced imports are never collected. rmac Settings never consumes its own
+portal. The D-Bus adapter and confirmation window remain separate presentation
+work. Remote fetching and lock-screen targets stay explicit failures until an
+isolated network importer and E5 secure-lock authority exist. See ADR 0003.
 
 ## Persistence
 

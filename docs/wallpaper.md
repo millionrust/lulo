@@ -115,7 +115,16 @@ ADR 0003 specifies a future rmac desktop backend: accept a bounded app identity
 and hostless local portal URI, always preview, validate through the same decoder,
 then atomically import and apply one whole-desktop Fill choice. Remote fetching
 and lock-screen/both requests fail until their real authorities exist. The
-backend and installer integration remain pending.
+portable `rmac-wallpaper-portal` transaction now stages the frontend-provided
+document from one validated handle under an exclusive private-directory lease,
+decodes the frozen bytes before confirmation, and exposes that decoded image to
+the future preview window. Consent creates or reuses an exact content-addressed
+private import, reloads the latest shell document, preserves unrelated policy,
+sets one default Fill source, clears output overrides, saves, and verifies
+readback. Decline and cancellation never touch settings. Failure cleanup and
+startup recovery remove only recognized unreferenced imports, while uncertain
+or currently referenced content is retained. Response mapping distinguishes
+success, cancellation, and other failure.
 
 System Settings now reads this authority, offers default and stable-output
 overrides, and follows the direct niri output stream so unplugged choices remain
@@ -128,5 +137,6 @@ stale generations on target/settings changes, and regenerates through the same
 bounded decoder when the file is replaced or edited.
 
 The Wayland adapter that executes this lifecycle as background layer surfaces,
-the wallpaper executable, portal backend, and Linux hotplug/frame-time evidence
-remain pending. D9 is therefore not complete.
+the wallpaper executable, authenticated D-Bus/request-cancellation adapter,
+mandatory preview window, backend installation assets, and Linux portal/hotplug/
+frame-time evidence remain pending. D9 is therefore not complete.

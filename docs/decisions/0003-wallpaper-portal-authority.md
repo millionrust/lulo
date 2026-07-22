@@ -50,10 +50,23 @@ ingress command, never a second state store:
 7. Cancellation or failed validation changes no settings and leaves no imported
    orphan.
 
-The existing `rmac-wallpaper::portal` model is the framework-neutral admission
-contract. The D-Bus backend, preview UI, durable importer, response mapping,
-installed backend descriptor, and `rmac-portals.conf` entry remain future
-implementation work.
+The `rmac-wallpaper::portal` model is the framework-neutral admission contract.
+`rmac-wallpaper-portal` now owns the durable transaction beneath the eventual
+D-Bus adapter. It takes an exclusive private-directory lease, stages the
+already frontend-authorized local document from one validated open handle,
+decodes that frozen copy through the shared bounds, and returns decoded pixels
+for the mandatory preview. Acceptance creates or reuses a verified
+content-addressed private copy, reloads the latest shell document, changes only
+wallpaper policy to one default Fill choice with no output overrides, saves and
+rereads the authority, and preserves unrelated shell settings. Decline and
+cancel never read settings. Failed validation, failed persistence, dropped
+requests, and startup recovery remove only recognized unreferenced transaction
+files; a file that current settings may reference is retained. Portal response
+codes map success, cancellation, and other failure explicitly.
+
+The authenticated D-Bus backend method, request-handle cancellation adapter,
+GPUI preview/confirmation window, installed backend descriptor, and
+`rmac-portals.conf` selection entry remain future implementation work.
 
 ## Consequences
 

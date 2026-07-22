@@ -1,0 +1,20 @@
+[package]
+name = "rmac-wallpaper-portal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+libc.workspace = true
+rmac-compositor.workspace = true
+rmac-shell-settings.workspace = true
+rmac-storage.workspace = true
+rmac-wallpaper.workspace = true
+rmac-wallpaper-image.workspace = true
+rmac-wallpaper-system.workspace = true
+
+[dev-dependencies]
+image = { workspace = true, features = ["png"] }
+url.workspace = true

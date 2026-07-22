@@ -105,6 +105,7 @@ rmac-updates = { version = "=0.1.0", path = "crates/rmac-updates" }
 rmac-updates-linux = { version = "=0.1.0", path = "crates/rmac-updates-linux" }
 rmac-wallpaper = { version = "=0.1.0", path = "crates/rmac-wallpaper" }
 rmac-wallpaper-image = { version = "=0.1.0", path = "crates/rmac-wallpaper-image" }
+rmac-wallpaper-portal = { version = "=0.1.0", path = "crates/rmac-wallpaper-portal" }
 rmac-wallpaper-runtime = { version = "=0.1.0", path = "crates/rmac-wallpaper-runtime" }
 rmac-wallpaper-system = { version = "=0.1.0", path = "crates/rmac-wallpaper-system" }
 pam-sys2 = "=1.0.2"

@@ -5794,6 +5794,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-wallpaper-portal"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "libc",
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "rmac-storage",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-system",
+ "url",
+]
+
+[[package]]
 name = "rmac-wallpaper-runtime"
 version = "0.1.0"
 dependencies = [

@@ -41,10 +41,28 @@ The visible legacy `app_name` is never used as authenticated ownership.
 wrong D-Bus type fail with redacted field-only errors; unknown extensible keys
 are ignored. Portal targets are serialized into bounded canonical variant bytes
 and targets containing file descriptors are rejected. Markup bodies become
-inert text with bounded input and balanced-tag validation. Custom icon and sound
-file descriptors are not retained by the reducer. Until the media validator and
-player exist, the freedesktop server advertises only `actions`, `body`, and
-`persistence`—not markup, sound, hyperlinks, or image capabilities.
+inert text with bounded input and balanced-tag validation. Portal-v2 themed
+icons accept at most 16 safe theme names. Sealed descriptor icons are frozen
+before dispatch, capped at 4 MiB, and fully decoded as square PNG/JPEG images no
+larger than 512 pixels or parsed as square SVGs capped at 4 KiB. SVGs use a
+non-executable element profile and reject scripts, event attributes, embedded
+media, styles, and non-local resources. Deprecated byte icons fail closed.
+
+Sealed custom sounds are likewise frozen before dispatch and structurally
+validated as Ogg Opus, Ogg Vorbis, or PCM WAV. Container sequence/checksum,
+codec headers, PCM layout, a 2 MiB byte limit, and a 15-second duration limit
+on PCM data or the Ogg-declared granule are enforced before presentation can
+see the bytes. The eventual player must independently stop at the same
+wall-clock deadline because a compressed stream can lie about its granule.
+Media is carried only by
+the bounded, backpressured runtime event and is removed when computed banner or
+sound policy suppresses it; it never enters the reducer or durable Center
+history. Portal admission is nonblocking and capped at four in-flight requests;
+full media decoding runs off the D-Bus executor and is serialized, preventing a
+concurrent maximum-image flood from multiplying decoder allocations. The
+freedesktop server still advertises only `actions`, `body`, and
+`persistence`—not markup, sound, hyperlinks, or image capabilities—because its
+unimplemented optional media path must remain undiscoverable.
 
 The same crate now serves `org.freedesktop.Notifications` at the standard
 object path and `org.freedesktop.impl.portal.Notification` version 2 at the
@@ -260,8 +278,10 @@ private history file.
 
 ## Next adapters and surfaces
 
-1. E1 media/evidence completion: validate icon and custom-sound descriptors and
-   prove both interfaces on the Linux reference PC.
+1. E1 Linux evidence completion: prove sealed icon/custom-sound descriptors and
+   both protocol interfaces against the real portal frontend on the Linux
+   reference PC, including malformed, unsealed, oversize, policy-suppressed,
+   replacement, flood/backpressure, and daemon-restart cases.
 2. E2 layer-surface renderer: render the runtime snapshot with real hover,
    keyboard, action, activation-token, and multi-output evidence on Linux.
 3. E3 Notification Center evidence and completion: prove trailing placement,

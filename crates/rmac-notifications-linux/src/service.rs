@@ -20,7 +20,10 @@ const LEGACY_PATH: &str = "/org/freedesktop/Notifications";
 const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
 pub const CENTER_BUS_NAME: &str = "org.rmac.NotificationCenter1";
 pub const CENTER_PATH: &str = "/org/rmac/NotificationCenter1";
-const EVENT_CAPACITY: usize = 128;
+// Each event can transiently own one validated 4 MiB icon and 2 MiB sound.
+// Backpressure therefore caps worst-case queued media at 192 MiB.
+const EVENT_CAPACITY: usize = 32;
+const MEDIA_ADMISSIONS: usize = 4;
 
 #[derive(Clone)]
 pub struct HistoryAuthority {
@@ -95,6 +98,7 @@ impl HistoryAuthority {
                 RuntimeEvent::Posted {
                     outcome,
                     notification,
+                    ..
                 } if outcome.delivery.history => {
                     if let Some(notification) = notification {
                         center.upsert(notification.as_ref().clone());
@@ -518,6 +522,9 @@ pub enum RuntimeEvent {
     Posted {
         outcome: PostOutcome,
         notification: Option<Box<Notification>>,
+        /// Validated presentation bytes live only in the bounded event stream.
+        /// They are never copied into the reducer or durable Center history.
+        media: crate::media::NotificationMedia,
     },
     Closed(Closed),
     ActionInvoked(ActionInvocation),
@@ -744,6 +751,7 @@ impl LegacyInterface {
             RuntimeEvent::Posted {
                 outcome,
                 notification,
+                media: crate::media::NotificationMedia::default(),
             },
         )
         .await?;
@@ -805,6 +813,63 @@ pub struct PortalInterface {
     core: SharedCore,
     events: Sender<RuntimeEvent>,
     history: HistoryAuthority,
+    media_decoder: MediaDecoder,
+}
+
+#[derive(Clone, Debug)]
+struct MediaDecoder {
+    permits: Sender<()>,
+    available_permits: Receiver<()>,
+    serial: Arc<Mutex<()>>,
+}
+
+impl MediaDecoder {
+    fn new() -> Self {
+        let (permits, available_permits) = async_channel::bounded(MEDIA_ADMISSIONS);
+        for () in std::iter::repeat_n((), MEDIA_ADMISSIONS) {
+            permits
+                .try_send(())
+                .expect("fresh media permit queue has exact capacity");
+        }
+        Self {
+            permits,
+            available_permits,
+            serial: Arc::new(Mutex::new(())),
+        }
+    }
+
+    fn try_acquire(&self) -> Option<MediaPermit> {
+        self.available_permits.try_recv().ok()?;
+        Some(MediaPermit {
+            permits: self.permits.clone(),
+        })
+    }
+
+    async fn decode(
+        &self,
+        app_id: String,
+        id: String,
+        notification: HashMap<String, OwnedValue>,
+    ) -> Result<crate::PortalDecoded, crate::Error> {
+        let serial = self.serial.clone();
+        blocking::unblock(move || {
+            let _guard = serial
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            super::portal_with_media(app_id, id, notification)
+        })
+        .await
+    }
+}
+
+struct MediaPermit {
+    permits: Sender<()>,
+}
+
+impl Drop for MediaPermit {
+    fn drop(&mut self) {
+        let _ = self.permits.try_send(());
+    }
 }
 
 #[interface(name = "org.freedesktop.impl.portal.Notification")]
@@ -818,17 +883,27 @@ impl PortalInterface {
         #[zbus(connection)] connection: &Connection,
     ) -> fdo::Result<()> {
         verify_portal_caller(connection, &header).await?;
-        let request = super::portal(app_id, id, notification).map_err(invalid_wire)?;
-        let policy = self.history.policy(request.source.app_id()).await;
+        let _permit = self
+            .media_decoder
+            .try_acquire()
+            .ok_or_else(|| fdo::Error::Failed("notification media decoder is busy".into()))?;
+        let mut decoded = self
+            .media_decoder
+            .decode(app_id, id, notification)
+            .await
+            .map_err(invalid_wire)?;
+        let policy = self.history.policy(decoded.request.source.app_id()).await;
         let (outcome, notification) = self
             .core
-            .post_event(request, policy)
+            .post_event(decoded.request, policy)
             .map_err(domain_error)?;
+        decoded.media.retain_for(outcome.delivery);
         publish(
             &self.events,
             RuntimeEvent::Posted {
                 outcome,
                 notification,
+                media: decoded.media,
             },
         )
         .await
@@ -1114,6 +1189,7 @@ pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceE
         core: core.clone(),
         events: events.clone(),
         history: history.clone(),
+        media_decoder: MediaDecoder::new(),
     };
     let center = CenterInterface {
         history: history.clone(),
@@ -1365,6 +1441,7 @@ mod tests {
             .record(&RuntimeEvent::Posted {
                 outcome: posted,
                 notification: active.first().cloned().map(Box::new),
+                media: crate::media::NotificationMedia::default(),
             })
             .is_some());
         assert_eq!(
@@ -1415,6 +1492,7 @@ mod tests {
             .record(&RuntimeEvent::Posted {
                 outcome,
                 notification,
+                media: crate::media::NotificationMedia::default(),
             })
             .unwrap();
         assert_eq!(recorded.indicator.unread_count, 1);
@@ -1440,6 +1518,7 @@ mod tests {
             .record(&RuntimeEvent::Posted {
                 outcome,
                 notification,
+                media: crate::media::NotificationMedia::default(),
             })
             .unwrap();
         let applications = history.applications();
@@ -1507,6 +1586,7 @@ mod tests {
             .record(&RuntimeEvent::Posted {
                 outcome,
                 notification,
+                media: crate::media::NotificationMedia::default(),
             })
             .unwrap();
 
@@ -1577,6 +1657,7 @@ mod tests {
             .record(&RuntimeEvent::Posted {
                 outcome,
                 notification,
+                media: crate::media::NotificationMedia::default(),
             })
             .unwrap();
 
@@ -1644,6 +1725,7 @@ mod tests {
             core: core.clone(),
             events: events.clone(),
             history: history.clone(),
+            media_decoder: MediaDecoder::new(),
         };
         let center = CenterInterface {
             history,
@@ -1678,6 +1760,17 @@ mod tests {
         assert!(center_xml.contains("method name=\"SetPolicy\""));
         assert!(center_xml.contains("signal name=\"Changed\""));
         assert!(center_xml.contains("signal name=\"PoliciesChanged\""));
+    }
+
+    #[test]
+    fn media_decoder_admission_is_bounded_and_returned_on_drop() {
+        let decoder = MediaDecoder::new();
+        let mut permits = (0..MEDIA_ADMISSIONS)
+            .map(|_| decoder.try_acquire().unwrap())
+            .collect::<Vec<_>>();
+        assert!(decoder.try_acquire().is_none());
+        permits.pop();
+        assert!(decoder.try_acquire().is_some());
     }
 
     #[test]

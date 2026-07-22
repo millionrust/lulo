@@ -14,6 +14,7 @@ use rmac_notifications::{ActionTarget, Request};
 use zbus::zvariant::{serialized::Context, to_bytes, Endian, OwnedValue};
 
 pub mod center;
+pub mod media;
 pub mod service;
 
 pub const FREEDESKTOP_CAPABILITIES: &[&str] = &["actions", "body", "persistence"];
@@ -24,6 +25,7 @@ pub enum ErrorKind {
     InvalidValue,
     InvalidMarkup,
     InvalidTarget,
+    InvalidMedia(media::ErrorKind),
     Domain,
 }
 
@@ -85,11 +87,25 @@ pub fn freedesktop(
     .map_err(|_| Error::new("request", ErrorKind::Domain))
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortalDecoded {
+    pub request: Request,
+    pub media: media::NotificationMedia,
+}
+
 pub fn portal(
     app_id: String,
     id: String,
-    mut notification: HashMap<String, OwnedValue>,
+    notification: HashMap<String, OwnedValue>,
 ) -> Result<Request, Error> {
+    portal_with_media(app_id, id, notification).map(|decoded| decoded.request)
+}
+
+pub fn portal_with_media(
+    app_id: String,
+    id: String,
+    mut notification: HashMap<String, OwnedValue>,
+) -> Result<PortalDecoded, Error> {
     let title = take_string(&mut notification, "title")?;
     let body = take_string(&mut notification, "body")?;
     let markup_body_plain = take_string(&mut notification, "markup-body")?
@@ -105,11 +121,25 @@ pub fn portal(
     let display_hints =
         take_optional::<Vec<String>>(&mut notification, "display-hint")?.unwrap_or_default();
     let category = take_string(&mut notification, "category")?;
-    let sound = take_portal_sound(&mut notification)?;
-    // Icon and validated custom media are presentation resources, not reducer
-    // state. The runtime adapter will validate sealed fds before publishing a
-    // separate bounded media handle; unknown optional keys are ignored.
-    protocol::portal(PortalInput {
+    let icon = notification
+        .remove("icon")
+        .map(media::take_icon)
+        .transpose()
+        .map_err(media_error)?
+        .flatten();
+    let sound = notification
+        .remove("sound")
+        .map(media::take_sound)
+        .transpose()
+        .map_err(media_error)?
+        .unwrap_or_default();
+    let (sound, custom_sound) = match sound {
+        media::SoundValue::Unspecified => (PortalSound::Unspecified, None),
+        media::SoundValue::Default => (PortalSound::Default, None),
+        media::SoundValue::Silent => (PortalSound::Silent, None),
+        media::SoundValue::Custom(sound) => (PortalSound::CustomValidated, Some(sound)),
+    };
+    let request = protocol::portal(PortalInput {
         app_id,
         id,
         title,
@@ -123,7 +153,14 @@ pub fn portal(
         category,
         sound,
     })
-    .map_err(|_| Error::new("notification", ErrorKind::Domain))
+    .map_err(|_| Error::new("notification", ErrorKind::Domain))?;
+    Ok(PortalDecoded {
+        request,
+        media: media::NotificationMedia {
+            icon,
+            sound: custom_sound,
+        },
+    })
 }
 
 fn take_buttons(
@@ -155,20 +192,8 @@ fn take_buttons(
         .collect()
 }
 
-fn take_portal_sound(notification: &mut HashMap<String, OwnedValue>) -> Result<PortalSound, Error> {
-    let Some(value) = notification.remove("sound") else {
-        return Ok(PortalSound::Unspecified);
-    };
-    if let Ok(name) = <&str>::try_from(&value) {
-        return match name {
-            "default" => Ok(PortalSound::Default),
-            "silent" => Ok(PortalSound::Silent),
-            _ => Err(Error::new("sound", ErrorKind::InvalidValue)),
-        };
-    }
-    // Custom sound fd tuples require the media validator, which is not part of
-    // this state-only slice. Ignoring them is permitted by the portal contract.
-    Ok(PortalSound::Unspecified)
+fn media_error(error: media::Error) -> Error {
+    Error::new(error.field, ErrorKind::InvalidMedia(error.kind))
 }
 
 fn target(field: &'static str, value: OwnedValue) -> Result<ActionTarget, Error> {
@@ -392,6 +417,33 @@ mod tests {
         assert!(!request.actions[0].target().unwrap().bytes().is_empty());
         assert!(request.display.show_as_new);
         assert_eq!(request.sound, rmac_notifications::Sound::Silent);
+    }
+
+    #[test]
+    fn portal_wire_separates_validated_media_from_reducer_state() {
+        let icon = owned((
+            "themed".to_owned(),
+            owned(vec![
+                "mail-unread-symbolic".to_owned(),
+                "mail-unread".to_owned(),
+            ]),
+        ));
+        let notification = HashMap::from([
+            ("title".into(), string("Message")),
+            ("icon".into(), icon),
+            ("sound".into(), string("default")),
+        ]);
+        let decoded =
+            portal_with_media("org.example.Chat".into(), "message-8".into(), notification).unwrap();
+        assert_eq!(decoded.request.sound, rmac_notifications::Sound::Default);
+        assert!(matches!(
+            decoded.media.icon,
+            Some(media::Icon::Themed(ref names))
+                if names.len() == 2
+                    && names[0] == "mail-unread-symbolic"
+                    && names[1] == "mail-unread"
+        ));
+        assert!(decoded.media.sound.is_none());
     }
 
     #[test]

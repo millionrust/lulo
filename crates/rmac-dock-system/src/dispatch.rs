@@ -39,6 +39,7 @@ pub struct PreparedAction {
 enum Execution {
     Activation(rmac_dock::Activation),
     Context(rmac_dock::ContextAction),
+    Special(rmac_dock::SpecialActivation),
     Rejected(Error),
 }
 
@@ -93,6 +94,7 @@ impl PendingAction {
                 crate::execute(activation, request_id, backend).await
             }
             Execution::Context(action) => crate::execute_context(action, request_id, backend).await,
+            Execution::Special(activation) => crate::execute_special(activation, backend).await,
             Execution::Rejected(error) => Err(error.clone()),
         };
         Completion {
@@ -121,7 +123,8 @@ impl Completion {
 
 /// Resolve a menu intent against the newest coherent Dock model. The menu may
 /// have been open across catalog, compositor, or settings changes; no launch
-/// specification, window action, or pin command crosses this boundary stale.
+/// specification, window action, pin command, or private place authority
+/// crosses this boundary stale.
 pub fn prepare(
     model: &rmac_dock::Model,
     action: rmac_dock::menu::Action,
@@ -130,13 +133,32 @@ pub fn prepare(
         rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Application(
             requested_id,
         )) => prepare_application_activation(model, &requested_id),
-        rmac_dock::menu::Action::ActivateEntry(
-            rmac_dock::presentation::EntryId::Special(_)
-            | rmac_dock::presentation::EntryId::Overflow,
-        ) => Err(PrepareError::UnsupportedEntry),
+        rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(kind)) => {
+            Ok(Preparation::Ready(prepare_special_activation(model, kind)))
+        }
+        rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Overflow) => {
+            Err(PrepareError::UnsupportedEntry)
+        }
         rmac_dock::menu::Action::Context(action) => {
             Ok(Preparation::Ready(prepare_context_action(model, &action)))
         }
+    }
+}
+
+fn prepare_special_activation(
+    model: &rmac_dock::Model,
+    kind: rmac_dock::SpecialItemKind,
+) -> PreparedAction {
+    let activation = model.activate_special(kind);
+    let operation = match &activation {
+        rmac_dock::SpecialActivation::OpenDirectory { .. }
+        | rmac_dock::SpecialActivation::OpenTrash => Operation::OpenPlace,
+        rmac_dock::SpecialActivation::Unavailable { .. } => Operation::Resolve,
+    };
+    PreparedAction {
+        target: ActionTarget::Special(kind),
+        operation,
+        execution: Execution::Special(activation),
     }
 }
 
@@ -349,13 +371,23 @@ mod tests {
 
         fn open_directory(
             &self,
-            _: &Path,
+            path: &Path,
         ) -> crate::BackendFuture<'_, Result<(), crate::BackendError>> {
-            Box::pin(async { Ok(()) })
+            let path = path.to_path_buf();
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .unwrap()
+                    .push(format!("directory {}", path.display()));
+                Ok(())
+            })
         }
 
         fn open_trash(&self) -> crate::BackendFuture<'_, Result<(), crate::BackendError>> {
-            Box::pin(async { Ok(()) })
+            Box::pin(async move {
+                self.calls.lock().unwrap().push("trash".into());
+                Ok(())
+            })
         }
     }
 
@@ -410,6 +442,39 @@ mod tests {
                 windows,
                 ..Default::default()
             },
+        )
+    }
+
+    fn places(
+        downloads: &str,
+        downloads_exists: bool,
+        trash_count: usize,
+    ) -> rmac_places::Snapshot {
+        rmac_places::Snapshot {
+            home: rmac_places::Place {
+                path: PathBuf::from("/home/alex"),
+                exists: true,
+            },
+            downloads: rmac_places::Place {
+                path: PathBuf::from(downloads),
+                exists: downloads_exists,
+            },
+            downloads_configured: true,
+            trash: rmac_places::TrashSnapshot {
+                available: true,
+                empty: trash_count == 0,
+                item_count: trash_count,
+            },
+        }
+    }
+
+    fn model_with_places(downloads: &str, downloads_exists: bool) -> rmac_dock::Model {
+        rmac_dock::Model::build_with_places(
+            &[],
+            &Default::default(),
+            &[application("terminal")],
+            &Default::default(),
+            &places(downloads, downloads_exists, 3),
         )
     }
 
@@ -558,6 +623,148 @@ mod tests {
                 target: ActionTarget::Application(app_id),
             }) if app_id == "terminal.desktop"
         ));
+    }
+
+    #[test]
+    fn special_activation_resolves_the_current_private_path_at_prepare_time() {
+        let current = model_with_places("/home/alex/Current Downloads", true);
+        let Preparation::Ready(prepared) = prepare(
+            &current,
+            rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
+                rmac_dock::SpecialItemKind::Downloads,
+            )),
+        )
+        .unwrap() else {
+            panic!("Downloads is ready");
+        };
+        assert_eq!(prepared.operation(), Operation::OpenPlace);
+        assert_eq!(
+            prepared.target(),
+            &ActionTarget::Special(rmac_dock::SpecialItemKind::Downloads)
+        );
+        assert!(!format!("{prepared:?}").contains("Current Downloads"));
+
+        let mut state = State::default();
+        let backend = FakeBackend::default();
+        let completion = futures_lite::future::block_on(
+            prepared
+                .begin(&mut state)
+                .unwrap()
+                .run(rmac_compositor::ActivationId(1), &backend),
+        );
+        let (result, transition) = completion.apply(&mut state);
+        assert_eq!(
+            result,
+            Ok(Outcome::PlaceOpened {
+                kind: rmac_dock::SpecialItemKind::Downloads,
+            })
+        );
+        assert!(transition.snapshot.busy.is_empty());
+        assert_eq!(
+            backend.calls.into_inner().unwrap(),
+            ["directory /home/alex/Current Downloads"]
+        );
+    }
+
+    #[test]
+    fn unavailable_special_entry_becomes_feedback_without_backend_work() {
+        let current = model("terminal", Vec::new(), true);
+        let Preparation::Ready(prepared) = prepare(
+            &current,
+            rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
+                rmac_dock::SpecialItemKind::Files,
+            )),
+        )
+        .unwrap() else {
+            panic!("unavailable Files produces feedback");
+        };
+        assert_eq!(prepared.operation(), Operation::Resolve);
+
+        let mut state = State::default();
+        let backend = FakeBackend::default();
+        let completion = futures_lite::future::block_on(
+            prepared
+                .begin(&mut state)
+                .unwrap()
+                .run(rmac_compositor::ActivationId(1), &backend),
+        );
+        let (result, transition) = completion.apply(&mut state);
+        assert!(matches!(
+            result,
+            Err(Error {
+                kind: FailureKind::Unavailable,
+                ..
+            })
+        ));
+        assert_eq!(
+            transition.snapshot.feedback[0].reason,
+            crate::interaction::FeedbackReason::ServiceUnavailable
+        );
+        assert!(backend.calls.into_inner().unwrap().is_empty());
+    }
+
+    #[test]
+    fn trash_uses_the_same_ticketed_special_dispatch_path() {
+        let current = model_with_places("/home/alex/Downloads", true);
+        let Preparation::Ready(prepared) = prepare(
+            &current,
+            rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
+                rmac_dock::SpecialItemKind::Trash,
+            )),
+        )
+        .unwrap() else {
+            panic!("Trash is ready");
+        };
+        let mut state = State::default();
+        let backend = FakeBackend::default();
+        let pending = prepared.begin(&mut state).unwrap();
+        assert!(pending
+            .started()
+            .snapshot
+            .busy
+            .contains(&ActionTarget::Special(rmac_dock::SpecialItemKind::Trash)));
+        let completion =
+            futures_lite::future::block_on(pending.run(rmac_compositor::ActivationId(1), &backend));
+        let (result, _) = completion.apply(&mut state);
+        assert_eq!(
+            result,
+            Ok(Outcome::PlaceOpened {
+                kind: rmac_dock::SpecialItemKind::Trash,
+            })
+        );
+        assert_eq!(backend.calls.into_inner().unwrap(), ["trash"]);
+    }
+
+    #[test]
+    fn special_busy_state_is_scoped_by_typed_identity() {
+        let current = model_with_places("/home/alex/Downloads", true);
+        let action = |kind| {
+            let Preparation::Ready(prepared) = prepare(
+                &current,
+                rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
+                    kind,
+                )),
+            )
+            .unwrap() else {
+                panic!("special entry is ready");
+            };
+            prepared
+        };
+        let mut state = State::default();
+        let _downloads = action(rmac_dock::SpecialItemKind::Downloads)
+            .begin(&mut state)
+            .unwrap();
+        let _files = action(rmac_dock::SpecialItemKind::Files)
+            .begin(&mut state)
+            .unwrap();
+
+        assert!(matches!(
+            action(rmac_dock::SpecialItemKind::Downloads).begin(&mut state),
+            Err(BeginError::Busy {
+                target: ActionTarget::Special(rmac_dock::SpecialItemKind::Downloads),
+            })
+        ));
+        assert_eq!(state.snapshot().busy.len(), 2);
     }
 
     #[test]

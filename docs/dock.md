@@ -118,14 +118,17 @@ stale error. Success removes busy state but never changes the Dock model—the
 catalog, niri, settings, and places watchers remain authoritative.
 
 `rmac-dock-system::dispatch` now closes the gap between an accepted menu row
-and those asynchronous executors. It revalidates every application intent
-against the newest coherent model before issuing a ticket: launch-new adopts
-the current catalog launch specification, a focus or close action requires its
-exact window ID to still exist, and pin/unpin/reorder requires the same command
-to remain valid instead of silently becoming its opposite. A focused
+or shelf entry and those asynchronous executors. It revalidates every
+application intent against the newest coherent model before issuing a ticket:
+launch-new adopts the current catalog launch specification, a focus or close
+action requires its exact window ID to still exist, and pin/unpin/reorder
+requires the same command to remain valid instead of silently becoming its
+opposite. Files and Downloads likewise resolve their newest private directory
+authority only during preparation, while Trash resolves its current desktop
+URI action; no private path enters the menu intent or Debug output. A focused
 single-window activation remains an explicit no-op, malformed entry identities
-fail before ticketing, and stale but well-formed actions become private-safe
-rejected feedback without touching a platform service.
+fail before ticketing, and stale or unavailable actions become private-safe
+feedback without touching an inappropriate platform service.
 
 The prepared action owns its exact target and operation as it enters the busy
 state. Its pending value then owns the monotonic ticket throughout asynchronous
@@ -142,7 +145,7 @@ message is therefore safe for a toast/status node, and feedback is explicitly
 dismissible. State is bounded to 64 simultaneous targets and the 16 newest
 feedback records, published chronologically; retry clears the target's previous
 feedback. The real renderer still needs to invoke this dispatch boundary from
-its menu nodes, show busy/error visuals, and restore menu focus.
+its shelf and menu nodes, show busy/error visuals, and restore menu focus.
 
 ## Live runtime
 

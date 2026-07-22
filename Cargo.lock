@@ -5331,8 +5331,11 @@ dependencies = [
  "image",
  "libc",
  "quick-xml 0.39.4",
+ "rmac-appearance",
+ "rmac-compositor",
  "rmac-focus-linux",
  "rmac-notifications",
+ "rmac-notifications-runtime",
  "rmac-notifications-store",
  "zbus",
 ]

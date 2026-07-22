@@ -14,7 +14,10 @@ futures-util.workspace = true
 image = { workspace = true, features = ["jpeg", "png"] }
 libc.workspace = true
 quick-xml.workspace = true
+rmac-appearance.workspace = true
+rmac-compositor.workspace = true
 rmac-focus-linux.workspace = true
 rmac-notifications.workspace = true
+rmac-notifications-runtime.workspace = true
 rmac-notifications-store.workspace = true
 zbus.workspace = true

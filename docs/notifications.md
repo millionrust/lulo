@@ -159,13 +159,12 @@ leaving or closing the focused banner emits one restoration effect. Output
 disconnect moves visual banners to the connected fallback and reapplies the
 bound without closing their notification records.
 
-`rmac-notifications-runtime` joins this state with the authoritative
-notification snapshot, compositor topology/focus, and resolved appearance. It
-copies no content. A post uses the notification's computed banner delivery and
-timeout duration, then resolves the focused connected output. Temporary loss
-of the compositor keeps the last-known-good topology; hotplug moves existing
-banners without closing records. Appearance changes can finish active motion
-immediately.
+The `rmac-notifications-runtime` coordinator joins this state with compositor
+topology/focus and resolved appearance without copying content. A post uses the
+notification's computed banner delivery and timeout duration, then resolves
+the focused connected output. Temporary loss of the compositor keeps the
+last-known-good topology; hotplug moves existing banners without closing
+records. Appearance changes can finish active motion immediately.
 
 Runtime effects collapse to one redraw plus typed focus and service commands.
 Paused timeout completion emits `Expire(id)`, which calls the service's
@@ -204,6 +203,27 @@ a banner before its exit animation completes, the presenter retains its last
 validated content until the stack removes the terminal visual; focused content
 then releases focus exactly once. A malformed, duplicate, missing, or oversized
 snapshot fails atomically without replacing the last valid presentation.
+
+`rmac_notifications_linux::banner::BannerSession` is the authority-bound E2
+host state. It consumes the service's owned runtime events after the same event
+has updated Center history, supplies exact validated content to the presenter,
+and retains only icon media belonging to current or terminal cards. Posts wait
+in a replacement-aware queue until a real compositor output exists; neither
+their announcement nor sound cue fires early, and each fires only once when the
+banner can actually be published. Policy-suppressed replacements animate the
+previous validated card out and never substitute the newly suppressed content
+or icon.
+
+Pointer/touch and keyboard activation share the presenter's exact stable
+control IDs. The session maps those IDs to default, original button position,
+dismiss, or single-banner expiry requests against the same `ServiceHandle` as
+both D-Bus protocols. Activation tokens are optional, bounded, control-free,
+and redacted. The bounded event receiver must continue draining while a service
+request executes; action/close events may lawfully arrive before the operation
+future completes, and the session reconciles either ordering without restarting
+terminal motion or unlocking a different control. The remaining Linux host
+must render the frame, resolve themed/frozen icons, play each emitted sound cue
+with the independent 15-second deadline, and surface operation failures.
 
 ## Notification Center storage
 

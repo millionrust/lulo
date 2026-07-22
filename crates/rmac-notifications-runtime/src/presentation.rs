@@ -279,7 +279,7 @@ impl Presenter {
             Key::BackTab | Key::ArrowUp => self.move_focus(false, false),
             Key::Home => self.move_focus(true, true),
             Key::End => self.move_focus(false, true),
-            Key::Enter | Key::Space => self.activate(),
+            Key::Enter | Key::Space => self.activate_focused(),
             Key::Escape => {
                 if self.focused.take().is_some() {
                     Effect::ReleaseFocus
@@ -288,6 +288,19 @@ impl Presenter {
                 }
             }
         }
+    }
+
+    /// Activates one exact pointer/touch-selected control without changing
+    /// keyboard focus. A second operation cannot start while one is pending.
+    pub fn activate_control(&mut self, control: ControlId) -> Effect {
+        if self.pending.is_some() {
+            return Effect::None;
+        }
+        let Some(intent) = self.intent(control) else {
+            return Effect::None;
+        };
+        self.pending = Some(control);
+        Effect::Activate { control, intent }
     }
 
     /// Clears one exact completed service operation. Mismatched/stale
@@ -329,15 +342,11 @@ impl Presenter {
         self.select(next)
     }
 
-    fn activate(&mut self) -> Effect {
+    fn activate_focused(&mut self) -> Effect {
         let Some(control) = self.focused else {
             return Effect::None;
         };
-        let Some(intent) = self.intent(control) else {
-            return Effect::None;
-        };
-        self.pending = Some(control);
-        Effect::Activate { control, intent }
+        self.activate_control(control)
     }
 
     fn intent(&self, control: ControlId) -> Option<Intent> {

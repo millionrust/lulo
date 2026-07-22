@@ -13,6 +13,7 @@ use rmac_notifications::protocol::{
 use rmac_notifications::{ActionTarget, Request};
 use zbus::zvariant::{serialized::Context, to_bytes, Endian, OwnedValue};
 
+pub mod banner;
 pub mod center;
 pub mod media;
 pub mod service;

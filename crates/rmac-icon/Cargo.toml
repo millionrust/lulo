@@ -1,0 +1,13 @@
+[package]
+name = "rmac-icon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+image = { workspace = true, features = ["jpeg", "png"] }
+libc.workspace = true
+quick-xml.workspace = true
+resvg.workspace = true

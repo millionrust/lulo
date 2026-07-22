@@ -4999,15 +4999,12 @@ version = "0.1.0"
 dependencies = [
  "blocking",
  "futures-lite 2.6.1",
- "image",
- "libc",
- "quick-xml 0.39.4",
- "resvg",
  "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-dock",
+ "rmac-icon",
  "rmac-places",
  "rmac-places-system",
  "rmac-portal",
@@ -5098,6 +5095,16 @@ name = "rmac-gtk-settings"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
+]
+
+[[package]]
+name = "rmac-icon"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "libc",
+ "quick-xml 0.39.4",
+ "resvg",
 ]
 
 [[package]]
@@ -5333,9 +5340,11 @@ dependencies = [
  "libc",
  "quick-xml 0.39.4",
  "rmac-appearance",
+ "rmac-apps",
  "rmac-audio",
  "rmac-compositor",
  "rmac-focus-linux",
+ "rmac-icon",
  "rmac-notifications",
  "rmac-notifications-runtime",
  "rmac-notifications-store",

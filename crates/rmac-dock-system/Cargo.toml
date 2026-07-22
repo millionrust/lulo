@@ -8,15 +8,12 @@ publish = false
 
 [dependencies]
 blocking.workspace = true
-image = { workspace = true, features = ["png"] }
-libc.workspace = true
-quick-xml.workspace = true
-resvg.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-dock.workspace = true
+rmac-icon.workspace = true
 rmac-places.workspace = true
 rmac-places-system.workspace = true
 rmac-portal.workspace = true

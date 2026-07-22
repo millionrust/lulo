@@ -227,6 +227,49 @@ pub fn find_desktop_entry<'a>(
         })
 }
 
+/// Exact XDG icon-theme resolver shared by shell surfaces. Resolution keeps
+/// theme metadata cached, accepts only safe theme icon names, and returns a
+/// private source path that callers must decode on a bounded worker.
+pub struct ThemedIconResolver {
+    environment: Environment,
+}
+
+impl ThemedIconResolver {
+    pub fn current() -> Self {
+        Self {
+            environment: Environment::current(),
+        }
+    }
+
+    /// Resolves one name at the requested physical pixel edge. Scale-qualified
+    /// theme directories participate through their physical-size distance.
+    pub fn resolve(&self, name: &str, pixel_edge: u32) -> Option<PathBuf> {
+        if pixel_edge == 0 || pixel_edge > 512 {
+            return None;
+        }
+        resolve_named_icon(name, pixel_edge, &self.environment)
+    }
+}
+
+impl Default for ThemedIconResolver {
+    fn default() -> Self {
+        Self::current()
+    }
+}
+
+impl std::fmt::Debug for ThemedIconResolver {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ThemedIconResolver")
+            .field("theme", &"<redacted>")
+            .field(
+                "cached_themes",
+                &self.environment.theme_cache.borrow().len(),
+            )
+            .finish()
+    }
+}
+
 pub fn launch(spec: &LaunchSpec) -> io::Result<Child> {
     match spec {
         LaunchSpec::OpenPath(path) => Command::new("open").arg(path).spawn(),
@@ -794,6 +837,10 @@ fn resolve_icon(icon: &str, environment: &Environment) -> Option<PathBuf> {
     if icon_path.is_absolute() && icon_path.is_file() {
         return Some(icon_path.to_path_buf());
     }
+    resolve_named_icon(icon, 64, environment)
+}
+
+fn resolve_named_icon(icon: &str, pixel_edge: u32, environment: &Environment) -> Option<PathBuf> {
     let bases = icon_base_directories(environment);
     let icon = normalized_icon_name(icon)?;
     let theme = environment.icon_theme.as_deref().unwrap_or("Adwaita");
@@ -802,7 +849,7 @@ fn resolve_icon(icon: &str, environment: &Environment) -> Option<PathBuf> {
         else {
             continue;
         };
-        if let Some(path) = lookup_icon_in_theme(icon, 64, 1, &theme, &bases, &metadata) {
+        if let Some(path) = lookup_icon_in_theme(icon, pixel_edge, 1, &theme, &bases, &metadata) {
             return Some(path);
         }
     }
@@ -1526,6 +1573,33 @@ mod tests {
         std::fs::create_dir_all(user_parent_icon.parent().unwrap()).unwrap();
         std::fs::write(&user_parent_icon, b"user parent").unwrap();
         assert_eq!(resolve_icon("demo", &environment), Some(user_parent_icon));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn shared_themed_resolver_uses_physical_edge_and_rejects_unsafe_names() {
+        let root = temporary_directory("shared-icon-resolver");
+        write_theme(
+            &root,
+            "Scaled",
+            "",
+            "32x32@2/apps",
+            "Size=32\nScale=2\nType=Fixed",
+        );
+        let icon = root.join("icons/Scaled/32x32@2/apps/message.png");
+        std::fs::write(&icon, b"icon").unwrap();
+        let mut environment = environment();
+        environment.home = None;
+        environment.data_home = Some(root.clone());
+        environment.data_dirs.clear();
+        environment.icon_theme = Some("Scaled".into());
+        let resolver = ThemedIconResolver { environment };
+
+        assert_eq!(resolver.resolve("message", 64), Some(icon));
+        assert!(resolver.resolve("../message", 64).is_none());
+        assert!(resolver.resolve("message", 0).is_none());
+        assert!(resolver.resolve("message", 513).is_none());
+        assert!(!format!("{resolver:?}").contains("Scaled"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

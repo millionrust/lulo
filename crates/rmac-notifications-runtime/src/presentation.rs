@@ -72,6 +72,7 @@ pub struct Card {
     pub phase: PhaseSnapshot,
     pub pause: PauseState,
     pub stack_index: usize,
+    pub app_id: String,
     pub app_name: String,
     pub title: String,
     pub body: String,
@@ -90,6 +91,7 @@ impl fmt::Debug for Card {
             .field("phase", &self.phase)
             .field("pause", &self.pause)
             .field("stack_index", &self.stack_index)
+            .field("app_id", &"<redacted>")
             .field("app_name", &"<redacted>")
             .field("title", &"<redacted>")
             .field("body", &"<redacted>")
@@ -468,6 +470,7 @@ fn card(
         phase: banner.phase,
         pause: banner.pause,
         stack_index: banner.stack_index,
+        app_id: app_id.to_owned(),
         app_name: app_name.to_owned(),
         title,
         body,
@@ -558,6 +561,7 @@ mod tests {
             }]
         );
         let controls = &presenter.cards()[0].controls;
+        assert_eq!(presenter.cards()[0].app_id, "org.example.Private");
         assert_eq!(controls.len(), 4);
         assert_eq!(controls[0].id, ControlId::Card(presenter.cards()[0].id));
         assert_eq!(
@@ -570,6 +574,11 @@ mod tests {
         assert_eq!(controls[1].label, "Archive Private 8472");
         assert_eq!(controls[2].label, "Reply");
         assert_eq!(controls[3].id, ControlId::Dismiss(presenter.cards()[0].id));
+        let diagnostics = format!("{:?}", presenter.cards()[0]);
+        assert!(!diagnostics.contains("org.example.Private"));
+        assert!(!diagnostics.contains("Private Chat 8472"));
+        assert!(!diagnostics.contains("Private title 8472"));
+        assert!(!diagnostics.contains("Private body 8472"));
         let debug = format!("{presenter:?}");
         assert!(!debug.contains("Private title 8472"));
         assert!(!debug.contains("Private body 8472"));

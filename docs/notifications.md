@@ -214,6 +214,27 @@ banner can actually be published. Policy-suppressed replacements animate the
 previous validated card out and never substitute the newly suppressed content
 or icon.
 
+Each renderer card now carries its exact validated application ID while keeping
+that identity redacted from diagnostics. `rmac_notifications_linux::icon`
+turns a logical icon edge and finite output scale into one exact rounded-up
+physical edge, then resolves a portal file or ordered themed name before the
+exact application-catalog icon. Only the standard `.desktop` suffix alias is
+accepted; missing or failed sources remain an explicit generic fallback rather
+than guessing from the visible application name. The shared XDG resolver uses
+theme directory size and scale metadata, and the shared `rmac-icon` boundary
+content-detects bounded PNG, JPEG, or non-executable SVG into centered square
+RGBA8 pixels.
+
+Frozen portal pixels use a notification-, size-, declared-format-, and exact
+source-identity cache. Theme and catalog files use a metadata-revalidated LRU;
+both are byte bounded, serialize decoding, redact sources and pixels from
+diagnostics, and can be refreshed when the theme or application catalog
+changes. A replaced notification cannot reuse the old frozen image, a declared
+format mismatch fails closed, and retiring cards release their portal cache
+entries. Resolution is synchronous by contract, so the Linux surface host must
+call it on its bounded icon worker and upload only the returned renderer-ready
+pixels.
+
 Pointer/touch and keyboard activation share the presenter's exact stable
 control IDs. The session maps those IDs to default, original button position,
 dismiss, or single-banner expiry requests against the same `ServiceHandle` as
@@ -222,9 +243,10 @@ and redacted. The bounded event receiver must continue draining while a service
 request executes; action/close events may lawfully arrive before the operation
 future completes, and the session reconciles either ordering without restarting
 terminal motion or unlocking a different control. The remaining Linux host
-must render the frame, resolve themed/frozen icons, play each emitted sound cue
-through the single-admission `SoundPlayer`, and surface operation failures. The
-player uses an original bounded default cue or the validated custom bytes,
+must render the frame, submit retained icons to the ready icon worker, upload
+the returned RGBA pixels, play each emitted sound cue through the
+single-admission `SoundPlayer`, and surface operation failures. The player uses
+an original bounded default cue or the validated custom bytes,
 passes a sealed seekable `memfd` to `pw-play` without a temporary pathname, and
 kills/reaps playback at the independent 15-second deadline.
 

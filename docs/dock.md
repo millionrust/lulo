@@ -232,16 +232,19 @@ SVG assets embedded in the crate, so session startup cannot race an
 installation path. The full Trash icon and badge appear only from an
 authoritative positive count; empty and unknown state never invent a badge.
 External icon paths have a redacted debug representation. The future renderer
-must use `rmac-dock-system::icons` from a worker and remains responsible for
-accessible button semantics. The decoder reads at most 4 MiB, detects content
-rather than trusting the extension, and accepts PNG or a deliberately bounded
-SVG subset. PNG dimensions, pixels, decoder allocation, and final output are
-capped. SVG parsing caps depth, elements, attributes, coordinates, and output;
+must use the shared `rmac-icon` decoder from a worker; the existing
+`rmac-dock-system::icons` path remains a compatibility re-export. The renderer
+remains responsible for accessible button semantics. The decoder reads at most
+4 MiB, detects content rather than trusting the extension, and accepts PNG,
+JPEG, or a deliberately bounded SVG subset. Raster dimensions, pixels, decoder
+allocation, and final output are capped. SVG parsing caps depth, elements,
+attributes, coordinates, and output;
 disables DTDs, processing instructions, scripts, event attributes, external or
 embedded images, filters, and expansion-heavy `use`; and installs resolvers
-that cannot read files or URLs. Both formats become a centered, exact-size,
-non-premultiplied RGBA8 square no larger than 512 pixels. Invisible, malformed,
-oversized, unsupported (including legacy XPM), and unsafe files return typed,
+that cannot read files or URLs. All supported formats become a centered,
+exact-size, non-premultiplied RGBA8 square no larger than 512 pixels. Invisible,
+malformed, oversized, unsupported (including legacy XPM), and unsafe files
+return typed,
 path-free failures so the renderer can use the embedded application tile.
 
 The shared decoder cache serializes misses, verifies device/inode/mtime/length

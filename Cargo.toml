@@ -49,6 +49,7 @@ rmac-focus-runtime = { version = "=0.1.0", path = "crates/rmac-focus-runtime" }
 rmac-focus-linux = { version = "=0.1.0", path = "crates/rmac-focus-linux" }
 rmac-focus-settings = { version = "=0.1.0", path = "crates/rmac-focus-settings" }
 rmac-gtk-settings = { version = "=0.1.0", path = "crates/rmac-gtk-settings" }
+rmac-icon = { version = "=0.1.0", path = "crates/rmac-icon" }
 rmac-mounts = { version = "=0.1.0", path = "crates/rmac-mounts" }
 rmac-network = { version = "=0.1.0", path = "crates/rmac-network" }
 rmac-notes-store = { version = "=0.1.0", path = "crates/rmac-notes-store" }

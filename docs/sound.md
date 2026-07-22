@@ -2,8 +2,36 @@
 
 System Settings treats the user's PipeWire graph and WirePlumber policy as the
 Linux authority for audio devices, defaults, volume, mute, ports, and device
-profiles. It does not keep a private audio preference document or present alert
-sounds or interface effects that have no reviewed session authority.
+profiles. It does not keep a private audio preference document or expose
+unimplemented alert-sound preferences. The notification authority may submit
+only policy-approved E2 cues through the bounded playback path below.
+
+## Notification cue playback
+
+`rmac-audio` plays notification cues with the official `pw-play` client and
+marks the PipeWire stream as `Playback`/`Notification`. The default is an
+original 420 ms rmac two-tone cue synthesized into mono 48 kHz PCM WAV; it does
+not copy a platform vendor's sound. Portal custom cues remain limited to the
+already structurally validated Ogg Opus, Ogg Vorbis, and PCM WAV formats. The
+audio boundary independently checks their 2 MiB bound and format signature
+before starting a process.
+
+Playback bytes are written into a sealed, non-executable `memfd`, rewound, and
+given to `pw-play` as its seekable standard input through `/proc/self/fd/0`.
+There is no shell, command interpolation, temporary pathname, captured media
+diagnostic, or durable copy. Standard output/error are discarded, process
+errors expose classifications only, cancellation kills the child, and a hard
+15-second wall-clock deadline kills and reaps it even though the earlier media
+validator also checked declared duration.
+
+The E2 `SoundPlayer` has one cancellation-safe admission. A concurrent cue
+returns an explicit busy result instead of spawning another decoder/player
+during a flood. The eventual layer-surface host must submit emitted cues through
+this player off its sole runtime-event receiver task and show playback failure
+separately from banner/action state. Ubuntu reference evidence records
+`pw-play`, PipeWire, WirePlumber, and libsndfile versions; real sink routing,
+mute/volume interaction, all three custom codecs, missing-tool behavior,
+cancellation, and the deadline remain reference-PC gates.
 
 ## Current snapshot and mutations
 
@@ -113,4 +141,6 @@ The implementation follows the official
 [`pw-mon` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-mon_1.html),
 [`pw-dump` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-dump_1.html),
 [`pw-cli` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-cli_1.html),
+[`pw-play` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-cat_1.html),
+[libsndfile format support](https://libsndfile.github.io/libsndfile/formats.html),
 and [WirePlumber `wpctl` interface](https://pipewire.pages.freedesktop.org/wireplumber/tools/wpctl.html).

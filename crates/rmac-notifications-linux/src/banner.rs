@@ -13,7 +13,7 @@ use rmac_notifications_runtime::{
     Command as RuntimeCommand, Coordinator, Error as RuntimeError, Update as RuntimeUpdate,
 };
 
-use crate::media::{CustomSound, Icon, NotificationMedia};
+use crate::media::{CustomSound, Icon, NotificationMedia, SoundFormat};
 use crate::service::{ActionError, ActionSelection, RuntimeEvent, ServiceHandle};
 
 pub const MAX_PENDING_POSTS: usize = 500;
@@ -67,6 +67,95 @@ impl fmt::Debug for SoundCue {
                 .field("sound", sound)
                 .finish(),
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct SoundPlayer {
+    permits: async_channel::Receiver<()>,
+    returns: async_channel::Sender<()>,
+}
+
+impl Default for SoundPlayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SoundPlayer {
+    pub fn new() -> Self {
+        let (returns, permits) = async_channel::bounded(1);
+        let inserted = returns.try_send(()).is_ok();
+        debug_assert!(inserted, "fresh sound player has one permit");
+        Self { permits, returns }
+    }
+
+    /// Plays at most one notification sound at once. A concurrent cue fails
+    /// explicitly instead of multiplying decoder/process memory during a
+    /// notification flood. Dropping a cancelled future returns its permit.
+    pub async fn play(&self, cue: &SoundCue) -> Result<(), SoundPlaybackError> {
+        let _permit = self.acquire()?;
+        let sound = match cue {
+            SoundCue::Default(_) => rmac_audio::NotificationSound::Default,
+            SoundCue::Custom { sound, .. } => rmac_audio::NotificationSound::Encoded {
+                format: notification_sound_format(sound.format),
+                bytes: sound.bytes(),
+            },
+        };
+        rmac_audio::play_notification_sound(sound)
+            .await
+            .map_err(|error| SoundPlaybackError::Playback(error.kind()))
+    }
+
+    fn acquire(&self) -> Result<SoundPermit, SoundPlaybackError> {
+        self.permits
+            .try_recv()
+            .map_err(|_| SoundPlaybackError::Busy)?;
+        Ok(SoundPermit {
+            returns: self.returns.clone(),
+        })
+    }
+}
+
+impl fmt::Debug for SoundPlayer {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SoundPlayer")
+            .field("available", &(!self.permits.is_empty()))
+            .finish()
+    }
+}
+
+struct SoundPermit {
+    returns: async_channel::Sender<()>,
+}
+
+impl Drop for SoundPermit {
+    fn drop(&mut self) {
+        let returned = self.returns.try_send(()).is_ok();
+        debug_assert!(returned, "one sound permit is returned exactly once");
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SoundPlaybackError {
+    Busy,
+    Playback(rmac_audio::NotificationPlaybackErrorKind),
+}
+
+impl fmt::Display for SoundPlaybackError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "notification sound failed ({self:?})")
+    }
+}
+
+impl std::error::Error for SoundPlaybackError {}
+
+fn notification_sound_format(format: SoundFormat) -> rmac_audio::NotificationSoundFormat {
+    match format {
+        SoundFormat::OggOpus => rmac_audio::NotificationSoundFormat::OggOpus,
+        SoundFormat::OggVorbis => rmac_audio::NotificationSoundFormat::OggVorbis,
+        SoundFormat::WavPcm => rmac_audio::NotificationSoundFormat::WavPcm,
     }
 }
 
@@ -1029,6 +1118,27 @@ mod tests {
             kind: ServiceErrorKind::InvalidActivationToken,
         };
         assert!(!format!("{error:?}").contains("safe-token"));
+    }
+
+    #[test]
+    fn sound_player_has_one_cancellation_safe_admission() {
+        let player = SoundPlayer::new();
+        let permit = player.acquire().unwrap();
+        assert!(matches!(player.acquire(), Err(SoundPlaybackError::Busy)));
+        drop(permit);
+        assert!(player.acquire().is_ok());
+        assert_eq!(
+            notification_sound_format(SoundFormat::OggOpus),
+            rmac_audio::NotificationSoundFormat::OggOpus
+        );
+        assert_eq!(
+            notification_sound_format(SoundFormat::OggVorbis),
+            rmac_audio::NotificationSoundFormat::OggVorbis
+        );
+        assert_eq!(
+            notification_sound_format(SoundFormat::WavPcm),
+            rmac_audio::NotificationSoundFormat::WavPcm
+        );
     }
 
     #[test]

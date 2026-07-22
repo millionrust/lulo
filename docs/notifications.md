@@ -223,7 +223,10 @@ request executes; action/close events may lawfully arrive before the operation
 future completes, and the session reconciles either ordering without restarting
 terminal motion or unlocking a different control. The remaining Linux host
 must render the frame, resolve themed/frozen icons, play each emitted sound cue
-with the independent 15-second deadline, and surface operation failures.
+through the single-admission `SoundPlayer`, and surface operation failures. The
+player uses an original bounded default cue or the validated custom bytes,
+passes a sealed seekable `memfd` to `pw-play` without a temporary pathname, and
+kills/reaps playback at the independent 15-second deadline.
 
 ## Notification Center storage
 

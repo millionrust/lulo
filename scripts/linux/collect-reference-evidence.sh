@@ -93,6 +93,13 @@ fi
 } >"$output_dir/accessibility.txt"
 
 {
+  command_version pw-play --version
+  command_version pw-cli --version
+  command_version wpctl --version
+  command_version wireplumber --version
+} >"$output_dir/audio.txt"
+
+{
   if command -v systemctl >/dev/null 2>&1; then
     systemctl --user --no-pager --full status xdg-desktop-portal.service 2>&1 || true
     systemctl --user --no-pager --full status xdg-desktop-portal-gnome.service 2>&1 || true
@@ -130,9 +137,9 @@ fi
 
 if command -v dpkg-query >/dev/null 2>&1; then
   dpkg-query -W -f='${Package}\t${Version}\n' \
-    at-spi2-core clang dbus git libvulkan-dev libwayland-dev \
+    at-spi2-core clang dbus git libsndfile1 libvulkan-dev libwayland-dev pipewire-bin \
     mesa-vulkan-drivers orca python3-pyatspi rustc sway \
-    vulkan-tools wayland-utils xdg-desktop-portal \
+    vulkan-tools wayland-utils wireplumber xdg-desktop-portal \
     xdg-desktop-portal-gnome >"$output_dir/packages.txt" 2>&1 || true
 fi
 

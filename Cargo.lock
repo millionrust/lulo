@@ -4905,6 +4905,7 @@ dependencies = [
  "async-process",
  "futures-lite 2.6.1",
  "futures-util",
+ "rustix 1.1.4",
  "serde_json",
 ]
 
@@ -5332,6 +5333,7 @@ dependencies = [
  "libc",
  "quick-xml 0.39.4",
  "rmac-appearance",
+ "rmac-audio",
  "rmac-compositor",
  "rmac-focus-linux",
  "rmac-notifications",

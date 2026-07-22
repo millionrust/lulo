@@ -35,6 +35,7 @@ sudo apt full-upgrade
 sudo apt install --yes \
   at-spi2-core build-essential clang curl dbus fonts-inter git jq libfontconfig1-dev \
   libfreetype-dev libglib2.0-bin libpam0g-dev libssl-dev libvulkan-dev libwayland-dev \
+  libsndfile1 pipewire-bin wireplumber \
   libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
   libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev mesa-vulkan-drivers \
   orca pciutils pkg-config python3-pyatspi sway swayidle swaylock vulkan-tools wayland-utils \

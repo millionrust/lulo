@@ -3,7 +3,10 @@
 use std::fmt;
 
 use crate::presentation::{EntryId, OverflowGroup};
-use crate::{ContextAction, ContextMenu, MoveDirection, PinCommand};
+use crate::{
+    ContextAction, ContextMenu, MoveDirection, PinCommand, SpecialActivation, SpecialContextAction,
+    SpecialContextMenu, SpecialItemKind,
+};
 
 pub const MAX_MENU_ROWS: usize = 512;
 const MAX_LABEL_CHARACTERS: usize = 96;
@@ -15,6 +18,8 @@ pub enum RowId {
     Window(rmac_compositor::WindowId),
     Pin,
     Move(MoveDirection),
+    OpenSpecial(SpecialItemKind),
+    EmptyTrash,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,12 +28,14 @@ pub enum Section {
     Commands,
     Windows,
     Organization,
+    Destructive,
 }
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum Action {
     ActivateEntry(EntryId),
     Context(ContextAction),
+    SpecialContext(SpecialContextAction),
 }
 
 impl fmt::Debug for Action {
@@ -36,6 +43,7 @@ impl fmt::Debug for Action {
         match self {
             Self::ActivateEntry(id) => formatter.debug_tuple("ActivateEntry").field(id).finish(),
             Self::Context(_) => formatter.write_str("Context(<redacted>)"),
+            Self::SpecialContext(_) => formatter.write_str("SpecialContext(<redacted>)"),
         }
     }
 }
@@ -49,6 +57,9 @@ pub struct Row {
     pub enabled: bool,
     pub checked: bool,
     pub urgent: bool,
+    /// True for an action that must open an explicit confirmation sheet before
+    /// any irreversible work. Selection alone never authorizes the mutation.
+    pub destructive: bool,
     pub primary: Option<Action>,
     /// A separately exposed accessibility action/trailing control. Keyboard
     /// renderers route alternate activation here without changing selection.
@@ -66,6 +77,7 @@ impl fmt::Debug for Row {
             .field("enabled", &self.enabled)
             .field("checked", &self.checked)
             .field("urgent", &self.urgent)
+            .field("destructive", &self.destructive)
             .field("has_primary", &self.primary.is_some())
             .field("has_secondary", &self.secondary.is_some())
             .finish()
@@ -101,6 +113,7 @@ pub enum MenuError {
     TooManyRows { count: usize },
     InvalidOverflowEntry,
     InvalidPinAction,
+    InvalidSpecialAction,
 }
 
 impl fmt::Display for MenuError {
@@ -117,6 +130,9 @@ impl fmt::Display for MenuError {
             }
             Self::InvalidPinAction => {
                 formatter.write_str("Dock context menu contains an invalid pin action")
+            }
+            Self::InvalidSpecialAction => {
+                formatter.write_str("Dock context menu contains an invalid special-item action")
             }
         }
     }
@@ -169,6 +185,7 @@ impl Session {
                     enabled: entry.enabled,
                     checked: entry.activity == crate::presentation::ActivityIndicator::Active,
                     urgent: entry.urgent,
+                    destructive: false,
                     primary: entry
                         .enabled
                         .then(|| Action::ActivateEntry(entry.id.clone())),
@@ -206,6 +223,7 @@ impl Session {
                 enabled: true,
                 checked: false,
                 urgent: false,
+                destructive: false,
                 primary: Some(Action::Context(action.clone())),
                 secondary: None,
             });
@@ -228,6 +246,7 @@ impl Session {
                 enabled: true,
                 checked: window.focused,
                 urgent: window.urgent,
+                destructive: false,
                 primary: Some(Action::Context(window.focus.clone())),
                 secondary: Some(Action::Context(window.close.clone())),
             }
@@ -247,6 +266,7 @@ impl Session {
             enabled: true,
             checked: false,
             urgent: false,
+            destructive: false,
             primary: Some(Action::Context(ContextAction::UpdatePins(menu.pin.clone()))),
             secondary: None,
         });
@@ -266,6 +286,7 @@ impl Session {
                     enabled: true,
                     checked: false,
                     urgent: false,
+                    destructive: false,
                     primary: Some(Action::Context(ContextAction::UpdatePins(command.clone()))),
                     secondary: None,
                 });
@@ -275,6 +296,53 @@ impl Session {
             EntryId::Application(menu.app_id.clone()),
             bounded(&menu.application_name),
             format!("{} Dock menu", bounded(&menu.application_name)),
+            rows,
+        )
+    }
+
+    pub fn special(menu: &SpecialContextMenu) -> Result<Self, MenuError> {
+        let available = validate_special_menu(menu)?;
+        let name = special_name(menu.kind);
+        let mut rows = vec![Row {
+            id: RowId::OpenSpecial(menu.kind),
+            section: Section::Commands,
+            label: format!("Open {name}"),
+            accessible_label: format!("Open {name}"),
+            enabled: available,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: available.then_some(Action::ActivateEntry(EntryId::Special(menu.kind))),
+            secondary: None,
+        }];
+        if let Some(action) = &menu.empty_trash {
+            let SpecialContextAction::EmptyTrash {
+                expected_item_count,
+            } = action;
+            let item_label = if *expected_item_count == 1 {
+                "item"
+            } else {
+                "items"
+            };
+            rows.push(Row {
+                id: RowId::EmptyTrash,
+                section: Section::Destructive,
+                label: "Empty Trash…".into(),
+                accessible_label: bounded(&format!(
+                    "Empty Trash permanently, {expected_item_count} {item_label}, requires confirmation"
+                )),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: true,
+                primary: Some(Action::SpecialContext(action.clone())),
+                secondary: None,
+            });
+        }
+        Self::new(
+            EntryId::Special(menu.kind),
+            name.into(),
+            format!("{name} Dock menu"),
             rows,
         )
     }
@@ -418,6 +486,37 @@ impl Session {
             action,
             restore_focus: self.invoker.clone(),
         }
+    }
+}
+
+fn validate_special_menu(menu: &SpecialContextMenu) -> Result<bool, MenuError> {
+    let available = match (&menu.open, menu.kind) {
+        (SpecialActivation::OpenDirectory { kind, .. }, SpecialItemKind::Files)
+        | (SpecialActivation::OpenDirectory { kind, .. }, SpecialItemKind::Downloads)
+            if *kind == menu.kind =>
+        {
+            true
+        }
+        (SpecialActivation::OpenTrash, SpecialItemKind::Trash) => true,
+        (SpecialActivation::Unavailable { kind, .. }, _) if *kind == menu.kind => false,
+        _ => return Err(MenuError::InvalidSpecialAction),
+    };
+    if let Some(SpecialContextAction::EmptyTrash {
+        expected_item_count,
+    }) = &menu.empty_trash
+    {
+        if menu.kind != SpecialItemKind::Trash || !available || *expected_item_count == 0 {
+            return Err(MenuError::InvalidSpecialAction);
+        }
+    }
+    Ok(available)
+}
+
+fn special_name(kind: SpecialItemKind) -> &'static str {
+    match kind {
+        SpecialItemKind::Files => "Files",
+        SpecialItemKind::Downloads => "Downloads",
+        SpecialItemKind::Trash => "Trash",
     }
 }
 
@@ -620,6 +719,107 @@ mod tests {
         assert_eq!(
             Session::overflow(&malformed).unwrap_err(),
             MenuError::InvalidOverflowEntry
+        );
+    }
+
+    #[test]
+    fn nonempty_trash_has_a_distinct_reviewed_destructive_action() {
+        let menu = SpecialContextMenu {
+            kind: SpecialItemKind::Trash,
+            open: SpecialActivation::OpenTrash,
+            empty_trash: Some(SpecialContextAction::EmptyTrash {
+                expected_item_count: 4,
+            }),
+        };
+        let mut session = Session::special(&menu).unwrap();
+
+        assert_eq!(
+            session.selected(),
+            Some(&RowId::OpenSpecial(SpecialItemKind::Trash))
+        );
+        assert_eq!(session.rows().len(), 2);
+        assert!(!session.rows()[0].destructive);
+        assert_eq!(session.rows()[1].section, Section::Destructive);
+        assert!(session.rows()[1].destructive);
+        assert!(session.rows()[1].accessible_label.contains("4 items"));
+        assert_eq!(
+            session.handle_key(KeyCommand::ArrowDown),
+            Effect::SelectionChanged
+        );
+        assert_eq!(session.selected(), Some(&RowId::EmptyTrash));
+        assert_eq!(
+            session.handle_key(KeyCommand::Return),
+            Effect::Activate {
+                action: Action::SpecialContext(SpecialContextAction::EmptyTrash {
+                    expected_item_count: 4,
+                }),
+                restore_focus: EntryId::Special(SpecialItemKind::Trash),
+            }
+        );
+    }
+
+    #[test]
+    fn special_menu_never_copies_a_private_directory_into_its_actions_or_debug() {
+        let menu = SpecialContextMenu {
+            kind: SpecialItemKind::Downloads,
+            open: SpecialActivation::OpenDirectory {
+                kind: SpecialItemKind::Downloads,
+                path: std::path::PathBuf::from("/home/alex/Private Downloads"),
+            },
+            empty_trash: None,
+        };
+        let mut session = Session::special(&menu).unwrap();
+
+        assert!(!format!("{session:?}").contains("Private Downloads"));
+        assert_eq!(
+            session.handle_key(KeyCommand::Return),
+            Effect::Activate {
+                action: Action::ActivateEntry(EntryId::Special(SpecialItemKind::Downloads)),
+                restore_focus: EntryId::Special(SpecialItemKind::Downloads),
+            }
+        );
+    }
+
+    #[test]
+    fn unavailable_and_malformed_special_menus_fail_safely() {
+        let unavailable = SpecialContextMenu {
+            kind: SpecialItemKind::Files,
+            open: SpecialActivation::Unavailable {
+                kind: SpecialItemKind::Files,
+                detail: "private backend detail".into(),
+            },
+            empty_trash: None,
+        };
+        let mut session = Session::special(&unavailable).unwrap();
+        assert_eq!(session.selected(), None);
+        assert_eq!(session.handle_key(KeyCommand::Return), Effect::None);
+        assert!(!format!("{session:?}").contains("private backend detail"));
+
+        let files_with_empty = SpecialContextMenu {
+            kind: SpecialItemKind::Files,
+            open: SpecialActivation::OpenDirectory {
+                kind: SpecialItemKind::Files,
+                path: "/home/alex".into(),
+            },
+            empty_trash: Some(SpecialContextAction::EmptyTrash {
+                expected_item_count: 1,
+            }),
+        };
+        assert_eq!(
+            Session::special(&files_with_empty).unwrap_err(),
+            MenuError::InvalidSpecialAction
+        );
+
+        let zero_count = SpecialContextMenu {
+            kind: SpecialItemKind::Trash,
+            open: SpecialActivation::OpenTrash,
+            empty_trash: Some(SpecialContextAction::EmptyTrash {
+                expected_item_count: 0,
+            }),
+        };
+        assert_eq!(
+            Session::special(&zero_count).unwrap_err(),
+            MenuError::InvalidSpecialAction
         );
     }
 }

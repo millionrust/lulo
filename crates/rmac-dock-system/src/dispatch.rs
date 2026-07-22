@@ -26,6 +26,7 @@ impl std::error::Error for PrepareError {}
 pub enum Preparation {
     NoAction,
     Ready(PreparedAction),
+    TrashReview(PreparedTrashReview),
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -33,6 +34,25 @@ pub struct PreparedAction {
     target: ActionTarget,
     operation: Operation,
     execution: Execution,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct PreparedTrashReview {
+    action: rmac_dock::SpecialContextAction,
+}
+
+impl fmt::Debug for PreparedTrashReview {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PreparedTrashReview")
+            .field(
+                "target",
+                &ActionTarget::Special(rmac_dock::SpecialItemKind::Trash),
+            )
+            .field("operation", &Operation::ReviewTrash)
+            .field("action", &"<redacted>")
+            .finish()
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -73,6 +93,160 @@ impl PreparedAction {
     }
 }
 
+impl PreparedTrashReview {
+    pub fn begin(self, state: &mut State) -> Result<PendingTrashReview, BeginError> {
+        let (ticket, started) = state.begin(
+            ActionTarget::Special(rmac_dock::SpecialItemKind::Trash),
+            Operation::ReviewTrash,
+        )?;
+        Ok(PendingTrashReview {
+            ticket,
+            started,
+            action: self.action,
+        })
+    }
+}
+
+pub struct PendingTrashReview {
+    ticket: Ticket,
+    started: Transition,
+    action: rmac_dock::SpecialContextAction,
+}
+
+impl PendingTrashReview {
+    pub fn ticket(&self) -> &Ticket {
+        &self.ticket
+    }
+
+    pub fn started(&self) -> &Transition {
+        &self.started
+    }
+
+    pub fn cancel(self, state: &mut State) -> Transition {
+        state.cancel(self.ticket)
+    }
+
+    /// Enumerate and bind the exact Trash identities on a blocking worker.
+    pub fn run_blocking(self, backend: &impl rmac_places_system::Backend) -> TrashReviewCompletion {
+        let result = crate::prepare_special_context(&self.action, backend)
+            .map(|review| ReviewedTrash { review });
+        TrashReviewCompletion {
+            ticket: self.ticket,
+            result,
+        }
+    }
+}
+
+pub struct TrashReviewCompletion {
+    ticket: Ticket,
+    result: Result<ReviewedTrash, Error>,
+}
+
+impl TrashReviewCompletion {
+    pub fn apply(self, state: &mut State) -> (Result<ReviewedTrash, Error>, Transition) {
+        let Self { ticket, result } = self;
+        let status = match &result {
+            Ok(_) => Ok(()),
+            Err(error) => Err(error),
+        };
+        let transition = state.finish(ticket, status);
+        (result, transition)
+    }
+}
+
+pub struct ReviewedTrash {
+    review: rmac_places_system::EmptyTrashReview,
+}
+
+impl fmt::Debug for ReviewedTrash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ReviewedTrash")
+            .field("item_count", &self.item_count())
+            .field("entries", &"<private>")
+            .finish()
+    }
+}
+
+impl ReviewedTrash {
+    pub fn item_count(&self) -> usize {
+        self.review.item_count()
+    }
+
+    /// The destructive capability is created only for an explicit affirmative
+    /// response from the confirmation sheet. Decline consumes the review.
+    pub fn confirm(self, confirmed: bool) -> Option<ConfirmedTrash> {
+        let item_count = self.item_count();
+        rmac_places_system::confirm_empty_trash(self.review, confirmed).map(|confirmation| {
+            ConfirmedTrash {
+                confirmation,
+                item_count,
+            }
+        })
+    }
+}
+
+pub struct ConfirmedTrash {
+    confirmation: rmac_places_system::EmptyTrashConfirmation,
+    item_count: usize,
+}
+
+impl fmt::Debug for ConfirmedTrash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ConfirmedTrash")
+            .field("item_count", &self.item_count)
+            .field("entries", &"<private>")
+            .finish()
+    }
+}
+
+impl ConfirmedTrash {
+    pub fn item_count(&self) -> usize {
+        self.item_count
+    }
+
+    pub fn begin(self, state: &mut State) -> Result<PendingEmptyTrash, BeginError> {
+        let (ticket, started) = state.begin(
+            ActionTarget::Special(rmac_dock::SpecialItemKind::Trash),
+            Operation::EmptyTrash,
+        )?;
+        Ok(PendingEmptyTrash {
+            ticket,
+            started,
+            confirmation: self.confirmation,
+        })
+    }
+}
+
+pub struct PendingEmptyTrash {
+    ticket: Ticket,
+    started: Transition,
+    confirmation: rmac_places_system::EmptyTrashConfirmation,
+}
+
+impl PendingEmptyTrash {
+    pub fn ticket(&self) -> &Ticket {
+        &self.ticket
+    }
+
+    pub fn started(&self) -> &Transition {
+        &self.started
+    }
+
+    pub fn cancel(self, state: &mut State) -> Transition {
+        state.cancel(self.ticket)
+    }
+
+    /// Permanently delete the reviewed identities on a blocking worker.
+    pub fn run_blocking(self, backend: &impl rmac_places_system::Backend) -> Completion {
+        Completion {
+            ticket: self.ticket,
+            result: crate::execute_empty_trash(self.confirmation, backend),
+        }
+    }
+}
+
 pub struct PendingAction {
     ticket: Ticket,
     started: Transition,
@@ -80,8 +254,16 @@ pub struct PendingAction {
 }
 
 impl PendingAction {
+    pub fn ticket(&self) -> &Ticket {
+        &self.ticket
+    }
+
     pub fn started(&self) -> &Transition {
         &self.started
+    }
+
+    pub fn cancel(self, state: &mut State) -> Transition {
+        state.cancel(self.ticket)
     }
 
     pub async fn run(
@@ -142,6 +324,26 @@ pub fn prepare(
         rmac_dock::menu::Action::Context(action) => {
             Ok(Preparation::Ready(prepare_context_action(model, &action)))
         }
+        rmac_dock::menu::Action::SpecialContext(action) => Ok(prepare_trash_review(model, &action)),
+    }
+}
+
+fn prepare_trash_review(
+    model: &rmac_dock::Model,
+    requested: &rmac_dock::SpecialContextAction,
+) -> Preparation {
+    let current = model
+        .special_context_menu(rmac_dock::SpecialItemKind::Trash)
+        .and_then(|menu| menu.empty_trash);
+    match current {
+        Some(action) if &action == requested => {
+            Preparation::TrashReview(PreparedTrashReview { action })
+        }
+        _ => Preparation::Ready(rejected(
+            ActionTarget::Special(rmac_dock::SpecialItemKind::Trash),
+            Operation::ReviewTrash,
+            "Trash",
+        )),
     }
 }
 
@@ -302,6 +504,7 @@ fn rejected(target: ActionTarget, operation: Operation, public_id: &str) -> Prep
 
 #[cfg(test)]
 mod tests {
+    use std::io;
     use std::path::{Path, PathBuf};
     use std::sync::Mutex;
 
@@ -310,6 +513,48 @@ mod tests {
     #[derive(Default)]
     struct FakeBackend {
         calls: Mutex<Vec<String>>,
+    }
+
+    #[derive(Default)]
+    struct FakeTrashBackend {
+        entries: Mutex<Vec<rmac_places_system::TrashEntryId>>,
+        purged: Mutex<Vec<rmac_places_system::TrashEntryId>>,
+    }
+
+    impl rmac_places_system::Backend for FakeTrashBackend {
+        fn home(&self) -> Option<PathBuf> {
+            Some("/home/alex".into())
+        }
+
+        fn config_home(&self) -> Option<PathBuf> {
+            None
+        }
+
+        fn read_optional(&self, _: &Path) -> io::Result<Option<String>> {
+            Ok(None)
+        }
+
+        fn exists(&self, _: &Path) -> io::Result<bool> {
+            Ok(true)
+        }
+
+        fn trash_count(&self) -> Result<usize, String> {
+            Ok(self.entries.lock().unwrap().len())
+        }
+
+        fn trash_entries(&self) -> Result<Vec<rmac_places_system::TrashEntryId>, String> {
+            Ok(self.entries.lock().unwrap().clone())
+        }
+
+        fn purge_trash(&self, reviewed: &[rmac_places_system::TrashEntryId]) -> Result<(), String> {
+            let mut entries = self.entries.lock().unwrap();
+            if reviewed.iter().any(|entry| !entries.contains(entry)) {
+                return Err("Trash changed after review".into());
+            }
+            self.purged.lock().unwrap().extend_from_slice(reviewed);
+            entries.retain(|entry| !reviewed.contains(entry));
+            Ok(())
+        }
     }
 
     impl Backend for FakeBackend {
@@ -468,13 +713,17 @@ mod tests {
         }
     }
 
-    fn model_with_places(downloads: &str, downloads_exists: bool) -> rmac_dock::Model {
+    fn model_with_places(
+        downloads: &str,
+        downloads_exists: bool,
+        trash_count: usize,
+    ) -> rmac_dock::Model {
         rmac_dock::Model::build_with_places(
             &[],
             &Default::default(),
             &[application("terminal")],
             &Default::default(),
-            &places(downloads, downloads_exists, 3),
+            &places(downloads, downloads_exists, trash_count),
         )
     }
 
@@ -626,8 +875,36 @@ mod tests {
     }
 
     #[test]
+    fn renderer_cancellation_makes_a_late_dispatch_completion_inert() {
+        let current = model("terminal", Vec::new(), true);
+        let action = current
+            .context_menu("terminal")
+            .unwrap()
+            .launch_new
+            .unwrap();
+        let Preparation::Ready(prepared) =
+            prepare(&current, rmac_dock::menu::Action::Context(action)).unwrap()
+        else {
+            panic!("launch is ready");
+        };
+        let mut state = State::default();
+        let backend = FakeBackend::default();
+        let pending = prepared.begin(&mut state).unwrap();
+        let cancellation = pending.ticket().clone();
+        let completion =
+            futures_lite::future::block_on(pending.run(rmac_compositor::ActivationId(1), &backend));
+        let cancelled = state.cancel(cancellation);
+        let (_, late) = completion.apply(&mut state);
+
+        assert!(cancelled.visible);
+        assert!(cancelled.snapshot.busy.is_empty());
+        assert!(!late.visible);
+        assert!(late.snapshot.feedback.is_empty());
+    }
+
+    #[test]
     fn special_activation_resolves_the_current_private_path_at_prepare_time() {
-        let current = model_with_places("/home/alex/Current Downloads", true);
+        let current = model_with_places("/home/alex/Current Downloads", true, 3);
         let Preparation::Ready(prepared) = prepare(
             &current,
             rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
@@ -705,7 +982,7 @@ mod tests {
 
     #[test]
     fn trash_uses_the_same_ticketed_special_dispatch_path() {
-        let current = model_with_places("/home/alex/Downloads", true);
+        let current = model_with_places("/home/alex/Downloads", true, 3);
         let Preparation::Ready(prepared) = prepare(
             &current,
             rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
@@ -737,7 +1014,7 @@ mod tests {
 
     #[test]
     fn special_busy_state_is_scoped_by_typed_identity() {
-        let current = model_with_places("/home/alex/Downloads", true);
+        let current = model_with_places("/home/alex/Downloads", true, 3);
         let action = |kind| {
             let Preparation::Ready(prepared) = prepare(
                 &current,
@@ -765,6 +1042,160 @@ mod tests {
             })
         ));
         assert_eq!(state.snapshot().busy.len(), 2);
+    }
+
+    #[test]
+    fn reviewed_trash_requires_confirmation_and_deletes_only_bound_identities() {
+        let first = rmac_places_system::TrashEntryId::from_authority_bytes(b"first");
+        let second = rmac_places_system::TrashEntryId::from_authority_bytes(b"second");
+        let backend = FakeTrashBackend {
+            entries: Mutex::new(vec![first, second]),
+            ..Default::default()
+        };
+        let current = model_with_places("/home/alex/Downloads", true, 2);
+        let action = current
+            .special_context_menu(rmac_dock::SpecialItemKind::Trash)
+            .unwrap()
+            .empty_trash
+            .unwrap();
+        let Preparation::TrashReview(prepared) =
+            prepare(&current, rmac_dock::menu::Action::SpecialContext(action)).unwrap()
+        else {
+            panic!("current Trash action requires review");
+        };
+        assert!(!format!("{prepared:?}").contains("first"));
+
+        let mut state = State::default();
+        let pending = prepared.begin(&mut state).unwrap();
+        assert!(pending
+            .started()
+            .snapshot
+            .busy
+            .contains(&ActionTarget::Special(rmac_dock::SpecialItemKind::Trash)));
+        let (review, reviewed) = pending.run_blocking(&backend).apply(&mut state);
+        let review = review.unwrap();
+        assert_eq!(review.item_count(), 2);
+        assert!(reviewed.snapshot.busy.is_empty());
+        assert!(!format!("{review:?}").contains("first"));
+
+        let confirmed = review.confirm(true).expect("affirmative confirmation");
+        assert_eq!(confirmed.item_count(), 2);
+        let later = rmac_places_system::TrashEntryId::from_authority_bytes(b"later");
+        backend.entries.lock().unwrap().push(later);
+        let deletion = confirmed.begin(&mut state).unwrap();
+        assert!(deletion
+            .started()
+            .snapshot
+            .busy
+            .contains(&ActionTarget::Special(rmac_dock::SpecialItemKind::Trash)));
+        let (outcome, finished) = deletion.run_blocking(&backend).apply(&mut state);
+
+        assert_eq!(outcome, Ok(Outcome::TrashEmptied { remaining_items: 1 }));
+        assert!(finished.snapshot.busy.is_empty());
+        assert_eq!(*backend.entries.lock().unwrap(), [later]);
+        assert_eq!(backend.purged.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn declining_the_sheet_consumes_review_without_deleting() {
+        let entry = rmac_places_system::TrashEntryId::from_authority_bytes(b"kept");
+        let backend = FakeTrashBackend {
+            entries: Mutex::new(vec![entry]),
+            ..Default::default()
+        };
+        let current = model_with_places("/home/alex/Downloads", true, 1);
+        let action = current
+            .special_context_menu(rmac_dock::SpecialItemKind::Trash)
+            .unwrap()
+            .empty_trash
+            .unwrap();
+        let Preparation::TrashReview(prepared) =
+            prepare(&current, rmac_dock::menu::Action::SpecialContext(action)).unwrap()
+        else {
+            panic!("current Trash action requires review");
+        };
+        let mut state = State::default();
+        let (review, _) = prepared
+            .begin(&mut state)
+            .unwrap()
+            .run_blocking(&backend)
+            .apply(&mut state);
+
+        assert!(review.unwrap().confirm(false).is_none());
+        assert_eq!(*backend.entries.lock().unwrap(), [entry]);
+        assert!(backend.purged.lock().unwrap().is_empty());
+        assert!(state.snapshot().busy.is_empty());
+    }
+
+    #[test]
+    fn stale_trash_menu_count_is_rejected_before_filesystem_review() {
+        let current = model_with_places("/home/alex/Downloads", true, 2);
+        let Preparation::Ready(rejected) = prepare(
+            &current,
+            rmac_dock::menu::Action::SpecialContext(rmac_dock::SpecialContextAction::EmptyTrash {
+                expected_item_count: 3,
+            }),
+        )
+        .unwrap() else {
+            panic!("stale Trash action becomes feedback");
+        };
+        assert_eq!(rejected.operation(), Operation::ReviewTrash);
+        let mut state = State::default();
+        let backend = FakeBackend::default();
+        let completion = futures_lite::future::block_on(
+            rejected
+                .begin(&mut state)
+                .unwrap()
+                .run(rmac_compositor::ActivationId(1), &backend),
+        );
+        let (result, transition) = completion.apply(&mut state);
+
+        assert!(result.is_err());
+        assert_eq!(
+            transition.snapshot.feedback[0].reason,
+            crate::interaction::FeedbackReason::Rejected
+        );
+        assert!(backend.calls.into_inner().unwrap().is_empty());
+    }
+
+    #[test]
+    fn changed_trash_authority_fails_review_with_ticketed_feedback() {
+        let only = rmac_places_system::TrashEntryId::from_authority_bytes(b"only");
+        let backend = FakeTrashBackend {
+            entries: Mutex::new(vec![only]),
+            ..Default::default()
+        };
+        let current = model_with_places("/home/alex/Downloads", true, 2);
+        let action = current
+            .special_context_menu(rmac_dock::SpecialItemKind::Trash)
+            .unwrap()
+            .empty_trash
+            .unwrap();
+        let Preparation::TrashReview(prepared) =
+            prepare(&current, rmac_dock::menu::Action::SpecialContext(action)).unwrap()
+        else {
+            panic!("model accepts review before filesystem revalidation");
+        };
+        let mut state = State::default();
+        let (result, transition) = prepared
+            .begin(&mut state)
+            .unwrap()
+            .run_blocking(&backend)
+            .apply(&mut state);
+
+        assert!(matches!(
+            result,
+            Err(Error {
+                operation: Operation::ReviewTrash,
+                kind: FailureKind::Rejected,
+                ..
+            })
+        ));
+        assert_eq!(
+            transition.snapshot.feedback[0].reason,
+            crate::interaction::FeedbackReason::Rejected
+        );
+        assert!(backend.purged.lock().unwrap().is_empty());
     }
 
     #[test]

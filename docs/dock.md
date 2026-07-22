@@ -87,9 +87,14 @@ stack into bounded renderer rows without re-resolving actions. Application
 menus keep New Window, the ordered real-window list, Keep/Remove from Dock, and
 only the reorder directions that can act. A window row carries its exact focus
 action plus an exact secondary close action; focused and urgent state are
-announced independently. The More stack preserves the hidden application order,
-keeps unavailable entries visible but out of keyboard selection, and activates
-the exact typed application identity through the current authoritative model.
+announced independently. Files, Downloads, and Trash menus expose a typed Open
+row without copying a private directory path. Only an available,
+authoritatively nonempty Trash adds an **Empty Trash…** row in a distinct
+destructive section; its accessible label announces the exact item count and
+that confirmation is required. The More stack preserves the hidden application
+order, keeps unavailable entries visible but out of keyboard selection, and
+activates the exact typed application identity through the current
+authoritative model.
 
 Menus select the first enabled row on open. Up/Down wrap across enabled rows,
 Home/End move to the first/last enabled row, Return invokes the primary action,
@@ -101,10 +106,10 @@ can restore Dock focus. Pointer selection cannot mutate a closed session.
 Visible labels are capped at 96 Unicode characters. Window titles remain
 visible where the user asked for the menu but labels, accessibility strings,
 launch specifications, and window titles are redacted from Debug output.
-Malformed overflow/pin projections and menus above 512 rows fail explicitly
-instead of panicking or silently dropping actions. The renderer must expose
-sections, menu roles, checked/urgent state, the close accessibility action, and
-focus restoration exactly as described.
+Malformed overflow, pin, or special-item projections and menus above 512 rows
+fail explicitly instead of panicking or silently dropping actions. The
+renderer must expose sections, menu roles, checked/urgent/destructive state,
+the close accessibility action, and focus restoration exactly as described.
 
 ## Busy state and failure feedback
 
@@ -136,6 +141,17 @@ execution, and only its completion can finish that ticket. This prevents a
 menu that was open during catalog, compositor, or settings changes from
 executing stale authority, while preserving the rule that successful receipts
 never mutate the visible model directly.
+
+Empty Trash is a two-ticket destructive workflow. Dispatch first requires the
+menu's expected count to still match the newest model, then a blocking review
+ticket enumerates and binds the exact path-free Trash identities. A successful
+review exposes only the item count for the confirmation sheet; declining
+consumes it and creates no deletion capability. An affirmative response alone
+creates a confirmed value that can start the second Empty Trash ticket.
+Deletion still revalidates the bound identities, leaves later additions alone,
+fails closed if a reviewed item vanished, and publishes only the authoritative
+remaining count. Review and deletion failures use the same bounded semantic
+feedback state; no private identity enters presentation or Debug output.
 
 Failures retain only the public target, intended operation, and a semantic
 reason such as permission denied, unavailable service, lost connection,

@@ -244,6 +244,23 @@ non-premultiplied RGBA8 square no larger than 512 pixels. Invisible, malformed,
 oversized, unsupported (including legacy XPM), and unsafe files return typed,
 path-free failures so the renderer can use the embedded application tile.
 
+The shared decoder cache serializes misses, verifies device/inode/mtime/length
+before and after decoding, coalesces concurrent requests, and evicts by both a
+32 MiB default byte budget and a 256-entry ceiling. Exact-path invalidation and
+automatic metadata-key replacement prevent theme changes from retaining old
+pixels; cache diagnostics expose only counts and bytes.
+
+`rmac-dock-runtime::icons` owns the off-UI execution contract. One batch may
+contain at most 512 distinct application/physical-size keys and at most 32 MiB
+of final pixels, while two-slot command and event queues make backpressure
+explicit. A dedicated serial worker uses the shared cache and returns a typed
+decoded image or fallback reason for every key. Request generations cancel old
+work between files, and the renderer-side session accepts completion only when
+the generation, cardinality, and complete key order still match. Late,
+cancelled, duplicate, oversized, and malformed work therefore cannot replace
+newer Dock artwork. Worker commands also provide exact-path and whole-cache
+invalidation without placing paths in event or Debug output.
+
 ## Crowded outputs
 
 Fitting is chosen from content and output width before hover. The Dock first
@@ -304,7 +321,8 @@ Output/configuration refresh hints resample that authority off-thread. A failed
 resample retains the last-known Main ID, reports separate display-source health,
 and never guesses from connector order.
 
-The current slice is not D4 completion. The layer-shell view,
-pointer/keyboard semantics, real surface-command execution,
+The current slice is not D4 completion. The layer-shell view, connection of the
+icon worker to retained renderer nodes, pointer/keyboard semantics, real
+surface-command execution,
 persistence UI, niri/reference-PC evidence, and performance gates remain
 pending.

@@ -4,11 +4,13 @@
 //! synchronous and potentially CPU intensive, so callers must run it on a
 //! dedicated worker rather than the GPUI thread.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::fs::{File, OpenOptions};
+use std::hash::Hash;
 use std::io::{Cursor, Read};
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use image::imageops::FilterType;
 use image::{DynamicImage, ImageError, ImageFormat, ImageReader};
@@ -20,6 +22,8 @@ pub const MAX_ICON_SOURCE_DIMENSION: u32 = 8_192;
 pub const MAX_ICON_SOURCE_PIXELS: u64 = 16_777_216;
 pub const MAX_ICON_DECODE_BYTES: u64 = 80 * 1024 * 1024;
 pub const MAX_ICON_EDGE: u32 = 512;
+pub const DEFAULT_ICON_CACHE_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_CACHED_ICONS: usize = 256;
 const MAX_SVG_ELEMENTS: usize = 4_096;
 const MAX_SVG_ATTRIBUTES: usize = 16_384;
 const MAX_SVG_DEPTH: usize = 64;
@@ -59,6 +63,7 @@ pub enum ErrorKind {
     Malformed,
     UnsafeSvg,
     Empty,
+    Changed,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,6 +91,7 @@ impl fmt::Display for Error {
             ErrorKind::Malformed => "the icon data is malformed",
             ErrorKind::UnsafeSvg => "the SVG uses a disabled feature",
             ErrorKind::Empty => "the icon contains no visible pixels",
+            ErrorKind::Changed => "the icon changed while it was being decoded",
         })
     }
 }
@@ -122,6 +128,232 @@ impl fmt::Debug for DecodedIcon {
             .field("format", &self.format)
             .field("rgba_bytes", &self.rgba.len())
             .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct CacheStats {
+    pub entries: usize,
+    pub bytes: usize,
+    pub decodes: u64,
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct FileIdentity {
+    byte_len: u64,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(unix)]
+    modified_seconds: i64,
+    #[cfg(unix)]
+    modified_nanoseconds: i64,
+    #[cfg(not(unix))]
+    modified_nanoseconds: Option<u128>,
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+struct CacheKey {
+    path: PathBuf,
+    identity: FileIdentity,
+    edge: u32,
+}
+
+struct CacheEntry {
+    icon: Arc<DecodedIcon>,
+    last_used: u64,
+}
+
+#[derive(Default)]
+struct CacheState {
+    entries: HashMap<CacheKey, CacheEntry>,
+    sequence: u64,
+    bytes: usize,
+    decodes: u64,
+}
+
+/// Thread-safe, byte- and entry-bounded LRU cache for worker-side decoding.
+///
+/// File identity is checked before and after every miss. Decodes are serialized
+/// so even accidental concurrent callers cannot multiply the decoder's bounded
+/// allocation. Paths are retained only inside the bounded private key set.
+pub struct Cache {
+    state: Mutex<CacheState>,
+    decode_lock: Mutex<()>,
+    byte_budget: usize,
+}
+
+impl Cache {
+    pub fn new(byte_budget: usize) -> Self {
+        Self {
+            state: Mutex::new(CacheState::default()),
+            decode_lock: Mutex::new(()),
+            byte_budget,
+        }
+    }
+
+    pub fn get_or_decode(
+        &self,
+        path: &Path,
+        request: DecodeRequest,
+    ) -> Result<Arc<DecodedIcon>, Error> {
+        let _decoder = self
+            .decode_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let before = file_identity(path)?;
+        let key = CacheKey {
+            path: path.to_path_buf(),
+            identity: before.clone(),
+            edge: request.edge,
+        };
+        if let Some(icon) = self.lookup(&key) {
+            return Ok(icon);
+        }
+
+        let decoded = Arc::new(decode_file(path, request)?);
+        if file_identity(path)? != before {
+            return Err(Error::new(ErrorKind::Changed));
+        }
+        let bytes = decoded.rgba.len();
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.decodes = state.decodes.saturating_add(1);
+        state
+            .entries
+            .retain(|candidate, _| candidate.path != path || candidate.identity == before);
+        state.bytes = state
+            .entries
+            .values()
+            .map(|entry| entry.icon.rgba.len())
+            .sum();
+        if self.byte_budget == 0 || bytes > self.byte_budget {
+            return Ok(decoded);
+        }
+        state.sequence = state.sequence.saturating_add(1);
+        let last_used = state.sequence;
+        if let Some(previous) = state.entries.insert(
+            key,
+            CacheEntry {
+                icon: decoded.clone(),
+                last_used,
+            },
+        ) {
+            state.bytes = state.bytes.saturating_sub(previous.icon.rgba.len());
+        }
+        state.bytes = state.bytes.saturating_add(bytes);
+        while state.bytes > self.byte_budget || state.entries.len() > MAX_CACHED_ICONS {
+            let Some(oldest) = state
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            if let Some(removed) = state.entries.remove(&oldest) {
+                state.bytes = state.bytes.saturating_sub(removed.icon.rgba.len());
+            }
+        }
+        Ok(decoded)
+    }
+
+    /// Remove every rendered size for one private source path.
+    pub fn invalidate_path(&self, path: &Path) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.entries.retain(|key, _| key.path != path);
+        state.bytes = state
+            .entries
+            .values()
+            .map(|entry| entry.icon.rgba.len())
+            .sum();
+    }
+
+    pub fn clear(&self) {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.entries.clear();
+        state.bytes = 0;
+    }
+
+    pub fn stats(&self) -> CacheStats {
+        let state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        CacheStats {
+            entries: state.entries.len(),
+            bytes: state.bytes,
+            decodes: state.decodes,
+        }
+    }
+
+    fn lookup(&self, key: &CacheKey) -> Option<Arc<DecodedIcon>> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.sequence = state.sequence.saturating_add(1);
+        let last_used = state.sequence;
+        let entry = state.entries.get_mut(key)?;
+        entry.last_used = last_used;
+        Some(entry.icon.clone())
+    }
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new(DEFAULT_ICON_CACHE_BYTES)
+    }
+}
+
+impl fmt::Debug for Cache {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Cache")
+            .field("byte_budget", &self.byte_budget)
+            .field("stats", &self.stats())
+            .finish()
+    }
+}
+
+fn file_identity(path: &Path) -> Result<FileIdentity, Error> {
+    let metadata = std::fs::metadata(path).map_err(io_error)?;
+    if !metadata.is_file() {
+        return Err(Error::new(ErrorKind::Unsupported));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+
+        Ok(FileIdentity {
+            byte_len: metadata.len(),
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            modified_seconds: metadata.mtime(),
+            modified_nanoseconds: metadata.mtime_nsec(),
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        use std::time::UNIX_EPOCH;
+
+        Ok(FileIdentity {
+            byte_len: metadata.len(),
+            modified_nanoseconds: metadata
+                .modified()
+                .ok()
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_nanos()),
+        })
     }
 }
 
@@ -407,6 +639,7 @@ fn finish(
 #[cfg(test)]
 mod tests {
     use std::io::Write as _;
+    use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use image::ImageEncoder as _;
@@ -423,6 +656,19 @@ mod tests {
             .write_image(rgba, width, height, image::ExtendedColorType::Rgba8)
             .unwrap();
         bytes
+    }
+
+    fn root(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "rmac-dock-icon-{label}-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        root
     }
 
     #[test]
@@ -525,15 +771,7 @@ mod tests {
 
     #[test]
     fn file_boundary_is_bounded_and_diagnostics_do_not_expose_path_or_pixels() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "rmac-dock-icon-private-{}-{unique}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
+        let root = root("private");
         let path = root.join("secret-app-icon.png");
         let bytes = png(1, 1, &[12, 34, 56, 255]);
         File::create(&path).unwrap().write_all(&bytes).unwrap();
@@ -549,6 +787,82 @@ mod tests {
         let diagnostics = format!("{error:?} {error}");
         assert!(!diagnostics.contains("private-missing-icon"));
         assert_eq!(error.kind(), ErrorKind::Io(std::io::ErrorKind::NotFound));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cache_hits_then_invalidates_an_atomically_replaced_file() {
+        let root = root("cache-change");
+        let path = root.join("private-theme-icon.png");
+        std::fs::write(&path, png(1, 1, &[10, 20, 30, 255])).unwrap();
+        let cache = Cache::default();
+
+        let first = cache.get_or_decode(&path, request(8)).unwrap();
+        let again = cache.get_or_decode(&path, request(8)).unwrap();
+        assert!(Arc::ptr_eq(&first, &again));
+        assert_eq!(cache.stats().decodes, 1);
+
+        let replacement = root.join("replacement.png");
+        std::fs::write(&replacement, png(2, 1, &[90, 80, 70, 255, 60, 50, 40, 255])).unwrap();
+        std::fs::rename(&replacement, &path).unwrap();
+        let changed = cache.get_or_decode(&path, request(8)).unwrap();
+        assert!(!Arc::ptr_eq(&first, &changed));
+        assert_eq!(cache.stats().decodes, 2);
+        assert_eq!(cache.stats().entries, 1);
+
+        cache.invalidate_path(&path);
+        assert_eq!(cache.stats().entries, 0);
+        assert!(!format!("{cache:?}").contains("private-theme-icon"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cache_enforces_byte_budget_with_lru_eviction() {
+        let root = root("cache-budget");
+        let first_path = root.join("first.png");
+        let second_path = root.join("second.png");
+        std::fs::write(&first_path, png(1, 1, &[1, 2, 3, 255])).unwrap();
+        std::fs::write(&second_path, png(1, 1, &[4, 5, 6, 255])).unwrap();
+        let cache = Cache::new(4 * 4 * 4);
+
+        cache.get_or_decode(&first_path, request(4)).unwrap();
+        cache.get_or_decode(&second_path, request(4)).unwrap();
+        assert_eq!(cache.stats().entries, 1);
+        assert_eq!(cache.stats().bytes, 64);
+        assert_eq!(cache.stats().decodes, 2);
+        cache.get_or_decode(&first_path, request(4)).unwrap();
+        assert_eq!(cache.stats().decodes, 3);
+        assert_eq!(cache.stats().entries, 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn concurrent_misses_are_coalesced_into_one_bounded_decode() {
+        let root = root("cache-coalesce");
+        let path = root.join("shared.png");
+        std::fs::write(&path, png(1, 1, &[7, 8, 9, 255])).unwrap();
+        let cache = Arc::new(Cache::default());
+        let barrier = Arc::new(Barrier::new(5));
+        let mut threads = Vec::new();
+        for _ in 0..4 {
+            let cache = cache.clone();
+            let barrier = barrier.clone();
+            let path = path.clone();
+            threads.push(std::thread::spawn(move || {
+                barrier.wait();
+                cache.get_or_decode(&path, request(16)).unwrap()
+            }));
+        }
+        barrier.wait();
+        let icons = threads
+            .into_iter()
+            .map(|thread| thread.join().unwrap())
+            .collect::<Vec<_>>();
+        assert!(icons
+            .iter()
+            .skip(1)
+            .all(|icon| Arc::ptr_eq(&icons[0], icon)));
+        assert_eq!(cache.stats().decodes, 1);
         std::fs::remove_dir_all(root).unwrap();
     }
 }

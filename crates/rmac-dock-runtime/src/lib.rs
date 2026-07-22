@@ -1,5 +1,6 @@
 //! Event-driven, last-known-good orchestration for the Dock process.
 
+pub mod icons;
 pub mod surfaces;
 
 use std::fmt;

@@ -10,6 +10,8 @@ use rmac_notifications::banner::{
 };
 use rmac_notifications::{Notification, NotificationId, PostOutcome, Time};
 
+pub mod presentation;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Command {
     Redraw,

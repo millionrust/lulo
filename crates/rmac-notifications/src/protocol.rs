@@ -8,6 +8,7 @@ use super::{
     Action, ActionTarget, AppId, Content, DisplayHints, LockScreenVisibility, Priority, Request,
     Sound, Source, Timeout, ValidationError,
 };
+use std::borrow::Cow;
 
 pub const SUPPORTED_BUTTON_PURPOSES: &[&str] = &[
     "system.custom-alert",
@@ -35,6 +36,24 @@ pub const SUPPORTED_CATEGORIES: &[&str] = &[
     "os.battery.low",
     "browser.web-notification",
 ];
+
+/// Returns the explicit or standardized label a presentation surface may
+/// expose. Unknown extensible purposes never become guessed controls.
+pub fn visible_action_label(action: &Action) -> Option<Cow<'_, str>> {
+    if !action.label().trim().is_empty() {
+        return Some(Cow::Borrowed(action.label()));
+    }
+    let label = match action.purpose()? {
+        "im.reply-with-text" => "Reply",
+        "call.accept" => "Accept",
+        "call.decline" => "Decline",
+        "call.hang-up" => "Hang Up",
+        "call.enable-speakerphone" => "Speaker On",
+        "call.disable-speakerphone" => "Speaker Off",
+        _ => return None,
+    };
+    Some(Cow::Borrowed(label))
+}
 
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct PortalButton {

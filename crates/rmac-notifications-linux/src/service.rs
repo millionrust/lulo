@@ -300,21 +300,7 @@ fn same_action_record(active: &Notification, record: &Notification) -> bool {
 }
 
 fn visible_action_label(action: &Action) -> Option<String> {
-    if !action.label().trim().is_empty() {
-        return Some(action.label().to_owned());
-    }
-    let label = match action.purpose()? {
-        "im.reply-with-text" => "Reply",
-        "call.accept" => "Accept",
-        "call.decline" => "Decline",
-        "call.hang-up" => "Hang Up",
-        "call.enable-speakerphone" => "Speaker On",
-        "call.disable-speakerphone" => "Speaker Off",
-        // A custom alert has no safe generic verb. Unknown purposes are
-        // extensible protocol values and must not become guessed controls.
-        _ => return None,
-    };
-    Some(label.to_owned())
+    rmac_notifications::protocol::visible_action_label(action).map(Into::into)
 }
 
 #[derive(Clone, Debug)]

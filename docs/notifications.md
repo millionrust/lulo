@@ -184,6 +184,27 @@ existing visual deadline is preserved but its pending service command is
 disarmed, preventing a second close after the authority has already committed
 the first one.
 
+`rmac_notifications_runtime::presentation::Presenter` is the renderer-neutral
+banner view contract. It atomically joins bounded stack geometry to the exact
+application name, title, body, priority, default action, and visible buttons.
+Explicit button text is preserved; known portal purposes receive their standard
+verb, and unknown unlabeled purposes never become guessed controls. Stable card,
+button-position, and dismiss identities preserve the service's exact action
+target. Persistent notifications expose no dismiss control. All presentation
+content, application names, control labels, and output identities remain
+redacted from diagnostics.
+
+Every card is an assistive live region: urgent notifications are assertive and
+the rest polite. New banners are announced once, while replacement is announced
+again only when `show-as-new` explicitly requests it. Cards and controls form a
+stable keyboard order supporting Tab, Shift+Tab, arrows, Home, End, Enter,
+Space, and Escape. One exact control may be busy at a time, and only its matching
+completion releases the activation latch. If the notification authority closes
+a banner before its exit animation completes, the presenter retains its last
+validated content until the stack removes the terminal visual; focused content
+then releases focus exactly once. A malformed, duplicate, missing, or oversized
+snapshot fails atomically without replacing the last valid presentation.
+
 ## Notification Center storage
 
 `rmac-notifications-store` owns the E3 history and per-app policy file under

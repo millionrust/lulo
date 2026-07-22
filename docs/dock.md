@@ -120,13 +120,33 @@ attention, exact window count, unavailable state, and exact Trash count without
 disclosing window titles, commands, or local paths.
 
 Desktop-entry icons retain their resolved Linux icon file. Apps without one use
-an original embedded rmac application tile. Files, Downloads, empty Trash, and
-full Trash also use original self-contained 64-unit SVG assets embedded in the
-crate, so session startup cannot race an installation path. The full Trash icon
-and badge appear only from an authoritative positive count; empty and unknown
-state never invent a badge. External icon paths have a redacted debug
-representation. The future renderer remains responsible for bounded decoding
-and accessible button semantics.
+an original embedded rmac application tile. Files, Downloads, empty Trash, full
+Trash, and the crowded-Dock More stack also use original self-contained 64-unit
+SVG assets embedded in the crate, so session startup cannot race an
+installation path. The full Trash icon and badge appear only from an
+authoritative positive count; empty and unknown state never invent a badge.
+External icon paths have a redacted debug representation. The future renderer
+remains responsible for bounded decoding and accessible button semantics.
+
+## Crowded outputs
+
+Fitting is chosen from content and output width before hover. The Dock first
+keeps every item and reduces its 48-pixel icon, normal gap, and influence radius
+proportionally, never below the 36-pixel primary-shell hit target. A conservative
+worst-case magnification envelope is reserved during this decision, so pointer
+movement cannot change the selected base size or make the shelf overflow.
+The renderer caches that immutable layout plan until content, output geometry,
+or policy changes; each pointer frame performs only the stable-center geometry
+projection and never repeats fitting or clones the hidden application stack.
+
+If every application still cannot fit, the leading application order and every
+place remain fixed while the hidden application tail moves behind one typed
+More stack. The stack retains the complete entries in order for a future
+keyboard/Orca-accessible popover and aggregates the exact hidden count plus
+running, active, and urgent state. It is a real hit-test identity with an
+original icon, not an ellipsis painted over unreachable items. Only an output
+too narrow for the More stack and mandatory places at the 36-pixel floor fails
+with an explicit required/available extent.
 
 Each coherent runtime snapshot also contains a renderer-ready `surface_plan`.
 For every selected output it fixes the edge, valid logical axis length, scale,

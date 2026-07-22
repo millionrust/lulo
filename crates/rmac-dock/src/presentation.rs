@@ -7,6 +7,8 @@ use crate::{motion, Item, Model, SpecialItem, SpecialItemKind, SurfaceDescriptio
 
 pub const SHELF_AXIS_PADDING: f32 = 8.0;
 pub const GROUP_GAP: f32 = 24.0;
+pub const MINIMUM_ICON_SIZE: f32 = 36.0;
+pub const MINIMUM_ICON_GAP: f32 = 4.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BuiltinIcon {
@@ -15,6 +17,7 @@ pub enum BuiltinIcon {
     Downloads,
     TrashEmpty,
     TrashFull,
+    More,
 }
 
 impl BuiltinIcon {
@@ -27,6 +30,7 @@ impl BuiltinIcon {
             Self::Downloads => include_str!("../assets/icons/downloads.svg"),
             Self::TrashEmpty => include_str!("../assets/icons/trash-empty.svg"),
             Self::TrashFull => include_str!("../assets/icons/trash-full.svg"),
+            Self::More => include_str!("../assets/icons/more.svg"),
         }
     }
 }
@@ -50,6 +54,7 @@ impl fmt::Debug for Icon {
 pub enum EntryId {
     Application(String),
     Special(SpecialItemKind),
+    Overflow,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -96,6 +101,33 @@ pub struct ShelfLayout {
     pub end: f32,
     /// Center of the noninteractive separator between applications and places.
     pub separator_axis: Option<f32>,
+    /// Stable fitting policy selected before pointer magnification is applied.
+    pub effective_magnification: motion::MagnificationConfig,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OverflowGroup {
+    pub entry: Entry,
+    /// Complete hidden tail in original Dock order for an accessible popover.
+    pub hidden_applications: Vec<Entry>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShelfLayoutPlan {
+    axis: f32,
+    available: f32,
+    ids: Vec<EntryId>,
+    application_group_len: usize,
+    place_count: usize,
+    gaps: Vec<f32>,
+    desired_shift: f32,
+    magnification_enabled: bool,
+    reduced_motion: bool,
+    pub effective_magnification: motion::MagnificationConfig,
+    /// Present only when a narrow output cannot show the complete application
+    /// group at the minimum visual size. It is prepared once, not cloned for
+    /// every pointer frame.
+    pub overflow: Option<OverflowGroup>,
 }
 
 impl ShelfLayout {
@@ -105,6 +137,68 @@ impl ShelfLayout {
             .iter()
             .find(|slot| (axis - slot.center).abs() <= slot.size / 2.0)
             .map(|slot| &slot.id)
+    }
+}
+
+impl ShelfLayoutPlan {
+    pub fn visible_ids(&self) -> &[EntryId] {
+        &self.ids
+    }
+
+    /// Project one pointer frame without repeating output fitting, overflow
+    /// selection, or hidden-entry cloning.
+    pub fn layout(&self, pointer_axis: Option<f32>) -> Result<ShelfLayout, LayoutError> {
+        if pointer_axis
+            .is_some_and(|pointer| !pointer.is_finite() || !(0.0..=self.axis).contains(&pointer))
+        {
+            return Err(LayoutError::InvalidPointer);
+        }
+        if self.ids.is_empty() {
+            return Ok(ShelfLayout {
+                start: self.axis / 2.0,
+                end: self.axis / 2.0,
+                effective_magnification: self.effective_magnification,
+                ..Default::default()
+            });
+        }
+        let relative_pointer = pointer_axis.map(|pointer| pointer - self.desired_shift);
+        let layout = motion::magnified_layout_with_gaps(
+            self.ids.len(),
+            &self.gaps,
+            relative_pointer,
+            self.magnification_enabled,
+            self.reduced_motion,
+            self.effective_magnification,
+        )?;
+        ensure_fits(layout.extent(), self.available)?;
+
+        let minimum_shift = SHELF_AXIS_PADDING - layout.start;
+        let maximum_shift = self.axis - SHELF_AXIS_PADDING - layout.end;
+        let shift = self.desired_shift.clamp(minimum_shift, maximum_shift);
+        let slots = self
+            .ids
+            .iter()
+            .cloned()
+            .zip(layout.items)
+            .map(|(id, geometry)| Slot {
+                id,
+                center: geometry.center + shift,
+                size: geometry.size,
+                scale: geometry.scale,
+            })
+            .collect::<Vec<_>>();
+        let separator_axis = (self.application_group_len > 0 && self.place_count > 0).then(|| {
+            let left = &slots[self.application_group_len - 1];
+            let right = &slots[self.application_group_len];
+            ((left.center + left.size / 2.0) + (right.center - right.size / 2.0)) / 2.0
+        });
+        Ok(ShelfLayout {
+            start: layout.start + shift,
+            end: layout.end + shift,
+            slots,
+            separator_axis,
+            effective_magnification: self.effective_magnification,
+        })
     }
 }
 
@@ -163,6 +257,15 @@ impl ShelfContent {
         surface: &SurfaceDescription,
         pointer_axis: Option<f32>,
     ) -> Result<ShelfLayout, LayoutError> {
+        self.prepare_layout(surface)?.layout(pointer_axis)
+    }
+
+    /// Fit content once per coherent content/output policy change. Renderers
+    /// retain this plan and call `ShelfLayoutPlan::layout` for pointer frames.
+    pub fn prepare_layout(
+        &self,
+        surface: &SurfaceDescription,
+    ) -> Result<ShelfLayoutPlan, LayoutError> {
         if !surface.output_axis_length.is_finite()
             || surface.output_axis_length <= 0.0
             || surface.output_axis_length > f32::MAX as f64
@@ -170,78 +273,260 @@ impl ShelfContent {
             return Err(LayoutError::InvalidAxis);
         }
         let axis = surface.output_axis_length as f32;
-        if pointer_axis
-            .is_some_and(|pointer| !pointer.is_finite() || !(0.0..=axis).contains(&pointer))
-        {
-            return Err(LayoutError::InvalidPointer);
-        }
-        let entries = self
-            .applications
-            .iter()
-            .chain(self.places.iter())
-            .collect::<Vec<_>>();
-        if entries.is_empty() {
-            return Ok(ShelfLayout {
-                start: axis / 2.0,
-                end: axis / 2.0,
-                ..Default::default()
+        let requested_magnification = surface.magnification.validate()?;
+        if self.applications.is_empty() && self.places.is_empty() {
+            return Ok(ShelfLayoutPlan {
+                axis,
+                available: axis,
+                ids: Vec::new(),
+                application_group_len: 0,
+                place_count: 0,
+                gaps: Vec::new(),
+                desired_shift: axis / 2.0,
+                magnification_enabled: surface.magnification_enabled,
+                reduced_motion: !surface.animate,
+                effective_magnification: requested_magnification,
+                overflow: None,
             });
         }
-
-        let mut gaps = vec![surface.magnification.gap; entries.len().saturating_sub(1)];
-        if self.has_separator() {
-            gaps[self.applications.len() - 1] = GROUP_GAP;
-        }
-        let base = motion::magnified_layout_with_gaps(
-            entries.len(),
-            &gaps,
-            None,
-            false,
-            false,
-            surface.magnification,
-        )?;
         let available = axis - 2.0 * SHELF_AXIS_PADDING;
         if available <= 0.0 {
             return Err(LayoutError::InvalidAxis);
         }
-        ensure_fits(base.extent(), available)?;
-
-        let desired_shift = (axis - base.extent()) / 2.0 - base.start;
-        let relative_pointer = pointer_axis.map(|pointer| pointer - desired_shift);
-        let layout = motion::magnified_layout_with_gaps(
-            entries.len(),
-            &gaps,
-            relative_pointer,
-            surface.magnification_enabled,
-            !surface.animate,
-            surface.magnification,
+        let selection = select_entries(
+            self,
+            requested_magnification,
+            surface.magnification_enabled && surface.animate,
+            available,
         )?;
-        ensure_fits(layout.extent(), available)?;
-
-        let minimum_shift = SHELF_AXIS_PADDING - layout.start;
-        let maximum_shift = axis - SHELF_AXIS_PADDING - layout.end;
-        let shift = desired_shift.clamp(minimum_shift, maximum_shift);
-        let slots = entries
-            .into_iter()
-            .zip(layout.items)
-            .map(|(entry, geometry)| Slot {
-                id: entry.id.clone(),
-                center: geometry.center + shift,
-                size: geometry.size,
-                scale: geometry.scale,
-            })
-            .collect::<Vec<_>>();
-        let separator_axis = self.has_separator().then(|| {
-            let left = &slots[self.applications.len() - 1];
-            let right = &slots[self.applications.len()];
-            ((left.center + left.size / 2.0) + (right.center - right.size / 2.0)) / 2.0
-        });
-        Ok(ShelfLayout {
-            start: layout.start + shift,
-            end: layout.end + shift,
-            slots,
-            separator_axis,
+        let gaps = layout_gaps(
+            selection.ids.len(),
+            selection.application_group_len,
+            self.places.len(),
+            selection.magnification.gap,
+        );
+        let base = motion::magnified_layout_with_gaps(
+            selection.ids.len(),
+            &gaps,
+            None,
+            false,
+            false,
+            selection.magnification,
+        )?;
+        let desired_shift = (axis - base.extent()) / 2.0 - base.start;
+        Ok(ShelfLayoutPlan {
+            axis,
+            available,
+            ids: selection.ids,
+            application_group_len: selection.application_group_len,
+            place_count: self.places.len(),
+            gaps,
+            desired_shift,
+            magnification_enabled: surface.magnification_enabled,
+            reduced_motion: !surface.animate,
+            effective_magnification: selection.magnification,
+            overflow: selection.overflow,
         })
+    }
+}
+
+struct LayoutSelection {
+    ids: Vec<EntryId>,
+    application_group_len: usize,
+    magnification: motion::MagnificationConfig,
+    overflow: Option<OverflowGroup>,
+}
+
+fn select_entries(
+    content: &ShelfContent,
+    requested: motion::MagnificationConfig,
+    magnifies: bool,
+    available: f32,
+) -> Result<LayoutSelection, LayoutError> {
+    if let Some(magnification) = fit_magnification(
+        content.applications.len(),
+        content.places.len(),
+        requested,
+        magnifies,
+        available,
+    ) {
+        return Ok(LayoutSelection {
+            ids: content
+                .applications
+                .iter()
+                .chain(content.places.iter())
+                .map(|entry| entry.id.clone())
+                .collect(),
+            application_group_len: content.applications.len(),
+            magnification,
+            overflow: None,
+        });
+    }
+
+    if !content.applications.is_empty() {
+        for visible_applications in (0..content.applications.len()).rev() {
+            let application_group_len = visible_applications + 1;
+            if let Some(magnification) = fit_magnification(
+                application_group_len,
+                content.places.len(),
+                requested,
+                magnifies,
+                available,
+            ) {
+                let overflow =
+                    overflow_group(content.applications[visible_applications..].to_vec());
+                let ids = content.applications[..visible_applications]
+                    .iter()
+                    .map(|entry| entry.id.clone())
+                    .chain(std::iter::once(EntryId::Overflow))
+                    .chain(content.places.iter().map(|entry| entry.id.clone()))
+                    .collect();
+                return Ok(LayoutSelection {
+                    ids,
+                    application_group_len,
+                    magnification,
+                    overflow: Some(overflow),
+                });
+            }
+        }
+    }
+
+    let minimum = compact_magnification(requested, requested.icon_size.min(MINIMUM_ICON_SIZE));
+    let application_group_len = usize::from(!content.applications.is_empty());
+    Err(LayoutError::DoesNotFit {
+        required: reserved_extent(
+            application_group_len,
+            content.places.len(),
+            minimum,
+            magnifies,
+        ),
+        available,
+    })
+}
+
+fn fit_magnification(
+    application_count: usize,
+    place_count: usize,
+    requested: motion::MagnificationConfig,
+    magnifies: bool,
+    available: f32,
+) -> Option<motion::MagnificationConfig> {
+    if reserved_extent(application_count, place_count, requested, magnifies) <= available {
+        return Some(requested);
+    }
+    let minimum_icon_size = requested.icon_size.min(MINIMUM_ICON_SIZE);
+    let minimum = compact_magnification(requested, minimum_icon_size);
+    if reserved_extent(application_count, place_count, minimum, magnifies) > available {
+        return None;
+    }
+
+    let mut lower = minimum_icon_size;
+    let mut upper = requested.icon_size;
+    let mut best = minimum;
+    for _ in 0..24 {
+        let candidate_size = (lower + upper) / 2.0;
+        let candidate = compact_magnification(requested, candidate_size);
+        if reserved_extent(application_count, place_count, candidate, magnifies) <= available {
+            best = candidate;
+            lower = candidate_size;
+        } else {
+            upper = candidate_size;
+        }
+    }
+    Some(best)
+}
+
+fn compact_magnification(
+    requested: motion::MagnificationConfig,
+    icon_size: f32,
+) -> motion::MagnificationConfig {
+    let ratio = icon_size / requested.icon_size;
+    let minimum_gap = requested.gap.min(MINIMUM_ICON_GAP);
+    motion::MagnificationConfig {
+        icon_size,
+        gap: (requested.gap * ratio).clamp(minimum_gap, requested.gap),
+        influence_radius: requested.influence_radius * ratio,
+        maximum_scale: requested.maximum_scale,
+    }
+}
+
+fn reserved_extent(
+    application_count: usize,
+    place_count: usize,
+    magnification: motion::MagnificationConfig,
+    magnifies: bool,
+) -> f32 {
+    let item_count = application_count + place_count;
+    if item_count == 0 {
+        return 0.0;
+    }
+    let mut extent = item_count as f32 * magnification.icon_size
+        + item_count.saturating_sub(1) as f32 * magnification.gap;
+    if application_count > 0 && place_count > 0 {
+        extent += GROUP_GAP.max(magnification.gap) - magnification.gap;
+    }
+    if magnifies {
+        let stride = magnification.icon_size + magnification.gap;
+        let affected = (((2.0 * magnification.influence_radius) / stride).floor() as usize + 1)
+            .min(item_count);
+        extent += affected as f32 * magnification.icon_size * (magnification.maximum_scale - 1.0);
+    }
+    extent
+}
+
+fn layout_gaps(
+    item_count: usize,
+    application_count: usize,
+    place_count: usize,
+    regular_gap: f32,
+) -> Vec<f32> {
+    let mut gaps = vec![regular_gap; item_count.saturating_sub(1)];
+    if application_count > 0 && place_count > 0 {
+        gaps[application_count - 1] = GROUP_GAP.max(regular_gap);
+    }
+    gaps
+}
+
+fn overflow_group(hidden_applications: Vec<Entry>) -> OverflowGroup {
+    let active = hidden_applications
+        .iter()
+        .any(|entry| entry.activity == ActivityIndicator::Active);
+    let running = hidden_applications
+        .iter()
+        .filter(|entry| entry.activity != ActivityIndicator::None)
+        .count();
+    let urgent = hidden_applications.iter().any(|entry| entry.urgent);
+    let mut accessible = vec![
+        "More applications".to_owned(),
+        count_label(hidden_applications.len(), "hidden application"),
+    ];
+    if running > 0 {
+        accessible.push(count_label(running, "running application"));
+    }
+    if active {
+        accessible.push("contains active application".into());
+    }
+    if urgent {
+        accessible.push("needs attention".into());
+    }
+    OverflowGroup {
+        entry: Entry {
+            id: EntryId::Overflow,
+            label: "More".into(),
+            accessible_label: accessible.join(", "),
+            icon: Icon::Builtin(BuiltinIcon::More),
+            enabled: true,
+            activity: if active {
+                ActivityIndicator::Active
+            } else if running > 0 {
+                ActivityIndicator::Running
+            } else {
+                ActivityIndicator::None
+            },
+            urgent,
+            badge: Some(hidden_applications.len()),
+        },
+        hidden_applications,
     }
 }
 
@@ -465,6 +750,7 @@ mod tests {
             BuiltinIcon::Downloads,
             BuiltinIcon::TrashEmpty,
             BuiltinIcon::TrashFull,
+            BuiltinIcon::More,
         ];
         for icon in icons {
             let svg = icon.svg();
@@ -550,13 +836,13 @@ mod tests {
         assert!(layout.slots.iter().all(|slot| slot.scale == 1.0));
         assert!(layout.slots.iter().all(|slot| slot.size == 48.0));
 
-        assert_eq!(
+        assert!(matches!(
             content.layout(&surface(100.0, false), None),
             Err(LayoutError::DoesNotFit {
-                required: 232.0,
+                required,
                 available: 84.0,
-            })
-        );
+            }) if required > 84.0
+        ));
         assert_eq!(
             content.layout(&surface(800.0, false), Some(f32::NAN)),
             Err(LayoutError::InvalidPointer)
@@ -564,6 +850,100 @@ mod tests {
         assert_eq!(
             content.layout(&surface(f64::INFINITY, false), None),
             Err(LayoutError::InvalidAxis)
+        );
+    }
+
+    #[test]
+    fn crowded_layout_selects_one_stable_size_before_hover() {
+        let applications = (0..20)
+            .map(|index| item(&format!("App {index:02}")))
+            .collect();
+        let content = ShelfContent::project(&Model {
+            items: applications,
+            special_items: vec![
+                special(SpecialItemKind::Files, "Files", true, None),
+                special(SpecialItemKind::Downloads, "Downloads", true, None),
+                special(SpecialItemKind::Trash, "Trash", true, Some(2)),
+            ],
+            ..Default::default()
+        });
+        let surface = surface(1366.0, false);
+        let plan = content.prepare_layout(&surface).unwrap();
+        let resting = plan.layout(None).unwrap();
+
+        assert_eq!(resting.slots.len(), 23);
+        assert!(plan.overflow.is_none());
+        assert!(plan.effective_magnification.icon_size < 48.0);
+        assert!(plan.effective_magnification.icon_size >= MINIMUM_ICON_SIZE);
+        let pointer = resting.slots[10].center;
+        let hovered = plan.layout(Some(pointer)).unwrap();
+        let replay = plan.layout(Some(pointer)).unwrap();
+        assert_eq!(hovered, replay);
+        assert_eq!(
+            hovered.effective_magnification,
+            plan.effective_magnification
+        );
+        assert!(hovered.end <= 1366.0 - SHELF_AXIS_PADDING);
+        assert!(hovered.start >= SHELF_AXIS_PADDING);
+    }
+
+    #[test]
+    fn extreme_crowding_keeps_a_stable_prefix_and_aggregates_hidden_state() {
+        let mut applications = (0..100)
+            .map(|index| item(&format!("App {index:03}")))
+            .collect::<Vec<_>>();
+        applications[99].running = true;
+        applications[99].active = true;
+        applications[99].urgent = true;
+        let content = ShelfContent::project(&Model {
+            items: applications,
+            special_items: vec![
+                special(SpecialItemKind::Files, "Files", true, None),
+                special(SpecialItemKind::Downloads, "Downloads", true, None),
+                special(SpecialItemKind::Trash, "Trash", true, Some(1)),
+            ],
+            ..Default::default()
+        });
+        let plan = content.prepare_layout(&surface(800.0, false)).unwrap();
+        let layout = plan.layout(None).unwrap();
+        let overflow = plan.overflow.as_ref().expect("overflow is discoverable");
+        let visible_applications = layout.slots.len() - content.places.len() - 1;
+
+        assert!(visible_applications > 0);
+        for (index, slot) in layout.slots[..visible_applications].iter().enumerate() {
+            assert_eq!(
+                slot.id,
+                EntryId::Application(format!("app {index:03}.desktop"))
+            );
+        }
+        assert_eq!(layout.slots[visible_applications].id, EntryId::Overflow);
+        assert_eq!(
+            overflow.hidden_applications.len(),
+            content.applications.len() - visible_applications
+        );
+        assert_eq!(
+            overflow.hidden_applications[0].id,
+            EntryId::Application(format!("app {visible_applications:03}.desktop"))
+        );
+        assert_eq!(overflow.entry.icon, Icon::Builtin(BuiltinIcon::More));
+        assert_eq!(
+            overflow.entry.badge,
+            Some(overflow.hidden_applications.len())
+        );
+        assert_eq!(overflow.entry.activity, ActivityIndicator::Active);
+        assert!(overflow.entry.urgent);
+        assert!(overflow
+            .entry
+            .accessible_label
+            .contains("contains active application"));
+        assert!(overflow.entry.accessible_label.contains("needs attention"));
+        assert_eq!(
+            layout.hit_test(layout.slots[visible_applications].center),
+            Some(&EntryId::Overflow)
+        );
+        assert_eq!(
+            layout.slots[visible_applications + 1].id,
+            EntryId::Special(SpecialItemKind::Files)
         );
     }
 }

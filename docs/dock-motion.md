@@ -29,8 +29,19 @@ axis inset. That final shift never feeds the next scale calculation.
 
 Every rendered slot retains its typed application or place identity for hit
 testing. Gaps and the separator remain noninteractive. Nonfinite/out-of-output
-pointer coordinates, invalid output axes, invalid gap vectors, and content that
-cannot fit are explicit errors rather than clipped or overlapping controls.
+pointer coordinates, invalid output axes, and invalid gap vectors are explicit
+errors rather than clipped or overlapping controls.
+
+Crowded output fitting is hover-independent. The layout reserves a conservative
+upper bound for every icon that can lie inside the influence radius, scales the
+48-pixel base icon, gap, and radius together, and stops at the 36-pixel primary-
+shell target. If that cannot fit, it keeps the stable leading application order
+and all places while replacing only the hidden application tail with one More
+stack. That stack aggregates active/running/urgent state and retains the exact
+hidden entries for its future accessible popover. An output too narrow for even
+that minimum representation fails explicitly. Fitting and overflow selection
+produce a reusable plan; pointer frames reuse it instead of repeating the
+binary fit or cloning hidden entries.
 
 The layout is one-dimensional and applies equally to bottom, left, and right
 placement; the renderer maps its axis to screen coordinates. Reduced motion
@@ -79,6 +90,7 @@ boolean changes.
 This model is not D6 completion. Niri 26.4 does not expose real fullscreen state
 on its IPC `Window`, so the project does not guess it; real fullscreen behavior
 must come from niri's layer-shell stacking and reference-PC proof. Layer-surface
-pressure behavior, pointer capture and event translation, crowded-Dock fitting,
-live reduced-motion renderer proof, 60/120 Hz frame evidence, combined-shell
-idle measurements, and multi-output hardware validation remain pending.
+pressure behavior, pointer capture and event translation, the accessible More
+popover renderer, live reduced-motion renderer proof, 60/120 Hz frame evidence,
+combined-shell idle measurements, and multi-output hardware validation remain
+pending.

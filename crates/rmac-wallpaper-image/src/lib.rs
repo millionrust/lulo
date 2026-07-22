@@ -126,7 +126,7 @@ pub struct RasterIssue {
     pub kind: RasterIssueKind,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RasterSurface {
     pub output: rmac_compositor::OutputId,
     pub logical_size: rmac_compositor::LogicalSize,

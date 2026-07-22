@@ -1,5 +1,7 @@
 //! Live, last-known-good orchestration for the wallpaper session process.
 
+pub mod surfaces;
+
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};

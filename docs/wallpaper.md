@@ -65,6 +65,33 @@ Aurora is cached at target physical size. Eviction leaves live renderer handles
 valid. Exact-file native events (including existing symlink targets) explicitly
 invalidate matching entries and force re-rasterization; there is no polling.
 
+## Physical surface lifecycle
+
+`rmac-wallpaper-runtime::surfaces` owns the framework-neutral boundary between
+render updates and real background windows. It accepts at most 32 requested
+outputs and validates each complete plan/raster transaction before changing
+desired state: output identities must be unique and matched, geometry and scale
+must agree with the plan, layout must be exactly reproducible, and decoded RGBA
+dimensions, pixels, and byte length must remain within the decoder bounds. A
+malformed, duplicate, unexpected, or oversized update leaves the previous
+accepted state untouched.
+
+Rasterization remains independently fallible per output. A requested output
+missing from a partial raster update retains its previous accepted frame and is
+reported as stale; a new output without any accepted frame is reported as
+unavailable. Other outputs can still update. Disconnecting an output removes
+its old background before a replacement is created, while presenting a new
+frame on a connected output preserves that surface's stable physical identity.
+
+The registry emits only one acknowledged Create, Present, or Remove command at
+a time. Applied state changes only after the platform adapter reports success.
+A newer desired revision supersedes pending work by reconciling immediately
+after its acknowledgement; stale command completions and safe cancellations
+cannot mutate newer state. Failure blocks only the still-current operation for
+that output, leaves its applied surface unchanged, and does not prevent peers
+from converging. Explicit retry or a changed desired frame clears that failure.
+Health-only runtime updates never create surface work.
+
 ## Motion
 
 Wallpaper changes use a 300 ms smoothstep crossfade capped at two seconds. The
@@ -100,5 +127,6 @@ wallpaper rollback. It keeps one exact selected-file watcher alive, invalidates
 stale generations on target/settings changes, and regenerates through the same
 bounded decoder when the file is replaced or edited.
 
-The Wayland background layer surface and executable, portal backend, and Linux
-hotplug/frame-time evidence remain pending. D9 is therefore not complete.
+The Wayland adapter that executes this lifecycle as background layer surfaces,
+the wallpaper executable, portal backend, and Linux hotplug/frame-time evidence
+remain pending. D9 is therefore not complete.

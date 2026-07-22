@@ -64,9 +64,30 @@ requests, and startup recovery remove only recognized unreferenced transaction
 files; a file that current settings may reference is retained. Portal response
 codes map success, cancellation, and other failure explicitly.
 
-The authenticated D-Bus backend method, request-handle cancellation adapter,
-GPUI preview/confirmation window, installed backend descriptor, and
-`rmac-portals.conf` selection entry remain future implementation work.
+`rmac-wallpaper-portal` also owns the authenticated asynchronous backend
+boundary. Its dedicated service builder exports the exact
+`org.freedesktop.impl.portal.Wallpaper.SetWallpaperURI` method and accepts calls
+only from the current unique owner of `org.freedesktop.portal.Desktop`. It
+exports `org.freedesktop.impl.portal.Request` at the frontend-provided handle
+for the interaction lifetime, and `Close()` races preview completion through
+one idempotent cancellation state. A preview decision wins exactly once before
+the durable commit begins; duplicate, stale, and replayed decisions are inert.
+
+Admission is capped at eight live interactions, source URIs and parent handles
+are bounded, preparation is serialized, and retained decoded previews share a
+256 MiB budget. The renderer-facing event contains app identity, parent handle,
+format, byte count, and decoded pixels but no source URI or staging path. It is
+published even when `show-preview=false`; a missing preview consumer fails with
+response 2 and drops the transaction. Unknown options are ignored for forward
+compatibility, missing `set-on` means background in rmac, and wrong types or
+unknown `set-on` values are rejected. The service uses a separate
+`org.freedesktop.impl.portal.desktop.rmac.wallpaper` bus name so future image/UI
+failures cannot take down the notification backend.
+
+The GPUI preview/confirmation window, supervised executable, installed backend
+descriptor, and `rmac-portals.conf` selection entry remain future
+implementation work. Installation must not advertise this backend before the
+real consent UI drains the mandatory preview stream.
 
 ## Consequences
 

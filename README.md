@@ -69,6 +69,7 @@ Shared crates:
 - `rmac-thumbnails` — XDG-aware, invalidation-safe image thumbnail generation.
 - `rmac-wallpaper` — per-output source planning and exact wallpaper fit geometry.
 - `rmac-wallpaper-image` — bounded procedural/file rasterization and shared LRU cache.
+- `rmac-wallpaper-portal` — authenticated, cancellable Wallpaper backend requests and durable confirmed imports.
 - `rmac-wallpaper-runtime` — live niri/settings orchestration with off-render resolution.
 - `rmac-wallpaper-system` — bounded, magic-checked local wallpaper file authority.
 

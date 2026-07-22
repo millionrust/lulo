@@ -5,6 +5,9 @@
 //! document, then applies an explicitly accepted whole-desktop choice without
 //! leaving failed or cancelled imports behind.
 
+pub mod broker;
+pub mod dbus;
+
 use std::collections::BTreeSet;
 use std::fmt;
 use std::fs::{File, OpenOptions};

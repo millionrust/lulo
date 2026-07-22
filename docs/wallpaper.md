@@ -126,6 +126,20 @@ startup recovery remove only recognized unreferenced imports, while uncertain
 or currently referenced content is retained. Response mapping distinguishes
 success, cancellation, and other failure.
 
+The same crate now exposes the exact authenticated backend method on a
+dedicated service connection. Only the current unique owner of
+`org.freedesktop.portal.Desktop` may call it. Each call installs the standard
+backend Request object at the supplied handle, and `Close()` cancels the live
+interaction before a durable commit can begin. At most eight requests are live;
+decode preparation is serialized; retained preview pixels share a 256 MiB
+budget; and source URI plus parent-window inputs are bounded. Every admitted
+image is sent through a private, path-free preview event even when the caller
+sets `show-preview=false`. The decision capability is one-shot, stale replies
+are inert, a dropped preview consumer fails closed, and the Request object is
+removed when the method returns. Missing `set-on` selects background, while
+lock-screen/both remain explicit non-success until the secure lock authority
+can apply them truthfully.
+
 System Settings now reads this authority, offers default and stable-output
 overrides, and follows the direct niri output stream so unplugged choices remain
 explicit and reappear by ID. Its local-file chooser is portal-mediated, and a
@@ -137,6 +151,6 @@ stale generations on target/settings changes, and regenerates through the same
 bounded decoder when the file is replaced or edited.
 
 The Wayland adapter that executes this lifecycle as background layer surfaces,
-the wallpaper executable, authenticated D-Bus/request-cancellation adapter,
-mandatory preview window, backend installation assets, and Linux portal/hotplug/
-frame-time evidence remain pending. D9 is therefore not complete.
+the supervised wallpaper executable and GPUI mandatory-preview window, backend
+installation assets/selection, and Linux portal/hotplug/frame-time evidence
+remain pending. D9 is therefore not complete.

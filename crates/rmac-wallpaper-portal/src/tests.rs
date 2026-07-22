@@ -262,3 +262,193 @@ fn portal_response_mapping_is_exact() {
     assert_eq!(Outcome::Cancelled.response() as u32, 1);
     assert_eq!(PortalResponse::Other as u32, 2);
 }
+
+#[test]
+fn broker_requires_preview_and_applies_one_exact_decision() {
+    let root = root("broker-accept");
+    let source = fixture(&root, "private-preview.png", [11, 22, 33, 255]);
+    let importer = importer(&root);
+    let (broker, previews) = broker::Broker::new(importer);
+    let cancellation = broker::Cancellation::new();
+    let worker = {
+        let broker = broker.clone();
+        let cancellation = cancellation.clone();
+        let request = request(&source);
+        std::thread::spawn(move || {
+            futures_lite::future::block_on(broker.request(
+                request,
+                "wayland:private-parent".into(),
+                cancellation,
+            ))
+        })
+    };
+
+    let preview = futures_lite::future::block_on(previews.recv()).unwrap();
+    assert_eq!(preview.app_id(), "org.example.Photos");
+    assert_eq!(preview.parent_window(), "wayland:private-parent");
+    assert_eq!(preview.image().physical_size().width, 8);
+    assert!(preview.source_bytes() > 0);
+    assert!(!format!("{preview:?}").contains("private-parent"));
+    assert!(broker.decide(preview.id(), Consent::Accept));
+    assert!(!broker.decide(preview.id(), Consent::Decline));
+    assert_eq!(worker.join().unwrap(), PortalResponse::Success);
+    assert_eq!(broker.pending_count(), 0);
+    assert!(root.join("config/shell.json").exists());
+
+    drop(preview);
+    drop(previews);
+    drop(broker);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn close_and_decline_are_private_safe_and_replay_is_inert() {
+    let root = root("broker-cancel");
+    let source = fixture(&root, "selected.png", [7, 8, 9, 255]);
+    let importer = importer(&root);
+    let (broker, previews) = broker::Broker::new(importer);
+
+    let declined = {
+        let broker = broker.clone();
+        let request = request(&source);
+        std::thread::spawn(move || {
+            futures_lite::future::block_on(broker.request(
+                request,
+                "".into(),
+                broker::Cancellation::new(),
+            ))
+        })
+    };
+    let decline_preview = futures_lite::future::block_on(previews.recv()).unwrap();
+    assert!(broker.decide(decline_preview.id(), Consent::Decline));
+    assert_eq!(declined.join().unwrap(), PortalResponse::Cancelled);
+
+    let cancellation = broker::Cancellation::new();
+    let cancelled = {
+        let broker = broker.clone();
+        let request = request(&source);
+        let cancellation = cancellation.clone();
+        std::thread::spawn(move || {
+            futures_lite::future::block_on(broker.request(request, "".into(), cancellation))
+        })
+    };
+    let cancel_preview = futures_lite::future::block_on(previews.recv()).unwrap();
+    assert!(cancellation.cancel());
+    assert!(!cancellation.cancel());
+    assert_eq!(cancelled.join().unwrap(), PortalResponse::Cancelled);
+    assert!(!broker.decide(cancel_preview.id(), Consent::Accept));
+    assert_eq!(broker.pending_count(), 0);
+    assert!(!root.join("config/shell.json").exists());
+    assert!(visible_entries(&root.join("managed")).is_empty());
+
+    drop(decline_preview);
+    drop(cancel_preview);
+    drop(previews);
+    drop(broker);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn broker_admission_is_bounded_before_additional_decode() {
+    let root = root("broker-bound");
+    let source = fixture(&root, "selected.png", [91, 92, 93, 255]);
+    let importer = importer(&root);
+    let (broker, previews) = broker::Broker::new(importer);
+    let mut workers = Vec::new();
+    let mut cancellations = Vec::new();
+    let mut preview_requests = Vec::new();
+
+    for _ in 0..broker::MAX_PENDING_REQUESTS {
+        let cancellation = broker::Cancellation::new();
+        cancellations.push(cancellation.clone());
+        let broker = broker.clone();
+        let request = request(&source);
+        workers.push(std::thread::spawn(move || {
+            futures_lite::future::block_on(broker.request(request, "".into(), cancellation))
+        }));
+        preview_requests.push(futures_lite::future::block_on(previews.recv()).unwrap());
+    }
+    assert_eq!(broker.pending_count(), broker::MAX_PENDING_REQUESTS);
+
+    assert_eq!(
+        futures_lite::future::block_on(broker.request(
+            request(&source),
+            "".into(),
+            broker::Cancellation::new(),
+        )),
+        PortalResponse::Other
+    );
+    for cancellation in cancellations {
+        assert!(cancellation.cancel());
+    }
+    for worker in workers {
+        assert_eq!(worker.join().unwrap(), PortalResponse::Cancelled);
+    }
+    assert_eq!(broker.pending_count(), 0);
+    assert!(visible_entries(&root.join("managed")).is_empty());
+
+    drop(preview_requests);
+    drop(previews);
+    drop(broker);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unavailable_preview_consumer_and_invalid_parent_fail_without_mutation() {
+    let root = root("broker-unavailable");
+    let source = fixture(&root, "selected.png", [101, 102, 103, 255]);
+    let importer = importer(&root);
+    let (broker, previews) = broker::Broker::new(importer);
+
+    assert_eq!(
+        futures_lite::future::block_on(broker.request(
+            request(&source),
+            "bad\nparent".into(),
+            broker::Cancellation::new(),
+        )),
+        PortalResponse::Other
+    );
+    assert!(previews.try_recv().is_err());
+    drop(previews);
+    assert_eq!(
+        futures_lite::future::block_on(broker.request(
+            request(&source),
+            "".into(),
+            broker::Cancellation::new(),
+        )),
+        PortalResponse::Other
+    );
+    assert_eq!(broker.pending_count(), 0);
+    assert!(!root.join("config/shell.json").exists());
+    assert!(visible_entries(&root.join("managed")).is_empty());
+
+    drop(broker);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn wallpaper_interface_introspection_has_the_exact_backend_method_shape() {
+    use zbus::object_server::Interface as _;
+
+    let root = root("wire-introspection");
+    let importer = importer(&root);
+    let (broker, previews) = broker::Broker::new(importer);
+    let interface = dbus::WallpaperInterface::new(broker.clone());
+    let mut xml = String::new();
+    interface.introspect_to_writer(&mut xml, 0);
+
+    assert!(xml.contains("org.freedesktop.impl.portal.Wallpaper"));
+    assert!(xml.contains("method name=\"SetWallpaperURI\""));
+    assert!(xml.contains("arg name=\"handle\" type=\"o\" direction=\"in\""));
+    assert!(xml.contains("arg name=\"app_id\" type=\"s\" direction=\"in\""));
+    assert!(xml.contains("arg name=\"parent_window\" type=\"s\" direction=\"in\""));
+    assert!(xml.contains("arg name=\"uri\" type=\"s\" direction=\"in\""));
+    assert!(xml.contains("arg name=\"options\" type=\"a{sv}\" direction=\"in\""));
+    assert!(xml.contains("arg type=\"u\" direction=\"out\""));
+    assert!(!xml.contains("property name="));
+
+    drop(interface);
+    drop(previews);
+    drop(broker);
+    std::fs::remove_dir_all(root).unwrap();
+}

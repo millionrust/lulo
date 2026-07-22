@@ -7,6 +7,9 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+async-channel.workspace = true
+blocking.workspace = true
+futures-lite.workspace = true
 libc.workspace = true
 rmac-compositor.workspace = true
 rmac-shell-settings.workspace = true
@@ -14,6 +17,7 @@ rmac-storage.workspace = true
 rmac-wallpaper.workspace = true
 rmac-wallpaper-image.workspace = true
 rmac-wallpaper-system.workspace = true
+zbus.workspace = true
 
 [dev-dependencies]
 image = { workspace = true, features = ["png"] }

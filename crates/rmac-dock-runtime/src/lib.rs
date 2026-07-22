@@ -1,5 +1,7 @@
 //! Event-driven, last-known-good orchestration for the Dock process.
 
+pub mod surfaces;
+
 use std::fmt;
 use std::time::Duration;
 

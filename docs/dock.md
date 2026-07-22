@@ -265,6 +265,25 @@ reservation request a frame even when the application items and output IDs are
 unchanged. Invalid magnification policy is an explicit plan error rather than a
 clamped or partly rendered Dock.
 
+`rmac-dock-runtime::surfaces::Registry` is the required ownership boundary for
+applying those plans. It accepts the complete runtime snapshot, retains at most
+32 desired outputs, rejects duplicate or invalid plans without discarding the
+last accepted state, and issues one monotonic command at a time. Disconnected
+outputs are removed before replacements are created; policy changes
+reconfigure the existing logical surface identity. A newer plan may arrive
+while an older command is pending—the acknowledged platform result is recorded
+first, then the next command converges directly to the newest description.
+
+Applied state changes only after the renderer acknowledges a real create,
+reconfigure, or remove. Cancellation is legal only when no platform state was
+touched, and a stale completion cannot mutate newer pending work. A failed
+command blocks only its output while other outputs continue; explicit retry or
+a changed desired description unblocks it, preventing an automatic failure
+loop. The renderer's command adapter must report `Failed` only when its applied
+state is known unchanged; uncertain partial platform work must be reconciled by
+closing that surface before retry. This registry specifies hotplug ownership,
+but the upstream-GPUI layer-surface command adapter remains pending A5.
+
 ## Outputs
 
 The model creates candidates only for enabled compositor outputs with finite,
@@ -276,6 +295,6 @@ resample retains the last-known Main ID, reports separate display-source health,
 and never guesses from connector order.
 
 The current slice is not D4 completion. The layer-shell view, bounded external
-icon decoding, pointer/keyboard semantics, surface hotplug execution,
+icon decoding, pointer/keyboard semantics, real surface-command execution,
 persistence UI, niri/reference-PC evidence, and performance gates remain
 pending.

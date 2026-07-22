@@ -175,6 +175,15 @@ action dispatch closes only the visual banner because the service already owns
 the notification transaction. This keeps D-Bus signals, Center history, and UI
 animation in one order without polling or content duplication.
 
+Service closure is also an explicit reconciliation input. Withdrawal,
+history-only posts, and duplicate closes for banners that were never shown or
+were already flood-retired are inert. A policy-suppressed replacement begins a
+visual-only exit for any older banner with the same stable ID. If an
+authoritative close arrives during a local expiry/dismiss animation, the
+existing visual deadline is preserved but its pending service command is
+disarmed, preventing a second close after the authority has already committed
+the first one.
+
 ## Notification Center storage
 
 `rmac-notifications-store` owns the E3 history and per-app policy file under

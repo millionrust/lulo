@@ -118,6 +118,9 @@ pub enum CloseCause {
     Expired,
     Dismissed,
     Action,
+    /// The notification authority already closed or suppressed this record.
+    /// Finishing its visual exit must not call the authority again.
+    Authority,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -372,6 +375,23 @@ impl Stack {
             .position(|banner| banner.id == id)
             .ok_or(Error::UnknownBanner)?;
         Ok(self.begin_exit(index, cause, now))
+    }
+
+    /// Reconciles a close already completed by the notification authority.
+    /// Unknown/retired banners are intentionally inert. If a local exit is in
+    /// progress, preserve its visual deadline but disarm its eventual service
+    /// command so the close cannot be dispatched twice.
+    pub fn reconcile_closed(&mut self, id: NotificationId, now: Time) -> Vec<Effect> {
+        let Some(index) = self.banners.iter().position(|banner| banner.id == id) else {
+            return Vec::new();
+        };
+        if let Phase::Exiting { cause, .. } = &mut self.banners[index].phase {
+            if *cause != CloseCause::Authority {
+                *cause = CloseCause::Authority;
+            }
+            return Vec::new();
+        }
+        self.begin_exit(index, CloseCause::Authority, now)
     }
 
     pub fn outputs_changed(
@@ -744,5 +764,29 @@ mod tests {
             .iter()
             .any(|effect| matches!(effect, Effect::RetireVisual { .. })));
         assert_eq!(stack.snapshot().banners.len(), 2);
+    }
+
+    #[test]
+    fn authoritative_close_is_idempotent_and_disarms_local_close_dispatch() {
+        let mut stack = Stack::new(Config::default(), Motion::Full).unwrap();
+        stack.post(id(1), output("one"), None, false, Time(0));
+        stack.advance(Time(220));
+        stack
+            .close(id(1), CloseCause::Dismissed, Time(300))
+            .unwrap();
+        assert_eq!(stack.schedule(Time(300)).wake_at, Some(Time(480)));
+
+        assert!(stack.reconcile_closed(id(1), Time(350)).is_empty());
+        assert_eq!(stack.schedule(Time(350)).wake_at, Some(Time(480)));
+        let effects = stack.advance(Time(480));
+        assert!(effects.contains(&Effect::Close {
+            id: id(1),
+            cause: CloseCause::Authority,
+        }));
+        assert!(!effects.contains(&Effect::Close {
+            id: id(1),
+            cause: CloseCause::Dismissed,
+        }));
+        assert!(stack.reconcile_closed(id(1), Time(500)).is_empty());
     }
 }

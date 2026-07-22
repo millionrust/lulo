@@ -61,7 +61,8 @@ impl Coordinator {
         now: Time,
     ) -> Result<Update, Error> {
         if !outcome.delivery.banner {
-            return Ok(self.update(Vec::new(), now));
+            let effects = self.stack.reconcile_closed(outcome.id, now);
+            return Ok(self.update(effects, now));
         }
         let notification = notifications
             .iter()
@@ -142,6 +143,13 @@ impl Coordinator {
             .close(id, CloseCause::Dismissed, now)
             .map_err(|_| Error::UnknownBanner)?;
         Ok(self.update(effects, now))
+    }
+
+    /// Reconciles a close already committed by the notification service. A
+    /// history-only, flood-retired, or duplicate close is intentionally inert.
+    pub fn apply_closed(&mut self, id: NotificationId, now: Time) -> Update {
+        let effects = self.stack.reconcile_closed(id, now);
+        self.update(effects, now)
     }
 
     /// Called after the service has successfully dispatched an action.
@@ -227,7 +235,7 @@ fn translate(effects: Vec<Effect>) -> Vec<Command> {
                 cause: CloseCause::Dismissed,
             } => commands.push(Command::Dismiss(id)),
             Effect::Close {
-                cause: CloseCause::Action,
+                cause: CloseCause::Action | CloseCause::Authority,
                 ..
             } => {}
         }
@@ -444,5 +452,62 @@ mod tests {
             .apply_post(outcome, &notifications, Time(2))
             .unwrap();
         assert_eq!(coordinator.snapshot().banners[0].output.as_str(), "known");
+    }
+
+    #[test]
+    fn authoritative_close_disarms_a_pending_dismiss_command() {
+        let mut coordinator = coordinator(rmac_appearance::MotionPreference::Full);
+        coordinator
+            .apply_compositor(
+                &rmac_compositor::Snapshot {
+                    outputs: vec![output("one")],
+                    ..Default::default()
+                },
+                Time(0),
+            )
+            .unwrap();
+        let (outcome, notifications) = posted(rmac_notifications::Timeout::Never);
+        let id = outcome.id;
+        coordinator
+            .apply_post(outcome, &notifications, Time(0))
+            .unwrap();
+        coordinator.advance(Time(220));
+        let dismissing = coordinator.request_dismiss(id, Time(300)).unwrap();
+        assert_eq!(dismissing.schedule.wake_at, Some(Time(480)));
+
+        let reconciled = coordinator.apply_closed(id, Time(350));
+        assert!(reconciled.commands.is_empty());
+        assert_eq!(reconciled.schedule.wake_at, Some(Time(480)));
+        assert_eq!(
+            coordinator.advance(Time(480)).commands,
+            vec![Command::Redraw]
+        );
+        assert!(coordinator.apply_closed(id, Time(500)).commands.is_empty());
+    }
+
+    #[test]
+    fn policy_suppressed_replacement_removes_an_existing_visual() {
+        let mut coordinator = coordinator(rmac_appearance::MotionPreference::Reduced);
+        coordinator
+            .apply_compositor(
+                &rmac_compositor::Snapshot {
+                    outputs: vec![output("one")],
+                    ..Default::default()
+                },
+                Time(0),
+            )
+            .unwrap();
+        let (mut outcome, notifications) = posted(rmac_notifications::Timeout::Never);
+        coordinator
+            .apply_post(outcome, &notifications, Time(0))
+            .unwrap();
+        assert_eq!(coordinator.snapshot().banners.len(), 1);
+
+        outcome.delivery.banner = false;
+        let update = coordinator
+            .apply_post(outcome, &notifications, Time(1))
+            .unwrap();
+        assert_eq!(update.commands, vec![Command::Redraw]);
+        assert!(coordinator.snapshot().banners.is_empty());
     }
 }

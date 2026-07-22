@@ -4995,6 +4995,10 @@ version = "0.1.0"
 dependencies = [
  "blocking",
  "futures-lite 2.6.1",
+ "image",
+ "libc",
+ "quick-xml 0.39.4",
+ "resvg",
  "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",

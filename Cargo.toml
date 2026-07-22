@@ -109,6 +109,7 @@ rmac-wallpaper-runtime = { version = "=0.1.0", path = "crates/rmac-wallpaper-run
 rmac-wallpaper-system = { version = "=0.1.0", path = "crates/rmac-wallpaper-system" }
 pam-sys2 = "=1.0.2"
 quick-xml = "0.39.4"
+resvg = { version = "=0.45.1", default-features = false }
 rust-embed = "8"
 rustix = { version = "=1.1.4", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }

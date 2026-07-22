@@ -1,5 +1,7 @@
 //! Typed launch and niri-focus execution for Dock activation outcomes.
 
+pub mod interaction;
+
 use std::fmt;
 use std::future::Future;
 use std::path::Path;

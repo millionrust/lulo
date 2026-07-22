@@ -80,6 +80,27 @@ optimistically. A future single-writer shell-settings service should serialize
 simultaneous writes across processes; this slice does not claim that E-phase
 authority is complete.
 
+## Busy state and failure feedback
+
+`rmac-dock-system::interaction` gives the future surface one target-scoped
+action state for primary activation, window menu actions, pins, places, and
+Trash. Starting an action exposes an exact busy target and rejects a duplicate
+for that target while allowing unrelated entries to proceed. Completion,
+cancellation, retry, and feedback dismissal all bind to a monotonic ticket;
+late completion from a cancelled surface cannot clear newer work or create a
+stale error. Success removes busy state but never changes the Dock model—the
+catalog, niri, settings, and places watchers remain authoritative.
+
+Failures retain only the public target, intended operation, and a semantic
+reason such as permission denied, unavailable service, lost connection,
+rejected, unsupported, or failed. Raw backend details, commands, paths, and
+window titles never enter the presentation snapshot. The fallback accessible
+message is therefore safe for a toast/status node, and feedback is explicitly
+dismissible. State is bounded to 64 simultaneous targets and the 16 newest
+feedback records, published chronologically; retry clears the target's previous
+feedback. The real renderer still needs to connect tickets to its async action
+tasks, show busy/error visuals, and restore menu focus.
+
 ## Live runtime
 
 `rmac-dock-runtime` watches the installed-application catalog, the versioned

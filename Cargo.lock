@@ -4977,6 +4977,7 @@ dependencies = [
  "blocking",
  "futures-util",
  "image",
+ "notify",
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-apps",

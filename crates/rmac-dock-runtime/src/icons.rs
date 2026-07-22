@@ -1,8 +1,9 @@
 //! Bounded, generation-safe icon work for a future Dock surface.
 
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::io;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{
     self, Receiver, RecvError, RecvTimeoutError, SyncSender, TryRecvError, TrySendError,
@@ -13,6 +14,7 @@ use std::time::Duration;
 
 pub const ICON_COMMAND_CAPACITY: usize = 2;
 pub const ICON_EVENT_CAPACITY: usize = 2;
+pub const ICON_WATCH_EVENT_CAPACITY: usize = 1;
 pub const MAX_ICON_BATCH_ITEMS: usize = 512;
 pub const MAX_ICON_BATCH_RGBA_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_APPLICATION_ID_BYTES: usize = 512;
@@ -30,7 +32,7 @@ impl IconGeneration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct IconKey {
     application_id: String,
     edge: u32,
@@ -196,6 +198,8 @@ pub enum IconState {
     Loading {
         generation: IconGeneration,
         keys: Vec<IconKey>,
+        previous_generation: Option<IconGeneration>,
+        previous: Vec<IconResult>,
     },
     Ready {
         generation: IconGeneration,
@@ -222,6 +226,16 @@ impl IconSession {
         &self.state
     }
 
+    /// Last accepted pixels remain visible while a replacement generation is
+    /// loading. Missing keys use the renderer's embedded fallback.
+    pub fn visible_results(&self) -> &[IconResult] {
+        match &self.state {
+            IconState::Loading { previous, .. } => previous,
+            IconState::Ready { results, .. } => results,
+            IconState::Empty => &[],
+        }
+    }
+
     pub fn request(
         &mut self,
         sources: Vec<IconSource>,
@@ -237,11 +251,39 @@ impl IconSession {
         if let Some(active) = self.active.take() {
             active.cancel();
         }
+        let keys = sources
+            .iter()
+            .map(|source| source.key.clone())
+            .collect::<Vec<_>>();
+        let requested = keys.iter().collect::<HashSet<_>>();
+        let (previous_generation, previous) = match &self.state {
+            IconState::Ready {
+                generation,
+                results,
+            } => (Some(*generation), results.clone()),
+            IconState::Loading {
+                previous_generation,
+                previous,
+                ..
+            } => (*previous_generation, previous.clone()),
+            IconState::Empty => (None, Vec::new()),
+        };
+        let previous = previous
+            .into_iter()
+            .filter(|result| requested.contains(&result.key))
+            .collect::<Vec<_>>();
+        let previous_generation = if previous.is_empty() {
+            None
+        } else {
+            previous_generation
+        };
         let cancellation = Cancellation::default();
         self.active = Some(cancellation.clone());
         self.state = IconState::Loading {
             generation,
-            keys: sources.iter().map(|source| source.key.clone()).collect(),
+            keys,
+            previous_generation,
+            previous,
         };
         Ok(IconBatchRequest {
             generation,
@@ -263,7 +305,20 @@ impl IconSession {
         if let Some(active) = self.active.take() {
             active.cancel();
         }
-        self.state = IconState::Empty;
+        let previous = match std::mem::replace(&mut self.state, IconState::Empty) {
+            IconState::Loading {
+                previous_generation: Some(previous_generation),
+                previous,
+                ..
+            } if !previous.is_empty() => Some((previous_generation, previous)),
+            _ => None,
+        };
+        if let Some((generation, results)) = previous {
+            self.state = IconState::Ready {
+                generation,
+                results,
+            };
+        }
         true
     }
 
@@ -276,7 +331,10 @@ impl IconSession {
 
     /// Apply only the exact requested generation, key order, and cardinality.
     pub fn apply(&mut self, event: IconBatchEvent) -> bool {
-        let IconState::Loading { generation, keys } = &self.state else {
+        let IconState::Loading {
+            generation, keys, ..
+        } = &self.state
+        else {
             return false;
         };
         if *generation != event.generation
@@ -339,6 +397,143 @@ fn validate_sources(sources: &[IconSource]) -> Result<(), IconRequestError> {
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IconWatchEvent {
+    Changed,
+    Failed,
+}
+
+pub struct IconFileWatcher {
+    _watcher: notify::RecommendedWatcher,
+}
+
+impl fmt::Debug for IconFileWatcher {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("IconFileWatcher").finish()
+    }
+}
+
+pub struct IconWatchSetup {
+    watcher: Option<IconFileWatcher>,
+    events: async_channel::Receiver<IconWatchEvent>,
+    unavailable_directories: usize,
+}
+
+impl IconWatchSetup {
+    pub fn healthy(&self) -> bool {
+        self.unavailable_directories == 0
+    }
+
+    pub fn active(&self) -> bool {
+        self.watcher.is_some()
+    }
+
+    pub fn unavailable_directories(&self) -> usize {
+        self.unavailable_directories
+    }
+
+    pub async fn recv(&self) -> Result<IconWatchEvent, async_channel::RecvError> {
+        self.events.recv().await
+    }
+
+    pub fn try_recv(&self) -> Result<IconWatchEvent, async_channel::TryRecvError> {
+        self.events.try_recv()
+    }
+}
+
+impl fmt::Debug for IconWatchSetup {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("IconWatchSetup")
+            .field("active", &self.active())
+            .field("unavailable_directories", &self.unavailable_directories)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IconWatchStartError {
+    TooManySources,
+    Backend,
+}
+
+impl fmt::Display for IconWatchStartError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::TooManySources => "the Dock icon watcher has too many sources",
+            Self::Backend => "the Dock icon watcher could not start",
+        })
+    }
+}
+
+impl std::error::Error for IconWatchStartError {}
+
+/// Watch only selected icon files, their current symlink targets, and those
+/// files' direct parents. Every relevant burst coalesces into one path-free
+/// event; the consumer should rebuild the watcher and request the complete
+/// current batch again. Setup performs filesystem work and belongs off GPUI.
+pub fn watch_icon_sources(sources: &[IconSource]) -> Result<IconWatchSetup, IconWatchStartError> {
+    use notify::Watcher as _;
+
+    let (sender, events) = async_channel::bounded(ICON_WATCH_EVENT_CAPACITY);
+    if sources.is_empty() {
+        return Ok(IconWatchSetup {
+            watcher: None,
+            events,
+            unavailable_directories: 0,
+        });
+    }
+    if sources.len() > MAX_ICON_BATCH_ITEMS {
+        return Err(IconWatchStartError::TooManySources);
+    }
+    let mut targets = BTreeSet::new();
+    for source in sources {
+        targets.insert(source.path.clone());
+        if let Ok(canonical) = source.path.canonicalize() {
+            targets.insert(canonical);
+        }
+    }
+    let callback_targets = targets.clone();
+    let mut watcher =
+        notify::recommended_watcher(move |result: notify::Result<notify::Event>| match result {
+            Ok(event) if icon_watch_event_is_relevant(&event, &callback_targets) => {
+                publish_watch_event(&sender, IconWatchEvent::Changed);
+            }
+            Ok(_) => {}
+            Err(_) => publish_watch_event(&sender, IconWatchEvent::Failed),
+        })
+        .map_err(|_| IconWatchStartError::Backend)?;
+    let parents = targets
+        .iter()
+        .filter_map(|path| path.parent().map(Path::to_path_buf))
+        .collect::<BTreeSet<_>>();
+    let mut watched = 0_usize;
+    let mut unavailable_directories = 0_usize;
+    for parent in parents {
+        match watcher.watch(&parent, notify::RecursiveMode::NonRecursive) {
+            Ok(()) => watched = watched.saturating_add(1),
+            Err(_) => unavailable_directories = unavailable_directories.saturating_add(1),
+        }
+    }
+    Ok(IconWatchSetup {
+        watcher: (watched != 0).then_some(IconFileWatcher { _watcher: watcher }),
+        events,
+        unavailable_directories,
+    })
+}
+
+fn publish_watch_event(sender: &async_channel::Sender<IconWatchEvent>, event: IconWatchEvent) {
+    let _ = sender.try_send(event);
+}
+
+fn icon_watch_event_is_relevant(event: &notify::Event, targets: &BTreeSet<PathBuf>) -> bool {
+    !matches!(event.kind, notify::EventKind::Access(_))
+        && (event.paths.is_empty()
+            || event.paths.iter().any(|path| {
+                targets.contains(path) || targets.iter().any(|target| target.starts_with(path))
+            }))
 }
 
 enum IconWorkerCommand {
@@ -679,6 +874,14 @@ mod tests {
             session.request(oversized).unwrap_err(),
             IconRequestError::TooManyOutputBytes
         );
+        assert_eq!(
+            watch_icon_sources(&vec![
+                source("watch.desktop", &path, 16);
+                MAX_ICON_BATCH_ITEMS + 1
+            ])
+            .unwrap_err(),
+            IconWatchStartError::TooManySources
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -764,6 +967,103 @@ mod tests {
         assert!(matches!(session.state(), IconState::Loading { .. }));
         assert!(session.cancel(request.generation()));
         assert!(matches!(session.state(), IconState::Empty));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refresh_keeps_last_accepted_pixels_until_exact_completion_or_cancel() {
+        let root = root("retained");
+        let path = root.join("icon.png");
+        write_png(&path, [1, 2, 3, 255]);
+        let mut session = IconSession::new();
+        let accepted = session
+            .request(vec![source("retained.desktop", &path, 32)])
+            .unwrap();
+        let accepted_generation = accepted.generation();
+        let key = accepted.sources()[0].key().clone();
+        assert!(session.apply(IconBatchEvent {
+            generation: accepted_generation,
+            results: vec![IconResult {
+                key: key.clone(),
+                outcome: IconOutcome::Fallback(rmac_dock_system::icons::ErrorKind::Unsupported,),
+            }],
+        }));
+
+        let refresh = session
+            .request(vec![source("retained.desktop", &path, 32)])
+            .unwrap();
+        assert_eq!(session.visible_results().len(), 1);
+        assert_eq!(session.visible_results()[0].key, key);
+        assert!(matches!(
+            session.state(),
+            IconState::Loading {
+                previous_generation: Some(generation),
+                previous,
+                ..
+            } if *generation == accepted_generation && previous.len() == 1
+        ));
+        assert!(session.cancel(refresh.generation()));
+        assert!(matches!(
+            session.state(),
+            IconState::Ready { generation, results }
+                if *generation == accepted_generation && results.len() == 1
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn watcher_relevance_is_exact_and_overflow_is_conservative() {
+        use notify::event::{AccessKind, AccessMode, ModifyKind};
+
+        let target = PathBuf::from("/icons/theme/demo.svg");
+        let targets = BTreeSet::from([target.clone()]);
+        let access = notify::Event::new(notify::EventKind::Access(AccessKind::Open(
+            AccessMode::Read,
+        )))
+        .add_path(target.clone());
+        let unrelated = notify::Event::new(notify::EventKind::Modify(ModifyKind::Any))
+            .add_path(PathBuf::from("/icons/theme/other.svg"));
+        let exact = notify::Event::new(notify::EventKind::Modify(ModifyKind::Any)).add_path(target);
+        let parent = notify::Event::new(notify::EventKind::Modify(ModifyKind::Any))
+            .add_path(PathBuf::from("/icons/theme"));
+        let overflow = notify::Event::new(notify::EventKind::Other);
+
+        assert!(!icon_watch_event_is_relevant(&access, &targets));
+        assert!(!icon_watch_event_is_relevant(&unrelated, &targets));
+        assert!(icon_watch_event_is_relevant(&exact, &targets));
+        assert!(icon_watch_event_is_relevant(&parent, &targets));
+        assert!(icon_watch_event_is_relevant(&overflow, &targets));
+    }
+
+    #[test]
+    fn watcher_events_coalesce_and_setup_diagnostics_are_path_free() {
+        let (sender, receiver) = async_channel::bounded(ICON_WATCH_EVENT_CAPACITY);
+        publish_watch_event(&sender, IconWatchEvent::Changed);
+        publish_watch_event(&sender, IconWatchEvent::Failed);
+        assert_eq!(receiver.try_recv().unwrap(), IconWatchEvent::Changed);
+        assert_eq!(receiver.try_recv(), Err(async_channel::TryRecvError::Empty));
+
+        let root = root("watch");
+        let path = root.join("private-watched-icon.png");
+        write_png(&path, [4, 5, 6, 255]);
+        let setup = watch_icon_sources(&[source("watch.desktop", &path, 32)]).unwrap();
+        assert!(setup.active());
+        assert!(setup.healthy());
+        assert_eq!(setup.unavailable_directories(), 0);
+        assert!(!format!("{setup:?}").contains("private-watched-icon"));
+        drop(setup);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn watcher_partial_setup_counts_failures_without_retaining_paths() {
+        let root = root("watch-partial");
+        let missing = root.join("missing-private-parent/icon.png");
+        let setup = watch_icon_sources(&[source("missing.desktop", &missing, 32)]).unwrap();
+        assert!(!setup.active());
+        assert!(!setup.healthy());
+        assert_eq!(setup.unavailable_directories(), 1);
+        assert!(!format!("{setup:?}").contains("missing-private-parent"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

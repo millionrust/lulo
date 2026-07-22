@@ -261,6 +261,19 @@ cancelled, duplicate, oversized, and malformed work therefore cannot replace
 newer Dock artwork. Worker commands also provide exact-path and whole-cache
 invalidation without placing paths in event or Debug output.
 
+The same runtime can hold one native watcher over only the selected source
+files, their current symlink targets, and direct parent directories. Relevant
+file changes and conservative backend-overflow notifications enter a one-slot
+path-free channel, so a burst requests one complete current-generation reload
+instead of one decode per filesystem event. Access and unrelated sibling
+events are ignored. Partial setup reports only an unavailable-directory count;
+backend failures report only `Failed`. After any change the consumer rebuilds
+the watcher to follow atomic replacements or a new symlink target. While that
+replacement generation is pending, `IconSession` retains the matching last
+accepted results; cancellation restores them and exact completion replaces
+them. Theme updates therefore neither flash every app to a generic tile nor
+allow old completion to overwrite newer artwork.
+
 ## Crowded outputs
 
 Fitting is chosen from content and output width before hover. The Dock first
@@ -322,7 +335,7 @@ resample retains the last-known Main ID, reports separate display-source health,
 and never guesses from connector order.
 
 The current slice is not D4 completion. The layer-shell view, connection of the
-icon worker to retained renderer nodes, pointer/keyboard semantics, real
-surface-command execution,
+icon worker/watcher to retained renderer nodes, pointer/keyboard semantics,
+real surface-command execution,
 persistence UI, niri/reference-PC evidence, and performance gates remain
 pending.

@@ -1,5 +1,6 @@
 //! Framework-neutral Dock application and activation model.
 
+pub mod drag;
 pub mod menu;
 pub mod motion;
 pub mod presentation;

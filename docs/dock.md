@@ -72,6 +72,16 @@ that is not currently pinned. Drag reorder uses an explicit destination index,
 bounded to the current pin list, and moves one exact stored ID without
 reconstructing the rest of the order.
 
+`rmac-dock::drag` turns that reducer into direct manipulation without feeding
+magnified geometry back into its thresholds. A drag starts only from a visible
+pinned application, uses the retained layout plan's resting centers, and does
+not activate until movement crosses four logical pixels. Below that threshold
+the exact original primary click is returned. During a real drag the preview
+order is cached and borrowed on unchanged pointer frames; dropping back on the
+source is a no-op, while cancellation creates no action. Special items,
+unpinned running apps, hidden entries, malformed layouts, nonfinite input, and
+pin sets above the persisted 128-item bound fail explicitly.
+
 `rmac-dock-system` rereads the latest shell settings, applies one pin command,
 atomically saves only when the list changed, then rereads before returning a
 receipt. Tests prove unrelated Dock and provider settings survive. The visible
@@ -79,6 +89,13 @@ Dock still waits for the settings watcher instead of applying that receipt
 optimistically. A future single-writer shell-settings service should serialize
 simultaneous writes across processes; this slice does not claim that E-phase
 authority is complete.
+
+A completed drag carries the exact full pin order the user manipulated, not
+only a destination index. Dispatch compares it with the newest coherent model
+before ticketing, and the settings worker rereads the store and compares it
+again immediately before applying `MoveTo`. A changed order becomes rejected
+feedback instead of reinterpreting the drop against different neighbors. The
+successful receipt still does not reorder the visible model optimistically.
 
 ## Context menus and the More stack
 
@@ -134,6 +151,12 @@ URI action; no private path enters the menu intent or Debug output. A focused
 single-window activation remains an explicit no-op, malformed entry identities
 fail before ticketing, and stale or unavailable actions become private-safe
 feedback without touching an inappropriate platform service.
+
+Direct reorder intents enter the same target-scoped action path. Only an intent
+whose complete accepted pin order still matches the newest model becomes a
+prepared update; it then uses the dedicated checked settings transaction above.
+This keeps drag preview responsive while treating persistence as authoritative
+asynchronous work.
 
 The prepared action owns its exact target and operation as it enters the busy
 state. Its pending value then owns the monotonic ticket throughout asynchronous

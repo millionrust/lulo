@@ -150,6 +150,11 @@ pub trait Backend: Send + Sync + 'static {
         command: &rmac_dock::PinCommand,
     ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>>;
 
+    fn reorder_pins(
+        &self,
+        reorder: &rmac_dock::drag::RevalidatedReorder,
+    ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>>;
+
     fn open_directory(&self, path: &Path) -> BackendFuture<'_, Result<(), BackendError>>;
 
     fn open_trash(&self) -> BackendFuture<'_, Result<(), BackendError>>;
@@ -225,6 +230,21 @@ impl Backend for SystemBackend {
         })
     }
 
+    fn reorder_pins(
+        &self,
+        reorder: &rmac_dock::drag::RevalidatedReorder,
+    ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>> {
+        let reorder = reorder.clone();
+        Box::pin(async move {
+            blocking::unblock(move || {
+                let store = rmac_shell_settings::ShellSettingsStore::from_environment()
+                    .map_err(settings_error)?;
+                reorder_pins_in_store(&store, reorder.command(), reorder.expected_order())
+            })
+            .await
+        })
+    }
+
     fn open_directory(&self, path: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
         let path = path.to_path_buf();
         Box::pin(async move {
@@ -251,6 +271,30 @@ fn update_pins_in_store(
     command: &rmac_dock::PinCommand,
 ) -> Result<Vec<rmac_shell_settings::AppId>, BackendError> {
     let mut settings = store.load().map_err(settings_error)?.settings;
+    let next = rmac_dock::apply_pin_command(&settings.pinned_apps, command)
+        .map_err(|error| BackendError::new(FailureKind::Unsupported, error.to_string()))?;
+    if next != settings.pinned_apps {
+        settings.pinned_apps = next;
+        store.save(&settings).map_err(settings_error)?;
+    }
+    store
+        .load()
+        .map(|snapshot| snapshot.settings.pinned_apps)
+        .map_err(settings_error)
+}
+
+fn reorder_pins_in_store(
+    store: &rmac_shell_settings::ShellSettingsStore,
+    command: &rmac_dock::PinCommand,
+    expected_order: &[rmac_shell_settings::AppId],
+) -> Result<Vec<rmac_shell_settings::AppId>, BackendError> {
+    let mut settings = store.load().map_err(settings_error)?.settings;
+    if settings.pinned_apps != expected_order {
+        return Err(BackendError::new(
+            FailureKind::Rejected,
+            "the pinned application order changed before the drag completed",
+        ));
+    }
     let next = rmac_dock::apply_pin_command(&settings.pinned_apps, command)
         .map_err(|error| BackendError::new(FailureKind::Unsupported, error.to_string()))?;
     if next != settings.pinned_apps {
@@ -594,6 +638,20 @@ mod tests {
             })
         }
 
+        fn reorder_pins(
+            &self,
+            reorder: &rmac_dock::drag::RevalidatedReorder,
+        ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>> {
+            let reorder = reorder.clone();
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .expect("calls lock")
+                    .push(format!("reorder {reorder:?}"));
+                self.result(reorder.expected_order().to_vec())
+            })
+        }
+
         fn open_directory(&self, _: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
             Box::pin(async move {
                 self.calls
@@ -912,6 +970,65 @@ mod tests {
 
         std::fs::remove_dir_all(&directory).unwrap_or_else(|error| {
             panic!("remove Dock settings test directory {directory:?}: {error}")
+        });
+    }
+
+    #[test]
+    fn drag_store_transaction_rechecks_the_exact_accepted_order() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("rmac-dock-reorder-{}-{unique}", std::process::id()));
+        let store = rmac_shell_settings::ShellSettingsStore::new(directory.join("shell.json"));
+        let original = [
+            rmac_shell_settings::AppId("finder.desktop".into()),
+            rmac_shell_settings::AppId("terminal.desktop".into()),
+            rmac_shell_settings::AppId("notes.desktop".into()),
+        ];
+        store
+            .save(&rmac_shell_settings::ShellSettings {
+                pinned_apps: original.to_vec(),
+                ..Default::default()
+            })
+            .expect("seed pin order");
+
+        let moved = reorder_pins_in_store(
+            &store,
+            &rmac_dock::PinCommand::MoveTo {
+                app_id: "finder.desktop".into(),
+                index: 2,
+            },
+            &original,
+        )
+        .expect("matching authority reorders");
+        assert_eq!(
+            moved,
+            [
+                rmac_shell_settings::AppId("terminal.desktop".into()),
+                rmac_shell_settings::AppId("notes.desktop".into()),
+                rmac_shell_settings::AppId("finder.desktop".into()),
+            ]
+        );
+
+        let error = reorder_pins_in_store(
+            &store,
+            &rmac_dock::PinCommand::MoveTo {
+                app_id: "terminal.desktop".into(),
+                index: 2,
+            },
+            &original,
+        )
+        .expect_err("stale accepted order is rejected");
+        assert_eq!(error.kind, FailureKind::Rejected);
+        assert_eq!(
+            store.load().expect("reload pins").settings.pinned_apps,
+            moved
+        );
+
+        std::fs::remove_dir_all(&directory).unwrap_or_else(|error| {
+            panic!("remove Dock reorder test directory {directory:?}: {error}")
         });
     }
 }

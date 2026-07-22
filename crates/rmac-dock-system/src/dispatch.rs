@@ -59,6 +59,7 @@ impl fmt::Debug for PreparedTrashReview {
 enum Execution {
     Activation(rmac_dock::Activation),
     Context(rmac_dock::ContextAction),
+    Reorder(rmac_dock::drag::RevalidatedReorder),
     Special(rmac_dock::SpecialActivation),
     Rejected(Error),
 }
@@ -276,6 +277,7 @@ impl PendingAction {
                 crate::execute(activation, request_id, backend).await
             }
             Execution::Context(action) => crate::execute_context(action, request_id, backend).await,
+            Execution::Reorder(reorder) => execute_reorder(reorder, backend).await,
             Execution::Special(activation) => crate::execute_special(activation, backend).await,
             Execution::Rejected(error) => Err(error.clone()),
         };
@@ -326,6 +328,44 @@ pub fn prepare(
         }
         rmac_dock::menu::Action::SpecialContext(action) => Ok(prepare_trash_review(model, &action)),
     }
+}
+
+/// Revalidate a completed direct-manipulation intent against the newest Dock
+/// model before it can mutate persisted pin order.
+pub fn prepare_reorder(
+    model: &rmac_dock::Model,
+    intent: &rmac_dock::drag::ReorderIntent,
+) -> Preparation {
+    let Some(reorder) = intent.revalidate(model) else {
+        return Preparation::Ready(rejected(
+            ActionTarget::Application(intent.app_id().to_owned()),
+            Operation::UpdatePins,
+            intent.app_id(),
+        ));
+    };
+    Preparation::Ready(PreparedAction {
+        target: ActionTarget::Application(reorder.command().app_id().to_owned()),
+        operation: Operation::UpdatePins,
+        execution: Execution::Reorder(reorder),
+    })
+}
+
+async fn execute_reorder(
+    reorder: &rmac_dock::drag::RevalidatedReorder,
+    backend: &impl Backend,
+) -> Result<Outcome, Error> {
+    backend
+        .reorder_pins(reorder)
+        .await
+        .map(|pinned| Outcome::PinsUpdated { pinned })
+        .map_err(|error| {
+            Error::new(
+                Operation::UpdatePins,
+                error.kind,
+                reorder.command().app_id(),
+                error.detail,
+            )
+        })
 }
 
 fn prepare_trash_review(
@@ -614,6 +654,21 @@ mod tests {
             })
         }
 
+        fn reorder_pins(
+            &self,
+            reorder: &rmac_dock::drag::RevalidatedReorder,
+        ) -> crate::BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, crate::BackendError>>
+        {
+            let reorder = reorder.clone();
+            Box::pin(async move {
+                self.calls
+                    .lock()
+                    .unwrap()
+                    .push(format!("reorder {reorder:?}"));
+                Ok(reorder.expected_order().to_vec())
+            })
+        }
+
         fn open_directory(
             &self,
             path: &Path,
@@ -725,6 +780,65 @@ mod tests {
             &Default::default(),
             &places(downloads, downloads_exists, trash_count),
         )
+    }
+
+    fn reorder_model(order: &[&str]) -> rmac_dock::Model {
+        let pinned = order
+            .iter()
+            .map(|id| rmac_shell_settings::AppId((*id).into()))
+            .collect::<Vec<_>>();
+        let catalog = order
+            .iter()
+            .map(|id| {
+                let mut application = application(id);
+                application.id = (*id).into();
+                application.name = id.trim_end_matches(".desktop").into();
+                application.source = PathBuf::from(format!("/apps/{id}"));
+                application
+            })
+            .collect::<Vec<_>>();
+        rmac_dock::Model::build(&pinned, &Default::default(), &catalog, &Default::default())
+    }
+
+    fn reorder_intent(
+        model: &rmac_dock::Model,
+        source_index: usize,
+        destination_index: usize,
+    ) -> rmac_dock::drag::ReorderIntent {
+        let content = rmac_dock::presentation::ShelfContent::project(model);
+        let plan = content
+            .prepare_layout(&rmac_dock::SurfaceDescription {
+                output: rmac_compositor::OutputId::from("eDP-1"),
+                placement: rmac_shell_settings::DockPlacement::Bottom,
+                output_axis_length: 800.0,
+                output_scale: 2.0,
+                base_thickness: 64.0,
+                maximum_thickness: 88.0,
+                exclusive_zone: 64.0,
+                reveal_edge_thickness: 0.0,
+                keyboard_interactive: false,
+                autohide: false,
+                overview_visible: false,
+                magnification_enabled: true,
+                animate: true,
+                magnification: rmac_dock::motion::MagnificationConfig::default(),
+            })
+            .unwrap();
+        let resting = plan.layout(None).unwrap();
+        let source = resting.slots[source_index].id.clone();
+        let mut drag = rmac_dock::drag::DragSession::begin(
+            model,
+            &plan,
+            &source,
+            resting.slots[source_index].center,
+        )
+        .unwrap();
+        drag.update(resting.slots[destination_index].center)
+            .unwrap();
+        let rmac_dock::drag::DropOutcome::Reorder(intent) = drag.finish() else {
+            panic!("test drag produces reorder intent");
+        };
+        intent
     }
 
     #[test]
@@ -900,6 +1014,62 @@ mod tests {
         assert!(cancelled.snapshot.busy.is_empty());
         assert!(!late.visible);
         assert!(late.snapshot.feedback.is_empty());
+    }
+
+    #[test]
+    fn current_drag_reorder_uses_ticketed_pin_persistence() {
+        let current = reorder_model(&["finder.desktop", "terminal.desktop", "notes.desktop"]);
+        let intent = reorder_intent(&current, 0, 2);
+        let Preparation::Ready(prepared) = prepare_reorder(&current, &intent) else {
+            panic!("current drag is ready");
+        };
+        assert_eq!(prepared.operation(), Operation::UpdatePins);
+        assert_eq!(
+            prepared.target(),
+            &ActionTarget::Application("finder.desktop".into())
+        );
+        let mut state = State::default();
+        let backend = FakeBackend::default();
+        let completion = futures_lite::future::block_on(
+            prepared
+                .begin(&mut state)
+                .unwrap()
+                .run(rmac_compositor::ActivationId(1), &backend),
+        );
+        let (result, transition) = completion.apply(&mut state);
+
+        assert!(result.is_ok());
+        assert!(transition.snapshot.busy.is_empty());
+        let calls = backend.calls.into_inner().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].contains("MoveTo { app_id: \"finder.desktop\", index: 2 }"));
+        assert!(calls[0].contains("expected_order"));
+    }
+
+    #[test]
+    fn drag_reorder_is_rejected_if_live_pin_order_changed_before_dispatch() {
+        let original = reorder_model(&["finder.desktop", "terminal.desktop", "notes.desktop"]);
+        let intent = reorder_intent(&original, 0, 2);
+        let changed = reorder_model(&["finder.desktop", "notes.desktop", "terminal.desktop"]);
+        let Preparation::Ready(rejected) = prepare_reorder(&changed, &intent) else {
+            panic!("stale drag produces feedback");
+        };
+        let mut state = State::default();
+        let backend = FakeBackend::default();
+        let completion = futures_lite::future::block_on(
+            rejected
+                .begin(&mut state)
+                .unwrap()
+                .run(rmac_compositor::ActivationId(1), &backend),
+        );
+        let (result, transition) = completion.apply(&mut state);
+
+        assert!(result.is_err());
+        assert_eq!(
+            transition.snapshot.feedback[0].reason,
+            crate::interaction::FeedbackReason::Rejected
+        );
+        assert!(backend.calls.into_inner().unwrap().is_empty());
     }
 
     #[test]

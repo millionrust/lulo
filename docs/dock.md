@@ -80,6 +80,32 @@ optimistically. A future single-writer shell-settings service should serialize
 simultaneous writes across processes; this slice does not claim that E-phase
 authority is complete.
 
+## Context menus and the More stack
+
+`rmac-dock::menu` projects the accepted application menu and crowded-output
+stack into bounded renderer rows without re-resolving actions. Application
+menus keep New Window, the ordered real-window list, Keep/Remove from Dock, and
+only the reorder directions that can act. A window row carries its exact focus
+action plus an exact secondary close action; focused and urgent state are
+announced independently. The More stack preserves the hidden application order,
+keeps unavailable entries visible but out of keyboard selection, and activates
+the exact typed application identity through the current authoritative model.
+
+Menus select the first enabled row on open. Up/Down wrap across enabled rows,
+Home/End move to the first/last enabled row, Return invokes the primary action,
+alternate activation invokes a separately exposed secondary action, and Escape
+dismisses. Activation closes before asynchronous execution. Both dismissal and
+activation return the exact invoking application or More identity so the view
+can restore Dock focus. Pointer selection cannot mutate a closed session.
+
+Visible labels are capped at 96 Unicode characters. Window titles remain
+visible where the user asked for the menu but labels, accessibility strings,
+launch specifications, and window titles are redacted from Debug output.
+Malformed overflow/pin projections and menus above 512 rows fail explicitly
+instead of panicking or silently dropping actions. The renderer must expose
+sections, menu roles, checked/urgent state, the close accessibility action, and
+focus restoration exactly as described.
+
 ## Busy state and failure feedback
 
 `rmac-dock-system::interaction` gives the future surface one target-scoped

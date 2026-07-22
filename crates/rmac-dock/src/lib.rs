@@ -1,5 +1,6 @@
 //! Framework-neutral Dock application and activation model.
 
+pub mod menu;
 pub mod motion;
 pub mod presentation;
 
@@ -108,7 +109,7 @@ pub enum Activation {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum MoveDirection {
     Left,
     Right,

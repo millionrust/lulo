@@ -1018,8 +1018,11 @@ enum ThemeStoreWatchEvent {
 #[derive(Clone, Copy)]
 enum NotificationPolicyChange {
     Enabled(bool),
+    Banners(bool),
+    Sounds(bool),
     Badges(bool),
     History(bool),
+    UrgentThroughFocus(bool),
 }
 
 fn notification_policy_with(
@@ -1028,8 +1031,13 @@ fn notification_policy_with(
 ) -> rmac_notifications_store::AppPolicy {
     match change {
         NotificationPolicyChange::Enabled(value) => policy.enabled = value,
+        NotificationPolicyChange::Banners(value) => policy.banners = value,
+        NotificationPolicyChange::Sounds(value) => policy.sounds = value,
         NotificationPolicyChange::Badges(value) => policy.badges = value,
         NotificationPolicyChange::History(value) => policy.history = value,
+        NotificationPolicyChange::UrgentThroughFocus(value) => {
+            policy.urgent_through_focus = value;
+        }
     }
     policy
 }
@@ -13273,6 +13281,26 @@ impl Settings {
             notification_toggle_row(
                 &view,
                 app_id,
+                "banners",
+                "Show notification banners",
+                Some("Show a banner when this application sends a notification"),
+                policy.banners,
+                busy || !policy.enabled,
+                NotificationPolicyChange::Banners,
+            ),
+            notification_toggle_row(
+                &view,
+                app_id,
+                "sounds",
+                "Play sounds for notifications",
+                Some("Allow this application to play its notification sound"),
+                policy.sounds,
+                busy || !policy.enabled,
+                NotificationPolicyChange::Sounds,
+            ),
+            notification_toggle_row(
+                &view,
+                app_id,
                 "badges",
                 "Badge indicator",
                 Some("Count unread notifications in the top bar"),
@@ -13290,9 +13318,19 @@ impl Settings {
                 busy || !policy.enabled,
                 NotificationPolicyChange::History,
             ),
+            notification_toggle_row(
+                &view,
+                app_id,
+                "urgent-through-focus",
+                "Allow urgent notifications through Focus",
+                Some("Only notifications marked urgent may bypass an active Focus"),
+                policy.urgent_through_focus,
+                busy || !policy.enabled,
+                NotificationPolicyChange::UrgentThroughFocus,
+            ),
         ]))
         .child(note_card(
-            "Banner, sound, Focus-bypass, and lock-screen controls stay hidden until their presentation and secure-lock adapters are active.",
+            "Lock Screen preview controls stay hidden because the shipping swaylock provider cannot securely render notification content.",
         ))
     }
 
@@ -19817,14 +19855,52 @@ mod tests {
     #[test]
     fn notification_policy_changes_touch_only_the_selected_field() {
         let original = rmac_notifications_store::AppPolicy::default();
-        let changed = notification_policy_with(original, NotificationPolicyChange::History(false));
-        assert!(!changed.history);
-        assert_eq!(changed.enabled, original.enabled);
-        assert_eq!(changed.banners, original.banners);
-        assert_eq!(changed.sounds, original.sounds);
-        assert_eq!(changed.badges, original.badges);
-        assert_eq!(changed.urgent_through_focus, original.urgent_through_focus);
-        assert_eq!(changed.lock_preview, original.lock_preview);
+        for (change, expected) in [
+            (
+                NotificationPolicyChange::Enabled(false),
+                rmac_notifications_store::AppPolicy {
+                    enabled: false,
+                    ..original
+                },
+            ),
+            (
+                NotificationPolicyChange::Banners(false),
+                rmac_notifications_store::AppPolicy {
+                    banners: false,
+                    ..original
+                },
+            ),
+            (
+                NotificationPolicyChange::Sounds(false),
+                rmac_notifications_store::AppPolicy {
+                    sounds: false,
+                    ..original
+                },
+            ),
+            (
+                NotificationPolicyChange::Badges(false),
+                rmac_notifications_store::AppPolicy {
+                    badges: false,
+                    ..original
+                },
+            ),
+            (
+                NotificationPolicyChange::History(false),
+                rmac_notifications_store::AppPolicy {
+                    history: false,
+                    ..original
+                },
+            ),
+            (
+                NotificationPolicyChange::UrgentThroughFocus(false),
+                rmac_notifications_store::AppPolicy {
+                    urgent_through_focus: false,
+                    ..original
+                },
+            ),
+        ] {
+            assert_eq!(notification_policy_with(original, change), expected);
+        }
     }
 
     #[test]

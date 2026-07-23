@@ -432,10 +432,12 @@ private history file.
 3. E3 Notification Center evidence and completion: prove trailing placement,
    outside/Escape dismissal, live and restart-stale action behavior, keyboard
    focus order, scaling, and Orca semantics on Linux. System Settings exposes
-   only already-observable allow/block,
-   badge, and history controls; banner, sound, Focus-bypass, and lock-preview
-   rows remain hidden until their presentation/security adapters are active.
-   Its application rows
+   the complete per-app policy enforced by the shipping presentation path:
+   master delivery, banners, sounds, badges, history, and urgent Focus bypass.
+   Dependent rows become read-only when master delivery is off, while each
+   mutation preserves every unrelated field and accepts only authoritative
+   service readback. Lock-preview rows remain hidden until the secure provider
+   can present them. Its application rows
    use the live XDG catalog for localized names and original theme icons when
    the authenticated application ID exactly matches a desktop-entry ID (with
    only the standard `.desktop` suffix alias). Unresolved IDs keep a generic
@@ -447,5 +449,6 @@ private history file.
    reconnects after a bounded delay. Stream-health errors remain separate from
    mutation/persistence failures so a reconnect cannot hide an unsuccessful
    user action.
-4. E4 Focus UI: expose mode, schedule, duration, and allow-list editing through
-   the single-writer authority and prove real delivery behavior on Linux.
+4. E4 Focus evidence: prove mode, schedule, duration, urgent, and allow-list
+   editing through the single-writer authority plus real delivery behavior on
+   Linux.

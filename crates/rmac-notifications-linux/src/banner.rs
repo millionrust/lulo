@@ -7,7 +7,7 @@ use rmac_notifications::banner::{Config, PlacementPolicy, Schedule, Snapshot as 
 use rmac_notifications::{AppId, Notification, NotificationId, PostOutcome, Time};
 use rmac_notifications_runtime::presentation::{
     Announcement, Card, ControlId, Effect as PresentationEffect, Error as PresentationError,
-    Intent, Key, Presenter,
+    Intent, Key, LiveRegion, Presenter,
 };
 use rmac_notifications_runtime::{
     Command as RuntimeCommand, Coordinator, Error as RuntimeError, Update as RuntimeUpdate,
@@ -18,6 +18,7 @@ use crate::service::{ActionError, ActionSelection, RuntimeEvent, ServiceHandle};
 
 pub const MAX_PENDING_POSTS: usize = 500;
 pub const MAX_APPLICATION_NAMES: usize = 4_096;
+pub const MAX_RETAINED_FEEDBACK: usize = 16;
 const MAX_ACTIVATION_TOKEN_BYTES: usize = 4_096;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +67,14 @@ impl fmt::Debug for SoundCue {
                 .field("notification", notification)
                 .field("sound", sound)
                 .finish(),
+        }
+    }
+}
+
+impl SoundCue {
+    pub fn notification(&self) -> NotificationId {
+        match self {
+            Self::Default(notification) | Self::Custom { notification, .. } => *notification,
         }
     }
 }
@@ -151,6 +160,89 @@ impl fmt::Display for SoundPlaybackError {
 
 impl std::error::Error for SoundPlaybackError {}
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct FeedbackId(u64);
+
+impl FeedbackId {
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FeedbackOperation {
+    Action,
+    Dismiss,
+    Expire,
+    Sound,
+}
+
+impl FeedbackOperation {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Action => "Notification action failed",
+            Self::Dismiss => "Could not dismiss notification",
+            Self::Expire => "Notification could not close",
+            Self::Sound => "Notification sound could not play",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FeedbackReason {
+    NoLongerAvailable,
+    InvalidRequest,
+    ConnectionLost,
+    ServiceUnavailable,
+    Rejected,
+    Busy,
+    InvalidMedia,
+    Unsupported,
+    TimedOut,
+    Failed,
+}
+
+impl FeedbackReason {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::NoLongerAvailable => "The notification is no longer available.",
+            Self::InvalidRequest => "The request was invalid.",
+            Self::ConnectionLost => "The notification service connection was lost.",
+            Self::ServiceUnavailable => "The required notification service is unavailable.",
+            Self::Rejected => "The request was rejected.",
+            Self::Busy => "Another notification sound is already playing.",
+            Self::InvalidMedia => "The notification sound was invalid.",
+            Self::Unsupported => "Sound playback is unavailable on this system.",
+            Self::TimedOut => "Sound playback took too long and was stopped.",
+            Self::Failed => "The operation did not complete.",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Feedback {
+    pub id: FeedbackId,
+    pub notification: NotificationId,
+    pub operation: FeedbackOperation,
+    pub reason: FeedbackReason,
+}
+
+impl Feedback {
+    pub fn live_region(self) -> LiveRegion {
+        LiveRegion::Polite
+    }
+
+    pub fn dismiss_label(self) -> &'static str {
+        "Dismiss error"
+    }
+
+    /// Private-content-free fallback for an error toast or accessible status.
+    /// Renderers may localize the operation and reason instead.
+    pub fn accessible_message(self) -> String {
+        format!("{}. {}", self.operation.title(), self.reason.message())
+    }
+}
+
 fn notification_sound_format(format: SoundFormat) -> rmac_audio::NotificationSoundFormat {
     match format {
         SoundFormat::OggOpus => rmac_audio::NotificationSoundFormat::OggOpus,
@@ -203,6 +295,7 @@ impl Update {
 pub struct Frame<'a> {
     pub layout: LayoutSnapshot,
     pub cards: &'a [Card],
+    pub feedback: &'a [Feedback],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -216,6 +309,7 @@ pub enum Error {
     InvalidApplicationIdentity,
     InvalidApplicationName,
     StaleCompletion,
+    FeedbackIdExhausted,
 }
 
 impl fmt::Display for Error {
@@ -281,6 +375,8 @@ pub struct BannerSession {
     icons: BTreeMap<NotificationId, Icon>,
     application_names: BTreeMap<String, String>,
     pending: VecDeque<PendingPost>,
+    feedback: Vec<Feedback>,
+    next_feedback: u64,
 }
 
 impl BannerSession {
@@ -296,6 +392,8 @@ impl BannerSession {
             icons: BTreeMap::new(),
             application_names: BTreeMap::new(),
             pending: VecDeque::new(),
+            feedback: Vec::new(),
+            next_feedback: 0,
         })
     }
 
@@ -303,6 +401,7 @@ impl BannerSession {
         Frame {
             layout: self.coordinator.snapshot(),
             cards: self.presenter.cards(),
+            feedback: &self.feedback,
         }
     }
 
@@ -467,7 +566,14 @@ impl BannerSession {
         now: Time,
     ) -> Result<Update, Error> {
         match completion {
-            ServiceCompletion::Closed(_) => Ok(self.idle(now)),
+            ServiceCompletion::Closed(request) => {
+                let (notification, operation) = service_feedback_target(request);
+                let mut update = self.idle(now);
+                if self.clear_feedback(notification, operation) {
+                    update.push_command(HostCommand::Redraw);
+                }
+                Ok(update)
+            }
             ServiceCompletion::Invoked {
                 control,
                 notification,
@@ -488,6 +594,7 @@ impl BannerSession {
                 // close, do not restart or relabel the terminal animation.
                 if !notification_remains && !self.presented.contains_key(&notification) {
                     let mut update = self.idle(now);
+                    self.clear_feedback(notification, FeedbackOperation::Action);
                     update.push_command(HostCommand::Redraw);
                     return Ok(update);
                 }
@@ -496,22 +603,66 @@ impl BannerSession {
                     .action_completed(notification, notification_remains, now)
                     .map_err(Error::Runtime)?;
                 let mut update = self.finish(runtime, &[], Vec::new(), now)?;
+                self.clear_feedback(notification, FeedbackOperation::Action);
                 update.push_command(HostCommand::Redraw);
                 Ok(update)
             }
         }
     }
 
-    pub fn fail_service(&mut self, request: ServiceRequest, now: Time) -> Result<Update, Error> {
-        let ServiceRequest::Invoke { control, .. } = request else {
-            return Ok(self.idle(now));
-        };
-        if !self.presenter.complete(control) {
-            return Err(Error::StaleCompletion);
+    pub fn fail_service(
+        &mut self,
+        error: ServiceExecutionError,
+        now: Time,
+    ) -> Result<Update, Error> {
+        if let ServiceRequest::Invoke {
+            control,
+            notification,
+            ..
+        } = error.request
+        {
+            if !self.presenter.complete(control) {
+                let card_still_exists = self
+                    .presenter
+                    .cards()
+                    .iter()
+                    .any(|card| card.id == notification);
+                if self.presenter.pending().is_some() || card_still_exists {
+                    return Err(Error::StaleCompletion);
+                }
+            }
         }
+        let (notification, operation) = service_feedback_target(error.request);
+        self.push_feedback(notification, operation, service_feedback_reason(error.kind))?;
         let mut update = self.idle(now);
         update.push_command(HostCommand::Redraw);
         Ok(update)
+    }
+
+    pub fn fail_sound(
+        &mut self,
+        cue: &SoundCue,
+        error: SoundPlaybackError,
+        now: Time,
+    ) -> Result<Update, Error> {
+        self.push_feedback(
+            cue.notification(),
+            FeedbackOperation::Sound,
+            sound_feedback_reason(error),
+        )?;
+        let mut update = self.idle(now);
+        update.push_command(HostCommand::Redraw);
+        Ok(update)
+    }
+
+    pub fn dismiss_feedback(&mut self, id: FeedbackId, now: Time) -> Update {
+        let before = self.feedback.len();
+        self.feedback.retain(|feedback| feedback.id != id);
+        let mut update = self.idle(now);
+        if self.feedback.len() != before {
+            update.push_command(HostCommand::Redraw);
+        }
+        update
     }
 
     fn apply_post(
@@ -564,6 +715,7 @@ impl BannerSession {
         };
         self.pending
             .retain(|pending| pending.outcome.id != post.outcome.id);
+        self.clear_notification_feedback(post.outcome.id);
         self.presented
             .insert(post.outcome.id, (*post.notification).clone());
         if let Some(icon) = post.media.icon.take() {
@@ -625,13 +777,18 @@ impl BannerSession {
             }
             PresentationEffect::Activate { control, intent } => match intent {
                 Intent::InvokeDefault(notification) => {
+                    self.clear_feedback(notification, FeedbackOperation::Action);
                     Ok(self.invoke_update(control, notification, Selection::Default, now))
                 }
                 Intent::InvokeButton {
                     notification,
                     index,
-                } => Ok(self.invoke_update(control, notification, Selection::Button(index), now)),
+                } => {
+                    self.clear_feedback(notification, FeedbackOperation::Action);
+                    Ok(self.invoke_update(control, notification, Selection::Button(index), now))
+                }
                 Intent::Dismiss(notification) => {
+                    self.clear_feedback(notification, FeedbackOperation::Dismiss);
                     let runtime = self
                         .coordinator
                         .request_dismiss(notification, now)
@@ -705,6 +862,52 @@ impl BannerSession {
         self.presented.retain(|id, _| visible.contains(id));
         self.icons.retain(|id, _| visible.contains(id));
     }
+
+    fn push_feedback(
+        &mut self,
+        notification: NotificationId,
+        operation: FeedbackOperation,
+        reason: FeedbackReason,
+    ) -> Result<FeedbackId, Error> {
+        let next = self
+            .next_feedback
+            .checked_add(1)
+            .ok_or(Error::FeedbackIdExhausted)?;
+        self.next_feedback = next;
+        let id = FeedbackId(next);
+        self.feedback.retain(|feedback| {
+            feedback.notification != notification || feedback.operation != operation
+        });
+        if self.feedback.len() >= MAX_RETAINED_FEEDBACK {
+            self.feedback.remove(0);
+        }
+        self.feedback.push(Feedback {
+            id,
+            notification,
+            operation,
+            reason,
+        });
+        Ok(id)
+    }
+
+    fn clear_feedback(
+        &mut self,
+        notification: NotificationId,
+        operation: FeedbackOperation,
+    ) -> bool {
+        let before = self.feedback.len();
+        self.feedback.retain(|feedback| {
+            feedback.notification != notification || feedback.operation != operation
+        });
+        self.feedback.len() != before
+    }
+
+    fn clear_notification_feedback(&mut self, notification: NotificationId) -> bool {
+        let before = self.feedback.len();
+        self.feedback
+            .retain(|feedback| feedback.notification != notification);
+        self.feedback.len() != before
+    }
 }
 
 impl fmt::Debug for BannerSession {
@@ -717,7 +920,56 @@ impl fmt::Debug for BannerSession {
             .field("icons", &self.icons.len())
             .field("application_names", &self.application_names.len())
             .field("pending", &self.pending.len())
+            .field("feedback", &self.feedback.len())
             .finish()
+    }
+}
+
+fn service_feedback_target(request: ServiceRequest) -> (NotificationId, FeedbackOperation) {
+    match request {
+        ServiceRequest::Expire(notification) => (notification, FeedbackOperation::Expire),
+        ServiceRequest::Dismiss(notification) => (notification, FeedbackOperation::Dismiss),
+        ServiceRequest::Invoke { notification, .. } => (notification, FeedbackOperation::Action),
+    }
+}
+
+fn service_feedback_reason(kind: ServiceErrorKind) -> FeedbackReason {
+    match kind {
+        ServiceErrorKind::InvalidActivationToken => FeedbackReason::InvalidRequest,
+        ServiceErrorKind::Action(ActionError::UnknownNotification) => {
+            FeedbackReason::NoLongerAvailable
+        }
+        ServiceErrorKind::Action(
+            ActionError::UnknownAction
+            | ActionError::InvalidTarget
+            | ActionError::InvalidApplication,
+        ) => FeedbackReason::InvalidRequest,
+        ServiceErrorKind::Action(ActionError::PersistentNotification) => FeedbackReason::Rejected,
+        ServiceErrorKind::Action(ActionError::Transport) => FeedbackReason::ConnectionLost,
+        ServiceErrorKind::Action(ActionError::RuntimeUnavailable) => {
+            FeedbackReason::ServiceUnavailable
+        }
+    }
+}
+
+fn sound_feedback_reason(error: SoundPlaybackError) -> FeedbackReason {
+    match error {
+        SoundPlaybackError::Busy => FeedbackReason::Busy,
+        SoundPlaybackError::Playback(rmac_audio::NotificationPlaybackErrorKind::InvalidSound) => {
+            FeedbackReason::InvalidMedia
+        }
+        SoundPlaybackError::Playback(
+            rmac_audio::NotificationPlaybackErrorKind::UnsupportedPlatform,
+        ) => FeedbackReason::Unsupported,
+        SoundPlaybackError::Playback(rmac_audio::NotificationPlaybackErrorKind::Timeout) => {
+            FeedbackReason::TimedOut
+        }
+        SoundPlaybackError::Playback(
+            rmac_audio::NotificationPlaybackErrorKind::Prepare
+            | rmac_audio::NotificationPlaybackErrorKind::Start
+            | rmac_audio::NotificationPlaybackErrorKind::Wait
+            | rmac_audio::NotificationPlaybackErrorKind::Rejected,
+        ) => FeedbackReason::Failed,
     }
 }
 
@@ -1021,6 +1273,139 @@ mod tests {
             .unwrap();
         assert_eq!(session.pending_control(), None);
         assert_eq!(session.frame().cards.len(), 1);
+    }
+
+    #[test]
+    fn failed_action_becomes_exact_accessible_feedback_and_success_clears_it() {
+        let mut server = Server::new(10, TimeoutPolicy::default());
+        let (outcome, notification) = post(
+            &mut server,
+            "Private failure title",
+            DeliveryPolicy::default(),
+        );
+        let id = outcome.id;
+        let mut session = BannerSession::new(
+            Config::default(),
+            PlacementPolicy::ActiveOutput,
+            &appearance(rmac_appearance::MotionPreference::Reduced),
+        )
+        .unwrap();
+        session.apply_compositor(&compositor(), Time(0)).unwrap();
+        session
+            .apply_event(
+                posted(outcome, notification, NotificationMedia::default()),
+                Time(1),
+            )
+            .unwrap();
+        let control = ControlId::Card(id);
+        let request = ServiceRequest::Invoke {
+            control,
+            notification: id,
+            selection: Selection::Default,
+        };
+        session.activate_control(control, Time(2)).unwrap();
+        let update = session
+            .fail_service(
+                ServiceExecutionError {
+                    request,
+                    kind: ServiceErrorKind::Action(ActionError::Transport),
+                },
+                Time(3),
+            )
+            .unwrap();
+        assert_eq!(session.pending_control(), None);
+        assert!(update.commands.contains(&HostCommand::Redraw));
+        assert_eq!(session.frame().feedback.len(), 1);
+        let feedback = session.frame().feedback[0];
+        assert_eq!(feedback.notification, id);
+        assert_eq!(feedback.operation, FeedbackOperation::Action);
+        assert_eq!(feedback.reason, FeedbackReason::ConnectionLost);
+        assert_eq!(feedback.live_region(), LiveRegion::Polite);
+        assert_eq!(feedback.dismiss_label(), "Dismiss error");
+        assert!(feedback
+            .accessible_message()
+            .contains("connection was lost"));
+        assert!(!feedback
+            .accessible_message()
+            .contains("Private failure title"));
+        assert!(!format!("{session:?}").contains("Private failure title"));
+
+        session.activate_control(control, Time(4)).unwrap();
+        assert!(session.frame().feedback.is_empty());
+        session
+            .complete_service(
+                ServiceCompletion::Invoked {
+                    control,
+                    notification: id,
+                    notification_remains: true,
+                },
+                Time(5),
+            )
+            .unwrap();
+        assert!(session.frame().feedback.is_empty());
+    }
+
+    #[test]
+    fn playback_feedback_is_replaceable_dismissible_and_bounded() {
+        let mut session = BannerSession::new(
+            Config::default(),
+            PlacementPolicy::ActiveOutput,
+            &appearance(rmac_appearance::MotionPreference::Reduced),
+        )
+        .unwrap();
+        let cue = SoundCue::Default(NotificationId::from_protocol(1).unwrap());
+        session
+            .fail_sound(&cue, SoundPlaybackError::Busy, Time(1))
+            .unwrap();
+        let first_id = session.frame().feedback[0].id;
+        session
+            .fail_sound(
+                &cue,
+                SoundPlaybackError::Playback(rmac_audio::NotificationPlaybackErrorKind::Timeout),
+                Time(2),
+            )
+            .unwrap();
+        assert_eq!(session.frame().feedback.len(), 1);
+        assert!(session.frame().feedback[0].id > first_id);
+        assert_eq!(session.frame().feedback[0].reason, FeedbackReason::TimedOut);
+
+        for value in 2..=u32::try_from(MAX_RETAINED_FEEDBACK + 2).unwrap() {
+            session
+                .fail_sound(
+                    &SoundCue::Default(NotificationId::from_protocol(value).unwrap()),
+                    SoundPlaybackError::Playback(rmac_audio::NotificationPlaybackErrorKind::Start),
+                    Time(u64::from(value)),
+                )
+                .unwrap();
+        }
+        assert_eq!(session.frame().feedback.len(), MAX_RETAINED_FEEDBACK);
+        assert!(session
+            .frame()
+            .feedback
+            .windows(2)
+            .all(|pair| pair[0].id < pair[1].id));
+        let latest = *session.frame().feedback.last().unwrap();
+        assert!(session
+            .dismiss_feedback(FeedbackId(latest.id.get().saturating_add(1)), Time(30))
+            .commands
+            .is_empty());
+        assert!(session
+            .dismiss_feedback(latest.id, Time(31))
+            .commands
+            .contains(&HostCommand::Redraw));
+        assert_eq!(session.frame().feedback.len(), MAX_RETAINED_FEEDBACK - 1);
+
+        let before = session.frame().feedback.to_vec();
+        session.next_feedback = u64::MAX;
+        assert_eq!(
+            session.fail_sound(
+                &SoundCue::Default(NotificationId::from_protocol(99).unwrap()),
+                SoundPlaybackError::Busy,
+                Time(33),
+            ),
+            Err(Error::FeedbackIdExhausted)
+        );
+        assert_eq!(session.frame().feedback, before);
     }
 
     #[test]

@@ -267,6 +267,20 @@ an original bounded default cue or the validated custom bytes,
 passes a sealed seekable `memfd` to `pw-play` without a temporary pathname, and
 kills/reaps playback at the independent 15-second deadline.
 
+Service and sound completion now return to the same `BannerSession`. A failed
+action, dismiss, expiry, busy player, invalid sound, unavailable playback,
+timeout, or backend failure becomes one semantic entry in `Frame::feedback`.
+Entries use stable monotonic dismiss IDs, carry only notification identity plus
+typed operation/reason, expose a private-content-free title/message fallback,
+and request a polite live region. A repeated failure replaces the same
+notification/operation entry; successful retry clears it; exact dismissal is
+idempotent; and the chronological collection evicts at 16 entries. Exhausted
+IDs fail explicitly instead of being reused. Operation completion remains
+correct when the authority's close event arrives before the async result, and
+diagnostics expose only feedback counts and typed reasons. The real surface
+must map these entries to the shared dismissible error Toast and an accessible
+status node without reconstructing backend details.
+
 ## Notification Center storage
 
 `rmac-notifications-store` owns the E3 history and per-app policy file under

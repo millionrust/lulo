@@ -281,6 +281,45 @@ diagnostics expose only feedback counts and typed reasons. The real surface
 must map these entries to the shared dismissible error Toast and an accessible
 status node without reconstructing backend details.
 
+`rmac_notifications_linux::surfaces` is the framework-neutral contract for the
+real per-output banner host. It follows the
+[wlr layer-shell protocol](https://wayland.app/protocols/wlr-layer-shell-unstable-v1)
+and [niri layer-shell guidance](https://github.com/YaLTeR/niri/wiki/Layer%E2%80%90Shell-Components):
+one compact surface per output is anchored to the top-right overlay layer with
+exclusive zone zero. Overlay is intentional because niri places only that
+layer above fullscreen windows. A surface requests no keyboard interaction
+until one of its exact controls owns presenter focus, then only `on-demand`
+interaction; it never requests exclusive keyboard focus.
+
+The renderer supplies one integer logical-height measurement for every current
+card. Planning atomically revalidates the exact card/layout join, measurements,
+contiguous per-output stack order, enabled output geometry, scale, margins, and
+fit. Cards are limited to 44–512 logical pixels, eight per surface, 500 across
+the frame, and 32 physical surfaces. A malformed, stale, oversized, duplicate,
+missing, or non-fitting transaction fails without replacing the last accepted
+surface plan. Plans contain stable notification and surface geometry only—no
+message text, app identity, hardware metadata, icon source, or action target.
+Their diagnostics redact output identity.
+
+The surface-local input region is an explicit union of two rectangles per
+rounded card. Card interiors remain interactive while rounded corners and
+every stack gap are excluded, following the
+[`wl_surface.set_input_region`](https://wayland.app/protocols/wayland)
+contract so transparent pixels pass pointer and touch input to the next surface
+underneath.
+
+A bounded registry translates each complete plan into one acknowledged Create,
+Reconfigure, or Remove command at a time. Disconnected outputs are removed
+before replacements are created; geometry, scale, card membership, input
+region, or focus policy reconfigure the same stable surface identity. Newer
+desired state converges after an older in-flight acknowledgement, stale
+acknowledgements are inert, and a failed output blocks only itself until retry
+or a changed description. Unsolicited layer-surface `closed` events discard
+the exact applied/in-flight identity and recreate it only when still desired.
+Identity exhaustion fails explicitly. The remaining Linux adapter must execute
+these accepted commands, apply the input region in the same surface commit,
+and acknowledge only observed compositor outcomes.
+
 ## Notification Center storage
 
 `rmac-notifications-store` owns the E3 history and per-app policy file under

@@ -405,6 +405,17 @@ impl BannerSession {
         }
     }
 
+    /// Produces the exact current per-output layer-surface transaction from
+    /// renderer measurements. Focus policy always comes from this session's
+    /// presenter rather than being reconstructed by the host.
+    pub fn surface_plan(
+        &self,
+        compositor: &rmac_compositor::Snapshot,
+        measurements: &[crate::surfaces::CardMeasurement],
+    ) -> Result<crate::surfaces::Plan, crate::surfaces::PlanError> {
+        crate::surfaces::plan(&self.frame(), compositor, measurements, self.focused())
+    }
+
     pub fn icon(&self, id: NotificationId) -> Option<&Icon> {
         self.icons.get(&id)
     }

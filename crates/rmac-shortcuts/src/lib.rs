@@ -2,6 +2,7 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_channel::Sender;
 use rmac_storage::atomic_write;
@@ -12,6 +13,11 @@ pub mod lock_settings;
 
 pub const PORTAL_MINIMUM_VERSION: u32 = 1;
 pub const PORTAL_CONFIGURE_VERSION: u32 = 2;
+const CONTROL_PROTOCOL_VERSION: u8 = 1;
+const CONTROL_RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+#[cfg(any(target_os = "linux", test))]
+const CONFIGURATION_REQUEST_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(2);
+static CONTROL_REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -91,6 +97,11 @@ pub enum Operation {
     ParseStatus,
     BindDispatch,
     ReadDispatch,
+    ResolveControl,
+    BindControl,
+    ReadControl,
+    RequestConfigure,
+    ConfigurePortal,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -148,6 +159,137 @@ fn backend_status_at(path: &Path) -> Result<BackendStatus, Error> {
             format!("shortcut broker status is invalid: {error}"),
         )
     })
+}
+
+/// Ask the live shortcut broker to open the desktop portal's configuration UI.
+///
+/// The broker owns the only GlobalShortcuts session. This request/response
+/// boundary deliberately does not create another portal session or persist a
+/// second copy of the bindings.
+pub fn request_shortcut_configuration() -> Result<(), Error> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| {
+            Error::new(
+                Operation::ResolveControl,
+                "XDG_RUNTIME_DIR is not set to an absolute path",
+            )
+        })?;
+    request_shortcut_configuration_at(&runtime, next_control_request_id())
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct ConfigureRequest {
+    version: u8,
+    request_id: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ConfigureOutcome {
+    Requested,
+    Unsupported,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct ConfigureResponse {
+    version: u8,
+    request_id: u64,
+    outcome: ConfigureOutcome,
+}
+
+fn control_socket_path_in(runtime: &Path) -> PathBuf {
+    runtime.join("rmac/shortcut-broker-control.sock")
+}
+
+fn next_control_request_id() -> u64 {
+    let sequence = CONTROL_REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let clock = elapsed.as_nanos().min(u128::from(u64::MAX)) as u64;
+    (clock.rotate_left(17) ^ sequence ^ u64::from(std::process::id())).max(1)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn configuration_request_is_coalesced(
+    last: Option<std::time::Instant>,
+    now: std::time::Instant,
+) -> bool {
+    last.is_some_and(|last| now.saturating_duration_since(last) < CONFIGURATION_REQUEST_COOLDOWN)
+}
+
+#[cfg(unix)]
+fn request_shortcut_configuration_at(runtime: &Path, request_id: u64) -> Result<(), Error> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let server_path = control_socket_path_in(runtime);
+    let parent = server_path.parent().ok_or_else(|| {
+        Error::new(
+            Operation::ResolveControl,
+            "shortcut control socket has no runtime directory",
+        )
+    })?;
+    validate_control_directory(parent, Operation::RequestConfigure)?;
+    let client_path = parent.join(format!(
+        "shortcut-configure-client-{}-{request_id}.sock",
+        std::process::id()
+    ));
+    let socket = std::os::unix::net::UnixDatagram::bind(&client_path)
+        .map_err(|error| Error::new(Operation::RequestConfigure, error.to_string()))?;
+    let socket_identity = socket_identity(&client_path, Operation::RequestConfigure)?;
+    let _cleanup = DispatchSocketCleanup {
+        path: client_path,
+        socket_identity,
+    };
+    std::fs::set_permissions(&_cleanup.path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|error| Error::new(Operation::RequestConfigure, error.to_string()))?;
+    socket
+        .set_read_timeout(Some(CONTROL_RESPONSE_TIMEOUT))
+        .map_err(|error| Error::new(Operation::RequestConfigure, error.to_string()))?;
+    let request = ConfigureRequest {
+        version: CONTROL_PROTOCOL_VERSION,
+        request_id,
+    };
+    let bytes = serde_json::to_vec(&request)
+        .map_err(|error| Error::new(Operation::RequestConfigure, error.to_string()))?;
+    socket
+        .send_to(&bytes, &server_path)
+        .map_err(|error| Error::new(Operation::RequestConfigure, error.to_string()))?;
+
+    let mut buffer = [0u8; 256];
+    let length = socket
+        .recv(&mut buffer)
+        .map_err(|error| Error::new(Operation::RequestConfigure, error.to_string()))?;
+    let response: ConfigureResponse = serde_json::from_slice(&buffer[..length])
+        .map_err(|_| Error::new(Operation::RequestConfigure, "broker response was invalid"))?;
+    if response.version != CONTROL_PROTOCOL_VERSION || response.request_id != request_id {
+        return Err(Error::new(
+            Operation::RequestConfigure,
+            "broker response did not match this request",
+        ));
+    }
+    match response.outcome {
+        ConfigureOutcome::Requested => Ok(()),
+        ConfigureOutcome::Unsupported => Err(Error::new(
+            Operation::ConfigurePortal,
+            "the active GlobalShortcuts portal cannot configure existing shortcuts",
+        )),
+        ConfigureOutcome::Failed => Err(Error::new(
+            Operation::ConfigurePortal,
+            "the active GlobalShortcuts portal did not open shortcut configuration",
+        )),
+    }
+}
+
+#[cfg(not(unix))]
+fn request_shortcut_configuration_at(_runtime: &Path, _request_id: u64) -> Result<(), Error> {
+    Err(Error::new(
+        Operation::RequestConfigure,
+        "shortcut configuration control is available only on Unix",
+    ))
 }
 
 pub fn validate_specs(shortcuts: &[ShortcutSpec]) -> Result<(), Error> {
@@ -488,6 +630,36 @@ struct DispatchSocketCleanup {
     socket_identity: (u64, u64),
 }
 
+#[cfg(unix)]
+fn socket_identity(path: &Path, operation: Operation) -> Result<(u64, u64), Error> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| Error::new(operation, error.to_string()))?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(unix)]
+fn validate_control_directory(path: &Path, operation: Operation) -> Result<(), Error> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| Error::new(operation, error.to_string()))?;
+    if !metadata.file_type().is_dir() {
+        return Err(Error::new(
+            operation,
+            "shortcut runtime endpoint parent is not a directory",
+        ));
+    }
+    if metadata.permissions().mode() & 0o077 != 0 {
+        return Err(Error::new(
+            operation,
+            "shortcut runtime endpoint parent is accessible by other users",
+        ));
+    }
+    Ok(())
+}
+
 impl Drop for DispatchSocketCleanup {
     fn drop(&mut self) {
         #[cfg(unix)]
@@ -500,6 +672,108 @@ impl Drop for DispatchSocketCleanup {
             }
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+struct ConfigurationControl {
+    socket: async_io::Async<std::os::unix::net::UnixDatagram>,
+    _cleanup: DispatchSocketCleanup,
+}
+
+#[cfg(target_os = "linux")]
+fn bind_configuration_control() -> Result<ConfigurationControl, Error> {
+    use std::os::unix::fs::{FileTypeExt as _, PermissionsExt as _};
+
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| {
+            Error::new(
+                Operation::ResolveControl,
+                "XDG_RUNTIME_DIR is not set to an absolute path",
+            )
+        })?;
+    let path = control_socket_path_in(&runtime);
+    let parent = path.parent().ok_or_else(|| {
+        Error::new(
+            Operation::BindControl,
+            "shortcut control socket has no runtime directory",
+        )
+    })?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| Error::new(Operation::BindControl, error.to_string()))?;
+    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+        .map_err(|error| Error::new(Operation::BindControl, error.to_string()))?;
+    validate_control_directory(parent, Operation::BindControl)?;
+
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_socket() => {
+            let probe = std::os::unix::net::UnixDatagram::unbound()
+                .map_err(|error| Error::new(Operation::BindControl, error.to_string()))?;
+            match probe.send_to(b"{}", &path) {
+                Ok(_) => {
+                    return Err(Error::new(
+                        Operation::BindControl,
+                        "another shortcut broker owns the configuration endpoint",
+                    ));
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+                    ) =>
+                {
+                    std::fs::remove_file(&path)
+                        .map_err(|error| Error::new(Operation::BindControl, error.to_string()))?;
+                }
+                Err(error) => return Err(Error::new(Operation::BindControl, error.to_string())),
+            }
+        }
+        Ok(_) => {
+            return Err(Error::new(
+                Operation::BindControl,
+                "shortcut configuration endpoint is not a socket",
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(Error::new(Operation::BindControl, error.to_string())),
+    }
+
+    let socket = async_io::Async::<std::os::unix::net::UnixDatagram>::bind(&path)
+        .map_err(|error| Error::new(Operation::BindControl, error.to_string()))?;
+    let socket_identity = socket_identity(&path, Operation::BindControl)?;
+    let cleanup = DispatchSocketCleanup {
+        path,
+        socket_identity,
+    };
+    std::fs::set_permissions(&cleanup.path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|error| Error::new(Operation::BindControl, error.to_string()))?;
+    Ok(ConfigurationControl {
+        socket,
+        _cleanup: cleanup,
+    })
+}
+
+#[cfg(target_os = "linux")]
+async fn receive_configuration_request(
+    control: &ConfigurationControl,
+) -> Result<Option<(ConfigureRequest, PathBuf)>, Error> {
+    let mut buffer = [0u8; 256];
+    let (length, address) = control
+        .socket
+        .recv_from(&mut buffer)
+        .await
+        .map_err(|error| Error::new(Operation::ReadControl, error.to_string()))?;
+    let Some(reply_path) = address.as_pathname().map(Path::to_path_buf) else {
+        return Ok(None);
+    };
+    let Ok(request) = serde_json::from_slice::<ConfigureRequest>(&buffer[..length]) else {
+        return Ok(None);
+    };
+    if request.version != CONTROL_PROTOCOL_VERSION || request.request_id == 0 {
+        return Ok(None);
+    }
+    Ok(Some((request, reply_path)))
 }
 
 pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
@@ -539,7 +813,7 @@ pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
 #[cfg(target_os = "linux")]
 async fn watch_portal(sender: &Sender<Event>) -> Result<(), Error> {
     use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
-    use futures_util::{pin_mut, select, StreamExt as _};
+    use futures_util::{pin_mut, select, FutureExt as _, StreamExt as _};
 
     let portal = GlobalShortcuts::new()
         .await
@@ -588,6 +862,7 @@ async fn watch_portal(sender: &Sender<Event>) -> Result<(), Error> {
         .await
         .and_then(|request| request.response())
         .map_err(|error| Error::new(Operation::BindPortal, error.to_string()))?;
+    let configuration_control = bind_configuration_control()?;
     send(
         sender,
         Event::Backend {
@@ -606,7 +881,10 @@ async fn watch_portal(sender: &Sender<Event>) -> Result<(), Error> {
     )
     .await?;
 
+    let mut last_configuration_request: Option<std::time::Instant> = None;
     loop {
+        let configuration_request = receive_configuration_request(&configuration_control).fuse();
+        pin_mut!(configuration_request);
         select! {
             signal = activated.next() => match signal {
                 Some(signal) => {
@@ -633,6 +911,34 @@ async fn watch_portal(sender: &Sender<Event>) -> Result<(), Error> {
                     }).await?;
                 }
                 None => return Err(Error::new(Operation::WatchPortal, "ShortcutsChanged signal stream ended")),
+            },
+            received = configuration_request => {
+                let Some((request, reply_path)) = received? else {
+                    continue;
+                };
+                let now = std::time::Instant::now();
+                let outcome = if version < PORTAL_CONFIGURE_VERSION {
+                    ConfigureOutcome::Unsupported
+                } else if configuration_request_is_coalesced(last_configuration_request, now) {
+                    ConfigureOutcome::Requested
+                } else if portal
+                    .configure_shortcuts(&session, None, None)
+                    .await
+                    .is_ok()
+                {
+                    last_configuration_request = Some(now);
+                    ConfigureOutcome::Requested
+                } else {
+                    ConfigureOutcome::Failed
+                };
+                let response = ConfigureResponse {
+                    version: CONTROL_PROTOCOL_VERSION,
+                    request_id: request.request_id,
+                    outcome,
+                };
+                if let Ok(bytes) = serde_json::to_vec(&response) {
+                    let _ = configuration_control.socket.send_to(&bytes, &reply_path).await;
+                }
             },
         }
     }
@@ -749,6 +1055,86 @@ mod tests {
         assert_ne!(launcher, drawer);
         assert!(launcher.ends_with("shortcut-launcher.sock"));
         assert!(shortcut_socket_path_in(runtime, &ShortcutId("unknown".into())).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn configuration_request_is_session_scoped_acknowledged_and_cleans_up() {
+        let root = PathBuf::from("/tmp").join(format!(
+            "rmac-shortcut-control-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let directory = root.join("rmac");
+        std::fs::create_dir_all(&directory).unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let server_path = control_socket_path_in(&root);
+        let server = std::os::unix::net::UnixDatagram::bind(&server_path).unwrap();
+        server
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .unwrap();
+        let broker = std::thread::spawn(move || {
+            let mut buffer = [0u8; 256];
+            let (length, peer) = server.recv_from(&mut buffer).unwrap();
+            let request: ConfigureRequest = serde_json::from_slice(&buffer[..length]).unwrap();
+            assert_eq!(request.version, CONTROL_PROTOCOL_VERSION);
+            assert_eq!(request.request_id, 41);
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                let reply_path = peer.as_pathname().unwrap();
+                assert_eq!(
+                    std::fs::symlink_metadata(reply_path)
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o077,
+                    0
+                );
+            }
+            let response = ConfigureResponse {
+                version: CONTROL_PROTOCOL_VERSION,
+                request_id: request.request_id,
+                outcome: ConfigureOutcome::Requested,
+            };
+            server
+                .send_to(
+                    &serde_json::to_vec(&response).unwrap(),
+                    peer.as_pathname().unwrap(),
+                )
+                .unwrap();
+        });
+
+        request_shortcut_configuration_at(&root, 41).unwrap();
+        broker.join().unwrap();
+        let remaining: Vec<_> = std::fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(
+            remaining,
+            [std::ffi::OsString::from("shortcut-broker-control.sock")]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn configuration_requests_are_coalesced_only_inside_the_bounded_cooldown() {
+        let now = std::time::Instant::now();
+        assert!(!configuration_request_is_coalesced(None, now));
+        assert!(configuration_request_is_coalesced(
+            Some(now - std::time::Duration::from_secs(1)),
+            now
+        ));
+        assert!(!configuration_request_is_coalesced(
+            Some(now - CONFIGURATION_REQUEST_COOLDOWN),
+            now
+        ));
     }
 
     #[test]

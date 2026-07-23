@@ -845,6 +845,8 @@ struct Settings {
     shortcut_status_loading: bool,
     shortcut_status: Option<rmac_shortcuts::BackendStatus>,
     shortcut_status_error: Option<SharedString>,
+    shortcut_configuration_busy: bool,
+    shortcut_configuration_error: Option<SharedString>,
 
     // Network
     network_loading: bool,
@@ -2885,6 +2887,8 @@ impl Settings {
             shortcut_status_loading: true,
             shortcut_status: None,
             shortcut_status_error: None,
+            shortcut_configuration_busy: false,
+            shortcut_configuration_error: None,
 
             network_loading: true,
             network_busy: false,
@@ -3566,6 +3570,32 @@ impl Settings {
             let result = blocking::unblock(rmac_shortcuts::backend_status).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_shortcut_status_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn configure_global_shortcuts(&mut self, cx: &mut Context<Self>) {
+        if self.shortcut_configuration_busy
+            || !shortcut_configuration_available(self.shortcut_status.as_ref())
+        {
+            return;
+        }
+        self.shortcut_configuration_busy = true;
+        self.shortcut_configuration_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result =
+                blocking::unblock(rmac_shortcuts::request_shortcut_configuration).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.shortcut_configuration_busy = false;
+                if result.is_err() {
+                    this.shortcut_configuration_error = Some(
+                        "Could not open global shortcut configuration. The live session broker or portal may be unavailable."
+                            .into(),
+                    );
+                }
                 cx.notify();
             });
         })
@@ -9429,6 +9459,7 @@ impl Settings {
         let refresh_view = view.clone();
         let revert_view = view.clone();
         let choose_view = view.clone();
+        let configure_shortcuts_view = view.clone();
         let mut cards = vec![div()
             .flex()
             .items_center()
@@ -9695,7 +9726,7 @@ impl Settings {
                 can_configure,
             }) => format!(
                 "Portal v{version}{}",
-                if *can_configure {
+                if *can_configure && *version >= rmac_shortcuts::PORTAL_CONFIGURE_VERSION {
                     " · configurable"
                 } else {
                     ""
@@ -9707,6 +9738,24 @@ impl Settings {
             }
             None if self.shortcut_status_loading => "Loading…".into(),
             None => "Not reported".into(),
+        };
+        let shortcut_configuration_enabled =
+            shortcut_configuration_available(self.shortcut_status.as_ref());
+        let shortcut_configuration_detail = match self.shortcut_status.as_ref() {
+            Some(rmac_shortcuts::BackendStatus::Portal {
+                version,
+                can_configure: true,
+            }) if *version >= rmac_shortcuts::PORTAL_CONFIGURE_VERSION => {
+                "Open the portal UI for every shortcut in the live rmac session"
+            }
+            Some(rmac_shortcuts::BackendStatus::Portal { .. }) => {
+                "The active portal is older than GlobalShortcuts version 2"
+            }
+            Some(rmac_shortcuts::BackendStatus::FallbackRequired { .. }) => {
+                "The generated niri fallback remains the shortcut authority"
+            }
+            None if self.shortcut_status_loading => "Waiting for the session broker",
+            None => "The session broker has not reported its shortcut backend",
         };
         cards.push(section_header("Keyboard shortcut"));
         cards.push(card(vec![
@@ -9728,12 +9777,37 @@ impl Settings {
                 "niri fallback".into(),
                 launcher_shortcut.niri_trigger.into(),
             ),
+            row_base()
+                .child(text_block(
+                    "Global shortcuts".into(),
+                    Some(shortcut_configuration_detail.into()),
+                ))
+                .child(
+                    Button::new(
+                        "spotlight-configure-shortcuts",
+                        if self.shortcut_configuration_busy {
+                            "Opening…"
+                        } else {
+                            "Configure…"
+                        },
+                    )
+                    .disabled(self.shortcut_configuration_busy || !shortcut_configuration_enabled)
+                    .on_click(move |_, _, cx| {
+                        configure_shortcuts_view.update(cx, |settings, cx| {
+                            settings.configure_global_shortcuts(cx);
+                        });
+                    }),
+                )
+                .into_any_element(),
         ]));
         if let Some(error) = self.shortcut_status_error.clone() {
             cards.push(note_card(error));
         }
+        if let Some(error) = self.shortcut_configuration_error.clone() {
+            cards.push(note_card(error));
+        }
         cards.push(note_card(
-            "The portal owns user consent and the actual trigger. The fallback is enabled only when the broker reports it is required, so one shortcut backend owns Logo/Mod+Space at a time.",
+            "The portal owns user consent and the actual trigger. Configure opens its UI through the broker's existing session; it never creates a second binding authority. The fallback is enabled only when the broker reports it is required, so one shortcut backend owns Logo/Mod+Space at a time.",
         ));
         cards.push(note_card(
             "These preferences are consumed by the launcher provider/runtime foundations. The centered GPUI overlay and full live session wiring remain D7/D8 release gates.",
@@ -18782,6 +18856,16 @@ fn wallpaper_fit_row(
         .into_any_element()
 }
 
+fn shortcut_configuration_available(status: Option<&rmac_shortcuts::BackendStatus>) -> bool {
+    matches!(
+        status,
+        Some(rmac_shortcuts::BackendStatus::Portal {
+            version,
+            can_configure: true,
+        }) if *version >= rmac_shortcuts::PORTAL_CONFIGURE_VERSION
+    )
+}
+
 fn spotlight_provider_row(
     view: Entity<Settings>,
     id: &'static str,
@@ -19572,13 +19656,13 @@ mod tests {
         network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
         power_stream_snapshot_is_current, privacy_stream_snapshot_is_current,
         relative_display_position, render_wallpaper_preview, sample_battery_history,
-        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
-        theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
-        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, FocusCurrentAction,
-        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
-        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
-        GENERAL_DESTINATIONS,
+        shortcut_configuration_available, storage_stream_snapshot_is_current,
+        system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
+        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
+        DisplayPlacement, DockChange, FocusCurrentAction, NotificationPolicyChange,
+        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
+        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -20147,6 +20231,34 @@ mod tests {
         assert!(!settings
             .providers
             .contains_key(&rmac_shell_settings::ProviderId(provider)));
+    }
+
+    #[test]
+    fn spotlight_configuration_requires_the_live_version_two_portal() {
+        assert!(shortcut_configuration_available(Some(
+            &rmac_shortcuts::BackendStatus::Portal {
+                version: 2,
+                can_configure: true,
+            }
+        )));
+        assert!(!shortcut_configuration_available(Some(
+            &rmac_shortcuts::BackendStatus::Portal {
+                version: 1,
+                can_configure: true,
+            }
+        )));
+        assert!(!shortcut_configuration_available(Some(
+            &rmac_shortcuts::BackendStatus::Portal {
+                version: 2,
+                can_configure: false,
+            }
+        )));
+        assert!(!shortcut_configuration_available(Some(
+            &rmac_shortcuts::BackendStatus::FallbackRequired {
+                reason: "portal unavailable".into(),
+            }
+        )));
+        assert!(!shortcut_configuration_available(None));
     }
 
     #[test]

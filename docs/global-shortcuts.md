@@ -37,6 +37,21 @@ requires the niri fallback, while displaying both stable trigger forms. The
 snapshot is diagnostic authority only: Settings can refresh it but cannot
 invent, bind, or silently switch a shortcut backend.
 
+When the live portal reports version 2 or newer, Settings exposes Configure.
+The action sends one versioned, bounded request to the broker-owned
+`$XDG_RUNTIME_DIR/rmac/shortcut-broker-control.sock`; it does not create a
+competing portal session. The broker calls `ConfigureShortcuts` with its exact
+live session handle and returns a matching request acknowledgement. The
+runtime directory is mode 0700, the broker and ephemeral reply sockets are
+mode 0600, request IDs must match, reads time out after three seconds, and
+identity-checked cleanup never removes a replacement socket. Unsupported
+portal versions and portal/request failures stay distinct internally, and
+accepted requests are coalesced for two seconds so repeated clicks cannot
+create a portal-dialog burst, while Settings presents a path-free failure. The
+portal remains responsible for the configuration UI, consent, and final
+bindings; its API configures every shortcut in the session rather than only
+Spotlight.
+
 Activated IDs pass through `rmac-shortcut-dispatch`, which accepts only the
 compiled allowlist. A normal shell ID becomes a small JSON message on its own
 `$XDG_RUNTIME_DIR/rmac/shortcut-<allowlisted-id>.sock`. Each separately
@@ -80,12 +95,13 @@ path; ordinary shell actions remain unavailable while locked.
 
 Tests prove the default IDs and both trigger forms are unique and valid,
 reject malformed input and relative dispatchers, prove action-scoped endpoints,
-and inspect the generated KDL
-for one shell-free dispatch per shortcut. The real portal implementation is
-cross-compiled through the Linux Rust target on the development host. Final
-evidence still requires the Linux PC to record portal version/consent, each
-activation, fallback validation, portal restart, niri reload, and keyboard
-layout behavior.
+prove the configuration request/acknowledgement identity and ephemeral-socket
+cleanup, and inspect the generated KDL for one shell-free dispatch per
+shortcut. The real portal implementation, including the broker-owned v2
+configuration call, is cross-compiled through the Linux Rust target on the
+development host. Final evidence still requires the Linux PC to record portal
+version/consent/configuration, each activation, fallback validation, portal
+restart, niri reload, and keyboard layout behavior.
 
 Primary contracts:
 

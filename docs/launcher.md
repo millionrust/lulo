@@ -143,6 +143,12 @@ System Settings now edits the same provider enablement, private-file admission,
 removable-mount scope, and directory exclusions consumed by this domain. The
 pane reports on-demand/no-background-index behavior and reads the session
 shortcut broker's typed status without becoming a second shortcut authority.
+For a live GlobalShortcuts v2 session it can request the portal's all-session
+configuration UI over a bounded runtime-directory control socket. The broker
+uses its existing session handle and returns an exact acknowledgement; Settings
+never binds shortcuts or opens a competing portal session. Older portals and
+the explicit niri fallback remain visible but do not expose a misleading
+Configure action.
 
 ## GPUI session surface
 
@@ -182,7 +188,7 @@ siblings before enabling the session units. `--show` is a deliberate
 development-only direct-open path; the normal session accepts only the
 allowlisted launcher shortcut endpoint.
 
-Linux/niri placement and focus evidence, the real portal-consent shortcut
-journey, Orca runtime evidence, context-menu polish beyond the explicit
-alternate action, and performance/idle measurements remain pending. D7/D8
-therefore remain open release gates.
+Linux/niri placement and focus evidence, the real portal consent/configuration
+shortcut journey, Orca runtime evidence, context-menu polish beyond the
+explicit alternate action, and performance/idle measurements remain pending.
+D7/D8 therefore remain open release gates.

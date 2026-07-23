@@ -26,6 +26,17 @@ protocol behavior keeps the session locked during that gap. The generated niri
 fallback adds `allow-when-locked=true` only to the lock shortcut for manual
 recovery.
 
+Both the coordinator and locker resolve the bounded imported
+`XDG_SESSION_ID` through logind before they proceed. The returned session must
+belong to the process's effective UID, be local, report type `wayland`, and
+name a bounded seat. The coordinator subscribes to that exact object's lock
+signal, and the locker sets or clears `LockedHint` on the same exact object
+after compositor readiness or authenticated exit. It never relies on logind's
+`/session/auto` convenience path from a user service. Invalid, remote,
+different-user, non-Wayland, seatless, control-bearing, whitespace-bearing, or
+oversized routes fail before readiness; session identity and object paths stay
+out of diagnostics.
+
 The development installer requires `/usr/bin/swaylock`, installs the supervisor
 and unit, and writes the default rmac swaylock config only when the user has no
 existing config. Production packaging must depend on the Ubuntu swaylock build
@@ -288,13 +299,14 @@ authority rather than a UI timer.
 An opt-in `development-provider` feature now supplies the uninstalled
 `rmac-lock-provider` process used by the future recovery/evidence harness. It
 resolves `XDG_SESSION_ID` through logind, reads the exact session's UID and PAM
-user name, and refuses to continue unless that UID equals the process's
-effective UID. A portable lifecycle orders `LockedHint=true` before systemd
-`READY=1`; denial never reports ready, failure after `locked` never clears the
-hint, and only authenticated unlock after the Wayland display-sync barrier
-attempts `LockedHint=false`. Hint failure remains an advisory warning, while a
-readiness notification failure terminates the provider so systemd can restart
-it fail-closed. Status and errors contain no session ID or username.
+user name, and applies the same validation—same UID, local, seated, and
+Wayland—before connecting to the lock protocol. A portable lifecycle orders
+`LockedHint=true` before systemd `READY=1`; denial never reports ready, failure
+after `locked` never clears the hint, and only authenticated unlock after the
+Wayland display-sync barrier attempts `LockedHint=false`. Hint failure remains
+an advisory warning, while a readiness notification failure terminates the
+provider so systemd can restart it fail-closed. Status and errors contain no
+session ID or username.
 
 The evidence provider also participates in systemd's process-scoped watchdog
 contract. It validates the manager-provided watchdog environment before the

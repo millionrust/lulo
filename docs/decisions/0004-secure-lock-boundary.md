@@ -41,7 +41,10 @@ or an unlocked secondary TTY/session.
    background. The entire control group is killed together on service stop.
 5. The supervisor updates logind's `LockedHint` after compositor readiness and
    after successful unlock. This hint is advisory state for the wider desktop;
-   it is never used as proof that the compositor is locked.
+   it is never used as proof that the compositor is locked. Both supervisor and
+   coordinator resolve the bounded imported `XDG_SESSION_ID`, require logind to
+   confirm the process UID's local seated Wayland session, and address that
+   exact object; a user service never relies on `/session/auto`.
 6. The direct shortcut and generated niri fallback start only the fixed
    `rmac-lock.service`. The fallback lock binding is allowed while locked so a
    user can restart the provider from niri's red recovery screen.

@@ -34,6 +34,12 @@ const MAX_IDLE_POLICY_BYTES: u64 = 16 * 1024;
 const MIN_IDLE_SECONDS: u32 = 60;
 const MAX_IDLE_SECONDS: u32 = 24 * 60 * 60;
 const MIN_SUSPEND_SECONDS: u32 = 5 * 60;
+#[cfg(any(target_os = "linux", test))]
+const MAX_SESSION_ID_BYTES: usize = 256;
+#[cfg(any(target_os = "linux", test))]
+const MAX_SEAT_NAME_BYTES: usize = 256;
+#[cfg(any(target_os = "linux", test))]
+const WAYLAND_SESSION_TYPE: &str = "wayland";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -85,6 +91,7 @@ pub enum Operation {
     WaitForUnlock,
     ConnectLogind,
     ResolveSession,
+    ValidateSession,
     InhibitSleep,
     SubscribeLogind,
     ReadSignal,
@@ -278,10 +285,7 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
         .await
         .map_err(|_| Error::failed(Operation::ConnectLogind))?;
     let mut sleep_inhibitor = Some(acquire_sleep_inhibitor(&manager).await?);
-    let session_id = std::env::var("XDG_SESSION_ID")
-        .ok()
-        .filter(|session_id| !session_id.is_empty())
-        .ok_or_else(|| Error::failed(Operation::ResolveSession))?;
+    let session_id = session_id_from_environment()?;
     let session_path = manager
         .get_session(&session_id)
         .await
@@ -292,6 +296,7 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
         .build()
         .await
         .map_err(|_| Error::failed(Operation::ResolveSession))?;
+    validate_async_session(&session).await?;
     let lock_requests = session
         .receive_lock()
         .await
@@ -496,26 +501,133 @@ fn terminate(locker: &mut Child) {
 
 #[cfg(target_os = "linux")]
 fn set_locked_hint(locked: bool) -> Result<(), Error> {
+    let session_id = session_id_from_environment()?;
     let connection = zbus::blocking::Connection::system()
         .map_err(|error| Error::io(Operation::UpdateLockedHint, io::Error::other(error)))?;
-    let proxy = LoginSessionProxyBlocking::new(&connection)
+    let manager = LoginManagerProxyBlocking::new(&connection)
+        .map_err(|error| Error::io(Operation::ResolveSession, io::Error::other(error)))?;
+    let path = manager
+        .get_session(&session_id)
+        .map_err(|error| Error::io(Operation::ResolveSession, io::Error::other(error)))?;
+    let proxy = LoginSessionProxyBlocking::builder(&connection)
+        .path(path)
+        .map_err(|error| Error::io(Operation::ResolveSession, io::Error::other(error)))?
+        .build()
         .map_err(|error| Error::io(Operation::UpdateLockedHint, io::Error::other(error)))?;
+    validate_blocking_session(&proxy)?;
     proxy
         .set_locked_hint(locked)
         .map_err(|error| Error::io(Operation::UpdateLockedHint, io::Error::other(error)))
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn valid_session_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_SESSION_ID_BYTES
+        && !value.chars().any(char::is_control)
+        && !value.chars().any(char::is_whitespace)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn valid_session_identity(
+    expected_uid: u32,
+    session_uid: u32,
+    remote: bool,
+    session_type: &str,
+    seat: &str,
+) -> bool {
+    expected_uid == session_uid
+        && !remote
+        && session_type == WAYLAND_SESSION_TYPE
+        && !seat.is_empty()
+        && seat.len() <= MAX_SEAT_NAME_BYTES
+        && !seat.chars().any(char::is_control)
+        && !seat.chars().any(char::is_whitespace)
+}
+
+#[cfg(target_os = "linux")]
+fn session_id_from_environment() -> Result<String, Error> {
+    std::env::var("XDG_SESSION_ID")
+        .ok()
+        .filter(|session_id| valid_session_id(session_id))
+        .ok_or_else(|| Error::failed(Operation::ResolveSession))
+}
+
+#[cfg(target_os = "linux")]
+fn effective_uid() -> u32 {
+    // SAFETY: `geteuid` has no arguments and cannot violate Rust memory
+    // invariants.
+    unsafe { libc::geteuid() }
+}
+
+#[cfg(target_os = "linux")]
+async fn validate_async_session(session: &LoginSessionProxy<'_>) -> Result<(), Error> {
+    let (session_uid, _) = session
+        .user()
+        .await
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    let remote = session
+        .remote()
+        .await
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    let session_type = session
+        .session_type()
+        .await
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    let (seat, _) = session
+        .seat()
+        .await
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    if valid_session_identity(effective_uid(), session_uid, remote, &session_type, &seat) {
+        Ok(())
+    } else {
+        Err(Error::failed(Operation::ValidateSession))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn validate_blocking_session(session: &LoginSessionProxyBlocking<'_>) -> Result<(), Error> {
+    let (session_uid, _) = session
+        .user()
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    let remote = session
+        .remote()
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    let session_type = session
+        .session_type()
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    let (seat, _) = session
+        .seat()
+        .map_err(|_| Error::failed(Operation::ValidateSession))?;
+    if valid_session_identity(effective_uid(), session_uid, remote, &session_type, &seat) {
+        Ok(())
+    } else {
+        Err(Error::failed(Operation::ValidateSession))
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[zbus::proxy(
     interface = "org.freedesktop.login1.Session",
-    default_service = "org.freedesktop.login1",
-    default_path = "/org/freedesktop/login1/session/auto"
+    default_service = "org.freedesktop.login1"
 )]
 trait LoginSession {
     fn set_locked_hint(&self, locked: bool) -> zbus::Result<()>;
 
     #[zbus(signal)]
     fn lock(&self) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn remote(&self) -> zbus::Result<bool>;
+
+    #[zbus(property, name = "Type")]
+    fn session_type(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn seat(&self) -> zbus::Result<(String, zbus::zvariant::OwnedObjectPath)>;
+
+    #[zbus(property)]
+    fn user(&self) -> zbus::Result<(u32, zbus::zvariant::OwnedObjectPath)>;
 }
 
 #[cfg(target_os = "linux")]
@@ -672,5 +784,50 @@ mod tests {
                 SUSPEND_ACTION.to_owned(),
             ]
         );
+    }
+
+    #[test]
+    fn session_route_is_bounded_and_never_accepts_control_or_whitespace() {
+        assert!(valid_session_id("c2"));
+        assert!(valid_session_id("wayland-session_42"));
+        for invalid in [
+            "",
+            "session with spaces",
+            "session\n2",
+            &"x".repeat(MAX_SESSION_ID_BYTES + 1),
+        ] {
+            assert!(!valid_session_id(invalid));
+        }
+    }
+
+    #[test]
+    fn only_the_same_users_local_seated_wayland_session_is_accepted() {
+        assert!(valid_session_identity(
+            1_000, 1_000, false, "wayland", "seat0"
+        ));
+        for (uid, remote, session_type, seat) in [
+            (1_001, false, "wayland", "seat0"),
+            (1_000, true, "wayland", "seat0"),
+            (1_000, false, "x11", "seat0"),
+            (1_000, false, "tty", "seat0"),
+            (1_000, false, "wayland", ""),
+            (1_000, false, "wayland", "seat 0"),
+            (1_000, false, "wayland", "seat\n0"),
+        ] {
+            assert!(!valid_session_identity(
+                1_000,
+                uid,
+                remote,
+                session_type,
+                seat
+            ));
+        }
+        assert!(!valid_session_identity(
+            1_000,
+            1_000,
+            false,
+            "wayland",
+            &"x".repeat(MAX_SEAT_NAME_BYTES + 1)
+        ));
     }
 }

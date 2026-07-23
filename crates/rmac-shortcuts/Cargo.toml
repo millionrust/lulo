@@ -17,6 +17,7 @@ serde_json.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd.workspace = true
 blocking.workspace = true
+libc.workspace = true
 zbus.workspace = true
 
 [[bin]]

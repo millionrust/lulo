@@ -19,6 +19,8 @@ use crate::runtime::ProviderExit;
 
 const SYSTEMD_NOTIFY: &str = "/usr/bin/systemd-notify";
 const MAX_SESSION_ID_BYTES: usize = 256;
+const MAX_SEAT_NAME_BYTES: usize = 256;
+const WAYLAND_SESSION_TYPE: &str = "wayland";
 const POLL_WAIT: Duration = Duration::from_secs(1);
 
 /// Run the opt-in custom provider until authenticated unlock or a fail-closed
@@ -101,7 +103,7 @@ impl SessionContext {
     fn connect() -> Result<Self, Error> {
         let session_id = env::var("XDG_SESSION_ID")
             .ok()
-            .filter(|value| !value.is_empty() && value.len() <= MAX_SESSION_ID_BYTES)
+            .filter(|value| valid_session_id(value))
             .ok_or_else(|| Error::new(Operation::ResolveSession))?;
         let connection = zbus::blocking::Connection::system()
             .map_err(|_| Error::new(Operation::ResolveSession))?;
@@ -121,8 +123,17 @@ impl SessionContext {
         // SAFETY: `geteuid` has no pointer arguments and cannot violate Rust
         // memory invariants.
         let effective_uid = unsafe { libc::geteuid() };
-        if session_uid != effective_uid {
-            return Err(Error::new(Operation::SessionOwnership));
+        let remote = session
+            .remote()
+            .map_err(|_| Error::new(Operation::ResolveSession))?;
+        let session_type = session
+            .session_type()
+            .map_err(|_| Error::new(Operation::ResolveSession))?;
+        let (seat, _) = session
+            .seat()
+            .map_err(|_| Error::new(Operation::ResolveSession))?;
+        if !valid_session_identity(effective_uid, session_uid, remote, &session_type, &seat) {
+            return Err(Error::new(Operation::SessionIdentity));
         }
         let username = session
             .name()
@@ -145,6 +156,29 @@ impl SessionContext {
             .build()?
             .set_locked_hint(locked)
     }
+}
+
+fn valid_session_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_SESSION_ID_BYTES
+        && !value.chars().any(char::is_control)
+        && !value.chars().any(char::is_whitespace)
+}
+
+fn valid_session_identity(
+    expected_uid: u32,
+    session_uid: u32,
+    remote: bool,
+    session_type: &str,
+    seat: &str,
+) -> bool {
+    expected_uid == session_uid
+        && !remote
+        && session_type == WAYLAND_SESSION_TYPE
+        && !seat.is_empty()
+        && seat.len() <= MAX_SEAT_NAME_BYTES
+        && !seat.chars().any(char::is_control)
+        && !seat.chars().any(char::is_whitespace)
 }
 
 fn notify_ready() -> Result<(), Error> {
@@ -199,13 +233,22 @@ trait LoginSession {
     fn name(&self) -> zbus::Result<String>;
 
     #[zbus(property)]
+    fn remote(&self) -> zbus::Result<bool>;
+
+    #[zbus(property, name = "Type")]
+    fn session_type(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn seat(&self) -> zbus::Result<(String, OwnedObjectPath)>;
+
+    #[zbus(property)]
     fn user(&self) -> zbus::Result<(u32, OwnedObjectPath)>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operation {
     ResolveSession,
-    SessionOwnership,
+    SessionIdentity,
     ResolveUsername,
     ResolveWatchdog,
     ConnectProvider,
@@ -250,5 +293,31 @@ mod tests {
         assert_eq!(error.operation(), Operation::ResolveSession);
         assert_eq!(error.to_string(), "rmac custom lock provider failed");
         assert!(!format!("{error:?}").contains("XDG_SESSION_ID"));
+    }
+
+    #[test]
+    fn routed_session_must_be_bounded_local_seated_wayland_and_same_uid() {
+        assert!(valid_session_id("c2"));
+        assert!(!valid_session_id("session 2"));
+        assert!(!valid_session_id("session\n2"));
+        assert!(!valid_session_id(&"x".repeat(MAX_SESSION_ID_BYTES + 1)));
+        assert!(valid_session_identity(
+            1_000, 1_000, false, "wayland", "seat0"
+        ));
+        for (uid, remote, session_type, seat) in [
+            (1_001, false, "wayland", "seat0"),
+            (1_000, true, "wayland", "seat0"),
+            (1_000, false, "x11", "seat0"),
+            (1_000, false, "wayland", ""),
+            (1_000, false, "wayland", "seat 0"),
+        ] {
+            assert!(!valid_session_identity(
+                1_000,
+                uid,
+                remote,
+                session_type,
+                seat
+            ));
+        }
     }
 }

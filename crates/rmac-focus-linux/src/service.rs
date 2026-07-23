@@ -31,11 +31,29 @@ pub type WireSettings = (WireConfiguration, WireState);
 const MAX_WIRE_MODES: usize = 32;
 const MAX_WIRE_SCHEDULES: usize = 64;
 const MAX_WIRE_ALLOWED_APPS: usize = 256;
+const EVALUATION_HINT_CAPACITY: usize = 1;
+
+#[derive(Clone)]
+struct EvaluationNotifier(async_channel::Sender<()>);
+
+impl EvaluationNotifier {
+    /// Coalesce policy mutations into one nonblocking evaluation request. A
+    /// closed receiver means the service loop is already terminating; the
+    /// mutation itself remains authoritative and must not be reported as if it
+    /// had rolled back.
+    fn notify(&self) {
+        match self.0.try_send(()) {
+            Ok(()) | Err(async_channel::TrySendError::Full(())) => {}
+            Err(async_channel::TrySendError::Closed(())) => {}
+        }
+    }
+}
 
 #[derive(Clone)]
 struct FocusInterface {
     runtime: Arc<Mutex<Runtime>>,
     clock: Arc<ClockSampler>,
+    evaluation: EvaluationNotifier,
 }
 
 #[interface(name = "org.rmac.Focus1")]
@@ -87,6 +105,7 @@ impl FocusInterface {
                 .map_err(runtime_error)?;
             wire_update(&runtime, &update)
         };
+        self.evaluation.notify();
         emit_if_changed(&emitter, &before, &after).await?;
         Self::configuration_changed(&emitter).await?;
         Ok(after)
@@ -100,17 +119,17 @@ impl FocusInterface {
     ) -> fdo::Result<WireState> {
         authenticated_sender(&header)?;
         let before = wire_state(&*lock(&self.runtime)?);
-        let (after, scheduled_after) = {
+        let (after, scheduled_after, mutated) = {
             let mut runtime = lock(&self.runtime)?;
             if enabled {
                 if runtime.status().active {
-                    (wire_state(&runtime), false)
+                    (wire_state(&runtime), false, false)
                 } else {
                     let mode = ModeId::parse(DEFAULT_MODE).map_err(domain_error)?;
                     let update = runtime
                         .activate_indefinitely(mode, self.clock.sample())
                         .map_err(runtime_error)?;
-                    (wire_update(&runtime, &update), false)
+                    (wire_update(&runtime, &update), false, true)
                 }
             } else {
                 if matches!(runtime.status().source, Some(ActivationSource::Schedule(_))) {
@@ -123,9 +142,12 @@ impl FocusInterface {
                     update.evaluation.status.source,
                     Some(ActivationSource::Schedule(_))
                 );
-                (wire_update(&runtime, &update), scheduled)
+                (wire_update(&runtime, &update), scheduled, true)
             }
         };
+        if mutated {
+            self.evaluation.notify();
+        }
         emit_if_changed(&emitter, &before, &after).await?;
         if scheduled_after {
             return Err(fdo::Error::Failed(SCHEDULED_DISABLE_DETAIL.into()));
@@ -153,6 +175,7 @@ impl FocusInterface {
             .map_err(runtime_error)?;
             wire_update(&runtime, &update)
         };
+        self.evaluation.notify();
         emit_if_changed(&emitter, &before, &after).await?;
         Ok(after)
     }
@@ -175,6 +198,7 @@ impl FocusInterface {
             );
             (wire_update(&runtime, &update), scheduled)
         };
+        self.evaluation.notify();
         emit_if_changed(&emitter, &before, &after).await?;
         if scheduled_after {
             return Err(fdo::Error::Failed(SCHEDULED_DISABLE_DETAIL.into()));
@@ -194,6 +218,7 @@ pub struct ServiceHandle {
     runtime: Arc<Mutex<Runtime>>,
     clock: Arc<ClockSampler>,
     update: Update,
+    evaluation_rx: async_channel::Receiver<()>,
 }
 
 pub async fn serve() -> Result<ServiceHandle, Error> {
@@ -201,9 +226,11 @@ pub async fn serve() -> Result<ServiceHandle, Error> {
     let clock = Arc::new(ClockSampler::default());
     let (runtime, update) = Runtime::load(store, clock.sample()).map_err(|_| Error::Runtime)?;
     let runtime = Arc::new(Mutex::new(runtime));
+    let (evaluation_tx, evaluation_rx) = async_channel::bounded(EVALUATION_HINT_CAPACITY);
     let interface = FocusInterface {
         runtime: runtime.clone(),
         clock: clock.clone(),
+        evaluation: EvaluationNotifier(evaluation_tx),
     };
     let connection = Builder::session()
         .map_err(|_| Error::Bus)?
@@ -219,6 +246,7 @@ pub async fn serve() -> Result<ServiceHandle, Error> {
         runtime,
         clock,
         update,
+        evaluation_rx,
     })
 }
 
@@ -230,15 +258,25 @@ pub async fn run(mut handle: ServiceHandle) -> Result<(), Error> {
     let evaluator = async {
         loop {
             let now = handle.clock.sample();
-            let delay = rmac_focus_runtime::wake_delay(&handle.update, now.unix_ms)
-                .unwrap_or(std::time::Duration::from_secs(24 * 60 * 60));
-            let timer = futures_util::FutureExt::fuse(async_io::Timer::after(delay));
+            let delay = rmac_focus_runtime::wake_delay(&handle.update, now.unix_ms);
+            let timer = futures_util::FutureExt::fuse(async {
+                if let Some(delay) = delay {
+                    async_io::Timer::after(delay).await;
+                } else {
+                    futures_util::future::pending::<()>().await;
+                }
+            });
             let hint = futures_util::FutureExt::fuse(hint_rx.recv());
-            futures_util::pin_mut!(timer, hint);
+            let mutation = futures_util::FutureExt::fuse(handle.evaluation_rx.recv());
+            futures_util::pin_mut!(timer, hint, mutation);
             futures_util::select! {
                 _ = timer => {},
                 event = hint => match event {
                     Ok(crate::Event::Refresh(_)) | Ok(crate::Event::Unavailable) => {},
+                    Err(_) => return Ok(()),
+                },
+                event = mutation => match event {
+                    Ok(()) => {},
                     Err(_) => return Ok(()),
                 },
             }
@@ -579,6 +617,7 @@ mod tests {
         let interface = FocusInterface {
             runtime: Arc::new(Mutex::new(runtime)),
             clock,
+            evaluation: EvaluationNotifier(async_channel::bounded(EVALUATION_HINT_CAPACITY).0),
         };
         let mut xml = String::new();
         interface.introspect_to_writer(&mut xml, 0);
@@ -596,5 +635,22 @@ mod tests {
         }
         assert!(xml.contains("signal name=\"Changed\""));
         assert!(xml.contains("signal name=\"ConfigurationChanged\""));
+    }
+
+    #[test]
+    fn policy_evaluation_hints_are_bounded_coalesced_and_nonblocking() {
+        let (sender, receiver) = async_channel::bounded(EVALUATION_HINT_CAPACITY);
+        let notifier = EvaluationNotifier(sender);
+        notifier.notify();
+        notifier.notify();
+        notifier.notify();
+        assert_eq!(receiver.len(), 1);
+        assert_eq!(receiver.try_recv(), Ok(()));
+        assert!(receiver.is_empty());
+
+        notifier.notify();
+        assert_eq!(receiver.try_recv(), Ok(()));
+        drop(receiver);
+        notifier.notify();
     }
 }

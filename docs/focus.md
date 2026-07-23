@@ -79,6 +79,15 @@ override a running schedule: it returns an actionable instruction to change
 that schedule in Focus settings. Persistence degradation is returned to the
 caller even though the live in-memory policy remains truthful.
 
+Every successful D-Bus policy mutation also submits one nonblocking request to
+the service evaluator. The one-slot channel coalesces bursts without delaying
+the caller; the evaluator resamples the latest complete authority and replaces
+its previous timer with the new temporary expiry or local-minute schedule
+boundary. A no-wake policy waits only for a mutation, timedated/logind hint, or
+service shutdown—there is no daily polling fallback. This prevents a temporary
+activation or newly edited schedule from inheriting the deadline that existed
+before its D-Bus transaction.
+
 The authority now exposes bounded `Configuration` and
 `ReplaceConfiguration` operations for the full Settings pane. One transaction
 contains all modes and schedules: mode ID, user-visible name, exact allowed-app

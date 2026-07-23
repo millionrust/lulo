@@ -2,13 +2,13 @@
 
 use async_channel::Sender;
 use futures_util::StreamExt as _;
-use rmac_focus::Config;
+use rmac_focus::{ActivationSource, Config};
 use rmac_focus_runtime::Projection;
 use rmac_notifications::{AppId, DeliveryPolicy};
 
 use crate::service::{
-    decode_configuration, decode_policy, encode_configuration, encode_policy, projection,
-    WireConfiguration, WirePolicy, WireSettings, WireState, SCHEDULED_DISABLE_DETAIL,
+    activation_source, decode_configuration, decode_policy, encode_configuration, encode_policy,
+    projection, WireConfiguration, WirePolicy, WireSettings, WireState, SCHEDULED_DISABLE_DETAIL,
 };
 
 #[cfg(test)]
@@ -40,6 +40,7 @@ trait Focus {
 pub struct Snapshot {
     pub projection: Projection,
     pub mode_id: Option<String>,
+    pub source: Option<ActivationSource>,
     pub persistence_healthy: bool,
 }
 
@@ -65,6 +66,7 @@ impl std::fmt::Debug for Snapshot {
             .debug_struct("Snapshot")
             .field("projection", &self.projection)
             .field("mode_id", &self.mode_id.as_ref().map(|_| "<redacted>"))
+            .field("source", &self.source)
             .field("persistence_healthy", &self.persistence_healthy)
             .finish()
     }
@@ -334,17 +336,38 @@ async fn watch_once(sender: &Sender<Result<Projection, String>>) -> Result<(), E
 fn decode(state: WireState) -> Result<Snapshot, Error> {
     let persistence_healthy = state.4;
     let mode_id = state.0.then(|| state.1.clone());
+    let source = activation_source(&state).map_err(|_| Error::Protocol)?;
     Ok(Snapshot {
         projection: projection(&state).map_err(|_| Error::Protocol)?,
         mode_id,
+        source,
         persistence_healthy,
     })
 }
 
 fn decode_settings(settings: WireSettings) -> Result<SettingsSnapshot, Error> {
+    let configuration = decode_configuration(settings.0).map_err(|_| Error::Protocol)?;
+    let state = decode(settings.1)?;
+    if let Some(mode_id) = state.mode_id.as_deref() {
+        let mode_id = rmac_focus::ModeId::parse(mode_id).map_err(|_| Error::Protocol)?;
+        if configuration.mode(&mode_id).is_none() {
+            return Err(Error::Protocol);
+        }
+    }
+    if let Some(ActivationSource::Schedule(schedule_id)) = &state.source {
+        let Some(schedule) = configuration
+            .schedules()
+            .find(|schedule| &schedule.id == schedule_id)
+        else {
+            return Err(Error::Protocol);
+        };
+        if state.mode_id.as_deref() != Some(schedule.mode.as_str()) {
+            return Err(Error::Protocol);
+        }
+    }
     Ok(SettingsSnapshot {
-        configuration: decode_configuration(settings.0).map_err(|_| Error::Protocol)?,
-        state: decode(settings.1)?,
+        configuration,
+        state,
     })
 }
 
@@ -401,15 +424,25 @@ impl std::error::Error for Error {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmac_focus::{Mode, ModeId};
+    use rmac_focus::{Mode, ModeId, Schedule, ScheduleId, Weekday};
     use std::collections::BTreeSet;
 
     #[test]
     fn decoding_exposes_persistence_health_without_private_state() {
-        let snapshot = decode((true, "work".into(), "Work".into(), 5_000, false)).unwrap();
+        let snapshot = decode((
+            true,
+            "work".into(),
+            "Work".into(),
+            5_000,
+            false,
+            1,
+            String::new(),
+        ))
+        .unwrap();
         assert!(snapshot.projection.enabled);
         assert_eq!(snapshot.projection.mode_name.as_deref(), Some("Work"));
         assert_eq!(snapshot.mode_id.as_deref(), Some("work"));
+        assert_eq!(snapshot.source, Some(ActivationSource::Manual));
         assert!(!snapshot.persistence_healthy);
         assert!(!format!("{snapshot:?}").contains("work"));
     }
@@ -422,7 +455,16 @@ mod tests {
 
     #[test]
     fn persistence_failure_is_actionable_after_a_mutation() {
-        let snapshot = decode((true, "work".into(), "Work".into(), 0, false)).unwrap();
+        let snapshot = decode((
+            true,
+            "work".into(),
+            "Work".into(),
+            0,
+            false,
+            1,
+            String::new(),
+        ))
+        .unwrap();
         assert_eq!(ensure_persisted(snapshot), Err(Error::Persistence));
         assert!(Error::Persistence
             .to_string()
@@ -431,15 +473,19 @@ mod tests {
 
     #[test]
     fn settings_snapshot_debug_redacts_configuration_and_state_identity() {
+        let mode_id = ModeId::parse("private-work-id").unwrap();
+        let schedule_id = ScheduleId::parse("private-schedule-id").unwrap();
         let configuration = Config::new(
-            vec![Mode::new(
-                ModeId::parse("private-work-id").unwrap(),
-                "Private Work Name",
-                BTreeSet::new(),
-                false,
-            )
-            .unwrap()],
-            Vec::new(),
+            vec![Mode::new(mode_id.clone(), "Private Work Name", BTreeSet::new(), false).unwrap()],
+            vec![Schedule {
+                id: schedule_id,
+                mode: mode_id,
+                days: BTreeSet::from([Weekday::Monday]),
+                start_minute: 9 * 60,
+                end_minute: 17 * 60,
+                priority: 1,
+                enabled: true,
+            }],
         )
         .unwrap();
         let snapshot = decode_settings((
@@ -450,20 +496,52 @@ mod tests {
                 "Private Work Name".into(),
                 0,
                 true,
+                2,
+                "private-schedule-id".into(),
             ),
         ))
         .unwrap();
         let debug = format!("{snapshot:?}");
         assert!(!debug.contains("private-work-id"));
         assert!(!debug.contains("Private Work Name"));
+        assert!(!debug.contains("private-schedule-id"));
         assert!(decode_settings((
             (Vec::new(), Vec::new()),
-            (false, String::new(), String::new(), 0, true,)
+            (
+                false,
+                String::new(),
+                String::new(),
+                0,
+                true,
+                0,
+                String::new(),
+            )
         ))
         .is_err());
         assert!(decode_settings((
             encode_configuration(&configuration),
-            (true, String::new(), "Missing ID".into(), 0, true),
+            (
+                true,
+                String::new(),
+                "Missing ID".into(),
+                0,
+                true,
+                1,
+                String::new(),
+            ),
+        ))
+        .is_err());
+        assert!(decode_settings((
+            encode_configuration(&configuration),
+            (
+                true,
+                "private-work-id".into(),
+                "Private Work Name".into(),
+                0,
+                true,
+                2,
+                "missing-schedule".into(),
+            ),
         ))
         .is_err());
     }

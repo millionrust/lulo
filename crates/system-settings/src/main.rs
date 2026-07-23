@@ -1294,6 +1294,23 @@ struct FocusLoad {
     state: rmac_focus_linux::client::Snapshot,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum FocusCurrentAction {
+    None,
+    TurnOffManual,
+    EditSchedule(rmac_focus::ScheduleId),
+}
+
+fn focus_current_action(source: Option<&rmac_focus::ActivationSource>) -> FocusCurrentAction {
+    match source {
+        Some(rmac_focus::ActivationSource::Manual) => FocusCurrentAction::TurnOffManual,
+        Some(rmac_focus::ActivationSource::Schedule(schedule_id)) => {
+            FocusCurrentAction::EditSchedule(schedule_id.clone())
+        }
+        None => FocusCurrentAction::None,
+    }
+}
+
 fn load_focus() -> std::result::Result<FocusLoad, rmac_focus_linux::client::Error> {
     let snapshot = rmac_focus_linux::client::settings()?;
     Ok(FocusLoad {
@@ -13381,21 +13398,28 @@ impl Settings {
         }
         if let Some(state) = &self.focus_policy_state {
             let active = state.projection.enabled;
-            let status = state
+            let mut status = state
                 .projection
                 .mode_name
                 .clone()
                 .unwrap_or_else(|| "Off".into());
-            let turn_off_view = view.clone();
-            cards.push(card(vec![row_base()
+            if matches!(
+                state.source,
+                Some(rmac_focus::ActivationSource::Schedule(_))
+            ) {
+                status.push_str(" · Scheduled");
+            }
+            let mut current = row_base()
                 .child(tile(
                     "icons/moon.svg",
                     if active { accent() } else { secondary() },
                     22.0,
                 ))
-                .child(text_block("Current Focus".into(), Some(status.into())))
-                .when(active, |row| {
-                    row.child(
+                .child(text_block("Current Focus".into(), Some(status.into())));
+            match focus_current_action(state.source.as_ref()) {
+                FocusCurrentAction::TurnOffManual => {
+                    let turn_off_view = view.clone();
+                    current = current.child(
                         div()
                             .id("focus-turn-off")
                             .px_2()
@@ -13409,9 +13433,37 @@ impl Settings {
                                 turn_off_view.update(cx, |settings, cx| settings.disable_focus(cx));
                             })
                             .child("Turn Off"),
-                    )
-                })
-                .into_any_element()]));
+                    );
+                }
+                FocusCurrentAction::EditSchedule(schedule_id) => {
+                    let edit_view = view.clone();
+                    let schedule_id = schedule_id.as_str().to_owned();
+                    current = current.child(
+                        div()
+                            .id("focus-edit-active-schedule")
+                            .px_2()
+                            .py_1()
+                            .rounded(px(6.0))
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(accent())
+                            .cursor_pointer()
+                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                            .on_click(move |_, _, cx| {
+                                edit_view.update(cx, |settings, cx| {
+                                    settings.push(
+                                        SubPage::FocusSchedule {
+                                            schedule_id: schedule_id.clone(),
+                                        },
+                                        cx,
+                                    );
+                                });
+                            })
+                            .child("Edit Schedule"),
+                    );
+                }
+                FocusCurrentAction::None => {}
+            }
+            cards.push(card(vec![current.into_any_element()]));
         }
         if let Some(configuration) = &self.focus_policy_config {
             let active_mode = self
@@ -19459,7 +19511,7 @@ mod tests {
         audio_stream_snapshot_is_current, bluetooth_stream_snapshot_is_current, categories,
         category_has_dedicated_renderer, category_name_for_pane_id, category_position,
         charge_threshold_description, composite_wallpaper_pixel, compositor_event_affects_displays,
-        compositor_event_affects_input, compositor_input_config_failed,
+        compositor_event_affects_input, compositor_input_config_failed, focus_current_action,
         gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
         locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
         network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
@@ -19468,9 +19520,10 @@ mod tests {
         storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
         theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
         update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, NotificationPolicyChange,
-        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
-        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
+        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, FocusCurrentAction,
+        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
+        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
+        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -19901,6 +19954,22 @@ mod tests {
         ] {
             assert_eq!(notification_policy_with(original, change), expected);
         }
+    }
+
+    #[test]
+    fn scheduled_focus_routes_to_its_editor_instead_of_a_failing_disable() {
+        assert_eq!(focus_current_action(None), FocusCurrentAction::None);
+        assert_eq!(
+            focus_current_action(Some(&rmac_focus::ActivationSource::Manual)),
+            FocusCurrentAction::TurnOffManual
+        );
+        let schedule_id = rmac_focus::ScheduleId::parse("weekday").unwrap();
+        assert_eq!(
+            focus_current_action(Some(&rmac_focus::ActivationSource::Schedule(
+                schedule_id.clone()
+            ))),
+            FocusCurrentAction::EditSchedule(schedule_id)
+        );
     }
 
     #[test]

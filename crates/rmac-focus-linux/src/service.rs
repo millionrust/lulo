@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use rmac_focus::{ActivationSource, Config, Mode, ModeId, Schedule, ScheduleId, Weekday};
+use rmac_focus::{ActivationSource, Config, Mode, ModeId, Schedule, ScheduleId, Status, Weekday};
 use rmac_focus_runtime::{ClockSampler, PersistenceHealth, Projection, Runtime, Update};
 use rmac_notifications::{AppId, BannerPolicy, DeliveryPolicy, HistoryPolicy};
 use zbus::connection::Builder;
@@ -19,10 +19,11 @@ const DEFAULT_MODE: &str = "do-not-disturb";
 pub(crate) const SCHEDULED_DISABLE_DETAIL: &str =
     "scheduled Focus must be changed in Focus settings";
 
-/// Stable D-Bus representation: enabled, mode id, display name, expiry, and
-/// whether the latest persistence operation succeeded. Empty strings and a
-/// zero expiry represent absent optional values.
-pub type WireState = (bool, String, String, u64, bool);
+/// Stable D-Bus representation: enabled, mode id, display name, expiry,
+/// persistence health, activation source, and exact schedule id. Empty strings
+/// and zero values represent absent optional values. Source 1 is manual and
+/// source 2 is scheduled.
+pub type WireState = (bool, String, String, u64, bool, u8, String);
 pub type WirePolicy = (bool, bool, bool, u8, bool, bool);
 pub type WireMode = (String, String, Vec<String>, bool);
 pub type WireSchedule = (String, String, u8, u16, u16, u8, bool);
@@ -310,7 +311,18 @@ fn lock(runtime: &Arc<Mutex<Runtime>>) -> fdo::Result<MutexGuard<'_, Runtime>> {
 }
 
 fn wire_state(runtime: &Runtime) -> WireState {
-    let status = runtime.status();
+    encode_status(
+        runtime.status(),
+        runtime.persistence_health() != PersistenceHealth::SaveFailed,
+    )
+}
+
+fn encode_status(status: &Status, persistence_healthy: bool) -> WireState {
+    let (source, schedule_id) = match &status.source {
+        None => (0, String::new()),
+        Some(ActivationSource::Manual) => (1, String::new()),
+        Some(ActivationSource::Schedule(schedule_id)) => (2, schedule_id.as_str().to_owned()),
+    };
     (
         status.active,
         status
@@ -320,31 +332,46 @@ fn wire_state(runtime: &Runtime) -> WireState {
             .unwrap_or_default(),
         status.mode_name.clone().unwrap_or_default(),
         status.ends_at_unix_ms.unwrap_or(0),
-        runtime.persistence_health() != PersistenceHealth::SaveFailed,
+        persistence_healthy,
+        source,
+        schedule_id,
     )
 }
 
 fn wire_update(runtime: &Runtime, update: &Update) -> WireState {
-    let mut state = wire_state(runtime);
-    state.0 = update.projection.enabled;
-    state.2 = update.projection.mode_name.clone().unwrap_or_default();
-    state.3 = update.projection.ends_at_unix_ms.unwrap_or(0);
-    state
+    encode_status(
+        &update.evaluation.status,
+        runtime.persistence_health() != PersistenceHealth::SaveFailed,
+    )
 }
 
 pub fn projection(state: &WireState) -> Result<Projection, Error> {
     if state.1.len() > 128
         || state.2.len() > 256
+        || state.2.chars().any(char::is_control)
         || (!state.0 && (!state.1.is_empty() || !state.2.is_empty() || state.3 != 0))
-        || (state.0 && (state.1.is_empty() || state.2.is_empty()))
+        || (state.0 && (ModeId::parse(&state.1).is_err() || state.2.trim().is_empty()))
     {
         return Err(Error::Protocol);
     }
+    activation_source(state)?;
     Ok(Projection {
         enabled: state.0,
         mode_name: state.0.then(|| state.2.clone()),
         ends_at_unix_ms: (state.3 != 0).then_some(state.3),
     })
+}
+
+pub fn activation_source(state: &WireState) -> Result<Option<ActivationSource>, Error> {
+    match (state.0, state.5, state.6.as_str()) {
+        (false, 0, "") => Ok(None),
+        (true, 1, "") => Ok(Some(ActivationSource::Manual)),
+        (true, 2, schedule_id) => ScheduleId::parse(schedule_id)
+            .map(ActivationSource::Schedule)
+            .map(Some)
+            .map_err(|_| Error::Protocol),
+        _ => Err(Error::Protocol),
+    }
 }
 
 pub fn encode_policy(policy: DeliveryPolicy) -> WirePolicy {
@@ -554,18 +581,137 @@ mod tests {
 
     #[test]
     fn wire_projection_rejects_inconsistent_or_oversized_state() {
-        assert!(projection(&(false, String::new(), String::new(), 0, true)).is_ok());
-        assert!(projection(&(false, "work".into(), "Work".into(), 0, true)).is_err());
-        assert!(projection(&(true, String::new(), "Work".into(), 0, true)).is_err());
-        assert!(projection(&(true, "work".into(), "x".repeat(257), 0, true)).is_err());
+        assert!(projection(&(
+            false,
+            String::new(),
+            String::new(),
+            0,
+            true,
+            0,
+            String::new(),
+        ))
+        .is_ok());
+        assert!(projection(&(
+            false,
+            "work".into(),
+            "Work".into(),
+            0,
+            true,
+            0,
+            String::new(),
+        ))
+        .is_err());
+        assert!(projection(&(
+            true,
+            String::new(),
+            "Work".into(),
+            0,
+            true,
+            1,
+            String::new(),
+        ))
+        .is_err());
+        assert!(projection(&(
+            true,
+            "work".into(),
+            "x".repeat(257),
+            0,
+            true,
+            1,
+            String::new(),
+        ))
+        .is_err());
+        assert!(projection(&(
+            true,
+            "work id".into(),
+            "Work".into(),
+            0,
+            true,
+            1,
+            String::new(),
+        ))
+        .is_err());
+        assert!(projection(&(
+            true,
+            "work".into(),
+            "Work\nPrivate".into(),
+            0,
+            true,
+            1,
+            String::new(),
+        ))
+        .is_err());
+        assert!(projection(&(
+            true,
+            "work".into(),
+            "Work".into(),
+            0,
+            true,
+            2,
+            String::new(),
+        ))
+        .is_err());
+        assert!(projection(&(
+            false,
+            String::new(),
+            String::new(),
+            0,
+            true,
+            2,
+            "weekday".into(),
+        ))
+        .is_err());
     }
 
     #[test]
     fn wire_projection_preserves_live_public_state() {
-        let projection = projection(&(true, "work".into(), "Work".into(), 9_000, true)).unwrap();
+        let projection = projection(&(
+            true,
+            "work".into(),
+            "Work".into(),
+            9_000,
+            true,
+            1,
+            String::new(),
+        ))
+        .unwrap();
         assert!(projection.enabled);
         assert_eq!(projection.mode_name.as_deref(), Some("Work"));
         assert_eq!(projection.ends_at_unix_ms, Some(9_000));
+    }
+
+    #[test]
+    fn activation_source_round_trips_without_exposing_schedule_in_projection() {
+        let manual = (
+            true,
+            "work".into(),
+            "Work".into(),
+            0,
+            true,
+            1,
+            String::new(),
+        );
+        assert_eq!(
+            activation_source(&manual).unwrap(),
+            Some(ActivationSource::Manual)
+        );
+
+        let scheduled = (
+            true,
+            "work".into(),
+            "Work".into(),
+            0,
+            true,
+            2,
+            "private-weekday".into(),
+        );
+        assert_eq!(
+            activation_source(&scheduled).unwrap(),
+            Some(ActivationSource::Schedule(
+                ScheduleId::parse("private-weekday").unwrap()
+            ))
+        );
+        assert!(!format!("{:?}", activation_source(&scheduled)).contains("private-weekday"));
     }
 
     #[test]

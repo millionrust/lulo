@@ -145,9 +145,19 @@ last-known-good content, reports connection health separately from mutation
 failures, and reconnects with a bounded delay. This separation prevents a later
 healthy signal from hiding an earlier persistence error.
 
-The Focus pane still requires a scoped GPUI build and live Linux/niri evidence
-before E9 can be checked complete. Installed portal application IDs are now
-resolved through the live XDG desktop-entry catalog for localized names and
-original theme icons. Resolution is exact except for the standard `.desktop`
-suffix alias; unmatched or transient D-Bus sender IDs retain an honest generic
-icon and their original identifier rather than borrowing a plausible name.
+Live state also carries an explicit absent/manual/scheduled source. Scheduled
+state includes the exact bounded schedule ID, which is redacted from default
+diagnostics. The client rejects inconsistent source combinations and, for the
+atomic Settings projection, requires the schedule to exist and target the
+reported mode. System Settings therefore offers `Turn Off` only for manual
+Focus; scheduled Focus is labelled truthfully and routes `Edit Schedule` to the
+exact authoritative rule instead of issuing a disable request that is defined
+to fail.
+
+The Focus pane has a scoped GPUI build but still requires live Linux/niri
+interaction and accessibility evidence before E9 can be checked complete.
+Installed portal application IDs are resolved through the live XDG
+desktop-entry catalog for localized names and original theme icons. Resolution
+is exact except for the standard `.desktop` suffix alias; unmatched or
+transient D-Bus sender IDs retain an honest generic icon and their original
+identifier rather than borrowing a plausible name.

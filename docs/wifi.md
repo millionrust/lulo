@@ -36,22 +36,35 @@ Selecting a row runs one bounded background transaction:
 4. For a new WPA Personal PSK, SAE, or transition network, present a masked
    password sheet. Validate WPA-PSK as 8–63 printable ASCII bytes or 64 hex
    digits and SAE as 1–63 non-control UTF-8 bytes before starting any mutation.
-5. Register a one-shot Secret Agent on its own system-bus connection, submit a
-   partial profile with the exact SSID and key-management mode, and deliver the
-   password only for the matching connection and security setting. The result
+5. For a new enterprise network, present a separate identity, optional
+   anonymous outer identity, server-certificate domain, and masked-password
+   sheet. The supported first slice is PEAP with MSCHAPv2. It always enables
+   NetworkManager's system CA trust and requires `domain-suffix-match`; there
+   is no skip-verification control. Private CA import, EAP-TLS/client
+   certificates, smart cards, TTLS, and other EAP methods remain unavailable
+   instead of being approximated.
+6. Generate a fresh profile UUID, register a one-shot Secret Agent on its own
+   system-bus connection, and submit a partial profile with the exact SSID,
+   security, UUID, and non-secret enterprise policy. The agent delivers a PSK
+   or 802.1X password only when the request matches both the exact network and
+   generated UUID. A concurrent same-name profile cannot consume it. The result
    uses system-owned secret flags, so NetworkManager—not rmac—owns persistence.
-6. Follow the returned ActiveConnection for at most ten seconds. Success is
+7. Follow the returned ActiveConnection for at most ten seconds. Success is
    published only after its state is activated and a fresh Wi-Fi snapshot marks
    the exact network connected.
 
 Radio-off, missing-adapter, out-of-range, permission, rejection, disappearance,
 and timeout failures leave the last known-good snapshot visible. A protected
-connection reports authentication and secret failures inside the sheet so the
-user can retry. While a transaction is active, power, scan, and all network rows
-are disabled; the selected row reads `Connecting…`. Stop or Escape sets a
+connection reports authentication and secret failures inside its sheet so the
+user can retry. While a transaction is active, power, scan, and all network
+rows are disabled; the selected row reads `Connecting…`. Stop or Escape sets a
 cancellation token, deactivates the in-flight ActiveConnection, and closes the
-sheet only after the bounded worker acknowledges cancellation. A timeout also
-deactivates the attempt before reporting failure.
+sheet only after the bounded worker acknowledges cancellation. Any failed new
+join revalidates the exact returned Settings.Connection object, generated UUID,
+SSID bytes, and security before deleting that newly created profile, then
+performs a fresh recovery snapshot. A changed or unprovable profile is never
+deleted and remains truthfully visible in Known Networks. Timeout follows the
+same cleanup path.
 
 ## Forget transaction
 
@@ -91,20 +104,24 @@ remains authoritative.
 
 ## Password lifetime
 
-The sheet uses GPUI's masked editor. A submitted value moves immediately into a
-non-cloneable `WifiPassword` whose `Debug` output is redacted and whose owned
-bytes are zeroized on drop. The editor entity is replaced at the same boundary
-to discard its text and undo history. The one-shot agent validates the exact
-profile identity, consumes the password on its first successful `GetSecrets`,
-and never logs or stores it. `SaveSecrets` and `DeleteSecrets` are no-ops because
-the requested secret is system-owned by NetworkManager.
+The sheets use GPUI's masked editor. A submitted value moves immediately into a
+non-cloneable `WifiPassword` or `WifiEnterpriseCredentials` value whose `Debug`
+output is redacted and whose owned bytes are zeroized on drop. Enterprise
+identity/domain strings are also cleared on drop. The password editor entity is
+replaced at the same boundary to discard its text and undo history. The
+one-shot agent validates the exact profile identity and generated UUID,
+consumes the password on its first successful `GetSecrets`, and never logs or
+stores it. `SaveSecrets` and `DeleteSecrets` are no-ops because the requested
+secret is system-owned by NetworkManager.
 
 ## Explicitly remaining
 
 F1 stays open until NetworkManager signal/restart behavior, permission,
-cancellation, wrong-secret, active-forget, and partial-delete behavior has Linux
-interaction evidence. Enterprise authentication needs a separate certificate
-and identity design; legacy security remains intentionally unavailable.
+cancellation, wrong-secret cleanup, active-forget, partial-delete, and
+certificate-verified PEAP/MSCHAPv2 behavior has Linux interaction evidence.
+Private enterprise CA import and certificate/smart-card/other-EAP onboarding
+need separate reviewed designs; legacy security remains intentionally
+unavailable.
 
 The adapter follows NetworkManager's official
 [`ActivateConnection` and `AddAndActivateConnection` contract](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.html)
@@ -114,4 +131,6 @@ The protected path also follows the official
 [`SecretAgent`](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.SecretAgent.html)
 and
 [`AgentManager`](https://networkmanager.dev/docs/api/latest/gdbus-org.freedesktop.NetworkManager.AgentManager.html)
-interfaces.
+interfaces. The enterprise profile follows NetworkManager's official
+[`802-1x` settings](https://networkmanager.dev/docs/api/latest/settings-802-1x.html)
+and its documented PEAP/MSCHAPv2 profile example.

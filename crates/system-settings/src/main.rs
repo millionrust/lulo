@@ -618,10 +618,40 @@ fn power_change_needs_followup(busy: bool, loading: bool, stream_unavailable: bo
     busy || (loading && stream_unavailable)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WifiJoinAction {
+    Direct,
+    PersonalPassword,
+    EnterpriseSetup,
+    Unavailable,
+}
+
+fn wifi_join_action(network: &rmac_network::WifiNetwork) -> WifiJoinAction {
+    if !network.can_connect() {
+        WifiJoinAction::Unavailable
+    } else if network.needs_enterprise_setup() {
+        WifiJoinAction::EnterpriseSetup
+    } else if network.needs_password() {
+        WifiJoinAction::PersonalPassword
+    } else {
+        WifiJoinAction::Direct
+    }
+}
+
 struct WifiPasswordPrompt {
     network: rmac_network::WifiNetworkId,
     ssid: SharedString,
     editor: Entity<InputState>,
+    validation_error: Option<SharedString>,
+}
+
+struct WifiEnterprisePrompt {
+    network: rmac_network::WifiNetworkId,
+    ssid: SharedString,
+    identity: Entity<InputState>,
+    anonymous_identity: Entity<InputState>,
+    certificate_domain: Entity<InputState>,
+    password: Entity<InputState>,
     validation_error: Option<SharedString>,
 }
 
@@ -884,6 +914,7 @@ struct Settings {
     wifi_forgetting: Option<rmac_network::WifiNetworkId>,
     wifi_forget_confirmation: Option<WifiForgetPrompt>,
     wifi_password_prompt: Option<WifiPasswordPrompt>,
+    wifi_enterprise_prompt: Option<WifiEnterprisePrompt>,
     wifi_cancellation: Option<rmac_network::WifiCancellation>,
     wifi_on: bool,
     wifi_interface: Option<String>,
@@ -2923,6 +2954,7 @@ impl Settings {
             wifi_forgetting: None,
             wifi_forget_confirmation: None,
             wifi_password_prompt: None,
+            wifi_enterprise_prompt: None,
             wifi_cancellation: None,
             wifi_on: false,
             wifi_interface: None,
@@ -5329,11 +5361,17 @@ impl Settings {
     fn finish_wifi_password_update(
         &mut self,
         result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
+        recovery_snapshot: Option<rmac_network::WifiSnapshot>,
     ) {
         self.wifi_loading = false;
         self.wifi_busy = false;
         self.wifi_connecting = None;
         self.wifi_cancellation = None;
+        if result.is_err() {
+            if let Some(snapshot) = recovery_snapshot {
+                self.apply_wifi_snapshot(snapshot);
+            }
+        }
         match result {
             Ok(snapshot) => {
                 self.apply_wifi_snapshot(snapshot);
@@ -5350,6 +5388,43 @@ impl Settings {
                         Some(format!("Could not join this network: {error}").into());
                 } else {
                     self.wifi_error = Some(format!("Could not join Wi-Fi: {error}").into());
+                }
+            }
+        }
+    }
+
+    fn finish_wifi_enterprise_update(
+        &mut self,
+        result: std::result::Result<rmac_network::WifiSnapshot, rmac_network::Error>,
+        recovery_snapshot: Option<rmac_network::WifiSnapshot>,
+    ) {
+        self.wifi_loading = false;
+        self.wifi_busy = false;
+        self.wifi_connecting = None;
+        self.wifi_cancellation = None;
+        if result.is_err() {
+            if let Some(snapshot) = recovery_snapshot {
+                self.apply_wifi_snapshot(snapshot);
+            }
+        }
+        match result {
+            Ok(snapshot) => {
+                self.apply_wifi_snapshot(snapshot);
+                self.wifi_enterprise_prompt = None;
+                self.wifi_error = None;
+            }
+            Err(error) if error.is_cancelled() => {
+                self.wifi_enterprise_prompt = None;
+                self.wifi_error = None;
+            }
+            Err(_) => {
+                if let Some(prompt) = &mut self.wifi_enterprise_prompt {
+                    prompt.validation_error = Some(
+                        "Could not join securely. Verify the identity, password, certificate domain, and that the network uses PEAP with MSCHAPv2."
+                            .into(),
+                    );
+                } else {
+                    self.wifi_error = Some("Could not join enterprise Wi-Fi.".into());
                 }
             }
         }
@@ -8187,8 +8262,49 @@ impl Settings {
         {
             return;
         }
-        if !network.needs_password() {
+        let action = wifi_join_action(&network);
+        if action == WifiJoinAction::EnterpriseSetup {
+            let identity = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .clean_on_escape()
+                    .placeholder("name@example.com")
+            });
+            let certificate_domain = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .clean_on_escape()
+                    .placeholder("radius.example.com")
+            });
+            let anonymous_identity = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .clean_on_escape()
+                    .placeholder("Optional")
+            });
+            let password = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .masked(true)
+                    .clean_on_escape()
+                    .placeholder("Password")
+            });
+            let focus = identity.read(cx).focus_handle(cx);
+            self.wifi_enterprise_prompt = Some(WifiEnterprisePrompt {
+                network: network.id,
+                ssid: network.ssid.into(),
+                identity,
+                anonymous_identity,
+                certificate_domain,
+                password,
+                validation_error: None,
+            });
+            self.wifi_error = None;
+            window.focus(&focus);
+            cx.notify();
+            return;
+        }
+        if action == WifiJoinAction::Direct {
             self.connect_wifi(network.id, cx);
+            return;
+        }
+        if action != WifiJoinAction::PersonalPassword {
             return;
         }
 
@@ -8262,14 +8378,102 @@ impl Settings {
         self.wifi_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
+            let (result, recovery_snapshot) = cx
                 .background_executor()
                 .spawn(async move {
-                    rmac_network::connect_with_password(&network, password, &cancellation)
+                    let result =
+                        rmac_network::connect_with_password(&network, password, &cancellation);
+                    let recovery_snapshot = result
+                        .is_err()
+                        .then(|| rmac_network::snapshot().ok())
+                        .flatten();
+                    (result, recovery_snapshot)
                 })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_wifi_password_update(result);
+                this.finish_wifi_password_update(result, recovery_snapshot);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn cancel_wifi_enterprise(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancellation) = &self.wifi_cancellation {
+            cancellation.cancel();
+        } else {
+            self.wifi_enterprise_prompt = None;
+            self.wifi_connecting = None;
+        }
+        cx.notify();
+    }
+
+    fn submit_wifi_enterprise(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.wifi_busy || !self.wifi_available || !self.wifi_on {
+            return;
+        }
+        let Some(prompt) = &self.wifi_enterprise_prompt else {
+            return;
+        };
+        let network = prompt.network.clone();
+        let identity = prompt.identity.read(cx).value().to_string();
+        let anonymous_identity = prompt.anonymous_identity.read(cx).value().to_string();
+        let certificate_domain = prompt.certificate_domain.read(cx).value().to_string();
+        let password = prompt.password.read(cx).value().to_string();
+        let credentials = match rmac_network::WifiEnterpriseCredentials::new(
+            identity,
+            anonymous_identity,
+            certificate_domain,
+            password,
+            &network,
+        ) {
+            Ok(credentials) => credentials,
+            Err(error) => {
+                if let Some(prompt) = &mut self.wifi_enterprise_prompt {
+                    prompt.validation_error = Some(error.to_string().into());
+                }
+                cx.notify();
+                return;
+            }
+        };
+
+        // The non-secret identity and certificate domain remain available for
+        // correction, but discard the password editor and its undo history as
+        // soon as the zeroizing credentials take ownership.
+        let empty_password = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .clean_on_escape()
+                .placeholder("Password")
+        });
+        let focus = empty_password.read(cx).focus_handle(cx);
+        if let Some(prompt) = &mut self.wifi_enterprise_prompt {
+            prompt.password = empty_password;
+            prompt.validation_error = None;
+        }
+        window.focus(&focus);
+
+        let cancellation = rmac_network::WifiCancellation::new();
+        self.begin_wifi_mutation();
+        self.wifi_connecting = Some(network.clone());
+        self.wifi_cancellation = Some(cancellation.clone());
+        self.wifi_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (result, recovery_snapshot) = cx
+                .background_executor()
+                .spawn(async move {
+                    let result =
+                        rmac_network::connect_enterprise(&network, credentials, &cancellation);
+                    let recovery_snapshot = result
+                        .is_err()
+                        .then(|| rmac_network::snapshot().ok())
+                        .flatten();
+                    (result, recovery_snapshot)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_wifi_enterprise_update(result, recovery_snapshot);
                 cx.notify();
             });
         })
@@ -10276,7 +10480,7 @@ impl Settings {
             };
             cards.push(card(rows));
             cards.push(note_card(
-                "Select a network to connect. New WPA Personal and SAE networks ask for their password; enterprise and legacy security remain unavailable until their dedicated setup flows exist.",
+                "Select a network to connect. New WPA Personal and SAE networks ask for their password. Enterprise setup supports certificate-verified PEAP with MSCHAPv2; certificate, smart-card, and other EAP methods remain unavailable. Legacy security is not supported.",
             ));
         }
 
@@ -10430,6 +10634,127 @@ impl Settings {
                         "enter" if !this.wifi_busy => {
                             cx.stop_propagation();
                             this.submit_wifi_password(window, cx);
+                        }
+                        _ => {}
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn render_wifi_enterprise_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let prompt = self.wifi_enterprise_prompt.as_ref()?;
+        let busy = self.wifi_busy;
+        let cancel_label = if busy { "Stop" } else { "Cancel" };
+        let field = |label_text: &'static str, editor: &Entity<InputState>| {
+            div()
+                .v_flex()
+                .gap_1()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(secondary())
+                        .child(label_text),
+                )
+                .child(TextField::new(editor).disabled(busy).w_full())
+        };
+
+        let content = div()
+            .w(px(430.0))
+            .v_flex()
+            .gap_4()
+            .p_5()
+            .rounded(px(14.0))
+            .border_1()
+            .border_color(rmac_ui::mac::separator())
+            .shadow_xl()
+            .bg(rmac_ui::mac::raised())
+            .child(
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(17.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(format!("Join “{}”", prompt.ssid)),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child("Enterprise Wi-Fi · PEAP with MSCHAPv2"),
+                    ),
+            )
+            .child(field("Identity", &prompt.identity))
+            .child(field(
+                "Anonymous outer identity (optional)",
+                &prompt.anonymous_identity,
+            ))
+            .child(field(
+                "Server certificate domain",
+                &prompt.certificate_domain,
+            ))
+            .child(field("Password", &prompt.password))
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(11.0))
+                    .text_color(secondary())
+                    .child(
+                        "The authentication server must chain to the system trust store and its certificate must match this domain. An anonymous outer identity can avoid exposing the login identity before the secure tunnel forms. Ask your network administrator for both values.",
+                    ),
+            )
+            .when_some(prompt.validation_error.clone(), |dialog, error| {
+                dialog.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::danger())
+                        .child(error),
+                )
+            })
+            .when(busy, |dialog| {
+                dialog.child(Progress::indeterminate().label("Verifying and connecting…"))
+            })
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        rmac_ui::dialog_button(
+                            "wifi-enterprise-cancel",
+                            cancel_label,
+                            rmac_ui::DialogButtonKind::Normal,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_wifi_enterprise(cx))),
+                    )
+                    .when(!busy, |buttons| {
+                        buttons.child(
+                            rmac_ui::dialog_button(
+                                "wifi-enterprise-submit",
+                                "Join",
+                                rmac_ui::DialogButtonKind::Primary,
+                            )
+                            .on_click(cx.listener(
+                                |this, _, window, cx| this.submit_wifi_enterprise(window, cx),
+                            )),
+                        )
+                    }),
+            );
+
+        Some(
+            rmac_ui::dialog("wifi-enterprise-dialog", content)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.cancel_wifi_enterprise(cx);
+                        }
+                        "enter" if !this.wifi_busy => {
+                            cx.stop_propagation();
+                            this.submit_wifi_enterprise(window, cx);
                         }
                         _ => {}
                     }
@@ -17450,6 +17775,7 @@ impl Render for Settings {
             .or_else(|| self.privacy_error.clone())
             .or_else(|| self.privacy_stream_error.clone());
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
+        let wifi_enterprise_dialog = self.render_wifi_enterprise_dialog(cx);
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
         let bluetooth_pairing_dialog = self.render_bluetooth_pairing_dialog(cx);
         let bluetooth_forget_dialog = self.render_bluetooth_forget_dialog(cx);
@@ -17653,6 +17979,7 @@ impl Render for Settings {
                     .child(self.render_detail(cx)),
             )
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
+            .when_some(wifi_enterprise_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_pairing_dialog, |root, dialog| root.child(dialog))
             .when_some(bluetooth_forget_dialog, |root, dialog| root.child(dialog))
@@ -19659,10 +19986,11 @@ mod tests {
         shortcut_configuration_available, storage_stream_snapshot_is_current,
         system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
         time_stream_snapshot_is_current, update_stream_snapshot_is_current,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
-        DisplayPlacement, DockChange, FocusCurrentAction, NotificationPolicyChange,
-        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
-        WallpaperChange, WallpaperTarget, GENERAL_DESTINATIONS,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_join_action,
+        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, FocusCurrentAction,
+        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
+        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget, WifiJoinAction,
+        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -19863,6 +20191,54 @@ mod tests {
         assert!(!wifi_stream_snapshot_is_current(6, 7, false, false));
         assert!(!wifi_stream_snapshot_is_current(7, 7, true, false));
         assert!(!wifi_stream_snapshot_is_current(7, 7, false, true));
+    }
+
+    #[test]
+    fn wifi_rows_route_each_security_authority_without_bypassing_enterprise_setup() {
+        let network = |security, known, connected| rmac_network::WifiNetwork {
+            id: rmac_network::WifiNetworkId::from_bytes(b"Network".to_vec(), security).unwrap(),
+            ssid: "Network".into(),
+            strength: 80,
+            security,
+            known,
+            connected,
+        };
+        assert_eq!(
+            wifi_join_action(&network(rmac_network::WifiSecurity::Open, false, false)),
+            WifiJoinAction::Direct
+        );
+        assert_eq!(
+            wifi_join_action(&network(
+                rmac_network::WifiSecurity::Personal(rmac_network::WifiPersonalMode::Sae),
+                false,
+                false,
+            )),
+            WifiJoinAction::PersonalPassword
+        );
+        assert_eq!(
+            wifi_join_action(&network(
+                rmac_network::WifiSecurity::Enterprise,
+                false,
+                false,
+            )),
+            WifiJoinAction::EnterpriseSetup
+        );
+        assert_eq!(
+            wifi_join_action(&network(
+                rmac_network::WifiSecurity::Enterprise,
+                true,
+                false,
+            )),
+            WifiJoinAction::Direct
+        );
+        assert_eq!(
+            wifi_join_action(&network(rmac_network::WifiSecurity::Legacy, false, false,)),
+            WifiJoinAction::Unavailable
+        );
+        assert_eq!(
+            wifi_join_action(&network(rmac_network::WifiSecurity::Open, false, true)),
+            WifiJoinAction::Unavailable
+        );
     }
 
     #[test]

@@ -56,7 +56,10 @@ impl WifiSecurity {
     }
 
     pub fn can_create(self) -> bool {
-        matches!(self, Self::Open | Self::EnhancedOpen | Self::Personal(_))
+        matches!(
+            self,
+            Self::Open | Self::EnhancedOpen | Self::Personal(_) | Self::Enterprise
+        )
     }
 }
 
@@ -133,6 +136,10 @@ impl WifiNetwork {
     pub fn needs_password(&self) -> bool {
         !self.known && self.security.needs_password()
     }
+
+    pub fn needs_enterprise_setup(&self) -> bool {
+        !self.known && self.security == WifiSecurity::Enterprise
+    }
 }
 
 pub struct WifiPassword {
@@ -204,6 +211,126 @@ impl fmt::Display for WifiPasswordError {
 }
 
 impl std::error::Error for WifiPasswordError {}
+
+pub struct WifiEnterpriseCredentials {
+    identity: String,
+    anonymous_identity: Option<String>,
+    domain_suffix: String,
+    password: Vec<u8>,
+}
+
+impl WifiEnterpriseCredentials {
+    pub fn new(
+        identity: String,
+        anonymous_identity: String,
+        domain_suffix: String,
+        mut password: String,
+        network: &WifiNetworkId,
+    ) -> Result<Self, WifiEnterpriseCredentialsError> {
+        if network.security != WifiSecurity::Enterprise {
+            password.zeroize();
+            return Err(WifiEnterpriseCredentialsError::UnsupportedSecurity);
+        }
+        if !valid_enterprise_identity(&identity) {
+            password.zeroize();
+            return Err(WifiEnterpriseCredentialsError::InvalidIdentity);
+        }
+        let anonymous_identity = if anonymous_identity.is_empty() {
+            None
+        } else if valid_enterprise_identity(&anonymous_identity) {
+            Some(anonymous_identity)
+        } else {
+            password.zeroize();
+            return Err(WifiEnterpriseCredentialsError::InvalidAnonymousIdentity);
+        };
+        let domain_suffix = domain_suffix.to_ascii_lowercase();
+        if !valid_certificate_domain(&domain_suffix) {
+            password.zeroize();
+            return Err(WifiEnterpriseCredentialsError::InvalidDomain);
+        }
+        if password.is_empty() || password.len() > 1_024 || password.contains('\0') {
+            password.zeroize();
+            return Err(WifiEnterpriseCredentialsError::InvalidPassword);
+        }
+        Ok(Self {
+            identity,
+            anonymous_identity,
+            domain_suffix,
+            password: password.into_bytes(),
+        })
+    }
+
+    #[cfg(any(not(target_os = "macos"), test))]
+    fn expose_password<R>(&self, use_password: impl FnOnce(&str) -> R) -> R {
+        let value =
+            std::str::from_utf8(&self.password).expect("enterprise password must remain UTF-8");
+        use_password(value)
+    }
+}
+
+impl fmt::Debug for WifiEnterpriseCredentials {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("WifiEnterpriseCredentials(<redacted>)")
+    }
+}
+
+impl Drop for WifiEnterpriseCredentials {
+    fn drop(&mut self) {
+        self.identity.zeroize();
+        if let Some(identity) = &mut self.anonymous_identity {
+            identity.zeroize();
+        }
+        self.domain_suffix.zeroize();
+        self.password.zeroize();
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WifiEnterpriseCredentialsError {
+    UnsupportedSecurity,
+    InvalidIdentity,
+    InvalidAnonymousIdentity,
+    InvalidDomain,
+    InvalidPassword,
+}
+
+impl fmt::Display for WifiEnterpriseCredentialsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::UnsupportedSecurity => "this network is not an enterprise network",
+            Self::InvalidIdentity => {
+                "enter an identity without leading, trailing, or control characters"
+            }
+            Self::InvalidAnonymousIdentity => "enter a valid anonymous identity or leave it empty",
+            Self::InvalidDomain => "enter an ASCII certificate domain such as example.com",
+            Self::InvalidPassword => "enter a password between 1 and 1,024 bytes",
+        })
+    }
+}
+
+impl std::error::Error for WifiEnterpriseCredentialsError {}
+
+fn valid_enterprise_identity(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_certificate_domain(value: &str) -> bool {
+    if value.len() > 253 || value.starts_with('.') || value.ends_with('.') || !value.contains('.') {
+        return false;
+    }
+    value.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
+}
 
 #[derive(Clone, Default)]
 pub struct WifiCancellation(std::sync::Arc<std::sync::atomic::AtomicBool>);
@@ -458,6 +585,12 @@ pub trait WifiService {
         password: WifiPassword,
         cancellation: &WifiCancellation,
     ) -> Result<WifiSnapshot, Error>;
+    fn connect_enterprise(
+        &self,
+        network: &WifiNetworkId,
+        credentials: WifiEnterpriseCredentials,
+        cancellation: &WifiCancellation,
+    ) -> Result<WifiSnapshot, Error>;
 }
 
 pub struct SystemWifiService;
@@ -492,6 +625,14 @@ pub fn connect_with_password(
     cancellation: &WifiCancellation,
 ) -> Result<WifiSnapshot, Error> {
     SystemWifiService.connect_with_password(network, password, cancellation)
+}
+
+pub fn connect_enterprise(
+    network: &WifiNetworkId,
+    credentials: WifiEnterpriseCredentials,
+    cancellation: &WifiCancellation,
+) -> Result<WifiSnapshot, Error> {
+    SystemWifiService.connect_enterprise(network, credentials, cancellation)
 }
 
 pub fn network_snapshot() -> Result<NetworkSnapshot, Error> {
@@ -843,6 +984,15 @@ impl WifiService for SystemWifiService {
     ) -> Result<WifiSnapshot, Error> {
         linux_connect_wifi_with_password(network, password, cancellation)
     }
+
+    fn connect_enterprise(
+        &self,
+        network: &WifiNetworkId,
+        credentials: WifiEnterpriseCredentials,
+        cancellation: &WifiCancellation,
+    ) -> Result<WifiSnapshot, Error> {
+        linux_connect_enterprise_wifi(network, credentials, cancellation)
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -979,18 +1129,9 @@ fn linux_wifi_access_points(
 fn linux_wifi_profiles(
     connection: &zbus::blocking::Connection,
 ) -> Result<Vec<WifiProfileRecord>, Error> {
-    use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+    use zbus::zvariant::OwnedValue;
 
-    let settings = zbus::blocking::Proxy::new(
-        connection,
-        "org.freedesktop.NetworkManager",
-        "/org/freedesktop/NetworkManager/Settings",
-        "org.freedesktop.NetworkManager.Settings",
-    )
-    .map_err(|error| Error::new("open saved Wi-Fi connections", error.to_string()))?;
-    let paths = settings
-        .call::<_, _, Vec<OwnedObjectPath>>("ListConnections", &())
-        .map_err(|error| Error::new("list saved Wi-Fi connections", error.to_string()))?;
+    let paths = wifi_connection_paths(connection)?;
     let mut profiles = Vec::new();
     for path in paths {
         let Ok(proxy) = zbus::blocking::Proxy::new(
@@ -1041,6 +1182,20 @@ fn wifi_profile_identity(
         .map_or(WifiSecurity::Open, wifi_security_from_profile);
     let id = WifiNetworkId::from_bytes(ssid, security)?;
     Some((id, property::<u64>(connection, "timestamp").unwrap_or(0)))
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn exact_created_wifi_profile(
+    settings: &HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>,
+    profile_uuid: &str,
+    network: &WifiNetworkId,
+) -> bool {
+    wifi_profile_identity(settings).is_some_and(|(identity, _)| identity == *network)
+        && settings
+            .get("connection")
+            .and_then(|connection| property_string(connection, "uuid"))
+            .as_deref()
+            == Some(profile_uuid)
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -1160,8 +1315,15 @@ fn linux_connect_wifi_with_password(
     if cancellation.is_cancelled() {
         return Err(Error::cancelled("connect protected Wi-Fi"));
     }
-    let agent = secret_agent::RegisteredSecretAgent::register(network.clone(), password)
-        .map_err(|error| Error::new("register Wi-Fi secret agent", error.to_string()))?;
+    let profile_uuid = uuid::Uuid::new_v4().to_string();
+    let template = secret_agent::personal_connection_template(network, &profile_uuid)
+        .map_err(|error| Error::new("prepare protected Wi-Fi", error.to_string()))?;
+    let agent = secret_agent::RegisteredSecretAgent::register_personal(
+        network.clone(),
+        profile_uuid.clone(),
+        password,
+    )
+    .map_err(|error| Error::new("register Wi-Fi secret agent", error.to_string()))?;
     let connection = agent.connection();
     let manager = manager_proxy(connection)?;
     let enabled = manager
@@ -1189,34 +1351,206 @@ fn linux_connect_wifi_with_password(
         return Err(Error::cancelled("connect protected Wi-Fi"));
     }
 
-    let profile = linux_wifi_profiles(connection)?
+    if linux_wifi_profiles(connection)?
         .into_iter()
-        .find(|profile| network.matches_profile(&profile.id));
-    let active_path = if let Some(profile) = profile {
-        manager
-            .call::<_, _, OwnedObjectPath>(
-                "ActivateConnection",
-                &(profile.connection_path, device.clone(), access_point.path),
-            )
-            .map_err(|error| Error::new("connect protected Wi-Fi", error.to_string()))?
-    } else {
-        let template = secret_agent::connection_template(network)
-            .map_err(|error| Error::new("prepare protected Wi-Fi", error.to_string()))?;
-        let (_, active_path) = manager
-            .call::<_, _, (OwnedObjectPath, OwnedObjectPath)>(
-                "AddAndActivateConnection",
-                &(template, device.clone(), access_point.path),
-            )
-            .map_err(|error| Error::new("connect protected Wi-Fi", error.to_string()))?;
-        active_path
-    };
-    wait_for_wifi_activation(
+        .any(|profile| network.matches_profile(&profile.id))
+    {
+        return Err(Error::new(
+            "connect protected Wi-Fi",
+            "the network became known; select it again to use the saved profile",
+        ));
+    }
+    let (profile_path, active_path) = manager
+        .call::<_, _, (OwnedObjectPath, OwnedObjectPath)>(
+            "AddAndActivateConnection",
+            &(template, device.clone(), access_point.path),
+        )
+        .map_err(|error| Error::new("connect protected Wi-Fi", error.to_string()))?;
+    wait_for_new_wifi_activation(
         connection,
+        &profile_path,
+        &profile_uuid,
         &active_path,
         &device,
         network,
         Some(cancellation),
     )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn linux_connect_enterprise_wifi(
+    network: &WifiNetworkId,
+    credentials: WifiEnterpriseCredentials,
+    cancellation: &WifiCancellation,
+) -> Result<WifiSnapshot, Error> {
+    use zbus::zvariant::OwnedObjectPath;
+
+    if network.security != WifiSecurity::Enterprise {
+        return Err(Error::new(
+            "connect enterprise Wi-Fi",
+            "the selected network does not use enterprise security",
+        ));
+    }
+    if cancellation.is_cancelled() {
+        return Err(Error::cancelled("connect enterprise Wi-Fi"));
+    }
+    let profile_uuid = uuid::Uuid::new_v4().to_string();
+    let template =
+        secret_agent::enterprise_connection_template(network, &profile_uuid, &credentials)
+            .map_err(|error| Error::new("prepare enterprise Wi-Fi", error.to_string()))?;
+    let agent = secret_agent::RegisteredSecretAgent::register_enterprise(
+        network.clone(),
+        profile_uuid.clone(),
+        credentials,
+    )
+    .map_err(|error| Error::new("register Wi-Fi secret agent", error.to_string()))?;
+    let connection = agent.connection();
+    let manager = manager_proxy(connection)?;
+    let enabled = manager
+        .get_property::<bool>("WirelessEnabled")
+        .map_err(|error| Error::new("read Wi-Fi power", error.to_string()))?;
+    if !enabled {
+        return Err(Error::new(
+            "connect enterprise Wi-Fi",
+            "Wi-Fi is turned off",
+        ));
+    }
+    let device = wifi_device_path(connection)?
+        .ok_or_else(|| Error::new("connect enterprise Wi-Fi", "no Wi-Fi adapter found"))?;
+    let access_point = linux_wifi_access_points(connection, &device)?
+        .into_iter()
+        .filter(|access_point| access_point.id == *network)
+        .max_by_key(|access_point| (access_point.connected, access_point.strength))
+        .ok_or_else(|| {
+            Error::new(
+                "connect enterprise Wi-Fi",
+                "the network is no longer in range",
+            )
+        })?;
+    if access_point.connected {
+        return linux_snapshot();
+    }
+    if cancellation.is_cancelled() {
+        return Err(Error::cancelled("connect enterprise Wi-Fi"));
+    }
+    if linux_wifi_profiles(connection)?
+        .into_iter()
+        .any(|profile| network.matches_profile(&profile.id))
+    {
+        return Err(Error::new(
+            "connect enterprise Wi-Fi",
+            "the network became known; select it again to use the saved profile",
+        ));
+    }
+    let (profile_path, active_path) = manager
+        .call::<_, _, (OwnedObjectPath, OwnedObjectPath)>(
+            "AddAndActivateConnection",
+            &(template, device.clone(), access_point.path),
+        )
+        .map_err(|error| Error::new("connect enterprise Wi-Fi", error.to_string()))?;
+    wait_for_new_wifi_activation(
+        connection,
+        &profile_path,
+        &profile_uuid,
+        &active_path,
+        &device,
+        network,
+        Some(cancellation),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wait_for_new_wifi_activation(
+    connection: &zbus::blocking::Connection,
+    profile_path: &zbus::zvariant::OwnedObjectPath,
+    profile_uuid: &str,
+    active_path: &zbus::zvariant::OwnedObjectPath,
+    device: &zbus::zvariant::OwnedObjectPath,
+    network: &WifiNetworkId,
+    cancellation: Option<&WifiCancellation>,
+) -> Result<WifiSnapshot, Error> {
+    match wait_for_wifi_activation(connection, active_path, device, network, cancellation) {
+        Ok(snapshot) => Ok(snapshot),
+        Err(mut failure) => {
+            if let Ok(manager) = manager_proxy(connection) {
+                let _ = manager.call::<_, _, ()>("DeactivateConnection", &(active_path.clone(),));
+            }
+            if delete_exact_created_wifi_profile(connection, profile_path, profile_uuid, network)
+                .is_err()
+            {
+                failure
+                    .detail
+                    .push_str("; the new saved profile could not be removed safely");
+            }
+            Err(failure)
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn delete_exact_created_wifi_profile(
+    connection: &zbus::blocking::Connection,
+    profile_path: &zbus::zvariant::OwnedObjectPath,
+    profile_uuid: &str,
+    network: &WifiNetworkId,
+) -> Result<(), Error> {
+    if !wifi_connection_paths(connection)?
+        .iter()
+        .any(|candidate| candidate == profile_path)
+    {
+        return Ok(());
+    }
+    let proxy = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        profile_path.as_str(),
+        "org.freedesktop.NetworkManager.Settings.Connection",
+    )
+    .map_err(|error| Error::new("open failed Wi-Fi profile", error.to_string()))?;
+    let settings = proxy
+        .call::<_, _, HashMap<String, HashMap<String, zbus::zvariant::OwnedValue>>>(
+            "GetSettings",
+            &(),
+        )
+        .map_err(|error| Error::new("read failed Wi-Fi profile", error.to_string()))?;
+    if !exact_created_wifi_profile(&settings, profile_uuid, network) {
+        return Err(Error::new(
+            "remove failed Wi-Fi profile",
+            "the created profile identity changed",
+        ));
+    }
+    proxy
+        .call::<_, _, ()>("Delete", &())
+        .map_err(|error| Error::new("remove failed Wi-Fi profile", error.to_string()))?;
+    for _ in 0..20 {
+        if !wifi_connection_paths(connection)?
+            .iter()
+            .any(|candidate| candidate == profile_path)
+        {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Err(Error::new(
+        "remove failed Wi-Fi profile",
+        "NetworkManager did not confirm profile removal",
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wifi_connection_paths(
+    connection: &zbus::blocking::Connection,
+) -> Result<Vec<zbus::zvariant::OwnedObjectPath>, Error> {
+    let settings = zbus::blocking::Proxy::new(
+        connection,
+        "org.freedesktop.NetworkManager",
+        "/org/freedesktop/NetworkManager/Settings",
+        "org.freedesktop.NetworkManager.Settings",
+    )
+    .map_err(|error| Error::new("open saved Wi-Fi connections", error.to_string()))?;
+    settings
+        .call::<_, _, Vec<zbus::zvariant::OwnedObjectPath>>("ListConnections", &())
+        .map_err(|error| Error::new("list saved Wi-Fi connections", error.to_string()))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -1427,8 +1761,13 @@ fn wifi_activation_failure(
     .map(|(_, reason)| reason);
     match reason {
         Some(7) => "NetworkManager could not obtain the Wi-Fi password",
-        Some(8..=11) if network.security.needs_password() => {
-            "the password may be incorrect or network authentication failed"
+        Some(8..=11)
+            if matches!(
+                network.security,
+                WifiSecurity::Personal(_) | WifiSecurity::Enterprise
+            ) =>
+        {
+            "the credentials may be incorrect or network authentication failed"
         }
         Some(53) => "the network is no longer in range",
         _ => "NetworkManager rejected the connection",
@@ -2140,6 +2479,21 @@ impl WifiService for SystemWifiService {
             "password activation is provided by the Linux NetworkManager session",
         ))
     }
+
+    fn connect_enterprise(
+        &self,
+        _network: &WifiNetworkId,
+        _credentials: WifiEnterpriseCredentials,
+        cancellation: &WifiCancellation,
+    ) -> Result<WifiSnapshot, Error> {
+        if cancellation.is_cancelled() {
+            return Err(Error::cancelled("connect enterprise Wi-Fi"));
+        }
+        Err(Error::new(
+            "connect enterprise Wi-Fi",
+            "enterprise activation is provided by the Linux NetworkManager session",
+        ))
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -2714,6 +3068,117 @@ mod tests {
     }
 
     #[test]
+    fn enterprise_credentials_require_identity_password_and_certificate_domain() {
+        let enterprise =
+            WifiNetworkId::from_bytes(b"Company".to_vec(), WifiSecurity::Enterprise).unwrap();
+        let credentials = WifiEnterpriseCredentials::new(
+            "person@example.com".into(),
+            "anonymous@example.com".into(),
+            "RADIUS.Example.COM".into(),
+            "private password".into(),
+            &enterprise,
+        )
+        .unwrap();
+        assert_eq!(credentials.identity, "person@example.com");
+        assert_eq!(
+            credentials.anonymous_identity.as_deref(),
+            Some("anonymous@example.com")
+        );
+        assert_eq!(credentials.domain_suffix, "radius.example.com");
+        assert_eq!(
+            format!("{credentials:?}"),
+            "WifiEnterpriseCredentials(<redacted>)"
+        );
+
+        assert!(matches!(
+            WifiEnterpriseCredentials::new(
+                " person@example.com".into(),
+                String::new(),
+                "radius.example.com".into(),
+                "password".into(),
+                &enterprise,
+            ),
+            Err(WifiEnterpriseCredentialsError::InvalidIdentity)
+        ));
+        assert!(matches!(
+            WifiEnterpriseCredentials::new(
+                "person@example.com".into(),
+                " anonymous@example.com".into(),
+                "radius.example.com".into(),
+                "password".into(),
+                &enterprise,
+            ),
+            Err(WifiEnterpriseCredentialsError::InvalidAnonymousIdentity)
+        ));
+        for invalid in [
+            "",
+            "localhost",
+            ".example.com",
+            "example.com.",
+            "-radius.example.com",
+            "radius..example.com",
+            "radius_example.com",
+            "rádius.example.com",
+        ] {
+            assert!(matches!(
+                WifiEnterpriseCredentials::new(
+                    "person@example.com".into(),
+                    String::new(),
+                    invalid.into(),
+                    "password".into(),
+                    &enterprise,
+                ),
+                Err(WifiEnterpriseCredentialsError::InvalidDomain)
+            ));
+        }
+        assert!(matches!(
+            WifiEnterpriseCredentials::new(
+                "person@example.com".into(),
+                String::new(),
+                "radius.example.com".into(),
+                String::new(),
+                &enterprise,
+            ),
+            Err(WifiEnterpriseCredentialsError::InvalidPassword)
+        ));
+        let personal = WifiNetworkId::from_bytes(
+            b"Home".to_vec(),
+            WifiSecurity::Personal(WifiPersonalMode::Psk),
+        )
+        .unwrap();
+        assert!(matches!(
+            WifiEnterpriseCredentials::new(
+                "person@example.com".into(),
+                String::new(),
+                "radius.example.com".into(),
+                "password".into(),
+                &personal,
+            ),
+            Err(WifiEnterpriseCredentialsError::UnsupportedSecurity)
+        ));
+    }
+
+    #[test]
+    fn new_enterprise_network_routes_to_setup_while_known_profiles_activate_directly() {
+        let id = WifiNetworkId::from_bytes(b"Company".to_vec(), WifiSecurity::Enterprise).unwrap();
+        let mut network = WifiNetwork {
+            id,
+            ssid: "Company".into(),
+            strength: 80,
+            security: WifiSecurity::Enterprise,
+            known: false,
+            connected: false,
+        };
+        assert!(network.can_connect());
+        assert!(network.needs_enterprise_setup());
+        assert!(!network.needs_password());
+
+        network.known = true;
+        assert!(network.can_connect());
+        assert!(!network.needs_enterprise_setup());
+    }
+
+    #[test]
     fn transition_access_points_match_saved_personal_profiles() {
         let transition = WifiNetworkId::from_bytes(
             b"Studio".to_vec(),
@@ -2801,6 +3266,29 @@ mod tests {
         assert_eq!(id.ssid, b"Studio");
         assert!(id.is_secure());
         assert_eq!(timestamp, 42);
+    }
+
+    #[test]
+    fn failed_join_cleanup_requires_exact_network_and_generated_profile_uuid() {
+        let selected = WifiNetworkId::from_bytes(
+            b"Studio".to_vec(),
+            WifiSecurity::Personal(WifiPersonalMode::Psk),
+        )
+        .unwrap();
+        let uuid = "ae023b9a-d681-468d-8f9c-4e544ae8f569";
+        let settings = secret_agent::personal_connection_template(&selected, uuid).unwrap();
+        assert!(exact_created_wifi_profile(&settings, uuid, &selected));
+        assert!(!exact_created_wifi_profile(
+            &settings,
+            "291cd974-5401-4fc5-af29-b2c460878429",
+            &selected
+        ));
+        let other = WifiNetworkId::from_bytes(
+            b"Visitor".to_vec(),
+            WifiSecurity::Personal(WifiPersonalMode::Psk),
+        )
+        .unwrap();
+        assert!(!exact_created_wifi_profile(&settings, uuid, &other));
     }
 
     #[test]

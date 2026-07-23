@@ -5257,6 +5257,7 @@ dependencies = [
  "futures-util",
  "libloading",
  "url",
+ "uuid",
  "zbus",
  "zeroize",
 ]

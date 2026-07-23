@@ -85,7 +85,20 @@ atomically replaces the private policy, and restarts the idle authority. If the
 new runtime cannot start, the service restores the previous file and runtime
 before returning an error. The UI exposes five lock and five automatic-suspend
 choices, each including Never, and reports loading, mutation, rollback, and
-reconnect states.
+reconnect states. Its `Lock Now` test action starts the same fixed
+readiness-gated systemd unit as the global shortcut; success is not reported
+until swaylock's readiness descriptor proves the compositor has hidden
+security-sensitive content. It is a real lock-and-authenticate journey, never a
+cosmetic preview.
+
+System Settings does not rewrite the user's preserved `swaylock.conf`. The
+[upstream swaylock contract](https://github.com/swaywm/swaylock/blob/master/swaylock.1.scd)
+documents one config file plus command-line appearance flags, but no composable
+include or account-photo/login-message model. The pane therefore reports the
+supported password, hidden-preview, and pre-sleep behavior without inventing
+avatar/message controls or silently overriding an existing custom appearance.
+The reviewed custom provider remains the path to richer rmac-owned
+presentation.
 
 Automatic suspend is exposed only when logind `CanSuspend()` returns `yes`.
 `challenge` is not accepted for an unattended action because no user is present

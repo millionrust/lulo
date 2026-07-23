@@ -822,6 +822,8 @@ struct Settings {
     lock_policy_error: Option<SharedString>,
     lock_policy_stream_error: Option<SharedString>,
     lock_policy: Option<rmac_shortcuts::lock_settings::Snapshot>,
+    lock_request_busy: bool,
+    lock_request_error: Option<SharedString>,
 
     // Desktop & Dock
     shell_settings_loading: bool,
@@ -2861,6 +2863,8 @@ impl Settings {
             lock_policy_error: None,
             lock_policy_stream_error: None,
             lock_policy: None,
+            lock_request_busy: false,
+            lock_request_error: None,
 
             shell_settings_loading: true,
             shell_settings_busy: false,
@@ -8813,6 +8817,29 @@ impl Settings {
         .detach();
     }
 
+    fn request_lock_screen(&mut self, cx: &mut Context<Self>) {
+        if self.lock_request_busy {
+            return;
+        }
+        self.lock_request_busy = true;
+        self.lock_request_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_shortcuts::lock::request() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.lock_request_busy = false;
+                this.lock_request_error = result
+                    .err()
+                    .map(|error| format!("Could not lock this session: {error}").into());
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn current(&self) -> &Category {
         &self.sections[self.selected.0][self.selected.1]
     }
@@ -13809,6 +13836,34 @@ impl Settings {
         if let Some(error) = &self.lock_policy_stream_error {
             cards.push(note_card(error.clone()));
         }
+        if let Some(error) = &self.lock_request_error {
+            cards.push(note_card(error.clone()));
+        }
+        let lock_view = view.clone();
+        cards.push(card(vec![row_base()
+            .child(tile("icons/lock.svg", accent(), 22.0))
+            .child(text_block(
+                "Test Lock Screen".into(),
+                Some(
+                    "Securely hide this session now, then authenticate to return to Settings"
+                        .into(),
+                ),
+            ))
+            .child(
+                Button::new(
+                    "lock-screen-now",
+                    if self.lock_request_busy {
+                        "Locking…"
+                    } else {
+                        "Lock Now"
+                    },
+                )
+                .disabled(self.lock_request_busy)
+                .on_click(move |_, _, cx| {
+                    lock_view.update(cx, |settings, cx| settings.request_lock_screen(cx));
+                }),
+            )
+            .into_any_element()]));
         if let Some(policy) = self.lock_policy {
             cards.push(section_header("Lock After Inactivity"));
             let mut timeout_rows = TIMEOUTS

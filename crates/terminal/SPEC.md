@@ -48,13 +48,20 @@ same guarded window path. Clipboard writes larger than 1 MiB are refused before
 the PTY. One window is capped at 64 tabs; every emulator grid is bounded to
 20–500 columns and 5–300 rows; and each tab owns an explicit 10,000-line
 scrollback limit rather than inheriting a changeable dependency default.
+Paste now follows the active emulator mode: xterm private mode 2004 wraps exact
+clipboard bytes with `ESC[200~` / `ESC[201~`, strips embedded Escape and ETX so
+the payload cannot end the bracket early, and preserves multiline Unicode. If
+the active program did not enable bracketed paste, platform line boundaries
+become Return, non-text controls are refused, and multiline content pauses in a
+content-redacted stable-session review that shows only checked line/byte counts.
+Cancellation drops the private payload, while confirmation rechecks the bound
+live session and current mode before writing.
 
-The complete application claim remains blocked on bracketed/large-paste review,
-IME preedit/commit, terminal-mode-correct key/mouse input, hyperlink policy,
-shell integration, per-tab selection/search/title state, explicit scrollback
-memory accounting, resize/write failure presentation depth, accessible
-terminal text semantics, Linux interaction/visual evidence, and measured
-idle/active performance.
+The complete application claim remains blocked on IME preedit/commit,
+terminal-mode-correct keyboard/mouse input, hyperlink policy, shell integration,
+per-tab selection/search/title state, explicit scrollback memory accounting,
+resize/write failure presentation depth, accessible terminal text semantics,
+Linux interaction/visual evidence, and measured idle/active performance.
 
 ## Platform authorities
 
@@ -95,9 +102,10 @@ shell-integration protocol before they may be shown.
 
 - User text is written directly to the PTY writer; it is never interpolated
   into a shell command or command-line parser.
-- Clipboard paste must be bounded, honor bracketed-paste mode when implemented,
-  and never log pasted content. Large-paste review and bracketed paste remain
-  required before the complete application claim.
+- Clipboard paste is capped at 1 MiB, follows the active bracketed-paste mode,
+  cannot embed its termination marker, requires review before unprotected
+  multiline Return input, and never logs or renders pasted content in the
+  review.
 - PTY output, selection, search queries, clipboard text, process IDs, working
   directories, commands, and environment values stay out of default logs,
   panic text, evidence bundles, and persistence.
@@ -156,7 +164,11 @@ IME preedit/commit behavior remains a Linux framework acceptance gate.
 
 Unit and contract tests cover input encoding, resize arithmetic and bounds,
 selection extraction, child state transitions, foreground-job classification,
-guarded close decisions, persistence failures, and redraw coalescing. Native
+guarded close decisions, bracketed/unbracketed paste construction and review,
+embedded-marker/control rejection, persistence failures, and redraw coalescing.
+The transport follows the official
+[xterm bracketed-paste contract](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode).
+Native
 Ubuntu/niri evidence must additionally cover Bash and another supported shell,
 `vim`/`less`/`top`, Unicode and IME, rapid output, scrollback, large paste,
 process exit/signals, idle and foreground close, multiple tabs, resize at 100%/

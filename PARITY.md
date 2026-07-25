@@ -22,9 +22,11 @@ evidence remains gated by the reference-PC framework work.
   **9 color profiles**, and a right-click menu. Child exit is event-driven and
   truthful; exited input is refused, and stable-ID tab/window close now reviews
   a kernel-reported foreground process group before hangup. Bracketed
-  paste, IME, terminal-mode input, hyperlinks/shell integration, per-tab UI
-  state, scrollback memory accounting, accessibility, Linux interaction/visual
-  evidence, and measured idle/active performance keep G3 partial.
+  paste is mode-correct and termination-safe; unprotected multiline paste has a
+  content-redacted exact-session review. IME, remaining terminal-mode input,
+  hyperlinks/shell integration, per-tab UI state, scrollback memory accounting,
+  accessibility, Linux interaction/visual evidence, and measured idle/active
+  performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

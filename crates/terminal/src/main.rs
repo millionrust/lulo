@@ -18,7 +18,7 @@ use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
-use alacritty_terminal::term::{Config, Term};
+use alacritty_terminal::term::{Config, Term, TermMode};
 use gpui::{
     div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div, Entity,
     FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
@@ -53,6 +53,8 @@ const TOP_PAD: f32 = 34.0 + 8.0;
 /// Pixels from the window left to the first column: 8pt content padding.
 const LEFT_PAD: f32 = 8.0;
 const MAX_PASTE_BYTES: usize = 1024 * 1024;
+const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
+const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// A macOS Terminal–style color profile: window chrome + 16-color ANSI palette.
@@ -229,6 +231,51 @@ fn grid_dimensions(width: f32, height: f32, cell_width: f32, line_height: f32) -
     }
 }
 
+fn logical_line_count(text: &str) -> usize {
+    if text.is_empty() {
+        return 0;
+    }
+    let bytes = text.as_bytes();
+    let mut lines = 1;
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
+                lines += 1;
+                index += 2;
+            }
+            b'\r' | b'\n' => {
+                lines += 1;
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    lines
+}
+
+fn has_unsafe_unbracketed_control(text: &str) -> bool {
+    text.chars()
+        .any(|character| character.is_control() && !matches!(character, '\t' | '\r' | '\n'))
+}
+
+fn prepare_paste(text: &str, bracketed: bool) -> Vec<u8> {
+    if bracketed {
+        let mut bytes = Vec::with_capacity(text.len().saturating_add(12));
+        bytes.extend_from_slice(BRACKETED_PASTE_START);
+        bytes.extend(
+            text.as_bytes()
+                .iter()
+                .copied()
+                .filter(|byte| !matches!(byte, b'\x1b' | b'\x03')),
+        );
+        bytes.extend_from_slice(BRACKETED_PASTE_END);
+        bytes
+    } else {
+        text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+    }
+}
+
 /// A selected cell range, in alacritty grid-line coordinates (`Line` values,
 /// which are negative for scrollback). Coordinates are `(line, column)`.
 #[derive(Clone, Copy)]
@@ -368,6 +415,7 @@ impl std::error::Error for SessionControlError {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SessionWriteError {
     Exited,
+    State,
     Write,
 }
 
@@ -375,12 +423,34 @@ impl std::fmt::Display for SessionWriteError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::Exited => "This terminal session is no longer accepting input.",
+            Self::State => "Terminal could not verify the active input mode.",
             Self::Write => "Terminal could not send input to the shell.",
         })
     }
 }
 
 impl std::error::Error for SessionWriteError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PasteError {
+    ReviewRequired,
+    UnsafeControl,
+    Session(SessionWriteError),
+}
+
+impl std::fmt::Display for PasteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::ReviewRequired => "This multiline paste requires review.",
+            Self::UnsafeControl => {
+                "Paste contains control characters the active program did not protect."
+            }
+            Self::Session(error) => return error.fmt(formatter),
+        })
+    }
+}
+
+impl std::error::Error for PasteError {}
 
 fn lifecycle_after_wait(result: std::io::Result<ExitStatus>) -> SessionLifecycle {
     match result {
@@ -570,6 +640,29 @@ impl Session {
             .and_then(|_| self.writer.flush())
             .map_err(|_| SessionWriteError::Write)
     }
+
+    fn paste(&mut self, text: &str, reviewed_multiline: bool) -> Result<(), PasteError> {
+        if !self.lifecycle().is_running() {
+            return Err(PasteError::Session(SessionWriteError::Exited));
+        }
+        let mut term = self
+            .term
+            .lock()
+            .map_err(|_| PasteError::Session(SessionWriteError::State))?;
+        let bracketed = term.mode().contains(TermMode::BRACKETED_PASTE);
+        if !bracketed {
+            if has_unsafe_unbracketed_control(text) {
+                return Err(PasteError::UnsafeControl);
+            }
+            if logical_line_count(text) > 1 && !reviewed_multiline {
+                return Err(PasteError::ReviewRequired);
+            }
+        }
+        term.scroll_display(Scroll::Bottom);
+        drop(term);
+        self.write(&prepare_paste(text, bracketed))
+            .map_err(PasteError::Session)
+    }
 }
 
 impl Drop for Session {
@@ -584,6 +677,25 @@ impl Drop for Session {
 enum PendingClose {
     Tab { session_id: u64 },
     Window { foreground_sessions: usize },
+}
+
+struct PendingPaste {
+    session_id: u64,
+    text: String,
+    line_count: usize,
+    byte_count: usize,
+}
+
+impl std::fmt::Debug for PendingPaste {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PendingPaste")
+            .field("session_id", &self.session_id)
+            .field("text", &"<private>")
+            .field("line_count", &self.line_count)
+            .field("byte_count", &self.byte_count)
+            .finish()
+    }
 }
 
 struct TerminalView {
@@ -612,6 +724,7 @@ struct TerminalView {
     persistence_error: Option<SharedString>,
     operation_error: Option<SharedString>,
     pending_close: Option<PendingClose>,
+    pending_paste: Option<PendingPaste>,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<Point<Pixels>>,
 }
@@ -743,6 +856,7 @@ impl TerminalView {
             persistence_error,
             operation_error: None,
             pending_close: None,
+            pending_paste: None,
             menu_at: None,
         }
     }
@@ -758,8 +872,12 @@ impl TerminalView {
         }
     }
 
+    fn modal_open(&self) -> bool {
+        self.pending_close.is_some() || self.pending_paste.is_some()
+    }
+
     fn new_tab(&mut self, cx: &mut Context<Self>) {
-        if self.pending_close.is_some() {
+        if self.modal_open() {
             return;
         }
         if self.tabs.len() >= MAX_TABS {
@@ -779,6 +897,11 @@ impl TerminalView {
     }
 
     fn request_close_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending_paste.take().is_some() {
+            window.focus(&self.focus);
+            cx.notify();
+            return;
+        }
         if self.pending_close.is_some() || index >= self.tabs.len() {
             return;
         }
@@ -828,6 +951,11 @@ impl TerminalView {
     }
 
     fn request_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending_paste.take().is_some() {
+            window.focus(&self.focus);
+            cx.notify();
+            return;
+        }
         if self.pending_close.is_some() {
             return;
         }
@@ -874,6 +1002,12 @@ impl TerminalView {
         cx.notify();
     }
 
+    fn cancel_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pending_paste = None;
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
     fn confirm_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(pending) = self.pending_close.take() else {
             return;
@@ -909,7 +1043,7 @@ impl TerminalView {
     }
 
     fn select_tab(&mut self, i: usize, cx: &mut Context<Self>) {
-        if self.pending_close.is_some() || i >= self.tabs.len() {
+        if self.modal_open() || i >= self.tabs.len() {
             return;
         }
         self.active = i;
@@ -1105,8 +1239,37 @@ impl TerminalView {
         ))
     }
 
+    fn render_paste_confirmation(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal};
+
+        let pending = self.pending_paste.as_ref()?;
+        let message = format!(
+            "The clipboard contains {} lines ({} bytes), but the active program did not enable bracketed paste. Continuing sends line breaks as Return and may run commands.",
+            pending.line_count, pending.byte_count
+        );
+        Some(rmac_ui::alert(
+            "Paste multiple lines?",
+            message,
+            vec![
+                rmac_ui::dialog_button("terminal-paste-cancel", "Cancel", Normal)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.cancel_paste(window, cx);
+                    }))
+                    .into_any_element(),
+                rmac_ui::dialog_button("terminal-paste-confirm", "Paste Anyway", Destructive)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.confirm_paste(window, cx);
+                    }))
+                    .into_any_element(),
+            ],
+        ))
+    }
+
     /// Clear the screen and scrollback (⌘K).
     fn clear(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
         if let Ok(mut t) = self.tabs[self.active].term.lock() {
             t.clear_screen(ClearMode::All);
             t.grid_mut().clear_history();
@@ -1118,6 +1281,9 @@ impl TerminalView {
 
     /// Select the entire buffer (scrollback history + visible screen).
     fn select_all(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
         let hist = self.tabs[self.active]
             .term
             .lock()
@@ -1141,6 +1307,9 @@ impl TerminalView {
     }
 
     fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
         self.searching = !self.searching;
         if self.searching {
             let h = self.search.read(cx).focus_handle(cx);
@@ -1260,23 +1429,68 @@ impl TerminalView {
         }
     }
 
-    /// Paste clipboard text into the PTY input stream.
-    fn paste(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
-            if text.len() > MAX_PASTE_BYTES {
-                self.operation_error =
-                    Some("Paste exceeds Terminal's 1 MiB input safety limit.".into());
-                cx.notify();
-                return;
-            }
-            if let Ok(mut t) = self.tabs[self.active].term.lock() {
-                t.scroll_display(Scroll::Bottom);
-            }
-            if let Err(error) = self.tabs[self.active].write(text.as_bytes()) {
-                self.operation_error = Some(error.to_string().into());
-                cx.notify();
-            }
+    /// Paste clipboard text using the active program's exact bracketed-paste
+    /// mode. Unprotected multiline content pauses for private-safe review.
+    fn request_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
         }
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        if text.is_empty() {
+            return;
+        }
+        if text.len() > MAX_PASTE_BYTES {
+            self.operation_error =
+                Some("Paste exceeds Terminal's 1 MiB input safety limit.".into());
+            cx.notify();
+            return;
+        }
+        match self.tabs[self.active].paste(&text, false) {
+            Ok(()) => {}
+            Err(PasteError::ReviewRequired) => {
+                self.pending_paste = Some(PendingPaste {
+                    session_id: self.tabs[self.active].id,
+                    line_count: logical_line_count(&text),
+                    byte_count: text.len(),
+                    text,
+                });
+                self.searching = false;
+                self.picker_open = false;
+                self.menu_at = None;
+                window.focus(&self.focus);
+            }
+            Err(error) => self.operation_error = Some(error.to_string().into()),
+        }
+        cx.notify();
+    }
+
+    fn confirm_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_paste.take() else {
+            return;
+        };
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|session| session.id == pending.session_id)
+        else {
+            self.operation_error = Some("The terminal session changed; nothing was pasted.".into());
+            window.focus(&self.focus);
+            cx.notify();
+            return;
+        };
+        if index != self.active {
+            self.operation_error = Some("The active terminal changed; nothing was pasted.".into());
+            window.focus(&self.focus);
+            cx.notify();
+            return;
+        }
+        if let Err(error) = self.tabs[index].paste(&pending.text, true) {
+            self.operation_error = Some(error.to_string().into());
+        }
+        window.focus(&self.focus);
+        cx.notify();
     }
 
     /// Extract the selected cells as text. Hard line breaks become `\n`, but
@@ -1477,6 +1691,9 @@ impl Render for TerminalView {
         let close_confirmation = self
             .render_close_confirmation(cx)
             .map(|alert| alert.into_any_element());
+        let paste_confirmation = self
+            .render_paste_confirmation(cx)
+            .map(|alert| alert.into_any_element());
         div()
             .size_full()
             .relative()
@@ -1509,9 +1726,13 @@ impl Render for TerminalView {
                     .track_focus(&self.focus)
                     .key_context("Terminal")
                     .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                        if this.pending_close.is_some() {
+                        if this.modal_open() {
                             if ev.keystroke.key == "escape" {
-                                this.cancel_close(window, cx);
+                                if this.pending_close.is_some() {
+                                    this.cancel_close(window, cx);
+                                } else {
+                                    this.cancel_paste(window, cx);
+                                }
                             }
                             return;
                         }
@@ -1521,7 +1742,9 @@ impl Render for TerminalView {
                         cx.notify();
                     }))
                     .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
-                    .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
+                    .on_action(
+                        cx.listener(|this, _: &Paste, window, cx| this.request_paste(window, cx)),
+                    )
                     .on_action(
                         cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)),
                     )
@@ -1546,7 +1769,7 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &PrevTab, _, cx| this.prev_tab(cx)))
                     .on_action(cx.listener(|this, _: &CycleProfile, _, cx| {
                         // ⌘⇧P toggles the profile picker.
-                        if this.pending_close.is_none() {
+                        if !this.modal_open() {
                             this.picker_open = !this.picker_open;
                             cx.notify();
                         }
@@ -1561,8 +1784,10 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &ShowProfiles, _, cx| {
                         // Right-click → Profiles… — a guaranteed mouse path to the
                         // picker (the picker rows are clickable body overlays).
-                        this.picker_open = true;
-                        cx.notify();
+                        if !this.modal_open() {
+                            this.picker_open = true;
+                            cx.notify();
+                        }
                     }))
                     // Drag to select a cell range.
                     .on_mouse_down(
@@ -1739,8 +1964,9 @@ impl Render for TerminalView {
                         })),
                 )
             })
-            // Destructive close review must remain the final child so no
-            // terminal surface can paint over it or receive pointer input.
+            // Modal reviews remain the final children so no terminal surface
+            // can paint over them or receive pointer input.
+            .when_some(paste_confirmation, |terminal, alert| terminal.child(alert))
             .when_some(close_confirmation, |terminal, alert| terminal.child(alert))
     }
 }
@@ -1977,5 +2203,66 @@ mod tests {
                 lines: MIN_ROWS
             }
         );
+    }
+
+    #[test]
+    fn paste_line_count_normalizes_platform_boundaries() {
+        assert_eq!(logical_line_count(""), 0);
+        assert_eq!(logical_line_count("one"), 1);
+        assert_eq!(logical_line_count("one\ntwo"), 2);
+        assert_eq!(logical_line_count("one\r\ntwo"), 2);
+        assert_eq!(logical_line_count("one\rtwo"), 2);
+        assert_eq!(logical_line_count("one\r\ntwo\nthree\rfour"), 4);
+    }
+
+    #[test]
+    fn bracketed_paste_cannot_embed_its_terminator() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+        parser.advance(&mut term, b"\x1b[?2004h");
+        assert!(term.mode().contains(TermMode::BRACKETED_PASTE));
+        parser.advance(&mut term, b"\x1b[?2004l");
+        assert!(!term.mode().contains(TermMode::BRACKETED_PASTE));
+
+        let payload = prepare_paste("one\x1b[201~two\x03\nthree", true);
+        let mut expected = BRACKETED_PASTE_START.to_vec();
+        expected.extend_from_slice(b"one[201~two\nthree");
+        expected.extend_from_slice(BRACKETED_PASTE_END);
+
+        assert_eq!(payload, expected);
+        assert_eq!(
+            payload
+                .windows(BRACKETED_PASTE_END.len())
+                .filter(|window| *window == BRACKETED_PASTE_END)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn unbracketed_paste_uses_return_and_rejects_controls() {
+        assert_eq!(
+            prepare_paste("one\r\ntwo\nthree\rfour", false),
+            b"one\rtwo\rthree\rfour"
+        );
+        assert!(has_unsafe_unbracketed_control("one\x1btwo"));
+        assert!(has_unsafe_unbracketed_control("one\x03two"));
+        assert!(!has_unsafe_unbracketed_control("one\ttwo\nthree"));
+    }
+
+    #[test]
+    fn pending_paste_debug_redacts_clipboard_text() {
+        let pending = PendingPaste {
+            session_id: 7,
+            text: "private clipboard body".into(),
+            line_count: 2,
+            byte_count: 22,
+        };
+        let debug = format!("{pending:?}");
+
+        assert!(!debug.contains("private clipboard body"));
+        assert!(debug.contains("<private>"));
+        assert!(debug.contains("line_count: 2"));
     }
 }

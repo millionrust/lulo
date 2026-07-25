@@ -29,10 +29,11 @@ evidence remains gated by the reference-PC framework work.
   mode are encoded and tested; incomplete enhanced keyboard modes are not
   partially advertised. OSC control strings are stream-capped at 1 KiB;
   malformed/overlong input and unreviewed OSC 8 links are discarded before VTE.
-  IME, enhanced Kitty/keypad/mouse input, reviewed hyperlinks/shell integration,
-  per-tab UI state, remaining dynamic terminal bounds, accessibility, Linux
-  interaction/visual evidence, and measured resident/idle/active performance
-  keep G3 partial.
+  Each rendered cell retains at most 16 combining marks without losing its base
+  style. IME, enhanced Kitty/keypad/mouse input, reviewed hyperlinks/shell
+  integration, per-tab UI state, remaining title/parser/thread bounds,
+  accessibility, Linux interaction/visual evidence, and measured Unicode/
+  resident/idle/active performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

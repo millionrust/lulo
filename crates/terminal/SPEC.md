@@ -82,14 +82,20 @@ malformed, and unterminated OSC is discarded as a unit, including the
 metadata is also discarded until Terminal has a reviewed visual/activation
 policy, preventing invisible per-cell link allocation. The reusable filtered
 chunk is capped by the 8 KiB PTY read plus one accepted OSC.
+After every non-ASCII parser completion, Terminal inspects the exact cell that
+Alacritty can have modified—including the base of a wide-character spacer—and
+retains at most 16 zero-width combining marks. Rebuilding an over-cap cell
+preserves its base character, colors, flags, underline color, and reviewed
+hyperlink metadata. This bounds the rare allocation immediately without a
+full-grid scan and works when UTF-8 is split across PTY reads.
 
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
 terminal mouse reporting, hyperlink policy, shell integration, per-tab
-selection/search/title state, hard bounds for combining-mark cell extras, title
-stacks, non-OSC parser buffers and thread resources, resize/write failure
-presentation depth, accessible terminal text semantics, Linux interaction/
-visual evidence, and measured resident/idle/active performance.
+selection/search/title state, hard bounds for title stacks, non-OSC parser
+buffers and thread resources, resize/write failure presentation depth,
+accessible terminal text semantics, Linux interaction/visual evidence, and
+measured Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -140,10 +146,10 @@ shell-integration protocol before they may be shown.
 - Reader/parser work stays off the GPUI thread. Output bursts coalesce into one
   pending repaint; a quiet terminal has no timer-driven CPU or frame activity.
 - Primary/alternate base grid storage has a conservative 512 MiB per-window
-  ceiling across every supported tab count. Dynamically allocated combining
-  marks, title stacks, non-OSC parser buffers, and thread resources still need
-  hard bounds before 1.0 evidence. OSC ingress is capped at 1 KiB; unreviewed
-  hyperlink metadata never reaches the grid.
+  ceiling across every supported tab count. A cell retains at most 16 combining
+  marks. OSC ingress is capped at 1 KiB, and unreviewed hyperlink metadata never
+  reaches the grid. Title stacks, non-OSC parser buffers, and thread resources
+  still need hard bounds before 1.0 evidence.
 
 ## Failure states
 
@@ -209,6 +215,9 @@ history, and prove one additional line would cross the ceiling at the maximum.
 Streaming-output tests cover ordinary split Unicode/CSI, split BEL/ST-terminated
 OSC at the exact cap, complete overlong/malformed discard, C0 Escape-state
 bypass prevention, recovery to normal output, and OSC 8 refusal.
+Combining-allocation tests cover multiple independently styled cells, exact
+retention, wide-character targeting, a UTF-8 sequence split between reads, and
+ASCII CSI REP amplification of a prior combining scalar.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and

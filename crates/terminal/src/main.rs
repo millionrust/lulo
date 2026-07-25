@@ -63,6 +63,7 @@ const TOP_PAD: f32 = 34.0 + 8.0;
 const LEFT_PAD: f32 = 8.0;
 const MAX_PASTE_BYTES: usize = 1024 * 1024;
 const MAX_OSC_PAYLOAD_BYTES: usize = 1024;
+const MAX_COMBINING_MARKS_PER_CELL: usize = 16;
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
@@ -461,6 +462,71 @@ impl OutputFilter {
             }
             OutputFilterState::Ground | OutputFilterState::Escape => 0,
         }
+    }
+}
+
+fn cap_cursor_combining_marks<T: EventListener>(term: &mut Term<T>) {
+    let (line, mut column, input_needs_wrap) = {
+        let grid = term.grid();
+        (
+            grid.cursor.point.line,
+            grid.cursor.point.column,
+            grid.cursor.input_needs_wrap,
+        )
+    };
+    if !input_needs_wrap {
+        column.0 = column.0.saturating_sub(1);
+    }
+    if term.grid()[line][column]
+        .flags
+        .contains(Flags::WIDE_CHAR_SPACER)
+    {
+        column.0 = column.0.saturating_sub(1);
+    }
+
+    let cell = &term.grid()[line][column];
+    let Some(zerowidth) = cell
+        .zerowidth()
+        .filter(|marks| marks.len() > MAX_COMBINING_MARKS_PER_CELL)
+    else {
+        return;
+    };
+    let retained = zerowidth[..MAX_COMBINING_MARKS_PER_CELL].to_vec();
+    let mut bounded = Cell {
+        c: cell.c,
+        fg: cell.fg,
+        bg: cell.bg,
+        flags: cell.flags,
+        extra: None,
+    };
+    bounded.set_underline_color(cell.underline_color());
+    bounded.set_hyperlink(cell.hyperlink());
+    for mark in retained {
+        bounded.push_zerowidth(mark);
+    }
+    term.grid_mut()[line][column] = bounded;
+}
+
+fn advance_filtered_output<T: EventListener>(
+    parser: &mut Processor,
+    term: &mut Term<T>,
+    bytes: &[u8],
+) {
+    let mut segment_start = 0;
+    for (index, byte) in bytes.iter().enumerate() {
+        // Non-ASCII bytes can complete a zero-width scalar. ASCII `b` can
+        // complete CSI REP and repeat the preceding combining scalar up to a
+        // u16 count, so it is also an immediate cap boundary.
+        if byte & 0x80 == 0 && *byte != b'b' {
+            continue;
+        }
+        parser.advance(term, &bytes[segment_start..=index]);
+        cap_cursor_combining_marks(term);
+        segment_start = index + 1;
+    }
+    if segment_start < bytes.len() {
+        parser.advance(term, &bytes[segment_start..]);
+        cap_cursor_combining_marks(term);
     }
 }
 
@@ -942,7 +1008,7 @@ impl Session {
                             continue;
                         }
                         if let Ok(mut term) = term_reader.lock() {
-                            parser.advance(&mut *term, &filtered);
+                            advance_filtered_output(&mut parser, &mut *term, &filtered);
                         }
                         request_redraw(&reader_redraw);
                     }
@@ -2783,6 +2849,67 @@ mod tests {
 
         assert_eq!(output, sequence);
         assert_eq!(filter.buffered_bytes(), 0);
+    }
+
+    fn append_combining_marks(bytes: &mut Vec<u8>, count: usize) {
+        for _ in 0..count {
+            bytes.extend_from_slice("\u{301}".as_bytes());
+        }
+    }
+
+    #[test]
+    fn combining_marks_are_bounded_per_exact_cell_without_losing_style() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+        let mut bytes = b"\x1b[31;4ma".to_vec();
+        append_combining_marks(&mut bytes, MAX_COMBINING_MARKS_PER_CELL + 20);
+        bytes.push(b'b');
+        append_combining_marks(&mut bytes, MAX_COMBINING_MARKS_PER_CELL + 20);
+
+        advance_filtered_output(&mut parser, &mut term, &bytes);
+
+        for column in [Column(0), Column(1)] {
+            let cell = &term.grid()[Line(0)][column];
+            assert_eq!(
+                cell.zerowidth().map(<[char]>::len),
+                Some(MAX_COMBINING_MARKS_PER_CELL)
+            );
+            assert_eq!(cell.fg, Color::Named(NamedColor::Red));
+            assert!(cell.flags.contains(Flags::UNDERLINE));
+        }
+
+        // CSI REP is entirely ASCII but can repeat the preceding zero-width
+        // scalar many times; its final `b` is an explicit cap boundary.
+        advance_filtered_output(&mut parser, &mut term, b"\x1b[200b");
+        assert_eq!(
+            term.grid()[Line(0)][Column(1)]
+                .zerowidth()
+                .map(<[char]>::len),
+            Some(MAX_COMBINING_MARKS_PER_CELL)
+        );
+    }
+
+    #[test]
+    fn combining_cap_handles_wide_cells_and_split_utf8() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+        let mut bytes = "界".as_bytes().to_vec();
+        append_combining_marks(&mut bytes, MAX_COMBINING_MARKS_PER_CELL + 20);
+        let split = "界".len() + 1;
+
+        advance_filtered_output(&mut parser, &mut term, &bytes[..split]);
+        advance_filtered_output(&mut parser, &mut term, &bytes[split..]);
+
+        let wide = &term.grid()[Line(0)][Column(0)];
+        assert_eq!(
+            wide.zerowidth().map(<[char]>::len),
+            Some(MAX_COMBINING_MARKS_PER_CELL)
+        );
+        assert!(term.grid()[Line(0)][Column(1)]
+            .flags
+            .contains(Flags::WIDE_CHAR_SPACER));
     }
 
     #[test]

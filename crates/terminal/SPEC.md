@@ -98,13 +98,21 @@ synchronized-update heap buffer stops before 2 MiB, while its CSI parameters,
 intermediates, and partial UTF-8 state are fixed arrays. Alacritty evicts the
 oldest saved title at 4,096 entries, and Terminal's 1 KiB OSC ingress limit
 bounds each title payload.
+Resize is now an authority-first per-tab transaction: Terminal locks the model,
+asks the kernel PTY to accept the bounded dimensions, and resizes the emulator
+grid only after success. A rejection retains and renders the exact last accepted
+rows and columns and remains visible on that tab until a later resize succeeds
+or the window returns to the accepted geometry. A writer failure is terminal
+for that tab's input path: subsequent key/paste writes are refused without
+clearing selection or showing a live cursor, the tab is labeled unavailable,
+and existing output remains readable.
 
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
 terminal mouse reporting, hyperlink policy, shell integration, per-tab
-selection/search/title state, resize/write failure presentation depth, accessible
-terminal text semantics, Linux interaction/visual evidence, and measured
-Unicode/resident/idle/active performance.
+selection/search/title state, accessible terminal text semantics, Linux
+interaction/visual evidence, and measured Unicode/resident/idle/active
+performance.
 
 ## Platform authorities
 
@@ -169,10 +177,12 @@ shell-integration protocol before they may be shown.
   commands, and output are not exposed in those messages.
 - A shell exit is not an application crash. Existing output remains readable
   and a new tab remains available.
-- Writer failure disables misleading live input and exposes that the session is
-  unavailable.
-- Resize failures retain the last kernel-accepted PTY size and are visible;
-  they must not silently claim the new geometry.
+- Writer failure permanently disables misleading live input for that tab,
+  preserves readable output and local selection state, hides the live cursor,
+  and exposes the tab as unavailable.
+- Resize failures retain and render the last kernel-accepted PTY size, expose a
+  persistent per-tab explanation, and suppress repeated calls for the rejected
+  geometry until the window requests a different size.
 - Closing the final tab follows the same guarded window-close path.
 
 ## Keyboard map
@@ -230,6 +240,9 @@ retention, wide-character targeting, a UTF-8 sequence split between reads, and
 ASCII CSI REP amplification of a prior combining scalar.
 Resource-contract tests cover the exact worker count/stack budget, VTE
 synchronized-update cutoff, and Alacritty title-stack eviction depth.
+Transport-state tests prove rejected resize transactions retain the last
+accepted geometry and a writer failure permanently disables live input while
+keeping existing output available.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and

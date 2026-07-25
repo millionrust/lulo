@@ -925,6 +925,64 @@ impl std::fmt::Display for SessionWriteError {
 impl std::error::Error for SessionWriteError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionResizeError {
+    State,
+    Resize,
+}
+
+impl std::fmt::Display for SessionResizeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::State => "Terminal could not safely access the session state.",
+            Self::Resize => {
+                "Terminal could not resize this session; it is using the last accepted size."
+            }
+        })
+    }
+}
+
+impl std::error::Error for SessionResizeError {}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SessionTransportState {
+    rejected_size: Option<TermSize>,
+    write_failed: bool,
+}
+
+impl SessionTransportState {
+    fn status_message(self) -> Option<&'static str> {
+        if self.write_failed {
+            Some("Terminal can no longer send input to this session. Existing output is readable.")
+        } else if self.rejected_size.is_some() {
+            Some(
+                "The shell rejected the new window size. The last accepted size remains active; resize again to retry.",
+            )
+        } else {
+            None
+        }
+    }
+}
+
+fn accepted_size_after_resize(
+    current: TermSize,
+    requested: TermSize,
+    kernel_result: Result<(), SessionResizeError>,
+) -> (TermSize, Result<(), SessionResizeError>) {
+    match kernel_result {
+        Ok(()) => (requested, Ok(())),
+        Err(error) => (current, Err(error)),
+    }
+}
+
+fn should_attempt_resize(
+    accepted: TermSize,
+    rejected: Option<TermSize>,
+    requested: TermSize,
+) -> bool {
+    requested != accepted && rejected != Some(requested)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PasteError {
     ReviewRequired,
     UnsafeControl,
@@ -1106,6 +1164,8 @@ impl ReservedSessionWorkers {
 struct Session {
     id: u64,
     term: Arc<Mutex<Term<EventProxy>>>,
+    accepted_size: TermSize,
+    transport: SessionTransportState,
     writer: Box<dyn Write + Send>,
     master: Option<Box<dyn MasterPty + Send>>,
     shell_pid: Option<u32>,
@@ -1168,6 +1228,8 @@ impl Session {
         Ok(Session {
             id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             term,
+            accepted_size: size,
+            transport: SessionTransportState::default(),
             writer,
             master: Some(pair.master),
             shell_pid,
@@ -1198,6 +1260,8 @@ impl Session {
         Session {
             id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             term,
+            accepted_size: size,
+            transport: SessionTransportState::default(),
             writer: Box::new(std::io::sink()),
             master: None,
             shell_pid: None,
@@ -1211,6 +1275,58 @@ impl Session {
             .lock()
             .map(|lifecycle| lifecycle.clone())
             .unwrap_or(SessionLifecycle::WaitFailed)
+    }
+
+    fn accepts_input(&self) -> bool {
+        self.lifecycle().is_running() && !self.transport.write_failed
+    }
+
+    fn tab_state_label(&self) -> Option<&'static str> {
+        if self.lifecycle().is_running() && self.transport.write_failed {
+            Some("Unavailable")
+        } else {
+            self.lifecycle().tab_state_label()
+        }
+    }
+
+    fn status_message(&self) -> Option<String> {
+        self.lifecycle()
+            .status_message()
+            .or_else(|| self.transport.status_message().map(str::to_string))
+    }
+
+    fn resize(&mut self, requested: TermSize) -> Result<(), SessionResizeError> {
+        if requested == self.accepted_size {
+            self.transport.rejected_size = None;
+            return Ok(());
+        }
+        if !should_attempt_resize(self.accepted_size, self.transport.rejected_size, requested) {
+            return Err(SessionResizeError::Resize);
+        }
+        let Ok(mut term) = self.term.lock() else {
+            self.transport.rejected_size = Some(requested);
+            return Err(SessionResizeError::State);
+        };
+        let kernel_result = self.master.as_ref().map_or(Ok(()), |master| {
+            master
+                .resize(PtySize {
+                    rows: requested.lines as u16,
+                    cols: requested.cols as u16,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|_| SessionResizeError::Resize)
+        });
+        let (accepted, result) =
+            accepted_size_after_resize(self.accepted_size, requested, kernel_result);
+        if result.is_err() {
+            self.transport.rejected_size = Some(requested);
+            return result;
+        }
+        term.resize(accepted);
+        self.accepted_size = accepted;
+        self.transport.rejected_size = None;
+        Ok(())
     }
 
     fn has_foreground_job(&self) -> bool {
@@ -1261,17 +1377,25 @@ impl Session {
         if !self.lifecycle().is_running() {
             return Err(SessionWriteError::Exited);
         }
-        self.writer
+        if self.transport.write_failed {
+            return Err(SessionWriteError::Write);
+        }
+        let result = self
+            .writer
             .write_all(bytes)
             .and_then(|_| self.writer.flush())
-            .map_err(|_| SessionWriteError::Write)
+            .map_err(|_| SessionWriteError::Write);
+        if result.is_err() {
+            self.transport.write_failed = true;
+        }
+        result
     }
 
     fn paste(&mut self, text: &str, reviewed_multiline: bool) -> Result<(), PasteError> {
         if !self.lifecycle().is_running() {
             return Err(PasteError::Session(SessionWriteError::Exited));
         }
-        let mut term = self
+        let term = self
             .term
             .lock()
             .map_err(|_| PasteError::Session(SessionWriteError::State))?;
@@ -1284,10 +1408,13 @@ impl Session {
                 return Err(PasteError::ReviewRequired);
             }
         }
-        term.scroll_display(Scroll::Bottom);
         drop(term);
         self.write(&prepare_paste(text, bracketed))
-            .map_err(PasteError::Session)
+            .map_err(PasteError::Session)?;
+        if let Ok(mut term) = self.term.lock() {
+            term.scroll_display(Scroll::Bottom);
+        }
+        Ok(())
     }
 }
 
@@ -1548,7 +1675,6 @@ impl TerminalView {
         );
         self.active = self.tabs.len() - 1;
         self.selection = None;
-        self.cols = 0; // force resize_to() to re-fit the new active session
         cx.notify();
     }
 
@@ -1602,7 +1728,6 @@ impl TerminalView {
             self.active = self.tabs.len() - 1;
         }
         self.selection = None;
-        self.cols = 0;
         if let Err(error) = self.rebalance_scrollback() {
             self.operation_error = Some(error.to_string().into());
         }
@@ -1707,7 +1832,6 @@ impl TerminalView {
         }
         self.active = i;
         self.selection = None;
-        self.cols = 0;
         cx.notify();
     }
 
@@ -1741,8 +1865,7 @@ impl TerminalView {
             .border_color(rmac_ui::mac::separator());
         for i in 0..n {
             let is_active = i == active_tab;
-            let lifecycle = self.tabs[i].lifecycle();
-            let label = lifecycle.tab_state_label().map_or_else(
+            let label = self.tabs[i].tab_state_label().map_or_else(
                 || format!("Terminal {}", i + 1),
                 |state| format!("Terminal {} — {state}", i + 1),
             );
@@ -1970,7 +2093,6 @@ impl TerminalView {
         self.font_size = size.clamp(8.0, 32.0);
         self.line_h = self.font_size * (LINE_H / FONT_SIZE);
         self.cell_w = self.font_size * 0.6;
-        self.cols = 0; // force resize_to() to recompute on the next render
         cx.notify();
     }
 
@@ -1994,24 +2116,9 @@ impl TerminalView {
         let w = f32::from(vp.width);
         let h = f32::from(vp.height);
         let size = grid_dimensions(w, h, self.cell_w, self.line_h);
-        let cols = size.cols;
-        let rows = size.lines;
-        if cols == self.cols && rows == self.rows {
-            return;
-        }
-        self.cols = cols;
-        self.rows = rows;
-        if let Ok(mut t) = self.tabs[self.active].term.lock() {
-            t.resize(TermSize { cols, lines: rows });
-        }
-        if let Some(master) = self.tabs[self.active].master.as_ref() {
-            let _ = master.resize(PtySize {
-                rows: rows as u16,
-                cols: cols as u16,
-                pixel_width: 0,
-                pixel_height: 0,
-            });
-        }
+        let _ = self.tabs[self.active].resize(size);
+        self.cols = self.tabs[self.active].accepted_size.cols;
+        self.rows = self.tabs[self.active].accepted_size.lines;
     }
 
     /// Current scrollback offset (0 = pinned to the live prompt).
@@ -2046,19 +2153,24 @@ impl TerminalView {
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent) -> Result<(), SessionWriteError> {
-        let mut term = self.tabs[self.active]
-            .term
-            .lock()
-            .map_err(|_| SessionWriteError::State)?;
-        let bytes = encode_key(&ev.keystroke, *term.mode());
+        let bytes = {
+            let term = self.tabs[self.active]
+                .term
+                .lock()
+                .map_err(|_| SessionWriteError::State)?;
+            encode_key(&ev.keystroke, *term.mode())
+        };
         if bytes.is_empty() {
             return Ok(());
         }
-        // Typing jumps to the live prompt and clears the visual selection.
-        term.scroll_display(Scroll::Bottom);
-        drop(term);
+        self.tabs[self.active].write(&bytes)?;
+        // Only accepted input jumps to the live prompt and clears the visual
+        // selection. A failed writer must not consume local UI state.
+        if let Ok(mut term) = self.tabs[self.active].term.lock() {
+            term.scroll_display(Scroll::Bottom);
+        }
         self.selection = None;
-        self.tabs[self.active].write(&bytes)
+        Ok(())
     }
 
     /// Copy the current selection to the system clipboard.
@@ -2102,7 +2214,14 @@ impl TerminalView {
                 self.menu_at = None;
                 window.focus(&self.focus);
             }
-            Err(error) => self.operation_error = Some(error.to_string().into()),
+            Err(error) => {
+                if !matches!(
+                    error,
+                    PasteError::Session(SessionWriteError::Exited | SessionWriteError::Write)
+                ) {
+                    self.operation_error = Some(error.to_string().into());
+                }
+            }
         }
         cx.notify();
     }
@@ -2128,7 +2247,12 @@ impl TerminalView {
             return;
         }
         if let Err(error) = self.tabs[index].paste(&pending.text, true) {
-            self.operation_error = Some(error.to_string().into());
+            if !matches!(
+                error,
+                PasteError::Session(SessionWriteError::Exited | SessionWriteError::Write)
+            ) {
+                self.operation_error = Some(error.to_string().into());
+            }
         }
         window.focus(&self.focus);
         cx.notify();
@@ -2199,7 +2323,7 @@ impl TerminalView {
         let cursor = grid.cursor.point;
         // Hide the cursor while scrolled into history or after the child exits;
         // an exited session must not resemble a live prompt.
-        let show_cursor = offset == 0 && self.tabs[self.active].lifecycle().is_running();
+        let show_cursor = offset == 0 && self.tabs[self.active].accepts_input();
         let cursor_line = cursor.line.0;
         let cursor_col = cursor.column.0;
 
@@ -2326,7 +2450,6 @@ impl Render for TerminalView {
             .or_else(|| self.persistence_error.clone());
         let has_terminal_error = terminal_error.is_some();
         let session_status = self.tabs[self.active]
-            .lifecycle()
             .status_message()
             .map(SharedString::from);
         let close_confirmation = self
@@ -2378,7 +2501,9 @@ impl Render for TerminalView {
                             return;
                         }
                         if let Err(error) = this.on_key(ev) {
-                            this.operation_error = Some(error.to_string().into());
+                            if error == SessionWriteError::State {
+                                this.operation_error = Some(error.to_string().into());
+                            }
                         }
                         cx.notify();
                     }))
@@ -2731,6 +2856,21 @@ mod tests {
 
     impl vte::ansi::Handler for NoopHandler {}
 
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "private writer diagnostic",
+            ))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     #[derive(Default)]
     struct ParserBoundRecorder {
         parameters: usize,
@@ -2863,6 +3003,68 @@ mod tests {
             lifecycle_after_wait(Err(std::io::Error::other("private diagnostic"))),
             SessionLifecycle::WaitFailed
         );
+    }
+
+    #[test]
+    fn resize_failure_retains_the_last_kernel_accepted_geometry() {
+        let current = TermSize {
+            cols: 100,
+            lines: 28,
+        };
+        let requested = TermSize {
+            cols: 140,
+            lines: 42,
+        };
+
+        let (accepted, result) =
+            accepted_size_after_resize(current, requested, Err(SessionResizeError::Resize));
+        assert_eq!(accepted, current);
+        assert_eq!(result, Err(SessionResizeError::Resize));
+
+        let (accepted, result) = accepted_size_after_resize(current, requested, Ok(()));
+        assert_eq!(accepted, requested);
+        assert_eq!(result, Ok(()));
+
+        assert!(should_attempt_resize(current, None, requested));
+        assert!(!should_attempt_resize(current, Some(requested), requested));
+        assert!(should_attempt_resize(
+            current,
+            Some(requested),
+            TermSize {
+                cols: 141,
+                lines: 42,
+            }
+        ));
+    }
+
+    #[test]
+    fn writer_failure_permanently_disables_misleading_live_input() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut session = Session {
+            id: 1,
+            term: Arc::new(Mutex::new(Term::new(
+                terminal_config(10),
+                &size,
+                EventProxy,
+            ))),
+            accepted_size: size,
+            transport: SessionTransportState::default(),
+            writer: Box::new(FailingWriter),
+            master: None,
+            shell_pid: None,
+            killer: None,
+            lifecycle: Arc::new(Mutex::new(SessionLifecycle::Running)),
+        };
+
+        assert!(session.accepts_input());
+        assert_eq!(session.write(b"private"), Err(SessionWriteError::Write));
+        assert!(!session.accepts_input());
+        assert_eq!(session.tab_state_label(), Some("Unavailable"));
+        assert_eq!(
+            session.status_message().as_deref(),
+            Some("Terminal can no longer send input to this session. Existing output is readable.")
+        );
+        assert_eq!(session.write(b"retry"), Err(SessionWriteError::Write));
     }
 
     #[test]

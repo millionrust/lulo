@@ -31,10 +31,12 @@ evidence remains gated by the reference-PC framework work.
   malformed/overlong input and unreviewed OSC 8 links are discarded before VTE.
   Each rendered cell retains at most 16 combining marks without losing its base
   style. Two explicitly stacked workers per tab, synchronized-update/parser
-  storage, and the title stack now have tested ceilings. IME, enhanced Kitty/
-  keypad/mouse input, reviewed hyperlinks/shell integration, per-tab UI state,
-  accessibility, Linux interaction/visual evidence, and measured Unicode/
-  resident/idle/active performance keep G3 partial.
+  storage, and the title stack now have tested ceilings. Resize commits only
+  after kernel PTY acceptance; writer failure persistently disables that tab's
+  input without discarding its output. IME, enhanced Kitty/keypad/mouse input,
+  reviewed hyperlinks/shell integration, per-tab UI state, accessibility,
+  Linux interaction/visual evidence, and measured Unicode/resident/idle/active
+  performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

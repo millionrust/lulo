@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original rmac artwork, MIT licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="#257A57"/>
+  <rect x="23" y="27" width="82" height="74" rx="14" fill="#133C30"/>
+  <path d="M35 82h14l8-29 12 39 10-26h14" fill="none" stroke="#91EDB9" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M35 43h16M77 43h16" stroke="#4FA478" stroke-width="5" stroke-linecap="round"/>
+</svg>

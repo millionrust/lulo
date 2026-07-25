@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original rmac artwork, MIT licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="#167C80"/>
+  <path d="M25 45c0-7 5-12 12-12h22l8 9h24c7 0 12 5 12 12v36c0 7-5 12-12 12H37c-7 0-12-5-12-12V45z" fill="#EAF8F6"/>
+  <path d="M25 57h78v33c0 7-5 12-12 12H37c-7 0-12-5-12-12V57z" fill="#B9E7E1"/>
+  <rect x="38" y="69" width="52" height="21" rx="8" fill="#167C80"/>
+  <circle cx="49" cy="79.5" r="3.5" fill="#EAF8F6"/>
+  <path d="M61 75h19M61 83h13" stroke="#EAF8F6" stroke-width="4" stroke-linecap="round"/>
+</svg>

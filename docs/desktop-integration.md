@@ -14,6 +14,20 @@ AppStream component ID, and every GPUI Wayland toplevel `app_id`.
 | Applications | `org.rmac.AppDrawer` | `rmac-app-drawer` |
 | System Settings | `org.rmac.SystemSettings` | `rmac-system-settings` |
 
+Each identity now has original MIT-licensed scalable artwork under
+`packaging/rmac-apps/icons`. The seven icons share a 128-unit canvas, 28-unit
+outer corner, quiet solid background, and high-contrast geometric foreground.
+They contain no Apple artwork, names, logos, fonts, embedded raster images,
+external references, scripts, filters, or text. Their motifs are rmac-owned:
+a file card, command prompt, note card, caret document, activity trace,
+application grid, and colored settings sliders.
+
+The icon fixture gate requires the exact seven-file inventory, distinct
+content, regular non-symlink files, a 16 KiB cap, the MIT notice, a fixed
+scalable view box, and a small safe SVG element/attribute subset. Rendered
+thumbnails still require visual review because structural validation cannot
+prove optical quality.
+
 `rmac-ui` owns these constants and creates both standard and unified-toolbar
 window options with the exact identity. Finder, Terminal, Text Editor,
 Activity Monitor, App Drawer, and System Settings publish it today. Notes is
@@ -46,7 +60,7 @@ the startup-notification completion protocol. Stable `app_id` matching is
 necessary for launcher grouping, Dock state, activation tokens, and icon
 resolution, but it is not evidence for that separate protocol.
 
-The desktop, icon, AppStream, localization, and license payload remains an H1
-gate. It must be validated with `desktop-file-validate`, `appstreamcli`, the
+The desktop, AppStream, localization, and complete license payload remains an
+H1 gate. It must be validated with `desktop-file-validate`, `appstreamcli`, the
 package metadata verifier, and real niri launch/group/open evidence before H1
 is checked.

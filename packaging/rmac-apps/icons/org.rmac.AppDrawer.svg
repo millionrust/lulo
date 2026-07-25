@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original rmac artwork, MIT licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="#6951A8"/>
+  <g fill="#F1ECFF">
+    <rect x="31" y="31" width="18" height="18" rx="6"/>
+    <rect x="55" y="31" width="18" height="18" rx="6"/>
+    <rect x="79" y="31" width="18" height="18" rx="6"/>
+    <rect x="31" y="55" width="18" height="18" rx="6"/>
+    <rect x="55" y="55" width="18" height="18" rx="6"/>
+    <rect x="79" y="55" width="18" height="18" rx="6"/>
+    <rect x="31" y="79" width="18" height="18" rx="6"/>
+    <rect x="55" y="79" width="18" height="18" rx="6"/>
+    <rect x="79" y="79" width="18" height="18" rx="6"/>
+  </g>
+  <circle cx="64" cy="64" r="6" fill="#6951A8"/>
+</svg>

@@ -1,0 +1,109 @@
+#!/bin/sh
+set -u
+
+session_pid=
+rmac_started=false
+
+stop_rmac()
+{
+    if [ "${rmac_started}" = true ]; then
+        /usr/bin/systemctl --user stop \
+            rmac-session.target rmac-safe-mode.target >/dev/null 2>&1 || :
+        rmac_started=false
+    fi
+}
+
+terminate_session()
+{
+    signal=$1
+    status=$2
+    trap - HUP INT TERM
+    if [ -n "${session_pid}" ] && kill -0 "${session_pid}" 2>/dev/null; then
+        kill -"${signal}" "${session_pid}" 2>/dev/null || :
+        wait "${session_pid}" 2>/dev/null || :
+    fi
+    stop_rmac
+    exit "${status}"
+}
+
+trap 'terminate_session HUP 129' HUP
+trap 'terminate_session INT 130' INT
+trap 'terminate_session TERM 143' TERM
+
+if [ ! -x /usr/bin/niri-session ]; then
+    echo "rmac requires the packaged niri session launcher" >&2
+    exit 1
+fi
+if [ ! -x /usr/libexec/rmac/rmac-session-start ]; then
+    echo "rmac session integration is incomplete" >&2
+    exit 1
+fi
+
+state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
+if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
+    # Safe mode retains niri and the secure lock coordinator, but intentionally
+    # does not select rmac portal backends or optional shell surfaces.
+    XDG_CURRENT_DESKTOP=niri
+    XDG_SESSION_DESKTOP=niri
+else
+    XDG_CURRENT_DESKTOP=rmac:niri
+    XDG_SESSION_DESKTOP=rmac
+fi
+XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
+
+/usr/bin/niri-session &
+session_pid=$!
+
+# niri-session owns the compositor lifecycle and imports the graphical login
+# environment. Do not start shell services until both its user unit and socket
+# routing value are ready. The bounded wait returns to GDM on a broken session.
+ready=false
+attempt=0
+while [ "${attempt}" -lt 300 ]; do
+    if ! kill -0 "${session_pid}" 2>/dev/null; then
+        wait "${session_pid}"
+        status=$?
+        echo "niri exited before the rmac session became ready" >&2
+        if [ "${status}" -ne 0 ]; then
+            exit "${status}"
+        fi
+        exit 1
+    fi
+    if /usr/bin/systemctl --user --quiet is-active niri.service &&
+        /usr/bin/systemctl --user show-environment 2>/dev/null |
+            /usr/bin/awk \
+                -v current_desktop="${XDG_CURRENT_DESKTOP}" \
+                -v session_desktop="${XDG_SESSION_DESKTOP}" '
+                $0 == "XDG_CURRENT_DESKTOP=" current_desktop { current = 1 }
+                $0 == "XDG_SESSION_DESKTOP=" session_desktop { desktop = 1 }
+                $0 == "XDG_SESSION_TYPE=wayland" { wayland = 1 }
+                index($0, "NIRI_SOCKET=") == 1 && length($0) > 12 { socket = 1 }
+                END { exit !(current && desktop && wayland && socket) }
+            '; then
+            ready=true
+            break
+    fi
+    /usr/bin/sleep 0.1
+    attempt=$((attempt + 1))
+done
+
+if [ "${ready}" != true ]; then
+    echo "niri did not become ready for the rmac session" >&2
+    terminate_session TERM 1
+fi
+
+if ! /usr/libexec/rmac/rmac-session-start --system-package; then
+    echo "rmac session services did not start" >&2
+    # The start command can fail after activating one target, so always attempt
+    # a bounded namespace-only cleanup before returning to GDM.
+    rmac_started=true
+    terminate_session TERM 1
+fi
+rmac_started=true
+
+wait "${session_pid}"
+status=$?
+session_pid=
+stop_rmac
+exit "${status}"

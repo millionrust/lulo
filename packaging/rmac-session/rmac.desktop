@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=rmac
+Comment=A calm Linux desktop built on niri
+Exec=/usr/libexec/rmac/rmac-wayland-session
+TryExec=/usr/bin/niri-session
+Type=Application
+DesktopNames=rmac;niri

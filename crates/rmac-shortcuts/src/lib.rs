@@ -998,6 +998,19 @@ mod tests {
     }
 
     #[test]
+    fn packaged_fallback_matches_the_typed_shortcut_domain() {
+        let output = render_niri_fallback(
+            &default_shortcuts(),
+            Path::new("/usr/libexec/rmac/rmac-shortcut-dispatch"),
+        )
+        .unwrap();
+        assert_eq!(
+            output,
+            include_str!("../../../packaging/rmac-session/shortcuts-fallback.kdl")
+        );
+    }
+
+    #[test]
     fn rejects_duplicate_or_malformed_shortcuts_and_relative_dispatchers() {
         let mut shortcuts = default_shortcuts();
         shortcuts[1].id = shortcuts[0].id.clone();

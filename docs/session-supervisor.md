@@ -27,6 +27,13 @@ builds the notification and Focus services, installs the notification
 portal descriptor and desktop-specific backend selection, and installs D-Bus
 activation files for both authorities.
 
+That command remains a development installer. Native packaging stages the
+separate, immutable integration payload described in
+`docs/ubuntu-session-packaging.md`. Its GDM wrapper delegates compositor
+lifecycle to the distribution's `niri-session`, waits for real niri readiness,
+and starts these same targets with package-path units. It never installs
+directly into `/usr` and never alters the stock GNOME recovery session.
+
 The start command must run from niri after the graphical session environment is
 available. It imports only `WAYLAND_DISPLAY`, `DISPLAY`, `XAUTHORITY`, desktop
 and session identity, `XDG_RUNTIME_DIR`, the D-Bus address, and `NIRI_SOCKET`

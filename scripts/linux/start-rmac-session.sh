@@ -1,6 +1,45 @@
 #!/bin/sh
 set -eu
 
+# The development installer creates these files directly. A native package
+# keeps immutable defaults under /usr and provisions only missing user-owned
+# copies on first session start. Never replace a user's existing policy.
+case ${1-} in
+    "")
+        ;;
+    --system-package)
+        shift
+        defaults_dir=/usr/share/rmac/session
+        config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
+        if [ ! -f "${defaults_dir}/swaylock.conf" ] ||
+            [ -L "${defaults_dir}/swaylock.conf" ] ||
+            [ ! -f "${defaults_dir}/lock-policy.json" ] ||
+            [ -L "${defaults_dir}/lock-policy.json" ]; then
+            echo "rmac session defaults are unavailable" >&2
+            exit 1
+        fi
+        /usr/bin/install -d -m 0700 "${config_home}/rmac"
+        if [ ! -e "${config_home}/rmac/swaylock.conf" ]; then
+            /usr/bin/install -m 0600 \
+                "${defaults_dir}/swaylock.conf" \
+                "${config_home}/rmac/swaylock.conf"
+        fi
+        if [ ! -e "${config_home}/rmac/lock-policy.json" ]; then
+            /usr/bin/install -m 0600 \
+                "${defaults_dir}/lock-policy.json" \
+                "${config_home}/rmac/lock-policy.json"
+        fi
+        ;;
+    *)
+        echo "usage: rmac-session-start [--system-package]" >&2
+        exit 2
+        ;;
+esac
+if [ "$#" -ne 0 ]; then
+    echo "usage: rmac-session-start [--system-package]" >&2
+    exit 2
+fi
+
 # Import only graphical-session routing values. Never copy the whole login
 # environment because it can contain credentials and application secrets.
 state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
@@ -29,17 +68,17 @@ set --
 [ "${NIRI_SOCKET+x}" = x ] && set -- "$@" NIRI_SOCKET
 
 if [ "$#" -gt 0 ]; then
-    systemctl --user import-environment "$@"
-    if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-        dbus-update-activation-environment --systemd "$@"
+    /usr/bin/systemctl --user import-environment "$@"
+    if [ -x /usr/bin/dbus-update-activation-environment ]; then
+        /usr/bin/dbus-update-activation-environment --systemd "$@"
     fi
 fi
 
 if [ "${normal_session}" = false ]; then
-    systemctl --user start rmac-safe-mode.target
+    /usr/bin/systemctl --user start rmac-safe-mode.target
 else
-    systemctl --user start rmac-session.target
+    /usr/bin/systemctl --user start rmac-session.target
     # xdg-desktop-portal reads desktop-specific backend selection at startup.
     # Restart only an already-running frontend after the rmac backend is ready.
-    systemctl --user try-restart xdg-desktop-portal.service
+    /usr/bin/systemctl --user try-restart xdg-desktop-portal.service
 fi

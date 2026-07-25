@@ -129,7 +129,10 @@ run_gate() {
 cd "$repo_root"
 run_gate format "$minimum_kib" cargo fmt --all -- --check
 run_gate harness-tests "$minimum_kib" \
-  /usr/bin/python3 -m unittest scripts/test_measure_baseline.py scripts/test_reference_preflight.py
+  /usr/bin/python3 -m unittest \
+  scripts/test_measure_baseline.py \
+  scripts/test_reference_preflight.py \
+  experiments/gpui-upstream-lab/scripts/test_a4_report.py
 run_gate shared-controls "$minimum_kib" bash scripts/check-shared-controls.sh
 run_gate clippy "$build_minimum_kib" \
   cargo clippy --locked --workspace --all-targets --all-features -- -D warnings

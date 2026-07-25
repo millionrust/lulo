@@ -54,6 +54,25 @@ Record the compositor, display protocol, scale factors, GPU/driver, Orca
 version, and pass/fail evidence in `docs/gpui-current-upstream-spike.md` before
 changing any product dependency.
 
+Create the fixed A4 result ledger before the run, change only its `pending`
+tokens to `pass` or `fail` as each named observation is reviewed, then verify
+it:
+
+```sh
+python3 scripts/a4-report.py create \
+  > ../../target/linux-evidence/a4-upstream-report.txt
+python3 scripts/a4-report.py verify \
+  ../../target/linux-evidence/a4-upstream-report.txt
+```
+
+The verifier binds all 23 results to this experiment's exact upstream revision,
+rejects missing/extra/reordered/duplicate fields, refuses non-ASCII and reports
+over 16 KiB, distinguishes an incomplete report from a complete report with a
+failure, and accepts only regular non-symlink files. It stores no evidence
+descriptions or environment values: pair it with separately reviewed evidence.
+Passing verification proves report completeness, not that the human
+observations were truthful.
+
 ## Automated nested-compositor smoke test
 
 On Linux with Sway, Mesa's software Vulkan driver, `wayland-info`, `jq`, D-Bus,
@@ -76,3 +95,10 @@ its results replace the static-candidate evidence. Platform-neutral projection
 tests can run on the macOS development host with `cargo test --locked --lib`.
 Notification and scheduled-Focus authorities remain later roadmap work; their
 projection here does not claim those providers are complete.
+
+The report contract itself is dependency-free and testable on the development
+host:
+
+```sh
+/usr/bin/python3 -m unittest scripts/test_a4_report.py
+```

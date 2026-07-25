@@ -370,13 +370,24 @@ cd experiments/gpui-upstream-lab
 cargo run --features wayland --bin a11y
 cargo run --features wayland --bin layer-shell
 cargo run --features wayland --bin top-bar
+python3 scripts/a4-report.py create \
+  > ../../target/linux-evidence/a4-upstream-report.txt
 ```
 
 With Orca active, verify the heading, counter, switch, focus order, actions, and
 state. For the layer surface, verify the 40-logical-pixel exclusive zone,
 keyboard non-interference, overview behavior, maximize/fullscreen interaction,
 output hotplug, and mixed scaling. Then complete the four-hour interaction soak
-from ADR 0001.
+from ADR 0001. Record every fixed result as `pass` or `fail`, then run
+
+```sh
+python3 scripts/a4-report.py verify \
+  ../../target/linux-evidence/a4-upstream-report.txt
+```
+
+A structurally complete report is not proof that its human observations are
+true; retain separately reviewed evidence for every result and never reuse the
+historical static-bar smoke result for the current live top-bar revision.
 
 Run the Linux-only PAM callback and transaction fault tests natively. They use
 injected function tables and do not authenticate the current account or install

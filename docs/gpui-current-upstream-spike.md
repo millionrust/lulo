@@ -167,6 +167,32 @@ scale factors, and Orca version with every result.
 11. Repeat interaction for 30 minutes, then run the complete four-hour soak
     required by ADR 0001 before approving a migration.
 
+Before step 1, create the revision-bound result template:
+
+```sh
+python3 scripts/a4-report.py create \
+  > ../../target/linux-evidence/a4-upstream-report.txt
+```
+
+Change only the 23 `result.*` values from `pending` to `pass` or `fail` as
+reviewed evidence lands. In particular,
+`automation.nested-smoke-live-revision` cannot reuse the historical static-bar
+result above; rerun the smoke against the current live top-bar revision.
+`environment.reviewed` and `privacy.reviewed-evidence` require a human review
+of the separate captures and are not inferred from a successful command.
+
+After the four-hour soak, verify the report:
+
+```sh
+python3 scripts/a4-report.py verify \
+  ../../target/linux-evidence/a4-upstream-report.txt
+```
+
+Exit status 4 means observations remain pending, 5 means the report is complete
+but one or more gates failed, and 3 means the structure/revision is invalid.
+Only status 0 plus the reviewed supporting evidence can inform A5. The
+verifier's pass does not authenticate the human observations.
+
 ## Decision status
 
 **Automated Linux smoke passed; manual acceptance is pending.** Do not migrate

@@ -33,6 +33,18 @@ pub use controls::{
 pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{EmptyState, Progress, ProgressStatus, Toast, ToastKind, Tooltip};
 
+/// Stable Linux desktop identities. Each value matches its installed desktop
+/// file ID (without `.desktop`) and the Wayland toplevel `app_id`.
+pub mod app_id {
+    pub const FINDER: &str = "org.rmac.Finder";
+    pub const TERMINAL: &str = "org.rmac.Terminal";
+    pub const NOTES: &str = "org.rmac.Notes";
+    pub const TEXT_EDITOR: &str = "org.rmac.TextEditor";
+    pub const ACTIVITY_MONITOR: &str = "org.rmac.ActivityMonitor";
+    pub const APP_DRAWER: &str = "org.rmac.AppDrawer";
+    pub const SYSTEM_SETTINGS: &str = "org.rmac.SystemSettings";
+}
+
 // Re-exports so apps depend on one crate for theming; these also bring the
 // traits into scope here for `.v_flex()`, `cx.theme()`, etc.
 pub use gpui_component::{ActiveTheme, StyledExt};
@@ -107,6 +119,14 @@ pub fn window_options(width: f32, height: f32) -> WindowOptions {
     }
 }
 
+/// Standard window options with a stable Linux desktop identity.
+pub fn window_options_for_app(app_id: &str, width: f32, height: f32) -> WindowOptions {
+    WindowOptions {
+        app_id: Some(app_id.to_owned()),
+        ..window_options(width, height)
+    }
+}
+
 /// Window options for an app with a **unified 52pt toolbar** (Finder-style):
 /// our own traffic lights are drawn by the app's toolbar.
 pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
@@ -122,6 +142,14 @@ pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
             traffic_light_position: Some(point(px(-200.0), px(0.0))),
         }),
         ..Default::default()
+    }
+}
+
+/// Unified-toolbar options with a stable Linux desktop identity.
+pub fn window_options_unified_for_app(app_id: &str, width: f32, height: f32) -> WindowOptions {
+    WindowOptions {
+        app_id: Some(app_id.to_owned()),
+        ..window_options_unified(width, height)
     }
 }
 
@@ -143,6 +171,35 @@ where
                 let view = cx.new(|cx| build(window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })
+            .expect("failed to open window");
+            cx.activate(true);
+        });
+}
+
+/// [`boot_unified_with_assets`] with an explicit desktop/Wayland identity.
+pub fn boot_unified_app_with_assets<A, V, F>(
+    app_id: &'static str,
+    assets: A,
+    width: f32,
+    height: f32,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
+    Application::new()
+        .with_assets(assets)
+        .run(move |cx: &mut App| {
+            init_application(cx);
+            cx.open_window(
+                window_options_unified_for_app(app_id, width, height),
+                move |window, cx| {
+                    prepare_surface_window(window, cx);
+                    let view = cx.new(|cx| build(window, cx));
+                    cx.new(|cx| Root::new(view, window, cx))
+                },
+            )
             .expect("failed to open window");
             cx.activate(true);
         });
@@ -250,6 +307,61 @@ where
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
     boot_with_assets(gpui_component_assets::Assets, title, width, height, build);
+}
+
+/// [`boot`] with an explicit desktop/Wayland identity.
+pub fn boot_app<V, F>(
+    app_id: &'static str,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    build: F,
+) where
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
+    boot_app_with_assets(
+        app_id,
+        gpui_component_assets::Assets,
+        title,
+        width,
+        height,
+        build,
+    );
+}
+
+/// [`boot_with_assets`] with an explicit desktop/Wayland identity.
+pub fn boot_app_with_assets<A, V, F>(
+    app_id: &'static str,
+    assets: A,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
+    let title: SharedString = title.into();
+    Application::new()
+        .with_assets(assets)
+        .run(move |cx: &mut App| {
+            init_application(cx);
+
+            cx.open_window(
+                window_options_for_app(app_id, width, height),
+                move |window, cx| {
+                    prepare_surface_window(window, cx);
+                    let view = cx.new(|cx| build(window, cx));
+                    cx.new(|cx| Root::new(view, window, cx))
+                },
+            )
+            .expect("failed to open window");
+
+            cx.activate(true);
+        });
+    let _ = title;
 }
 
 /// Like [`boot`], but with a custom asset source (e.g. an app that embeds its
@@ -393,6 +505,47 @@ fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
 
 fn current_component_theme_mode() -> gpui_component::theme::ThemeMode {
     component_theme_mode(theme::current().color_scheme)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{app_id, window_options_for_app, window_options_unified_for_app};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn application_ids_are_unique_reverse_domain_desktop_ids() {
+        let identities = [
+            app_id::FINDER,
+            app_id::TERMINAL,
+            app_id::NOTES,
+            app_id::TEXT_EDITOR,
+            app_id::ACTIVITY_MONITOR,
+            app_id::APP_DRAWER,
+            app_id::SYSTEM_SETTINGS,
+        ];
+        assert_eq!(
+            identities.iter().copied().collect::<BTreeSet<_>>().len(),
+            identities.len()
+        );
+        assert!(identities.iter().all(|identity| {
+            identity.starts_with("org.rmac.")
+                && identity
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+        }));
+    }
+
+    #[test]
+    fn both_window_styles_publish_the_exact_application_id() {
+        assert_eq!(
+            window_options_for_app(app_id::TEXT_EDITOR, 800.0, 600.0).app_id,
+            Some(app_id::TEXT_EDITOR.to_owned())
+        );
+        assert_eq!(
+            window_options_unified_for_app(app_id::FINDER, 800.0, 600.0).app_id,
+            Some(app_id::FINDER.to_owned())
+        );
+    }
 }
 
 fn component_theme_mode(

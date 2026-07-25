@@ -1252,12 +1252,15 @@ fn route_shortcut(cx: &mut GpuiApp) {
         service.next_token
     });
     let mut drawer = None;
-    let handle = cx.open_window(rmac_ui::window_options(1080.0, 720.0), |window, cx| {
-        rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));
-        drawer = Some(view.downgrade());
-        cx.new(|cx| Root::new(view, window, cx))
-    });
+    let handle = cx.open_window(
+        rmac_ui::window_options_for_app(rmac_ui::app_id::APP_DRAWER, 1080.0, 720.0),
+        |window, cx| {
+            rmac_ui::prepare_surface_window(window, cx);
+            let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));
+            drawer = Some(view.downgrade());
+            cx.new(|cx| Root::new(view, window, cx))
+        },
+    );
     if let (Ok(handle), Some(view)) = (handle, drawer) {
         cx.update_global::<AppDrawerService, _>(|service, _| {
             service.active = Some(ActiveDrawer {
@@ -1324,10 +1327,16 @@ fn run_service(show_on_start: bool) {
 fn main() {
     match run_mode(std::env::args().skip(1)) {
         RunMode::Service { show_on_start } => run_service(show_on_start),
-        RunMode::Standalone => rmac_ui::boot("Applications", 1080.0, 720.0, |window, cx| {
-            cx.bind_keys(key_bindings());
-            AppDrawer::new(None, window, cx)
-        }),
+        RunMode::Standalone => rmac_ui::boot_app(
+            rmac_ui::app_id::APP_DRAWER,
+            "Applications",
+            1080.0,
+            720.0,
+            |window, cx| {
+                cx.bind_keys(key_bindings());
+                AppDrawer::new(None, window, cx)
+            },
+        ),
     }
 }
 

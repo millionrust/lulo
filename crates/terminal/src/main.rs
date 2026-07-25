@@ -3907,9 +3907,13 @@ fn split(hex: u32) -> (u8, u8, u8) {
 }
 
 fn main() {
-    rmac_ui::boot("Terminal", 820.0, 560.0, |window, cx| {
-        TerminalView::new(window, cx)
-    });
+    rmac_ui::boot_app(
+        rmac_ui::app_id::TERMINAL,
+        "Terminal",
+        820.0,
+        560.0,
+        TerminalView::new,
+    );
 }
 
 #[cfg(test)]

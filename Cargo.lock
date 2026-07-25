@@ -5704,6 +5704,7 @@ dependencies = [
  "async-channel 2.5.0",
  "gpui",
  "gpui-component",
+ "gpui-component-assets",
  "libc",
  "notify",
  "objc2",

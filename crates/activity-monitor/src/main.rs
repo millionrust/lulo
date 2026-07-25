@@ -1792,22 +1792,28 @@ impl Render for MonitorView {
 }
 
 fn main() {
-    rmac_ui::boot("Activity Monitor", 1040.0, 680.0, |window, cx| {
-        let view = MonitorView::new(window, cx);
-        cx.bind_keys([
-            gpui::KeyBinding::new("cmd-f", FocusSearch, Some("ActivityMonitor")),
-            gpui::KeyBinding::new("cmd-backspace", QuitProcess, Some("ActivityMonitor")),
-            gpui::KeyBinding::new(
-                "shift-cmd-backspace",
-                ForceQuitProcess,
-                Some("ActivityMonitor"),
-            ),
-            gpui::KeyBinding::new("enter", ConfirmKill, Some("ActivityMonitor")),
-            gpui::KeyBinding::new("escape", CancelKill, Some("ActivityMonitor")),
-        ]);
-        window.focus(&view.focus);
-        view
-    });
+    rmac_ui::boot_app(
+        rmac_ui::app_id::ACTIVITY_MONITOR,
+        "Activity Monitor",
+        1040.0,
+        680.0,
+        |window, cx| {
+            let view = MonitorView::new(window, cx);
+            cx.bind_keys([
+                gpui::KeyBinding::new("cmd-f", FocusSearch, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("cmd-backspace", QuitProcess, Some("ActivityMonitor")),
+                gpui::KeyBinding::new(
+                    "shift-cmd-backspace",
+                    ForceQuitProcess,
+                    Some("ActivityMonitor"),
+                ),
+                gpui::KeyBinding::new("enter", ConfirmKill, Some("ActivityMonitor")),
+                gpui::KeyBinding::new("escape", CancelKill, Some("ActivityMonitor")),
+            ]);
+            window.focus(&view.focus);
+            view
+        },
+    );
 }
 
 #[cfg(test)]

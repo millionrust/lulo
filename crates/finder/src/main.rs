@@ -2804,9 +2804,13 @@ fn date_label(t: SystemTime) -> String {
 }
 
 fn main() {
-    rmac_ui::boot_unified_with_assets(CombinedAssets, 1100.0, 720.0, |window, cx| {
-        FinderView::new(window, cx)
-    });
+    rmac_ui::boot_unified_app_with_assets(
+        rmac_ui::app_id::FINDER,
+        CombinedAssets,
+        1100.0,
+        720.0,
+        FinderView::new,
+    );
 }
 
 #[cfg(test)]

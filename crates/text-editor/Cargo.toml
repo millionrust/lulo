@@ -13,6 +13,7 @@ path = "src/main.rs"
 async-channel.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+gpui-component-assets.workspace = true
 notify.workspace = true
 rmac-ui.workspace = true
 rmac-editor.workspace = true

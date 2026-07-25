@@ -19964,10 +19964,16 @@ fn category_has_dedicated_renderer(name: &str) -> bool {
 }
 
 fn main() {
-    rmac_ui::boot_unified_with_assets(CombinedAssets, 1000.0, 720.0, |window, cx| {
-        cx.bind_keys([KeyBinding::new("cmd-[", GoBack, Some("SystemSettings"))]);
-        Settings::new(window, cx)
-    });
+    rmac_ui::boot_unified_app_with_assets(
+        rmac_ui::app_id::SYSTEM_SETTINGS,
+        CombinedAssets,
+        1000.0,
+        720.0,
+        |window, cx| {
+            cx.bind_keys([KeyBinding::new("cmd-[", GoBack, Some("SystemSettings"))]);
+            Settings::new(window, cx)
+        },
+    );
 }
 
 #[cfg(test)]

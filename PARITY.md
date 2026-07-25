@@ -23,8 +23,11 @@ evidence remains gated by the reference-PC framework work.
   truthful; exited input is refused, and stable-ID tab/window close now reviews
   a kernel-reported foreground process group before hangup. Bracketed
   paste is mode-correct and termination-safe; unprotected multiline paste has a
-  content-redacted exact-session review. IME, remaining terminal-mode input,
-  hyperlinks/shell integration, per-tab UI state, scrollback memory accounting,
+  content-redacted exact-session review. Traditional xterm arrows, Home/End,
+  editing keys, F1–F20, modifiers, Meta/control input, and application-cursor
+  mode are encoded and tested; incomplete enhanced keyboard modes are not
+  partially advertised. IME, enhanced Kitty/keypad/mouse input, hyperlinks/
+  shell integration, per-tab UI state, scrollback memory accounting,
   accessibility, Linux interaction/visual evidence, and measured idle/active
   performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux

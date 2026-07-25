@@ -276,6 +276,156 @@ fn prepare_paste(text: &str, bracketed: bool) -> Vec<u8> {
     }
 }
 
+/// xterm's one-based modifier parameter: Shift=1, Alt=2, Control=4.
+fn xterm_modifier(modifiers: &gpui::Modifiers) -> u8 {
+    1 + u8::from(modifiers.shift) + 2 * u8::from(modifiers.alt) + 4 * u8::from(modifiers.control)
+}
+
+fn cursor_key_sequence(
+    final_byte: char,
+    modifiers: &gpui::Modifiers,
+    application_cursor: bool,
+) -> Vec<u8> {
+    let modifier = xterm_modifier(modifiers);
+    if modifier != 1 {
+        format!("\x1b[1;{modifier}{final_byte}").into_bytes()
+    } else if application_cursor {
+        format!("\x1bO{final_byte}").into_bytes()
+    } else {
+        format!("\x1b[{final_byte}").into_bytes()
+    }
+}
+
+fn tilde_key_sequence(code: u8, modifiers: &gpui::Modifiers) -> Vec<u8> {
+    let modifier = xterm_modifier(modifiers);
+    if modifier == 1 {
+        format!("\x1b[{code}~").into_bytes()
+    } else {
+        format!("\x1b[{code};{modifier}~").into_bytes()
+    }
+}
+
+fn function_key_sequence(key: &str, modifiers: &gpui::Modifiers) -> Option<Vec<u8>> {
+    let modifier = xterm_modifier(modifiers);
+    let sequence = match key {
+        "f1" | "f2" | "f3" | "f4" => {
+            let final_byte = match key {
+                "f1" => 'P',
+                "f2" => 'Q',
+                "f3" => 'R',
+                _ => 'S',
+            };
+            if modifier == 1 {
+                format!("\x1bO{final_byte}").into_bytes()
+            } else {
+                format!("\x1b[1;{modifier}{final_byte}").into_bytes()
+            }
+        }
+        "f5" => tilde_key_sequence(15, modifiers),
+        "f6" => tilde_key_sequence(17, modifiers),
+        "f7" => tilde_key_sequence(18, modifiers),
+        "f8" => tilde_key_sequence(19, modifiers),
+        "f9" => tilde_key_sequence(20, modifiers),
+        "f10" => tilde_key_sequence(21, modifiers),
+        "f11" => tilde_key_sequence(23, modifiers),
+        "f12" => tilde_key_sequence(24, modifiers),
+        "f13" => tilde_key_sequence(25, modifiers),
+        "f14" => tilde_key_sequence(26, modifiers),
+        "f15" => tilde_key_sequence(28, modifiers),
+        "f16" => tilde_key_sequence(29, modifiers),
+        "f17" => tilde_key_sequence(31, modifiers),
+        "f18" => tilde_key_sequence(32, modifiers),
+        "f19" => tilde_key_sequence(33, modifiers),
+        "f20" => tilde_key_sequence(34, modifiers),
+        _ => return None,
+    };
+    Some(sequence)
+}
+
+fn is_supported_function_key(key: &str) -> bool {
+    key.strip_prefix('f')
+        .and_then(|number| number.parse::<u8>().ok())
+        .is_some_and(|number| (1..=20).contains(&number))
+}
+
+fn control_byte(key: &str) -> Option<u8> {
+    let character = key.chars().next()?;
+    if key.len() == 1 && character.is_ascii_alphabetic() {
+        return Some((character.to_ascii_uppercase() as u8) & 0x1f);
+    }
+    match key {
+        "space" | "@" | "2" => Some(0x00),
+        "[" | "{" | "3" => Some(0x1b),
+        "\\" | "|" | "4" => Some(0x1c),
+        "]" | "}" | "5" => Some(0x1d),
+        "^" | "~" | "6" => Some(0x1e),
+        "_" | "/" | "7" => Some(0x1f),
+        "?" | "8" => Some(0x7f),
+        _ => None,
+    }
+}
+
+/// Encode the traditional xterm/DEC key contract represented by GPUI.
+///
+/// GPUI intentionally does not preserve numeric-keypad location, so APP_KEYPAD
+/// remains a separate framework gate. Enhanced Kitty keyboard modes likewise
+/// require key release/location metadata beyond this key-down path.
+fn encode_key(keystroke: &gpui::Keystroke, mode: TermMode) -> Vec<u8> {
+    let modifiers = &keystroke.modifiers;
+    if modifiers.platform {
+        return Vec::new();
+    }
+
+    let application_cursor = mode.contains(TermMode::APP_CURSOR);
+    let mut bytes = match keystroke.key.as_str() {
+        "enter" => vec![b'\r'],
+        "backspace" => vec![0x7f],
+        "tab" if modifiers.shift => b"\x1b[Z".to_vec(),
+        "tab" => vec![b'\t'],
+        "escape" => vec![0x1b],
+        "up" => cursor_key_sequence('A', modifiers, application_cursor),
+        "down" => cursor_key_sequence('B', modifiers, application_cursor),
+        "right" => cursor_key_sequence('C', modifiers, application_cursor),
+        "left" => cursor_key_sequence('D', modifiers, application_cursor),
+        "home" => cursor_key_sequence('H', modifiers, application_cursor),
+        "end" => cursor_key_sequence('F', modifiers, application_cursor),
+        "insert" => tilde_key_sequence(2, modifiers),
+        "delete" => tilde_key_sequence(3, modifiers),
+        "pageup" => tilde_key_sequence(5, modifiers),
+        "pagedown" => tilde_key_sequence(6, modifiers),
+        key if is_supported_function_key(key) => {
+            return function_key_sequence(key, modifiers).unwrap_or_default();
+        }
+        key if modifiers.control => control_byte(key).into_iter().collect(),
+        _ => keystroke
+            .key_char
+            .as_deref()
+            .unwrap_or_default()
+            .as_bytes()
+            .to_vec(),
+    };
+
+    // xterm's conventional Meta/Alt behavior prefixes ordinary and control
+    // characters with Escape. Special cursor/function keys encode Alt in
+    // their modifier parameter instead.
+    let parameterized_special = matches!(
+        keystroke.key.as_str(),
+        "up" | "down"
+            | "right"
+            | "left"
+            | "home"
+            | "end"
+            | "insert"
+            | "delete"
+            | "pageup"
+            | "pagedown"
+    );
+    if modifiers.alt && !parameterized_special && !bytes.is_empty() {
+        bytes.insert(0, 0x1b);
+    }
+    bytes
+}
+
 /// A selected cell range, in alacritty grid-line coordinates (`Line` values,
 /// which are negative for scrollback). Coordinates are `(line, column)`.
 #[derive(Clone, Copy)]
@@ -1378,46 +1528,19 @@ impl TerminalView {
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent) -> Result<(), SessionWriteError> {
-        let ks = &ev.keystroke;
-        let m = &ks.modifiers;
-        // Let ⌘-shortcuts (copy/paste/…) flow to the action system instead of
-        // writing the literal character to the PTY.
-        if m.platform {
+        let mut term = self.tabs[self.active]
+            .term
+            .lock()
+            .map_err(|_| SessionWriteError::State)?;
+        let bytes = encode_key(&ev.keystroke, *term.mode());
+        if bytes.is_empty() {
             return Ok(());
         }
-        let bytes: Vec<u8> = match ks.key.as_str() {
-            "enter" => vec![b'\r'],
-            "backspace" => vec![0x7f],
-            "tab" => vec![b'\t'],
-            "escape" => vec![0x1b],
-            "up" => b"\x1b[A".to_vec(),
-            "down" => b"\x1b[B".to_vec(),
-            "right" => b"\x1b[C".to_vec(),
-            "left" => b"\x1b[D".to_vec(),
-            _ => {
-                if m.control {
-                    // Ctrl-letter → control code (Ctrl-C = 0x03, etc.)
-                    match ks.key.chars().next() {
-                        Some(c) if c.is_ascii_alphabetic() => {
-                            vec![(c.to_ascii_uppercase() as u8) & 0x1f]
-                        }
-                        _ => vec![],
-                    }
-                } else if let Some(text) = &ks.key_char {
-                    text.as_bytes().to_vec()
-                } else {
-                    vec![]
-                }
-            }
-        };
-        if !bytes.is_empty() {
-            // Typing jumps the viewport back to the live prompt, like a real terminal.
-            if let Ok(mut t) = self.tabs[self.active].term.lock() {
-                t.scroll_display(Scroll::Bottom);
-            }
-            self.tabs[self.active].write(&bytes)?;
-        }
-        Ok(())
+        // Typing jumps to the live prompt and clears the visual selection.
+        term.scroll_display(Scroll::Bottom);
+        drop(term);
+        self.selection = None;
+        self.tabs[self.active].write(&bytes)
     }
 
     /// Copy the current selection to the system clipboard.
@@ -2264,5 +2387,154 @@ mod tests {
         assert!(!debug.contains("private clipboard body"));
         assert!(debug.contains("<private>"));
         assert!(debug.contains("line_count: 2"));
+    }
+
+    fn test_keystroke(
+        key: &str,
+        key_char: Option<&str>,
+        modifiers: gpui::Modifiers,
+    ) -> gpui::Keystroke {
+        gpui::Keystroke {
+            key: key.into(),
+            key_char: key_char.map(str::to_owned),
+            modifiers,
+        }
+    }
+
+    #[test]
+    fn cursor_keys_follow_the_parsed_application_mode() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+        let up = test_keystroke("up", None, gpui::Modifiers::default());
+        let home = test_keystroke("home", None, gpui::Modifiers::default());
+
+        assert_eq!(encode_key(&up, *term.mode()), b"\x1b[A");
+        assert_eq!(encode_key(&home, *term.mode()), b"\x1b[H");
+
+        parser.advance(&mut term, b"\x1b[?1h");
+        assert!(term.mode().contains(TermMode::APP_CURSOR));
+        assert_eq!(encode_key(&up, *term.mode()), b"\x1bOA");
+        assert_eq!(encode_key(&home, *term.mode()), b"\x1bOH");
+
+        parser.advance(&mut term, b"\x1b[?1l");
+        assert!(!term.mode().contains(TermMode::APP_CURSOR));
+        assert_eq!(encode_key(&up, *term.mode()), b"\x1b[A");
+    }
+
+    #[test]
+    fn navigation_and_function_keys_encode_xterm_modifiers() {
+        let alt = gpui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        let shift_control = gpui::Modifiers {
+            shift: true,
+            control: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            encode_key(&test_keystroke("left", None, alt), TermMode::APP_CURSOR),
+            b"\x1b[1;3D"
+        );
+        assert_eq!(
+            encode_key(
+                &test_keystroke("delete", None, shift_control),
+                TermMode::default()
+            ),
+            b"\x1b[3;6~"
+        );
+        assert_eq!(
+            encode_key(
+                &test_keystroke("f1", None, gpui::Modifiers::default()),
+                TermMode::default()
+            ),
+            b"\x1bOP"
+        );
+        assert_eq!(
+            encode_key(
+                &test_keystroke("f1", None, shift_control),
+                TermMode::default()
+            ),
+            b"\x1b[1;6P"
+        );
+        assert_eq!(
+            encode_key(
+                &test_keystroke("f5", None, shift_control),
+                TermMode::default()
+            ),
+            b"\x1b[15;6~"
+        );
+        assert_eq!(
+            encode_key(
+                &test_keystroke("f20", None, gpui::Modifiers::default()),
+                TermMode::default()
+            ),
+            b"\x1b[34~"
+        );
+    }
+
+    #[test]
+    fn enhanced_keyboard_protocol_is_not_partially_advertised() {
+        assert!(!terminal_config().kitty_keyboard);
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+
+        parser.advance(&mut term, b"\x1b[>1u");
+        assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
+    }
+
+    #[test]
+    fn text_control_and_meta_input_remain_exact() {
+        let control = gpui::Modifiers {
+            control: true,
+            ..Default::default()
+        };
+        let alt = gpui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        let shift = gpui::Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        let platform = gpui::Modifiers {
+            platform: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            encode_key(&test_keystroke("c", None, control), TermMode::default()),
+            b"\x03"
+        );
+        assert_eq!(
+            encode_key(&test_keystroke("[", None, control), TermMode::default()),
+            b"\x1b"
+        );
+        assert_eq!(
+            encode_key(&test_keystroke("space", None, control), TermMode::default()),
+            b"\x00"
+        );
+        assert_eq!(
+            encode_key(
+                &test_keystroke("f", Some("f"), gpui::Modifiers::default()),
+                TermMode::default()
+            ),
+            b"f"
+        );
+        assert_eq!(
+            encode_key(&test_keystroke("x", Some("λ"), alt), TermMode::default()),
+            "\u{1b}λ".as_bytes()
+        );
+        assert_eq!(
+            encode_key(
+                &test_keystroke("tab", Some("\t"), shift),
+                TermMode::default()
+            ),
+            b"\x1b[Z"
+        );
+        assert!(encode_key(&test_keystroke("x", None, platform), TermMode::default()).is_empty());
     }
 }

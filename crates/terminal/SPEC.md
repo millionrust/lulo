@@ -56,12 +56,23 @@ become Return, non-text controls are refused, and multiline content pauses in a
 content-redacted stable-session review that shows only checked line/byte counts.
 Cancellation drops the private payload, while confirmation rechecks the bound
 live session and current mode before writing.
+Traditional keyboard input now reads the parsed xterm application-cursor mode:
+arrows plus Home/End switch between CSI and SS3, editing keys and F1–F20 use
+their conventional sequences, and Shift/Alt/Control combinations use xterm's
+one-based modifier parameter. Alt prefixes ordinary/control text with Escape,
+Ctrl-letter and conventional Ctrl-punctuation mappings are exact, Shift-Tab
+sends backtab, platform shortcuts never leak to the PTY, and terminal-state
+lock failure sends nothing. Successful input returns to live output and clears
+only the current visual selection. Enhanced Kitty keyboard mode remains
+disabled at the emulator authority, so the incomplete key-down-only path is
+not partially advertised or activated.
 
 The complete application claim remains blocked on IME preedit/commit,
-terminal-mode-correct keyboard/mouse input, hyperlink policy, shell integration,
-per-tab selection/search/title state, explicit scrollback memory accounting,
-resize/write failure presentation depth, accessible terminal text semantics,
-Linux interaction/visual evidence, and measured idle/active performance.
+enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
+terminal mouse reporting, hyperlink policy, shell integration, per-tab
+selection/search/title state, explicit scrollback memory accounting, resize/
+write failure presentation depth, accessible terminal text semantics, Linux
+interaction/visual evidence, and measured idle/active performance.
 
 ## Platform authorities
 
@@ -143,7 +154,10 @@ shell-integration protocol before they may be shown.
 
 Terminal control sequences without the platform modifier, including arrows,
 Tab, Escape, Backspace, Enter, and Ctrl-letter input, go to the PTY. Complete
-IME preedit/commit behavior remains a Linux framework acceptance gate.
+traditional xterm navigation and F1–F20 sequences follow application-cursor
+mode and encode Shift/Alt/Control modifiers. Enhanced Kitty keyboard reporting,
+numeric-keypad identity, and complete IME preedit/commit behavior remain Linux
+framework acceptance gates.
 
 ## Visual and accessibility states
 
@@ -166,8 +180,14 @@ Unit and contract tests cover input encoding, resize arithmetic and bounds,
 selection extraction, child state transitions, foreground-job classification,
 guarded close decisions, bracketed/unbracketed paste construction and review,
 embedded-marker/control rejection, persistence failures, and redraw coalescing.
-The transport follows the official
-[xterm bracketed-paste contract](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode).
+Keyboard mode transitions, navigation/function modifier sequences, control/
+Unicode/Meta input, platform-shortcut suppression, and enhanced-mode
+non-advertisement are checked directly.
+The transport follows the official xterm
+[keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
+and
+[bracketed-paste](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode)
+contracts.
 Native
 Ubuntu/niri evidence must additionally cover Bash and another supported shell,
 `vim`/`less`/`top`, Unicode and IME, rapid output, scrollback, large paste,

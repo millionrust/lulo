@@ -30,8 +30,9 @@ evidence remains gated by the reference-PC framework work.
   partially advertised. OSC control strings are stream-capped at 1 KiB;
   malformed/overlong input and unreviewed OSC 8 links are discarded before VTE.
   Each rendered cell retains at most 16 combining marks without losing its base
-  style. IME, enhanced Kitty/keypad/mouse input, reviewed hyperlinks/shell
-  integration, per-tab UI state, remaining title/parser/thread bounds,
+  style. Two explicitly stacked workers per tab, synchronized-update/parser
+  storage, and the title stack now have tested ceilings. IME, enhanced Kitty/
+  keypad/mouse input, reviewed hyperlinks/shell integration, per-tab UI state,
   accessibility, Linux interaction/visual evidence, and measured Unicode/
   resident/idle/active performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux

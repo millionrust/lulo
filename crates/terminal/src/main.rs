@@ -11,8 +11,10 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
+    mpsc::{sync_channel, SyncSender},
     Arc, Mutex,
 };
+use std::thread::JoinHandle;
 
 use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::{Dimensions, Row, Scroll};
@@ -28,7 +30,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use portable_pty::{
-    native_pty_system, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
+    native_pty_system, Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
 };
 use rmac_ui::{Button, InputState, SearchField};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
@@ -64,6 +66,23 @@ const LEFT_PAD: f32 = 8.0;
 const MAX_PASTE_BYTES: usize = 1024 * 1024;
 const MAX_OSC_PAYLOAD_BYTES: usize = 1024;
 const MAX_COMBINING_MARKS_PER_CELL: usize = 16;
+/// One reader and one child waiter are reserved before a shell can launch.
+#[cfg(test)]
+const SESSION_WORKERS_PER_TAB: usize = 2;
+/// Parser storage is heap-backed; 512 KiB is ample for each shallow worker.
+const SESSION_WORKER_STACK_BYTES: usize = 512 * 1024;
+/// `vte` 0.15 terminates synchronized updates before this heap buffer fills.
+#[cfg(test)]
+const MAX_VTE_SYNC_BUFFER_BYTES: usize = 2 * 1024 * 1024;
+#[cfg(test)]
+const MAX_VTE_CSI_PARAMETERS: usize = 32;
+#[cfg(test)]
+const MAX_VTE_INTERMEDIATES: usize = 2;
+#[cfg(test)]
+const MAX_UTF8_SCALAR_BYTES: usize = 4;
+/// `alacritty_terminal` 0.25 evicts the oldest saved title at this depth.
+#[cfg(test)]
+const MAX_TITLE_STACK_DEPTH: usize = 4096;
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
@@ -275,6 +294,13 @@ fn bounded_grid_base_bytes(tab_count: usize, history_lines: usize) -> usize {
         )
         .saturating_mul(bounded_cell_row_bytes());
     cell_rows.saturating_add(tab_count.saturating_mul(retained_row_slots_bytes_per_tab()))
+}
+
+#[cfg(test)]
+fn max_session_worker_stack_bytes_per_window() -> usize {
+    MAX_TABS
+        .saturating_mul(SESSION_WORKERS_PER_TAB)
+        .saturating_mul(SESSION_WORKER_STACK_BYTES)
 }
 
 #[derive(Debug, Default)]
@@ -848,6 +874,8 @@ enum SessionStartError {
     StartShell,
     OpenReader,
     OpenWriter,
+    StartReaderWorker,
+    StartWaiterWorker,
 }
 
 impl std::fmt::Display for SessionStartError {
@@ -857,6 +885,9 @@ impl std::fmt::Display for SessionStartError {
             Self::StartShell => "Terminal could not start the configured shell.",
             Self::OpenReader => "Terminal could not receive output from the shell.",
             Self::OpenWriter => "Terminal could not send input to the shell.",
+            Self::StartReaderWorker | Self::StartWaiterWorker => {
+                "Terminal could not reserve bounded resources for the configured shell."
+            }
         })
     }
 }
@@ -935,6 +966,141 @@ fn foreground_job_requires_confirmation(
             .is_none_or(|(shell, foreground)| shell != foreground)
 }
 
+type ReaderTask = (
+    Box<dyn Read + Send>,
+    Arc<Mutex<Term<EventProxy>>>,
+    RedrawSender,
+);
+type WaiterTask = (
+    Box<dyn Child + Send + Sync>,
+    Arc<Mutex<SessionLifecycle>>,
+    RedrawSender,
+);
+
+fn run_reader_worker((mut reader, term, redraw): ReaderTask) {
+    let mut parser: Processor = Processor::new();
+    let mut output_filter = OutputFilter::default();
+    let mut buf = [0u8; 8192];
+    let mut filtered = Vec::with_capacity(buf.len());
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                output_filter.filter_into(&buf[..n], &mut filtered);
+                if filtered.is_empty() {
+                    continue;
+                }
+                if let Ok(mut term) = term.lock() {
+                    advance_filtered_output(&mut parser, &mut *term, &filtered);
+                }
+                request_redraw(&redraw);
+            }
+        }
+    }
+    request_redraw(&redraw);
+}
+
+fn run_waiter_worker((mut child, lifecycle, redraw): WaiterTask) {
+    let next = lifecycle_after_wait(child.wait());
+    if let Ok(mut lifecycle) = lifecycle.lock() {
+        *lifecycle = next;
+    }
+    request_redraw(&redraw);
+}
+
+fn reserve_session_worker<Task, Run>(
+    name: &'static str,
+    run: Run,
+) -> std::io::Result<(SyncSender<Task>, JoinHandle<()>)>
+where
+    Task: Send + 'static,
+    Run: FnOnce(Task) + Send + 'static,
+{
+    let (sender, receiver) = sync_channel(0);
+    let handle = std::thread::Builder::new()
+        .name(name.into())
+        .stack_size(SESSION_WORKER_STACK_BYTES)
+        .spawn(move || {
+            if let Ok(task) = receiver.recv() {
+                run(task);
+            }
+        })?;
+    Ok((sender, handle))
+}
+
+struct ReservedSessionWorkers {
+    reader_sender: SyncSender<ReaderTask>,
+    reader_handle: JoinHandle<()>,
+    waiter_sender: SyncSender<WaiterTask>,
+    waiter_handle: JoinHandle<()>,
+}
+
+impl ReservedSessionWorkers {
+    /// Reserve both fallible OS threads before the shell exists. Dropping the
+    /// rendezvous sender makes an unused worker exit without polling.
+    fn reserve() -> Result<Self, SessionStartError> {
+        let (reader_sender, reader_handle) =
+            reserve_session_worker("rmac-terminal-reader", run_reader_worker)
+                .map_err(|_| SessionStartError::StartReaderWorker)?;
+        let (waiter_sender, waiter_handle) =
+            match reserve_session_worker("rmac-terminal-waiter", run_waiter_worker) {
+                Ok(worker) => worker,
+                Err(_) => {
+                    drop(reader_sender);
+                    let _ = reader_handle.join();
+                    return Err(SessionStartError::StartWaiterWorker);
+                }
+            };
+        Ok(Self {
+            reader_sender,
+            reader_handle,
+            waiter_sender,
+            waiter_handle,
+        })
+    }
+
+    fn activate(
+        self,
+        reader_task: ReaderTask,
+        waiter_task: WaiterTask,
+        killer: &mut dyn ChildKiller,
+    ) -> Result<(), SessionStartError> {
+        let Self {
+            reader_sender,
+            reader_handle,
+            waiter_sender,
+            waiter_handle,
+        } = self;
+
+        // Supervision starts first. If this reserved receiver disappeared,
+        // retain the returned child task and synchronously reap it.
+        if let Err(error) = waiter_sender.send(waiter_task) {
+            let (mut child, _, _) = error.0;
+            let _ = child.kill();
+            let _ = child.wait();
+            drop(reader_sender);
+            let _ = reader_handle.join();
+            let _ = waiter_handle.join();
+            return Err(SessionStartError::StartWaiterWorker);
+        }
+
+        // The waiter now owns the child. A theoretically disconnected reader
+        // fails closed by terminating that child; the waiter remains attached
+        // long enough to reap it.
+        if reader_sender.send(reader_task).is_err() {
+            let _ = killer.kill();
+            let _ = reader_handle.join();
+            drop(waiter_handle);
+            return Err(SessionStartError::StartReaderWorker);
+        }
+
+        // Dropping JoinHandle detaches the two bounded lifetime workers.
+        drop(reader_handle);
+        drop(waiter_handle);
+        Ok(())
+    }
+}
+
 /// One terminal tab: its own PTY + parser-fed grid. `master` is `None` for a
 /// failed session (PTY/shell couldn't start) — it still renders an error grid.
 struct Session {
@@ -966,7 +1132,7 @@ impl Session {
                 pixel_height: 0,
             })
             .map_err(|_| SessionStartError::OpenPty)?;
-        let mut reader = pair
+        let reader = pair
             .master
             .try_clone_reader()
             .map_err(|_| SessionStartError::OpenReader)?;
@@ -974,57 +1140,31 @@ impl Session {
             .master
             .take_writer()
             .map_err(|_| SessionStartError::OpenWriter)?;
+        let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut cmd = CommandBuilder::new(shell);
         cmd.env("TERM", "xterm-256color");
         if let Ok(dir) = std::env::current_dir() {
             cmd.cwd(dir);
         }
-        let mut child = pair
+        let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|_| SessionStartError::StartShell)?;
         let shell_pid = child.process_id();
-        let killer = child.clone_killer();
+        let mut killer = child.clone_killer();
         drop(pair.slave);
         let term = Arc::new(Mutex::new(Term::new(
             terminal_config(scrollback_lines),
             &size,
             EventProxy,
         )));
-        let term_reader = term.clone();
-        let reader_redraw = redraw.clone();
-        std::thread::spawn(move || {
-            let mut parser: Processor = Processor::new();
-            let mut output_filter = OutputFilter::default();
-            let mut buf = [0u8; 8192];
-            let mut filtered = Vec::with_capacity(buf.len());
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => {
-                        output_filter.filter_into(&buf[..n], &mut filtered);
-                        if filtered.is_empty() {
-                            continue;
-                        }
-                        if let Ok(mut term) = term_reader.lock() {
-                            advance_filtered_output(&mut parser, &mut *term, &filtered);
-                        }
-                        request_redraw(&reader_redraw);
-                    }
-                }
-            }
-            request_redraw(&reader_redraw);
-        });
         let lifecycle = Arc::new(Mutex::new(SessionLifecycle::Running));
-        let lifecycle_waiter = lifecycle.clone();
-        std::thread::spawn(move || {
-            let next = lifecycle_after_wait(child.wait());
-            if let Ok(mut lifecycle) = lifecycle_waiter.lock() {
-                *lifecycle = next;
-            }
-            request_redraw(&redraw);
-        });
+        workers.activate(
+            (reader, term.clone(), redraw.clone()),
+            (child, lifecycle.clone(), redraw),
+            killer.as_mut(),
+        )?;
         Ok(Session {
             id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             term,
@@ -2569,6 +2709,53 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alacritty_terminal::event::Event;
+
+    #[derive(Clone, Default)]
+    struct TitleEventProxy(Arc<Mutex<Vec<Option<String>>>>);
+
+    impl EventListener for TitleEventProxy {
+        fn send_event(&self, event: Event) {
+            let title = match event {
+                Event::Title(title) => Some(Some(title)),
+                Event::ResetTitle => Some(None),
+                _ => None,
+            };
+            if let (Some(title), Ok(mut events)) = (title, self.0.lock()) {
+                events.push(title);
+            }
+        }
+    }
+
+    struct NoopHandler;
+
+    impl vte::ansi::Handler for NoopHandler {}
+
+    #[derive(Default)]
+    struct ParserBoundRecorder {
+        parameters: usize,
+        intermediates: usize,
+        ignored: bool,
+        printed: String,
+    }
+
+    impl vte::Perform for ParserBoundRecorder {
+        fn print(&mut self, character: char) {
+            self.printed.push(character);
+        }
+
+        fn csi_dispatch(
+            &mut self,
+            parameters: &vte::Params,
+            intermediates: &[u8],
+            ignored: bool,
+            _action: char,
+        ) {
+            self.parameters = parameters.iter().flatten().count();
+            self.intermediates = intermediates.len();
+            self.ignored = ignored;
+        }
+    }
 
     #[test]
     fn redraw_requests_coalesce_until_the_ui_consumes_one() {
@@ -2682,6 +2869,12 @@ mod tests {
     fn terminal_resources_have_explicit_bounds() {
         assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
         assert_eq!(MAX_TABS, 16);
+        assert_eq!(SESSION_WORKERS_PER_TAB, 2);
+        assert_eq!(SESSION_WORKER_STACK_BYTES, 512 * 1024);
+        assert_eq!(
+            max_session_worker_stack_bytes_per_window(),
+            16 * 1024 * 1024
+        );
         assert_eq!(terminal_config(SCROLLBACK_LINES).scrolling_history, 10_000);
         assert_eq!(
             grid_dimensions(0.0, 0.0, CELL_W, LINE_H),
@@ -2704,6 +2897,72 @@ mod tests {
                 lines: MIN_ROWS
             }
         );
+    }
+
+    #[test]
+    fn vte_synchronized_update_buffer_stops_at_the_pinned_limit() {
+        let mut parser: Processor = Processor::new();
+        let mut handler = NoopHandler;
+        parser.advance(&mut handler, b"\x1b[?2026h");
+
+        let payload = vec![b'x'; MAX_VTE_SYNC_BUFFER_BYTES - 2];
+        parser.advance(&mut handler, &payload);
+        assert_eq!(parser.sync_bytes_count(), MAX_VTE_SYNC_BUFFER_BYTES - 2);
+
+        parser.advance(&mut handler, b"x");
+        assert_eq!(parser.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn vte_parser_arrays_and_partial_utf8_are_bounded() {
+        let mut parser = vte::Parser::new();
+        let mut recorder = ParserBoundRecorder::default();
+        let mut parameters = b"\x1b[".to_vec();
+        parameters.extend_from_slice("1;".repeat(MAX_VTE_CSI_PARAMETERS + 8).as_bytes());
+        parameters.push(b'm');
+        parser.advance(&mut recorder, &parameters);
+        assert_eq!(recorder.parameters, MAX_VTE_CSI_PARAMETERS);
+        assert!(recorder.ignored);
+
+        recorder = ParserBoundRecorder::default();
+        parser.advance(&mut recorder, b"\x1b[!!!m");
+        assert_eq!(recorder.intermediates, MAX_VTE_INTERMEDIATES);
+        assert!(recorder.ignored);
+
+        recorder = ParserBoundRecorder::default();
+        for byte in "😀".as_bytes().chunks(1) {
+            parser.advance(&mut recorder, byte);
+        }
+        assert_eq!("😀".len(), MAX_UTF8_SCALAR_BYTES);
+        assert_eq!(recorder.printed, "😀");
+    }
+
+    #[test]
+    fn alacritty_title_stack_evicts_at_the_pinned_depth() {
+        let proxy = TitleEventProxy::default();
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, proxy.clone());
+        let mut parser: Processor = Processor::new();
+
+        for title in 0..=MAX_TITLE_STACK_DEPTH {
+            let sequence = format!("\x1b]0;{title}\x07\x1b[22t");
+            parser.advance(&mut term, sequence.as_bytes());
+        }
+        if let Ok(mut events) = proxy.0.lock() {
+            events.clear();
+        }
+
+        for _ in 0..=MAX_TITLE_STACK_DEPTH {
+            parser.advance(&mut term, b"\x1b[23t");
+        }
+
+        let events = proxy
+            .0
+            .lock()
+            .expect("title event lock should remain healthy");
+        assert_eq!(events.len(), MAX_TITLE_STACK_DEPTH);
+        assert_eq!(events.first().and_then(Option::as_deref), Some("4096"));
+        assert_eq!(events.last().and_then(Option::as_deref), Some("1"));
     }
 
     #[test]

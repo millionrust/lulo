@@ -88,14 +88,23 @@ retains at most 16 zero-width combining marks. Rebuilding an over-cap cell
 preserves its base character, colors, flags, underline color, and reviewed
 hyperlink metadata. This bounds the rare allocation immediately without a
 full-grid scan and works when UTF-8 is split across PTY reads.
+Session creation reserves exactly one named PTY reader and one named child
+waiter before launching the shell. Each uses an explicit 512 KiB stack, so the
+16-tab limit caps worker-stack reservation at 16 MiB per window. Thread
+reservation is fallible and private-safe; a missing worker produces an
+unavailable tab instead of panicking or launching an unsupervised child.
+Dependency-contract tests pin the remaining parser assumptions: VTE's
+synchronized-update heap buffer stops before 2 MiB, while its CSI parameters,
+intermediates, and partial UTF-8 state are fixed arrays. Alacritty evicts the
+oldest saved title at 4,096 entries, and Terminal's 1 KiB OSC ingress limit
+bounds each title payload.
 
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
 terminal mouse reporting, hyperlink policy, shell integration, per-tab
-selection/search/title state, hard bounds for title stacks, non-OSC parser
-buffers and thread resources, resize/write failure presentation depth,
-accessible terminal text semantics, Linux interaction/visual evidence, and
-measured Unicode/resident/idle/active performance.
+selection/search/title state, resize/write failure presentation depth, accessible
+terminal text semantics, Linux interaction/visual evidence, and measured
+Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -148,15 +157,16 @@ shell-integration protocol before they may be shown.
 - Primary/alternate base grid storage has a conservative 512 MiB per-window
   ceiling across every supported tab count. A cell retains at most 16 combining
   marks. OSC ingress is capped at 1 KiB, and unreviewed hyperlink metadata never
-  reaches the grid. Title stacks, non-OSC parser buffers, and thread resources
-  still need hard bounds before 1.0 evidence.
+  reaches the grid. Two 512 KiB-stack workers per tab, VTE's sub-2 MiB
+  synchronized-update buffer, fixed parser arrays, and Alacritty's 4,096-entry
+  title stack have explicit tested contracts.
 
 ## Failure states
 
-- PTY allocation, shell start, reader/writer setup, child wait, resize, write,
-  profile load/save, and termination each have a truthful unavailable or error
-  state. Raw private paths, environment values, commands, and output are not
-  exposed in those messages.
+- PTY allocation, bounded worker reservation, shell start, reader/writer setup,
+  child wait, resize, write, profile load/save, and termination each have a
+  truthful unavailable or error state. Raw private paths, environment values,
+  commands, and output are not exposed in those messages.
 - A shell exit is not an application crash. Existing output remains readable
   and a new tab remains available.
 - Writer failure disables misleading live input and exposes that the session is
@@ -218,6 +228,8 @@ bypass prevention, recovery to normal output, and OSC 8 refusal.
 Combining-allocation tests cover multiple independently styled cells, exact
 retention, wide-character targeting, a UTF-8 sequence split between reads, and
 ASCII CSI REP amplification of a prior combining scalar.
+Resource-contract tests cover the exact worker count/stack budget, VTE
+synchronized-update cutoff, and Alacritty title-stack eviction depth.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and

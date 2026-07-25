@@ -38,10 +38,11 @@ evidence remains gated by the reference-PC framework work.
   exact bounded legacy, UTF-8, or SGR cell reports for presses, balanced
   releases, cell motion, extended buttons, and vertical/horizontal wheels;
   Shift preserves local selection/context input, and alternate scroll emits
-  mode-correct cursor keys. IME, enhanced Kitty/keypad and focus-event input,
-  reviewed hyperlinks/shell-derived titles, accessibility, Linux interaction/
-  visual evidence, and measured Unicode/resident/idle/active performance keep
-  G3 partial.
+  mode-correct cursor keys. Parsed xterm 1004 focus reporting now follows exact
+  OS window activation and active-tab ownership without treating internal find
+  focus as a shell event. IME, enhanced Kitty/keypad input, reviewed hyperlinks/
+  shell-derived titles, accessibility, Linux interaction/visual evidence, and
+  measured Unicode/resident/idle/active performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

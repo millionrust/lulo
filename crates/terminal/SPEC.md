@@ -125,12 +125,19 @@ application has reporting enabled. Without mouse reporting, alternate-screen
 mode 1007 translates vertical wheel steps to mode-correct cursor keys; otherwise
 the wheel remains local scrollback. One-tab and multi-tab pointer coordinates
 now share the rendered title/tab/content offsets.
+Focus input now follows parsed xterm mode 1004. Operating-system activation and
+deactivation send exact `CSI I` and `CSI O` reports only to the current live
+session; selecting another tab transfers focus out of the old PTY and into the
+new one while the window is active. Re-selecting the current tab, internal find
+focus, and ordinary renders emit nothing. The three-byte static reports use the
+same truthful writer-failure path as keyboard, paste, and mouse input, and their
+successful path does not request a repaint.
 
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
-focus event reporting, hyperlink policy, shell integration, per-tab title
-authority, accessible terminal text semantics, Linux interaction/visual evidence,
-and measured Unicode/resident/idle/active performance.
+hyperlink policy, shell integration, per-tab title authority, accessible
+terminal text semantics, Linux interaction/visual evidence, and measured
+Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -141,8 +148,10 @@ and measured Unicode/resident/idle/active performance.
   or inconsistent identity is treated as potentially active, never as safe.
 - `alacritty_terminal` and `vte` own escape parsing, screen/scrollback state,
   cell flags, cursor position, and terminal modes.
-- GPUI owns window geometry, focus, keyboard/IME delivery, clipboard exchange,
-  pointer selection, and rendering.
+- GPUI owns window geometry, operating-system activation, internal focus,
+  keyboard/IME delivery, clipboard exchange, pointer selection, and rendering.
+  Only OS activation and explicit active-tab ownership reach xterm focus mode;
+  movement into Terminal's own find control does not.
 - `rmac-storage` owns the atomic local profile preference under
   `$XDG_CONFIG_HOME/rmac-terminal` or the documented platform fallback.
 
@@ -188,7 +197,7 @@ shell-integration protocol before they may be shown.
   synchronized-update buffer, fixed parser arrays, and Alacritty's 4,096-entry
   title stack have explicit tested contracts. Mouse coordinates are limited by
   their selected wire encoding, and one input event can create at most 32 wheel
-  reports across both axes.
+  reports across both axes. Focus reports are static three-byte slices.
 
 ## Failure states
 
@@ -239,6 +248,17 @@ framework acceptance gates.
   alternate screen with 1007 but no mouse tracking, vertical wheel input sends
   cursor Up/Down; otherwise the wheel navigates local scrollback.
 
+## Focus map
+
+- Parsed mode 1004 is the sole authority for emitting focus reports.
+- Window activation emits `CSI I`; deactivation emits `CSI O`.
+- While the window is active, changing tabs emits focus-out to the prior live
+  session and focus-in to the newly active live session. Closing an active tab
+  does not write to the terminating session, but the surviving active tab gets
+  focus-in.
+- Find, menus, and other internal controls do not masquerade as operating-system
+  window activation changes.
+
 ## Visual and accessibility states
 
 - Toolbar, tabs, active/inactive/hover/focus states, profile picker, context
@@ -284,13 +304,17 @@ buttons, drag/all-motion mode selection, fractional wheel accumulation, and the
 per-event report ceiling. Runtime routing preserves Shift-local selection,
 same-cell suppression, outside-release state, and input-failure
 visibility without repainting ordinary application motion.
+Focus contract tests parse mode 1004 directly and prove exact enable/disable and
+static focus-in/focus-out bytes. Runtime routing deduplicates OS activation,
+transfers active-tab ownership, refuses exited sessions, and uses the tested
+permanent writer-failure state without scheduling ordinary success redraws.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and
 [bracketed-paste](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode)
 and
 [mouse-tracking](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Mouse-Tracking)
-contracts.
+contracts, including focus events.
 Native
 Ubuntu/niri evidence must additionally cover Bash and another supported shell,
 `vim`/`less`/`top`, Unicode and IME, rapid output, scrollback, large paste,

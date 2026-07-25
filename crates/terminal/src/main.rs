@@ -90,6 +90,8 @@ const MAX_UTF8_SCALAR_BYTES: usize = 4;
 const MAX_TITLE_STACK_DEPTH: usize = 4096;
 const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
 const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
+const FOCUS_IN_REPORT: &[u8] = b"\x1b[I";
+const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// A macOS Terminal–style color profile: window chrome + 16-color ANSI palette.
@@ -771,6 +773,14 @@ fn encode_key(keystroke: &gpui::Keystroke, mode: TermMode) -> Vec<u8> {
         bytes.insert(0, 0x1b);
     }
     bytes
+}
+
+fn focus_report(mode: TermMode, focused: bool) -> Option<&'static [u8]> {
+    mode.contains(TermMode::FOCUS_IN_OUT).then_some(if focused {
+        FOCUS_IN_REPORT
+    } else {
+        FOCUS_OUT_REPORT
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1615,6 +1625,8 @@ struct TerminalView {
     line_h: f32,
     cell_w: f32,
     focus: FocusHandle,
+    /// Last operating-system activation state observed for this window.
+    window_active: bool,
     /// One visible editor is synchronized with the active tab's bounded query.
     search: Entity<InputState>,
     /// True while the mouse button is held during a drag-select.
@@ -1728,6 +1740,11 @@ impl TerminalView {
 
         let focus = cx.focus_handle();
         window.focus(&focus);
+        let window_active = window.is_window_active();
+        cx.observe_window_activation(window, |this, window, cx| {
+            this.handle_window_activation(window.is_window_active(), cx);
+        })
+        .detach();
         let (profile, persistence_error) = match load_profile() {
             Ok((profile, legacy_index)) => {
                 let migration_error = legacy_index
@@ -1760,6 +1777,7 @@ impl TerminalView {
             line_h: LINE_H,
             cell_w: CELL_W,
             focus,
+            window_active,
             search,
             selecting: false,
             scroll_accum: 0.0,
@@ -1799,6 +1817,49 @@ impl TerminalView {
         self.mouse_wheel_y_accum = 0.0;
         self.reported_mouse_press = None;
         self.last_mouse_report_cell = None;
+    }
+
+    fn report_focus_for_session(
+        &mut self,
+        index: usize,
+        focused: bool,
+    ) -> Result<(), SessionWriteError> {
+        if !self.tabs[index].accepts_input() {
+            return Ok(());
+        }
+        let report = {
+            let term = self.tabs[index]
+                .term
+                .lock()
+                .map_err(|_| SessionWriteError::State)?;
+            focus_report(*term.mode(), focused)
+        };
+        let Some(report) = report else {
+            return Ok(());
+        };
+        self.tabs[index].write(report)
+    }
+
+    /// Report one truthful focus transition without repainting the ordinary
+    /// success path. Returns whether visible failure state changed.
+    fn report_active_focus(&mut self, focused: bool) -> bool {
+        let was_live = self.tabs[self.active].accepts_input();
+        let result = self.report_focus_for_session(self.active, focused);
+        if matches!(result, Err(SessionWriteError::State)) {
+            self.operation_error = Some(SessionWriteError::State.to_string().into());
+        }
+        was_live != self.tabs[self.active].accepts_input()
+            || matches!(result, Err(SessionWriteError::State))
+    }
+
+    fn handle_window_activation(&mut self, active: bool, cx: &mut Context<Self>) {
+        if self.window_active == active {
+            return;
+        }
+        self.window_active = active;
+        if self.report_active_focus(active) {
+            cx.notify();
+        }
     }
 
     fn capture_active_search_query(&mut self, cx: &Context<Self>) {
@@ -1856,6 +1917,9 @@ impl TerminalView {
             cx.notify();
             return;
         }
+        if self.window_active {
+            let _ = self.report_active_focus(false);
+        }
         self.capture_active_search_query(cx);
         let (c, r) = (self.cols.max(MIN_COLS), self.rows.max(MIN_ROWS));
         self.tabs.push(
@@ -1865,6 +1929,9 @@ impl TerminalView {
         self.active = self.tabs.len() - 1;
         self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
+        if self.window_active {
+            let _ = self.report_active_focus(true);
+        }
         cx.notify();
     }
 
@@ -1911,6 +1978,7 @@ impl TerminalView {
         if self.tabs.len() <= 1 {
             return;
         }
+        let previous_active_id = self.tabs[self.active].id;
         self.capture_active_search_query(cx);
         self.tabs.remove(index);
         if self.active > index {
@@ -1921,6 +1989,9 @@ impl TerminalView {
         }
         self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
+        if self.window_active && self.tabs[self.active].id != previous_active_id {
+            let _ = self.report_active_focus(true);
+        }
         if let Err(error) = self.rebalance_scrollback() {
             self.operation_error = Some(error.to_string().into());
         }
@@ -2021,13 +2092,19 @@ impl TerminalView {
     }
 
     fn select_tab(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.modal_open() || i >= self.tabs.len() {
+        if self.modal_open() || i >= self.tabs.len() || i == self.active {
             return;
+        }
+        if self.window_active {
+            let _ = self.report_active_focus(false);
         }
         self.capture_active_search_query(cx);
         self.active = i;
         self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
+        if self.window_active {
+            let _ = self.report_active_focus(true);
+        }
         cx.notify();
     }
 
@@ -3624,6 +3701,8 @@ mod tests {
         assert_eq!(MAX_LEGACY_MOUSE_COORD, 223);
         assert_eq!(MAX_UTF8_MOUSE_COORD, 2015);
         assert_eq!(MAX_WHEEL_REPORTS_PER_AXIS, 16);
+        assert_eq!(FOCUS_IN_REPORT.len(), 3);
+        assert_eq!(FOCUS_OUT_REPORT.len(), 3);
         assert_eq!(MAX_TABS, 16);
         assert_eq!(SESSION_WORKERS_PER_TAB, 2);
         assert_eq!(SESSION_WORKER_STACK_BYTES, 512 * 1024);
@@ -3669,6 +3748,25 @@ mod tests {
 
         parser.advance(&mut handler, b"x");
         assert_eq!(parser.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn focus_reports_follow_the_parsed_xterm_mode() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+
+        assert_eq!(focus_report(*term.mode(), true), None);
+        assert_eq!(focus_report(*term.mode(), false), None);
+
+        parser.advance(&mut term, b"\x1b[?1004h");
+        assert!(term.mode().contains(TermMode::FOCUS_IN_OUT));
+        assert_eq!(focus_report(*term.mode(), true), Some(FOCUS_IN_REPORT));
+        assert_eq!(focus_report(*term.mode(), false), Some(FOCUS_OUT_REPORT));
+
+        parser.advance(&mut term, b"\x1b[?1004l");
+        assert!(!term.mode().contains(TermMode::FOCUS_IN_OUT));
+        assert_eq!(focus_report(*term.mode(), true), None);
     }
 
     #[test]

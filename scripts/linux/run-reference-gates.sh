@@ -51,15 +51,20 @@ preflight_args=(
   --expected-desktop "$expected_desktop"
   --minimum-free-gib 25
   --require-command bash
+  --require-command busctl
   --require-command cargo
   --require-command cargo-deny
   --require-command git
   --require-command python3
   --require-command rustc
+  --require-command systemctl
   --require-command timeout
   --require-command vulkaninfo
   --require-command wayland-info
 )
+if [[ "$expected_desktop" == niri ]]; then
+  preflight_args+=(--require-command niri)
+fi
 if [[ "$run_upstream_smoke" == true ]]; then
   preflight_args+=(
     --require-command dbus-run-session

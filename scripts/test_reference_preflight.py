@@ -29,6 +29,11 @@ def passing_host(**overrides):
             "deviceName = Example GPU"
         ),
         "worktree_clean": True,
+        "portal_service_active": True,
+        "portal_bus_owned": True,
+        "manager_environment_matches": True,
+        "niri_ipc_succeeded": True,
+        "niri_enabled_outputs": 1,
     }
     values.update(overrides)
     return reference_preflight.HostSnapshot(**values)
@@ -100,6 +105,48 @@ class ReferencePreflightTests(unittest.TestCase):
             failures,
         )
 
+    def test_rejects_missing_portal_frontend_authorities(self):
+        failures = evaluate(
+            passing_host(
+                portal_service_active=False,
+                portal_bus_owned=False,
+            )
+        )
+        self.assertIn("xdg-desktop-portal.service is not active", failures)
+        self.assertIn(
+            "the desktop portal frontend does not own its session-bus name",
+            failures,
+        )
+
+    def test_niri_gate_requires_manager_environment_ipc_and_enabled_output(self):
+        failures = evaluate(
+            passing_host(
+                current_desktop="rmac:niri",
+                manager_environment_matches=False,
+                niri_ipc_succeeded=False,
+                niri_enabled_outputs=0,
+            ),
+            expected_desktop="niri",
+        )
+        self.assertIn(
+            "the user-manager graphical routing environment is stale",
+            failures,
+        )
+        self.assertIn(
+            "niri IPC did not return a valid bounded output snapshot",
+            failures,
+        )
+
+        failures = evaluate(
+            passing_host(
+                current_desktop="rmac:niri",
+                niri_ipc_succeeded=True,
+                niri_enabled_outputs=0,
+            ),
+            expected_desktop="niri",
+        )
+        self.assertIn("niri reports no enabled output", failures)
+
     def test_desktop_tokens_are_exact_not_substring_matches(self):
         self.assertEqual(
             reference_preflight.desktop_tokens("rmac:niri;GNOME"),
@@ -107,6 +154,45 @@ class ReferencePreflightTests(unittest.TestCase):
         )
         failures = evaluate(passing_host(current_desktop="not-gnome"))
         self.assertIn("the untouched GNOME Wayland session is required", failures)
+
+    def test_manager_environment_compares_only_exact_required_routing_values(self):
+        environment = {
+            "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+            "NIRI_SOCKET": "/run/user/1000/niri.sock",
+            "WAYLAND_DISPLAY": "wayland-1",
+            "XDG_CURRENT_DESKTOP": "rmac:niri",
+            "XDG_RUNTIME_DIR": "/run/user/1000",
+            "XDG_SESSION_ID": "9",
+            "XDG_SESSION_TYPE": "wayland",
+        }
+        output = (
+            "\n".join(f"{key}={value}" for key, value in environment.items())
+            + "\nPRIVATE_TOKEN=not-inspected\n"
+        )
+        self.assertTrue(
+            reference_preflight.manager_environment_matches(output, environment)
+        )
+        self.assertFalse(
+            reference_preflight.manager_environment_matches(
+                output.replace("WAYLAND_DISPLAY=wayland-1", "WAYLAND_DISPLAY=wayland-0"),
+                environment,
+            )
+        )
+
+    def test_niri_output_parser_counts_enabled_and_rejects_malformed_geometry(self):
+        output = """
+        {
+          "DP-1": {"logical": {"width": 1920, "height": 1080}},
+          "DP-2": {"logical": null}
+        }
+        """
+        self.assertEqual(reference_preflight.niri_enabled_output_count(output), 1)
+        self.assertIsNone(
+            reference_preflight.niri_enabled_output_count(
+                '{"DP-1":{"logical":{"width":0,"height":1080}}}'
+            )
+        )
+        self.assertIsNone(reference_preflight.niri_enabled_output_count("[]"))
 
 
 if __name__ == "__main__":

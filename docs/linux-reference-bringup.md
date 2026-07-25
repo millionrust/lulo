@@ -75,11 +75,12 @@ bash scripts/linux/run-reference-gates.sh --with-upstream-smoke
 
 The preflight refuses non-Linux and root execution, X11, a non-GNOME baseline,
 missing Wayland/Vulkan tools, llvmpipe/lavapipe and other software renderers,
-tracked worktree edits, or less than 25 GiB of build headroom. The full command
-rechecks 25 GiB before expensive Cargo/smoke/performance builds and stops later
-gates if the machine reaches the 15 GiB floor. It stores non-serial hardware,
-session, Wayland, Vulkan, accessibility, portal, package, harness-test, Clippy,
-test, policy, and nested-smoke evidence under ignored
+tracked worktree edits, an inactive/unowned desktop portal frontend, or less
+than 25 GiB of build headroom. The full command rechecks 25 GiB before
+expensive Cargo/smoke/performance builds and stops later gates if the machine
+reaches the 15 GiB floor. It stores non-serial hardware, session, Wayland,
+Vulkan, accessibility, portal, package, harness-test, Clippy, test, policy, and
+nested-smoke evidence under ignored
 `target/linux-evidence/<UTC timestamp>/`. Review the files before sharing them;
 the collector deliberately omits hostname, machine ID, and hardware serials.
 
@@ -133,7 +134,16 @@ echo "$XDG_CURRENT_DESKTOP"
 niri --version
 niri msg --json outputs | jq
 systemctl --user --no-pager status xdg-desktop-portal.service
+bash scripts/linux/run-reference-gates.sh --session niri --preflight-only
 ```
+
+The niri preflight additionally requires exact current-to-user-manager values
+for the allow-listed graphical routing environment, valid bounded niri output
+JSON with at least one enabled logical output, the active portal service, and
+ownership of `org.freedesktop.portal.Desktop`. It never prints the session ID,
+runtime paths, bus address, socket, output identity, or raw authority payload.
+Passing preflight proves only those session authorities; it does not replace
+the interaction lab or four-hour soak.
 
 Install the development supervisor and user units, then add the installed
 start command to niri's session startup configuration:

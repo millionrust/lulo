@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import platform
@@ -12,10 +13,11 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Mapping, Sequence
+from typing import Mapping, Optional, Sequence
 
 
 GIB = 1024**3
+MAX_AUTHORITY_OUTPUT_BYTES = 1024 * 1024
 HARDWARE_VULKAN_DEVICE = re.compile(
     r"PHYSICAL_DEVICE_TYPE_(?:INTEGRATED|DISCRETE)_GPU", re.IGNORECASE
 )
@@ -40,6 +42,11 @@ class HostSnapshot:
     vulkan_succeeded: bool
     vulkan_summary: str
     worktree_clean: bool
+    portal_service_active: bool
+    portal_bus_owned: bool
+    manager_environment_matches: bool
+    niri_ipc_succeeded: bool
+    niri_enabled_outputs: int
 
 
 def desktop_tokens(value: str) -> set[str]:
@@ -97,31 +104,25 @@ def evaluate_host(
 
     if not snapshot.worktree_clean:
         failures.append("tracked worktree changes make the evidence non-reproducible")
+    if not snapshot.portal_service_active:
+        failures.append("xdg-desktop-portal.service is not active")
+    if not snapshot.portal_bus_owned:
+        failures.append("the desktop portal frontend does not own its session-bus name")
+
+    if expected_desktop == "niri":
+        if not snapshot.manager_environment_matches:
+            failures.append("the user-manager graphical routing environment is stale")
+        if not snapshot.niri_ipc_succeeded:
+            failures.append("niri IPC did not return a valid bounded output snapshot")
+        elif snapshot.niri_enabled_outputs == 0:
+            failures.append("niri reports no enabled output")
     return failures
 
 
-def command_succeeded(command: Sequence[str], repo_root: Path) -> bool:
-    try:
-        return (
-            subprocess.run(
-                command,
-                cwd=repo_root,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=20,
-                check=False,
-            ).returncode
-            == 0
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-def vulkan_summary(repo_root: Path) -> tuple[bool, str]:
+def command_output(command: Sequence[str], repo_root: Path) -> tuple[bool, str]:
     try:
         result = subprocess.run(
-            ["vulkaninfo", "--summary"],
+            command,
             cwd=repo_root,
             stdin=subprocess.DEVNULL,
             capture_output=True,
@@ -131,10 +132,75 @@ def vulkan_summary(repo_root: Path) -> tuple[bool, str]:
         )
     except (OSError, subprocess.TimeoutExpired):
         return False, ""
-    return result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    output_bytes = len(result.stdout.encode("utf-8")) + len(
+        result.stderr.encode("utf-8")
+    )
+    if output_bytes > MAX_AUTHORITY_OUTPUT_BYTES:
+        return False, ""
+    return result.returncode == 0, result.stdout
 
 
-def capture_host(repo_root: Path, required_commands: Sequence[str]) -> HostSnapshot:
+def command_succeeded(command: Sequence[str], repo_root: Path) -> bool:
+    succeeded, _ = command_output(command, repo_root)
+    return succeeded
+
+
+def vulkan_summary(repo_root: Path) -> tuple[bool, str]:
+    return command_output(["vulkaninfo", "--summary"], repo_root)
+
+
+def manager_environment_matches(output: str, environment: Mapping[str, str]) -> bool:
+    required = (
+        "DBUS_SESSION_BUS_ADDRESS",
+        "NIRI_SOCKET",
+        "WAYLAND_DISPLAY",
+        "XDG_CURRENT_DESKTOP",
+        "XDG_RUNTIME_DIR",
+        "XDG_SESSION_ID",
+        "XDG_SESSION_TYPE",
+    )
+    observed: dict[str, str] = {}
+    for line in output.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key in required:
+            observed[key] = value
+    return all(
+        environment.get(key, "") and observed.get(key) == environment[key]
+        for key in required
+    )
+
+
+def niri_enabled_output_count(output: str) -> Optional[int]:
+    try:
+        document = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(document, dict):
+        return None
+    enabled = 0
+    for value in document.values():
+        if not isinstance(value, dict):
+            return None
+        logical = value.get("logical")
+        if logical is None:
+            continue
+        if (
+            not isinstance(logical, dict)
+            or not isinstance(logical.get("width"), int)
+            or not isinstance(logical.get("height"), int)
+            or logical["width"] <= 0
+            or logical["height"] <= 0
+        ):
+            return None
+        enabled += 1
+    return enabled
+
+
+def capture_host(
+    repo_root: Path,
+    required_commands: Sequence[str],
+    expected_desktop: str,
+) -> HostSnapshot:
     commands = {command: shutil.which(command) is not None for command in required_commands}
     vulkan_succeeded, summary = vulkan_summary(repo_root)
     clean = command_succeeded(
@@ -143,6 +209,36 @@ def capture_host(repo_root: Path, required_commands: Sequence[str]) -> HostSnaps
         ["git", "diff", "--cached", "--quiet", "--ignore-submodules", "--"],
         repo_root,
     )
+    portal_service_active = command_succeeded(
+        [
+            "systemctl",
+            "--user",
+            "is-active",
+            "--quiet",
+            "xdg-desktop-portal.service",
+        ],
+        repo_root,
+    )
+    portal_bus_owned = command_succeeded(
+        ["busctl", "--user", "status", "org.freedesktop.portal.Desktop"],
+        repo_root,
+    )
+    manager_matches = False
+    niri_ipc_succeeded = False
+    enabled_outputs = 0
+    if expected_desktop == "niri":
+        manager_succeeded, manager_output = command_output(
+            ["systemctl", "--user", "show-environment"], repo_root
+        )
+        manager_matches = manager_succeeded and manager_environment_matches(
+            manager_output, os.environ
+        )
+        niri_succeeded, niri_output = command_output(
+            ["niri", "msg", "--json", "outputs"], repo_root
+        )
+        parsed_outputs = niri_enabled_output_count(niri_output) if niri_succeeded else None
+        niri_ipc_succeeded = parsed_outputs is not None
+        enabled_outputs = parsed_outputs or 0
     return HostSnapshot(
         kernel=platform.system(),
         effective_uid=os.geteuid(),
@@ -154,6 +250,11 @@ def capture_host(repo_root: Path, required_commands: Sequence[str]) -> HostSnaps
         vulkan_succeeded=vulkan_succeeded,
         vulkan_summary=summary,
         worktree_clean=clean,
+        portal_service_active=portal_service_active,
+        portal_bus_owned=portal_bus_owned,
+        manager_environment_matches=manager_matches,
+        niri_ipc_succeeded=niri_ipc_succeeded,
+        niri_enabled_outputs=enabled_outputs,
     )
 
 
@@ -186,7 +287,7 @@ def main() -> int:
         return 2
 
     required_commands = tuple(dict.fromkeys(args.required_commands))
-    snapshot = capture_host(repo_root, required_commands)
+    snapshot = capture_host(repo_root, required_commands, args.expected_desktop)
     failures = evaluate_host(
         snapshot,
         expected_desktop=args.expected_desktop,

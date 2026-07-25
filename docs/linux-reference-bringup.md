@@ -107,6 +107,15 @@ Enable Orca and repeat the keyboard journey. The stable GPUI 0.2.2 lab is
 expected to expose the documented accessibility gap; capture the failure
 precisely rather than marking the whole application “broken.”
 
+Use the result controls on every lab card. “Confirm blocker” records that the
+known stable-API limitation was reproduced; it is not a passing accessibility
+or layer-shell result. Copy the redacted report only after every card has a
+result and pair it with the reviewed collector output. A report containing
+`recording_complete=false`, `exercisable_probes_passed=false`, any `pending`
+result, or a failed required probe cannot satisfy A2. A confirmed expected
+blocker records the known limitation rather than turning it into a pass. The
+report deliberately omits input, clipboard, path, display, and session content.
+
 ## 5. Add niri without removing GNOME
 
 Use niri 26.04 as the shell-development compositor. Prefer a trusted

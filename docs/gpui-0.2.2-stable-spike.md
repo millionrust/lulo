@@ -17,8 +17,9 @@ cargo run -p rmac-platform-lab
 ## Automated checks
 
 The lab tests ensure its capability IDs remain unique, all core desktop probes
-remain represented, and the stable-API blockers are not accidentally marked as
-working without evidence.
+remain represented, the stable-API blockers are not accidentally marked as
+working without evidence, and the deterministic result report stays below
+4 KiB without private probe content.
 
 ```sh
 cargo test -p rmac-platform-lab
@@ -39,6 +40,15 @@ Wayland. Record OS, compositor, GPU, scale, and input method.
 8. Repeat at 100%, 125%, 150%, and 200% scaling.
 9. Suspend/resume and repeat clipboard and input checks.
 10. Leave the lab idle for ten minutes and measure CPU/wakeups.
+
+Record each card as Pass or Fail. For the two stable-API blockers, “Confirm
+blocker” means the expected missing accessibility/layer-shell authority was
+reproduced; it never means the capability passed. Pending remains visibly
+incomplete. “Copy redacted report” writes a deterministic, bounded report with
+only OS, architecture, probe IDs, completion state, and results. It contains no
+typed text, clipboard body, file name, path, display identity, or environment
+value. Pair it with the separately reviewed environment evidence rather than
+adding private facts to the report.
 
 The lab compares the built-in clipboard probe without retaining clipboard
 content, reduces other clipboard reads to a content-hidden status, and retains

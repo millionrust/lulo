@@ -4,6 +4,8 @@
 //! ports product applications to Linux. It intentionally stays small and does
 //! not contain product behavior.
 
+use std::fmt::Write as _;
+
 use gpui::{
     div, px, AppContext as _, ClipboardItem, Context, Entity, ExternalPaths,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement, PathPromptOptions, Render,
@@ -88,6 +90,30 @@ const CAPABILITIES: &[Capability] = &[
         instruction: "Scroll the list and check it at 100%, 125%, 150%, and 200%.",
     },
     Capability {
+        id: "display-lifecycle",
+        name: "Mixed-scale display lifecycle",
+        status: CapabilityStatus::ExerciseHere,
+        instruction: "Move between differently scaled displays, then disconnect and reconnect one.",
+    },
+    Capability {
+        id: "keyboard-focus",
+        name: "Keyboard shortcuts and focus",
+        status: CapabilityStatus::ExerciseHere,
+        instruction: "Use Tab/Shift-Tab and every shortcut; verify focus remains visible.",
+    },
+    Capability {
+        id: "suspend-resume",
+        name: "Suspend and resume",
+        status: CapabilityStatus::ExerciseHere,
+        instruction: "Suspend with the lab open, resume, then repeat input and clipboard.",
+    },
+    Capability {
+        id: "idle",
+        name: "Idle CPU and redraw behavior",
+        status: CapabilityStatus::ExerciseHere,
+        instruction: "Leave the lab untouched for ten minutes and measure CPU and wakeups.",
+    },
+    Capability {
         id: "accessibility",
         name: "Programmatic accessibility",
         status: CapabilityStatus::MissingFromStableApi,
@@ -101,12 +127,112 @@ const CAPABILITIES: &[Capability] = &[
     },
 ];
 
+const CAPABILITY_COUNT: usize = CAPABILITIES.len();
+const MAX_EVIDENCE_REPORT_BYTES: usize = 4096;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum ProbeResult {
+    #[default]
+    Pending,
+    Passed,
+    Failed,
+    BlockerConfirmed,
+}
+
+impl ProbeResult {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Pending => "PENDING",
+            Self::Passed => "PASS",
+            Self::Failed => "FAIL",
+            Self::BlockerConfirmed => "BLOCKER CONFIRMED",
+        }
+    }
+
+    fn report_value(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Passed => "pass",
+            Self::Failed => "fail",
+            Self::BlockerConfirmed => "blocker-confirmed",
+        }
+    }
+
+    fn color(self) -> gpui::Hsla {
+        match self {
+            Self::Pending => gpui::rgb(0x6e6e73).into(),
+            Self::Passed => gpui::rgb(0x248a3d).into(),
+            Self::Failed => gpui::rgb(0xc9342f).into(),
+            Self::BlockerConfirmed => gpui::rgb(0xb35c00).into(),
+        }
+    }
+}
+
+fn positive_result(capability: Capability) -> ProbeResult {
+    match capability.status {
+        CapabilityStatus::ExerciseHere => ProbeResult::Passed,
+        CapabilityStatus::MissingFromStableApi => ProbeResult::BlockerConfirmed,
+    }
+}
+
+fn recorded_result_count(results: &[ProbeResult; CAPABILITY_COUNT]) -> usize {
+    results
+        .iter()
+        .filter(|result| **result != ProbeResult::Pending)
+        .count()
+}
+
+fn evidence_report(results: &[ProbeResult; CAPABILITY_COUNT]) -> String {
+    let recorded = recorded_result_count(results);
+    let exercisable_probes_passed = CAPABILITIES
+        .iter()
+        .zip(results)
+        .filter(|(capability, _)| capability.status == CapabilityStatus::ExerciseHere)
+        .all(|(_, result)| *result == ProbeResult::Passed);
+    let expected_blockers_confirmed = CAPABILITIES
+        .iter()
+        .zip(results)
+        .filter(|(capability, _)| capability.status == CapabilityStatus::MissingFromStableApi)
+        .all(|(_, result)| *result == ProbeResult::BlockerConfirmed);
+    let mut report = String::with_capacity(1024);
+    writeln!(report, "rmac-platform-lab-report=1").unwrap();
+    writeln!(report, "os={}", std::env::consts::OS).unwrap();
+    writeln!(report, "arch={}", std::env::consts::ARCH).unwrap();
+    writeln!(
+        report,
+        "recording_complete={}",
+        recorded == CAPABILITY_COUNT
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "exercisable_probes_passed={exercisable_probes_passed}"
+    )
+    .unwrap();
+    writeln!(
+        report,
+        "expected_blockers_confirmed={expected_blockers_confirmed}"
+    )
+    .unwrap();
+    writeln!(report, "recorded={recorded}/{CAPABILITY_COUNT}").unwrap();
+    for (capability, result) in CAPABILITIES.iter().zip(results) {
+        let kind = match capability.status {
+            CapabilityStatus::ExerciseHere => "probe",
+            CapabilityStatus::MissingFromStableApi => "blocker",
+        };
+        writeln!(report, "{kind}.{}={}", capability.id, result.report_value()).unwrap();
+    }
+    debug_assert!(report.len() <= MAX_EVIDENCE_REPORT_BYTES);
+    report
+}
+
 struct PlatformLab {
     input: Entity<InputState>,
     event: SharedString,
     file_selected: bool,
     dropped_path_count: usize,
     clipboard_result: ClipboardProbeResult,
+    probe_results: [ProbeResult; CAPABILITY_COUNT],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -173,6 +299,7 @@ impl PlatformLab {
             file_selected: false,
             dropped_path_count: 0,
             clipboard_result: ClipboardProbeResult::NotRead,
+            probe_results: [ProbeResult::Pending; CAPABILITY_COUNT],
         }
     }
 
@@ -221,6 +348,34 @@ impl PlatformLab {
             });
         })
         .detach();
+    }
+
+    fn set_probe_result(&mut self, index: usize, result: ProbeResult, cx: &mut Context<Self>) {
+        let Some(slot) = self.probe_results.get_mut(index) else {
+            self.event = "Ignored an invalid evidence-result index".into();
+            cx.notify();
+            return;
+        };
+        *slot = result;
+        let recorded = recorded_result_count(&self.probe_results);
+        self.event = format!("Recorded {recorded} of {CAPABILITY_COUNT} evidence results").into();
+        cx.notify();
+    }
+
+    fn copy_evidence_report(&mut self, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(ClipboardItem::new_string(evidence_report(
+            &self.probe_results,
+        )));
+        let recorded = recorded_result_count(&self.probe_results);
+        self.event =
+            format!("Redacted report copied — {recorded} of {CAPABILITY_COUNT} recorded").into();
+        cx.notify();
+    }
+
+    fn reset_evidence_report(&mut self, cx: &mut Context<Self>) {
+        self.probe_results.fill(ProbeResult::Pending);
+        self.event = "Evidence results reset to pending".into();
+        cx.notify();
     }
 
     fn render_probe_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -338,14 +493,43 @@ impl PlatformLab {
             )
     }
 
-    fn render_capabilities(&self) -> impl IntoElement {
+    fn render_capabilities(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let recorded = recorded_result_count(&self.probe_results);
         div()
+            .id("capability-results")
             .w(px(390.0))
             .min_w(px(300.0))
+            .h_full()
+            .overflow_y_scroll()
             .v_flex()
             .gap_3()
             .child(section_title("Stable GPUI 0.2.2 capability gate"))
-            .children(CAPABILITIES.iter().map(|capability| {
+            .child(value(format!(
+                "{recorded} of {CAPABILITY_COUNT} results recorded; pending is never a pass"
+            )))
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        Button::new("copy-evidence-report")
+                            .label("Copy redacted report")
+                            .with_size(gpui_component::Size::Small)
+                            .on_click(cx.listener(|this, _, _, cx| this.copy_evidence_report(cx))),
+                    )
+                    .child(
+                        Button::new("reset-evidence-report")
+                            .label("Reset")
+                            .with_size(gpui_component::Size::Small)
+                            .on_click(cx.listener(|this, _, _, cx| this.reset_evidence_report(cx))),
+                    ),
+            )
+            .children(CAPABILITIES.iter().enumerate().map(|(index, capability)| {
+                let result = self.probe_results[index];
+                let positive_label = match capability.status {
+                    CapabilityStatus::ExerciseHere => "Pass",
+                    CapabilityStatus::MissingFromStableApi => "Confirm blocker",
+                };
                 div()
                     .v_flex()
                     .gap_1()
@@ -356,10 +540,8 @@ impl PlatformLab {
                     .bg(mac::window())
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap_2()
+                            .v_flex()
+                            .gap_1()
                             .child(
                                 div()
                                     .text_size(px(13.0))
@@ -369,17 +551,67 @@ impl PlatformLab {
                             )
                             .child(
                                 div()
-                                    .px_2()
-                                    .py(px(2.0))
-                                    .rounded_full()
-                                    .bg(capability.status.color())
-                                    .text_color(gpui::white())
-                                    .text_size(px(9.0))
-                                    .font_weight(mac::BOLD)
-                                    .child(capability.status.label()),
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py(px(2.0))
+                                            .rounded_full()
+                                            .bg(capability.status.color())
+                                            .text_color(gpui::white())
+                                            .text_size(px(9.0))
+                                            .font_weight(mac::BOLD)
+                                            .child(capability.status.label()),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py(px(2.0))
+                                            .rounded_full()
+                                            .bg(result.color())
+                                            .text_color(gpui::white())
+                                            .text_size(px(9.0))
+                                            .font_weight(mac::BOLD)
+                                            .child(result.label()),
+                                    ),
                             ),
                     )
                     .child(value(capability.instruction))
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .child(
+                                Button::new(SharedString::from(format!("probe-positive-{index}")))
+                                    .label(positive_label)
+                                    .with_size(gpui_component::Size::XSmall)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_probe_result(
+                                            index,
+                                            positive_result(CAPABILITIES[index]),
+                                            cx,
+                                        )
+                                    })),
+                            )
+                            .child(
+                                Button::new(SharedString::from(format!("probe-failed-{index}")))
+                                    .label("Fail")
+                                    .with_size(gpui_component::Size::XSmall)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_probe_result(index, ProbeResult::Failed, cx)
+                                    })),
+                            )
+                            .child(
+                                Button::new(SharedString::from(format!("probe-pending-{index}")))
+                                    .label("Pending")
+                                    .with_size(gpui_component::Size::XSmall)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.set_probe_result(index, ProbeResult::Pending, cx)
+                                    })),
+                            ),
+                    )
             }))
     }
 }
@@ -405,7 +637,7 @@ impl Render for PlatformLab {
                     .p_5()
                     .overflow_hidden()
                     .child(self.render_probe_panel(cx))
-                    .child(self.render_capabilities()),
+                    .child(self.render_capabilities(cx)),
             )
             .child(
                 div()
@@ -478,6 +710,7 @@ mod tests {
                 .find(|capability| capability.id == id)
                 .expect("required gate exists");
             assert_eq!(capability.status, CapabilityStatus::MissingFromStableApi);
+            assert_eq!(positive_result(*capability), ProbeResult::BlockerConfirmed);
         }
     }
 
@@ -490,6 +723,10 @@ mod tests {
             "file-dialog",
             "file-drop",
             "scroll-scale",
+            "display-lifecycle",
+            "keyboard-focus",
+            "suspend-resume",
+            "idle",
         ] {
             let capability = CAPABILITIES
                 .iter()
@@ -517,5 +754,58 @@ mod tests {
             dropped_paths_summary(2),
             "2 external paths received; paths hidden"
         );
+    }
+
+    #[test]
+    fn evidence_report_is_bounded_ordered_and_pending_by_default() {
+        let report = evidence_report(&[ProbeResult::Pending; CAPABILITY_COUNT]);
+
+        assert!(report.starts_with("rmac-platform-lab-report=1\n"));
+        assert!(report.contains("recording_complete=false\n"));
+        assert!(report.contains("exercisable_probes_passed=false\n"));
+        assert!(report.contains("expected_blockers_confirmed=false\n"));
+        assert!(report.contains(&format!("recorded=0/{CAPABILITY_COUNT}\n")));
+        assert!(report.contains("probe.input=pending\n"));
+        assert!(report.contains("blocker.accessibility=pending\n"));
+        assert!(report.len() <= MAX_EVIDENCE_REPORT_BYTES);
+        for private in ["/home/", "/Users/", "clipboard probe ✓"] {
+            assert!(!report.contains(private));
+        }
+    }
+
+    #[test]
+    fn complete_report_distinguishes_pass_fail_and_confirmed_blockers() {
+        let mut results = [ProbeResult::Passed; CAPABILITY_COUNT];
+        let accessibility = CAPABILITIES
+            .iter()
+            .position(|capability| capability.id == "accessibility")
+            .unwrap();
+        let layer_shell = CAPABILITIES
+            .iter()
+            .position(|capability| capability.id == "layer-shell")
+            .unwrap();
+        let clipboard = CAPABILITIES
+            .iter()
+            .position(|capability| capability.id == "clipboard")
+            .unwrap();
+        results[accessibility] = ProbeResult::BlockerConfirmed;
+        results[layer_shell] = ProbeResult::BlockerConfirmed;
+
+        let passing_report = evidence_report(&results);
+        assert!(passing_report.contains("recording_complete=true\n"));
+        assert!(passing_report.contains("exercisable_probes_passed=true\n"));
+        assert!(passing_report.contains("expected_blockers_confirmed=true\n"));
+
+        results[clipboard] = ProbeResult::Failed;
+        let failed_report = evidence_report(&results);
+        assert!(failed_report.contains("recording_complete=true\n"));
+        assert!(failed_report.contains("exercisable_probes_passed=false\n"));
+        assert!(failed_report.contains("expected_blockers_confirmed=true\n"));
+        assert!(
+            failed_report.contains(&format!("recorded={CAPABILITY_COUNT}/{CAPABILITY_COUNT}\n"))
+        );
+        assert!(failed_report.contains("probe.clipboard=fail\n"));
+        assert!(failed_report.contains("blocker.accessibility=blocker-confirmed\n"));
+        assert!(failed_report.contains("blocker.layer-shell=blocker-confirmed\n"));
     }
 }

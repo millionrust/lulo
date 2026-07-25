@@ -40,6 +40,13 @@ Wayland. Record OS, compositor, GPU, scale, and input method.
 9. Suspend/resume and repeat clipboard and input checks.
 10. Leave the lab idle for ten minutes and measure CPU/wakeups.
 
+The lab compares the built-in clipboard probe without retaining clipboard
+content, reduces other clipboard reads to a content-hidden status, and retains
+only whether a chooser succeeded or how many paths were dropped. File names and
+paths are never rendered into screenshots or ordinary diagnostics. Use
+disposable probe files anyway; the platform chooser and drag source remain
+outside the lab's authority.
+
 ## Stable API findings
 
 Source inspection of the published GPUI 0.2.2 crate found normal Wayland/X11

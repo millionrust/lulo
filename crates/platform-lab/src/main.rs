@@ -4,8 +4,6 @@
 //! ports product applications to Linux. It intentionally stays small and does
 //! not contain product behavior.
 
-use std::path::PathBuf;
-
 use gpui::{
     div, px, AppContext as _, ClipboardItem, Context, Entity, ExternalPaths,
     InteractiveElement as _, IntoElement, KeyBinding, ParentElement, PathPromptOptions, Render,
@@ -106,9 +104,45 @@ const CAPABILITIES: &[Capability] = &[
 struct PlatformLab {
     input: Entity<InputState>,
     event: SharedString,
-    selected_path: Option<PathBuf>,
-    dropped_paths: Vec<PathBuf>,
-    clipboard_value: Option<String>,
+    file_selected: bool,
+    dropped_path_count: usize,
+    clipboard_result: ClipboardProbeResult,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum ClipboardProbeResult {
+    #[default]
+    NotRead,
+    ExactProbe,
+    OtherText,
+    NoText,
+}
+
+impl ClipboardProbeResult {
+    fn summary(self) -> &'static str {
+        match self {
+            Self::NotRead => "No clipboard text read",
+            Self::ExactProbe => "Built-in clipboard probe matched exactly",
+            Self::OtherText => "Clipboard text received; content hidden",
+            Self::NoText => "Clipboard did not contain text",
+        }
+    }
+}
+
+fn selected_file_summary(selected: bool) -> &'static str {
+    if selected {
+        "One file selected; path hidden"
+    } else {
+        "No file selected"
+    }
+}
+
+fn dropped_paths_summary(count: usize) -> String {
+    match count {
+        0 => "No external files dropped".to_string(),
+        1 => "One external path received; path hidden".to_string(),
+        count => format!("{count} external paths received; paths hidden"),
+    }
 }
 
 impl PlatformLab {
@@ -136,9 +170,9 @@ impl PlatformLab {
         Self {
             input,
             event: "Ready — work through every probe and record the result".into(),
-            selected_path: None,
-            dropped_paths: Vec::new(),
-            clipboard_value: None,
+            file_selected: false,
+            dropped_path_count: 0,
+            clipboard_result: ClipboardProbeResult::NotRead,
         }
     }
 
@@ -149,12 +183,12 @@ impl PlatformLab {
     }
 
     fn read_probe(&mut self, cx: &mut Context<Self>) {
-        self.clipboard_value = cx.read_from_clipboard().and_then(|item| item.text());
-        self.event = if self.clipboard_value.is_some() {
-            "Clipboard text read successfully".into()
-        } else {
-            "Clipboard did not contain text".into()
+        self.clipboard_result = match cx.read_from_clipboard().and_then(|item| item.text()) {
+            Some(text) if text == CLIPBOARD_PROBE => ClipboardProbeResult::ExactProbe,
+            Some(_) => ClipboardProbeResult::OtherText,
+            None => ClipboardProbeResult::NoText,
         };
+        self.event = self.clipboard_result.summary().into();
         cx.notify();
     }
 
@@ -173,36 +207,20 @@ impl PlatformLab {
             let _ = this.update_in(cx, |this, _, cx| {
                 match outcome {
                     Ok(Ok(Some(paths))) => {
-                        this.selected_path = paths.into_iter().next();
+                        this.file_selected = !paths.is_empty();
                         this.event = "File chooser returned a path".into();
                     }
-                    Ok(Ok(None)) => this.event = "File chooser cancelled".into(),
-                    Ok(Err(error)) => {
-                        this.event = format!("File chooser error: {error}").into();
+                    Ok(Ok(None)) => {
+                        this.file_selected = false;
+                        this.event = "File chooser cancelled".into();
                     }
-                    Err(error) => {
-                        this.event = format!("File chooser channel error: {error}").into();
-                    }
+                    Ok(Err(_)) => this.event = "File chooser returned an error".into(),
+                    Err(_) => this.event = "File chooser channel closed unexpectedly".into(),
                 }
                 cx.notify();
             });
         })
         .detach();
-    }
-
-    fn path_summary(&self) -> String {
-        self.selected_path
-            .as_ref()
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "No file selected".to_string())
-    }
-
-    fn dropped_summary(&self) -> String {
-        match self.dropped_paths.as_slice() {
-            [] => "No external files dropped".to_string(),
-            [path] => path.display().to_string(),
-            paths => format!("{} paths; first: {}", paths.len(), paths[0].display()),
-        }
     }
 
     fn render_probe_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -250,11 +268,7 @@ impl PlatformLab {
                                     .on_click(cx.listener(|this, _, _, cx| this.read_probe(cx))),
                             ),
                     )
-                    .child(value(
-                        self.clipboard_value
-                            .clone()
-                            .unwrap_or_else(|| "No clipboard text read".to_string()),
-                    )),
+                    .child(value(self.clipboard_result.summary())),
             )
             .child(
                 div()
@@ -269,7 +283,7 @@ impl PlatformLab {
                                 cx.listener(|this, _, window, cx| this.open_probe(window, cx)),
                             ),
                     )
-                    .child(value(self.path_summary())),
+                    .child(value(selected_file_summary(self.file_selected))),
             )
             .child(
                 div()
@@ -289,13 +303,13 @@ impl PlatformLab {
                     .text_color(mac::text_secondary())
                     .drag_over::<ExternalPaths>(|style, _, _, _| style.bg(gpui::rgb(0xcfeaff)))
                     .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
-                        this.dropped_paths = paths.paths().to_vec();
+                        this.dropped_path_count = paths.paths().len();
                         this.event =
                             format!("Received {} dropped path(s)", paths.paths().len()).into();
                         cx.notify();
                     }))
                     .child("Drop files here from the system file manager")
-                    .child(value(self.dropped_summary())),
+                    .child(value(dropped_paths_summary(self.dropped_path_count))),
             )
             .child(label("Scroll stress list"))
             .child(
@@ -483,5 +497,25 @@ mod tests {
                 .expect("core probe exists");
             assert_eq!(capability.status, CapabilityStatus::ExerciseHere);
         }
+    }
+
+    #[test]
+    fn evidence_summaries_never_include_clipboard_or_path_content() {
+        assert_eq!(
+            ClipboardProbeResult::ExactProbe.summary(),
+            "Built-in clipboard probe matched exactly"
+        );
+        assert_eq!(
+            ClipboardProbeResult::OtherText.summary(),
+            "Clipboard text received; content hidden"
+        );
+        assert_eq!(
+            selected_file_summary(true),
+            "One file selected; path hidden"
+        );
+        assert_eq!(
+            dropped_paths_summary(2),
+            "2 external paths received; paths hidden"
+        );
     }
 }

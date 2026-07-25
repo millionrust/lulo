@@ -69,13 +69,24 @@ The session type must be `wayland`, and `vulkaninfo` must identify the real GPU
 driver rather than llvmpipe/lavapipe. From the repository, run:
 
 ```sh
+bash scripts/linux/run-reference-gates.sh --preflight-only
 bash scripts/linux/run-reference-gates.sh --with-upstream-smoke
 ```
 
-This stores non-serial hardware, session, Wayland, Vulkan, accessibility,
-portal, package, Clippy, test, policy, and nested-smoke evidence under ignored
+The preflight refuses non-Linux and root execution, X11, a non-GNOME baseline,
+missing Wayland/Vulkan tools, llvmpipe/lavapipe and other software renderers,
+tracked worktree edits, or less than 25 GiB of build headroom. The full command
+rechecks 25 GiB before expensive Cargo/smoke/performance builds and stops later
+gates if the machine reaches the 15 GiB floor. It stores non-serial hardware,
+session, Wayland, Vulkan, accessibility, portal, package, harness-test, Clippy,
+test, policy, and nested-smoke evidence under ignored
 `target/linux-evidence/<UTC timestamp>/`. Review the files before sharing them;
 the collector deliberately omits hostname, machine ID, and hardware serials.
+
+The default desktop gate is the untouched GNOME baseline. For an explicitly
+separate niri repeat use `--session niri`; `--session any` is diagnostic only
+and cannot satisfy A1 or A3 by itself. A generated directory or passing code
+checks do not replace the manual platform-lab and soak evidence below.
 
 ## 4. Manual GNOME platform-lab pass
 
@@ -494,7 +505,7 @@ failures rather than treating the passing nested-Sway gate as niri approval.
 After correctness passes, close unrelated applications and run:
 
 ```sh
-bash scripts/linux/run-reference-gates.sh --with-performance
+bash scripts/linux/run-reference-gates.sh --session niri --with-performance
 ```
 
 Compare the resulting JSON with `docs/performance-baseline.md`. Do not compare

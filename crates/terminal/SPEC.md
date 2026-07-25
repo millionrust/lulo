@@ -74,14 +74,22 @@ lock failure sends nothing. Successful input returns to live output and clears
 only the current visual selection. Enhanced Kitty keyboard mode remains
 disabled at the emulator authority, so the incomplete key-down-only path is
 not partially advertised or activated.
+PTY output now crosses a streaming OSC boundary before VTE: an allowed title/
+palette/control payload is capped at 1 KiB and buffered only until BEL or
+`ESC \`, then delivered byte-for-byte. Split sequences remain exact. Overlong,
+malformed, and unterminated OSC is discarded as a unit, including the
+`ESC <C0> ]` form that otherwise retains parser Escape state. OSC 8 hyperlink
+metadata is also discarded until Terminal has a reviewed visual/activation
+policy, preventing invisible per-cell link allocation. The reusable filtered
+chunk is capped by the 8 KiB PTY read plus one accepted OSC.
 
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
 terminal mouse reporting, hyperlink policy, shell integration, per-tab
-selection/search/title state, hard bounds for dynamically allocated cell extras,
-title stacks, parser/control-string buffers and thread resources, resize/write
-failure presentation depth, accessible terminal text semantics, Linux
-interaction/visual evidence, and measured resident/idle/active performance.
+selection/search/title state, hard bounds for combining-mark cell extras, title
+stacks, non-OSC parser buffers and thread resources, resize/write failure
+presentation depth, accessible terminal text semantics, Linux interaction/
+visual evidence, and measured resident/idle/active performance.
 
 ## Platform authorities
 
@@ -133,8 +141,9 @@ shell-integration protocol before they may be shown.
   pending repaint; a quiet terminal has no timer-driven CPU or frame activity.
 - Primary/alternate base grid storage has a conservative 512 MiB per-window
   ceiling across every supported tab count. Dynamically allocated combining
-  marks, hyperlinks/titles, parser control strings, and thread resources still
-  need hard bounds before 1.0 evidence.
+  marks, title stacks, non-OSC parser buffers, and thread resources still need
+  hard bounds before 1.0 evidence. OSC ingress is capped at 1 KiB; unreviewed
+  hyperlink metadata never reaches the grid.
 
 ## Failure states
 
@@ -197,6 +206,9 @@ Unicode/Meta input, platform-shortcut suppression, and enhanced-mode
 non-advertisement are checked directly. Aggregate grid-budget tests cover every
 supported tab count, verify monotonic history reduction, preserve useful crowded
 history, and prove one additional line would cross the ceiling at the maximum.
+Streaming-output tests cover ordinary split Unicode/CSI, split BEL/ST-terminated
+OSC at the exact cap, complete overlong/malformed discard, C0 Escape-state
+bypass prevention, recovery to normal output, and OSC 8 refusal.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and

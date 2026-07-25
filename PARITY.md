@@ -27,10 +27,12 @@ evidence remains gated by the reference-PC framework work.
   content-redacted exact-session review. Traditional xterm arrows, Home/End,
   editing keys, F1–F20, modifiers, Meta/control input, and application-cursor
   mode are encoded and tested; incomplete enhanced keyboard modes are not
-  partially advertised. IME, enhanced Kitty/keypad/mouse input, hyperlinks/
-  shell integration, per-tab UI state, bounds for dynamic terminal extras,
-  accessibility, Linux interaction/visual evidence, and measured resident/
-  idle/active performance keep G3 partial.
+  partially advertised. OSC control strings are stream-capped at 1 KiB;
+  malformed/overlong input and unreviewed OSC 8 links are discarded before VTE.
+  IME, enhanced Kitty/keypad/mouse input, reviewed hyperlinks/shell integration,
+  per-tab UI state, remaining dynamic terminal bounds, accessibility, Linux
+  interaction/visual evidence, and measured resident/idle/active performance
+  keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

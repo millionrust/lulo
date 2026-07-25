@@ -64,6 +64,7 @@ const TOP_PAD: f32 = 34.0 + 8.0;
 /// Pixels from the window left to the first column: 8pt content padding.
 const LEFT_PAD: f32 = 8.0;
 const MAX_PASTE_BYTES: usize = 1024 * 1024;
+const MAX_SEARCH_QUERY_BYTES: usize = 4096;
 const MAX_OSC_PAYLOAD_BYTES: usize = 1024;
 const MAX_COMBINING_MARKS_PER_CELL: usize = 16;
 /// One reader and one child waiter are reserved before a shell can launch.
@@ -766,7 +767,7 @@ fn encode_key(keystroke: &gpui::Keystroke, mode: TermMode) -> Vec<u8> {
 
 /// A selected cell range, in alacritty grid-line coordinates (`Line` values,
 /// which are negative for scrollback). Coordinates are `(line, column)`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Selection {
     anchor: (i32, usize),
     head: (i32, usize),
@@ -791,6 +792,24 @@ impl Selection {
         let (s, e) = self.ordered();
         (line, col) >= s && (line, col) <= e
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct SessionUiState {
+    selection: Option<Selection>,
+    search_open: bool,
+    search_query: String,
+}
+
+fn bounded_search_query(value: &str) -> String {
+    if value.len() <= MAX_SEARCH_QUERY_BYTES {
+        return value.to_string();
+    }
+    let mut end = MAX_SEARCH_QUERY_BYTES;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_string()
 }
 
 /// Visual style of a run of cells — runs break when any attribute changes.
@@ -1164,6 +1183,7 @@ impl ReservedSessionWorkers {
 struct Session {
     id: u64,
     term: Arc<Mutex<Term<EventProxy>>>,
+    ui: SessionUiState,
     accepted_size: TermSize,
     transport: SessionTransportState,
     writer: Box<dyn Write + Send>,
@@ -1228,6 +1248,7 @@ impl Session {
         Ok(Session {
             id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             term,
+            ui: SessionUiState::default(),
             accepted_size: size,
             transport: SessionTransportState::default(),
             writer,
@@ -1260,6 +1281,7 @@ impl Session {
         Session {
             id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             term,
+            ui: SessionUiState::default(),
             accepted_size: size,
             transport: SessionTransportState::default(),
             writer: Box::new(std::io::sink()),
@@ -1461,11 +1483,8 @@ struct TerminalView {
     line_h: f32,
     cell_w: f32,
     focus: FocusHandle,
-    /// Find bar: input + whether it's open.
+    /// One visible editor is synchronized with the active tab's bounded query.
     search: Entity<InputState>,
-    searching: bool,
-    /// Active text selection (set while dragging, kept until next click).
-    selection: Option<Selection>,
     /// True while the mouse button is held during a drag-select.
     selecting: bool,
     /// Fractional scroll-line accumulator for smooth trackpad scrolling.
@@ -1547,7 +1566,12 @@ impl TerminalView {
             .unwrap_or_else(|error| Session::failed(COLS, ROWS, scrollback_lines, error));
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
-        cx.observe(&search, |_, _, cx| cx.notify()).detach();
+        cx.observe(&search, |this, _, cx| {
+            let query = bounded_search_query(&this.search.read(cx).value());
+            this.tabs[this.active].ui.search_query = query;
+            cx.notify();
+        })
+        .detach();
 
         cx.bind_keys([
             KeyBinding::new("cmd-c", Copy, Some("Terminal")),
@@ -1601,8 +1625,6 @@ impl TerminalView {
             cell_w: CELL_W,
             focus,
             search,
-            searching: false,
-            selection: None,
             selecting: false,
             scroll_accum: 0.0,
             profile,
@@ -1630,6 +1652,23 @@ impl TerminalView {
         self.pending_close.is_some() || self.pending_paste.is_some()
     }
 
+    fn capture_active_search_query(&mut self, cx: &Context<Self>) {
+        let query = bounded_search_query(&self.search.read(cx).value());
+        self.tabs[self.active].ui.search_query = query;
+    }
+
+    fn sync_search_editor_to_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let query = self.tabs[self.active].ui.search_query.clone();
+        self.search
+            .update(cx, |state, cx| state.set_value(query, window, cx));
+        if self.tabs[self.active].ui.search_open {
+            let search_focus = self.search.read(cx).focus_handle(cx);
+            window.focus(&search_focus);
+        } else {
+            window.focus(&self.focus);
+        }
+    }
+
     fn apply_scrollback_limit(&self, limit: usize) -> Result<(), SessionWriteError> {
         // Acquire every authority before mutating any, so one poisoned session
         // cannot leave a partially applied cross-tab budget.
@@ -1651,7 +1690,7 @@ impl TerminalView {
         self.apply_scrollback_limit(scrollback_limit_for_tab_count(self.tabs.len()))
     }
 
-    fn new_tab(&mut self, cx: &mut Context<Self>) {
+    fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.modal_open() {
             return;
         }
@@ -1668,13 +1707,16 @@ impl TerminalView {
             cx.notify();
             return;
         }
+        self.capture_active_search_query(cx);
         let (c, r) = (self.cols.max(MIN_COLS), self.rows.max(MIN_ROWS));
         self.tabs.push(
             Session::spawn(c, r, scrollback_lines, self.redraw.clone())
                 .unwrap_or_else(|error| Session::failed(c, r, scrollback_lines, error)),
         );
         self.active = self.tabs.len() - 1;
-        self.selection = None;
+        self.selecting = false;
+        self.scroll_accum = 0.0;
+        self.sync_search_editor_to_active(window, cx);
         cx.notify();
     }
 
@@ -1694,7 +1736,8 @@ impl TerminalView {
         let session_id = self.tabs[index].id;
         if self.tabs[index].has_foreground_job() {
             self.pending_close = Some(PendingClose::Tab { session_id });
-            self.searching = false;
+            self.capture_active_search_query(cx);
+            self.tabs[self.active].ui.search_open = false;
             self.picker_open = false;
             self.menu_at = None;
             window.focus(&self.focus);
@@ -1706,10 +1749,10 @@ impl TerminalView {
             cx.notify();
             return;
         }
-        self.remove_tab(session_id, cx);
+        self.remove_tab(session_id, window, cx);
     }
 
-    fn remove_tab(&mut self, session_id: u64, cx: &mut Context<Self>) {
+    fn remove_tab(&mut self, session_id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self
             .tabs
             .iter()
@@ -1720,6 +1763,7 @@ impl TerminalView {
         if self.tabs.len() <= 1 {
             return;
         }
+        self.capture_active_search_query(cx);
         self.tabs.remove(index);
         if self.active > index {
             self.active -= 1;
@@ -1727,7 +1771,9 @@ impl TerminalView {
         if self.active >= self.tabs.len() {
             self.active = self.tabs.len() - 1;
         }
-        self.selection = None;
+        self.selecting = false;
+        self.scroll_accum = 0.0;
+        self.sync_search_editor_to_active(window, cx);
         if let Err(error) = self.rebalance_scrollback() {
             self.operation_error = Some(error.to_string().into());
         }
@@ -1761,7 +1807,8 @@ impl TerminalView {
         self.pending_close = Some(PendingClose::Window {
             foreground_sessions,
         });
-        self.searching = false;
+        self.capture_active_search_query(cx);
+        self.tabs[self.active].ui.search_open = false;
         self.picker_open = false;
         self.menu_at = None;
         window.focus(&self.focus);
@@ -1810,7 +1857,7 @@ impl TerminalView {
                     cx.notify();
                     return;
                 }
-                self.remove_tab(session_id, cx);
+                self.remove_tab(session_id, window, cx);
                 window.focus(&self.focus);
             }
             PendingClose::Window { .. } => {
@@ -1826,26 +1873,29 @@ impl TerminalView {
         }
     }
 
-    fn select_tab(&mut self, i: usize, cx: &mut Context<Self>) {
+    fn select_tab(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
         if self.modal_open() || i >= self.tabs.len() {
             return;
         }
+        self.capture_active_search_query(cx);
         self.active = i;
-        self.selection = None;
+        self.selecting = false;
+        self.scroll_accum = 0.0;
+        self.sync_search_editor_to_active(window, cx);
         cx.notify();
     }
 
-    fn next_tab(&mut self, cx: &mut Context<Self>) {
+    fn next_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.len() > 1 {
             let next = (self.active + 1) % self.tabs.len();
-            self.select_tab(next, cx);
+            self.select_tab(next, window, cx);
         }
     }
 
-    fn prev_tab(&mut self, cx: &mut Context<Self>) {
+    fn prev_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.tabs.len() > 1 {
             let prev = (self.active + self.tabs.len() - 1) % self.tabs.len();
-            self.select_tab(prev, cx);
+            self.select_tab(prev, window, cx);
         }
     }
 
@@ -1888,7 +1938,9 @@ impl TerminalView {
                                 rmac_ui::mac::text_secondary()
                             })
                             .child(label)
-                            .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select_tab(i, window, cx);
+                            })),
                     )
                     .child(
                         div()
@@ -1922,7 +1974,7 @@ impl TerminalView {
                     .text_size(rmac_ui::text_px(15.0))
                     .text_color(rmac_ui::mac::text_secondary())
                     .child("+")
-                    .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.new_tab(window, cx))),
             )
     }
 
@@ -2066,7 +2118,7 @@ impl TerminalView {
             t.grid_mut().clear_history();
             t.scroll_display(Scroll::Bottom);
         }
-        self.selection = None;
+        self.tabs[self.active].ui.selection = None;
         cx.notify();
     }
 
@@ -2081,7 +2133,7 @@ impl TerminalView {
             .ok()
             .map(|t| t.grid().history_size() as i32)
             .unwrap_or(0);
-        self.selection = Some(Selection {
+        self.tabs[self.active].ui.selection = Some(Selection {
             anchor: (-hist, 0),
             head: (self.rows as i32 - 1, self.cols.saturating_sub(1)),
         });
@@ -2100,8 +2152,9 @@ impl TerminalView {
         if self.modal_open() {
             return;
         }
-        self.searching = !self.searching;
-        if self.searching {
+        self.capture_active_search_query(cx);
+        self.tabs[self.active].ui.search_open = !self.tabs[self.active].ui.search_open;
+        if self.tabs[self.active].ui.search_open {
             let h = self.search.read(cx).focus_handle(cx);
             window.focus(&h);
         } else {
@@ -2169,7 +2222,7 @@ impl TerminalView {
         if let Ok(mut term) = self.tabs[self.active].term.lock() {
             term.scroll_display(Scroll::Bottom);
         }
-        self.selection = None;
+        self.tabs[self.active].ui.selection = None;
         Ok(())
     }
 
@@ -2209,7 +2262,8 @@ impl TerminalView {
                     byte_count: text.len(),
                     text,
                 });
-                self.searching = false;
+                self.capture_active_search_query(cx);
+                self.tabs[self.active].ui.search_open = false;
                 self.picker_open = false;
                 self.menu_at = None;
                 window.focus(&self.focus);
@@ -2262,7 +2316,7 @@ impl TerminalView {
     /// soft-wrapped rows (the last cell carries alacritty's `WRAPLINE` flag) are
     /// joined without a newline so a wrapped long line copies as a single line.
     fn selection_text(&self) -> Option<String> {
-        let sel = self.selection?;
+        let sel = self.tabs[self.active].ui.selection?;
         let (s, e) = sel.ordered();
         let term = self.tabs[self.active].term.lock().ok()?;
         let grid = term.grid();
@@ -2380,7 +2434,7 @@ impl TerminalView {
                     std::mem::swap(&mut fg, &mut bg);
                 }
                 // Selection highlight overrides the background.
-                if let Some(sel) = &self.selection {
+                if let Some(sel) = &self.tabs[self.active].ui.selection {
                     if !sel.is_empty() && sel.contains(line_idx, col) {
                         bg = hsla(active().selection);
                     }
@@ -2435,13 +2489,21 @@ impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         ACTIVE.with(|a| a.set(self.profile));
         self.resize_to(window);
-        let query = if self.searching {
-            self.search.read(cx).value().to_lowercase()
+        let raw_query = self.search.read(cx).value().to_string();
+        let bounded_query = bounded_search_query(&raw_query);
+        if bounded_query != raw_query {
+            let normalized = bounded_query.clone();
+            self.search
+                .update(cx, |state, cx| state.set_value(normalized, window, cx));
+        }
+        self.tabs[self.active].ui.search_query = bounded_query.clone();
+        let searching = self.tabs[self.active].ui.search_open;
+        let query = if searching {
+            bounded_query.to_lowercase()
         } else {
             String::new()
         };
         let rows = self.render_rows(&query);
-        let searching = self.searching;
         let multi = self.tabs.len() > 1;
         let operation_error_visible = self.operation_error.is_some();
         let terminal_error = self
@@ -2527,12 +2589,18 @@ impl Render for TerminalView {
                     )
                     .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
                     .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
-                    .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
+                    .on_action(cx.listener(|this, _: &NewTab, window, cx| {
+                        this.new_tab(window, cx);
+                    }))
                     .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                         this.request_close_tab(this.active, window, cx)
                     }))
-                    .on_action(cx.listener(|this, _: &NextTab, _, cx| this.next_tab(cx)))
-                    .on_action(cx.listener(|this, _: &PrevTab, _, cx| this.prev_tab(cx)))
+                    .on_action(cx.listener(|this, _: &NextTab, window, cx| {
+                        this.next_tab(window, cx);
+                    }))
+                    .on_action(cx.listener(|this, _: &PrevTab, window, cx| {
+                        this.prev_tab(window, cx);
+                    }))
                     .on_action(cx.listener(|this, _: &CycleProfile, _, cx| {
                         // ⌘⇧P toggles the profile picker.
                         if !this.modal_open() {
@@ -2564,7 +2632,7 @@ impl Render for TerminalView {
                             }
                             let offset = this.display_offset();
                             let cell = this.pos_to_cell(ev.position, offset);
-                            this.selection = Some(Selection {
+                            this.tabs[this.active].ui.selection = Some(Selection {
                                 anchor: cell,
                                 head: cell,
                             });
@@ -2576,7 +2644,7 @@ impl Render for TerminalView {
                         if this.selecting {
                             let offset = this.display_offset();
                             let cell = this.pos_to_cell(ev.position, offset);
-                            if let Some(sel) = this.selection.as_mut() {
+                            if let Some(sel) = this.tabs[this.active].ui.selection.as_mut() {
                                 sel.head = cell;
                             }
                             cx.notify();
@@ -2587,9 +2655,9 @@ impl Render for TerminalView {
                         cx.listener(|this, _: &MouseUpEvent, _, cx| {
                             this.selecting = false;
                             // A bare click (no drag) clears the selection.
-                            if let Some(sel) = this.selection {
+                            if let Some(sel) = this.tabs[this.active].ui.selection {
                                 if sel.is_empty() {
-                                    this.selection = None;
+                                    this.tabs[this.active].ui.selection = None;
                                 }
                             }
                             cx.notify();
@@ -2649,7 +2717,8 @@ impl Render for TerminalView {
                                 .text_color(rmac_ui::mac::text_secondary())
                                 .child("×")
                                 .on_click(cx.listener(|this, _, window, cx| {
-                                    this.searching = false;
+                                    this.capture_active_search_query(cx);
+                                    this.tabs[this.active].ui.search_open = false;
                                     window.focus(&this.focus);
                                     cx.notify();
                                 })),
@@ -2695,7 +2764,9 @@ impl Render for TerminalView {
                         .child(
                             Button::new("new-tab-after-exit", "New Tab")
                                 .small()
-                                .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.new_tab(window, cx);
+                                })),
                         ),
                 )
             })
@@ -3047,6 +3118,7 @@ mod tests {
                 &size,
                 EventProxy,
             ))),
+            ui: SessionUiState::default(),
             accepted_size: size,
             transport: SessionTransportState::default(),
             writer: Box::new(FailingWriter),
@@ -3068,8 +3140,34 @@ mod tests {
     }
 
     #[test]
+    fn selection_and_search_state_are_isolated_and_search_is_bounded() {
+        let selection = Selection {
+            anchor: (-2, 1),
+            head: (3, 8),
+        };
+        let mut tabs = [SessionUiState::default(), SessionUiState::default()];
+        tabs[0].selection = Some(selection);
+        tabs[0].search_open = true;
+        tabs[0].search_query = "first tab".into();
+
+        assert_eq!(tabs[0].selection, Some(selection));
+        assert_eq!(tabs[0].search_query, "first tab");
+        assert_eq!(tabs[1], SessionUiState::default());
+
+        let oversized = format!("{}😀", "a".repeat(MAX_SEARCH_QUERY_BYTES - 1));
+        let bounded = bounded_search_query(&oversized);
+        assert_eq!(bounded.len(), MAX_SEARCH_QUERY_BYTES - 1);
+        assert!(bounded.is_char_boundary(bounded.len()));
+        assert_eq!(
+            bounded_search_query(&"b".repeat(MAX_SEARCH_QUERY_BYTES)),
+            "b".repeat(MAX_SEARCH_QUERY_BYTES)
+        );
+    }
+
+    #[test]
     fn terminal_resources_have_explicit_bounds() {
         assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
+        assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
         assert_eq!(MAX_TABS, 16);
         assert_eq!(SESSION_WORKERS_PER_TAB, 2);
         assert_eq!(SESSION_WORKER_STACK_BYTES, 512 * 1024);

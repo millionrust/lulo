@@ -33,10 +33,11 @@ evidence remains gated by the reference-PC framework work.
   style. Two explicitly stacked workers per tab, synchronized-update/parser
   storage, and the title stack now have tested ceilings. Resize commits only
   after kernel PTY acceptance; writer failure persistently disables that tab's
-  input without discarding its output. IME, enhanced Kitty/keypad/mouse input,
-  reviewed hyperlinks/shell integration, per-tab UI state, accessibility,
-  Linux interaction/visual evidence, and measured Unicode/resident/idle/active
-  performance keep G3 partial.
+  input without discarding its output. Selection and bounded find state are
+  isolated per stable tab. IME, enhanced Kitty/keypad/mouse input, reviewed
+  hyperlinks/shell-derived titles, accessibility, Linux interaction/visual
+  evidence, and measured Unicode/resident/idle/active performance keep G3
+  partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

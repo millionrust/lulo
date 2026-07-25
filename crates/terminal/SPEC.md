@@ -106,13 +106,19 @@ or the window returns to the accepted geometry. A writer failure is terminal
 for that tab's input path: subsequent key/paste writes are refused without
 clearing selection or showing a live cursor, the tab is labeled unavailable,
 and existing output remains readable.
+Each stable session now owns its selection plus find-open/query state. Switching,
+creating, or removing tabs saves and restores the active editor without leaking
+another tab's query or discarding its selection. Queries remain memory-only and
+are capped at 4 KiB on a valid UTF-8 boundary before matching; oversized editor
+input is normalized on the next event-driven render. Generic numbered tab
+labels remain intentional until reviewed shell integration can provide a
+private-safe title authority.
 
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
 terminal mouse reporting, hyperlink policy, shell integration, per-tab
-selection/search/title state, accessible terminal text semantics, Linux
-interaction/visual evidence, and measured Unicode/resident/idle/active
-performance.
+title authority, accessible terminal text semantics, Linux interaction/visual
+evidence, and measured Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -159,7 +165,8 @@ shell-integration protocol before they may be shown.
   review.
 - PTY output, selection, search queries, clipboard text, process IDs, working
   directories, commands, and environment values stay out of default logs,
-  panic text, evidence bundles, and persistence.
+  panic text, evidence bundles, and persistence. Each per-tab query is limited
+  to 4 KiB in memory.
 - Reader/parser work stays off the GPUI thread. Output bursts coalesce into one
   pending repaint; a quiet terminal has no timer-driven CPU or frame activity.
 - Primary/alternate base grid storage has a conservative 512 MiB per-window
@@ -243,6 +250,8 @@ synchronized-update cutoff, and Alacritty title-stack eviction depth.
 Transport-state tests prove rejected resize transactions retain the last
 accepted geometry and a writer failure permanently disables live input while
 keeping existing output available.
+Per-tab state tests prove independent selection/find state and UTF-8-safe query
+bounding.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and

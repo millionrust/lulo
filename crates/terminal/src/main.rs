@@ -8,6 +8,7 @@
 mod storage;
 
 use std::io::{Read, Write};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -22,17 +23,19 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::{Config, Term, TermMode};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div, Entity,
-    FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    KeyBinding, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    NavigationDirection, ParentElement, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent,
-    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
+    canvas, div, prelude::FluentBuilder as _, px, AppContext as _, Bounds, ClipboardItem, Context,
+    Div, ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable as _, FontWeight,
+    Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, Modifiers, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, ParentElement, Pixels,
+    Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, UTF16Selection, Window,
 };
 use gpui_component::StyledExt as _;
 use portable_pty::{
     native_pty_system, Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
 };
 use rmac_ui::{Button, InputState, SearchField};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
 
 type RedrawSender = async_channel::Sender<()>;
@@ -66,6 +69,7 @@ const BODY_PAD: f32 = 8.0;
 const LEFT_PAD: f32 = BODY_PAD;
 const MAX_PASTE_BYTES: usize = 1024 * 1024;
 const MAX_SEARCH_QUERY_BYTES: usize = 4096;
+const MAX_IME_TEXT_BYTES: usize = 16 * 1024;
 const MAX_LEGACY_MOUSE_COORD: usize = 223;
 const MAX_UTF8_MOUSE_COORD: usize = 2015;
 const MAX_WHEEL_REPORTS_PER_AXIS: usize = 16;
@@ -697,6 +701,14 @@ fn is_supported_function_key(key: &str) -> bool {
         .is_some_and(|number| (1..=20).contains(&number))
 }
 
+fn uses_platform_text_input(keystroke: &gpui::Keystroke) -> bool {
+    keystroke
+        .key_char
+        .as_ref()
+        .is_some_and(|text| !text.chars().any(char::is_control))
+        && keystroke.modifiers.is_subset_of(&Modifiers::shift())
+}
+
 fn control_byte(key: &str) -> Option<u8> {
     let character = key.chars().next()?;
     if key.len() == 1 && character.is_ascii_alphabetic() {
@@ -780,6 +792,93 @@ fn focus_report(mode: TermMode, focused: bool) -> Option<&'static [u8]> {
         FOCUS_IN_REPORT
     } else {
         FOCUS_OUT_REPORT
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ImeBuffer {
+    text: String,
+    selection_utf16: Range<usize>,
+}
+
+struct ImeComposition {
+    session_id: u64,
+    buffer: ImeBuffer,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ImeEditError {
+    InvalidRange,
+    TooLarge,
+}
+
+fn utf16_len(text: &str) -> usize {
+    text.chars().map(char::len_utf16).sum()
+}
+
+fn byte_offset_for_utf16(text: &str, target: usize) -> Option<usize> {
+    let mut utf16_offset = 0;
+    for (byte_offset, character) in text.char_indices() {
+        if utf16_offset == target {
+            return Some(byte_offset);
+        }
+        utf16_offset += character.len_utf16();
+        if utf16_offset > target {
+            return None;
+        }
+    }
+    (utf16_offset == target).then_some(text.len())
+}
+
+fn byte_range_for_utf16(text: &str, range: Range<usize>) -> Option<Range<usize>> {
+    if range.start > range.end {
+        return None;
+    }
+    Some(byte_offset_for_utf16(text, range.start)?..byte_offset_for_utf16(text, range.end)?)
+}
+
+fn replace_ime_buffer(
+    current: Option<&ImeBuffer>,
+    range_utf16: Option<Range<usize>>,
+    new_text: &str,
+    new_selection_utf16: Option<Range<usize>>,
+) -> Result<ImeBuffer, ImeEditError> {
+    let current_text = current.map_or("", |buffer| buffer.text.as_str());
+    let current_utf16_len = utf16_len(current_text);
+    let replacement_utf16 = range_utf16.unwrap_or(0..current_utf16_len);
+    let replacement_bytes = byte_range_for_utf16(current_text, replacement_utf16.clone())
+        .ok_or(ImeEditError::InvalidRange)?;
+    let new_byte_len = current_text
+        .len()
+        .checked_sub(replacement_bytes.len())
+        .and_then(|len| len.checked_add(new_text.len()))
+        .ok_or(ImeEditError::TooLarge)?;
+    if new_byte_len > MAX_IME_TEXT_BYTES {
+        return Err(ImeEditError::TooLarge);
+    }
+
+    let inserted_utf16_len = utf16_len(new_text);
+    let relative_selection = new_selection_utf16.unwrap_or(inserted_utf16_len..inserted_utf16_len);
+    if byte_range_for_utf16(new_text, relative_selection.clone()).is_none() {
+        return Err(ImeEditError::InvalidRange);
+    }
+
+    let mut text = String::with_capacity(new_byte_len);
+    text.push_str(&current_text[..replacement_bytes.start]);
+    text.push_str(new_text);
+    text.push_str(&current_text[replacement_bytes.end..]);
+    let selection_start = replacement_utf16
+        .start
+        .checked_add(relative_selection.start)
+        .ok_or(ImeEditError::InvalidRange)?;
+    let selection_end = replacement_utf16
+        .start
+        .checked_add(relative_selection.end)
+        .ok_or(ImeEditError::InvalidRange)?;
+
+    Ok(ImeBuffer {
+        text,
+        selection_utf16: selection_start..selection_end,
     })
 }
 
@@ -1629,6 +1728,8 @@ struct TerminalView {
     window_active: bool,
     /// One visible editor is synchronized with the active tab's bounded query.
     search: Entity<InputState>,
+    /// Private, bounded marked text bound to one exact terminal session.
+    ime: Option<ImeComposition>,
     /// True while the mouse button is held during a drag-select.
     selecting: bool,
     /// Fractional scroll-line accumulator for smooth trackpad scrolling.
@@ -1779,6 +1880,7 @@ impl TerminalView {
             focus,
             window_active,
             search,
+            ime: None,
             selecting: false,
             scroll_accum: 0.0,
             mouse_wheel_x_accum: 0.0,
@@ -1860,6 +1962,100 @@ impl TerminalView {
         if self.report_active_focus(active) {
             cx.notify();
         }
+    }
+
+    fn reject_ime(&mut self, message: &'static str, cx: &mut Context<Self>) {
+        self.ime = None;
+        self.operation_error = Some(message.into());
+        cx.notify();
+    }
+
+    fn commit_text_input(&mut self, session_id: u64, text: &str, cx: &mut Context<Self>) {
+        if text.is_empty() {
+            cx.notify();
+            return;
+        }
+        if text.len() > MAX_IME_TEXT_BYTES {
+            self.reject_ime(
+                "Text input exceeds Terminal's 16 KiB composition safety limit; nothing was sent.",
+                cx,
+            );
+            return;
+        }
+        if text.chars().any(char::is_control) {
+            self.reject_ime(
+                "Terminal refused non-text control data from the input method.",
+                cx,
+            );
+            return;
+        }
+        if self.modal_open() {
+            self.reject_ime(
+                "Terminal did not send text while a confirmation was open.",
+                cx,
+            );
+            return;
+        }
+        if self.tabs[self.active].id != session_id {
+            self.reject_ime(
+                "Text composition belonged to another terminal tab; nothing was sent.",
+                cx,
+            );
+            return;
+        }
+        if let Err(error) = self.active_terminal_mode() {
+            self.operation_error = Some(error.to_string().into());
+            cx.notify();
+            return;
+        }
+
+        match self.tabs[self.active].write(text.as_bytes()) {
+            Ok(()) => {
+                if let Ok(mut term) = self.tabs[self.active].term.lock() {
+                    term.scroll_display(Scroll::Bottom);
+                }
+                self.tabs[self.active].ui.selection = None;
+            }
+            Err(SessionWriteError::State) => {
+                self.operation_error = Some(SessionWriteError::State.to_string().into());
+            }
+            Err(SessionWriteError::Exited | SessionWriteError::Write) => {}
+        }
+        cx.notify();
+    }
+
+    fn active_cursor_viewport_cell(&self) -> Option<(usize, usize)> {
+        let term = self.tabs[self.active].term.lock().ok()?;
+        let grid = term.grid();
+        let cursor = grid.cursor.point;
+        let row = (cursor.line.0 + grid.display_offset() as i32)
+            .clamp(0, self.rows.saturating_sub(1) as i32) as usize;
+        let column = cursor.column.0.min(self.cols.saturating_sub(1));
+        Some((row, column))
+    }
+
+    fn render_ime_preedit(&self) -> Option<Div> {
+        let composition = self.ime.as_ref()?;
+        if composition.session_id != self.tabs[self.active].id || composition.buffer.text.is_empty()
+        {
+            return None;
+        }
+        let (row, column) = self.active_cursor_viewport_cell()?;
+        let remaining_columns = self.cols.saturating_sub(column).max(1);
+        Some(
+            div()
+                .absolute()
+                .left(px(BODY_PAD + column as f32 * self.cell_w))
+                .top(px(BODY_PAD + row as f32 * self.line_h))
+                .w(px(remaining_columns as f32 * self.cell_w))
+                .max_h(px(self.rows.saturating_sub(row).max(1) as f32 * self.line_h))
+                .overflow_hidden()
+                .bg(hsla(active().bg))
+                .text_color(hsla(active().fg))
+                .line_height(px(self.line_h))
+                .underline()
+                .child(composition.buffer.text.clone()),
+        )
     }
 
     fn capture_active_search_query(&mut self, cx: &Context<Self>) {
@@ -2927,6 +3123,261 @@ impl TerminalView {
     }
 }
 
+impl EntityInputHandler for TerminalView {
+    fn text_for_range(
+        &mut self,
+        range_utf16: Range<usize>,
+        adjusted_range: &mut Option<Range<usize>>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<String> {
+        let Some(composition) = self
+            .ime
+            .as_ref()
+            .filter(|composition| composition.session_id == self.tabs[self.active].id)
+        else {
+            if range_utf16.is_empty() && range_utf16.start == 0 {
+                *adjusted_range = Some(0..0);
+                return Some(String::new());
+            }
+            return None;
+        };
+        let bytes = byte_range_for_utf16(&composition.buffer.text, range_utf16.clone())?;
+        *adjusted_range = Some(range_utf16);
+        Some(composition.buffer.text[bytes].to_owned())
+    }
+
+    fn selected_text_range(
+        &mut self,
+        _ignore_disabled_input: bool,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<UTF16Selection> {
+        if self.modal_open() || !self.tabs[self.active].accepts_input() {
+            return None;
+        }
+        let range = self
+            .ime
+            .as_ref()
+            .filter(|composition| composition.session_id == self.tabs[self.active].id)
+            .map_or(0..0, |composition| {
+                composition.buffer.selection_utf16.clone()
+            });
+        Some(UTF16Selection {
+            range,
+            reversed: false,
+        })
+    }
+
+    fn marked_text_range(
+        &self,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<Range<usize>> {
+        let composition = self
+            .ime
+            .as_ref()
+            .filter(|composition| composition.session_id == self.tabs[self.active].id)?;
+        Some(0..utf16_len(&composition.buffer.text))
+    }
+
+    fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(composition) = self.ime.take() else {
+            return;
+        };
+        self.commit_text_input(composition.session_id, &composition.buffer.text, cx);
+    }
+
+    fn replace_text_in_range(
+        &mut self,
+        range_utf16: Option<Range<usize>>,
+        text: &str,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let composition = self.ime.take();
+        let session_id = composition
+            .as_ref()
+            .map_or(self.tabs[self.active].id, |composition| {
+                composition.session_id
+            });
+        if session_id != self.tabs[self.active].id {
+            self.reject_ime(
+                "Text composition belonged to another terminal tab; nothing was sent.",
+                cx,
+            );
+            return;
+        }
+        if let Some(range) = range_utf16 {
+            let valid = if let Some(composition) = composition.as_ref() {
+                byte_range_for_utf16(&composition.buffer.text, range).is_some()
+            } else {
+                range.is_empty() && range.start == 0
+            };
+            if !valid {
+                self.reject_ime(
+                    "Terminal refused an invalid text-composition replacement.",
+                    cx,
+                );
+                return;
+            }
+        }
+        self.commit_text_input(session_id, text, cx);
+    }
+
+    fn replace_and_mark_text_in_range(
+        &mut self,
+        range_utf16: Option<Range<usize>>,
+        new_text: &str,
+        new_selected_range_utf16: Option<Range<usize>>,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.modal_open() {
+            self.reject_ime(
+                "Terminal did not begin text composition while a confirmation was open.",
+                cx,
+            );
+            return;
+        }
+        if !self.tabs[self.active].accepts_input() {
+            self.ime = None;
+            cx.notify();
+            return;
+        }
+        if new_text.chars().any(char::is_control) {
+            self.reject_ime(
+                "Terminal refused non-text control data from the input method.",
+                cx,
+            );
+            return;
+        }
+
+        let active_id = self.tabs[self.active].id;
+        if self
+            .ime
+            .as_ref()
+            .is_some_and(|composition| composition.session_id != active_id)
+        {
+            self.reject_ime(
+                "Text composition belonged to another terminal tab; nothing was sent.",
+                cx,
+            );
+            return;
+        }
+        let current = self.ime.as_ref().map(|composition| &composition.buffer);
+        match replace_ime_buffer(current, range_utf16, new_text, new_selected_range_utf16) {
+            Ok(buffer) if buffer.text.is_empty() => {
+                self.ime = None;
+                cx.notify();
+            }
+            Ok(buffer) => {
+                let term = Arc::clone(&self.tabs[self.active].term);
+                let Ok(mut term) = term.lock() else {
+                    self.reject_ime(
+                        "Terminal state is unavailable; composed text was not accepted.",
+                        cx,
+                    );
+                    return;
+                };
+                term.scroll_display(Scroll::Bottom);
+                drop(term);
+                self.ime = Some(ImeComposition {
+                    session_id: active_id,
+                    buffer,
+                });
+                cx.notify();
+            }
+            Err(ImeEditError::TooLarge) => self.reject_ime(
+                "Text input exceeds Terminal's 16 KiB composition safety limit; nothing was sent.",
+                cx,
+            ),
+            Err(ImeEditError::InvalidRange) => self.reject_ime(
+                "Terminal refused an invalid text-composition replacement.",
+                cx,
+            ),
+        }
+    }
+
+    fn bounds_for_range(
+        &mut self,
+        range_utf16: Range<usize>,
+        element_bounds: Bounds<Pixels>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<Bounds<Pixels>> {
+        let (row, column) = self.active_cursor_viewport_cell()?;
+        let (prefix_cells, range_cells) = if let Some(composition) = self
+            .ime
+            .as_ref()
+            .filter(|composition| composition.session_id == self.tabs[self.active].id)
+        {
+            let prefix_bytes =
+                byte_range_for_utf16(&composition.buffer.text, 0..range_utf16.start)?;
+            let range_bytes = byte_range_for_utf16(&composition.buffer.text, range_utf16.clone())?;
+            (
+                UnicodeWidthStr::width(&composition.buffer.text[prefix_bytes]),
+                UnicodeWidthStr::width(&composition.buffer.text[range_bytes]).max(1),
+            )
+        } else if range_utf16.is_empty() && range_utf16.start == 0 {
+            (0, 1)
+        } else {
+            return None;
+        };
+
+        let linear_cell = column.saturating_add(prefix_cells);
+        let candidate_row = row
+            .saturating_add(linear_cell / self.cols.max(1))
+            .min(self.rows.saturating_sub(1));
+        let candidate_column = linear_cell % self.cols.max(1);
+        let available_columns = self.cols.saturating_sub(candidate_column).max(1);
+        Some(Bounds::new(
+            gpui::point(
+                element_bounds.left() + px(BODY_PAD + candidate_column as f32 * self.cell_w),
+                element_bounds.top() + px(BODY_PAD + candidate_row as f32 * self.line_h),
+            ),
+            gpui::size(
+                px(range_cells.min(available_columns) as f32 * self.cell_w),
+                px(self.line_h),
+            ),
+        ))
+    }
+
+    fn character_index_for_point(
+        &mut self,
+        point: Point<Pixels>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) -> Option<usize> {
+        let composition = self
+            .ime
+            .as_ref()
+            .filter(|composition| composition.session_id == self.tabs[self.active].id)?;
+        let (cursor_row, cursor_column) = self.active_cursor_viewport_cell()?;
+        let row = (((f32::from(point.y) - self.terminal_content_top()) / self.line_h).floor()
+            as i32)
+            .clamp(0, self.rows.saturating_sub(1) as i32) as usize;
+        let column = (((f32::from(point.x) - LEFT_PAD) / self.cell_w).floor() as i32)
+            .clamp(0, self.cols.saturating_sub(1) as i32) as usize;
+        let cursor_linear = cursor_row
+            .saturating_mul(self.cols)
+            .saturating_add(cursor_column);
+        let target_linear = row.saturating_mul(self.cols).saturating_add(column);
+        let target_cells = target_linear.saturating_sub(cursor_linear);
+
+        let mut cells = 0;
+        let mut utf16_offset = 0;
+        for character in composition.buffer.text.chars() {
+            if cells >= target_cells {
+                break;
+            }
+            cells += UnicodeWidthChar::width(character).unwrap_or(0);
+            utf16_offset += character.len_utf16();
+        }
+        Some(utf16_offset)
+    }
+}
+
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         ACTIVE.with(|a| a.set(self.profile));
@@ -2962,6 +3413,23 @@ impl Render for TerminalView {
         let paste_confirmation = self
             .render_paste_confirmation(cx)
             .map(|alert| alert.into_any_element());
+        let ime_preedit = (!searching && !self.modal_open())
+            .then(|| self.render_ime_preedit())
+            .flatten();
+        let input_view = cx.entity().clone();
+        let input_focus = self.focus.clone();
+        let input_bridge = canvas(
+            |_, _, _| (),
+            move |bounds, (), window, cx| {
+                window.handle_input(
+                    &input_focus,
+                    ElementInputHandler::new(bounds, input_view),
+                    cx,
+                );
+            },
+        )
+        .absolute()
+        .inset_0();
         div()
             .size_full()
             .relative()
@@ -3002,6 +3470,14 @@ impl Render for TerminalView {
                                     this.cancel_paste(window, cx);
                                 }
                             }
+                            cx.stop_propagation();
+                            return;
+                        }
+                        // Plain and shift-modified text must propagate to GPUI's
+                        // platform input handler. That is the one path shared by
+                        // direct keyboard text and committed IME text, avoiding
+                        // duplicate writes on Linux.
+                        if uses_platform_text_input(&ev.keystroke) {
                             return;
                         }
                         if let Err(error) = this.on_key(ev) {
@@ -3009,6 +3485,7 @@ impl Render for TerminalView {
                                 this.operation_error = Some(error.to_string().into());
                             }
                         }
+                        cx.stop_propagation();
                         cx.notify();
                     }))
                     .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
@@ -3215,12 +3692,15 @@ impl Render for TerminalView {
                         }
                     }))
                     .flex_1()
+                    .relative()
                     .p_2()
                     .bg(hsla(active().bg))
                     .font_family(FONT)
                     .text_size(px(self.font_size))
                     .v_flex()
-                    .children(rows),
+                    .children(rows)
+                    .when_some(ime_preedit, |body, preedit| body.child(preedit))
+                    .child(input_bridge),
             )
             .when(searching, |el| {
                 el.child(
@@ -3698,6 +4178,7 @@ mod tests {
     fn terminal_resources_have_explicit_bounds() {
         assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
         assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
+        assert_eq!(MAX_IME_TEXT_BYTES, 16 * 1024);
         assert_eq!(MAX_LEGACY_MOUSE_COORD, 223);
         assert_eq!(MAX_UTF8_MOUSE_COORD, 2015);
         assert_eq!(MAX_WHEEL_REPORTS_PER_AXIS, 16);
@@ -4410,5 +4891,129 @@ mod tests {
             b"\x1b[Z"
         );
         assert!(encode_key(&test_keystroke("x", None, platform), TermMode::default()).is_empty());
+    }
+
+    #[test]
+    fn plain_text_uses_the_platform_input_path_exactly_once() {
+        let shift = gpui::Modifiers {
+            shift: true,
+            ..Default::default()
+        };
+        let control = gpui::Modifiers {
+            control: true,
+            ..Default::default()
+        };
+        let alt = gpui::Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        let platform = gpui::Modifiers {
+            platform: true,
+            ..Default::default()
+        };
+
+        assert!(uses_platform_text_input(&test_keystroke(
+            "x",
+            Some("λ"),
+            gpui::Modifiers::default()
+        )));
+        assert!(uses_platform_text_input(&test_keystroke(
+            "a",
+            Some("A"),
+            shift
+        )));
+        assert!(!uses_platform_text_input(&test_keystroke(
+            "tab",
+            Some("\t"),
+            shift
+        )));
+        assert!(!uses_platform_text_input(&test_keystroke(
+            "enter",
+            Some("\r"),
+            gpui::Modifiers::default()
+        )));
+        assert!(!uses_platform_text_input(&test_keystroke(
+            "backspace",
+            Some("\u{8}"),
+            gpui::Modifiers::default()
+        )));
+        assert!(!uses_platform_text_input(&test_keystroke(
+            "c",
+            Some("c"),
+            control
+        )));
+        assert!(!uses_platform_text_input(&test_keystroke(
+            "x",
+            Some("λ"),
+            alt
+        )));
+        assert!(!uses_platform_text_input(&test_keystroke(
+            "x",
+            Some("x"),
+            platform
+        )));
+        assert!(!uses_platform_text_input(&test_keystroke(
+            "left",
+            None,
+            gpui::Modifiers::default()
+        )));
+    }
+
+    #[test]
+    fn ime_ranges_use_utf16_scalar_boundaries() {
+        let text = "a😀界";
+
+        assert_eq!(utf16_len(text), 4);
+        assert_eq!(byte_offset_for_utf16(text, 0), Some(0));
+        assert_eq!(byte_offset_for_utf16(text, 1), Some(1));
+        assert_eq!(byte_offset_for_utf16(text, 2), None);
+        assert_eq!(byte_offset_for_utf16(text, 3), Some(5));
+        assert_eq!(byte_offset_for_utf16(text, 4), Some(text.len()));
+        assert_eq!(byte_offset_for_utf16(text, 5), None);
+        assert_eq!(byte_range_for_utf16(text, 1..3), Some(1..5));
+        assert_eq!(byte_range_for_utf16(text, 2..3), None);
+        let reversed = Range { start: 3, end: 1 };
+        assert_eq!(byte_range_for_utf16(text, reversed), None);
+    }
+
+    #[test]
+    fn ime_preedit_replacement_is_bounded_and_selection_safe() {
+        let initial = replace_ime_buffer(None, Some(0..0), "ka", Some(2..2)).unwrap();
+        assert_eq!(initial.text, "ka");
+        assert_eq!(initial.selection_utf16, 2..2);
+
+        let committed = replace_ime_buffer(Some(&initial), None, "か", Some(1..1)).unwrap();
+        assert_eq!(committed.text, "か");
+        assert_eq!(committed.selection_utf16, 1..1);
+
+        let emoji = ImeBuffer {
+            text: "a😀界".into(),
+            selection_utf16: 4..4,
+        };
+        let edited = replace_ime_buffer(Some(&emoji), Some(1..3), "é", Some(1..1)).unwrap();
+        assert_eq!(edited.text, "aé界");
+        assert_eq!(edited.selection_utf16, 2..2);
+
+        assert_eq!(
+            replace_ime_buffer(Some(&emoji), Some(2..3), "x", None),
+            Err(ImeEditError::InvalidRange)
+        );
+        assert_eq!(
+            replace_ime_buffer(None, None, "😀", Some(1..1)),
+            Err(ImeEditError::InvalidRange)
+        );
+
+        let exact_limit = format!("{}界", "x".repeat(MAX_IME_TEXT_BYTES - "界".len()));
+        assert_eq!(
+            replace_ime_buffer(None, None, &exact_limit, None)
+                .unwrap()
+                .text
+                .len(),
+            MAX_IME_TEXT_BYTES
+        );
+        assert_eq!(
+            replace_ime_buffer(None, None, &format!("{exact_limit}x"), None),
+            Err(ImeEditError::TooLarge)
+        );
     }
 }

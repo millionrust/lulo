@@ -5693,6 +5693,7 @@ dependencies = [
  "portable-pty",
  "rmac-storage",
  "rmac-ui",
+ "unicode-width 0.2.2",
  "vte",
 ]
 

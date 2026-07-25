@@ -74,6 +74,17 @@ lock failure sends nothing. Successful input returns to live output and clears
 only the current visual selection. Enhanced Kitty keyboard mode remains
 disabled at the emulator authority, so the incomplete key-down-only path is
 not partially advertised or activated.
+GPUI's platform text-input handler now owns both ordinary Unicode keystrokes
+and IME composition. Marked text is held in a private 16 KiB UTF-8 buffer,
+underlined at the live cursor, and exposed to the platform in UTF-16 scalar-safe
+ranges with Unicode cell-aware candidate bounds. Preedit changes never reach
+the PTY. Commit or platform unmark writes the final text exactly once to the
+stable live session that began composition; cancellation writes nothing.
+Switching tabs leaves a composition bound to its original session, and a later
+stale update or commit is visibly refused rather than injected into another
+shell. Exited sessions, open confirmations, oversized input, invalid UTF-16
+ranges, and control-bearing input all fail closed. The preedit is memory-only
+and is not copied into errors, persistence, or logs.
 PTY output now crosses a streaming OSC boundary before VTE: an allowed title/
 palette/control payload is capped at 1 KiB and buffered only until BEL or
 `ESC \`, then delivered byte-for-byte. Split sequences remain exact. Overlong,
@@ -133,11 +144,11 @@ focus, and ordinary renders emit nothing. The three-byte static reports use the
 same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
-The complete application claim remains blocked on IME preedit/commit,
-enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
-hyperlink policy, shell integration, per-tab title authority, accessible
-terminal text semantics, Linux interaction/visual evidence, and measured
-Unicode/resident/idle/active performance.
+The complete application claim remains blocked on enhanced Kitty keyboard
+press/repeat/release reporting, numeric-keypad identity, hyperlink policy,
+shell integration, per-tab title authority, accessible terminal text
+semantics, Linux interaction/visual evidence (including native IME proof), and
+measured Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -180,6 +191,10 @@ shell-integration protocol before they may be shown.
 
 - User text is written directly to the PTY writer; it is never interpolated
   into a shell command or command-line parser.
+- Direct Unicode and IME commits share GPUI's platform text-input path, so text
+  reaches the PTY once rather than through both key and composition events.
+  Marked text stays in a private 16 KiB memory-only buffer and is sent only on
+  final commit to its exact stable session; cancellation sends nothing.
 - Clipboard paste is capped at 1 MiB, follows the active bracketed-paste mode,
   cannot embed its termination marker, requires review before unprotected
   multiline Return input, and never logs or renders pasted content in the
@@ -197,7 +212,9 @@ shell-integration protocol before they may be shown.
   synchronized-update buffer, fixed parser arrays, and Alacritty's 4,096-entry
   title stack have explicit tested contracts. Mouse coordinates are limited by
   their selected wire encoding, and one input event can create at most 32 wheel
-  reports across both axes. Focus reports are static three-byte slices.
+  reports across both axes. Focus reports are static three-byte slices. IME
+  preedit is capped at 16 KiB and every platform range is checked against exact
+  UTF-16 scalar boundaries before allocation or display.
 
 ## Failure states
 
@@ -210,6 +227,10 @@ shell-integration protocol before they may be shown.
 - Writer failure permanently disables misleading live input for that tab,
   preserves readable output and local selection state, hides the live cursor,
   and exposes the tab as unavailable.
+- IME commit is refused if its stable session is no longer active/live, a
+  confirmation is open, its text exceeds 16 KiB, it contains control data, or
+  the platform supplies a non-scalar UTF-16 range. The private preedit is then
+  discarded and only a content-free explanation is shown.
 - Resize failures retain and render the last kernel-accepted PTY size, expose a
   persistent per-tab explanation, and suppress repeated calls for the rejected
   geometry until the window requests a different size.
@@ -232,9 +253,12 @@ shell-integration protocol before they may be shown.
 Terminal control sequences without the platform modifier, including arrows,
 Tab, Escape, Backspace, Enter, and Ctrl-letter input, go to the PTY. Complete
 traditional xterm navigation and F1–F20 sequences follow application-cursor
-mode and encode Shift/Alt/Control modifiers. Enhanced Kitty keyboard reporting,
-numeric-keypad identity, and complete IME preedit/commit behavior remain Linux
-framework acceptance gates.
+mode and encode Shift/Alt/Control modifiers. Ordinary and shift-modified text
+uses GPUI's platform handler so direct Unicode and final IME commits have one
+exact delivery path; marked text is visibly underlined at the live cursor and
+is not sent early. Enhanced Kitty keyboard reporting and numeric-keypad
+identity remain implementation gates; native Linux IME behavior remains an
+interaction-evidence gate.
 
 ## Pointer map
 
@@ -298,6 +322,12 @@ accepted geometry and a writer failure permanently disables live input while
 keeping existing output available.
 Per-tab state tests prove independent selection/find state and UTF-8-safe query
 bounding.
+IME contract tests prove the direct-text routing split, exact UTF-16 offsets,
+surrogate-boundary refusal, marked-text replacement/selection behavior, and
+the inclusive 16 KiB UTF-8 ceiling. Runtime routing binds preedit and commit to
+one stable live session, keeps marked text out of PTY writes, sends a final
+commit once, and fails closed on stale, modal, exited, invalid, oversized, or
+control-bearing input.
 Mouse contract tests parse the mutually exclusive tracking/encoding modes and
 prove exact SGR press/release/motion, legacy and UTF-8 boundaries, extended
 buttons, drag/all-motion mode selection, fractional wheel accumulation, and the

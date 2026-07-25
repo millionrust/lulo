@@ -34,10 +34,14 @@ evidence remains gated by the reference-PC framework work.
   storage, and the title stack now have tested ceilings. Resize commits only
   after kernel PTY acceptance; writer failure persistently disables that tab's
   input without discarding its output. Selection and bounded find state are
-  isolated per stable tab. IME, enhanced Kitty/keypad/mouse input, reviewed
-  hyperlinks/shell-derived titles, accessibility, Linux interaction/visual
-  evidence, and measured Unicode/resident/idle/active performance keep G3
-  partial.
+  isolated per stable tab. Parsed xterm 1000/1002/1003 mouse tracking now emits
+  exact bounded legacy, UTF-8, or SGR cell reports for presses, balanced
+  releases, cell motion, extended buttons, and vertical/horizontal wheels;
+  Shift preserves local selection/context input, and alternate scroll emits
+  mode-correct cursor keys. IME, enhanced Kitty/keypad and focus-event input,
+  reviewed hyperlinks/shell-derived titles, accessibility, Linux interaction/
+  visual evidence, and measured Unicode/resident/idle/active performance keep
+  G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

@@ -24,9 +24,9 @@ use alacritty_terminal::term::{Config, Term, TermMode};
 use gpui::{
     div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div, Entity,
     FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Window,
+    KeyBinding, KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    NavigationDirection, ParentElement, Pixels, Point, Render, ScrollDelta, ScrollWheelEvent,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::StyledExt as _;
 use portable_pty::{
@@ -59,12 +59,16 @@ const FONT_SIZE: f32 = 13.0;
 const LINE_H: f32 = 17.0;
 /// Approximate monospace cell advance for `Menlo` at `FONT_SIZE`.
 const CELL_W: f32 = FONT_SIZE * 0.6;
-/// Pixels from the window top to the first text row: 34pt title bar + 8pt pad.
-const TOP_PAD: f32 = 34.0 + 8.0;
+const TITLE_BAR_HEIGHT: f32 = 34.0;
+const TAB_BAR_HEIGHT: f32 = 32.0;
+const BODY_PAD: f32 = 8.0;
 /// Pixels from the window left to the first column: 8pt content padding.
-const LEFT_PAD: f32 = 8.0;
+const LEFT_PAD: f32 = BODY_PAD;
 const MAX_PASTE_BYTES: usize = 1024 * 1024;
 const MAX_SEARCH_QUERY_BYTES: usize = 4096;
+const MAX_LEGACY_MOUSE_COORD: usize = 223;
+const MAX_UTF8_MOUSE_COORD: usize = 2015;
+const MAX_WHEEL_REPORTS_PER_AXIS: usize = 16;
 const MAX_OSC_PAYLOAD_BYTES: usize = 1024;
 const MAX_COMBINING_MARKS_PER_CELL: usize = 16;
 /// One reader and one child waiter are reserved before a shell can launch.
@@ -570,6 +574,10 @@ fn grid_dimensions(width: f32, height: f32, cell_width: f32, line_height: f32) -
     }
 }
 
+fn terminal_content_top(tab_count: usize) -> f32 {
+    TITLE_BAR_HEIGHT + if tab_count > 1 { TAB_BAR_HEIGHT } else { 0.0 } + BODY_PAD
+}
+
 fn logical_line_count(text: &str) -> usize {
     if text.is_empty() {
         return 0;
@@ -763,6 +771,130 @@ fn encode_key(keystroke: &gpui::Keystroke, mode: TermMode) -> Vec<u8> {
         bytes.insert(0, 0x1b);
     }
     bytes
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MouseReport {
+    Press(MouseButton),
+    Release(MouseButton),
+    Motion(Option<MouseButton>),
+    Wheel(u16),
+}
+
+fn mouse_button_code(button: MouseButton) -> u16 {
+    match button {
+        MouseButton::Left => 0,
+        MouseButton::Middle => 1,
+        MouseButton::Right => 2,
+        MouseButton::Navigate(NavigationDirection::Back) => 128,
+        MouseButton::Navigate(NavigationDirection::Forward) => 129,
+    }
+}
+
+fn mouse_modifier_bits(modifiers: &Modifiers) -> u16 {
+    4 * u16::from(modifiers.shift)
+        + 8 * u16::from(modifiers.alt)
+        + 16 * u16::from(modifiers.control)
+}
+
+fn mouse_motion_report(mode: TermMode, pressed: Option<MouseButton>) -> Option<MouseReport> {
+    if mode.contains(TermMode::MOUSE_MOTION) {
+        Some(MouseReport::Motion(pressed))
+    } else if mode.contains(TermMode::MOUSE_DRAG) {
+        pressed.map(|button| MouseReport::Motion(Some(button)))
+    } else {
+        None
+    }
+}
+
+fn append_utf8_mouse_value(bytes: &mut Vec<u8>, value: u16) -> Option<()> {
+    let character = char::from_u32(u32::from(value))?;
+    let mut encoded = [0; 4];
+    bytes.extend_from_slice(character.encode_utf8(&mut encoded).as_bytes());
+    Some(())
+}
+
+/// Encode an xterm mouse report for a zero-based viewport cell.
+fn encode_mouse_report(
+    mode: TermMode,
+    report: MouseReport,
+    column: usize,
+    row: usize,
+    modifiers: &Modifiers,
+) -> Option<Vec<u8>> {
+    if !mode.intersects(TermMode::MOUSE_MODE) {
+        return None;
+    }
+    let x = column.checked_add(1)?;
+    let y = row.checked_add(1)?;
+    let modifier = mouse_modifier_bits(modifiers);
+    let (button, release) = match report {
+        MouseReport::Press(button) => (mouse_button_code(button) + modifier, false),
+        MouseReport::Release(button) => (mouse_button_code(button) + modifier, true),
+        MouseReport::Motion(button) => (button.map_or(3, mouse_button_code) + 32 + modifier, false),
+        MouseReport::Wheel(button) => (button + modifier, false),
+    };
+
+    if mode.contains(TermMode::SGR_MOUSE) {
+        return Some(
+            format!("\x1b[<{button};{x};{y}{}", if release { 'm' } else { 'M' }).into_bytes(),
+        );
+    }
+
+    let max_coordinate = if mode.contains(TermMode::UTF8_MOUSE) {
+        MAX_UTF8_MOUSE_COORD
+    } else {
+        MAX_LEGACY_MOUSE_COORD
+    };
+    if x > max_coordinate || y > max_coordinate {
+        return None;
+    }
+
+    // Legacy release reports discard button identity and use low bits 3.
+    let button = if release { 3 + modifier } else { button };
+    let mut bytes = b"\x1b[M".to_vec();
+    if mode.contains(TermMode::UTF8_MOUSE) {
+        append_utf8_mouse_value(&mut bytes, button + 32)?;
+        append_utf8_mouse_value(&mut bytes, u16::try_from(x).ok()? + 32)?;
+        append_utf8_mouse_value(&mut bytes, u16::try_from(y).ok()? + 32)?;
+    } else {
+        bytes.extend_from_slice(&[
+            u8::try_from(button + 32).ok()?,
+            u8::try_from(x + 32).ok()?,
+            u8::try_from(y + 32).ok()?,
+        ]);
+    }
+    Some(bytes)
+}
+
+fn accumulate_wheel_reports(
+    accumulator: &mut f32,
+    delta: f32,
+    positive_button: u16,
+    negative_button: u16,
+) -> Vec<MouseReport> {
+    if !delta.is_finite() {
+        return Vec::new();
+    }
+    let total = *accumulator + delta;
+    let unbounded_steps = total.trunc() as i32;
+    let step_limit = MAX_WHEEL_REPORTS_PER_AXIS as i32;
+    let steps = unbounded_steps.clamp(-step_limit, step_limit);
+    // Keep genuine sub-line precision, but discard deliberately bounded excess
+    // instead of leaking a near-complete extra report into the next event.
+    *accumulator = if steps == unbounded_steps {
+        total - steps as f32
+    } else {
+        0.0
+    };
+    let button = if steps >= 0 {
+        positive_button
+    } else {
+        negative_button
+    };
+    (0..steps.unsigned_abs().min(MAX_WHEEL_REPORTS_PER_AXIS as u32))
+        .map(|_| MouseReport::Wheel(button))
+        .collect()
 }
 
 /// A selected cell range, in alacritty grid-line coordinates (`Line` values,
@@ -1489,6 +1621,10 @@ struct TerminalView {
     selecting: bool,
     /// Fractional scroll-line accumulator for smooth trackpad scrolling.
     scroll_accum: f32,
+    mouse_wheel_x_accum: f32,
+    mouse_wheel_y_accum: f32,
+    reported_mouse_press: Option<(u64, MouseButton)>,
+    last_mouse_report_cell: Option<(u64, usize, usize)>,
     /// Index into `PROFILES` for the active color scheme.
     profile: usize,
     /// Whether the profile picker dropdown is open.
@@ -1627,6 +1763,10 @@ impl TerminalView {
             search,
             selecting: false,
             scroll_accum: 0.0,
+            mouse_wheel_x_accum: 0.0,
+            mouse_wheel_y_accum: 0.0,
+            reported_mouse_press: None,
+            last_mouse_report_cell: None,
             profile,
             picker_open: false,
             persistence_error,
@@ -1650,6 +1790,15 @@ impl TerminalView {
 
     fn modal_open(&self) -> bool {
         self.pending_close.is_some() || self.pending_paste.is_some()
+    }
+
+    fn reset_pointer_routing(&mut self) {
+        self.selecting = false;
+        self.scroll_accum = 0.0;
+        self.mouse_wheel_x_accum = 0.0;
+        self.mouse_wheel_y_accum = 0.0;
+        self.reported_mouse_press = None;
+        self.last_mouse_report_cell = None;
     }
 
     fn capture_active_search_query(&mut self, cx: &Context<Self>) {
@@ -1714,8 +1863,7 @@ impl TerminalView {
                 .unwrap_or_else(|error| Session::failed(c, r, scrollback_lines, error)),
         );
         self.active = self.tabs.len() - 1;
-        self.selecting = false;
-        self.scroll_accum = 0.0;
+        self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
         cx.notify();
     }
@@ -1771,8 +1919,7 @@ impl TerminalView {
         if self.active >= self.tabs.len() {
             self.active = self.tabs.len() - 1;
         }
-        self.selecting = false;
-        self.scroll_accum = 0.0;
+        self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
         if let Err(error) = self.rebalance_scrollback() {
             self.operation_error = Some(error.to_string().into());
@@ -1879,8 +2026,7 @@ impl TerminalView {
         }
         self.capture_active_search_query(cx);
         self.active = i;
-        self.selecting = false;
-        self.scroll_accum = 0.0;
+        self.reset_pointer_routing();
         self.sync_search_editor_to_active(window, cx);
         cx.notify();
     }
@@ -2187,12 +2333,22 @@ impl TerminalView {
     /// `offset` is the scrollback offset so history selections stay anchored
     /// to content rather than to the viewport.
     fn pos_to_cell(&self, pos: Point<Pixels>, offset: i32) -> (i32, usize) {
+        let (row, column) = self.pos_to_viewport_cell(pos);
+        (row as i32 - offset, column)
+    }
+
+    fn terminal_content_top(&self) -> f32 {
+        terminal_content_top(self.tabs.len())
+    }
+
+    fn pos_to_viewport_cell(&self, pos: Point<Pixels>) -> (usize, usize) {
         let x = f32::from(pos.x);
         let y = f32::from(pos.y);
-        let col =
+        let column =
             (((x - LEFT_PAD) / self.cell_w).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
-        let row = (((y - TOP_PAD) / self.line_h).floor() as i32).clamp(0, self.rows as i32 - 1);
-        (row - offset, col)
+        let row = (((y - self.terminal_content_top()) / self.line_h).floor() as i32)
+            .clamp(0, self.rows as i32 - 1) as usize;
+        (row, column)
     }
 
     /// Scroll the viewport by `lines` (positive = into history).
@@ -2203,6 +2359,215 @@ impl TerminalView {
         if let Ok(mut t) = self.tabs[self.active].term.lock() {
             t.scroll_display(Scroll::Delta(lines));
         }
+    }
+
+    fn active_terminal_mode(&self) -> Result<TermMode, SessionWriteError> {
+        self.tabs[self.active]
+            .term
+            .lock()
+            .map(|term| *term.mode())
+            .map_err(|_| SessionWriteError::State)
+    }
+
+    fn report_mouse_down(&mut self, event: &MouseDownEvent) -> bool {
+        if event.modifiers.shift || !self.tabs[self.active].accepts_input() {
+            return false;
+        }
+        let mode = match self.active_terminal_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                return true;
+            }
+        };
+        if !mode.intersects(TermMode::MOUSE_MODE) {
+            return false;
+        }
+        let (row, column) = self.pos_to_viewport_cell(event.position);
+        let Some(bytes) = encode_mouse_report(
+            mode,
+            MouseReport::Press(event.button),
+            column,
+            row,
+            &event.modifiers,
+        ) else {
+            // The application owns unshifted input while reporting is enabled,
+            // even when a legacy encoding cannot represent this large cell.
+            return true;
+        };
+        let session_id = self.tabs[self.active].id;
+        if self.tabs[self.active].write(&bytes).is_ok() {
+            self.reported_mouse_press = Some((session_id, event.button));
+            self.last_mouse_report_cell = Some((session_id, column, row));
+        }
+        self.menu_at = None;
+        true
+    }
+
+    fn report_mouse_up(&mut self, event: &MouseUpEvent) -> bool {
+        let active_id = self.tabs[self.active].id;
+        let balanced_release = self.reported_mouse_press == Some((active_id, event.button));
+        if !balanced_release && (event.modifiers.shift || !self.tabs[self.active].accepts_input()) {
+            return false;
+        }
+        let mode = match self.active_terminal_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                self.reported_mouse_press = None;
+                return balanced_release;
+            }
+        };
+        if !balanced_release && !mode.intersects(TermMode::MOUSE_MODE) {
+            return false;
+        }
+        let (row, column) = self.pos_to_viewport_cell(event.position);
+        if let Some(bytes) = encode_mouse_report(
+            mode,
+            MouseReport::Release(event.button),
+            column,
+            row,
+            &event.modifiers,
+        ) {
+            let _ = self.tabs[self.active].write(&bytes);
+        }
+        self.reported_mouse_press = None;
+        self.last_mouse_report_cell = None;
+        true
+    }
+
+    fn handle_mouse_up(&mut self, event: &MouseUpEvent, cx: &mut Context<Self>) {
+        let was_live = self.tabs[self.active].accepts_input();
+        let error_before = self.operation_error.clone();
+        if self.report_mouse_up(event) {
+            self.selecting = false;
+            if was_live != self.tabs[self.active].accepts_input()
+                || error_before != self.operation_error
+            {
+                cx.notify();
+            }
+            return;
+        }
+        if event.button != MouseButton::Left {
+            return;
+        }
+        if self.selecting {
+            let offset = self.display_offset();
+            let cell = self.pos_to_cell(event.position, offset);
+            if let Some(selection) = self.tabs[self.active].ui.selection.as_mut() {
+                selection.head = cell;
+            }
+        }
+        self.selecting = false;
+        // A bare click (no drag) clears the selection.
+        if self.tabs[self.active]
+            .ui
+            .selection
+            .is_some_and(|selection| selection.is_empty())
+        {
+            self.tabs[self.active].ui.selection = None;
+        }
+        cx.notify();
+    }
+
+    fn report_mouse_motion(&mut self, event: &MouseMoveEvent) -> bool {
+        if event.modifiers.shift || !self.tabs[self.active].accepts_input() {
+            return false;
+        }
+        let mode = match self.active_terminal_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                return true;
+            }
+        };
+        if !mode.intersects(TermMode::MOUSE_MODE) {
+            return false;
+        }
+        let Some(report) = mouse_motion_report(mode, event.pressed_button) else {
+            return true;
+        };
+        let session_id = self.tabs[self.active].id;
+        let (row, column) = self.pos_to_viewport_cell(event.position);
+        if self.last_mouse_report_cell == Some((session_id, column, row)) {
+            return true;
+        }
+        let Some(bytes) = encode_mouse_report(mode, report, column, row, &event.modifiers) else {
+            return true;
+        };
+        if self.tabs[self.active].write(&bytes).is_ok() {
+            self.last_mouse_report_cell = Some((session_id, column, row));
+        }
+        true
+    }
+
+    fn report_mouse_wheel(&mut self, event: &ScrollWheelEvent) -> bool {
+        if event.modifiers.shift || !self.tabs[self.active].accepts_input() {
+            return false;
+        }
+        let mode = match self.active_terminal_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                return true;
+            }
+        };
+        let mouse_reporting = mode.intersects(TermMode::MOUSE_MODE);
+        let alternate_scroll = mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL);
+        if !mouse_reporting && !alternate_scroll {
+            return false;
+        }
+
+        let (x_delta, y_delta) = match event.delta {
+            ScrollDelta::Lines(delta) => (delta.x, delta.y),
+            ScrollDelta::Pixels(delta) => (
+                f32::from(delta.x) / self.line_h,
+                f32::from(delta.y) / self.line_h,
+            ),
+        };
+        let mut reports = accumulate_wheel_reports(&mut self.mouse_wheel_y_accum, y_delta, 64, 65);
+        reports.extend(accumulate_wheel_reports(
+            &mut self.mouse_wheel_x_accum,
+            x_delta,
+            66,
+            67,
+        ));
+        if reports.is_empty() {
+            return true;
+        }
+
+        let mut bytes = Vec::with_capacity(reports.len() * 16);
+        if mouse_reporting {
+            let (row, column) = self.pos_to_viewport_cell(event.position);
+            for report in reports {
+                if let Some(encoded) =
+                    encode_mouse_report(mode, report, column, row, &event.modifiers)
+                {
+                    bytes.extend(encoded);
+                }
+            }
+        } else {
+            let modifiers = Modifiers::default();
+            for report in reports {
+                let MouseReport::Wheel(button) = report else {
+                    continue;
+                };
+                let final_byte = match button {
+                    64 => 'A',
+                    65 => 'B',
+                    _ => continue,
+                };
+                bytes.extend(cursor_key_sequence(
+                    final_byte,
+                    &modifiers,
+                    mode.contains(TermMode::APP_CURSOR),
+                ));
+            }
+        }
+        if !bytes.is_empty() {
+            let _ = self.tabs[self.active].write(&bytes);
+        }
+        true
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent) -> Result<(), SessionWriteError> {
@@ -2623,23 +2988,48 @@ impl Render for TerminalView {
                             cx.notify();
                         }
                     }))
-                    // Drag to select a cell range.
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                            if this.picker_open {
-                                this.picker_open = false;
+                    // Applications own unshifted pointer input only while the
+                    // parsed terminal mode requests it. Shift always preserves
+                    // Terminal's local selection/context-menu path.
+                    .on_any_mouse_down(cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                        if this.modal_open() {
+                            return;
+                        }
+                        let was_live = this.tabs[this.active].accepts_input();
+                        let error_before = this.operation_error.clone();
+                        let overlay_was_open = this.menu_at.is_some() || this.picker_open;
+                        if this.report_mouse_down(ev) {
+                            this.selecting = false;
+                            this.menu_at = None;
+                            this.picker_open = false;
+                            if was_live != this.tabs[this.active].accepts_input()
+                                || error_before != this.operation_error
+                                || overlay_was_open
+                            {
+                                cx.notify();
                             }
-                            let offset = this.display_offset();
-                            let cell = this.pos_to_cell(ev.position, offset);
-                            this.tabs[this.active].ui.selection = Some(Selection {
-                                anchor: cell,
-                                head: cell,
-                            });
-                            this.selecting = true;
-                            cx.notify();
-                        }),
-                    )
+                            return;
+                        }
+                        if this.picker_open {
+                            this.picker_open = false;
+                        }
+                        match ev.button {
+                            MouseButton::Left => {
+                                let offset = this.display_offset();
+                                let cell = this.pos_to_cell(ev.position, offset);
+                                this.tabs[this.active].ui.selection = Some(Selection {
+                                    anchor: cell,
+                                    head: cell,
+                                });
+                                this.selecting = true;
+                            }
+                            MouseButton::Right => {
+                                this.menu_at = Some(ev.position);
+                            }
+                            MouseButton::Middle | MouseButton::Navigate(_) => {}
+                        }
+                        cx.notify();
+                    }))
                     .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
                         if this.selecting {
                             let offset = this.display_offset();
@@ -2648,23 +3038,93 @@ impl Render for TerminalView {
                                 sel.head = cell;
                             }
                             cx.notify();
+                            return;
+                        }
+                        let was_live = this.tabs[this.active].accepts_input();
+                        let error_before = this.operation_error.clone();
+                        if this.report_mouse_motion(ev)
+                            && (was_live != this.tabs[this.active].accepts_input()
+                                || error_before != this.operation_error)
+                        {
+                            cx.notify();
                         }
                     }))
                     .on_mouse_up(
                         MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, _, cx| {
-                            this.selecting = false;
-                            // A bare click (no drag) clears the selection.
-                            if let Some(sel) = this.tabs[this.active].ui.selection {
-                                if sel.is_empty() {
-                                    this.tabs[this.active].ui.selection = None;
-                                }
-                            }
-                            cx.notify();
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
                         }),
                     )
-                    // Scroll wheel / trackpad → walk through scrollback history.
+                    .on_mouse_up(
+                        MouseButton::Middle,
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Right,
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Navigate(NavigationDirection::Back),
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Navigate(NavigationDirection::Forward),
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    // GPUI dispatches an outside release separately. Handling
+                    // both paths prevents a drag from leaving either the
+                    // terminal application or local selection in a stuck state.
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Middle,
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Right,
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Navigate(NavigationDirection::Back),
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Navigate(NavigationDirection::Forward),
+                        cx.listener(|this, ev: &MouseUpEvent, _, cx| {
+                            this.handle_mouse_up(ev, cx);
+                        }),
+                    )
+                    // Mouse-aware applications receive bounded wheel reports;
+                    // otherwise the wheel walks local scrollback.
                     .on_scroll_wheel(cx.listener(|this, ev: &ScrollWheelEvent, _, cx| {
+                        let was_live = this.tabs[this.active].accepts_input();
+                        let error_before = this.operation_error.clone();
+                        if this.report_mouse_wheel(ev) {
+                            if was_live != this.tabs[this.active].accepts_input()
+                                || error_before != this.operation_error
+                            {
+                                cx.notify();
+                            }
+                            return;
+                        }
                         let dy = match ev.delta {
                             ScrollDelta::Lines(p) => p.y,
                             ScrollDelta::Pixels(p) => f32::from(p.y) / this.line_h,
@@ -2683,14 +3143,7 @@ impl Render for TerminalView {
                     .font_family(FONT)
                     .text_size(px(self.font_size))
                     .v_flex()
-                    .children(rows)
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                            this.menu_at = Some(ev.position);
-                            cx.notify();
-                        }),
-                    ),
+                    .children(rows),
             )
             .when(searching, |el| {
                 el.child(
@@ -3168,6 +3621,9 @@ mod tests {
     fn terminal_resources_have_explicit_bounds() {
         assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
         assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
+        assert_eq!(MAX_LEGACY_MOUSE_COORD, 223);
+        assert_eq!(MAX_UTF8_MOUSE_COORD, 2015);
+        assert_eq!(MAX_WHEEL_REPORTS_PER_AXIS, 16);
         assert_eq!(MAX_TABS, 16);
         assert_eq!(SESSION_WORKERS_PER_TAB, 2);
         assert_eq!(SESSION_WORKER_STACK_BYTES, 512 * 1024);
@@ -3197,6 +3653,8 @@ mod tests {
                 lines: MIN_ROWS
             }
         );
+        assert_eq!(terminal_content_top(1), 42.0);
+        assert_eq!(terminal_content_top(2), 74.0);
     }
 
     #[test]
@@ -3211,6 +3669,181 @@ mod tests {
 
         parser.advance(&mut handler, b"x");
         assert_eq!(parser.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn mouse_modes_and_sgr_reports_follow_xterm_cells() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+        parser.advance(&mut term, b"\x1b[?1002;1006h");
+        let mode = *term.mode();
+        assert!(mode.contains(TermMode::MOUSE_DRAG | TermMode::SGR_MOUSE));
+        assert!(!mode.contains(TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_MOTION));
+
+        assert_eq!(
+            encode_mouse_report(
+                mode,
+                MouseReport::Press(MouseButton::Left),
+                0,
+                0,
+                &Modifiers::default()
+            )
+            .as_deref(),
+            Some(b"\x1b[<0;1;1M".as_slice())
+        );
+        assert_eq!(
+            encode_mouse_report(
+                mode,
+                MouseReport::Release(MouseButton::Right),
+                499,
+                299,
+                &Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                }
+            )
+            .as_deref(),
+            Some(b"\x1b[<18;500;300m".as_slice())
+        );
+        assert_eq!(
+            encode_mouse_report(
+                mode,
+                MouseReport::Motion(Some(MouseButton::Middle)),
+                4,
+                6,
+                &Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                }
+            )
+            .as_deref(),
+            Some(b"\x1b[<41;5;7M".as_slice())
+        );
+        assert_eq!(
+            encode_mouse_report(
+                mode,
+                MouseReport::Press(MouseButton::Navigate(NavigationDirection::Back)),
+                2,
+                3,
+                &Modifiers::default()
+            )
+            .as_deref(),
+            Some(b"\x1b[<128;3;4M".as_slice())
+        );
+
+        parser.advance(&mut term, b"\x1b[?1002;1006l");
+        assert!(!term
+            .mode()
+            .intersects(TermMode::MOUSE_MODE | TermMode::SGR_MOUSE));
+    }
+
+    #[test]
+    fn legacy_and_utf8_mouse_encodings_refuse_unrepresentable_cells() {
+        let legacy = TermMode::MOUSE_REPORT_CLICK;
+        assert_eq!(
+            encode_mouse_report(
+                legacy,
+                MouseReport::Press(MouseButton::Left),
+                0,
+                0,
+                &Modifiers::default()
+            ),
+            Some(vec![0x1b, b'[', b'M', 32, 33, 33])
+        );
+        assert_eq!(
+            encode_mouse_report(
+                legacy,
+                MouseReport::Release(MouseButton::Left),
+                0,
+                0,
+                &Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                }
+            ),
+            Some(vec![0x1b, b'[', b'M', 51, 33, 33])
+        );
+        assert!(encode_mouse_report(
+            legacy,
+            MouseReport::Press(MouseButton::Left),
+            MAX_LEGACY_MOUSE_COORD,
+            0,
+            &Modifiers::default()
+        )
+        .is_none());
+        assert!(encode_mouse_report(
+            legacy,
+            MouseReport::Press(MouseButton::Left),
+            MAX_LEGACY_MOUSE_COORD - 1,
+            MAX_LEGACY_MOUSE_COORD - 1,
+            &Modifiers::default()
+        )
+        .is_some());
+
+        let utf8 = legacy | TermMode::UTF8_MOUSE;
+        let encoded = encode_mouse_report(
+            utf8,
+            MouseReport::Press(MouseButton::Left),
+            499,
+            299,
+            &Modifiers::default(),
+        )
+        .expect("500x300 must fit UTF-8 mouse coordinates");
+        let mut expected = b"\x1b[M ".to_vec();
+        append_utf8_mouse_value(&mut expected, 532).expect("valid x coordinate");
+        append_utf8_mouse_value(&mut expected, 332).expect("valid y coordinate");
+        assert_eq!(encoded, expected);
+        assert!(encode_mouse_report(
+            utf8,
+            MouseReport::Press(MouseButton::Left),
+            MAX_UTF8_MOUSE_COORD - 1,
+            MAX_UTF8_MOUSE_COORD - 1,
+            &Modifiers::default()
+        )
+        .is_some());
+        assert!(encode_mouse_report(
+            utf8,
+            MouseReport::Press(MouseButton::Left),
+            MAX_UTF8_MOUSE_COORD,
+            0,
+            &Modifiers::default()
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn mouse_motion_and_wheel_reports_are_mode_correct_and_bounded() {
+        assert_eq!(
+            mouse_motion_report(TermMode::MOUSE_REPORT_CLICK, Some(MouseButton::Left)),
+            None
+        );
+        assert_eq!(mouse_motion_report(TermMode::MOUSE_DRAG, None), None);
+        assert_eq!(
+            mouse_motion_report(TermMode::MOUSE_DRAG, Some(MouseButton::Right)),
+            Some(MouseReport::Motion(Some(MouseButton::Right)))
+        );
+        assert_eq!(
+            mouse_motion_report(TermMode::MOUSE_MOTION, None),
+            Some(MouseReport::Motion(None))
+        );
+
+        let mut accumulator = 0.0;
+        assert!(accumulate_wheel_reports(&mut accumulator, 0.4, 64, 65).is_empty());
+        assert_eq!(
+            accumulate_wheel_reports(&mut accumulator, 0.7, 64, 65),
+            vec![MouseReport::Wheel(64)]
+        );
+        assert_eq!(
+            accumulate_wheel_reports(&mut accumulator, -2.2, 64, 65),
+            vec![MouseReport::Wheel(65), MouseReport::Wheel(65)]
+        );
+        assert_eq!(
+            accumulate_wheel_reports(&mut accumulator, 1000.0, 64, 65).len(),
+            MAX_WHEEL_REPORTS_PER_AXIS
+        );
+        assert_eq!(accumulator, 0.0);
+        assert!(accumulate_wheel_reports(&mut accumulator, f32::NAN, 64, 65).is_empty());
     }
 
     #[test]

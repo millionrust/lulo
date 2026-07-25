@@ -113,12 +113,24 @@ are capped at 4 KiB on a valid UTF-8 boundary before matching; oversized editor
 input is normalized on the next event-driven render. Generic numbered tab
 labels remain intentional until reviewed shell integration can provide a
 private-safe title authority.
+Terminal mouse input now follows the parsed xterm 1000/1002/1003 tracking mode
+and 1005/1006 coordinate encoding. Press, balanced release, cell-deduplicated
+drag/all-motion, vertical and horizontal wheel events use one-based viewport
+cells; SGR retains release-button identity, while legacy and UTF-8 reports are
+refused beyond their exact 223/2,015 coordinate limits instead of being clamped
+to a false cell. Each wheel event emits at most 16 reports per axis and discards
+overflow. A release outside the body still finishes the exact application drag.
+Shift always takes the local selection/context-menu path, including while an
+application has reporting enabled. Without mouse reporting, alternate-screen
+mode 1007 translates vertical wheel steps to mode-correct cursor keys; otherwise
+the wheel remains local scrollback. One-tab and multi-tab pointer coordinates
+now share the rendered title/tab/content offsets.
 
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
-terminal mouse reporting, hyperlink policy, shell integration, per-tab
-title authority, accessible terminal text semantics, Linux interaction/visual
-evidence, and measured Unicode/resident/idle/active performance.
+focus event reporting, hyperlink policy, shell integration, per-tab title
+authority, accessible terminal text semantics, Linux interaction/visual evidence,
+and measured Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -174,7 +186,9 @@ shell-integration protocol before they may be shown.
   marks. OSC ingress is capped at 1 KiB, and unreviewed hyperlink metadata never
   reaches the grid. Two 512 KiB-stack workers per tab, VTE's sub-2 MiB
   synchronized-update buffer, fixed parser arrays, and Alacritty's 4,096-entry
-  title stack have explicit tested contracts.
+  title stack have explicit tested contracts. Mouse coordinates are limited by
+  their selected wire encoding, and one input event can create at most 32 wheel
+  reports across both axes.
 
 ## Failure states
 
@@ -212,6 +226,18 @@ traditional xterm navigation and F1–F20 sequences follow application-cursor
 mode and encode Shift/Alt/Control modifiers. Enhanced Kitty keyboard reporting,
 numeric-keypad identity, and complete IME preedit/commit behavior remain Linux
 framework acceptance gates.
+
+## Pointer map
+
+- Unshifted press/release and requested motion go to the active PTY only while
+  its parsed 1000, 1002, or 1003 mouse mode owns them.
+- Shift-drag always selects locally. Shift-right-click opens the local context
+  menu even when a full-screen application has mouse reporting enabled.
+- Motion is emitted only when the pointer enters another terminal cell. A
+  release over or outside the body completes a successfully reported press.
+- Vertical/horizontal wheel reports follow 1005/1006 when selected. In an
+  alternate screen with 1007 but no mouse tracking, vertical wheel input sends
+  cursor Up/Down; otherwise the wheel navigates local scrollback.
 
 ## Visual and accessibility states
 
@@ -252,10 +278,18 @@ accepted geometry and a writer failure permanently disables live input while
 keeping existing output available.
 Per-tab state tests prove independent selection/find state and UTF-8-safe query
 bounding.
+Mouse contract tests parse the mutually exclusive tracking/encoding modes and
+prove exact SGR press/release/motion, legacy and UTF-8 boundaries, extended
+buttons, drag/all-motion mode selection, fractional wheel accumulation, and the
+per-event report ceiling. Runtime routing preserves Shift-local selection,
+same-cell suppression, outside-release state, and input-failure
+visibility without repainting ordinary application motion.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and
 [bracketed-paste](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode)
+and
+[mouse-tracking](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Mouse-Tracking)
 contracts.
 Native
 Ubuntu/niri evidence must additionally cover Bash and another supported shell,

@@ -15,9 +15,9 @@ use std::sync::{
 };
 
 use alacritty_terminal::event::EventListener;
-use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::grid::{Dimensions, Row, Scroll};
 use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::cell::Flags;
+use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::{Config, Term, TermMode};
 use gpui::{
     div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div, Entity,
@@ -41,8 +41,17 @@ const MIN_COLS: usize = 20;
 const MIN_ROWS: usize = 5;
 const MAX_COLS: usize = 500;
 const MAX_ROWS: usize = 300;
-const MAX_TABS: usize = 64;
+const MAX_TABS: usize = 16;
 const SCROLLBACK_LINES: usize = 10_000;
+const MAX_GRID_BASE_BYTES_PER_WINDOW: usize = 512 * 1024 * 1024;
+/// `Vec` can retain almost twice the requested elements after amortized growth.
+const MAX_ROW_CELL_CAPACITY_FACTOR: usize = 2;
+/// Alacritty retains both the primary and alternate visible screen grids.
+const VISIBLE_GRID_COPIES: usize = 2;
+/// Conservative allocator metadata/alignment/size-class allowance per cell row.
+const ROW_ALLOCATION_ALLOWANCE_BYTES: usize = 1024;
+/// Reserve for retained/rounded primary and alternate outer Row storage.
+const OUTER_ROW_STORAGE_ALLOWANCE_BYTES_PER_TAB: usize = 1024 * 1024;
 const FONT: &str = "Menlo"; // macOS Terminal's default monospace
 const FONT_SIZE: f32 = 13.0;
 const LINE_H: f32 = 17.0;
@@ -211,11 +220,59 @@ impl Dimensions for TermSize {
     }
 }
 
-fn terminal_config() -> Config {
+fn terminal_config(scrollback_lines: usize) -> Config {
     Config {
-        scrolling_history: SCROLLBACK_LINES,
+        scrolling_history: scrollback_lines.min(SCROLLBACK_LINES),
         ..Config::default()
     }
+}
+
+fn bounded_cell_row_bytes() -> usize {
+    MAX_COLS
+        .saturating_mul(MAX_ROW_CELL_CAPACITY_FACTOR)
+        .saturating_mul(std::mem::size_of::<Cell>())
+        .saturating_add(ROW_ALLOCATION_ALLOWANCE_BYTES)
+}
+
+fn retained_row_slots_bytes_per_tab() -> usize {
+    // Shrinking history drops each Row's cell allocation, but the outer
+    // primary/alternate Vecs can retain their old Row-slot capacities. Budget
+    // their lifetime maximum independently from the current history limit.
+    SCROLLBACK_LINES
+        .saturating_add(MAX_ROWS.saturating_mul(VISIBLE_GRID_COPIES))
+        .saturating_mul(MAX_ROW_CELL_CAPACITY_FACTOR)
+        .saturating_mul(std::mem::size_of::<Row<Cell>>())
+        .saturating_add(OUTER_ROW_STORAGE_ALLOWANCE_BYTES_PER_TAB)
+}
+
+fn scrollback_limit_for_tab_count(tab_count: usize) -> usize {
+    if tab_count == 0 {
+        return 0;
+    }
+    let limit = MAX_GRID_BASE_BYTES_PER_WINDOW
+        .checked_div(tab_count)
+        .unwrap_or(0)
+        .saturating_sub(retained_row_slots_bytes_per_tab())
+        .checked_div(bounded_cell_row_bytes())
+        .unwrap_or(0)
+        .saturating_sub(MAX_ROWS.saturating_mul(VISIBLE_GRID_COPIES))
+        .min(SCROLLBACK_LINES);
+    debug_assert!(
+        bounded_grid_base_bytes(tab_count, limit) <= MAX_GRID_BASE_BYTES_PER_WINDOW,
+        "scrollback history must stay inside the base-grid budget"
+    );
+    limit
+}
+
+fn bounded_grid_base_bytes(tab_count: usize, history_lines: usize) -> usize {
+    let cell_rows = tab_count
+        .saturating_mul(
+            MAX_ROWS
+                .saturating_mul(VISIBLE_GRID_COPIES)
+                .saturating_add(history_lines),
+        )
+        .saturating_mul(bounded_cell_row_bytes());
+    cell_rows.saturating_add(tab_count.saturating_mul(retained_row_slots_bytes_per_tab()))
 }
 
 fn grid_dimensions(width: f32, height: f32, cell_width: f32, line_height: f32) -> TermSize {
@@ -573,7 +630,7 @@ impl std::fmt::Display for SessionWriteError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::Exited => "This terminal session is no longer accepting input.",
-            Self::State => "Terminal could not verify the active input mode.",
+            Self::State => "Terminal could not safely access the session state.",
             Self::Write => "Terminal could not send input to the shell.",
         })
     }
@@ -638,7 +695,12 @@ struct Session {
 impl Session {
     /// Start a real shell in a PTY. Returns a private-safe typed failure
     /// instead of panicking or exposing environment-derived shell details.
-    fn spawn(cols: usize, rows: usize, redraw: RedrawSender) -> Result<Session, SessionStartError> {
+    fn spawn(
+        cols: usize,
+        rows: usize,
+        scrollback_lines: usize,
+        redraw: RedrawSender,
+    ) -> Result<Session, SessionStartError> {
         let size = TermSize { cols, lines: rows };
         let pty = native_pty_system();
         let pair = pty
@@ -670,7 +732,11 @@ impl Session {
         let shell_pid = child.process_id();
         let killer = child.clone_killer();
         drop(pair.slave);
-        let term = Arc::new(Mutex::new(Term::new(terminal_config(), &size, EventProxy)));
+        let term = Arc::new(Mutex::new(Term::new(
+            terminal_config(scrollback_lines),
+            &size,
+            EventProxy,
+        )));
         let term_reader = term.clone();
         let reader_redraw = redraw.clone();
         std::thread::spawn(move || {
@@ -711,9 +777,18 @@ impl Session {
 
     /// A no-PTY session that just displays an error message in its grid, so a
     /// shell-startup failure degrades gracefully instead of crashing.
-    fn failed(cols: usize, rows: usize, error: SessionStartError) -> Session {
+    fn failed(
+        cols: usize,
+        rows: usize,
+        scrollback_lines: usize,
+        error: SessionStartError,
+    ) -> Session {
         let size = TermSize { cols, lines: rows };
-        let term = Arc::new(Mutex::new(Term::new(terminal_config(), &size, EventProxy)));
+        let term = Arc::new(Mutex::new(Term::new(
+            terminal_config(scrollback_lines),
+            &size,
+            EventProxy,
+        )));
         if let Ok(mut t) = term.lock() {
             let mut parser: Processor = Processor::new();
             let text = format!("\r\n  {error}\r\n");
@@ -939,8 +1014,9 @@ fn save_profile(index: usize) -> Result<(), storage::Failure> {
 impl TerminalView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (redraw, redraw_rx) = async_channel::bounded(1);
-        let session = Session::spawn(COLS, ROWS, redraw.clone())
-            .unwrap_or_else(|error| Session::failed(COLS, ROWS, error));
+        let scrollback_lines = scrollback_limit_for_tab_count(1);
+        let session = Session::spawn(COLS, ROWS, scrollback_lines, redraw.clone())
+            .unwrap_or_else(|error| Session::failed(COLS, ROWS, scrollback_lines, error));
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
@@ -1026,19 +1102,48 @@ impl TerminalView {
         self.pending_close.is_some() || self.pending_paste.is_some()
     }
 
+    fn apply_scrollback_limit(&self, limit: usize) -> Result<(), SessionWriteError> {
+        // Acquire every authority before mutating any, so one poisoned session
+        // cannot leave a partially applied cross-tab budget.
+        let mut terms = Vec::with_capacity(self.tabs.len());
+        for session in &self.tabs {
+            terms.push(session.term.lock().map_err(|_| SessionWriteError::State)?);
+        }
+        for term in &mut terms {
+            // `set_options` updates the primary history even while the
+            // alternate screen is active, while preserving the alternate
+            // grid's zero-history contract. Updating `grid_mut()` directly
+            // would target the wrong grid.
+            term.set_options(terminal_config(limit));
+        }
+        Ok(())
+    }
+
+    fn rebalance_scrollback(&self) -> Result<(), SessionWriteError> {
+        self.apply_scrollback_limit(scrollback_limit_for_tab_count(self.tabs.len()))
+    }
+
     fn new_tab(&mut self, cx: &mut Context<Self>) {
         if self.modal_open() {
             return;
         }
         if self.tabs.len() >= MAX_TABS {
-            self.operation_error = Some("Terminal supports up to 64 tabs in one window.".into());
+            self.operation_error =
+                Some(format!("Terminal supports up to {MAX_TABS} tabs in one window.").into());
+            cx.notify();
+            return;
+        }
+        let next_tab_count = self.tabs.len() + 1;
+        let scrollback_lines = scrollback_limit_for_tab_count(next_tab_count);
+        if let Err(error) = self.apply_scrollback_limit(scrollback_lines) {
+            self.operation_error = Some(error.to_string().into());
             cx.notify();
             return;
         }
         let (c, r) = (self.cols.max(MIN_COLS), self.rows.max(MIN_ROWS));
         self.tabs.push(
-            Session::spawn(c, r, self.redraw.clone())
-                .unwrap_or_else(|error| Session::failed(c, r, error)),
+            Session::spawn(c, r, scrollback_lines, self.redraw.clone())
+                .unwrap_or_else(|error| Session::failed(c, r, scrollback_lines, error)),
         );
         self.active = self.tabs.len() - 1;
         self.selection = None;
@@ -1097,6 +1202,9 @@ impl TerminalView {
         }
         self.selection = None;
         self.cols = 0;
+        if let Err(error) = self.rebalance_scrollback() {
+            self.operation_error = Some(error.to_string().into());
+        }
         cx.notify();
     }
 
@@ -1219,6 +1327,7 @@ impl TerminalView {
     fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let n = self.tabs.len();
         let active_tab = self.active;
+        let history_limit = scrollback_limit_for_tab_count(n);
         let mut bar = div()
             .h(px(32.0))
             .flex_none()
@@ -1269,20 +1378,28 @@ impl TerminalView {
                     ),
             );
         }
-        bar.child(div().flex_1()).child(
-            div()
-                .id("newtab")
-                .w(px(22.0))
-                .h(px(26.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.0))
-                .text_size(rmac_ui::text_px(15.0))
-                .text_color(rmac_ui::mac::text_secondary())
-                .child("+")
-                .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
-        )
+        bar.child(div().flex_1())
+            .child(
+                div()
+                    .px_1()
+                    .text_size(rmac_ui::text_px(10.0))
+                    .text_color(rmac_ui::mac::text_secondary())
+                    .child(format!("{history_limit} history lines/tab")),
+            )
+            .child(
+                div()
+                    .id("newtab")
+                    .w(px(22.0))
+                    .h(px(26.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(5.0))
+                    .text_size(rmac_ui::text_px(15.0))
+                    .text_color(rmac_ui::mac::text_secondary())
+                    .child("+")
+                    .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
+            )
     }
 
     /// The profile chip in the toolbar — shows the active scheme; click to
@@ -2303,8 +2420,8 @@ mod tests {
     #[test]
     fn terminal_resources_have_explicit_bounds() {
         assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
-        assert_eq!(MAX_TABS, 64);
-        assert_eq!(terminal_config().scrolling_history, 10_000);
+        assert_eq!(MAX_TABS, 16);
+        assert_eq!(terminal_config(SCROLLBACK_LINES).scrolling_history, 10_000);
         assert_eq!(
             grid_dimensions(0.0, 0.0, CELL_W, LINE_H),
             TermSize {
@@ -2329,6 +2446,61 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_scrollback_budget_covers_every_supported_tab_count() {
+        assert_eq!(scrollback_limit_for_tab_count(0), 0);
+        assert_eq!(scrollback_limit_for_tab_count(1), SCROLLBACK_LINES);
+        assert_eq!(scrollback_limit_for_tab_count(2), SCROLLBACK_LINES);
+        assert!(bounded_cell_row_bytes() >= MAX_COLS * std::mem::size_of::<Cell>());
+        assert!(
+            retained_row_slots_bytes_per_tab()
+                >= (SCROLLBACK_LINES + MAX_ROWS * VISIBLE_GRID_COPIES)
+                    * std::mem::size_of::<Row<Cell>>()
+        );
+
+        let mut previous = SCROLLBACK_LINES;
+        for tabs in 1..=MAX_TABS {
+            let history = scrollback_limit_for_tab_count(tabs);
+            assert!(history <= previous);
+            assert!(
+                bounded_grid_base_bytes(tabs, history) <= MAX_GRID_BASE_BYTES_PER_WINDOW,
+                "{tabs} tabs with {history} history lines exceeded the base-grid budget"
+            );
+            previous = history;
+        }
+
+        let crowded_history = scrollback_limit_for_tab_count(MAX_TABS);
+        assert!(crowded_history >= 650);
+        assert!(crowded_history < SCROLLBACK_LINES);
+        assert!(
+            bounded_grid_base_bytes(MAX_TABS, crowded_history + 1) > MAX_GRID_BASE_BYTES_PER_WINDOW
+        );
+        assert_eq!(
+            terminal_config(usize::MAX).scrolling_history,
+            SCROLLBACK_LINES
+        );
+    }
+
+    #[test]
+    fn history_rebalance_preserves_zero_history_on_the_alternate_screen() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut parser: Processor = Processor::new();
+
+        parser.advance(&mut term, b"\x1b[?1049h");
+        term.set_options(terminal_config(2));
+        for _ in 0..20 {
+            parser.advance(&mut term, b"alternate\r\n");
+        }
+        assert_eq!(term.grid().history_size(), 0);
+
+        parser.advance(&mut term, b"\x1b[?1049l");
+        for _ in 0..20 {
+            parser.advance(&mut term, b"primary\r\n");
+        }
+        assert_eq!(term.grid().history_size(), 2);
+    }
+
+    #[test]
     fn paste_line_count_normalizes_platform_boundaries() {
         assert_eq!(logical_line_count(""), 0);
         assert_eq!(logical_line_count("one"), 1);
@@ -2341,7 +2513,7 @@ mod tests {
     #[test]
     fn bracketed_paste_cannot_embed_its_terminator() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(), &size, EventProxy);
+        let mut term = Term::new(terminal_config(SCROLLBACK_LINES), &size, EventProxy);
         let mut parser: Processor = Processor::new();
         parser.advance(&mut term, b"\x1b[?2004h");
         assert!(term.mode().contains(TermMode::BRACKETED_PASTE));
@@ -2404,7 +2576,7 @@ mod tests {
     #[test]
     fn cursor_keys_follow_the_parsed_application_mode() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(), &size, EventProxy);
+        let mut term = Term::new(terminal_config(SCROLLBACK_LINES), &size, EventProxy);
         let mut parser: Processor = Processor::new();
         let up = test_keystroke("up", None, gpui::Modifiers::default());
         let home = test_keystroke("home", None, gpui::Modifiers::default());
@@ -2477,9 +2649,9 @@ mod tests {
 
     #[test]
     fn enhanced_keyboard_protocol_is_not_partially_advertised() {
-        assert!(!terminal_config().kitty_keyboard);
+        assert!(!terminal_config(SCROLLBACK_LINES).kitty_keyboard);
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(), &size, EventProxy);
+        let mut term = Term::new(terminal_config(SCROLLBACK_LINES), &size, EventProxy);
         let mut parser: Processor = Processor::new();
 
         parser.advance(&mut term, b"\x1b[>1u");

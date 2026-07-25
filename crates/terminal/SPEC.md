@@ -45,9 +45,17 @@ opens a destructive review; unknown group/PID state also requires review.
 Confirmation sends SIGHUP to the exact positive foreground group and then the
 shell, while cancellation changes no process state. The final tab follows the
 same guarded window path. Clipboard writes larger than 1 MiB are refused before
-the PTY. One window is capped at 64 tabs; every emulator grid is bounded to
-20–500 columns and 5–300 rows; and each tab owns an explicit 10,000-line
-scrollback limit rather than inheriting a changeable dependency default.
+the PTY. One window is capped at 16 tabs; every emulator grid is bounded to
+20–500 columns and 5–300 rows. One or two tabs can each retain the full
+10,000-line history. At every higher supported tab count, Terminal derives and
+applies one smaller per-tab limit before creating the next session so the
+window's primary/alternate base cell grids remain within a conservative
+512 MiB ceiling. The accounting uses the compiled Cell/Row sizes, maximum
+geometry, two retained screen grids, worst-case amortized row capacity, and
+per-row allocator size-class allowance, plus retained/rounded outer Row storage.
+The tab bar reports the active history cap; closing tabs raises future capacity
+but cannot restore history already trimmed. A session-state failure aborts tab
+creation rather than bypassing the budget.
 Paste now follows the active emulator mode: xterm private mode 2004 wraps exact
 clipboard bytes with `ESC[200~` / `ESC[201~`, strips embedded Escape and ETX so
 the payload cannot end the bracket early, and preserves multiline Unicode. If
@@ -70,9 +78,10 @@ not partially advertised or activated.
 The complete application claim remains blocked on IME preedit/commit,
 enhanced Kitty keyboard press/repeat/release reporting, numeric-keypad identity,
 terminal mouse reporting, hyperlink policy, shell integration, per-tab
-selection/search/title state, explicit scrollback memory accounting, resize/
-write failure presentation depth, accessible terminal text semantics, Linux
-interaction/visual evidence, and measured idle/active performance.
+selection/search/title state, hard bounds for dynamically allocated cell extras,
+title stacks, parser/control-string buffers and thread resources, resize/write
+failure presentation depth, accessible terminal text semantics, Linux
+interaction/visual evidence, and measured resident/idle/active performance.
 
 ## Platform authorities
 
@@ -122,7 +131,10 @@ shell-integration protocol before they may be shown.
   panic text, evidence bundles, and persistence.
 - Reader/parser work stays off the GPUI thread. Output bursts coalesce into one
   pending repaint; a quiet terminal has no timer-driven CPU or frame activity.
-- Output and scrollback must have explicit memory bounds before 1.0 evidence.
+- Primary/alternate base grid storage has a conservative 512 MiB per-window
+  ceiling across every supported tab count. Dynamically allocated combining
+  marks, hyperlinks/titles, parser control strings, and thread resources still
+  need hard bounds before 1.0 evidence.
 
 ## Failure states
 
@@ -182,7 +194,9 @@ guarded close decisions, bracketed/unbracketed paste construction and review,
 embedded-marker/control rejection, persistence failures, and redraw coalescing.
 Keyboard mode transitions, navigation/function modifier sequences, control/
 Unicode/Meta input, platform-shortcut suppression, and enhanced-mode
-non-advertisement are checked directly.
+non-advertisement are checked directly. Aggregate grid-budget tests cover every
+supported tab count, verify monotonic history reduction, preserve useful crowded
+history, and prove one additional line would cross the ceiling at the maximum.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and

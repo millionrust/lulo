@@ -17,8 +17,9 @@ evidence remains gated by the reference-PC framework work.
   (Spotlight last-used query), Get Info, recursive Spotlight search, native
   NSPasteboard file copy/paste, and a **status bar** (item count + free space).
   (Toolbar Share/Tag/⋯ are decorative; the ⋯ opens the item context menu.)
-- **Terminal** 🟡 — real PTY, true-color, bounded dynamic resize and 10,000-line
-  scrollback, mouse selection, bounded copy/paste, find, font zoom, clear, tabs,
+- **Terminal** 🟡 — real PTY, true-color, bounded dynamic resize and up to
+  10,000-line scrollback per tab under a tested 512 MiB aggregate base-grid
+  ceiling, mouse selection, bounded copy/paste, find, font zoom, clear, tabs,
   **9 color profiles**, and a right-click menu. Child exit is event-driven and
   truthful; exited input is refused, and stable-ID tab/window close now reviews
   a kernel-reported foreground process group before hangup. Bracketed
@@ -27,9 +28,9 @@ evidence remains gated by the reference-PC framework work.
   editing keys, F1–F20, modifiers, Meta/control input, and application-cursor
   mode are encoded and tested; incomplete enhanced keyboard modes are not
   partially advertised. IME, enhanced Kitty/keypad/mouse input, hyperlinks/
-  shell integration, per-tab UI state, scrollback memory accounting,
-  accessibility, Linux interaction/visual evidence, and measured idle/active
-  performance keep G3 partial.
+  shell integration, per-tab UI state, bounds for dynamic terminal extras,
+  accessibility, Linux interaction/visual evidence, and measured resident/
+  idle/active performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

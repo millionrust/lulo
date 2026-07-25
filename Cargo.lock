@@ -5689,6 +5689,7 @@ dependencies = [
  "async-channel 2.5.0",
  "gpui",
  "gpui-component",
+ "libc",
  "portable-pty",
  "rmac-storage",
  "rmac-ui",

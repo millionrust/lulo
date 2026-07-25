@@ -9,7 +9,10 @@ mod storage;
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
 
 use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::{Dimensions, Scroll};
@@ -24,7 +27,9 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::StyledExt as _;
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{
+    native_pty_system, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
+};
 use rmac_ui::{Button, InputState, SearchField};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
 
@@ -32,6 +37,12 @@ type RedrawSender = async_channel::Sender<()>;
 
 const COLS: usize = 100;
 const ROWS: usize = 28;
+const MIN_COLS: usize = 20;
+const MIN_ROWS: usize = 5;
+const MAX_COLS: usize = 500;
+const MAX_ROWS: usize = 300;
+const MAX_TABS: usize = 64;
+const SCROLLBACK_LINES: usize = 10_000;
 const FONT: &str = "Menlo"; // macOS Terminal's default monospace
 const FONT_SIZE: f32 = 13.0;
 const LINE_H: f32 = 17.0;
@@ -41,6 +52,8 @@ const CELL_W: f32 = FONT_SIZE * 0.6;
 const TOP_PAD: f32 = 34.0 + 8.0;
 /// Pixels from the window left to the first column: 8pt content padding.
 const LEFT_PAD: f32 = 8.0;
+const MAX_PASTE_BYTES: usize = 1024 * 1024;
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 /// A macOS Terminal–style color profile: window chrome + 16-color ANSI palette.
 #[derive(Clone, Copy)]
@@ -178,7 +191,7 @@ gpui::actions!(
 const FIND_HL: u32 = 0xffd60a;
 
 /// Grid geometry handed to the terminal model and the PTY.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TermSize {
     cols: usize,
     lines: usize,
@@ -193,6 +206,26 @@ impl Dimensions for TermSize {
     }
     fn columns(&self) -> usize {
         self.cols
+    }
+}
+
+fn terminal_config() -> Config {
+    Config {
+        scrolling_history: SCROLLBACK_LINES,
+        ..Config::default()
+    }
+}
+
+fn grid_dimensions(width: f32, height: f32, cell_width: f32, line_height: f32) -> TermSize {
+    let bounded = |available: f32, cell: f32, minimum: usize| {
+        if !available.is_finite() || !cell.is_finite() || cell <= 0.0 {
+            return minimum;
+        }
+        (available.max(0.0) / cell).floor() as usize
+    };
+    TermSize {
+        cols: bounded(width - 16.0, cell_width, MIN_COLS).clamp(MIN_COLS, MAX_COLS),
+        lines: bounded(height - 50.0, line_height, MIN_ROWS).clamp(MIN_ROWS, MAX_ROWS),
     }
 }
 
@@ -252,18 +285,140 @@ fn shell_program(configured: Option<String>) -> String {
         .unwrap_or_else(|| "/bin/sh".to_string())
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SessionLifecycle {
+    Running,
+    Exited {
+        exit_code: u32,
+        signal: Option<String>,
+    },
+    WaitFailed,
+    StartFailed,
+}
+
+impl SessionLifecycle {
+    fn is_running(&self) -> bool {
+        matches!(self, Self::Running)
+    }
+
+    fn may_be_running(&self) -> bool {
+        matches!(self, Self::Running | Self::WaitFailed)
+    }
+
+    fn status_message(&self) -> Option<String> {
+        match self {
+            Self::Running => None,
+            Self::Exited {
+                exit_code: 0,
+                signal: None,
+            } => Some("The shell exited successfully.".into()),
+            Self::Exited {
+                signal: Some(signal),
+                ..
+            } => Some(format!("The shell was terminated by {signal}.")),
+            Self::Exited { exit_code, .. } => {
+                Some(format!("The shell exited with status {exit_code}."))
+            }
+            Self::WaitFailed => Some("Terminal could not observe the shell's exit status.".into()),
+            Self::StartFailed => Some("Terminal could not start the configured shell.".into()),
+        }
+    }
+
+    fn tab_state_label(&self) -> Option<&'static str> {
+        match self {
+            Self::Running => None,
+            Self::Exited { .. } => Some("Exited"),
+            Self::WaitFailed | Self::StartFailed => Some("Unavailable"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionStartError {
+    OpenPty,
+    StartShell,
+    OpenReader,
+    OpenWriter,
+}
+
+impl std::fmt::Display for SessionStartError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::OpenPty => "Terminal could not create a private terminal session.",
+            Self::StartShell => "Terminal could not start the configured shell.",
+            Self::OpenReader => "Terminal could not receive output from the shell.",
+            Self::OpenWriter => "Terminal could not send input to the shell.",
+        })
+    }
+}
+
+impl std::error::Error for SessionStartError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SessionControlError;
+
+impl std::fmt::Display for SessionControlError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Terminal could not terminate the selected shell safely.")
+    }
+}
+
+impl std::error::Error for SessionControlError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionWriteError {
+    Exited,
+    Write,
+}
+
+impl std::fmt::Display for SessionWriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Exited => "This terminal session is no longer accepting input.",
+            Self::Write => "Terminal could not send input to the shell.",
+        })
+    }
+}
+
+impl std::error::Error for SessionWriteError {}
+
+fn lifecycle_after_wait(result: std::io::Result<ExitStatus>) -> SessionLifecycle {
+    match result {
+        Ok(status) => SessionLifecycle::Exited {
+            exit_code: status.exit_code(),
+            signal: status.signal().map(str::to_string),
+        },
+        Err(_) => SessionLifecycle::WaitFailed,
+    }
+}
+
+fn foreground_job_requires_confirmation(
+    running: bool,
+    shell_pid: Option<u32>,
+    foreground_process_group: Option<u32>,
+) -> bool {
+    running
+        && shell_pid
+            .zip(foreground_process_group)
+            .is_none_or(|(shell, foreground)| shell != foreground)
+}
+
 /// One terminal tab: its own PTY + parser-fed grid. `master` is `None` for a
 /// failed session (PTY/shell couldn't start) — it still renders an error grid.
 struct Session {
+    id: u64,
     term: Arc<Mutex<Term<EventProxy>>>,
     writer: Box<dyn Write + Send>,
     master: Option<Box<dyn MasterPty + Send>>,
+    shell_pid: Option<u32>,
+    killer: Option<Box<dyn ChildKiller + Send + Sync>>,
+    lifecycle: Arc<Mutex<SessionLifecycle>>,
 }
 
 impl Session {
-    /// Start a real shell in a PTY. Returns an error string (rather than
-    /// panicking) if the PTY or shell can't be created, so the app stays alive.
-    fn spawn(cols: usize, rows: usize, redraw: RedrawSender) -> Result<Session, String> {
+    /// Start a real shell in a PTY. Returns a private-safe typed failure
+    /// instead of panicking or exposing environment-derived shell details.
+    fn spawn(cols: usize, rows: usize, redraw: RedrawSender) -> Result<Session, SessionStartError> {
         let size = TermSize { cols, lines: rows };
         let pty = native_pty_system();
         let pair = pty
@@ -273,28 +428,31 @@ impl Session {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| format!("openpty failed: {e}"))?;
+            .map_err(|_| SessionStartError::OpenPty)?;
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|_| SessionStartError::OpenReader)?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|_| SessionStartError::OpenWriter)?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut cmd = CommandBuilder::new(shell);
         cmd.env("TERM", "xterm-256color");
         if let Ok(dir) = std::env::current_dir() {
             cmd.cwd(dir);
         }
-        let _child = pair
+        let mut child = pair
             .slave
             .spawn_command(cmd)
-            .map_err(|e| format!("could not start shell: {e}"))?;
+            .map_err(|_| SessionStartError::StartShell)?;
+        let shell_pid = child.process_id();
+        let killer = child.clone_killer();
         drop(pair.slave);
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| format!("reader failed: {e}"))?;
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| format!("writer failed: {e}"))?;
-        let term = Arc::new(Mutex::new(Term::new(Config::default(), &size, EventProxy)));
+        let term = Arc::new(Mutex::new(Term::new(terminal_config(), &size, EventProxy)));
         let term_reader = term.clone();
+        let reader_redraw = redraw.clone();
         std::thread::spawn(move || {
             let mut parser: Processor = Processor::new();
             let mut buf = [0u8; 8192];
@@ -305,35 +463,127 @@ impl Session {
                         if let Ok(mut t) = term_reader.lock() {
                             parser.advance(&mut *t, &buf[..n]);
                         }
-                        request_redraw(&redraw);
+                        request_redraw(&reader_redraw);
                     }
                 }
+            }
+            request_redraw(&reader_redraw);
+        });
+        let lifecycle = Arc::new(Mutex::new(SessionLifecycle::Running));
+        let lifecycle_waiter = lifecycle.clone();
+        std::thread::spawn(move || {
+            let next = lifecycle_after_wait(child.wait());
+            if let Ok(mut lifecycle) = lifecycle_waiter.lock() {
+                *lifecycle = next;
             }
             request_redraw(&redraw);
         });
         Ok(Session {
+            id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             term,
             writer,
             master: Some(pair.master),
+            shell_pid,
+            killer: Some(killer),
+            lifecycle,
         })
     }
 
     /// A no-PTY session that just displays an error message in its grid, so a
     /// shell-startup failure degrades gracefully instead of crashing.
-    fn failed(cols: usize, rows: usize, msg: &str) -> Session {
+    fn failed(cols: usize, rows: usize, error: SessionStartError) -> Session {
         let size = TermSize { cols, lines: rows };
-        let term = Arc::new(Mutex::new(Term::new(Config::default(), &size, EventProxy)));
+        let term = Arc::new(Mutex::new(Term::new(terminal_config(), &size, EventProxy)));
         if let Ok(mut t) = term.lock() {
             let mut parser: Processor = Processor::new();
-            let text = format!("\r\n  Terminal unavailable — {msg}\r\n");
+            let text = format!("\r\n  {error}\r\n");
             parser.advance(&mut *t, text.as_bytes());
         }
         Session {
+            id: NEXT_SESSION_ID.fetch_add(1, Ordering::Relaxed),
             term,
             writer: Box::new(std::io::sink()),
             master: None,
+            shell_pid: None,
+            killer: None,
+            lifecycle: Arc::new(Mutex::new(SessionLifecycle::StartFailed)),
         }
     }
+
+    fn lifecycle(&self) -> SessionLifecycle {
+        self.lifecycle
+            .lock()
+            .map(|lifecycle| lifecycle.clone())
+            .unwrap_or(SessionLifecycle::WaitFailed)
+    }
+
+    fn has_foreground_job(&self) -> bool {
+        let may_be_running = self.lifecycle().may_be_running();
+        #[cfg(unix)]
+        let foreground_process_group = self
+            .master
+            .as_ref()
+            .and_then(|master| master.process_group_leader())
+            .and_then(|pid| u32::try_from(pid).ok());
+        #[cfg(not(unix))]
+        let foreground_process_group = None;
+        foreground_job_requires_confirmation(
+            may_be_running,
+            self.shell_pid,
+            foreground_process_group,
+        )
+    }
+
+    fn terminate(&mut self) -> Result<(), SessionControlError> {
+        if !self.lifecycle().may_be_running() {
+            return Ok(());
+        }
+        #[cfg(unix)]
+        if let Some(process_group) = self
+            .master
+            .as_ref()
+            .and_then(|master| master.process_group_leader())
+            .filter(|process_group| *process_group > 0)
+            .filter(|process_group| u32::try_from(*process_group).ok() != self.shell_pid)
+        {
+            // SAFETY: `process_group` is the positive foreground group returned
+            // by this still-owned PTY. Negating it requests SIGHUP for that
+            // exact group and does not dereference application memory.
+            let result = unsafe { libc::kill(-process_group, libc::SIGHUP) };
+            if result != 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) {
+                return Err(SessionControlError);
+            }
+        }
+        self.killer
+            .as_mut()
+            .ok_or(SessionControlError)?
+            .kill()
+            .map_err(|_| SessionControlError)
+    }
+
+    fn write(&mut self, bytes: &[u8]) -> Result<(), SessionWriteError> {
+        if !self.lifecycle().is_running() {
+            return Err(SessionWriteError::Exited);
+        }
+        self.writer
+            .write_all(bytes)
+            .and_then(|_| self.writer.flush())
+            .map_err(|_| SessionWriteError::Write)
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        if self.lifecycle().may_be_running() {
+            let _ = self.killer.as_mut().map(|killer| killer.kill());
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PendingClose {
+    Tab { session_id: u64 },
+    Window { foreground_sessions: usize },
 }
 
 struct TerminalView {
@@ -360,6 +610,8 @@ struct TerminalView {
     /// Whether the profile picker dropdown is open.
     picker_open: bool,
     persistence_error: Option<SharedString>,
+    operation_error: Option<SharedString>,
+    pending_close: Option<PendingClose>,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<Point<Pixels>>,
 }
@@ -425,7 +677,7 @@ impl TerminalView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (redraw, redraw_rx) = async_channel::bounded(1);
         let session = Session::spawn(COLS, ROWS, redraw.clone())
-            .unwrap_or_else(|e| Session::failed(COLS, ROWS, &e));
+            .unwrap_or_else(|error| Session::failed(COLS, ROWS, error));
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
@@ -489,6 +741,8 @@ impl TerminalView {
             profile,
             picker_open: false,
             persistence_error,
+            operation_error: None,
+            pending_close: None,
             menu_at: None,
         }
     }
@@ -505,9 +759,18 @@ impl TerminalView {
     }
 
     fn new_tab(&mut self, cx: &mut Context<Self>) {
-        let (c, r) = (self.cols.max(20), self.rows.max(5));
+        if self.pending_close.is_some() {
+            return;
+        }
+        if self.tabs.len() >= MAX_TABS {
+            self.operation_error = Some("Terminal supports up to 64 tabs in one window.".into());
+            cx.notify();
+            return;
+        }
+        let (c, r) = (self.cols.max(MIN_COLS), self.rows.max(MIN_ROWS));
         self.tabs.push(
-            Session::spawn(c, r, self.redraw.clone()).unwrap_or_else(|e| Session::failed(c, r, &e)),
+            Session::spawn(c, r, self.redraw.clone())
+                .unwrap_or_else(|error| Session::failed(c, r, error)),
         );
         self.active = self.tabs.len() - 1;
         self.selection = None;
@@ -515,11 +778,47 @@ impl TerminalView {
         cx.notify();
     }
 
-    fn close_tab(&mut self, cx: &mut Context<Self>) {
+    fn request_close_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending_close.is_some() || index >= self.tabs.len() {
+            return;
+        }
+        if self.tabs.len() == 1 {
+            self.request_close_window(window, cx);
+            return;
+        }
+        let session_id = self.tabs[index].id;
+        if self.tabs[index].has_foreground_job() {
+            self.pending_close = Some(PendingClose::Tab { session_id });
+            self.searching = false;
+            self.picker_open = false;
+            self.menu_at = None;
+            window.focus(&self.focus);
+            cx.notify();
+            return;
+        }
+        if let Err(error) = self.tabs[index].terminate() {
+            self.operation_error = Some(error.to_string().into());
+            cx.notify();
+            return;
+        }
+        self.remove_tab(session_id, cx);
+    }
+
+    fn remove_tab(&mut self, session_id: u64, cx: &mut Context<Self>) {
+        let Some(index) = self
+            .tabs
+            .iter()
+            .position(|session| session.id == session_id)
+        else {
+            return;
+        };
         if self.tabs.len() <= 1 {
             return;
         }
-        self.tabs.remove(self.active);
+        self.tabs.remove(index);
+        if self.active > index {
+            self.active -= 1;
+        }
         if self.active >= self.tabs.len() {
             self.active = self.tabs.len() - 1;
         }
@@ -528,8 +827,89 @@ impl TerminalView {
         cx.notify();
     }
 
+    fn request_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pending_close.is_some() {
+            return;
+        }
+        let foreground_sessions = self
+            .tabs
+            .iter()
+            .filter(|session| session.has_foreground_job())
+            .count();
+        if foreground_sessions == 0 {
+            if self.terminate_all().is_err() {
+                self.operation_error =
+                    Some("Terminal could not terminate every shell safely.".into());
+                cx.notify();
+                return;
+            }
+            window.remove_window();
+            return;
+        }
+        self.pending_close = Some(PendingClose::Window {
+            foreground_sessions,
+        });
+        self.searching = false;
+        self.picker_open = false;
+        self.menu_at = None;
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn terminate_all(&mut self) -> Result<(), SessionControlError> {
+        let mut failed = false;
+        for session in &mut self.tabs {
+            failed |= session.terminate().is_err();
+        }
+        if failed {
+            Err(SessionControlError)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn cancel_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pending_close = None;
+        window.focus(&self.focus);
+        cx.notify();
+    }
+
+    fn confirm_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_close.take() else {
+            return;
+        };
+        match pending {
+            PendingClose::Tab { session_id } => {
+                let result = self
+                    .tabs
+                    .iter_mut()
+                    .find(|session| session.id == session_id)
+                    .map(Session::terminate)
+                    .unwrap_or(Ok(()));
+                if let Err(error) = result {
+                    self.operation_error = Some(error.to_string().into());
+                    window.focus(&self.focus);
+                    cx.notify();
+                    return;
+                }
+                self.remove_tab(session_id, cx);
+                window.focus(&self.focus);
+            }
+            PendingClose::Window { .. } => {
+                if self.terminate_all().is_err() {
+                    self.operation_error =
+                        Some("Terminal could not terminate every shell safely.".into());
+                    window.focus(&self.focus);
+                    cx.notify();
+                    return;
+                }
+                window.remove_window();
+            }
+        }
+    }
+
     fn select_tab(&mut self, i: usize, cx: &mut Context<Self>) {
-        if i >= self.tabs.len() {
+        if self.pending_close.is_some() || i >= self.tabs.len() {
             return;
         }
         self.active = i;
@@ -567,6 +947,11 @@ impl TerminalView {
             .border_color(rmac_ui::mac::separator());
         for i in 0..n {
             let is_active = i == active_tab;
+            let lifecycle = self.tabs[i].lifecycle();
+            let label = lifecycle.tab_state_label().map_or_else(
+                || format!("Terminal {}", i + 1),
+                |state| format!("Terminal {} — {state}", i + 1),
+            );
             bar = bar.child(
                 div()
                     .flex()
@@ -585,7 +970,7 @@ impl TerminalView {
                             } else {
                                 rmac_ui::mac::text_secondary()
                             })
-                            .child(format!("Terminal {}", i + 1))
+                            .child(label)
                             .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
                     )
                     .child(
@@ -594,9 +979,8 @@ impl TerminalView {
                             .text_size(rmac_ui::text_px(13.0))
                             .text_color(rmac_ui::mac::text_secondary())
                             .child("×")
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.active = i.min(this.tabs.len().saturating_sub(1));
-                                this.close_tab(cx);
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.request_close_tab(i, window, cx);
                             })),
                     ),
             );
@@ -679,6 +1063,48 @@ impl TerminalView {
             }))
     }
 
+    fn render_close_confirmation(&self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        use rmac_ui::DialogButtonKind::{Destructive, Normal};
+
+        let pending = self.pending_close?;
+        let (title, message, confirm_label): (&str, String, &str) = match pending {
+            PendingClose::Tab { .. } => (
+                "Close this terminal tab?",
+                "A foreground process group is still using this terminal. Closing sends hangup to that group and its shell, then removes the tab.".into(),
+                "Close Tab",
+            ),
+            PendingClose::Window {
+                foreground_sessions,
+            } => (
+                "Close this Terminal window?",
+                if foreground_sessions == 1 {
+                    "One tab has an active foreground process group. Closing sends hangup to active groups and shells, then removes the window.".into()
+                } else {
+                    format!(
+                        "{foreground_sessions} tabs have active foreground process groups. Closing sends hangup to active groups and shells, then removes the window."
+                    )
+                },
+                "Close Window",
+            ),
+        };
+        Some(rmac_ui::alert(
+            title,
+            message,
+            vec![
+                rmac_ui::dialog_button("terminal-close-cancel", "Cancel", Normal)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.cancel_close(window, cx);
+                    }))
+                    .into_any_element(),
+                rmac_ui::dialog_button("terminal-close-confirm", confirm_label, Destructive)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.confirm_close(window, cx);
+                    }))
+                    .into_any_element(),
+            ],
+        ))
+    }
+
     /// Clear the screen and scrollback (⌘K).
     fn clear(&mut self, cx: &mut Context<Self>) {
         if let Ok(mut t) = self.tabs[self.active].term.lock() {
@@ -730,8 +1156,9 @@ impl TerminalView {
         let vp = window.viewport_size();
         let w = f32::from(vp.width);
         let h = f32::from(vp.height);
-        let cols = (((w - 16.0) / self.cell_w).floor() as usize).max(20);
-        let rows = (((h - 34.0 - 16.0) / self.line_h).floor() as usize).max(5);
+        let size = grid_dimensions(w, h, self.cell_w, self.line_h);
+        let cols = size.cols;
+        let rows = size.lines;
         if cols == self.cols && rows == self.rows {
             return;
         }
@@ -781,13 +1208,13 @@ impl TerminalView {
         }
     }
 
-    fn on_key(&mut self, ev: &KeyDownEvent) {
+    fn on_key(&mut self, ev: &KeyDownEvent) -> Result<(), SessionWriteError> {
         let ks = &ev.keystroke;
         let m = &ks.modifiers;
         // Let ⌘-shortcuts (copy/paste/…) flow to the action system instead of
         // writing the literal character to the PTY.
         if m.platform {
-            return;
+            return Ok(());
         }
         let bytes: Vec<u8> = match ks.key.as_str() {
             "enter" => vec![b'\r'],
@@ -819,9 +1246,9 @@ impl TerminalView {
             if let Ok(mut t) = self.tabs[self.active].term.lock() {
                 t.scroll_display(Scroll::Bottom);
             }
-            let _ = self.tabs[self.active].writer.write_all(&bytes);
-            let _ = self.tabs[self.active].writer.flush();
+            self.tabs[self.active].write(&bytes)?;
         }
+        Ok(())
     }
 
     /// Copy the current selection to the system clipboard.
@@ -836,11 +1263,19 @@ impl TerminalView {
     /// Paste clipboard text into the PTY input stream.
     fn paste(&mut self, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
+            if text.len() > MAX_PASTE_BYTES {
+                self.operation_error =
+                    Some("Paste exceeds Terminal's 1 MiB input safety limit.".into());
+                cx.notify();
+                return;
+            }
             if let Ok(mut t) = self.tabs[self.active].term.lock() {
                 t.scroll_display(Scroll::Bottom);
             }
-            let _ = self.tabs[self.active].writer.write_all(text.as_bytes());
-            let _ = self.tabs[self.active].writer.flush();
+            if let Err(error) = self.tabs[self.active].write(text.as_bytes()) {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
         }
     }
 
@@ -907,8 +1342,9 @@ impl TerminalView {
         let grid = term.grid();
         let offset = grid.display_offset() as i32;
         let cursor = grid.cursor.point;
-        // Hide the cursor while scrolled back into history.
-        let show_cursor = offset == 0;
+        // Hide the cursor while scrolled into history or after the child exits;
+        // an exited session must not resemble a live prompt.
+        let show_cursor = offset == 0 && self.tabs[self.active].lifecycle().is_running();
         let cursor_line = cursor.line.0;
         let cursor_col = cursor.column.0;
 
@@ -1028,7 +1464,19 @@ impl Render for TerminalView {
         let rows = self.render_rows(&query);
         let searching = self.searching;
         let multi = self.tabs.len() > 1;
-        let persistence_error = self.persistence_error.clone();
+        let operation_error_visible = self.operation_error.is_some();
+        let terminal_error = self
+            .operation_error
+            .clone()
+            .or_else(|| self.persistence_error.clone());
+        let has_terminal_error = terminal_error.is_some();
+        let session_status = self.tabs[self.active]
+            .lifecycle()
+            .status_message()
+            .map(SharedString::from);
+        let close_confirmation = self
+            .render_close_confirmation(cx)
+            .map(|alert| alert.into_any_element());
         div()
             .size_full()
             .relative()
@@ -1060,8 +1508,16 @@ impl Render for TerminalView {
                 div()
                     .track_focus(&self.focus)
                     .key_context("Terminal")
-                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
-                        this.on_key(ev);
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        if this.pending_close.is_some() {
+                            if ev.keystroke.key == "escape" {
+                                this.cancel_close(window, cx);
+                            }
+                            return;
+                        }
+                        if let Err(error) = this.on_key(ev) {
+                            this.operation_error = Some(error.to_string().into());
+                        }
                         cx.notify();
                     }))
                     .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
@@ -1083,23 +1539,25 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
                     .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
                     .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
-                    .on_action(cx.listener(|this, _: &CloseTab, _, cx| this.close_tab(cx)))
+                    .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
+                        this.request_close_tab(this.active, window, cx)
+                    }))
                     .on_action(cx.listener(|this, _: &NextTab, _, cx| this.next_tab(cx)))
                     .on_action(cx.listener(|this, _: &PrevTab, _, cx| this.prev_tab(cx)))
                     .on_action(cx.listener(|this, _: &CycleProfile, _, cx| {
                         // ⌘⇧P toggles the profile picker.
-                        this.picker_open = !this.picker_open;
-                        cx.notify();
+                        if this.pending_close.is_none() {
+                            this.picker_open = !this.picker_open;
+                            cx.notify();
+                        }
                     }))
                     .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
                         this.menu_at = None;
                         cx.notify();
                     }))
-                    .on_action(
-                        cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
-                            window.remove_window()
-                        }),
-                    )
+                    .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                        this.request_close_window(window, cx)
+                    }))
                     .on_action(cx.listener(|this, _: &ShowProfiles, _, cx| {
                         // Right-click → Profiles… — a guaranteed mouse path to the
                         // picker (the picker rows are clickable body overlays).
@@ -1224,10 +1682,36 @@ impl Render for TerminalView {
                         .render(),
                 )
             })
-            .when_some(persistence_error, |terminal, message| {
+            .when_some(session_status, |terminal, message| {
                 terminal.child(
                     div()
-                        .id("persistence-error")
+                        .id("session-status")
+                        .absolute()
+                        .left(px(8.0))
+                        .right(px(8.0))
+                        .bottom(px(if has_terminal_error { 54.0 } else { 8.0 }))
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .py_2()
+                        .rounded(px(7.0))
+                        .bg(rmac_ui::mac::raised())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::text())
+                        .shadow_lg()
+                        .child(div().flex_1().child(message))
+                        .child(
+                            Button::new("new-tab-after-exit", "New Tab")
+                                .small()
+                                .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
+                        ),
+                )
+            })
+            .when_some(terminal_error, |terminal, message| {
+                terminal.child(
+                    div()
+                        .id("terminal-error")
                         .absolute()
                         .left(px(8.0))
                         .right(px(8.0))
@@ -1245,12 +1729,19 @@ impl Render for TerminalView {
                         .cursor_pointer()
                         .child(div().flex_1().child(message))
                         .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.persistence_error = None;
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if operation_error_visible {
+                                this.operation_error = None;
+                            } else {
+                                this.persistence_error = None;
+                            }
                             cx.notify();
                         })),
                 )
             })
+            // Destructive close review must remain the final child so no
+            // terminal surface can paint over it or receive pointer input.
+            .when_some(close_confirmation, |terminal, alert| terminal.child(alert))
     }
 }
 
@@ -1385,5 +1876,106 @@ mod tests {
         assert!(parse_profile("").is_err());
         assert!(parse_profile("Not a Profile").is_err());
         assert!(parse_profile(&PROFILES.len().to_string()).is_err());
+    }
+
+    #[test]
+    fn foreground_job_close_review_fails_closed() {
+        assert!(!foreground_job_requires_confirmation(
+            false,
+            Some(40),
+            Some(41)
+        ));
+        assert!(!foreground_job_requires_confirmation(
+            true,
+            Some(40),
+            Some(40)
+        ));
+        assert!(foreground_job_requires_confirmation(
+            true,
+            Some(40),
+            Some(41)
+        ));
+        assert!(foreground_job_requires_confirmation(true, None, Some(41)));
+        assert!(foreground_job_requires_confirmation(true, Some(40), None));
+    }
+
+    #[test]
+    fn child_exit_states_are_truthful_and_private_safe() {
+        assert_eq!(SessionLifecycle::Running.status_message(), None);
+        assert!(SessionLifecycle::WaitFailed.may_be_running());
+        assert!(!SessionLifecycle::StartFailed.may_be_running());
+        assert_eq!(
+            SessionLifecycle::Exited {
+                exit_code: 0,
+                signal: None
+            }
+            .status_message()
+            .as_deref(),
+            Some("The shell exited successfully.")
+        );
+        assert_eq!(
+            SessionLifecycle::Exited {
+                exit_code: 7,
+                signal: None
+            }
+            .status_message()
+            .as_deref(),
+            Some("The shell exited with status 7.")
+        );
+        assert_eq!(
+            SessionLifecycle::Exited {
+                exit_code: 1,
+                signal: Some("Hangup".into())
+            }
+            .status_message()
+            .as_deref(),
+            Some("The shell was terminated by Hangup.")
+        );
+        assert_eq!(
+            lifecycle_after_wait(Ok(ExitStatus::with_exit_code(9))),
+            SessionLifecycle::Exited {
+                exit_code: 9,
+                signal: None
+            }
+        );
+        assert_eq!(
+            lifecycle_after_wait(Ok(ExitStatus::with_signal("Hangup"))),
+            SessionLifecycle::Exited {
+                exit_code: 1,
+                signal: Some("Hangup".into())
+            }
+        );
+        assert_eq!(
+            lifecycle_after_wait(Err(std::io::Error::other("private diagnostic"))),
+            SessionLifecycle::WaitFailed
+        );
+    }
+
+    #[test]
+    fn terminal_resources_have_explicit_bounds() {
+        assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
+        assert_eq!(MAX_TABS, 64);
+        assert_eq!(terminal_config().scrolling_history, 10_000);
+        assert_eq!(
+            grid_dimensions(0.0, 0.0, CELL_W, LINE_H),
+            TermSize {
+                cols: MIN_COLS,
+                lines: MIN_ROWS
+            }
+        );
+        assert_eq!(
+            grid_dimensions(f32::MAX, f32::MAX, CELL_W, LINE_H),
+            TermSize {
+                cols: MAX_COLS,
+                lines: MAX_ROWS
+            }
+        );
+        assert_eq!(
+            grid_dimensions(f32::NAN, f32::NAN, CELL_W, LINE_H),
+            TermSize {
+                cols: MIN_COLS,
+                lines: MIN_ROWS
+            }
+        );
     }
 }

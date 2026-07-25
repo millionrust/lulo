@@ -1,0 +1,164 @@
+# Terminal application specification
+
+This file is the product and authority contract for `rmac-terminal`. Terminal
+is a trusted native application because an interactive shell necessarily has
+the user's ordinary account access. It must behave like a careful desktop
+terminal without pretending to provide shell state, accessibility, or process
+control that the platform cannot prove.
+
+## Core journeys
+
+1. Open a window into the configured login shell, type Unicode and control
+   input, run interactive and full-screen programs, and see exact terminal
+   output without an idle redraw loop.
+2. Resize or scale the window and propagate the exact bounded row/column
+   geometry to both the emulator and PTY.
+3. Scroll through bounded history; select forward or backward across hard and
+   soft-wrapped lines; copy, paste, clear, and search without altering output.
+4. Create, select, reorder later, and close independent tabs. Each tab owns one
+   PTY, parser, child lifecycle, scrollback, title, selection, and close state.
+5. Observe successful, failed, and signalled shell exit truthfully. Never leave
+   an exited tab looking like a live prompt.
+6. Close an idle shell directly. When the PTY proves another foreground process
+   group is active, review an exact tab/window close warning and explicitly
+   cancel or terminate it. Unknown process state fails closed.
+7. Choose a color profile and persist its stable name through private,
+   atomic storage without making terminal output part of preferences or logs.
+
+Multiplexing/server mode, remote-session management, and proprietary shell
+services are not required for 1.0.
+
+## Current implementation
+
+The running app has a real dynamically resized PTY, Alacritty/VTE grid,
+scrollback, forward/backward mouse selection, soft-wrap-aware copy, bounded
+paste, search highlighting, zoom, clear, independent shell tabs, nine profiles,
+and event-coalesced rendering. The shell child is now retained and reaped by one
+blocking waiter per session; output and exit share the bounded wake channel, so
+quiet sessions do not poll. Startup, wait, write, and termination failures are
+private-safe typed states. An exited/unavailable tab is labeled, its live cursor
+is hidden, input is refused, and its existing output stays readable.
+
+Command-W and window close now bind a stable session identity. On Unix, a
+kernel-reported foreground process group different from the retained shell PID
+opens a destructive review; unknown group/PID state also requires review.
+Confirmation sends SIGHUP to the exact positive foreground group and then the
+shell, while cancellation changes no process state. The final tab follows the
+same guarded window path. Clipboard writes larger than 1 MiB are refused before
+the PTY. One window is capped at 64 tabs; every emulator grid is bounded to
+20–500 columns and 5–300 rows; and each tab owns an explicit 10,000-line
+scrollback limit rather than inheriting a changeable dependency default.
+
+The complete application claim remains blocked on bracketed/large-paste review,
+IME preedit/commit, terminal-mode-correct key/mouse input, hyperlink policy,
+shell integration, per-tab selection/search/title state, explicit scrollback
+memory accounting, resize/write failure presentation depth, accessible
+terminal text semantics, Linux interaction/visual evidence, and measured
+idle/active performance.
+
+## Platform authorities
+
+- `portable-pty` owns PTY creation, the configured shell child, master resize,
+  readable output, writable input, child wait, and termination.
+- On Unix, the PTY's kernel-backed foreground process-group identity is compared
+  with the retained shell PID only to decide whether close needs review. Missing
+  or inconsistent identity is treated as potentially active, never as safe.
+- `alacritty_terminal` and `vte` own escape parsing, screen/scrollback state,
+  cell flags, cursor position, and terminal modes.
+- GPUI owns window geometry, focus, keyboard/IME delivery, clipboard exchange,
+  pointer selection, and rendering.
+- `rmac-storage` owns the atomic local profile preference under
+  `$XDG_CONFIG_HOME/rmac-terminal` or the documented platform fallback.
+
+Terminal does not scrape shell output to infer commands, working directories,
+or job names. Rich tab titles and command-aware close text require a reviewed
+shell-integration protocol before they may be shown.
+
+## Child lifecycle and close safety
+
+- The shell child handle remains owned until one waiter observes its terminal
+  status. Child exit wakes the UI through the same bounded coalescing channel as
+  PTY output; there is no lifecycle polling timer.
+- A tab distinguishes starting/running, successful exit, nonzero exit, signal,
+  wait failure, and startup failure without retaining raw OS diagnostics in
+  ordinary UI state.
+- Dropping or explicitly closing a live session requests termination and closes
+  its PTY handles. A reviewed window close covers every tab rather than silently
+  bypassing per-tab state.
+- A running shell with itself as the PTY foreground group is considered idle
+  for close presentation. A different foreground group, unavailable group, or
+  unavailable shell PID requires confirmation.
+- Cancellation changes no process state. A failed termination remains visible
+  and must not be reported as closed.
+
+## Input, output, and privacy
+
+- User text is written directly to the PTY writer; it is never interpolated
+  into a shell command or command-line parser.
+- Clipboard paste must be bounded, honor bracketed-paste mode when implemented,
+  and never log pasted content. Large-paste review and bracketed paste remain
+  required before the complete application claim.
+- PTY output, selection, search queries, clipboard text, process IDs, working
+  directories, commands, and environment values stay out of default logs,
+  panic text, evidence bundles, and persistence.
+- Reader/parser work stays off the GPUI thread. Output bursts coalesce into one
+  pending repaint; a quiet terminal has no timer-driven CPU or frame activity.
+- Output and scrollback must have explicit memory bounds before 1.0 evidence.
+
+## Failure states
+
+- PTY allocation, shell start, reader/writer setup, child wait, resize, write,
+  profile load/save, and termination each have a truthful unavailable or error
+  state. Raw private paths, environment values, commands, and output are not
+  exposed in those messages.
+- A shell exit is not an application crash. Existing output remains readable
+  and a new tab remains available.
+- Writer failure disables misleading live input and exposes that the session is
+  unavailable.
+- Resize failures retain the last kernel-accepted PTY size and are visible;
+  they must not silently claim the new geometry.
+- Closing the final tab follows the same guarded window-close path.
+
+## Keyboard map
+
+- `Cmd-T`: new tab.
+- `Cmd-W`: guarded close of the current tab, or guarded window close for the
+  final tab.
+- `Shift-Cmd-]` / `Shift-Cmd-[`: next / previous tab.
+- `Cmd-C` / `Cmd-V`: copy selected text / paste into the active PTY.
+- `Cmd-F`: show and focus search; `Escape` closes a modal or search before it is
+  sent to the PTY.
+- `Cmd-A`: select the complete bounded buffer.
+- `Cmd-K`: clear visible output and scrollback after terminal-mode review.
+- `Cmd-+`, `Cmd-=`, `Cmd--`, `Cmd-0`: zoom controls.
+- `Shift-Cmd-P`: show profiles.
+
+Terminal control sequences without the platform modifier, including arrows,
+Tab, Escape, Backspace, Enter, and Ctrl-letter input, go to the PTY. Complete
+IME preedit/commit behavior remains a Linux framework acceptance gate.
+
+## Visual and accessibility states
+
+- Toolbar, tabs, active/inactive/hover/focus states, profile picker, context
+  menu, search, selection, cursor, exited session, unavailable session, and
+  close confirmation use the shared rmac visual language.
+- Terminal profiles are user content and may retain explicit ANSI palettes;
+  application chrome follows shared light/dark/accent/contrast/motion tokens.
+- At 200% scale, rows and tabs remain usable and PTY geometry matches the
+  actually visible grid. Fractional scaling must not create a clipped phantom
+  row or column.
+- Tabs, buttons, menus, alerts, search, session state, and the terminal content
+  expose meaningful roles, names, focus, state, and actions. The terminal grid
+  needs a documented accessible text/caret/selection strategy compatible with
+  Orca; visual cell rendering alone is not an accessibility claim.
+
+## Acceptance evidence
+
+Unit and contract tests cover input encoding, resize arithmetic and bounds,
+selection extraction, child state transitions, foreground-job classification,
+guarded close decisions, persistence failures, and redraw coalescing. Native
+Ubuntu/niri evidence must additionally cover Bash and another supported shell,
+`vim`/`less`/`top`, Unicode and IME, rapid output, scrollback, large paste,
+process exit/signals, idle and foreground close, multiple tabs, resize at 100%/
+150%/200%, clipboard, keyboard-only use, Orca, idle CPU, active frame pacing,
+memory bounds, and abrupt app/compositor/session shutdown.

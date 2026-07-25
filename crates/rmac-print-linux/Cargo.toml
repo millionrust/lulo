@@ -1,0 +1,20 @@
+[package]
+name = "rmac-print-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+ashpd = { workspace = true, features = ["raw_handle"] }
+blocking.workspace = true
+futures-util.workspace = true
+raw-window-handle.workspace = true
+rmac-print.workspace = true
+serde.workspace = true
+zbus.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { workspace = true, features = ["wayland"] }
+rustix.workspace = true

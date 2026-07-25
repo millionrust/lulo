@@ -11,7 +11,15 @@ mod recovery;
 mod rtf;
 mod storage;
 
-use std::{path::Path, path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    path::Path,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
+};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -30,6 +38,7 @@ const CTX: &str = "TextEditor";
 const WINDOW_WIDTH: f32 = 860.0;
 const WINDOW_HEIGHT: f32 = 640.0;
 static STARTUP_RECOVERY_LOCK: Mutex<()> = Mutex::new(());
+static NEXT_WINDOW_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 actions!(
     text_editor,
@@ -38,6 +47,7 @@ actions!(
         OpenFile,
         SaveFile,
         SaveFileAs,
+        PrintFile,
         ToggleFind,
         ToggleReplace,
         FindNext,
@@ -166,6 +176,7 @@ struct EditorView {
     saved_value: String,
     dirty: bool,
     file_busy: bool,
+    print_busy: bool,
 
     // Find / replace bar
     find_open: bool,
@@ -194,7 +205,9 @@ struct EditorView {
     recovery_loading: bool,
     recovery_error: Option<SharedString>,
     status_notice: Option<SharedString>,
+    window_generation: u64,
     document_generation: u64,
+    current_document_generation: Arc<AtomicU64>,
     external_change: Option<ExternalChange>,
     document_watch_warning: bool,
     watched_directory: Option<PathBuf>,
@@ -474,6 +487,16 @@ fn should_reuse_untitled_window(
     !dirty && !has_path && !rich_text_preview && empty
 }
 
+fn can_begin_print(
+    file_busy: bool,
+    print_busy: bool,
+    recovery_loading: bool,
+    alert_open: bool,
+    rich_text_preview: bool,
+) -> bool {
+    !file_busy && !print_busy && !recovery_loading && !alert_open && !rich_text_preview
+}
+
 fn recovery_failure_message() -> SharedString {
     "Text Editor could not safely update its private recovery data. The current buffer remains open; save the document before closing."
         .into()
@@ -540,6 +563,8 @@ impl EditorView {
             KeyBinding::new("cmd-shift-m", ToggleMono, Some(CTX)),
             KeyBinding::new("cmd-w", CloseWindow, Some(CTX)),
         ]);
+        #[cfg(target_os = "linux")]
+        cx.bind_keys([KeyBinding::new("cmd-p", PrintFile, Some(CTX))]);
 
         // Recovery discovery can inspect bounded records totaling up to 128
         // MiB. Present the first frame immediately and keep the document gated
@@ -651,6 +676,7 @@ impl EditorView {
             saved_value: String::new(),
             dirty: false,
             file_busy: false,
+            print_busy: false,
             find_open: false,
             replace_mode: false,
             find_input,
@@ -668,7 +694,11 @@ impl EditorView {
             recovery_loading: true,
             recovery_error: None,
             status_notice: None,
+            window_generation: NEXT_WINDOW_GENERATION
+                .fetch_add(1, Ordering::Relaxed)
+                .max(1),
             document_generation: 0,
+            current_document_generation: Arc::new(AtomicU64::new(0)),
             external_change: None,
             document_watch_warning: false,
             watched_directory: None,
@@ -690,11 +720,17 @@ impl EditorView {
     }
 
     fn file_action_blocked(&self) -> bool {
-        self.recovery_loading || self.alert.is_some()
+        self.recovery_loading || self.alert.is_some() || self.print_busy
+    }
+
+    fn advance_document_generation(&mut self) {
+        self.document_generation = self.document_generation.wrapping_add(1);
+        self.current_document_generation
+            .store(self.document_generation, Ordering::Release);
     }
 
     fn reset_document_watch(&mut self) {
-        self.document_generation = self.document_generation.wrapping_add(1);
+        self.advance_document_generation();
         self.external_change = None;
         let next_directory = self
             .path
@@ -726,6 +762,7 @@ impl EditorView {
     // ── Dirty + autosave ────────────────────────────────────────────────
 
     fn on_buffer_changed(&mut self, cx: &mut Context<Self>) {
+        self.advance_document_generation();
         if self.find_open {
             self.recompute_matches(cx);
         }
@@ -1014,6 +1051,90 @@ impl EditorView {
         }
         let content = self.input.read(cx).value().to_string();
         self.save_to_new_path(content, self.text_format, None, None, window, cx);
+    }
+
+    fn print_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !can_begin_print(
+            self.file_busy,
+            self.print_busy,
+            self.recovery_loading,
+            self.alert.is_some(),
+            false,
+        ) {
+            return;
+        }
+        if self.rtf_runs.is_some() {
+            self.alert = Some(ActiveAlert::Error {
+                title: "Could not print the document.",
+                message: "Printing the formatted RTF preview is not supported yet. Continue as plain text to print without implying the original formatting is preserved."
+                    .into(),
+            });
+            cx.notify();
+            return;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let raw_window = raw_window_handle::HasWindowHandle::window_handle(window)
+                .map(|handle| handle.as_raw());
+            let raw_display = raw_window_handle::HasDisplayHandle::display_handle(window)
+                .map(|handle| handle.as_raw());
+            let (raw_window, raw_display) = match (raw_window, raw_display) {
+                (Ok(raw_window), Ok(raw_display)) => (raw_window, raw_display),
+                (Err(_), _) | (_, Err(_)) => {
+                    self.alert = Some(ActiveAlert::Error {
+                        title: "Could not open the print dialog.",
+                        message:
+                            "Printing requires the current exported Wayland application window."
+                                .into(),
+                    });
+                    cx.notify();
+                    return;
+                }
+            };
+            let request = rmac_print_linux::PrintDocument {
+                window: raw_window,
+                display: raw_display,
+                window_generation: self.window_generation,
+                document_generation: self.document_generation,
+                current_document_generation: self.current_document_generation.clone(),
+                title: self.filename().to_string(),
+                text: self.input.read(cx).value().to_string(),
+            };
+            self.print_busy = true;
+            self.status_notice = None;
+            cx.notify();
+            cx.spawn_in(window, async move |this, cx| {
+                let result = rmac_print_linux::print_document(request).await;
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.print_busy = false;
+                    match result {
+                        Ok(rmac_print_linux::Outcome::Printed) => {
+                            this.status_notice =
+                                Some("The desktop print service accepted the document.".into());
+                        }
+                        Ok(rmac_print_linux::Outcome::Cancelled) => {}
+                        Err(error) => {
+                            this.alert = Some(ActiveAlert::Error {
+                                title: "Could not print the document.",
+                                message: error.to_string(),
+                            });
+                        }
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = window;
+            let _ = (self.window_generation, &self.current_document_generation);
+            self.alert = Some(ActiveAlert::Error {
+                title: "Printing is unavailable.",
+                message: "Printing is implemented for the supported Linux session.".into(),
+            });
+            cx.notify();
+        }
     }
 
     /// Save the buffer; if `then` is set, run that pending action only **after**
@@ -1511,6 +1632,9 @@ impl EditorView {
     }
 
     fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.print_busy {
+            return;
+        }
         self.recompute_matches(cx);
         if self.matches.is_empty() {
             return;
@@ -1529,6 +1653,9 @@ impl EditorView {
     }
 
     fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.print_busy {
+            return;
+        }
         let needle = self.find_input.read(cx).value().to_string();
         if needle.is_empty() {
             return;
@@ -1682,6 +1809,25 @@ impl EditorView {
                             .tooltip("Larger text")
                             .on_click(cx.listener(|this, _, _, cx| this.increase_font(cx))),
                     )
+                    .when(cfg!(target_os = "linux"), |actions| {
+                        actions.child(
+                            Button::new("print", "Print…")
+                                .ghost()
+                                .with_size(Size::Small)
+                                .busy(self.print_busy)
+                                .disabled(!can_begin_print(
+                                    self.file_busy,
+                                    self.print_busy,
+                                    self.recovery_loading,
+                                    self.alert.is_some(),
+                                    self.rtf_runs.is_some(),
+                                ))
+                                .tooltip("Print Document")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.print_document(window, cx)
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("save", "Save")
                             .primary()
@@ -1776,6 +1922,7 @@ impl EditorView {
                         Button::new("replace-one", "Replace")
                             .ghost()
                             .with_size(Size::Small)
+                            .disabled(self.print_busy)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.replace_current(window, cx)),
                             ),
@@ -1784,6 +1931,7 @@ impl EditorView {
                         Button::new("replace-all", "Replace All")
                             .ghost()
                             .with_size(Size::Small)
+                            .disabled(self.print_busy)
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.replace_all(window, cx)),
                             ),
@@ -2113,6 +2261,9 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| this.open(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFile, window, cx| this.save(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFileAs, window, cx| this.save_as(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &PrintFile, window, cx| this.print_document(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &ToggleFind, window, cx| this.toggle_find(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleReplace, window, cx| this.toggle_replace(window, cx)),
@@ -2291,7 +2442,7 @@ impl Render for EditorView {
                         TextField::new(&self.input)
                             .h_full()
                             .appearance(false)
-                            .disabled(recovery_loading),
+                            .disabled(recovery_loading || self.print_busy),
                     )
                     .into_any_element()
             })
@@ -2313,8 +2464,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        document, recovery_path_for_platform, same_file_identity, save_document_copy,
-        should_reuse_untitled_window, RecoveryClock, SaveFailure,
+        can_begin_print, document, recovery_path_for_platform, same_file_identity,
+        save_document_copy, should_reuse_untitled_window, RecoveryClock, SaveFailure,
     };
     use std::path::PathBuf;
 
@@ -2431,5 +2582,15 @@ mod tests {
         assert!(!should_reuse_untitled_window(false, true, false, false));
         assert!(!should_reuse_untitled_window(false, false, true, false));
         assert!(!should_reuse_untitled_window(false, false, false, false));
+    }
+
+    #[test]
+    fn printing_requires_one_stable_plain_text_window_state() {
+        assert!(can_begin_print(false, false, false, false, false));
+        assert!(!can_begin_print(true, false, false, false, false));
+        assert!(!can_begin_print(false, true, false, false, false));
+        assert!(!can_begin_print(false, false, true, false, false));
+        assert!(!can_begin_print(false, false, false, true, false));
+        assert!(!can_begin_print(false, false, false, false, true));
     }
 }

@@ -215,10 +215,14 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "rand 0.9.4",
+ "raw-window-handle",
  "serde",
  "serde_repr",
  "tokio",
  "url",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols 0.32.13",
  "zbus",
 ]
 
@@ -5422,6 +5426,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-print-linux"
+version = "0.1.0"
+dependencies = [
+ "ashpd 0.12.3",
+ "blocking",
+ "futures-util",
+ "raw-window-handle",
+ "rmac-print",
+ "rustix 1.1.4",
+ "serde",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-privacy"
 version = "0.1.0"
 
@@ -5689,7 +5707,9 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "raw-window-handle",
  "rmac-editor",
+ "rmac-print-linux",
  "rmac-storage",
  "rmac-ui",
 ]

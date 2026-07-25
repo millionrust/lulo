@@ -28,8 +28,10 @@ plain text over a rich-text file.
    selection; every other document gets its own window. Each window owns its
    path, revision, dirty baseline, recovery identity, dialogs, watcher, and
    close guard, and closing one window never bypasses another window's guard.
-8. Print or export only through a documented Linux authority. Until that
-   authority is implemented, no control may imply printing or PDF export works.
+8. Print through the documented Linux portal authority with the current
+   Wayland window as parent, preserve exact page choices, and make cancellation
+   normal. No control may imply unsupported RTF-format preservation or a
+   separate PDF export path exists.
 
 ## Platform authorities
 
@@ -50,14 +52,22 @@ plain text over a rich-text file.
   and Print. The shared transaction advertises only PDF, refuses stale portal
   responses or unsupported PS/SVG output, preserves the returned token and page
   setup, and treats cancellation at either portal request as a normal result.
-  The platform adapter must provide the final readable PDF file descriptor; no
-  Print control is exposed until that complete adapter is available.
-- ashpd 0.12.3 can export the GPUI raw Wayland handle, but its high-level print
-  methods do not expose the portal version-3 `supported_output_file_formats`
-  option. The Linux adapter must therefore use an exact reviewed D-Bus request
-  that includes `['pdf']`, or adopt a verified library API that exposes the
-  option. Calling the current convenience method and silently advertising all
-  formats is prohibited.
+  The `rmac-print-linux` adapter now provides that boundary: it uses ashpd only
+  to export the GPUI raw Wayland parent, requires Print portal version 3 or
+  newer, performs exact D-Bus requests with
+  `supported_output_file_formats=['pdf']` on both calls, validates the returned
+  request handle and response dictionaries, renders off-thread, and supplies a
+  sealed readable anonymous PDF file descriptor. Each in-flight request is
+  bound to the portal's current D-Bus owner, so disappearance or replacement
+  fails the modal operation safely and the next attempt reconnects afresh. Text
+  Editor exposes Print and Command-P only for the supported Linux plain-text
+  view, blocks document mutation and close while the modal transaction is
+  active, and never flattens the formatted RTF preview while implying its
+  formatting was preserved.
+- This exact D-Bus path is necessary because ashpd 0.12.3 can export the GPUI
+  raw Wayland handle, but its high-level print methods omit the portal
+  version-3 `supported_output_file_formats` option. Calling those convenience
+  methods would silently advertise unsupported PS and SVG output.
 
 There is no portable atomic compare-and-replace operation against arbitrary
 cooperating and non-cooperating editors. Text Editor therefore performs an
@@ -151,4 +161,9 @@ clipboard, atomic and injected storage failures, exact conflict/readback,
 external delete/replace, crash recovery, malformed and maximum-size fixtures,
 multi-window isolation, keyboard-only operation, Orca/AT-SPI semantics, visual
 references, launch/idle/edit/search/save performance, and no private content in
-errors or committed evidence.
+errors or committed evidence. Printing specifically still needs a native Linux
+build plus live PreparePrint/Print, print-to-PDF, physical-printer,
+cancellation, stale-generation, portal-restart, and unsupported/old-portal
+matrix. The transport follows the official
+[`org.freedesktop.portal.Print`](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Print.html)
+contract.

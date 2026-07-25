@@ -82,6 +82,7 @@ rmac-quick-settings = { version = "=0.1.0", path = "crates/rmac-quick-settings" 
 rmac-quick-settings-system = { version = "=0.1.0", path = "crates/rmac-quick-settings-system" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
 rmac-print = { version = "=0.1.0", path = "crates/rmac-print" }
+rmac-print-linux = { version = "=0.1.0", path = "crates/rmac-print-linux" }
 rmac-places = { version = "=0.1.0", path = "crates/rmac-places" }
 rmac-places-system = { version = "=0.1.0", path = "crates/rmac-places-system" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }
@@ -111,6 +112,7 @@ rmac-wallpaper-runtime = { version = "=0.1.0", path = "crates/rmac-wallpaper-run
 rmac-wallpaper-system = { version = "=0.1.0", path = "crates/rmac-wallpaper-system" }
 pam-sys2 = "=1.0.2"
 quick-xml = "0.39.4"
+raw-window-handle = "=0.6.2"
 resvg = { version = "=0.45.1", default-features = false }
 rust-embed = "8"
 rustix = { version = "=1.1.4", features = ["fs"] }

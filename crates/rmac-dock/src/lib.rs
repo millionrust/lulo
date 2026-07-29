@@ -808,6 +808,7 @@ mod tests {
             source: PathBuf::from(format!("/apps/{id}")),
             icon: Some(PathBuf::from(format!("/icons/{id}.svg"))),
             categories: Vec::new(),
+            mime_types: Vec::new(),
             launch: rmac_apps::LaunchSpec::Command {
                 program: id.trim_end_matches(".desktop").into(),
                 args: Vec::new(),

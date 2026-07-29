@@ -103,6 +103,7 @@ struct App {
     icon: Option<PathBuf>,
     category: Category,
     source_categories: Vec<String>,
+    mime_types: Vec<String>,
     search_text: String,
     launch: rmac_apps::LaunchSpec,
     actions: Vec<rmac_apps::DesktopAction>,
@@ -406,6 +407,7 @@ impl AppDrawer {
             source: app.path.clone(),
             icon: app.icon.clone(),
             categories: app.source_categories.clone(),
+            mime_types: app.mime_types.clone(),
             launch: app.launch.clone(),
             actions: app.actions.clone(),
         })
@@ -909,6 +911,7 @@ fn scan_apps() -> (Vec<App>, Option<SharedString>) {
             icon: application.icon,
             category,
             source_categories: application.categories,
+            mime_types: application.mime_types,
             launch: application.launch,
             actions: application.actions,
         })

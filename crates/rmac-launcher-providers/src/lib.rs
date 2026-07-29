@@ -844,6 +844,7 @@ mod tests {
             source: PathBuf::from(format!("/apps/{id}")),
             icon: None,
             categories: vec!["Utility".into()],
+            mime_types: Vec::new(),
             launch: rmac_apps::LaunchSpec::Command {
                 program: id.into(),
                 args: vec!["--new".into()],

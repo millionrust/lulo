@@ -7,6 +7,10 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+#[cfg(target_os = "linux")]
+use std::process::{ExitStatus, Stdio};
+#[cfg(target_os = "linux")]
+use std::time::{Duration, Instant};
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
@@ -19,6 +23,9 @@ pub struct Application {
     pub source: PathBuf,
     pub icon: Option<PathBuf>,
     pub categories: Vec<String>,
+    /// Exact MIME types advertised by the desktop entry. An empty list means
+    /// the application did not claim file-handler support.
+    pub mime_types: Vec<String>,
     pub launch: LaunchSpec,
     /// Additional launcher actions declared by the desktop entry, in the
     /// author's `Actions=` order. macOS catalog entries currently omit these.
@@ -39,6 +46,51 @@ const MAX_ACTION_NAME_BYTES: usize = 512;
 const MAX_GENERIC_NAME_BYTES: usize = 512;
 const MAX_SEARCH_KEYWORDS: usize = 64;
 const MAX_KEYWORD_BYTES: usize = 256;
+const MAX_MIME_TYPES: usize = 256;
+const MAX_MIME_TYPE_BYTES: usize = 255;
+const MAX_DESKTOP_ID_BYTES: usize = 512;
+const MAX_ASSOCIATION_OUTPUT_BYTES: usize = 4 * 1024;
+#[cfg(target_os = "linux")]
+const ASSOCIATION_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
+#[cfg(target_os = "linux")]
+const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+#[cfg(target_os = "linux")]
+struct BoundedCommandOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FileAssociation {
+    pub mime_type: String,
+    pub default_application_id: Option<String>,
+    pub handlers: Vec<Application>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpenFileWithError {
+    pub default_changed: bool,
+    detail: String,
+}
+
+impl std::fmt::Display for OpenFileWithError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.detail)
+    }
+}
+
+impl std::error::Error for OpenFileWithError {}
+
+impl From<io::Error> for OpenFileWithError {
+    fn from(error: io::Error) -> Self {
+        Self {
+            default_changed: false,
+            detail: error.to_string(),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ApplicationSource {
@@ -200,6 +252,117 @@ pub fn discover() -> io::Result<Vec<Application>> {
     #[cfg(not(target_os = "macos"))]
     {
         discover_linux(&Environment::current())
+    }
+}
+
+/// Resolve the shared-mime-info type, current default, and visible compatible
+/// applications for one local file.
+///
+/// Linux uses the XDG association authority rather than guessing from the file
+/// extension. The returned applications come from the same bounded desktop
+/// catalog used by the launcher and Dock.
+pub fn file_association(path: &Path) -> io::Result<FileAssociation> {
+    #[cfg(target_os = "linux")]
+    {
+        let mime_type = query_file_mime_type(path)?;
+        let default_application_id = query_default_application(&mime_type)?;
+        let handlers =
+            matching_file_handlers(discover()?, &mime_type, default_application_id.as_deref());
+        Ok(FileAssociation {
+            mime_type,
+            default_application_id,
+            handlers,
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = path;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Open With associations are available in the supported Linux session",
+        ))
+    }
+}
+
+/// Open one file with an exact compatible desktop application, optionally
+/// making that application the XDG default first.
+///
+/// Both the file MIME type and desktop catalog are re-read immediately before
+/// dispatch. `gio launch` interprets the trusted desktop entry and its field
+/// codes without involving a shell.
+pub fn open_file_with(
+    path: &Path,
+    expected_mime_type: &str,
+    application_id: &str,
+    make_default: bool,
+) -> Result<(), OpenFileWithError> {
+    #[cfg(target_os = "linux")]
+    {
+        let current_mime_type = query_file_mime_type(path)?;
+        if current_mime_type != expected_mime_type {
+            return Err(io::Error::other(
+                "the file type changed while the Open With panel was visible",
+            )
+            .into());
+        }
+        let application = discover()?
+            .into_iter()
+            .find(|application| {
+                application.id == application_id
+                    && application
+                        .mime_types
+                        .iter()
+                        .any(|candidate| candidate == &current_mime_type)
+            })
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "the selected application is no longer installed or compatible",
+                )
+            })
+            .map_err(OpenFileWithError::from)?;
+
+        if make_default {
+            run_xdg_mime(&[
+                std::ffi::OsStr::new("default"),
+                std::ffi::OsStr::new(&application.id),
+                std::ffi::OsStr::new(&current_mime_type),
+            ])?;
+            if query_default_application(&current_mime_type)?.as_deref()
+                != Some(application.id.as_str())
+            {
+                return Err(io::Error::other(
+                    "the desktop did not retain the new default application",
+                )
+                .into());
+            }
+        }
+
+        let launch = run_command_success(
+            Command::new("gio")
+                .arg("launch")
+                .arg(&application.source)
+                .arg(path),
+            "launch the selected application",
+        );
+        if make_default {
+            launch.map_err(|error| OpenFileWithError {
+                default_changed: true,
+                detail: format!(
+                    "The default application changed, but the file could not be opened: {error}"
+                ),
+            })
+        } else {
+            launch.map_err(OpenFileWithError::from)
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (path, expected_mime_type, application_id, make_default);
+        Err(OpenFileWithError {
+            default_changed: false,
+            detail: "Open With is available in the supported Linux session".into(),
+        })
     }
 }
 
@@ -392,6 +555,7 @@ fn discover_macos() -> io::Result<Vec<Application>> {
                 source: path.clone(),
                 icon: None,
                 categories: Vec::new(),
+                mime_types: Vec::new(),
                 launch: LaunchSpec::OpenPath(path),
                 actions: Vec::new(),
             });
@@ -590,6 +754,7 @@ fn parse_desktop_entry(
     let (program, args) = expand_exec(exec, &name, icon_name, path)?;
     let icon = icon_name.and_then(|icon| resolve_icon(icon, environment));
     let categories = split_list(values.get("Categories"));
+    let mime_types = bounded_mime_types(values.get("MimeType"));
     let actions = desktop_actions(contents, &values, &name, path, environment);
     Some(Application {
         id: id.to_string(),
@@ -599,6 +764,7 @@ fn parse_desktop_entry(
         source: path.to_path_buf(),
         icon,
         categories,
+        mime_types,
         launch: LaunchSpec::Command {
             program,
             args,
@@ -702,6 +868,274 @@ fn split_list_value(value: &str) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+fn bounded_mime_types(value: Option<&String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    split_list(value)
+        .into_iter()
+        .filter(|mime_type| valid_mime_type(mime_type) && seen.insert(mime_type.clone()))
+        .take(MAX_MIME_TYPES)
+        .collect()
+}
+
+fn valid_mime_type(value: &str) -> bool {
+    if value.is_empty() || value.len() > MAX_MIME_TYPE_BYTES || !value.is_ascii() {
+        return false;
+    }
+    let Some((kind, subtype)) = value.split_once('/') else {
+        return false;
+    };
+    !kind.is_empty()
+        && !subtype.is_empty()
+        && !subtype.contains('/')
+        && kind.bytes().all(valid_mime_token_byte)
+        && subtype.bytes().all(valid_mime_token_byte)
+}
+
+fn valid_mime_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'!' | b'#' | b'$' | b'&' | b'^' | b'_' | b'.' | b'+' | b'-'
+        )
+}
+
+fn matching_file_handlers(
+    catalog: Vec<Application>,
+    mime_type: &str,
+    default_application_id: Option<&str>,
+) -> Vec<Application> {
+    let mut handlers = catalog
+        .into_iter()
+        .filter(|application| {
+            application
+                .mime_types
+                .iter()
+                .any(|candidate| candidate == mime_type)
+        })
+        .collect::<Vec<_>>();
+    handlers.sort_by(|left, right| {
+        let left_default = default_application_id == Some(left.id.as_str());
+        let right_default = default_application_id == Some(right.id.as_str());
+        right_default.cmp(&left_default).then_with(|| {
+            left.name
+                .to_lowercase()
+                .cmp(&right.name.to_lowercase())
+                .then_with(|| left.id.cmp(&right.id))
+        })
+    });
+    handlers
+}
+
+#[cfg(target_os = "linux")]
+fn query_file_mime_type(path: &Path) -> io::Result<String> {
+    if !path.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Open With requires a regular file",
+        ));
+    }
+    let output = run_xdg_mime(&[
+        std::ffi::OsStr::new("query"),
+        std::ffi::OsStr::new("filetype"),
+        path.as_os_str(),
+    ])?;
+    parse_mime_output(&output)
+}
+
+#[cfg(target_os = "linux")]
+fn query_default_application(mime_type: &str) -> io::Result<Option<String>> {
+    if !valid_mime_type(mime_type) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid MIME type",
+        ));
+    }
+    let output = run_xdg_mime(&[
+        std::ffi::OsStr::new("query"),
+        std::ffi::OsStr::new("default"),
+        std::ffi::OsStr::new(mime_type),
+    ])?;
+    parse_default_application_output(&output)
+}
+
+#[cfg(target_os = "linux")]
+fn run_xdg_mime(arguments: &[&std::ffi::OsStr]) -> io::Result<Vec<u8>> {
+    let mut command = Command::new("xdg-mime");
+    command.args(arguments);
+    let output = bounded_command_output(&mut command).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("could not run the XDG MIME authority: {error}"),
+        )
+    })?;
+    if !output.status.success() {
+        return Err(command_failure(
+            "query the XDG MIME authority",
+            &output.stderr,
+        ));
+    }
+    Ok(output.stdout)
+}
+
+fn parse_mime_output(output: &[u8]) -> io::Result<String> {
+    let value = parse_one_line(output, "MIME type")?;
+    if !valid_mime_type(&value) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the XDG MIME authority returned an invalid MIME type",
+        ));
+    }
+    Ok(value)
+}
+
+fn parse_default_application_output(output: &[u8]) -> io::Result<Option<String>> {
+    if output.iter().all(u8::is_ascii_whitespace) {
+        return Ok(None);
+    }
+    let value = parse_one_line(output, "default application")?;
+    if value.len() > MAX_DESKTOP_ID_BYTES
+        || !value.ends_with(".desktop")
+        || value.bytes().any(|byte| {
+            byte.is_ascii_control()
+                || byte.is_ascii_whitespace()
+                || matches!(byte, b'/' | b'\\' | b';')
+        })
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the XDG MIME authority returned an invalid desktop application ID",
+        ));
+    }
+    Ok(Some(value))
+}
+
+fn parse_one_line(output: &[u8], label: &str) -> io::Result<String> {
+    if output.len() > MAX_ASSOCIATION_OUTPUT_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("the {label} response was too large"),
+        ));
+    }
+    let text = std::str::from_utf8(output).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("the {label} response was not UTF-8"),
+        )
+    })?;
+    let value = text.trim();
+    if value.is_empty() || value.lines().count() != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("the {label} response was empty or ambiguous"),
+        ));
+    }
+    Ok(value.to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn run_command_success(command: &mut Command, operation: &str) -> io::Result<()> {
+    let output = bounded_command_output(command)
+        .map_err(|error| io::Error::new(error.kind(), format!("could not {operation}: {error}")))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(command_failure(operation, &output.stderr))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn command_failure(operation: &str, stderr: &[u8]) -> io::Error {
+    let detail = bounded_command_detail(stderr);
+    io::Error::other(if detail.is_empty() {
+        format!("could not {operation}: the command failed")
+    } else {
+        format!("could not {operation}: {detail}")
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn bounded_command_detail(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let mut detail = String::new();
+    let mut truncated = false;
+    for (index, character) in text.trim().chars().enumerate() {
+        if index == 512 {
+            truncated = true;
+            break;
+        }
+        detail.push(if character.is_control() {
+            ' '
+        } else {
+            character
+        });
+    }
+    if truncated {
+        detail.push('…');
+    }
+    detail
+}
+
+#[cfg(target_os = "linux")]
+fn bounded_command_output(command: &mut Command) -> io::Result<BoundedCommandOutput> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("missing command stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("missing command stderr"))?;
+    let stdout_reader = std::thread::spawn(move || drain_bounded(stdout));
+    let stderr_reader = std::thread::spawn(move || drain_bounded(stderr));
+    let deadline = Instant::now() + ASSOCIATION_COMMAND_TIMEOUT;
+    let status = loop {
+        match child.try_wait()? {
+            Some(status) => break status,
+            None if Instant::now() < deadline => std::thread::sleep(PROCESS_POLL_INTERVAL),
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "the command did not finish before the bounded deadline",
+                ));
+            }
+        }
+    };
+    let (stdout, stdout_excessive) = stdout_reader
+        .join()
+        .map_err(|_| io::Error::other("command stdout reader failed"))??;
+    let (stderr, stderr_excessive) = stderr_reader
+        .join()
+        .map_err(|_| io::Error::other("command stderr reader failed"))??;
+    if stdout_excessive || stderr_excessive {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the command returned excessive output",
+        ));
+    }
+    Ok(BoundedCommandOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn drain_bounded(mut reader: impl io::Read) -> io::Result<(Vec<u8>, bool)> {
+    let mut bytes = Vec::with_capacity(MAX_ASSOCIATION_OUTPUT_BYTES);
+    reader
+        .take(MAX_ASSOCIATION_OUTPUT_BYTES.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)?;
+    let excessive = bytes.len() > MAX_ASSOCIATION_OUTPUT_BYTES;
+    bytes.truncate(MAX_ASSOCIATION_OUTPUT_BYTES);
+    Ok((bytes, excessive))
 }
 
 fn bounded_keywords(value: &str) -> Vec<String> {
@@ -1255,6 +1689,7 @@ mod tests {
             source: PathBuf::from(format!("/apps/{id}")),
             icon: None,
             categories: Vec::new(),
+            mime_types: Vec::new(),
             launch: LaunchSpec::OpenPath(PathBuf::from(format!("/apps/{id}"))),
             actions: Vec::new(),
         }
@@ -1340,7 +1775,7 @@ mod tests {
         let entry = parse_desktop_entry(
             "demo.desktop",
             Path::new("/apps/demo.desktop"),
-            "[Desktop Entry]\nType=Application\nName=Demo\nName[en_GB]=Demonstration\nGenericName=Tool\nGenericName[en_GB]=Developer Tool\nKeywords=code;editor;\nKeywords[en_GB]=develop;build;\nExec=demo --title %c %% %f\nIcon=demo\nCategories=Development;Utility;\nOnlyShowIn=niri;\n",
+            "[Desktop Entry]\nType=Application\nName=Demo\nName[en_GB]=Demonstration\nGenericName=Tool\nGenericName[en_GB]=Developer Tool\nKeywords=code;editor;\nKeywords[en_GB]=develop;build;\nExec=demo --title %c %% %f\nIcon=demo\nCategories=Development;Utility;\nMimeType=text/plain;text/markdown;text/plain;invalid;\nOnlyShowIn=niri;\n",
             &environment(),
         )
         .unwrap();
@@ -1354,6 +1789,7 @@ mod tests {
         assert!(searchable.contains("develop"));
         assert!(searchable.contains("utility"));
         assert_eq!(entry.categories, ["Development", "Utility"]);
+        assert_eq!(entry.mime_types, ["text/plain", "text/markdown"]);
         assert_eq!(
             entry.launch,
             LaunchSpec::Command {
@@ -1363,6 +1799,69 @@ mod tests {
                 terminal: false,
             }
         );
+    }
+
+    #[test]
+    fn association_outputs_are_bounded_exact_and_unambiguous() {
+        assert_eq!(parse_mime_output(b"text/plain\n").unwrap(), "text/plain");
+        assert!(parse_mime_output(b"text/plain\nimage/png\n").is_err());
+        assert!(parse_mime_output(b"text plain\n").is_err());
+        assert!(parse_mime_output(&vec![b'a'; MAX_ASSOCIATION_OUTPUT_BYTES + 1]).is_err());
+
+        assert_eq!(
+            parse_default_application_output(b"org.example.Editor.desktop\n").unwrap(),
+            Some("org.example.Editor.desktop".into())
+        );
+        assert_eq!(parse_default_application_output(b"\n").unwrap(), None);
+        for invalid in [
+            b"editor\nother.desktop\n".as_slice(),
+            b"../editor.desktop\n",
+            b"editor.desktop;other.desktop\n",
+            b"editor\n",
+        ] {
+            assert!(parse_default_application_output(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn matching_file_handlers_are_exact_and_put_the_default_first() {
+        let mut image = application("image.desktop", "Image");
+        image.mime_types = vec!["image/png".into()];
+        let mut alternate = application("alternate.desktop", "Alternate");
+        alternate.mime_types = vec!["text/plain".into()];
+        let mut default = application("default.desktop", "Default");
+        default.mime_types = vec!["text/plain".into()];
+
+        let handlers = matching_file_handlers(
+            vec![image, alternate, default],
+            "text/plain",
+            Some("default.desktop"),
+        );
+        assert_eq!(
+            handlers
+                .iter()
+                .map(|application| application.id.as_str())
+                .collect::<Vec<_>>(),
+            ["default.desktop", "alternate.desktop"]
+        );
+    }
+
+    #[test]
+    fn mime_capabilities_are_bounded_and_reject_unsafe_tokens() {
+        let values = (0..(MAX_MIME_TYPES + 10))
+            .map(|index| format!("application/x-rmac-{index};"))
+            .collect::<String>();
+        let value = Some(values);
+        let types = bounded_mime_types(value.as_ref());
+        assert_eq!(types.len(), MAX_MIME_TYPES);
+        assert!(valid_mime_type("application/vnd.example+json"));
+        assert!(!valid_mime_type("text/plain;application/x-shellscript"));
+        assert!(!valid_mime_type("../text/plain"));
+        assert!(!valid_mime_type("text/\nplain"));
+        assert!(!valid_mime_type(&format!(
+            "text/{}",
+            "a".repeat(MAX_MIME_TYPE_BYTES)
+        )));
     }
 
     #[test]

@@ -51,6 +51,7 @@ actions!(
         GoUp,
         ToggleHidden,
         OpenItems,
+        OpenWith,
         QuickLook,
         GetInfo,
         NewTab,
@@ -187,6 +188,16 @@ struct ActiveTrash {
 #[derive(Clone)]
 struct DeleteConfirmation {
     items: Vec<trash_store::TrashedItem>,
+}
+
+#[derive(Clone)]
+struct OpenWithPicker {
+    path: PathBuf,
+    association: Option<rmac_apps::FileAssociation>,
+    selected: usize,
+    make_default: bool,
+    busy: bool,
+    error: Option<SharedString>,
 }
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -369,6 +380,8 @@ struct FinderView {
     fwd: Vec<PathBuf>,
     sections: Vec<Section>,
     info: Option<usize>,
+    open_with: Option<OpenWithPicker>,
+    open_generation: u64,
     result_title: Option<SharedString>,
     operation_notice: Option<SharedString>,
     operation_error: Option<SharedString>,
@@ -643,6 +656,8 @@ impl FinderView {
             fwd: Vec::new(),
             sections,
             info: None,
+            open_with: None,
+            open_generation: 0,
             result_title: None,
             operation_notice: None,
             operation_error: mount_error,
@@ -1222,7 +1237,7 @@ impl FinderView {
         if e.is_dir {
             self.navigate(e.path, cx);
         } else {
-            cx.open_with_system(&e.path);
+            self.open_paths(vec![e.path], cx);
         }
     }
 
@@ -1242,10 +1257,238 @@ impl FinderView {
         if let [(true, dir)] = paths.as_slice() {
             self.navigate(dir.clone(), cx);
         } else {
-            for (_, p) in paths {
-                cx.open_with_system(&p);
-            }
+            self.open_paths(paths.into_iter().map(|(_, path)| path).collect(), cx);
         }
+    }
+
+    fn open_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if paths.is_empty() {
+            return;
+        }
+        self.operation_error = None;
+        self.open_generation = self.open_generation.wrapping_add(1);
+        let generation = self.open_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let total = paths.len();
+            let mut failures = Vec::new();
+            for path in paths {
+                if let Err(error) = rmac_portal::open_item(&path).await {
+                    failures.push(error.to_string());
+                }
+            }
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.open_generation != generation {
+                    return;
+                }
+                if let Some(first) = failures.first() {
+                    this.operation_error = Some(
+                        if failures.len() == 1 {
+                            first.clone()
+                        } else {
+                            format!(
+                                "{first} (and {} more of {total} items could not be opened)",
+                                failures.len() - 1
+                            )
+                        }
+                        .into(),
+                    );
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn request_open_with(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error = Some("Restore the item before choosing an application".into());
+            cx.notify();
+            return;
+        }
+        let mut selected = self
+            .selected
+            .iter()
+            .filter_map(|&index| self.entries.get(index));
+        let Some(entry) = selected.next() else {
+            return;
+        };
+        if selected.next().is_some() || entry.is_dir {
+            self.operation_error =
+                Some("Select one file to choose which application opens it".into());
+            cx.notify();
+            return;
+        }
+
+        let path = entry.path.clone();
+        self.menu_at = None;
+        self.operation_error = None;
+        self.open_with = Some(OpenWithPicker {
+            path: path.clone(),
+            association: None,
+            selected: 0,
+            make_default: false,
+            busy: false,
+            error: None,
+        });
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move { rmac_apps::file_association(&path) }
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                let Some(picker) = this.open_with.as_mut().filter(|picker| picker.path == path)
+                else {
+                    return;
+                };
+                match result {
+                    Ok(association) => {
+                        picker.association = Some(association);
+                        picker.selected = 0;
+                    }
+                    Err(error) => {
+                        this.open_with = None;
+                        this.operation_error =
+                            Some(format!("Could not load compatible applications: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn close_open_with(&mut self, cx: &mut Context<Self>) {
+        if self.open_with.as_ref().is_some_and(|picker| picker.busy) {
+            return;
+        }
+        self.open_with = None;
+        cx.notify();
+    }
+
+    fn move_open_with_selection(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let Some(picker) = self.open_with.as_mut() else {
+            return;
+        };
+        let Some(association) = picker.association.as_ref() else {
+            return;
+        };
+        if picker.busy || association.handlers.is_empty() {
+            return;
+        }
+        picker.selected = picker
+            .selected
+            .saturating_add_signed(delta)
+            .min(association.handlers.len() - 1);
+        cx.notify();
+    }
+
+    fn choose_open_with(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(picker) = self.open_with.as_mut() else {
+            return;
+        };
+        let Some(association) = picker.association.as_ref() else {
+            return;
+        };
+        if !picker.busy && index < association.handlers.len() {
+            picker.selected = index;
+            picker.error = None;
+            cx.notify();
+        }
+    }
+
+    fn toggle_open_with_default(&mut self, cx: &mut Context<Self>) {
+        let Some(picker) = self.open_with.as_mut() else {
+            return;
+        };
+        let Some(association) = picker.association.as_ref() else {
+            return;
+        };
+        let Some(application) = association.handlers.get(picker.selected) else {
+            return;
+        };
+        if !picker.busy
+            && association.default_application_id.as_deref() != Some(application.id.as_str())
+        {
+            picker.make_default = !picker.make_default;
+            picker.error = None;
+            cx.notify();
+        }
+    }
+
+    fn confirm_open_with(&mut self, cx: &mut Context<Self>) {
+        let Some(picker) = self.open_with.as_mut() else {
+            return;
+        };
+        let Some(association) = picker.association.as_ref() else {
+            return;
+        };
+        let Some(application) = association.handlers.get(picker.selected) else {
+            return;
+        };
+        if picker.busy {
+            return;
+        }
+        let path = picker.path.clone();
+        let mime_type = association.mime_type.clone();
+        let application_id = application.id.clone();
+        let application_name = sanitize_dialog_name(&application.name);
+        let make_default = picker.make_default
+            && association.default_application_id.as_deref() != Some(application.id.as_str());
+        picker.busy = true;
+        picker.error = None;
+        self.operation_error = None;
+        cx.notify();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    let mime_type = mime_type.clone();
+                    let application_id = application_id.clone();
+                    async move {
+                        rmac_apps::open_file_with(&path, &mime_type, &application_id, make_default)
+                    }
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                let Some(picker) = this.open_with.as_mut().filter(|picker| picker.path == path)
+                else {
+                    return;
+                };
+                picker.busy = false;
+                match result {
+                    Ok(()) => {
+                        this.open_with = None;
+                        this.operation_notice = Some(
+                            if make_default {
+                                format!(
+                                    "{application_name} is now the default for {mime_type} files"
+                                )
+                            } else {
+                                format!("Opened with {application_name}")
+                            }
+                            .into(),
+                        );
+                    }
+                    Err(error) => {
+                        if error.default_changed {
+                            if let Some(association) = picker.association.as_mut() {
+                                association.default_application_id = Some(application_id.clone());
+                            }
+                            picker.make_default = false;
+                        }
+                        picker.error = Some(format!("Could not open the file: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     // ---- selection ----
@@ -3361,6 +3604,7 @@ impl FinderView {
     fn build_context_menu(
         pos: Point<Pixels>,
         has_selection: bool,
+        can_open_with: bool,
         can_paste: bool,
         trash_view: bool,
         undo_label: Option<String>,
@@ -3379,8 +3623,11 @@ impl FinderView {
             return m;
         }
         if has_selection {
+            m = m.item("Open", Box::new(OpenItems));
+            if can_open_with {
+                m = m.item("Open With…", Box::new(OpenWith));
+            }
             m = m
-                .item("Open", Box::new(OpenItems))
                 .item("Rename", Box::new(RenameItem))
                 .item("Duplicate", Box::new(Duplicate))
                 .separator()
@@ -3736,6 +3983,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
+            .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, _, cx| this.get_info(cx)))
@@ -3928,7 +4176,7 @@ impl FinderView {
                                 this.col_stack.push(ep.clone());
                                 cx.notify();
                             } else {
-                                cx.open_with_system(&ep);
+                                this.open_paths(vec![ep.clone()], cx);
                             }
                         })),
                 );
@@ -4384,6 +4632,244 @@ impl FinderView {
         )
     }
 
+    fn render_open_with(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let picker = self.open_with.as_ref()?;
+        let name = picker
+            .path
+            .file_name()
+            .map(|name| sanitize_dialog_name(&name.to_string_lossy()))
+            .unwrap_or_else(|| "this file".into());
+        let busy = picker.busy;
+
+        let mut body = div().v_flex().gap_2().px_5().py_4();
+        let mut can_open = false;
+        let mut selected_is_default = false;
+        if let Some(association) = &picker.association {
+            body = body.child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(secondary())
+                    .child(format!(
+                        "Choose an application for “{name}” ({})",
+                        association.mime_type
+                    )),
+            );
+            if association.handlers.is_empty() {
+                body = body.child(
+                    div()
+                        .h(px(120.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(secondary())
+                        .child("No installed application advertises support for this file type."),
+                );
+            } else {
+                can_open = true;
+                let mut rows = Vec::with_capacity(association.handlers.len());
+                for (index, application) in association.handlers.iter().enumerate() {
+                    let selected = index == picker.selected;
+                    let is_default = association.default_application_id.as_deref()
+                        == Some(application.id.as_str());
+                    if selected {
+                        selected_is_default = is_default;
+                    }
+                    rows.push(
+                        div()
+                            .id(("open-with-handler", index))
+                            .h(px(34.0))
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_2()
+                            .rounded(px(6.0))
+                            .cursor_pointer()
+                            .when(selected, |element: Stateful<Div>| element.bg(sel()))
+                            .when(!selected, |element: Stateful<Div>| {
+                                element.hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                            })
+                            .child(icon(
+                                "icons/file-fill.svg",
+                                16.0,
+                                if selected { white() } else { secondary() },
+                            ))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .truncate()
+                                    .text_size(rmac_ui::text_px(13.0))
+                                    .text_color(if selected { white() } else { label() })
+                                    .child(sanitize_dialog_name(&application.name)),
+                            )
+                            .when(is_default, |element: Stateful<Div>| {
+                                element.child(
+                                    div()
+                                        .text_size(rmac_ui::text_px(11.0))
+                                        .text_color(if selected { white() } else { secondary() })
+                                        .child("Default"),
+                                )
+                            })
+                            .on_click(
+                                cx.listener(move |this, _, _, cx| this.choose_open_with(index, cx)),
+                            )
+                            .into_any_element(),
+                    );
+                }
+                body = body.child(
+                    div()
+                        .id("open-with-list")
+                        .max_h(px(260.0))
+                        .overflow_y_scroll()
+                        .v_flex()
+                        .gap_0p5()
+                        .children(rows),
+                );
+
+                let checked = selected_is_default || picker.make_default;
+                body = body.child(
+                    div()
+                        .id("open-with-default")
+                        .h(px(28.0))
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .rounded(px(5.0))
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(if selected_is_default {
+                            secondary()
+                        } else {
+                            label()
+                        })
+                        .when(!selected_is_default && !busy, |element: Stateful<Div>| {
+                            element.cursor_pointer().on_click(
+                                cx.listener(|this, _, _, cx| this.toggle_open_with_default(cx)),
+                            )
+                        })
+                        .child(
+                            div()
+                                .w(px(16.0))
+                                .h(px(16.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(4.0))
+                                .border_1()
+                                .border_color(if checked {
+                                    rmac_ui::mac::accent()
+                                } else {
+                                    sep()
+                                })
+                                .bg(if checked {
+                                    rmac_ui::mac::accent()
+                                } else {
+                                    rmac_ui::mac::raised()
+                                })
+                                .text_color(rmac_ui::mac::on_accent())
+                                .child(if checked { "✓" } else { "" }),
+                        )
+                        .child(if selected_is_default {
+                            "This application is already the default"
+                        } else {
+                            "Always open this file type with this application"
+                        }),
+                );
+            }
+        } else {
+            body = body.child(
+                div()
+                    .h(px(150.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(secondary())
+                    .child("Finding compatible applications…"),
+            );
+        }
+        if let Some(error) = &picker.error {
+            body = body.child(
+                div()
+                    .id("open-with-error")
+                    .rounded(px(6.0))
+                    .border_1()
+                    .border_color(rmac_ui::mac::error_border())
+                    .bg(rmac_ui::mac::error_background())
+                    .px_3()
+                    .py_2()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(rmac_ui::mac::danger())
+                    .child(error.clone()),
+            );
+        }
+
+        let buttons = div()
+            .h(px(54.0))
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap_2()
+            .px_5()
+            .border_t_1()
+            .border_color(sep())
+            .child(
+                rmac_ui::dialog_button(
+                    "open-with-cancel",
+                    if can_open { "Cancel" } else { "Close" },
+                    rmac_ui::DialogButtonKind::Normal,
+                )
+                .disabled(busy)
+                .on_click(cx.listener(|this, _, _, cx| this.close_open_with(cx))),
+            )
+            .child(
+                rmac_ui::dialog_button(
+                    "open-with-confirm",
+                    if busy { "Opening…" } else { "Open" },
+                    rmac_ui::DialogButtonKind::Primary,
+                )
+                .busy(busy)
+                .disabled(busy || !can_open)
+                .on_click(cx.listener(|this, _, _, cx| this.confirm_open_with(cx))),
+            );
+
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(rmac_ui::mac::scrim())
+                .child(
+                    div()
+                        .w(px(440.0))
+                        .max_h(px(520.0))
+                        .v_flex()
+                        .rounded(px(12.0))
+                        .bg(rmac_ui::mac::raised())
+                        .border_1()
+                        .border_color(sep())
+                        .shadow_lg()
+                        .child(
+                            div()
+                                .h(px(48.0))
+                                .flex()
+                                .items_center()
+                                .px_5()
+                                .border_b_1()
+                                .border_color(sep())
+                                .text_size(rmac_ui::text_px(15.0))
+                                .font_weight(rmac_ui::mac::SEMIBOLD)
+                                .text_color(label())
+                                .child("Open With"),
+                        )
+                        .child(body)
+                        .child(buttons),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn render_info(&self, ix: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(e) = self.entries.get(ix) else {
             return div();
@@ -4476,6 +4962,14 @@ impl Render for FinderView {
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at;
         let has_sel = !self.selected.is_empty();
+        let can_open_with = !self.trash_view
+            && self.selected.len() == 1
+            && self
+                .selected
+                .iter()
+                .next()
+                .and_then(|index| self.entries.get(*index))
+                .is_some_and(|entry| !entry.is_dir);
         let can_paste = !self.clipboard.is_empty();
         let undo_label = self
             .undo_available
@@ -4502,6 +4996,7 @@ impl Render for FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_recovery_pending = false;
         let any_recovery_pending = recovery_pending || trash_recovery_pending;
+        let open_with_dialog = self.render_open_with(cx);
         let conflict_dialog = self.render_conflict(cx);
         let recovery_dialog = self.render_recovery(cx);
         #[cfg(any(target_os = "linux", test))]
@@ -4520,6 +5015,18 @@ impl Render for FinderView {
             .bg(list_bg())
             .text_color(label())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                if this.open_with.is_some() {
+                    cx.stop_propagation();
+                    match event.keystroke.key.as_str() {
+                        "escape" => this.close_open_with(cx),
+                        "up" => this.move_open_with_selection(-1, cx),
+                        "down" => this.move_open_with_selection(1, cx),
+                        "enter" => this.confirm_open_with(cx),
+                        "space" => this.toggle_open_with_default(cx),
+                        _ => {}
+                    }
+                    return;
+                }
                 #[cfg(any(target_os = "linux", test))]
                 if this.delete_confirmation.is_some() {
                     cx.stop_propagation();
@@ -4818,14 +5325,22 @@ impl Render for FinderView {
             .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))
             .when_some(menu_at, |el, pos| {
                 el.child(
-                    Self::build_context_menu(pos, has_sel, can_paste, self.trash_view, undo_label)
-                        .render(),
+                    Self::build_context_menu(
+                        pos,
+                        has_sel,
+                        can_open_with,
+                        can_paste,
+                        self.trash_view,
+                        undo_label,
+                    )
+                    .render(),
                 )
             })
             .when_some(conflict_dialog, |el, dialog| el.child(dialog))
             .when_some(recovery_dialog, |el, dialog| el.child(dialog))
             .when_some(trash_recovery_dialog, |el, dialog| el.child(dialog))
             .when_some(delete_dialog, |el, dialog| el.child(dialog))
+            .when_some(open_with_dialog, |el, dialog| el.child(dialog))
     }
 }
 

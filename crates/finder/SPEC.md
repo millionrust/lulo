@@ -230,6 +230,21 @@ metadata, icons, and identifiers remain original rmac work.
   uses shared semantic controls, supports
   Enter/Escape while idle, blocks duplicate resolution while busy, processes
   records in stable order, and redacts all paths from `Debug`.
+- Ordinary Open dispatches through the desktop portal and reports a visible,
+  dismissible failure instead of silently dropping a launch error. Open With
+  is offered only for one selected non-Trash regular file. Its worker asks the
+  shared-mime-info authority for the exact current MIME type and default
+  desktop application, then filters the bounded shared application catalog by
+  exact `MimeType` declarations. The default appears first in a keyboard-
+  navigable sheet; Escape closes, arrows move, Space toggles “always open,” and
+  Enter opens. Before an explicit launch, Files re-queries the MIME type and
+  installed catalog so a changed file type, removed application, or edited
+  capability fails visibly. Linux dispatch uses `gio launch` with the exact
+  catalog desktop file and path argument, never a shell or reconstructed
+  `Exec` string. A requested default change goes through `xdg-mime`, is read
+  back exactly, and is reported truthfully if application launch then fails.
+  MIME/default queries and launch helpers run away from GPUI with bounded
+  output and an eight-second deadline.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

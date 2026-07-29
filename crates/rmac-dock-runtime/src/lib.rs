@@ -800,6 +800,7 @@ mod tests {
             source: PathBuf::from(format!("/apps/{id}")),
             icon: None,
             categories: Vec::new(),
+            mime_types: Vec::new(),
             launch: rmac_apps::LaunchSpec::Command {
                 program: id.into(),
                 args: Vec::new(),

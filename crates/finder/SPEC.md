@@ -259,6 +259,30 @@ metadata, icons, and identifiers remain original rmac work.
   size/time invalidation, no-follow opens, a 32,768-pixel source-dimension
   ceiling, a 128 MiB decoder allocation budget, and a 1,024-pixel output edge.
   A source changed during decoding is never published as the accepted preview.
+- Files watches both the current directory and its parent so an external rename
+  can supply an old/new path pair. Callback traffic enters a capacity-one wake
+  channel while a mutex-protected accumulator retains at most 16 rename hints
+  plus watcher failure state; bursts therefore coalesce without unbounded
+  memory. A rename is followed only when the candidate new path has the exact
+  device/inode identity already bound to the open tab. Navigation history and
+  every affected tab path are rewritten component-wise. Every directory read
+  captures that identity before enumeration, distinguishes read errors from an
+  empty directory, rejects a same-path replacement, and rechecks identity
+  afterward. Missing, replaced, or newly inaccessible locations fall back to
+  the nearest accessible parent with a visible explanation instead of showing
+  a false empty folder. Generation checks prevent slow old reads or rename
+  resolutions from replacing newer navigation state, and watcher failures are
+  visible while Files attempts to re-establish the watches.
+- On Linux, Files consumes the existing bounded mount-namespace watcher and
+  performs a complete fresh mount snapshot for every coalesced hint. Sidebar
+  Locations are rebuilt from authoritative opaque mount identity/path/class,
+  so hotplug appears without restart and a reused display name or mountpoint is
+  not mistaken for the previous volume. A disappeared mount removes affected
+  history, clipboard paths, thumbnails, Open With/Quick Look state, and stale
+  sidebar entries. Every tab below it returns to Home; the active tab reloads
+  there with a visible disconnect notice. This prevents Files from silently
+  exposing the underlying mountpoint directory after an unmount. Manual Eject
+  uses the same authoritative refresh/recovery path.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

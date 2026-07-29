@@ -5,6 +5,7 @@
 //! shortcuts + right-click context menus, live search, clickable sort headers,
 //! hidden-file toggle, and live directory watching.
 
+mod directory_state;
 mod file_ops;
 mod operation_journal;
 mod pasteboard;
@@ -19,7 +20,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
@@ -208,6 +209,34 @@ struct QuickLookPanel {
     content: Option<quick_look::Content>,
     error: Option<SharedString>,
 }
+
+const MAX_RENAME_HINTS: usize = 16;
+
+#[derive(Default)]
+struct FilesystemHints {
+    watch_error: bool,
+    renames: Vec<(PathBuf, PathBuf)>,
+}
+
+impl FilesystemHints {
+    fn record(&mut self, result: notify::Result<notify::Event>) {
+        match result {
+            Ok(event) => {
+                if matches!(
+                    event.kind,
+                    notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
+                ) && event.paths.len() == 2
+                    && event.paths[0] != event.paths[1]
+                    && self.renames.len() < MAX_RENAME_HINTS
+                {
+                    self.renames
+                        .push((event.paths[0].clone(), event.paths[1].clone()));
+                }
+            }
+            Err(_) => self.watch_error = true,
+        }
+    }
+}
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let n = self.count;
@@ -361,6 +390,7 @@ enum SortKey {
 #[derive(Clone)]
 struct Tab {
     cwd: PathBuf,
+    identity: Option<directory_state::Identity>,
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
 }
@@ -370,6 +400,10 @@ struct FinderView {
     tabs: Vec<Tab>,
     active: usize,
     home: PathBuf,
+    mounts: Vec<rmac_mounts::Mount>,
+    mount_generation: u64,
+    cwd_identity: Option<directory_state::Identity>,
+    directory_generation: u64,
     thumbs: std::collections::HashMap<PathBuf, PathBuf>,
     entries: Vec<Entry>,
     selected: BTreeSet<usize>,
@@ -435,6 +469,7 @@ struct FinderView {
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
     watched: Option<PathBuf>,
+    watched_parent: Option<PathBuf>,
     search_generation: u64,
     search_cancel: Option<Arc<AtomicBool>>,
 }
@@ -499,7 +534,7 @@ impl FinderView {
                 Some(format!("Could not load mounted volumes: {error}").into()),
             ),
         };
-        locations.extend(mounts.into_iter().map(|mount| {
+        locations.extend(mounts.iter().cloned().map(|mount| {
             p(
                 &mount.name,
                 mount.path,
@@ -630,12 +665,17 @@ impl FinderView {
         // The bounded channel bridges notify's callback thread to GPUI. A
         // capacity of one coalesces filesystem-event bursts into one reload.
         let (fs_events, fs_event_rx) = async_channel::bounded(1);
+        let fs_hints = Arc::new(Mutex::new(FilesystemHints::default()));
+        let callback_hints = fs_hints.clone();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if res.is_ok() {
-                let _ = fs_events.try_send(());
+            if let Ok(mut hints) = callback_hints.lock() {
+                hints.record(res);
             }
+            let _ = fs_events.try_send(());
         })
         .ok();
+        #[cfg(target_os = "linux")]
+        let (mount_events, mount_event_rx) = async_channel::bounded(1);
 
         let focus = cx.focus_handle();
         window.focus(&focus);
@@ -644,11 +684,16 @@ impl FinderView {
             cwd: home.clone(),
             tabs: vec![Tab {
                 cwd: home.clone(),
+                identity: None,
                 back: Vec::new(),
                 fwd: Vec::new(),
             }],
             active: 0,
             home: home.clone(),
+            mounts: mounts.clone(),
+            mount_generation: 0,
+            cwd_identity: None,
+            directory_generation: 0,
             thumbs: std::collections::HashMap::new(),
             entries: Vec::new(),
             selected: BTreeSet::new(),
@@ -712,6 +757,7 @@ impl FinderView {
             focus,
             watcher,
             watched: None,
+            watched_parent: None,
             search_generation: 0,
             search_cancel: None,
         };
@@ -863,7 +909,7 @@ impl FinderView {
         })
         .detach();
 
-        // Live directory watching → reload on filesystem changes.
+        // Live directory watching → identity-bound reload/recovery on changes.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while fs_event_rx.recv().await.is_ok() {
                 // FSEvents can deliver a rapid sequence for one logical
@@ -878,8 +924,14 @@ impl FinderView {
                     }
                 }
                 while fs_event_rx.try_recv().is_ok() {}
+                let hints = fs_hints
+                    .lock()
+                    .map(|mut hints| std::mem::take(&mut *hints))
+                    .unwrap_or_default();
                 if this
-                    .update(cx, |this: &mut FinderView, cx| this.reload_after_event(cx))
+                    .update(cx, |this: &mut FinderView, cx| {
+                        this.reload_after_event(hints, cx)
+                    })
                     .is_err()
                 {
                     break;
@@ -887,6 +939,31 @@ impl FinderView {
             }
         })
         .detach();
+
+        #[cfg(target_os = "linux")]
+        {
+            let watch_sender = mount_events.clone();
+            cx.spawn(async move |_, _| {
+                let _ = rmac_mounts::watch(watch_sender).await;
+            })
+            .detach();
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                while let Ok(event) = mount_event_rx.recv().await {
+                    while mount_event_rx.try_recv().is_ok() {}
+                    let unavailable = event == rmac_mounts::WatchEvent::Unavailable;
+                    if this
+                        .update(cx, |this: &mut FinderView, cx| {
+                            this.refresh_mounts(unavailable, cx)
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+            view.refresh_mounts(false, cx);
+        }
 
         view
     }
@@ -905,11 +982,81 @@ impl FinderView {
 
     /// Refresh after a watcher event without spawning `df`; free space changes
     /// slowly and is refreshed on navigation and explicit file operations.
-    fn reload_after_event(&mut self, cx: &mut Context<Self>) {
+    fn reload_after_event(&mut self, hints: FilesystemHints, cx: &mut Context<Self>) {
         if self.trash_view {
             return;
         }
-        self.reload_inner(cx, false);
+        if hints.watch_error {
+            if let Some(watcher) = self.watcher.as_mut() {
+                if let Some(watched) = self.watched.take() {
+                    let _ = watcher.unwatch(&watched);
+                }
+                if let Some(parent) = self.watched_parent.take() {
+                    let _ = watcher.unwatch(&parent);
+                }
+            }
+            if self.operation_error.is_none() {
+                self.operation_error =
+                    Some("Live folder updates were interrupted; Files is rechecking".into());
+            }
+        }
+        let Some(expected) = self.cwd_identity else {
+            self.reload_inner(cx, false);
+            return;
+        };
+        if hints.renames.is_empty() {
+            self.reload_inner(cx, false);
+            return;
+        }
+
+        self.directory_generation = self.directory_generation.wrapping_add(1);
+        let generation = self.directory_generation;
+        let current = self.cwd.clone();
+        let renames = hints.renames;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let resolution = cx
+                .background_executor()
+                .spawn({
+                    let current = current.clone();
+                    async move { directory_state::renamed_path(&current, expected, &renames) }
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.directory_generation != generation
+                    || this.cwd != current
+                    || this.cwd_identity != Some(expected)
+                {
+                    return;
+                }
+                if let Some(resolution) = resolution {
+                    this.rewrite_navigation_prefix(&resolution.old, &resolution.new);
+                    this.cwd = resolution.current;
+                    this.operation_notice =
+                        Some("The current folder was renamed; Files followed it".into());
+                }
+                this.reload_inner(cx, false);
+            });
+        })
+        .detach();
+    }
+
+    fn rewrite_navigation_prefix(&mut self, old: &Path, new: &Path) {
+        self.cwd = directory_state::rewrite_prefix(&self.cwd, old, new);
+        for path in &mut self.back {
+            *path = directory_state::rewrite_prefix(path, old, new);
+        }
+        for path in &mut self.fwd {
+            *path = directory_state::rewrite_prefix(path, old, new);
+        }
+        for tab in &mut self.tabs {
+            tab.cwd = directory_state::rewrite_prefix(&tab.cwd, old, new);
+            for path in &mut tab.back {
+                *path = directory_state::rewrite_prefix(path, old, new);
+            }
+            for path in &mut tab.fwd {
+                *path = directory_state::rewrite_prefix(path, old, new);
+            }
+        }
     }
 
     fn reload_trash(&mut self, cx: &mut Context<Self>) {
@@ -1008,21 +1155,43 @@ impl FinderView {
         self.col_stack = vec![self.cwd.clone()];
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
+            t.identity = self.cwd_identity;
         }
         // Reconfigure the watcher only after navigation. Re-watching the same
         // directory in response to its own event can create a reload storm.
+        let mut watch_failed = false;
         if self.watched.as_ref() != Some(&self.cwd) {
             if let Some(w) = self.watcher.as_mut() {
                 if let Some(old) = self.watched.take() {
                     let _ = w.unwatch(&old);
                 }
+                if let Some(old_parent) = self.watched_parent.take() {
+                    let _ = w.unwatch(&old_parent);
+                }
                 if w.watch(&self.cwd, RecursiveMode::NonRecursive).is_ok() {
                     self.watched = Some(self.cwd.clone());
+                } else {
+                    watch_failed = true;
+                }
+                if let Some(parent) = self.cwd.parent().filter(|parent| *parent != self.cwd) {
+                    if w.watch(parent, RecursiveMode::NonRecursive).is_ok() {
+                        self.watched_parent = Some(parent.to_path_buf());
+                    } else {
+                        watch_failed = true;
+                    }
                 }
             }
         }
+        if watch_failed && self.operation_error.is_none() {
+            self.operation_error =
+                Some("This folder could not be watched; Files will verify every refresh".into());
+        }
 
         let path = self.cwd.clone();
+        let home = self.home.clone();
+        let expected_identity = self.cwd_identity;
+        self.directory_generation = self.directory_generation.wrapping_add(1);
+        let generation = self.directory_generation;
         // Compared on completion so a slow read for a directory we've since
         // navigated away from doesn't clobber the current listing.
         let read_path = path.clone();
@@ -1030,37 +1199,86 @@ impl FinderView {
         let key = self.sort_key;
         let asc = self.sort_asc;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let (entries, free) = cx
+            let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let mut v = read_entries(&path, show_hidden);
-                    sort_entries(&mut v, key, asc);
-                    let free = refresh_free_space.then(|| free_space(&path));
-                    (v, free)
+                    match read_entries_checked(&path, show_hidden, expected_identity) {
+                        Ok((identity, mut entries)) => {
+                            sort_entries(&mut entries, key, asc);
+                            let free = refresh_free_space.then(|| free_space(&path));
+                            Ok((identity, entries, free))
+                        }
+                        Err(error) => Err((
+                            error.kind(),
+                            directory_state::recovery_parent(&path, &home),
+                        )),
+                    }
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
                 // Drop stale results from a superseded navigation.
-                if this.cwd != read_path {
+                if this.cwd != read_path || this.directory_generation != generation {
                     return;
                 }
-                this.entries = entries;
-                let entry_paths = this
-                    .entries
-                    .iter()
-                    .map(|entry| entry.path.clone())
-                    .collect::<BTreeSet<_>>();
-                this.thumbs.retain(|source, thumbnail| {
-                    entry_paths.contains(source) && rmac_thumbnails::is_current(source, thumbnail)
-                });
-                if let Some(free) = free {
-                    this.free_bytes = free;
+                match result {
+                    Ok((identity, entries, free)) => {
+                        this.cwd_identity = Some(identity);
+                        if let Some(tab) = this.tabs.get_mut(this.active) {
+                            tab.identity = Some(identity);
+                        }
+                        this.entries = entries;
+                        let entry_paths = this
+                            .entries
+                            .iter()
+                            .map(|entry| entry.path.clone())
+                            .collect::<BTreeSet<_>>();
+                        this.thumbs.retain(|source, thumbnail| {
+                            entry_paths.contains(source)
+                                && rmac_thumbnails::is_current(source, thumbnail)
+                        });
+                        if let Some(free) = free {
+                            this.free_bytes = free;
+                        }
+                        this.selected.clear();
+                        this.anchor = None;
+                        this.renaming = None;
+                        cx.notify();
+                        this.gen_thumbs(cx);
+                    }
+                    Err((kind, fallback)) if fallback != this.cwd => {
+                        this.entries.clear();
+                        this.selected.clear();
+                        this.anchor = None;
+                        this.renaming = None;
+                        this.cwd = fallback;
+                        this.cwd_identity = None;
+                        this.fwd.clear();
+                        if let Some(tab) = this.tabs.get_mut(this.active) {
+                            tab.cwd = this.cwd.clone();
+                            tab.identity = None;
+                            tab.fwd.clear();
+                        }
+                        this.operation_error = Some(
+                            match kind {
+                                std::io::ErrorKind::PermissionDenied => {
+                                    "The folder is no longer accessible; showing its nearest available parent"
+                                }
+                                _ => {
+                                    "The folder moved, disappeared, or was replaced; showing its nearest available parent"
+                                }
+                            }
+                            .into(),
+                        );
+                        this.reload_inner(cx, true);
+                    }
+                    Err(_) => {
+                        this.entries.clear();
+                        this.cwd_identity = None;
+                        this.operation_error =
+                            Some("This location is unavailable and could not be recovered".into());
+                        cx.notify();
+                    }
                 }
-                this.selected.clear();
-                this.anchor = None;
-                this.renaming = None;
-                cx.notify();
-                this.gen_thumbs(cx);
             });
         })
         .detach();
@@ -1134,6 +1352,7 @@ impl FinderView {
     fn save_tab(&mut self) {
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
+            t.identity = self.cwd_identity;
             t.back = self.back.clone();
             t.fwd = self.fwd.clone();
         }
@@ -1143,6 +1362,7 @@ impl FinderView {
     fn load_tab(&mut self, i: usize) {
         if let Some(t) = self.tabs.get(i) {
             self.cwd = t.cwd.clone();
+            self.cwd_identity = t.identity;
             self.back = t.back.clone();
             self.fwd = t.fwd.clone();
         }
@@ -1153,6 +1373,7 @@ impl FinderView {
         self.trash_view = false;
         self.tabs.push(Tab {
             cwd: self.home.clone(),
+            identity: None,
             back: Vec::new(),
             fwd: Vec::new(),
         });
@@ -1203,6 +1424,7 @@ impl FinderView {
         self.back.push(self.cwd.clone());
         self.fwd.clear();
         self.cwd = path;
+        self.cwd_identity = None;
         self.reload(cx);
     }
 
@@ -1215,6 +1437,7 @@ impl FinderView {
         if let Some(p) = self.back.pop() {
             self.fwd.push(self.cwd.clone());
             self.cwd = p;
+            self.cwd_identity = None;
             self.reload(cx);
         }
     }
@@ -1223,6 +1446,7 @@ impl FinderView {
         if let Some(p) = self.fwd.pop() {
             self.back.push(self.cwd.clone());
             self.cwd = p;
+            self.cwd_identity = None;
             self.reload(cx);
         }
     }
@@ -1576,6 +1800,152 @@ impl FinderView {
         self.search_generation = self.search_generation.wrapping_add(1);
     }
 
+    fn refresh_mounts(&mut self, watcher_unavailable: bool, cx: &mut Context<Self>) {
+        self.mount_generation = self.mount_generation.wrapping_add(1);
+        let generation = self.mount_generation;
+        if watcher_unavailable && self.operation_error.is_none() {
+            self.operation_error = Some("Automatic mounted-volume updates are unavailable".into());
+        }
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_mounts::discover() })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.mount_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(mounts) => this.apply_mount_snapshot(mounts, cx),
+                    Err(error) => {
+                        this.operation_error =
+                            Some(format!("Could not refresh mounted volumes: {error}").into());
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn apply_mount_snapshot(&mut self, mounts: Vec<rmac_mounts::Mount>, cx: &mut Context<Self>) {
+        let disappeared = disappeared_mount_roots(&self.mounts, &mounts);
+        self.mounts = mounts;
+        self.rebuild_location_places();
+        if disappeared.is_empty() {
+            cx.notify();
+            return;
+        }
+
+        let current_lost = directory_state::lies_under_any(&self.cwd, &disappeared);
+        self.back
+            .retain(|path| !directory_state::lies_under_any(path, &disappeared));
+        self.fwd
+            .retain(|path| !directory_state::lies_under_any(path, &disappeared));
+        for tab in &mut self.tabs {
+            tab.back
+                .retain(|path| !directory_state::lies_under_any(path, &disappeared));
+            tab.fwd
+                .retain(|path| !directory_state::lies_under_any(path, &disappeared));
+            if directory_state::lies_under_any(&tab.cwd, &disappeared) {
+                tab.cwd = self.home.clone();
+                tab.identity = None;
+                tab.back.clear();
+                tab.fwd.clear();
+            }
+        }
+        self.clipboard
+            .retain(|path| !directory_state::lies_under_any(path, &disappeared));
+        if self.clipboard.is_empty() {
+            self.clip_cut = false;
+        }
+        self.thumbs
+            .retain(|path, _| !directory_state::lies_under_any(path, &disappeared));
+        if self
+            .open_with
+            .as_ref()
+            .is_some_and(|picker| directory_state::lies_under_any(&picker.path, &disappeared))
+        {
+            self.open_with = None;
+        }
+        if self.quick_look.as_ref().is_some_and(|panel| {
+            panel
+                .paths
+                .iter()
+                .any(|path| directory_state::lies_under_any(path, &disappeared))
+        }) {
+            self.quick_look_generation = self.quick_look_generation.wrapping_add(1);
+            self.quick_look = None;
+        }
+
+        if current_lost {
+            self.cwd = self.home.clone();
+            self.cwd_identity = None;
+            self.back.clear();
+            self.fwd.clear();
+            self.selected.clear();
+            self.anchor = None;
+            self.renaming = None;
+            self.info = None;
+            self.menu_at = None;
+            if let Some(tab) = self.tabs.get_mut(self.active) {
+                tab.cwd = self.cwd.clone();
+                tab.identity = None;
+                tab.back.clear();
+                tab.fwd.clear();
+            }
+            self.operation_notice =
+                Some("A mounted volume disconnected; affected tabs returned to Home".into());
+            self.reload(cx);
+        } else {
+            self.operation_notice =
+                Some("A mounted volume disconnected; stale locations were removed".into());
+            cx.notify();
+        }
+    }
+
+    fn rebuild_location_places(&mut self) {
+        let host = self
+            .home
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root_volume_name().to_string());
+        let mut places = vec![
+            Place {
+                name: host.into(),
+                path: self.home.clone(),
+                icon: "icons/house.svg",
+                tint: drive_gray(),
+                kind: PlaceKind::Item,
+            },
+            Place {
+                name: root_volume_name().into(),
+                path: PathBuf::from("/"),
+                icon: "icons/hard-drive.svg",
+                tint: drive_gray(),
+                kind: PlaceKind::Item,
+            },
+        ];
+        places.extend(self.mounts.iter().map(|mount| Place {
+            name: mount.name.clone().into(),
+            path: mount.path.clone(),
+            icon: "icons/hard-drive.svg",
+            tint: drive_gray(),
+            kind: if mount.ejectable {
+                PlaceKind::Volume
+            } else {
+                PlaceKind::Item
+            },
+        }));
+        if let Some(locations) = self
+            .sections
+            .iter_mut()
+            .find(|section| section.title.as_ref() == "Locations")
+        {
+            locations.places = places;
+        }
+    }
+
     fn eject_volume(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let unmount_path = path.clone();
@@ -1587,13 +1957,8 @@ impl FinderView {
                 match result {
                     Ok(()) => {
                         this.operation_error = None;
-                        for section in &mut this.sections {
-                            section.places.retain(|place| place.path != path);
-                        }
-                        if this.cwd.starts_with(&path) {
-                            this.navigate(this.home.clone(), cx);
-                            return;
-                        }
+                        this.refresh_mounts(false, cx);
+                        return;
                     }
                     Err(error) => {
                         this.operation_error =
@@ -6272,6 +6637,59 @@ fn read_entries(dir: &Path, show_hidden: bool) -> Vec<Entry> {
     v
 }
 
+fn read_entries_checked(
+    directory: &Path,
+    show_hidden: bool,
+    expected: Option<directory_state::Identity>,
+) -> std::io::Result<(directory_state::Identity, Vec<Entry>)> {
+    let before = directory_state::Identity::capture(directory)?;
+    if expected.is_some_and(|expected| expected != before) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "the directory identity changed",
+        ));
+    }
+    let mut entries = Vec::new();
+    for result in std::fs::read_dir(directory)? {
+        let entry = match result {
+            Ok(entry) => entry,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+        if let Some(entry) = entry_for(&entry.path()) {
+            entries.push(entry);
+        }
+    }
+    if !before.still_matches(directory)? {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "the directory changed while it was read",
+        ));
+    }
+    Ok((before, entries))
+}
+
+fn disappeared_mount_roots(
+    previous: &[rmac_mounts::Mount],
+    current: &[rmac_mounts::Mount],
+) -> Vec<PathBuf> {
+    previous
+        .iter()
+        .filter(|old| {
+            !current.iter().any(|new| {
+                old.identity == new.identity
+                    && old.path == new.path
+                    && old.ejectable == new.ejectable
+            })
+        })
+        .map(|mount| mount.path.clone())
+        .collect()
+}
+
 fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
     v.sort_by(|a, b| {
         let o = match key {
@@ -6480,6 +6898,64 @@ mod tests {
         sender
             .try_send(())
             .expect("a new event should queue after consumption");
+    }
+
+    #[test]
+    fn filesystem_hints_bound_renames_and_retain_watch_failure() {
+        use notify::event::{ModifyKind, RenameMode};
+
+        let mut hints = FilesystemHints::default();
+        for index in 0..(MAX_RENAME_HINTS + 5) {
+            hints.record(Ok(notify::Event::new(notify::EventKind::Modify(
+                ModifyKind::Name(RenameMode::Both),
+            ))
+            .add_path(PathBuf::from(format!("/old/{index}")))
+            .add_path(PathBuf::from(format!("/new/{index}")))));
+        }
+        hints.record(Err(notify::Error::generic("watch failed")));
+
+        assert_eq!(hints.renames.len(), MAX_RENAME_HINTS);
+        assert!(hints.watch_error);
+    }
+
+    #[test]
+    fn checked_listing_rejects_a_replacement_at_the_same_path() {
+        let root = TestDirectory::new("directory-replacement");
+        let current = root.0.join("current");
+        std::fs::create_dir(&current).unwrap();
+        std::fs::write(current.join("old.txt"), "old").unwrap();
+        let expected = directory_state::Identity::capture(&current).unwrap();
+        let moved = root.0.join("moved");
+        std::fs::rename(&current, &moved).unwrap();
+        std::fs::create_dir(&current).unwrap();
+        std::fs::write(current.join("new.txt"), "new").unwrap();
+
+        let error = match read_entries_checked(&current, true, Some(expected)) {
+            Ok(_) => panic!("the replacement must not be accepted"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+    }
+
+    #[test]
+    fn mount_disappearance_uses_opaque_identity_not_display_name() {
+        let mount = |identity: &str, name: &str, path: &str| rmac_mounts::Mount {
+            identity: identity.into(),
+            name: name.into(),
+            path: PathBuf::from(path),
+            ejectable: true,
+        };
+        let previous = vec![mount("linux:42", "Drive", "/media/drive")];
+
+        assert!(disappeared_mount_roots(
+            &previous,
+            &[mount("linux:42", "Renamed Drive", "/media/drive")]
+        )
+        .is_empty());
+        assert_eq!(
+            disappeared_mount_roots(&previous, &[mount("linux:99", "Drive", "/media/drive")]),
+            [PathBuf::from("/media/drive")]
+        );
     }
 
     #[test]

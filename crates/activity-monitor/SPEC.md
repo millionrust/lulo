@@ -33,6 +33,10 @@ the application does not fabricate unavailable per-process data.
   bounded visible snapshots, filtering, sorting, column projection, PID-stable
   selection, row rendering, and row-scoped Quit/Force Quit actions. The root
   view coordinates that domain without owning its table-widget implementation.
+- The view-render boundary owns the GPUI projection for summaries, histories,
+  network rows, toolbar, process table, column chooser, inspector, confirmation,
+  feedback, and shortcuts. It invokes controller operations without owning
+  metric sampling, persistence, process identity, or signal-delivery policy.
 
 ## Sampling and failure states
 

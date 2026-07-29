@@ -573,6 +573,204 @@ fn replace_copy_cancellable(
     Ok(())
 }
 
+struct MoveReplacement<'a> {
+    binding: &'a ReplacementBinding,
+    copy_required: bool,
+}
+
+fn move_replace_cancellable(
+    fs: &impl FileSystem,
+    source: &Path,
+    destination: &Path,
+    replacement: MoveReplacement<'_>,
+    cancel: &AtomicBool,
+    journal: Option<&operation_journal::Journal>,
+    progress: &mut dyn FnMut(CopyActivity),
+) -> Result<(), Failure> {
+    let Some(journal) = journal else {
+        return Err(Failure::message(
+            Operation::Replace,
+            source,
+            Some(destination),
+            "durable recovery is unavailable",
+        )
+        .with_recovery_detail("The source and existing destination were not changed"));
+    };
+    if cancel.load(Ordering::Acquire) {
+        return Err(Failure::from_io(
+            Operation::Replace,
+            source,
+            Some(destination),
+            io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
+        ));
+    }
+    let mut ticket = journal
+        .prepare_move_replace_bound(
+            source,
+            destination,
+            &replacement.binding.expected_source,
+            &replacement.binding.expected_destination,
+        )
+        .map_err(|error| {
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_recovery_detail(
+                    "Recovery could not be prepared, so the source and existing destination were not changed",
+                )
+        })?;
+
+    let mut cancellation_record_error = None;
+    if replacement.copy_required {
+        fs.copy_cancellable(source, &ticket.staging_destination(), cancel, progress)
+            .map_err(|error| {
+                Failure::from_io(Operation::Replace, source, Some(destination), error)
+                    .with_recovery_detail(
+                        "The source and existing destination were retained; a partial recovery copy may remain",
+                    )
+            })?;
+        if cancel.load(Ordering::Acquire) {
+            return Err(Failure::from_io(
+                Operation::Replace,
+                source,
+                Some(destination),
+                io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
+            )
+            .with_recovery_detail(
+                "The source and existing destination were retained; a complete recovery copy may remain",
+            ));
+        }
+        ticket.mark_destination_complete().map_err(|error| {
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_recovery_detail(
+                    "The source and existing destination were retained; a recovery copy may remain",
+                )
+        })?;
+        if cancel.load(Ordering::Acquire) {
+            match ticket.retain_cancelled_replacement() {
+                Ok(()) => {
+                    return Err(Failure::from_io(
+                        Operation::Replace,
+                        source,
+                        Some(destination),
+                        io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
+                    )
+                    .with_recovery_detail(
+                        "The source and existing destination were retained; a complete recovery copy remains for review",
+                    ));
+                }
+                Err(error) => cancellation_record_error = Some(error),
+            }
+        }
+        if !ticket.destination_still_matches().map_err(|error| {
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_recovery_detail(
+                    "The source and existing destination were retained because the staged move could not be rechecked",
+                )
+        })? || !ticket.source_still_matches().map_err(|error| {
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_recovery_detail(
+                    "The existing destination was retained because the source could not be rechecked",
+                )
+        })? || !ticket.replacement_still_matches().map_err(|error| {
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_recovery_detail(
+                    "The staged move was retained because the existing destination could not be rechecked",
+                )
+        })? {
+            return Err(Failure::message(
+                Operation::Replace,
+                source,
+                Some(destination),
+                "the source, staged move, or existing destination changed before replacement",
+            )
+            .with_recovery_detail(
+                "No item was replaced; the source and existing destination were retained",
+            ));
+        }
+        fs.remove(source).map_err(|error| {
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_recovery_detail(
+                    "The existing destination was retained; the complete staged move remains for review",
+                )
+        })?;
+        ticket.mark_source_removed().map_err(|error| {
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_source_removed()
+                .with_recovery_detail(
+                    "The source was removed only after durable staging; Files retained the exact recovery record",
+                )
+        })?;
+    } else {
+        if cancel.load(Ordering::Acquire) {
+            return Err(Failure::from_io(
+                Operation::Replace,
+                source,
+                Some(destination),
+                io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
+            )
+            .with_recovery_detail(
+                "The source and existing destination were retained; only the prepared recovery record remains",
+            ));
+        }
+        ticket.stage_source_for_move_replace().map_err(|error| {
+            let failure = Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_recovery_detail(
+                    "Files retained the exact move-replacement state for recovery",
+                );
+            if std::fs::symlink_metadata(source)
+                .is_err_and(|source_error| source_error.kind() == io::ErrorKind::NotFound)
+            {
+                failure.with_source_removed()
+            } else {
+                failure
+            }
+        })?;
+        progress(CopyActivity::Finishing);
+    }
+
+    if !ticket.destination_still_matches().map_err(|error| {
+        Failure::from_io(Operation::Replace, source, Some(destination), error)
+            .with_source_removed()
+            .with_recovery_detail("The staged move could not be rechecked")
+    })? || !ticket.replacement_still_matches().map_err(|error| {
+        Failure::from_io(Operation::Replace, source, Some(destination), error)
+            .with_source_removed()
+            .with_recovery_detail("The previous destination could not be rechecked")
+    })? {
+        return Err(Failure::message(
+            Operation::Replace,
+            source,
+            Some(destination),
+            "the staged move or existing destination changed before replacement",
+        )
+        .with_source_removed()
+        .with_recovery_detail("Files retained the exact recovery state without guessing"));
+    }
+    ticket.replace_move().map_err(|error| {
+        Failure::from_io(Operation::Replace, source, Some(destination), error)
+            .with_source_removed()
+            .with_recovery_detail(
+                "Files retained the exact move-replacement state for restart recovery",
+            )
+    })?;
+    ticket.commit().map_err(|error| {
+        Failure::from_io(Operation::Replace, source, Some(destination), error)
+            .with_source_removed()
+            .with_recovery_detail(
+                "The move replacement is complete, but Files retained a recovery record",
+            )
+    })?;
+    if let Some(error) = cancellation_record_error {
+        return Err(
+            Failure::from_io(Operation::Replace, source, Some(destination), error)
+                .with_source_removed()
+                .with_recovery_detail(
+                    "Cancellation could not be recorded durably, so Files completed the already prepared move replacement instead of leaving an unsafe restart state",
+                ),
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn delete(fs: &impl FileSystem, path: &Path) -> Result<(), Failure> {
     fs.remove(path)
         .map_err(|error| Failure::from_io(Operation::Delete, path, None, error))
@@ -772,11 +970,12 @@ pub(crate) enum TransferKind {
     Copy,
     Move,
     Replace(Box<ReplacementBinding>),
+    MoveReplace(Box<ReplacementBinding>),
 }
 
 impl TransferKind {
     fn is_move(&self) -> bool {
-        matches!(self, Self::Move)
+        matches!(self, Self::Move | Self::MoveReplace(_))
     }
 }
 
@@ -851,7 +1050,7 @@ fn plan_transfers(
         let operation = match &task.kind {
             TransferKind::Copy => Operation::Copy,
             TransferKind::Move => Operation::Move,
-            TransferKind::Replace(_) => Operation::Replace,
+            TransferKind::Replace(_) | TransferKind::MoveReplace(_) => Operation::Replace,
         };
         let parent = task.destination.parent().ok_or_else(|| {
             Failure::message(
@@ -866,7 +1065,7 @@ fn plan_transfers(
         })?;
         let copy_required = match &task.kind {
             TransferKind::Copy | TransferKind::Replace(_) => true,
-            TransferKind::Move => {
+            TransferKind::Move | TransferKind::MoveReplace(_) => {
                 fs.source_device(&task.source, cancel).map_err(|error| {
                     Failure::from_io(operation, &task.source, Some(&task.destination), error)
                 })? != space.device
@@ -936,7 +1135,7 @@ fn plan_transfers(
             let operation = match &task.kind {
                 TransferKind::Copy => Operation::Copy,
                 TransferKind::Move => Operation::Move,
-                TransferKind::Replace(_) => Operation::Replace,
+                TransferKind::Replace(_) | TransferKind::MoveReplace(_) => Operation::Replace,
             };
             return Err(Failure::message(
                 operation,
@@ -1070,6 +1269,18 @@ pub(crate) fn execute_transfers(
                     journal,
                     &mut copy_progress,
                 ),
+                TransferKind::MoveReplace(binding) => move_replace_cancellable(
+                    fs,
+                    &task.source,
+                    &task.destination,
+                    MoveReplacement {
+                        binding,
+                        copy_required: planned.copy_required,
+                    },
+                    cancel,
+                    journal,
+                    &mut copy_progress,
+                ),
             }
         };
         report.processed += 1;
@@ -1150,6 +1361,13 @@ mod tests {
 
     fn replacement_kind(source: &Path, destination: &Path) -> TransferKind {
         TransferKind::Replace(Box::new(ReplacementBinding {
+            expected_source: operation_journal::TreeSnapshot::capture(source).unwrap(),
+            expected_destination: operation_journal::TreeSnapshot::capture(destination).unwrap(),
+        }))
+    }
+
+    fn move_replacement_kind(source: &Path, destination: &Path) -> TransferKind {
+        TransferKind::MoveReplace(Box::new(ReplacementBinding {
             expected_source: operation_journal::TreeSnapshot::capture(source).unwrap(),
             expected_destination: operation_journal::TreeSnapshot::capture(destination).unwrap(),
         }))
@@ -1793,6 +2011,141 @@ mod tests {
             std::fs::read(staged_transfer_in(&root.0)).unwrap(),
             b"new bytes"
         );
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn same_volume_move_replacement_renames_source_through_private_stage() {
+        let root = TestDirectory::new("same-volume-move-replace");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"new bytes").unwrap();
+        std::fs::write(&destination, b"previous bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let tasks = vec![TransferTask {
+            kind: move_replacement_kind(&source, &destination),
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report = execute_transfers(
+            &RealFileSystem,
+            Some(&journal),
+            &tasks,
+            &AtomicBool::new(false),
+            |_| {},
+        );
+
+        assert!(report.failures.is_empty());
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(destination).unwrap(), b"new bytes");
+        assert!(report.unfinished_moves.is_empty());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn cross_volume_move_replacement_copies_before_removing_source() {
+        let root = TestDirectory::new("cross-volume-move-replace");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"new bytes").unwrap();
+        std::fs::write(&destination, b"previous bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let fs = CrossDeviceFixture {
+            replace_source_during_copy: false,
+            fail_source_removal: false,
+            racing_destination: None,
+            cancel_after_copy: None,
+            remove_calls: Cell::new(0),
+        };
+        let tasks = vec![TransferTask {
+            kind: move_replacement_kind(&source, &destination),
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
+
+        assert!(report.failures.is_empty());
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(destination).unwrap(), b"new bytes");
+        assert_eq!(fs.remove_calls.get(), 1);
+        assert!(report.unfinished_moves.is_empty());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn cross_volume_move_replacement_cancellation_retains_both_reviewed_items() {
+        let root = TestDirectory::new("cross-volume-move-replace-cancel");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"new bytes").unwrap();
+        std::fs::write(&destination, b"previous bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let cancel = AtomicBool::new(false);
+        let fs = CrossDeviceFixture {
+            replace_source_during_copy: false,
+            fail_source_removal: false,
+            racing_destination: None,
+            cancel_after_copy: Some(&cancel),
+            remove_calls: Cell::new(0),
+        };
+        let tasks = vec![TransferTask {
+            kind: move_replacement_kind(&source, &destination),
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report = execute_transfers(&fs, Some(&journal), &tasks, &cancel, |_| {});
+
+        assert!(report.cancelled);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(std::fs::read(&source).unwrap(), b"new bytes");
+        assert_eq!(std::fs::read(&destination).unwrap(), b"previous bytes");
+        assert_eq!(
+            std::fs::read(staged_transfer_in(&root.0)).unwrap(),
+            b"new bytes"
+        );
+        assert_eq!(report.unfinished_moves, vec![source]);
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn move_replacement_destination_race_never_removes_the_racing_item() {
+        let root = TestDirectory::new("cross-volume-move-replace-race");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"new bytes").unwrap();
+        std::fs::write(&destination, b"previous bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let fs = CrossDeviceFixture {
+            replace_source_during_copy: false,
+            fail_source_removal: false,
+            racing_destination: Some(destination.clone()),
+            cancel_after_copy: None,
+            remove_calls: Cell::new(0),
+        };
+        let tasks = vec![TransferTask {
+            kind: move_replacement_kind(&source, &destination),
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
+
+        assert_eq!(report.failures.len(), 1);
+        assert!(!source.exists());
+        assert_eq!(
+            std::fs::read(&destination).unwrap(),
+            b"racing destination bytes"
+        );
+        assert_eq!(
+            std::fs::read(staged_transfer_in(&root.0)).unwrap(),
+            b"new bytes"
+        );
+        assert!(report.unfinished_moves.is_empty());
         assert_eq!(journal.pending_count().unwrap(), 1);
     }
 

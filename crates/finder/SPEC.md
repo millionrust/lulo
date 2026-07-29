@@ -49,9 +49,11 @@ metadata, icons, and identifiers remain original rmac work.
   changed source or stage, conflicting final name, or partial stage remains
   available for explicit recovery review rather than being guessed or
   discarded.
-- Cancellation never removes the move source. Partial destinations remain
-  visible for explicit recovery and are never silently deleted after a path
-  race.
+- An honored cancellation never removes the move source. Once a same-volume
+  source rename or cross-volume source removal begins, Files completes or
+  durably retains that transaction instead of claiming it was cancelled.
+  Partial destinations remain visible for explicit recovery and are never
+  silently deleted after a path race.
 - Paste and drag/drop conflicts are preflighted away from GPUI and presented
   sequentially with explicit Keep Both, Replace, and Skip choices. Each review
   binds bounded no-follow source and existing-destination tree snapshots and
@@ -60,22 +62,25 @@ metadata, icons, and identifiers remain original rmac work.
   items unchanged and retains skipped cut items on the clipboard. Enter chooses
   Keep Both, Escape chooses Skip, and duplicate activation is blocked while a
   choice is being revalidated.
-- Copy replacement never uses delete-then-copy. The reviewed snapshots are
-  revalidated again while preparing a private journal; the source is copied to
-  a durable hidden destination-volume stage; source, stage, and previous
-  destination are checked again; then one kernel atomic exchange publishes the
-  new copy while retaining the previous destination at the hidden name.
-  Cancellation is honored only before that exchange. If it arrives after the
-  completed-stage record is durable, Files first converts that record into a
-  non-destructive retained-copy review so restart cannot resume the cancelled
-  replacement. The exchanged stage is fsynced and persisted before the
-  previous destination is removed without following symlinks. Restart recovery
-  infers an exchange interrupted before
-  its stage write, resumes identity-bound partial directory cleanup, and keeps
-  changed backup state for an exact review that can preserve it under a
-  no-clobber recovered name. Safe move replacement and user-facing undo are not
-  implemented yet; Replace is visibly disabled for move and batch-only
-  conflicts instead of claiming unsupported safety.
+- Copy and move replacement never use delete-then-copy. The reviewed snapshots
+  are revalidated again while preparing a private journal. Copy replacement
+  creates a durable hidden destination-volume stage. A same-volume move
+  atomically renames the exact source into that private stage without duplicate
+  capacity; a cross-volume move durably copies there, revalidates source/stage/
+  previous destination, and only then removes the exact source. One kernel
+  atomic exchange publishes the new item while retaining the previous
+  destination at the hidden name. Cancellation is honored only before that
+  exchange and, for a cross-volume move, before source removal. If it arrives
+  after the completed-stage record is durable, Files first converts that record
+  into a non-destructive retained-copy review so restart cannot resume the
+  cancelled replacement. The exchanged stage is fsynced and persisted before
+  the previous destination is removed without following symlinks. Restart
+  recovery never removes a source that still exists, but infers a same-volume
+  source rename, cross-volume source removal, or exchange interrupted before
+  its stage write; it resumes identity-bound partial directory cleanup and
+  keeps changed source/destination/backup state for an exact review. Batch-only
+  conflicts still disable Replace because no existing destination snapshot was
+  reviewed. User-facing Undo is not implemented yet.
 - Every destructive or multi-step operation has a durable, versioned journal
   whose recovery distinguishes prepared, destination-complete,
   source-removed, replacement-exchanged, published, committed, and ambiguous

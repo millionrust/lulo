@@ -1426,8 +1426,7 @@ impl FinderView {
         };
         let reserved = batch.reserved_destinations.clone();
         if decision == ConflictDecision::Replace
-            && (conflict.kind != ConflictTransferKind::Copy
-                || conflict.destination_snapshot.is_none())
+            && (conflict.destination_snapshot.is_none() || conflict.source == conflict.destination)
         {
             return;
         }
@@ -3956,9 +3955,8 @@ impl FinderView {
             batch.conflict_total
         );
         let busy = self.conflict_busy;
-        let replace_available = conflict.kind == ConflictTransferKind::Copy
-            && conflict.destination_snapshot.is_some()
-            && conflict.source != conflict.destination;
+        let replace_available =
+            conflict.destination_snapshot.is_some() && conflict.source != conflict.destination;
         let buttons = vec![
             rmac_ui::dialog_button("conflict-skip", "Skip", rmac_ui::DialogButtonKind::Normal)
                 .disabled(busy)
@@ -4505,7 +4503,7 @@ fn conflict_prompt(conflict: &TransferConflict) -> String {
     let choice = if conflict.destination_snapshot.is_none() {
         "Another item in this batch needs the same name. Keep Both chooses an available numbered name. Replace is unavailable because no existing destination was reviewed."
     } else if conflict.kind == ConflictTransferKind::Move {
-        "Keep Both moves this item under an available numbered name. Safe replacement while moving is not available yet, so Replace is disabled. Skip leaves both items unchanged."
+        "Keep Both moves this item under an available numbered name. Replace durably stages the move, atomically publishes it, and removes the reviewed previous item only after the source-removal boundary is safe. Replace cannot be undone yet. Skip leaves both items unchanged."
     } else if conflict.source == conflict.destination {
         "Keep Both creates a copy under an available numbered name. An item cannot replace itself, so Replace is disabled. Skip leaves it unchanged."
     } else {
@@ -4648,7 +4646,7 @@ fn prepare_conflict_batch(
         let kind = match &task.kind {
             file_ops::TransferKind::Copy => ConflictTransferKind::Copy,
             file_ops::TransferKind::Move => ConflictTransferKind::Move,
-            file_ops::TransferKind::Replace(_) => {
+            file_ops::TransferKind::Replace(_) | file_ops::TransferKind::MoveReplace(_) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     "replacement task cannot enter conflict preflight",
@@ -4734,19 +4732,27 @@ fn resolve_conflict_task(
                     "batch-only conflict cannot replace a destination",
                 )
             })?;
-            if conflict.kind != ConflictTransferKind::Copy
-                || conflict.source == conflict.destination
-            {
+            if conflict.source == conflict.destination {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Unsupported,
                     "safe replacement is unavailable for this transfer",
                 ));
             }
             Ok(Some(file_ops::TransferTask {
-                kind: file_ops::TransferKind::Replace(Box::new(file_ops::ReplacementBinding {
-                    expected_source: conflict.source_snapshot.clone(),
-                    expected_destination: destination_snapshot,
-                })),
+                kind: match conflict.kind {
+                    ConflictTransferKind::Copy => {
+                        file_ops::TransferKind::Replace(Box::new(file_ops::ReplacementBinding {
+                            expected_source: conflict.source_snapshot.clone(),
+                            expected_destination: destination_snapshot,
+                        }))
+                    }
+                    ConflictTransferKind::Move => file_ops::TransferKind::MoveReplace(Box::new(
+                        file_ops::ReplacementBinding {
+                            expected_source: conflict.source_snapshot.clone(),
+                            expected_destination: destination_snapshot,
+                        },
+                    )),
+                },
                 source: conflict.source.clone(),
                 destination: conflict.destination.clone(),
             }))
@@ -5327,7 +5333,7 @@ mod tests {
     }
 
     #[test]
-    fn moved_item_conflict_never_offers_unsafe_replacement() {
+    fn moved_item_conflict_offers_only_snapshot_bound_replacement() {
         let root = TestDirectory::new("move-conflict");
         let source = root.0.join("incoming").join("item");
         let destination = root.0.join("destination").join("item");
@@ -5347,13 +5353,18 @@ mod tests {
         .unwrap();
         let conflict = batch.conflicts.front().unwrap();
 
-        assert!(conflict_prompt(conflict).contains("Replace is disabled"));
-        assert!(resolve_conflict_task(
+        assert!(conflict_prompt(conflict).contains("durably stages the move"));
+        let replacement = resolve_conflict_task(
             conflict,
             ConflictDecision::Replace,
             &batch.reserved_destinations,
         )
-        .is_err());
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            replacement.kind,
+            file_ops::TransferKind::MoveReplace(_)
+        ));
     }
 
     #[test]

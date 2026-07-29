@@ -1078,6 +1078,12 @@ impl fmt::Debug for TrashedItem {
     }
 }
 
+impl TrashedItem {
+    pub(crate) fn data_path(&self) -> &Path {
+        &self.data_path
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TrashRecovery {
     pub(crate) finalized: usize,

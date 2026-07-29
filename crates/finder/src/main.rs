@@ -39,6 +39,7 @@ actions!(
         RenameItem,
         Duplicate,
         MoveToTrash,
+        RestoreItems,
         DeleteItem,
         CopyItems,
         CutItems,
@@ -79,12 +80,20 @@ enum TransferEvent {
 }
 
 #[cfg(any(target_os = "linux", test))]
+#[derive(Clone, Copy)]
+enum TrashTaskKind {
+    Move,
+    Restore,
+}
+
+#[cfg(any(target_os = "linux", test))]
 enum TrashEvent {
     Progress {
         processed: usize,
         total: usize,
     },
     Finished {
+        kind: TrashTaskKind,
         completed: usize,
         cancelled: bool,
         failures: Vec<file_ops::Failure>,
@@ -108,6 +117,7 @@ struct ActiveTransfer {
 #[cfg(any(target_os = "linux", test))]
 #[derive(Clone)]
 struct ActiveTrash {
+    label: SharedString,
     processed: usize,
     total: usize,
     cancel: Arc<AtomicBool>,
@@ -237,6 +247,7 @@ enum PlaceKind {
     Tag,
     /// Recently-used files from the platform search provider, not a folder.
     Recents,
+    Trash,
 }
 
 #[derive(Clone)]
@@ -311,6 +322,11 @@ struct FinderView {
     trash_pending: usize,
     #[cfg(any(target_os = "linux", test))]
     trash_operation: Option<ActiveTrash>,
+    trash_view: bool,
+    #[cfg(any(target_os = "linux", test))]
+    trash_items: Vec<trash_store::TrashedItem>,
+    #[cfg(any(target_os = "linux", test))]
+    trash_generation: u64,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
     dragging: bool,
@@ -432,6 +448,14 @@ impl FinderView {
                 PlaceKind::Item,
             ),
         ]);
+        #[cfg(target_os = "linux")]
+        favorites.push(p(
+            "Trash",
+            PathBuf::new(),
+            "icons/trash-2.svg",
+            accent(),
+            PlaceKind::Trash,
+        ));
         let mut sections = vec![Section {
             title: "Favorites".into(),
             places: favorites,
@@ -554,6 +578,11 @@ impl FinderView {
             trash_pending: 0,
             #[cfg(any(target_os = "linux", test))]
             trash_operation: None,
+            trash_view: false,
+            #[cfg(any(target_os = "linux", test))]
+            trash_items: Vec::new(),
+            #[cfg(any(target_os = "linux", test))]
+            trash_generation: 0,
             free_bytes: None,
             dragging: false,
             focus,
@@ -671,7 +700,7 @@ impl FinderView {
                         Err(_) => {
                             this.trash_store = None;
                             this.operation_error = Some(
-                                "Trash recovery data could not be verified; Move to Trash is disabled"
+                                "Trash recovery data could not be verified; Trash actions are disabled"
                                     .into(),
                             );
                         }
@@ -679,12 +708,16 @@ impl FinderView {
                     Err(_) => {
                         this.trash_store = None;
                         this.operation_error = Some(
-                            "Trash recovery data could not be verified; Move to Trash is disabled"
+                            "Trash recovery data could not be verified; Trash actions are disabled"
                                 .into(),
                         );
                     }
                 }
-                cx.notify();
+                if this.trash_view && this.trash_store.is_some() {
+                    this.reload_trash(cx);
+                } else {
+                    cx.notify();
+                }
             });
         })
         .detach();
@@ -718,13 +751,110 @@ impl FinderView {
     }
 
     fn reload(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.reload_trash(cx);
+            return;
+        }
         self.reload_inner(cx, true);
     }
 
     /// Refresh after a watcher event without spawning `df`; free space changes
     /// slowly and is refreshed on navigation and explicit file operations.
     fn reload_after_event(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            return;
+        }
         self.reload_inner(cx, false);
+    }
+
+    fn reload_trash(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "linux", test))]
+        {
+            self.cancel_search();
+            self.result_title = Some("Trash".into());
+            self.selected.clear();
+            self.anchor = None;
+            self.renaming = None;
+            self.trash_generation = self.trash_generation.wrapping_add(1);
+            let generation = self.trash_generation;
+            let key = self.sort_key;
+            let asc = self.sort_asc;
+            let Some(store) = self.trash_store.clone() else {
+                self.entries.clear();
+                self.trash_items.clear();
+                self.operation_error = Some(
+                    if self.trash_loading {
+                        "Files is still verifying Trash recovery"
+                    } else {
+                        "Trash is unavailable"
+                    }
+                    .into(),
+                );
+                cx.notify();
+                return;
+            };
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let items = store.list()?;
+                        let mut entries = Vec::with_capacity(items.len());
+                        for item in &items {
+                            let mut entry = entry_for(item.data_path()).ok_or_else(|| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::WouldBlock,
+                                    "Trash changed while it was listed",
+                                )
+                            })?;
+                            entry.name = item
+                                .original_path
+                                .file_name()
+                                .unwrap_or(item.name.as_os_str())
+                                .to_string_lossy()
+                                .into_owned()
+                                .into();
+                            entry.modified = item.deleted_at.clone().into();
+                            entries.push(entry);
+                        }
+                        sort_entries(&mut entries, key, asc);
+                        Ok::<_, std::io::Error>((items, entries))
+                    })
+                    .await;
+                let _ = this.update(cx, |this: &mut FinderView, cx| {
+                    if !this.trash_view || this.trash_generation != generation {
+                        return;
+                    }
+                    match result {
+                        Ok((items, entries)) => {
+                            this.trash_items = items;
+                            this.entries = entries;
+                            this.free_bytes = None;
+                        }
+                        Err(error) => {
+                            this.entries.clear();
+                            this.trash_items.clear();
+                            this.operation_error = Some(
+                                match error.kind() {
+                                    std::io::ErrorKind::WouldBlock => {
+                                        "Trash is busy or changed; try again"
+                                    }
+                                    _ => "Trash could not be verified safely",
+                                }
+                                .into(),
+                            );
+                        }
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        #[cfg(not(any(target_os = "linux", test)))]
+        {
+            self.entries.clear();
+            self.operation_error = Some("Trash browsing is available on Linux".into());
+            cx.notify();
+        }
     }
 
     fn reload_inner(&mut self, cx: &mut Context<Self>, refresh_free_space: bool) {
@@ -875,6 +1005,7 @@ impl FinderView {
 
     fn new_tab(&mut self, cx: &mut Context<Self>) {
         self.save_tab();
+        self.trash_view = false;
         self.tabs.push(Tab {
             cwd: self.home.clone(),
             back: Vec::new(),
@@ -900,6 +1031,7 @@ impl FinderView {
             self.active -= 1;
         }
         if was_active {
+            self.trash_view = false;
             self.load_tab(self.active);
             self.reload(cx);
         } else {
@@ -912,15 +1044,17 @@ impl FinderView {
             return;
         }
         self.save_tab();
+        self.trash_view = false;
         self.active = i;
         self.load_tab(i);
         self.reload(cx);
     }
 
     fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if path == self.cwd || !path.is_dir() {
+        if !path.is_dir() || (path == self.cwd && !self.trash_view) {
             return;
         }
+        self.trash_view = false;
         self.back.push(self.cwd.clone());
         self.fwd.clear();
         self.cwd = path;
@@ -928,6 +1062,11 @@ impl FinderView {
     }
 
     fn go_back(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.trash_view = false;
+            self.reload(cx);
+            return;
+        }
         if let Some(p) = self.back.pop() {
             self.fwd.push(self.cwd.clone());
             self.cwd = p;
@@ -944,12 +1083,22 @@ impl FinderView {
     }
 
     fn go_up(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.trash_view = false;
+            self.reload(cx);
+            return;
+        }
         if let Some(parent) = self.cwd.parent().map(|p| p.to_path_buf()) {
             self.navigate(parent, cx);
         }
     }
 
     fn open_index(&mut self, ix: usize, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error = Some("Restore the item before opening it".into());
+            cx.notify();
+            return;
+        }
         let Some(e) = self.entries.get(ix).cloned() else {
             return;
         };
@@ -961,6 +1110,11 @@ impl FinderView {
     }
 
     fn open_selected(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error = Some("Restore items before opening them".into());
+            cx.notify();
+            return;
+        }
         let paths: Vec<(bool, PathBuf)> = self
             .selected
             .iter()
@@ -1080,6 +1234,12 @@ impl FinderView {
     }
 
     fn block_mutation_during_transfer(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.trash_view {
+            self.operation_error =
+                Some("Use Restore for items in Trash; direct changes are disabled".into());
+            cx.notify();
+            return true;
+        }
         #[cfg(any(target_os = "linux", test))]
         let trash_busy = self.trash_operation.is_some();
         #[cfg(not(any(target_os = "linux", test)))]
@@ -1271,6 +1431,144 @@ impl FinderView {
         let _ = cx;
     }
 
+    #[cfg(any(target_os = "linux", test))]
+    fn receive_trash_events(
+        &mut self,
+        event_rx: async_channel::Receiver<TrashEvent>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = event_rx.recv().await {
+                let finished = matches!(event, TrashEvent::Finished { .. });
+                if this
+                    .update(cx, |this: &mut FinderView, cx| match event {
+                        TrashEvent::Progress { processed, total } => {
+                            if let Some(operation) = this.trash_operation.as_mut() {
+                                operation.processed = processed;
+                                operation.total = total;
+                            }
+                            cx.notify();
+                        }
+                        TrashEvent::Finished {
+                            kind,
+                            completed,
+                            cancelled,
+                            failures,
+                            recovery,
+                        } => this
+                            .finish_trash_task(kind, completed, cancelled, failures, recovery, cx),
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                if finished {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    fn finish_trash_task(
+        &mut self,
+        kind: TrashTaskKind,
+        completed: usize,
+        cancelled: bool,
+        failures: Vec<file_ops::Failure>,
+        recovery: std::io::Result<trash_store::TrashRecovery>,
+        cx: &mut Context<Self>,
+    ) {
+        self.trash_operation = None;
+        let recovery_unavailable = match recovery {
+            Ok(recovery) => {
+                self.trash_pending = recovery.pending;
+                false
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                self.operation_notice =
+                    Some("Another Files window is safely handling Trash".into());
+                false
+            }
+            Err(_) => {
+                self.trash_store = None;
+                self.trash_pending = 0;
+                self.operation_error = Some(
+                    "Trash recovery data could not be verified; Trash actions are disabled".into(),
+                );
+                true
+            }
+        };
+        if !failures.is_empty() {
+            self.operation_notice = None;
+            self.record_operation_failures(failures, cx);
+        }
+        if recovery_unavailable {
+            let unavailable = "Trash recovery is unavailable; Trash actions are disabled";
+            self.operation_error = Some(
+                match self.operation_error.take() {
+                    Some(failure) => format!("{failure}. {unavailable}"),
+                    None => unavailable.to_string(),
+                }
+                .into(),
+            );
+        }
+        if self.trash_pending != 0 {
+            let retained = format!(
+                "{} changed Trash operation{} retained for manual recovery",
+                self.trash_pending,
+                if self.trash_pending == 1 {
+                    " was"
+                } else {
+                    "s were"
+                }
+            );
+            self.operation_error = Some(
+                match self.operation_error.take() {
+                    Some(failure) => format!("{failure}. {retained}"),
+                    None => retained,
+                }
+                .into(),
+            );
+        } else if cancelled && self.operation_error.is_none() {
+            self.operation_notice = Some(
+                match (kind, completed) {
+                    (TrashTaskKind::Move, 0) => {
+                        "Move to Trash cancelled; no item was moved".to_string()
+                    }
+                    (TrashTaskKind::Move, completed) => format!(
+                        "Move to Trash cancelled after moving {completed} item{}",
+                        if completed == 1 { "" } else { "s" }
+                    ),
+                    (TrashTaskKind::Restore, 0) => {
+                        "Restore cancelled; no item was restored".to_string()
+                    }
+                    (TrashTaskKind::Restore, completed) => format!(
+                        "Restore cancelled after restoring {completed} item{}",
+                        if completed == 1 { "" } else { "s" }
+                    ),
+                }
+                .into(),
+            );
+        } else if self.operation_error.is_none() {
+            self.operation_notice = Some(
+                match (kind, completed) {
+                    (TrashTaskKind::Move, 1) => "Moved 1 item to Trash".to_string(),
+                    (TrashTaskKind::Move, completed) => {
+                        format!("Moved {completed} items to Trash")
+                    }
+                    (TrashTaskKind::Restore, 1) => "Restored 1 item".to_string(),
+                    (TrashTaskKind::Restore, completed) => {
+                        format!("Restored {completed} items")
+                    }
+                }
+                .into(),
+            );
+        }
+        self.reload(cx);
+    }
+
     fn close_recovery(&mut self, cx: &mut Context<Self>) {
         if self.recovery_busy {
             return;
@@ -1403,6 +1701,9 @@ impl FinderView {
 
     // ---- operations ----
     fn new_folder(&mut self, cx: &mut Context<Self>) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
         let path = unique_path(self.cwd.join("untitled folder"));
         let failures = file_ops::create_folder(&file_ops::RealFileSystem, &path)
             .err()
@@ -1436,6 +1737,10 @@ impl FinderView {
     }
 
     fn move_to_trash(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.restore_selected(cx);
+            return;
+        }
         if self.block_mutation_during_transfer(cx) {
             return;
         }
@@ -1468,6 +1773,7 @@ impl FinderView {
             let total = paths.len();
             let cancel = Arc::new(AtomicBool::new(false));
             self.trash_operation = Some(ActiveTrash {
+                label: "Moving to Trash".into(),
                 processed: 0,
                 total,
                 cancel: cancel.clone(),
@@ -1516,6 +1822,7 @@ impl FinderView {
                     }
                     let recovery = store.recover();
                     let _ = events.send_blocking(TrashEvent::Finished {
+                        kind: TrashTaskKind::Move,
                         completed,
                         cancelled,
                         failures,
@@ -1523,118 +1830,7 @@ impl FinderView {
                     });
                 })
                 .detach();
-
-            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-                while let Ok(event) = event_rx.recv().await {
-                    let finished = matches!(event, TrashEvent::Finished { .. });
-                    if this
-                        .update(cx, |this: &mut FinderView, cx| match event {
-                            TrashEvent::Progress { processed, total } => {
-                                if let Some(operation) = this.trash_operation.as_mut() {
-                                    operation.processed = processed;
-                                    operation.total = total;
-                                }
-                                cx.notify();
-                            }
-                            TrashEvent::Finished {
-                                completed,
-                                cancelled,
-                                failures,
-                                recovery,
-                            } => {
-                                this.trash_operation = None;
-                                let recovery_unavailable = match recovery {
-                                    Ok(recovery) => {
-                                        this.trash_pending = recovery.pending;
-                                        false
-                                    }
-                                    Err(error)
-                                        if error.kind() == std::io::ErrorKind::WouldBlock =>
-                                    {
-                                        this.operation_notice = Some(
-                                            "Another Files window is safely handling Trash".into(),
-                                        );
-                                        false
-                                    }
-                                    Err(_) => {
-                                        this.trash_store = None;
-                                        this.trash_pending = 0;
-                                        this.operation_error = Some(
-                                            "Trash recovery data could not be verified; Move to Trash is disabled"
-                                                .into(),
-                                        );
-                                        true
-                                    }
-                                };
-                                if !failures.is_empty() {
-                                    this.operation_notice = None;
-                                    this.record_operation_failures(failures, cx);
-                                }
-                                if recovery_unavailable {
-                                    let unavailable =
-                                        "Trash recovery is unavailable; Move to Trash is disabled";
-                                    this.operation_error = Some(
-                                        match this.operation_error.take() {
-                                            Some(failure) => {
-                                                format!("{failure}. {unavailable}")
-                                            }
-                                            None => unavailable.to_string(),
-                                        }
-                                        .into(),
-                                    );
-                                }
-                                if this.trash_pending != 0 {
-                                    let retained = format!(
-                                        "{} changed Trash operation{} retained for manual recovery",
-                                        this.trash_pending,
-                                        if this.trash_pending == 1 {
-                                            " was"
-                                        } else {
-                                            "s were"
-                                        }
-                                    );
-                                    this.operation_error = Some(
-                                        match this.operation_error.take() {
-                                            Some(failure) => format!("{failure}. {retained}"),
-                                            None => retained,
-                                        }
-                                        .into(),
-                                    );
-                                } else if cancelled && this.operation_error.is_none() {
-                                    this.operation_notice = Some(
-                                        if completed == 0 {
-                                            "Move to Trash cancelled; no item was moved".to_string()
-                                        } else {
-                                            format!(
-                                                "Move to Trash cancelled after moving {completed} item{}",
-                                                if completed == 1 { "" } else { "s" }
-                                            )
-                                        }
-                                        .into(),
-                                    );
-                                } else if this.operation_error.is_none() {
-                                    this.operation_notice = Some(
-                                        if completed == 1 {
-                                            "Moved 1 item to Trash".to_string()
-                                        } else {
-                                            format!("Moved {completed} items to Trash")
-                                        }
-                                        .into(),
-                                    );
-                                }
-                                this.reload(cx);
-                            }
-                        })
-                        .is_err()
-                    {
-                        break;
-                    }
-                    if finished {
-                        break;
-                    }
-                }
-            })
-            .detach();
+            self.receive_trash_events(event_rx, cx);
         }
 
         #[cfg(not(any(target_os = "linux", test)))]
@@ -1652,6 +1848,115 @@ impl FinderView {
                 .into_iter()
                 .collect();
             self.finish_file_operations(failures, cx);
+        }
+    }
+
+    fn restore_selected(&mut self, cx: &mut Context<Self>) {
+        if !self.trash_view {
+            self.operation_error = Some("Open Trash to restore items".into());
+            cx.notify();
+            return;
+        }
+        #[cfg(any(target_os = "linux", test))]
+        {
+            if self.transfer.is_some() || self.trash_operation.is_some() {
+                self.operation_error = Some("Wait for the current file operation to finish".into());
+                cx.notify();
+                return;
+            }
+            if self.trash_loading {
+                self.operation_error = Some("Files is still verifying Trash recovery".into());
+                cx.notify();
+                return;
+            }
+            let Some(store) = self.trash_store.clone() else {
+                self.operation_error =
+                    Some("Trash recovery is unavailable; no item was changed".into());
+                cx.notify();
+                return;
+            };
+            if self.trash_pending != 0 {
+                self.operation_error =
+                    Some("A changed Trash operation needs manual recovery before restore".into());
+                cx.notify();
+                return;
+            }
+            let selected_paths = self.selected_paths().into_iter().collect::<BTreeSet<_>>();
+            let items = self
+                .trash_items
+                .iter()
+                .filter(|item| selected_paths.contains(item.data_path()))
+                .cloned()
+                .collect::<Vec<_>>();
+            if items.is_empty() {
+                return;
+            }
+            let total = items.len();
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.trash_operation = Some(ActiveTrash {
+                label: "Restoring".into(),
+                processed: 0,
+                total,
+                cancel: cancel.clone(),
+                cancelling: false,
+            });
+            self.operation_error = None;
+            self.operation_notice = None;
+            cx.notify();
+
+            let (events, event_rx) = async_channel::bounded(16);
+            cx.background_executor()
+                .spawn(async move {
+                    let mut failures = Vec::new();
+                    let mut completed = 0usize;
+                    let mut processed = 0usize;
+                    let mut cancelled = false;
+                    for item in items {
+                        if cancel.load(Ordering::Acquire) {
+                            cancelled = true;
+                            break;
+                        }
+                        match store.restore(&item, &cancel) {
+                            Ok(_) => completed += 1,
+                            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                                cancelled = true;
+                                break;
+                            }
+                            Err(error) => {
+                                let blocked = error.kind() == std::io::ErrorKind::WouldBlock;
+                                failures.push(file_ops::Failure::message(
+                                    file_ops::Operation::Restore,
+                                    &item.original_path,
+                                    None,
+                                    error.to_string(),
+                                ));
+                                if blocked {
+                                    processed += 1;
+                                    let _ =
+                                        events.try_send(TrashEvent::Progress { processed, total });
+                                    break;
+                                }
+                            }
+                        }
+                        processed += 1;
+                        let _ = events.try_send(TrashEvent::Progress { processed, total });
+                    }
+                    let recovery = store.recover();
+                    let _ = events.send_blocking(TrashEvent::Finished {
+                        kind: TrashTaskKind::Restore,
+                        completed,
+                        cancelled,
+                        failures,
+                        recovery,
+                    });
+                })
+                .detach();
+            self.receive_trash_events(event_rx, cx);
+        }
+        #[cfg(not(any(target_os = "linux", test)))]
+        {
+            self.operation_error = Some("Trash restore is available on Linux".into());
+            cx.notify();
         }
     }
 
@@ -1685,18 +1990,31 @@ impl FinderView {
     }
 
     fn copy(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error = Some("Restore items before copying them".into());
+            cx.notify();
+            return;
+        }
         self.clipboard = self.selected_paths();
         self.clip_cut = false;
         self.write_clip_text(cx);
     }
 
     fn cut(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error = Some("Use Restore to move an item out of Trash".into());
+            cx.notify();
+            return;
+        }
         self.clipboard = self.selected_paths();
         self.clip_cut = true;
         self.write_clip_text(cx);
     }
 
     fn paste(&mut self, cx: &mut Context<Self>) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
         // Nothing copied inside rmac Finder — pull from the system pasteboard so
         // items copied in the real Finder (or elsewhere) can be pasted here.
         if self.clipboard.is_empty() {
@@ -1867,6 +2185,11 @@ impl FinderView {
                     if active { label() } else { secondary() },
                 ))
                 .on_click(cx.listener(move |this, _, _, cx| {
+                    if this.trash_view && mode == ViewMode::Column {
+                        this.operation_error = Some("Column view is unavailable in Trash".into());
+                        cx.notify();
+                        return;
+                    }
                     this.view = mode;
                     cx.notify();
                 }))
@@ -1943,8 +2266,12 @@ impl FinderView {
                     .items_center()
                     .gap_0p5()
                     .child(
-                        nav("back", "icons/chevron-left.svg", !self.back.is_empty())
-                            .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
+                        nav(
+                            "back",
+                            "icons/chevron-left.svg",
+                            self.trash_view || !self.back.is_empty(),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
                     )
                     .child(
                         nav("fwd", "icons/chevron-right.svg", !self.fwd.is_empty())
@@ -2000,7 +2327,11 @@ impl FinderView {
     // ---- sidebar ----
     fn render_place(&self, p: &Place, cx: &Context<Self>) -> impl IntoElement {
         let is_tag = p.kind == PlaceKind::Tag;
-        let selected = !is_tag && self.cwd == p.path;
+        let selected = if p.kind == PlaceKind::Trash {
+            self.trash_view
+        } else {
+            !is_tag && !self.trash_view && self.cwd == p.path
+        };
         let key = format!("{}-{}", p.name, p.path.display());
 
         let leading: gpui::AnyElement = if is_tag {
@@ -2037,6 +2368,7 @@ impl FinderView {
             .on_click(cx.listener(move |this, _, _, cx| match kind {
                 PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
                 PlaceKind::Recents => this.recents_click(cx),
+                PlaceKind::Trash => this.trash_click(cx),
                 _ => this.navigate(np.clone(), cx),
             }));
 
@@ -2078,6 +2410,16 @@ impl FinderView {
         row
     }
 
+    fn trash_click(&mut self, cx: &mut Context<Self>) {
+        self.trash_view = true;
+        if self.view == ViewMode::Column {
+            self.view = ViewMode::List;
+        }
+        self.result_title = Some("Trash".into());
+        self.operation_error = None;
+        self.reload_trash(cx);
+    }
+
     fn render_sidebar(&self, cx: &Context<Self>) -> impl IntoElement {
         let mut col = div()
             .w(px(SIDEBAR_W))
@@ -2112,8 +2454,15 @@ impl FinderView {
         pos: Point<Pixels>,
         has_selection: bool,
         can_paste: bool,
+        trash_view: bool,
     ) -> rmac_ui::ContextMenu {
         let mut m = rmac_ui::ContextMenu::new(pos);
+        if trash_view {
+            if has_selection {
+                m = m.item("Restore", Box::new(RestoreItems));
+            }
+            return m;
+        }
         if has_selection {
             m = m
                 .item("Open", Box::new(OpenItems))
@@ -2308,10 +2657,12 @@ impl FinderView {
                         window.focus(&this.focus);
                         cx.notify();
                     }))
-                    .on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
-                        cx.new(|_| DragPreview { count: drag_count })
+                    .when(!self.trash_view, |el: Stateful<Div>| {
+                        el.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                            cx.new(|_| DragPreview { count: drag_count })
+                        })
                     })
-                    .when(row_is_dir, |el: Stateful<Div>| {
+                    .when(row_is_dir && !self.trash_view, |el: Stateful<Div>| {
                         let dd = drop_dir.clone();
                         el.drag_over::<DraggedPaths>(|s, _, _, _| {
                             s.bg(rmac_ui::mac::accent_subtle())
@@ -2401,37 +2752,52 @@ impl FinderView {
             }
         }
 
-        let content = match self.view {
-            ViewMode::List => div()
-                .id("file-list")
+        let content = if self.trash_view && self.entries.is_empty() {
+            div()
+                .id("trash-empty")
                 .flex_1()
                 .min_h(px(0.0))
-                .overflow_y_scroll()
-                .child(div().v_flex().children(rows))
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                        this.menu_at = Some(ev.position);
-                        cx.notify();
-                    }),
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    rmac_ui::EmptyState::new("Trash is Empty")
+                        .message("Items moved to Trash will appear here."),
                 )
-                .into_any_element(),
-            ViewMode::Column => self.render_columns(cx).into_any_element(),
-            _ => div()
-                .id("icon-grid")
-                .flex_1()
-                .min_h(px(0.0))
-                .overflow_y_scroll()
-                .p_3()
-                .child(div().flex().flex_wrap().gap_2().children(tiles))
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                        this.menu_at = Some(ev.position);
-                        cx.notify();
-                    }),
-                )
-                .into_any_element(),
+                .into_any_element()
+        } else {
+            match self.view {
+                ViewMode::List => div()
+                    .id("file-list")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .child(div().v_flex().children(rows))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.menu_at = Some(ev.position);
+                            cx.notify();
+                        }),
+                    )
+                    .into_any_element(),
+                ViewMode::Column => self.render_columns(cx).into_any_element(),
+                _ => div()
+                    .id("icon-grid")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .p_3()
+                    .child(div().flex().flex_wrap().gap_2().children(tiles))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.menu_at = Some(ev.position);
+                            cx.notify();
+                        }),
+                    )
+                    .into_any_element(),
+            }
         };
 
         div()
@@ -2443,6 +2809,7 @@ impl FinderView {
             )
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
             .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.move_to_trash(cx)))
+            .on_action(cx.listener(|this, _: &RestoreItems, _, cx| this.restore_selected(cx)))
             .on_action(cx.listener(|this, _: &DeleteItem, _, cx| this.delete_immediately(cx)))
             .on_action(cx.listener(|this, _: &CopyItems, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &CutItems, _, cx| this.cut(cx)))
@@ -2685,6 +3052,22 @@ impl FinderView {
     }
 
     fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.trash_view {
+            return div()
+                .h(px(24.0))
+                .flex_none()
+                .flex()
+                .items_center()
+                .px_3()
+                .gap_1()
+                .bg(toolbar_bg())
+                .border_t_1()
+                .border_color(sep())
+                .text_size(rmac_ui::text_px(11.0))
+                .text_color(secondary())
+                .child(icon("icons/trash-2.svg", 12.0, secondary()))
+                .child("Trash");
+        }
         let mut comps: Vec<(String, PathBuf)> = Vec::new();
         let mut acc = PathBuf::new();
         for c in self.cwd.components() {
@@ -2726,7 +3109,12 @@ impl FinderView {
         bar
     }
 
-    fn quick_look(&mut self, _cx: &mut Context<Self>) {
+    fn quick_look(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error = Some("Restore items before previewing them".into());
+            cx.notify();
+            return;
+        }
         let paths = self.selected_paths();
         if !paths.is_empty() {
             let _ = Command::new("qlmanage").arg("-p").args(&paths).spawn();
@@ -2773,12 +3161,23 @@ impl FinderView {
     }
 
     fn get_info(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error =
+                Some("Restore an item before viewing its file information".into());
+            cx.notify();
+            return;
+        }
         self.info = self.selected.iter().next().copied();
         cx.notify();
     }
 
     /// Recursive platform search of the current folder tree (Return in the search box).
     fn recursive_search(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view {
+            self.operation_error = Some("Trash search filters the current list as you type".into());
+            cx.notify();
+            return;
+        }
         let q = self.query.read(cx).value().to_string();
         if q.trim().is_empty() {
             return;
@@ -2825,6 +3224,7 @@ impl FinderView {
     }
 
     fn tag_click(&mut self, name: SharedString, cx: &mut Context<Self>) {
+        self.trash_view = false;
         let title: SharedString = format!("Tag: {name}").into();
         let key = self.sort_key;
         let asc = self.sort_asc;
@@ -2864,6 +3264,7 @@ impl FinderView {
 
     /// Show real recently-used files from Spotlight or the XDG bookmark store.
     fn recents_click(&mut self, cx: &mut Context<Self>) {
+        self.trash_view = false;
         let (generation, cancel) = self.begin_search();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -3038,12 +3439,16 @@ impl Render for FinderView {
         let operation_error = self.operation_error.clone();
         let transfer = self.transfer.clone();
         #[cfg(any(target_os = "linux", test))]
-        let trash_progress = self
-            .trash_operation
-            .as_ref()
-            .map(|operation| (operation.processed, operation.total, operation.cancelling));
+        let trash_progress = self.trash_operation.as_ref().map(|operation| {
+            (
+                operation.label.clone(),
+                operation.processed,
+                operation.total,
+                operation.cancelling,
+            )
+        });
         #[cfg(not(any(target_os = "linux", test)))]
-        let trash_progress: Option<(usize, usize, bool)> = None;
+        let trash_progress: Option<(SharedString, usize, usize, bool)> = None;
         let recovery_pending = self.pending_operations != 0;
         let recovery_dialog = self.render_recovery(cx);
         div()
@@ -3151,44 +3556,47 @@ impl Render for FinderView {
                         })),
                 )
             })
-            .when_some(trash_progress, |el, (processed, total, cancelling)| {
-                el.child(
-                    div()
-                        .h(px(34.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .bg(rmac_ui::mac::accent_subtle())
-                        .border_b_1()
-                        .border_color(rmac_ui::mac::accent_border())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(label())
-                        .child(
-                            div()
-                                .flex_1()
-                                .child(format!("Moving to Trash — {processed} of {total} items")),
-                        )
-                        .child(
-                            div()
-                                .id("cancel-trash")
-                                .px_2()
-                                .py_0p5()
-                                .rounded(px(5.0))
-                                .bg(rmac_ui::mac::raised())
-                                .border_1()
-                                .border_color(rmac_ui::mac::accent_border())
-                                .cursor_pointer()
-                                .child(if cancelling {
-                                    "Cancelling…"
-                                } else {
-                                    "Cancel"
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| this.cancel_trash(cx))),
-                        ),
-                )
-            })
+            .when_some(
+                trash_progress,
+                |el, (operation, processed, total, cancelling)| {
+                    el.child(
+                        div()
+                            .h(px(34.0))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .px_3()
+                            .bg(rmac_ui::mac::accent_subtle())
+                            .border_b_1()
+                            .border_color(rmac_ui::mac::accent_border())
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(label())
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .child(format!("{operation} — {processed} of {total} items")),
+                            )
+                            .child(
+                                div()
+                                    .id("cancel-trash")
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded(px(5.0))
+                                    .bg(rmac_ui::mac::raised())
+                                    .border_1()
+                                    .border_color(rmac_ui::mac::accent_border())
+                                    .cursor_pointer()
+                                    .child(if cancelling {
+                                        "Cancelling…"
+                                    } else {
+                                        "Cancel"
+                                    })
+                                    .on_click(cx.listener(|this, _, _, cx| this.cancel_trash(cx))),
+                            ),
+                    )
+                },
+            )
             .when_some(transfer, |el, transfer| {
                 let action = if transfer.cancelling {
                     "Cancelling…"
@@ -3257,7 +3665,9 @@ impl Render for FinderView {
             )
             .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))
             .when_some(menu_at, |el, pos| {
-                el.child(Self::build_context_menu(pos, has_sel, can_paste).render())
+                el.child(
+                    Self::build_context_menu(pos, has_sel, can_paste, self.trash_view).render(),
+                )
             })
             .when_some(recovery_dialog, |el, dialog| el.child(dialog))
     }

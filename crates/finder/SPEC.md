@@ -109,6 +109,17 @@ metadata, icons, and identifiers remain original rmac work.
   boundary; data, metadata, parent, and destination races remain pending
   without replacement or deletion. Permanent delete requires explicit
   confirmation and is not described as undoable.
+- Trash is a virtual Files sidebar location, not a browsable implementation
+  directory. Its rows use the original item name and deletion timestamp while
+  retaining the bound private data identity internally. List, icon, and gallery
+  presentation remain available; column view is refused because it would
+  traverse ordinary filesystem parents. Double-click/Open, Copy, Cut,
+  Duplicate, Rename, Quick Look, Get Info, internal drag/drop, and external
+  drops do not expose or mutate private Trash paths. The item context menu
+  offers Restore only. Restore runs through the journaled authority away from
+  GPUI with bounded progress, cooperative cancellation, no-clobber failures,
+  startup recovery, a truthful result banner, and a generation-guarded refresh.
+  An empty verified inventory renders a dedicated Trash empty state.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

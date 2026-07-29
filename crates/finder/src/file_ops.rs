@@ -19,6 +19,8 @@ pub(crate) enum Operation {
     Delete,
     Move,
     Rename,
+    #[cfg(any(target_os = "linux", test))]
+    Restore,
     Trash,
 }
 
@@ -30,6 +32,8 @@ impl Operation {
             Self::Delete => "delete",
             Self::Move => "move",
             Self::Rename => "rename",
+            #[cfg(any(target_os = "linux", test))]
+            Self::Restore => "restore",
             Self::Trash => "move to Trash",
         }
     }
@@ -1182,6 +1186,24 @@ mod tests {
         assert_eq!(failure.operation, Operation::Delete);
         assert_eq!(failure.error_kind, io::ErrorKind::PermissionDenied);
         assert_eq!(&*fs.calls.borrow(), &["remove:protected"]);
+    }
+
+    #[test]
+    fn restore_failure_names_the_original_item_without_a_trash_storage_path() {
+        let failure = Failure::message(
+            Operation::Restore,
+            Path::new("/home/alice/Documents/report.txt"),
+            None,
+            "an item already exists at the original location",
+        );
+
+        let message = failure.to_string();
+
+        assert_eq!(
+            message,
+            "Could not restore “report.txt”: an item already exists at the original location"
+        );
+        assert!(!message.contains(".local/share/Trash"));
     }
 
     #[test]

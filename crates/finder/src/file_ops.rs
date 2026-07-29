@@ -1,9 +1,16 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
+use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::operation_journal;
+
+const MAX_PLANNED_ENTRIES: u64 = 1_000_000;
+const MAX_PLANNED_DEPTH: usize = 256;
+const ENTRY_SPACE_ALLOWANCE: u64 = 4 * 1024;
+const MAX_FREE_SPACE_RESERVE: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Operation {
@@ -115,13 +122,68 @@ pub(crate) trait FileSystem {
         source: &Path,
         destination: &Path,
         cancel: &AtomicBool,
+        progress: &mut dyn FnMut(CopyActivity),
     ) -> io::Result<()> {
         if cancel.load(Ordering::Acquire) {
             return Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
         }
-        self.copy(source, destination)
+        self.copy(source, destination)?;
+        progress(CopyActivity::Finishing);
+        Ok(())
     }
     fn remove(&self, path: &Path) -> io::Result<()>;
+
+    fn source_usage(&self, _path: &Path, cancel: &AtomicBool) -> io::Result<SourceUsage> {
+        if cancel.load(Ordering::Acquire) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
+        }
+        Ok(SourceUsage {
+            logical_bytes: 0,
+            entries: 1,
+            device: 0,
+        })
+    }
+
+    fn source_device(&self, path: &Path, cancel: &AtomicBool) -> io::Result<u64> {
+        self.source_usage(path, cancel).map(|usage| usage.device)
+    }
+
+    fn destination_space(&self, _parent: &Path) -> io::Result<VolumeSpace> {
+        Ok(VolumeSpace {
+            device: 1,
+            total_bytes: u64::MAX,
+            available_bytes: u64::MAX,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CopyActivity {
+    Bytes(u64),
+    Finishing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SourceUsage {
+    logical_bytes: u64,
+    entries: u64,
+    device: u64,
+}
+
+impl SourceUsage {
+    fn required_bytes(self) -> io::Result<u64> {
+        self.entries
+            .checked_mul(ENTRY_SPACE_ALLOWANCE)
+            .and_then(|overhead| self.logical_bytes.checked_add(overhead))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "copy size is too large"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct VolumeSpace {
+    device: u64,
+    total_bytes: u64,
+    available_bytes: u64,
 }
 
 pub(crate) struct RealFileSystem;
@@ -144,8 +206,9 @@ impl FileSystem for RealFileSystem {
         source: &Path,
         destination: &Path,
         cancel: &AtomicBool,
+        progress: &mut dyn FnMut(CopyActivity),
     ) -> io::Result<()> {
-        crate::copy_item_cancellable(source, destination, cancel)
+        crate::copy_item_cancellable(source, destination, cancel, progress)
     }
 
     fn remove(&self, path: &Path) -> io::Result<()> {
@@ -155,6 +218,100 @@ impl FileSystem for RealFileSystem {
             std::fs::remove_file(path)
         }
     }
+
+    fn source_usage(&self, path: &Path, cancel: &AtomicBool) -> io::Result<SourceUsage> {
+        measure_source(path, cancel)
+    }
+
+    fn source_device(&self, path: &Path, cancel: &AtomicBool) -> io::Result<u64> {
+        if cancel.load(Ordering::Acquire) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "scan cancelled"));
+        }
+        Ok(std::fs::symlink_metadata(path)?.dev())
+    }
+
+    fn destination_space(&self, parent: &Path) -> io::Result<VolumeSpace> {
+        let metadata = std::fs::metadata(parent)?;
+        let stats = rustix::fs::statvfs(parent).map_err(io::Error::from)?;
+        let fragment_size = if stats.f_frsize == 0 {
+            stats.f_bsize
+        } else {
+            stats.f_frsize
+        };
+        let total_bytes = stats.f_blocks.checked_mul(fragment_size).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "volume size is too large")
+        })?;
+        let available_bytes = stats.f_bavail.checked_mul(fragment_size).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "free-space value is too large")
+        })?;
+        Ok(VolumeSpace {
+            device: metadata.dev(),
+            total_bytes,
+            available_bytes,
+        })
+    }
+}
+
+fn measure_source(path: &Path, cancel: &AtomicBool) -> io::Result<SourceUsage> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    let device = metadata.dev();
+    let mut usage = SourceUsage {
+        logical_bytes: 0,
+        entries: 0,
+        device,
+    };
+    measure_source_inner(path, cancel, 0, &mut usage)?;
+    Ok(usage)
+}
+
+fn measure_source_inner(
+    path: &Path,
+    cancel: &AtomicBool,
+    depth: usize,
+    usage: &mut SourceUsage,
+) -> io::Result<()> {
+    if cancel.load(Ordering::Acquire) {
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "scan cancelled"));
+    }
+    if depth > MAX_PLANNED_DEPTH {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "folder nesting exceeds the transfer safety limit",
+        ));
+    }
+    usage.entries = usage
+        .entries
+        .checked_add(1)
+        .filter(|entries| *entries <= MAX_PLANNED_ENTRIES)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "transfer contains too many files",
+            )
+        })?;
+
+    let metadata = std::fs::symlink_metadata(path)?;
+    let file_type = metadata.file_type();
+    if file_type.is_symlink() {
+        return Ok(());
+    }
+    if metadata.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            measure_source_inner(&entry?.path(), cancel, depth + 1, usage)?;
+        }
+        return Ok(());
+    }
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "special files cannot be copied",
+        ));
+    }
+    usage.logical_bytes = usage
+        .logical_bytes
+        .checked_add(metadata.len())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "copy size is too large"))?;
+    Ok(())
 }
 
 /// Atomically rename without replacing a destination created by another
@@ -193,8 +350,9 @@ fn copy_cancellable(
     source: &Path,
     destination: &Path,
     cancel: &AtomicBool,
+    progress: &mut dyn FnMut(CopyActivity),
 ) -> Result<(), Failure> {
-    fs.copy_cancellable(source, destination, cancel)
+    fs.copy_cancellable(source, destination, cancel, progress)
         .map_err(|error| {
             Failure::from_io(Operation::Copy, source, Some(destination), error)
                 .with_recovery_detail(format!(
@@ -228,7 +386,15 @@ pub(crate) fn move_item(
     source: &Path,
     destination: &Path,
 ) -> Result<(), Failure> {
-    move_item_cancellable(fs, source, destination, &AtomicBool::new(false), None)
+    move_item_cancellable(
+        fs,
+        source,
+        destination,
+        &AtomicBool::new(false),
+        None,
+        true,
+        &mut |_| {},
+    )
 }
 
 fn move_item_cancellable(
@@ -237,6 +403,8 @@ fn move_item_cancellable(
     destination: &Path,
     cancel: &AtomicBool,
     journal: Option<&operation_journal::Journal>,
+    cross_volume_copy_allowed: bool,
+    progress: &mut dyn FnMut(CopyActivity),
 ) -> Result<(), Failure> {
     if cancel.load(Ordering::Acquire) {
         return Err(Failure::from_io(
@@ -248,6 +416,16 @@ fn move_item_cancellable(
     }
     match fs.rename(source, destination) {
         Ok(()) => return Ok(()),
+        Err(error)
+            if error.kind() == io::ErrorKind::CrossesDevices && !cross_volume_copy_allowed =>
+        {
+            return Err(Failure::message(
+                Operation::Move,
+                source,
+                Some(destination),
+                "the destination volume changed after the transfer was checked; try again",
+            ));
+        }
         Err(error) if error.kind() != io::ErrorKind::CrossesDevices => {
             return Err(Failure::from_io(
                 Operation::Move,
@@ -271,7 +449,7 @@ fn move_item_cancellable(
 
     if let Some(ticket) = ticket.as_ref() {
         let staging = ticket.staging_destination();
-        fs.copy_cancellable(source, &staging, cancel)
+        fs.copy_cancellable(source, &staging, cancel, progress)
             .map_err(|error| {
                 Failure::from_io(Operation::Move, source, Some(destination), error)
                     .with_recovery_detail(
@@ -279,7 +457,7 @@ fn move_item_cancellable(
                     )
             })?;
     } else {
-        copy_cancellable(fs, source, destination, cancel)?;
+        copy_cancellable(fs, source, destination, cancel, progress)?;
     }
     if cancel.load(Ordering::Acquire) {
         let failure = Failure::from_io(
@@ -393,14 +571,208 @@ pub(crate) struct TransferReport {
     pub(crate) cancelled: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TransferPhase {
+    Scanning,
+    Copying,
+    Finishing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TransferProgress {
+    pub(crate) phase: TransferPhase,
+    pub(crate) processed: usize,
+    pub(crate) total: usize,
+    pub(crate) bytes_processed: u64,
+    pub(crate) bytes_total: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PlannedTask {
+    copy_required: bool,
+}
+
+#[derive(Debug)]
+struct TransferPlan {
+    tasks: Vec<PlannedTask>,
+    bytes_total: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct VolumeRequirement {
+    space: VolumeSpace,
+    required_bytes: u64,
+    task_index: usize,
+}
+
+fn plan_transfers(
+    fs: &impl FileSystem,
+    tasks: &[TransferTask],
+    cancel: &AtomicBool,
+    progress: &mut impl FnMut(TransferProgress),
+) -> Result<TransferPlan, Failure> {
+    let mut planned = Vec::with_capacity(tasks.len());
+    let mut volumes = BTreeMap::<u64, VolumeRequirement>::new();
+    let mut bytes_total = 0u64;
+
+    progress(TransferProgress {
+        phase: TransferPhase::Scanning,
+        processed: 0,
+        total: tasks.len(),
+        bytes_processed: 0,
+        bytes_total: 0,
+    });
+
+    for (index, task) in tasks.iter().enumerate() {
+        let operation = match task.kind {
+            TransferKind::Copy => Operation::Copy,
+            TransferKind::Move => Operation::Move,
+        };
+        let parent = task.destination.parent().ok_or_else(|| {
+            Failure::message(
+                operation,
+                &task.source,
+                Some(&task.destination),
+                "the destination has no containing folder",
+            )
+        })?;
+        let space = fs.destination_space(parent).map_err(|error| {
+            Failure::from_io(operation, &task.source, Some(&task.destination), error)
+        })?;
+        let copy_required = match task.kind {
+            TransferKind::Copy => true,
+            TransferKind::Move => {
+                fs.source_device(&task.source, cancel).map_err(|error| {
+                    Failure::from_io(operation, &task.source, Some(&task.destination), error)
+                })? != space.device
+            }
+        };
+
+        if copy_required {
+            let usage = fs.source_usage(&task.source, cancel).map_err(|error| {
+                Failure::from_io(operation, &task.source, Some(&task.destination), error)
+            })?;
+            bytes_total = bytes_total
+                .checked_add(usage.logical_bytes)
+                .ok_or_else(|| {
+                    Failure::message(
+                        operation,
+                        &task.source,
+                        Some(&task.destination),
+                        "the transfer size is too large",
+                    )
+                })?;
+            let required_bytes = usage.required_bytes().map_err(|error| {
+                Failure::from_io(operation, &task.source, Some(&task.destination), error)
+            })?;
+            if let Some(requirement) = volumes.get_mut(&space.device) {
+                requirement.required_bytes = requirement
+                    .required_bytes
+                    .checked_add(required_bytes)
+                    .ok_or_else(|| {
+                        Failure::message(
+                            operation,
+                            &task.source,
+                            Some(&task.destination),
+                            "the transfer size is too large",
+                        )
+                    })?;
+                requirement.space.available_bytes =
+                    requirement.space.available_bytes.min(space.available_bytes);
+                requirement.space.total_bytes =
+                    requirement.space.total_bytes.min(space.total_bytes);
+            } else {
+                volumes.insert(
+                    space.device,
+                    VolumeRequirement {
+                        space,
+                        required_bytes,
+                        task_index: index,
+                    },
+                );
+            }
+        }
+
+        planned.push(PlannedTask { copy_required });
+        progress(TransferProgress {
+            phase: TransferPhase::Scanning,
+            processed: index + 1,
+            total: tasks.len(),
+            bytes_processed: 0,
+            bytes_total,
+        });
+    }
+
+    for requirement in volumes.values() {
+        let reserve = (requirement.space.total_bytes / 20).min(MAX_FREE_SPACE_RESERVE);
+        let usable = requirement.space.available_bytes.saturating_sub(reserve);
+        if requirement.required_bytes > usable {
+            let task = &tasks[requirement.task_index];
+            let operation = match task.kind {
+                TransferKind::Copy => Operation::Copy,
+                TransferKind::Move => Operation::Move,
+            };
+            return Err(Failure::message(
+                operation,
+                &task.source,
+                Some(&task.destination),
+                format!(
+                    "not enough free space on the destination ({} needed, {} available while keeping a {} reserve)",
+                    format_bytes(requirement.required_bytes),
+                    format_bytes(usable),
+                    format_bytes(reserve)
+                ),
+            ));
+        }
+    }
+
+    Ok(TransferPlan {
+        tasks: planned,
+        bytes_total,
+    })
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.0} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
 pub(crate) fn execute_transfers(
     fs: &impl FileSystem,
     journal: Option<&operation_journal::Journal>,
     tasks: &[TransferTask],
     cancel: &AtomicBool,
-    mut progress: impl FnMut(usize, usize),
+    mut progress: impl FnMut(TransferProgress),
 ) -> TransferReport {
     let mut report = TransferReport::default();
+    let plan = match plan_transfers(fs, tasks, cancel, &mut progress) {
+        Ok(plan) => plan,
+        Err(failure) => {
+            report.cancelled = failure.error_kind == io::ErrorKind::Interrupted;
+            if !report.cancelled {
+                report.failures.push(failure);
+            }
+            report.unfinished_moves.extend(
+                tasks
+                    .iter()
+                    .filter(|task| task.kind == TransferKind::Move)
+                    .map(|task| task.source.clone()),
+            );
+            return report;
+        }
+    };
+    let mut bytes_processed = 0u64;
+
     for (index, task) in tasks.iter().enumerate() {
         if cancel.load(Ordering::Acquire) {
             report.cancelled = true;
@@ -413,14 +785,65 @@ pub(crate) fn execute_transfers(
             break;
         }
 
-        let result = match task.kind {
-            TransferKind::Copy => copy_cancellable(fs, &task.source, &task.destination, cancel),
-            TransferKind::Move => {
-                move_item_cancellable(fs, &task.source, &task.destination, cancel, journal)
+        let planned = plan.tasks[index];
+        let mut phase = if planned.copy_required {
+            TransferPhase::Copying
+        } else {
+            TransferPhase::Finishing
+        };
+        progress(TransferProgress {
+            phase,
+            processed: report.processed,
+            total: tasks.len(),
+            bytes_processed,
+            bytes_total: plan.bytes_total,
+        });
+        let result = {
+            let mut copy_progress = |activity| {
+                match activity {
+                    CopyActivity::Bytes(bytes) => {
+                        phase = TransferPhase::Copying;
+                        bytes_processed = bytes_processed.saturating_add(bytes);
+                    }
+                    CopyActivity::Finishing => {
+                        phase = TransferPhase::Finishing;
+                    }
+                }
+                progress(TransferProgress {
+                    phase,
+                    processed: report.processed,
+                    total: tasks.len(),
+                    bytes_processed,
+                    bytes_total: plan.bytes_total,
+                });
+            };
+            match task.kind {
+                TransferKind::Copy => copy_cancellable(
+                    fs,
+                    &task.source,
+                    &task.destination,
+                    cancel,
+                    &mut copy_progress,
+                ),
+                TransferKind::Move => move_item_cancellable(
+                    fs,
+                    &task.source,
+                    &task.destination,
+                    cancel,
+                    journal,
+                    planned.copy_required,
+                    &mut copy_progress,
+                ),
             }
         };
         report.processed += 1;
-        progress(report.processed, tasks.len());
+        progress(TransferProgress {
+            phase,
+            processed: report.processed,
+            total: tasks.len(),
+            bytes_processed,
+            bytes_total: plan.bytes_total,
+        });
 
         if let Err(failure) = result {
             if task.kind == TransferKind::Move && failure.source_retained {
@@ -708,7 +1131,7 @@ mod tests {
             destination: "dest".into(),
         }];
 
-        let report = execute_transfers(&fs, None, &tasks, &cancel, |_, _| {});
+        let report = execute_transfers(&fs, None, &tasks, &cancel, |_| {});
 
         assert!(report.cancelled);
         assert_eq!(report.processed, 0);
@@ -734,13 +1157,20 @@ mod tests {
         ];
         let mut progress = Vec::new();
 
-        let report = execute_transfers(&fs, None, &tasks, &cancel, |processed, total| {
-            progress.push((processed, total));
+        let report = execute_transfers(&fs, None, &tasks, &cancel, |update| {
+            progress.push(update);
         });
 
         assert_eq!(report.processed, 2);
         assert!(report.failures.is_empty());
-        assert_eq!(progress, vec![(1, 2), (2, 2)]);
+        assert_eq!(
+            progress
+                .iter()
+                .filter(|update| update.phase == TransferPhase::Finishing)
+                .map(|update| update.processed)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 1, 2]
+        );
     }
 
     #[test]
@@ -786,7 +1216,7 @@ mod tests {
             destination: "dest".into(),
         }];
 
-        let report = execute_transfers(&fs, None, &tasks, &cancel, |_, _| {});
+        let report = execute_transfers(&fs, None, &tasks, &cancel, |_| {});
 
         assert!(report.cancelled);
         assert_eq!(report.unfinished_moves, vec![PathBuf::from("source")]);
@@ -847,13 +1277,8 @@ mod tests {
             destination: destination.clone(),
         }];
 
-        let report = execute_transfers(
-            &fs,
-            Some(&journal),
-            &tasks,
-            &AtomicBool::new(false),
-            |_, _| {},
-        );
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
 
         assert!(report.failures.is_empty());
         assert!(!source.exists());
@@ -882,13 +1307,8 @@ mod tests {
             destination: destination.clone(),
         }];
 
-        let report = execute_transfers(
-            &fs,
-            Some(&journal),
-            &tasks,
-            &AtomicBool::new(false),
-            |_, _| {},
-        );
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
 
         assert_eq!(report.failures.len(), 1);
         assert_eq!(fs.remove_calls.get(), 0);
@@ -922,13 +1342,8 @@ mod tests {
             destination: destination.clone(),
         }];
 
-        let report = execute_transfers(
-            &fs,
-            Some(&journal),
-            &tasks,
-            &AtomicBool::new(false),
-            |_, _| {},
-        );
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
 
         assert_eq!(report.failures.len(), 1);
         assert_eq!(fs.remove_calls.get(), 1);
@@ -962,13 +1377,8 @@ mod tests {
             destination: destination.clone(),
         }];
 
-        let report = execute_transfers(
-            &fs,
-            Some(&journal),
-            &tasks,
-            &AtomicBool::new(false),
-            |_, _| {},
-        );
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
 
         assert_eq!(report.failures.len(), 1);
         assert!(!source.exists());
@@ -1005,7 +1415,7 @@ mod tests {
             destination: destination.clone(),
         }];
 
-        let report = execute_transfers(&fs, Some(&journal), &tasks, &cancel, |_, _| {});
+        let report = execute_transfers(&fs, Some(&journal), &tasks, &cancel, |_| {});
 
         assert!(report.cancelled);
         assert_eq!(fs.remove_calls.get(), 0);
@@ -1017,5 +1427,307 @@ mod tests {
         );
         assert_eq!(report.unfinished_moves, vec![source]);
         assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    struct PlanningFixture {
+        usage: SourceUsage,
+        space: VolumeSpace,
+        rename_error: Option<io::ErrorKind>,
+        calls: RefCell<Vec<&'static str>>,
+    }
+
+    impl FileSystem for PlanningFixture {
+        fn create_dir(&self, _path: &Path) -> io::Result<()> {
+            self.calls.borrow_mut().push("create_dir");
+            Ok(())
+        }
+
+        fn rename(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+            self.calls.borrow_mut().push("rename");
+            match self.rename_error {
+                Some(kind) => Err(io::Error::new(kind, "planned fixture rename")),
+                None => Ok(()),
+            }
+        }
+
+        fn copy(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+            self.calls.borrow_mut().push("copy");
+            Ok(())
+        }
+
+        fn remove(&self, _path: &Path) -> io::Result<()> {
+            self.calls.borrow_mut().push("remove");
+            Ok(())
+        }
+
+        fn source_usage(&self, _path: &Path, cancel: &AtomicBool) -> io::Result<SourceUsage> {
+            if cancel.load(Ordering::Acquire) {
+                return Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"));
+            }
+            Ok(self.usage)
+        }
+
+        fn destination_space(&self, _parent: &Path) -> io::Result<VolumeSpace> {
+            Ok(self.space)
+        }
+    }
+
+    fn one_task(kind: TransferKind) -> Vec<TransferTask> {
+        vec![TransferTask {
+            kind,
+            source: PathBuf::from("source"),
+            destination: PathBuf::from("destination-parent/destination"),
+        }]
+    }
+
+    #[test]
+    fn low_space_preflight_refuses_the_batch_before_mutation() {
+        let fs = PlanningFixture {
+            usage: SourceUsage {
+                logical_bytes: 16 * 1024,
+                entries: 2,
+                device: 1,
+            },
+            space: VolumeSpace {
+                device: 2,
+                total_bytes: 1024 * 1024,
+                available_bytes: 32 * 1024,
+            },
+            rename_error: None,
+            calls: RefCell::new(Vec::new()),
+        };
+
+        let report = execute_transfers(
+            &fs,
+            None,
+            &one_task(TransferKind::Move),
+            &AtomicBool::new(false),
+            |_| {},
+        );
+
+        assert_eq!(report.processed, 0);
+        assert_eq!(report.failures.len(), 1);
+        assert!(report.failures[0].detail.contains("not enough free space"));
+        assert_eq!(
+            report.unfinished_moves,
+            vec![PathBuf::from("source")],
+            "a rejected move must remain available to retry"
+        );
+        assert!(
+            fs.calls.borrow().is_empty(),
+            "preflight failure must precede every mutation"
+        );
+    }
+
+    #[test]
+    fn same_volume_move_needs_no_duplicate_space() {
+        let fs = PlanningFixture {
+            usage: SourceUsage {
+                logical_bytes: 8 * 1024 * 1024,
+                entries: 1,
+                device: 7,
+            },
+            space: VolumeSpace {
+                device: 7,
+                total_bytes: 1024 * 1024,
+                available_bytes: 0,
+            },
+            rename_error: None,
+            calls: RefCell::new(Vec::new()),
+        };
+
+        let report = execute_transfers(
+            &fs,
+            None,
+            &one_task(TransferKind::Move),
+            &AtomicBool::new(false),
+            |_| {},
+        );
+
+        assert!(report.failures.is_empty());
+        assert_eq!(&*fs.calls.borrow(), &["rename"]);
+    }
+
+    #[test]
+    fn changed_mount_boundary_never_bypasses_preflight() {
+        let fs = PlanningFixture {
+            usage: SourceUsage {
+                logical_bytes: 8 * 1024,
+                entries: 1,
+                device: 7,
+            },
+            space: VolumeSpace {
+                device: 7,
+                total_bytes: 1024 * 1024,
+                available_bytes: 0,
+            },
+            rename_error: Some(io::ErrorKind::CrossesDevices),
+            calls: RefCell::new(Vec::new()),
+        };
+
+        let report = execute_transfers(
+            &fs,
+            None,
+            &one_task(TransferKind::Move),
+            &AtomicBool::new(false),
+            |_| {},
+        );
+
+        assert_eq!(report.failures.len(), 1);
+        assert!(report.failures[0]
+            .detail
+            .contains("destination volume changed"));
+        assert_eq!(&*fs.calls.borrow(), &["rename"]);
+        assert_eq!(report.unfinished_moves, vec![PathBuf::from("source")]);
+    }
+
+    #[test]
+    fn sparse_files_use_their_logical_copy_size_and_symlinks_are_not_followed() {
+        let root = TestDirectory::new("sparse-plan");
+        let source = root.0.join("source");
+        std::fs::create_dir(&source).unwrap();
+        let sparse = source.join("sparse");
+        std::fs::File::create(&sparse)
+            .unwrap()
+            .set_len(8 * 1024 * 1024)
+            .unwrap();
+        std::os::unix::fs::symlink(&source, source.join("cycle")).unwrap();
+
+        let usage = measure_source(&source, &AtomicBool::new(false)).unwrap();
+
+        assert_eq!(usage.logical_bytes, 8 * 1024 * 1024);
+        assert_eq!(usage.entries, 3);
+        assert_eq!(
+            usage.required_bytes().unwrap(),
+            8 * 1024 * 1024 + 3 * ENTRY_SPACE_ALLOWANCE
+        );
+    }
+
+    #[test]
+    fn real_copy_reports_exact_bytes_and_ordered_phases() {
+        let root = TestDirectory::new("byte-progress");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        let bytes = vec![0x5a; 600 * 1024];
+        std::fs::write(&source, &bytes).unwrap();
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Copy,
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+        let mut updates = Vec::new();
+
+        let report = execute_transfers(
+            &RealFileSystem,
+            None,
+            &tasks,
+            &AtomicBool::new(false),
+            |update| updates.push(update),
+        );
+
+        assert!(report.failures.is_empty());
+        assert_eq!(std::fs::read(destination).unwrap(), bytes);
+        assert_eq!(
+            updates
+                .iter()
+                .filter(|update| update.phase == TransferPhase::Copying)
+                .map(|update| update.bytes_processed)
+                .max(),
+            Some(600 * 1024)
+        );
+        assert!(updates
+            .windows(2)
+            .all(|pair| pair[0].bytes_processed <= pair[1].bytes_processed));
+        let first_copy = updates
+            .iter()
+            .position(|update| update.phase == TransferPhase::Copying)
+            .unwrap();
+        let first_finish = updates
+            .iter()
+            .position(|update| update.phase == TransferPhase::Finishing)
+            .unwrap();
+        assert!(first_copy < first_finish);
+    }
+
+    #[test]
+    fn deterministic_mid_copy_enospc_retains_move_source() {
+        struct FullDuringCopy {
+            calls: RefCell<Vec<&'static str>>,
+        }
+
+        impl FileSystem for FullDuringCopy {
+            fn create_dir(&self, _path: &Path) -> io::Result<()> {
+                Ok(())
+            }
+
+            fn rename(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+                self.calls.borrow_mut().push("rename");
+                Err(io::Error::new(
+                    io::ErrorKind::CrossesDevices,
+                    "fixture filesystem boundary",
+                ))
+            }
+
+            fn copy(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+                unreachable!("the cancellable copy fixture is authoritative")
+            }
+
+            fn copy_cancellable(
+                &self,
+                _source: &Path,
+                _destination: &Path,
+                _cancel: &AtomicBool,
+                progress: &mut dyn FnMut(CopyActivity),
+            ) -> io::Result<()> {
+                self.calls.borrow_mut().push("copy");
+                progress(CopyActivity::Bytes(4096));
+                Err(io::Error::new(
+                    io::ErrorKind::StorageFull,
+                    "fixture destination is full",
+                ))
+            }
+
+            fn remove(&self, _path: &Path) -> io::Result<()> {
+                self.calls.borrow_mut().push("remove");
+                Ok(())
+            }
+
+            fn source_usage(&self, _path: &Path, _cancel: &AtomicBool) -> io::Result<SourceUsage> {
+                Ok(SourceUsage {
+                    logical_bytes: 8192,
+                    entries: 1,
+                    device: 1,
+                })
+            }
+
+            fn destination_space(&self, _parent: &Path) -> io::Result<VolumeSpace> {
+                Ok(VolumeSpace {
+                    device: 2,
+                    total_bytes: 1024 * 1024 * 1024,
+                    available_bytes: 1024 * 1024 * 1024,
+                })
+            }
+        }
+
+        let fs = FullDuringCopy {
+            calls: RefCell::new(Vec::new()),
+        };
+        let mut updates = Vec::new();
+        let report = execute_transfers(
+            &fs,
+            None,
+            &one_task(TransferKind::Move),
+            &AtomicBool::new(false),
+            |update| updates.push(update),
+        );
+
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].error_kind, io::ErrorKind::StorageFull);
+        assert_eq!(report.unfinished_moves, vec![PathBuf::from("source")]);
+        assert_eq!(&*fs.calls.borrow(), &["rename", "copy"]);
+        assert_eq!(
+            updates.iter().map(|update| update.bytes_processed).max(),
+            Some(4096)
+        );
     }
 }

@@ -69,10 +69,7 @@ struct DragPreview {
 }
 
 enum TransferEvent {
-    Progress {
-        processed: usize,
-        total: usize,
-    },
+    Progress(file_ops::TransferProgress),
     Finished {
         report: file_ops::TransferReport,
         recovery_reviews: std::io::Result<Vec<operation_journal::RecoveryReview>>,
@@ -82,8 +79,11 @@ enum TransferEvent {
 #[derive(Clone)]
 struct ActiveTransfer {
     label: SharedString,
+    phase: file_ops::TransferPhase,
     processed: usize,
     total: usize,
+    bytes_processed: u64,
+    bytes_total: u64,
     cancel: Arc<AtomicBool>,
     cancelling: bool,
     keep_unfinished_in_clipboard: bool,
@@ -1025,15 +1025,21 @@ impl FinderView {
         self.operation_error = None;
         self.transfer = Some(ActiveTransfer {
             label: label.into(),
+            phase: file_ops::TransferPhase::Scanning,
             processed: 0,
             total: tasks.len(),
+            bytes_processed: 0,
+            bytes_total: 0,
             cancel: cancel.clone(),
             cancelling: false,
             keep_unfinished_in_clipboard,
         });
         cx.notify();
 
-        let (events, event_rx) = async_channel::unbounded();
+        // Byte progress can advance faster than the renderer. Keep this bridge
+        // bounded and drop intermediate snapshots; the terminal result still
+        // uses backpressure and is never intentionally discarded.
+        let (events, event_rx) = async_channel::bounded(64);
         cx.background_executor()
             .spawn(async move {
                 let progress_events = events.clone();
@@ -1042,9 +1048,8 @@ impl FinderView {
                     Some(journal.as_ref()),
                     &tasks,
                     &cancel,
-                    move |processed, total| {
-                        let _ = progress_events
-                            .send_blocking(TransferEvent::Progress { processed, total });
+                    move |progress| {
+                        let _ = progress_events.try_send(TransferEvent::Progress(progress));
                     },
                 );
                 let recovery_reviews = journal
@@ -1062,10 +1067,13 @@ impl FinderView {
                 let finished = matches!(event, TransferEvent::Finished { .. });
                 if this
                     .update(cx, |this: &mut FinderView, cx| match event {
-                        TransferEvent::Progress { processed, total } => {
+                        TransferEvent::Progress(progress) => {
                             if let Some(transfer) = this.transfer.as_mut() {
-                                transfer.processed = processed;
-                                transfer.total = total;
+                                transfer.phase = progress.phase;
+                                transfer.processed = progress.processed;
+                                transfer.total = progress.total;
+                                transfer.bytes_processed = progress.bytes_processed;
+                                transfer.bytes_total = progress.bytes_total;
                             }
                             cx.notify();
                         }
@@ -2820,6 +2828,28 @@ impl Render for FinderView {
                 } else {
                     "Cancel"
                 };
+                let status = match transfer.phase {
+                    file_ops::TransferPhase::Scanning => format!(
+                        "{} — Scanning {} of {} items",
+                        transfer.label, transfer.processed, transfer.total
+                    ),
+                    file_ops::TransferPhase::Copying if transfer.bytes_total > 0 => format!(
+                        "{} — {} of {} · {} of {}",
+                        transfer.label,
+                        transfer.processed,
+                        transfer.total,
+                        human_size(transfer.bytes_processed),
+                        human_size(transfer.bytes_total.max(transfer.bytes_processed))
+                    ),
+                    file_ops::TransferPhase::Copying => format!(
+                        "{} — Copying {} of {} items",
+                        transfer.label, transfer.processed, transfer.total
+                    ),
+                    file_ops::TransferPhase::Finishing => format!(
+                        "{} — Finishing {} of {} items",
+                        transfer.label, transfer.processed, transfer.total
+                    ),
+                };
                 el.child(
                     div()
                         .h(px(34.0))
@@ -2833,10 +2863,7 @@ impl Render for FinderView {
                         .border_color(rmac_ui::mac::accent_border())
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(label())
-                        .child(div().flex_1().child(format!(
-                            "{} — {} of {} items",
-                            transfer.label, transfer.processed, transfer.total
-                        )))
+                        .child(div().flex_1().child(status))
                         .child(
                             div()
                                 .id("cancel-transfer")
@@ -2949,10 +2976,15 @@ fn unique_path_avoiding(path: PathBuf, reserved: &BTreeSet<PathBuf>) -> PathBuf 
 /// Every destination node is created exclusively. A concurrent writer can
 /// therefore make the operation fail, but can never have its data overwritten.
 fn copy_item(src: &Path, dst: &Path) -> std::io::Result<()> {
-    copy_item_cancellable(src, dst, &AtomicBool::new(false))
+    copy_item_cancellable(src, dst, &AtomicBool::new(false), &mut |_| {})
 }
 
-fn copy_item_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> std::io::Result<()> {
+fn copy_item_cancellable(
+    src: &Path,
+    dst: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(file_ops::CopyActivity),
+) -> std::io::Result<()> {
     if cancel.load(Ordering::Acquire) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::Interrupted,
@@ -2960,7 +2992,8 @@ fn copy_item_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> std::io
         ));
     }
     validate_copy_destination(src, dst)?;
-    copy_recursive_cancellable(src, dst, cancel)?;
+    copy_recursive_cancellable(src, dst, cancel, progress)?;
+    progress(file_ops::CopyActivity::Finishing);
     sync_copied_tree(dst)?;
     if let Some(parent) = dst.parent() {
         std::fs::File::open(parent)?.sync_all()?;
@@ -2999,7 +3032,12 @@ fn validate_copy_destination(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn copy_recursive_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> std::io::Result<()> {
+fn copy_recursive_cancellable(
+    src: &Path,
+    dst: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(file_ops::CopyActivity),
+) -> std::io::Result<()> {
     use std::io::{Read as _, Write as _};
 
     if cancel.load(Ordering::Acquire) {
@@ -3015,10 +3053,10 @@ fn copy_recursive_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> st
         std::fs::create_dir(dst)?;
         for e in std::fs::read_dir(src)? {
             let e = e?;
-            copy_recursive_cancellable(&e.path(), &dst.join(e.file_name()), cancel)?;
+            copy_recursive_cancellable(&e.path(), &dst.join(e.file_name()), cancel, progress)?;
         }
         std::fs::set_permissions(dst, metadata.permissions())?;
-    } else {
+    } else if metadata.is_file() {
         let mut source = std::fs::File::open(src)?;
         let mut destination = std::fs::OpenOptions::new()
             .write(true)
@@ -3037,9 +3075,15 @@ fn copy_recursive_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> st
                 break;
             }
             destination.write_all(&buffer[..read])?;
+            progress(file_ops::CopyActivity::Bytes(read as u64));
         }
         destination.sync_all()?;
         std::fs::set_permissions(dst, metadata.permissions())?;
+    } else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "special files cannot be copied",
+        ));
     }
     Ok(())
 }
@@ -3169,17 +3213,17 @@ fn perm_string(mode: u32) -> String {
     s
 }
 
-/// Free space (bytes) on the volume containing `path`, via `df -k`.
+/// Bytes available to an unprivileged process on the volume containing
+/// `path`. Use the filesystem authority directly rather than parsing localized
+/// command output.
 fn free_space(path: &Path) -> Option<u64> {
-    let out = Command::new("df").arg("-k").arg(path).output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
-    // Second line, 4th column = available 1K-blocks.
-    let line = text.lines().nth(1)?;
-    let avail_k: u64 = line.split_whitespace().nth(3)?.parse().ok()?;
-    Some(avail_k * 1024)
+    let stats = rustix::fs::statvfs(path).ok()?;
+    let fragment_size = if stats.f_frsize == 0 {
+        stats.f_bsize
+    } else {
+        stats.f_frsize
+    };
+    stats.f_bavail.checked_mul(fragment_size)
 }
 
 fn human_size(bytes: u64) -> String {
@@ -3282,6 +3326,17 @@ mod tests {
                 std::process::id()
             ));
             std::fs::create_dir(&path).expect("test directory should be created");
+            Self(path)
+        }
+
+        fn new_short(label: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("test clock should follow the Unix epoch")
+                .as_nanos();
+            let path =
+                PathBuf::from("/tmp").join(format!("rmac-{label}-{}-{unique}", std::process::id()));
+            std::fs::create_dir(&path).expect("short test directory should be created");
             Self(path)
         }
     }
@@ -3391,6 +3446,19 @@ mod tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
         assert_eq!(std::fs::read(&destination).unwrap(), b"destination bytes");
+    }
+
+    #[test]
+    fn recursive_copy_refuses_special_files_without_opening_them() {
+        let root = TestDirectory::new_short("special");
+        let source = root.0.join("source.socket");
+        let destination = root.0.join("destination");
+        let _listener = std::os::unix::net::UnixListener::bind(&source).unwrap();
+
+        let error = copy_item(&source, &destination).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+        assert!(!destination.exists());
     }
 
     #[test]

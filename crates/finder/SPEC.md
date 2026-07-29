@@ -17,7 +17,9 @@ metadata, icons, and identifiers remain original rmac work.
   descendant reached through a symlinked destination parent.
 - Recursive copy uses `symlink_metadata`, recreates a symlink itself, and never
   traverses the symlink target. Dangling and relative links retain their exact
-  link payload.
+  link payload. Sockets, FIFOs, devices, and other special files are refused
+  during both planning and copy rather than opened or interpreted as regular
+  file content.
 - Cross-volume move is copy-then-source-removal only for the kernel's
   cross-device result. Any other rename failure stops without copying. Source
   removal begins only after a durable hidden copy on the destination volume,
@@ -61,8 +63,20 @@ metadata, icons, and identifiers remain original rmac work.
 - Trash follows the freedesktop Trash specification on Linux and records enough
   identity to offer restore. Permanent delete requires explicit confirmation
   and is not described as undoable.
-- Low-space preflight and mid-operation `ENOSPC` preserve the source, retain
-  truthful partial-destination recovery, and never claim completion.
+- Before creating any batch destination, a cancellable no-follow scan is
+  bounded to 1,000,000 entries and 256 levels. It accounts for each regular
+  file's logical bytes plus 4 KiB per destination entry, groups requirements by
+  destination device, and preserves five percent of each volume up to a
+  512 MiB reserve. Sparse files use logical size because the current copier
+  materializes their holes. Same-volume moves require no duplicate capacity.
+  If the mount boundary changes after preflight, a move refuses the newly
+  required copy and asks for a retry.
+- Visible progress distinguishes scanning, copying, and finishing. It reports
+  copied bytes from accepted writes and completed top-level items. The
+  background/UI bridge is bounded; intermediate snapshots may coalesce, but
+  the terminal outcome is delivered with backpressure.
+- Low-space preflight and mid-operation `ENOSPC` preserve the move source,
+  retain truthful partial-destination recovery, and never claim completion.
 
 Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light mode.
 

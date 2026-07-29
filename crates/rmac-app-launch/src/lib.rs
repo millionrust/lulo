@@ -1,4 +1,4 @@
-//! Shared, private-safe application launch routing.
+//! Shared, private-safe application and document launch routing.
 //!
 //! On the supported niri session, argv is sent through direct compositor IPC
 //! so niri can attach an XDG activation token to the child. Ordinary desktop
@@ -6,6 +6,7 @@
 //! fallback. A compositor rejection is never bypassed.
 
 use std::fmt;
+use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Delivery {
@@ -48,6 +49,57 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ItemOperation {
+    Open,
+    Reveal,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ItemError {
+    pub operation: ItemOperation,
+}
+
+impl fmt::Display for ItemError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self.operation {
+            ItemOperation::Open => "the item could not be opened",
+            ItemOperation::Reveal => "the item could not be revealed",
+        })
+    }
+}
+
+impl std::error::Error for ItemError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AssociationError;
+
+impl fmt::Display for AssociationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("compatible applications could not be loaded")
+    }
+}
+
+impl std::error::Error for AssociationError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OpenWithError {
+    /// The XDG default changed successfully before application startup failed.
+    pub default_changed: bool,
+}
+
+impl fmt::Display for OpenWithError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(if self.default_changed {
+            "the default application changed, but the file could not be opened"
+        } else {
+            "the file could not be opened with the selected application"
+        })
+    }
+}
+
+impl std::error::Error for OpenWithError {}
 
 /// Start one parsed desktop-entry command without a shell.
 pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
@@ -100,6 +152,60 @@ pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
     .await
 }
 
+/// Open one local item through the user-mediated desktop boundary.
+///
+/// The underlying portal may retain a private path and diagnostic, but neither
+/// crosses this shared application boundary.
+pub async fn open_item(path: PathBuf) -> Result<(), ItemError> {
+    rmac_portal::open_item(&path).await.map_err(|_| ItemError {
+        operation: ItemOperation::Open,
+    })
+}
+
+/// Reveal one local item in the platform file manager.
+///
+/// Callers receive only the operation class so a private path or portal detail
+/// cannot accidentally enter a launcher, notification, or application UI.
+pub async fn reveal_item(path: PathBuf) -> Result<(), ItemError> {
+    rmac_portal::show_item(&path).await.map_err(|_| ItemError {
+        operation: ItemOperation::Reveal,
+    })
+}
+
+/// Reveal the trusted source for one catalog application.
+pub async fn reveal_application(application: rmac_apps::Application) -> Result<(), ItemError> {
+    reveal_item(application.source).await
+}
+
+/// Resolve current XDG MIME handlers away from the UI executor.
+pub async fn file_association(
+    path: PathBuf,
+) -> Result<rmac_apps::FileAssociation, AssociationError> {
+    blocking::unblock(move || rmac_apps::file_association(&path))
+        .await
+        .map_err(|_| AssociationError)
+}
+
+/// Revalidate and open one file with an exact compatible desktop application.
+///
+/// The catalog authority still distinguishes a successfully retained default
+/// change from a later launch failure. All private command and path details are
+/// reduced before returning to application UI.
+pub async fn open_file_with(
+    path: PathBuf,
+    expected_mime_type: String,
+    application_id: String,
+    make_default: bool,
+) -> Result<(), OpenWithError> {
+    blocking::unblock(move || {
+        rmac_apps::open_file_with(&path, &expected_mime_type, &application_id, make_default)
+    })
+    .await
+    .map_err(|error| OpenWithError {
+        default_changed: error.default_changed,
+    })
+}
+
 fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
     matches!(
         kind,
@@ -132,5 +238,37 @@ mod tests {
         assert!(may_fallback(rmac_compositor::ActionErrorKind::Unsupported));
         assert!(!may_fallback(rmac_compositor::ActionErrorKind::Rejected));
         assert!(!may_fallback(rmac_compositor::ActionErrorKind::Protocol));
+    }
+
+    #[test]
+    fn integration_errors_are_private_and_actionable() {
+        let open = ItemError {
+            operation: ItemOperation::Open,
+        };
+        let reveal = ItemError {
+            operation: ItemOperation::Reveal,
+        };
+        assert_eq!(open.to_string(), "the item could not be opened");
+        assert_eq!(reveal.to_string(), "the item could not be revealed");
+        assert_eq!(
+            AssociationError.to_string(),
+            "compatible applications could not be loaded"
+        );
+        assert_eq!(
+            OpenWithError {
+                default_changed: true,
+            }
+            .to_string(),
+            "the default application changed, but the file could not be opened"
+        );
+        let diagnostics = format!(
+            "{open:?} {reveal:?} {:?} {:?}",
+            AssociationError,
+            OpenWithError {
+                default_changed: false,
+            }
+        );
+        assert!(!diagnostics.contains("/home"));
+        assert!(!diagnostics.contains("gio"));
     }
 }

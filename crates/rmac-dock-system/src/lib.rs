@@ -249,7 +249,7 @@ impl Backend for SystemBackend {
     fn open_directory(&self, path: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
         let path = path.to_path_buf();
         Box::pin(async move {
-            rmac_portal::show_item(&path).await.map_err(|_| {
+            rmac_app_launch::reveal_item(path).await.map_err(|_| {
                 BackendError::new(
                     FailureKind::Other,
                     "the desktop portal could not open the selected directory",

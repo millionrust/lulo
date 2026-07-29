@@ -10,7 +10,6 @@ publish = false
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-launcher.workspace = true
-rmac-portal.workspace = true
 
 [dev-dependencies]
 futures-lite.workspace = true

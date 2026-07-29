@@ -439,7 +439,7 @@ impl AppDrawer {
     fn reveal_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(application) = self.selected_app(cx) {
             cx.spawn(async move |this, cx| {
-                let result = rmac_apps::reveal(&application).await;
+                let result = rmac_app_launch::reveal_application(application).await;
                 let _ = this.update(cx, |this, cx| {
                     this.catalog_error = result
                         .err()

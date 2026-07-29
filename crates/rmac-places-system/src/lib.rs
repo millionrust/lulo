@@ -486,7 +486,7 @@ pub async fn open_downloads(snapshot: &rmac_places::Snapshot) -> Result<(), Erro
             "directory is unavailable",
         ));
     }
-    rmac_portal::show_item(&snapshot.downloads.path)
+    rmac_app_launch::reveal_item(snapshot.downloads.path.clone())
         .await
         .map_err(|error| {
             Error::message(

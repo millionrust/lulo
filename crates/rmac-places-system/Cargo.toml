@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 notify.workspace = true
+rmac-app-launch.workspace = true
 rmac-places.workspace = true
-rmac-portal.workspace = true
 sha2.workspace = true
 trash.workspace = true

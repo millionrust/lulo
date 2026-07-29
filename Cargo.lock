@@ -4873,6 +4873,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-portal",
 ]
 
 [[package]]
@@ -4898,7 +4899,6 @@ name = "rmac-apps"
 version = "0.1.0"
 dependencies = [
  "notify",
- "rmac-portal",
 ]
 
 [[package]]
@@ -5038,9 +5038,9 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "rmac-app-launch",
  "rmac-apps",
  "rmac-mounts",
- "rmac-portal",
  "rmac-search",
  "rmac-thumbnails",
  "rmac-ui",
@@ -5196,7 +5196,6 @@ dependencies = [
  "rmac-app-launch",
  "rmac-apps",
  "rmac-launcher",
- "rmac-portal",
 ]
 
 [[package]]
@@ -5398,8 +5397,8 @@ name = "rmac-places-system"
 version = "0.1.0"
 dependencies = [
  "notify",
+ "rmac-app-launch",
  "rmac-places",
- "rmac-portal",
  "sha2",
  "trash",
 ]
@@ -5689,6 +5688,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "image",
+ "rmac-app-launch",
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-apps",

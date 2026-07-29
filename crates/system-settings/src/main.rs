@@ -4193,7 +4193,9 @@ impl Settings {
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = match blocking::unblock(move || rmac_mounts::revalidate(&mount)).await {
-                Ok(current) => rmac_portal::open_item(&current.path).await.map_err(|_| ()),
+                Ok(current) => rmac_app_launch::open_item(current.path)
+                    .await
+                    .map_err(|_| ()),
                 Err(_) => Err(()),
             };
             let _ = this.update(cx, |this: &mut Settings, cx| {
@@ -5070,7 +5072,7 @@ impl Settings {
                 })
                 .await;
             let result = match path {
-                Ok(path) => rmac_portal::show_item(&path)
+                Ok(path) => rmac_app_launch::reveal_item(path)
                     .await
                     .map_err(|_| "the file manager could not reveal this login item".to_string()),
                 Err(error) => Err(error.to_string()),

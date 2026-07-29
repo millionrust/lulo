@@ -150,11 +150,13 @@ impl<S: Surface> Backend for SystemBackend<S> {
     }
 
     fn open_file<'a>(&'a self, path: &'a Path) -> BackendFuture<'a, Result<(), BackendError>> {
-        Box::pin(async move { rmac_portal::open_item(path).await.map_err(portal_error) })
+        let path = path.to_path_buf();
+        Box::pin(async move { rmac_app_launch::open_item(path).await.map_err(item_error) })
     }
 
     fn reveal_file<'a>(&'a self, path: &'a Path) -> BackendFuture<'a, Result<(), BackendError>> {
-        Box::pin(async move { rmac_portal::show_item(path).await.map_err(portal_error) })
+        let path = path.to_path_buf();
+        Box::pin(async move { rmac_app_launch::reveal_item(path).await.map_err(item_error) })
     }
 
     fn copy_text<'a>(&'a self, text: &'a str) -> BackendFuture<'a, Result<(), BackendError>> {
@@ -162,8 +164,8 @@ impl<S: Surface> Backend for SystemBackend<S> {
     }
 }
 
-fn portal_error(error: rmac_portal::Error) -> BackendError {
-    BackendError::new(FailureKind::Other, error.detail)
+fn item_error(error: rmac_app_launch::ItemError) -> BackendError {
+    BackendError::new(FailureKind::Other, error.to_string())
 }
 
 pub async fn execute(

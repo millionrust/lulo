@@ -11,3 +11,4 @@ blocking.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
+rmac-portal.workspace = true

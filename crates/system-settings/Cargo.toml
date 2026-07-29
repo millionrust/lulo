@@ -20,6 +20,7 @@ image.workspace = true
 rmac-audio.workspace = true
 rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
+rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-bluetooth.workspace = true
 rmac-compositor.workspace = true

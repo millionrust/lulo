@@ -1562,7 +1562,7 @@ impl FinderView {
             let total = paths.len();
             let mut failures = Vec::new();
             for path in paths {
-                if let Err(error) = rmac_portal::open_item(&path).await {
+                if let Err(error) = rmac_app_launch::open_item(path).await {
                     failures.push(error.to_string());
                 }
             }
@@ -1622,13 +1622,7 @@ impl FinderView {
         });
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn({
-                    let path = path.clone();
-                    async move { rmac_apps::file_association(&path) }
-                })
-                .await;
+            let result = rmac_app_launch::file_association(path.clone()).await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 let Some(picker) = this.open_with.as_mut().filter(|picker| picker.path == path)
                 else {
@@ -1734,17 +1728,13 @@ impl FinderView {
         cx.notify();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn({
-                    let path = path.clone();
-                    let mime_type = mime_type.clone();
-                    let application_id = application_id.clone();
-                    async move {
-                        rmac_apps::open_file_with(&path, &mime_type, &application_id, make_default)
-                    }
-                })
-                .await;
+            let result = rmac_app_launch::open_file_with(
+                path.clone(),
+                mime_type.clone(),
+                application_id.clone(),
+                make_default,
+            )
+            .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 let Some(picker) = this.open_with.as_mut().filter(|picker| picker.path == path)
                 else {

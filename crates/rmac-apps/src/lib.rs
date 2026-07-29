@@ -5,6 +5,8 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;
+#[cfg(target_os = "linux")]
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 #[cfg(target_os = "linux")]
@@ -509,10 +511,6 @@ fn activation_spawn_argv_with_terminal(
         );
     }
     Some(command)
-}
-
-pub async fn reveal(application: &Application) -> Result<(), rmac_portal::Error> {
-    rmac_portal::show_item(&application.source).await
 }
 
 fn terminal_command(program: &str, args: &[String]) -> Command {
@@ -1128,7 +1126,7 @@ fn bounded_command_output(command: &mut Command) -> io::Result<BoundedCommandOut
 }
 
 #[cfg(target_os = "linux")]
-fn drain_bounded(mut reader: impl io::Read) -> io::Result<(Vec<u8>, bool)> {
+fn drain_bounded(reader: impl io::Read) -> io::Result<(Vec<u8>, bool)> {
     let mut bytes = Vec::with_capacity(MAX_ASSOCIATION_OUTPUT_BYTES);
     reader
         .take(MAX_ASSOCIATION_OUTPUT_BYTES.saturating_add(1) as u64)

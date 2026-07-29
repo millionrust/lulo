@@ -392,6 +392,38 @@ impl Registry {
         }
     }
 
+    /// Reconcile an authoritative compositor close. Desired raster state is
+    /// retained so the next command recreates the surface with a fresh
+    /// physical identity.
+    pub fn surface_closed(&mut self, surface: SurfaceId) -> Transition {
+        let pending_output = self
+            .pending
+            .as_ref()
+            .filter(|command| command.kind.surface() == surface)
+            .map(|command| command.kind.output().clone());
+        if pending_output.is_some() {
+            self.pending = None;
+        }
+        let applied_output = self
+            .applied
+            .iter()
+            .find_map(|(output, applied)| (applied.surface == surface).then(|| output.clone()));
+        if let Some(output) = applied_output.as_ref() {
+            self.applied.remove(output);
+        }
+        let mut visible = pending_output.is_some() || applied_output.is_some();
+        for output in [pending_output.as_ref(), applied_output.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            visible |= self.failures.remove(output).is_some();
+        }
+        Transition {
+            snapshot: self.snapshot(),
+            visible,
+        }
+    }
+
     fn next_kind(&mut self) -> Result<Option<CommandKind>, LifecycleError> {
         if let Some((output, applied)) = self.applied.iter().find(|(output, _)| {
             !self.desired.contains_key(*output) && !self.failures.contains_key(*output)
@@ -640,6 +672,23 @@ mod tests {
         let presented = apply_next(&mut registry);
         assert!(matches!(presented.kind, CommandKind::Present { .. }));
         assert_eq!(created.kind.surface(), presented.kind.surface());
+    }
+
+    #[test]
+    fn compositor_close_recreates_desired_surface_with_fresh_identity() {
+        let mut registry = Registry::default();
+        registry
+            .set_render_update(&plan(&["A"]), &rasterized(vec![raster("A", 1)]))
+            .unwrap();
+        let created = apply_next(&mut registry);
+        let old_surface = created.kind.surface();
+        assert!(registry.surface_closed(old_surface).visible);
+        assert!(registry.snapshot().applied.is_empty());
+        assert!(!registry.surface_closed(old_surface).visible);
+
+        let replacement = apply_next(&mut registry);
+        assert!(matches!(replacement.kind, CommandKind::Create { .. }));
+        assert_ne!(replacement.kind.surface(), old_surface);
     }
 
     #[test]

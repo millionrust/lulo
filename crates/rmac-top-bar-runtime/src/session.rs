@@ -59,17 +59,24 @@ impl Session {
         self.issue_next(changed)
     }
 
-    /// A disconnected host leaves the exact pending platform mutation
-    /// uncertain. Mark it failed and issue nothing else until a new host is
-    /// ready.
+    /// Wayland surfaces cannot survive their owning host. Retire every pending
+    /// and applied physical identity while preserving desired projections.
     pub fn host_stopped(&mut self) -> Transition {
         let mut changed = self.host_ready;
         self.host_ready = false;
-        if let Some(command) = self.registry.snapshot().pending {
-            changed |= self
-                .registry
-                .finish(command.id(), surfaces::CommandResult::Failed)
-                .visible;
+        let snapshot = self.registry.snapshot();
+        let mut physical = snapshot
+            .applied
+            .iter()
+            .map(|applied| applied.surface)
+            .collect::<Vec<_>>();
+        if let Some(command) = snapshot.pending {
+            physical.push(command.kind.surface());
+        }
+        physical.sort_unstable();
+        physical.dedup();
+        for surface in physical {
+            changed |= self.registry.surface_closed(surface).visible;
         }
         Transition {
             snapshot: self.snapshot(),
@@ -206,21 +213,29 @@ mod tests {
     }
 
     #[test]
-    fn host_loss_stops_commands_until_a_new_host_is_ready() {
+    fn host_loss_retires_all_physical_state_until_a_new_host_is_ready() {
         let mut session = ready_session();
-        let pending = session.apply(&update(&["A", "B"], 0)).command.unwrap();
+        let first = session.apply(&update(&["A", "B"], 0)).command.unwrap();
+        let old_surface = first.kind.surface();
+        let pending = session
+            .finish(first.id(), surfaces::CommandResult::Applied)
+            .command
+            .unwrap();
         let stopped = session.host_stopped();
         assert!(stopped.command.is_none());
         assert!(!stopped.snapshot.host_ready);
-        assert_eq!(stopped.snapshot.surfaces.failures.len(), 1);
+        assert!(stopped.snapshot.surfaces.applied.is_empty());
+        assert!(stopped.snapshot.surfaces.pending.is_none());
+        assert!(stopped.snapshot.surfaces.failures.is_empty());
         assert!(
             !session
                 .finish(pending.id(), surfaces::CommandResult::Applied)
                 .changed
         );
 
-        let resumed = session.host_ready();
-        assert_eq!(resumed.command.unwrap().kind.output().0, "B");
+        let replacement = session.host_ready().command.unwrap();
+        assert_eq!(replacement.kind.output().0, "A");
+        assert_ne!(replacement.kind.surface(), old_surface);
     }
 
     #[test]

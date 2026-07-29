@@ -89,27 +89,35 @@ impl Session {
         self.issue_next(transition.visible)
     }
 
-    /// A stopped or disconnected host leaves compositor side effects
-    /// uncertain. Treat its exact pending command as failed rather than
-    /// cancelling it as if no mutation occurred.
+    /// Wayland surfaces cannot survive their owning host. Retire every pending
+    /// and applied physical identity while preserving desired raster state.
     pub fn host_stopped(&mut self) -> Transition {
-        let host_changed = self.host_ready;
+        let mut changed = self.host_ready;
         self.host_ready = false;
-        let Some(command) = self.registry.snapshot().pending else {
-            return Transition {
-                snapshot: self.snapshot(),
-                command: None,
-                changed: host_changed,
-            };
-        };
-        let transition = self
-            .registry
-            .finish(command.id(), surfaces::CommandResult::Failed);
+        let snapshot = self.registry.snapshot();
+        let mut physical = snapshot
+            .applied
+            .iter()
+            .map(|applied| applied.surface)
+            .collect::<Vec<_>>();
+        if let Some(command) = snapshot.pending {
+            physical.push(command.kind.surface());
+        }
+        physical.sort_unstable();
+        physical.dedup();
+        for surface in physical {
+            changed |= self.registry.surface_closed(surface).visible;
+        }
         Transition {
             snapshot: self.snapshot(),
             command: None,
-            changed: host_changed || transition.visible,
+            changed,
         }
+    }
+
+    pub fn surface_closed(&mut self, surface: surfaces::SurfaceId) -> Transition {
+        let transition = self.registry.surface_closed(surface);
+        self.issue_next(transition.visible)
     }
 
     /// Retry one exact output failure. Other outputs remain unaffected.
@@ -285,16 +293,32 @@ mod tests {
     }
 
     #[test]
-    fn host_loss_fails_uncertain_work_and_invalid_updates_preserve_state() {
+    fn host_loss_retires_physical_state_and_invalid_updates_preserve_state() {
         let mut session = ready_session();
-        let pending = session.apply(&render(&[("A", 1), ("B", 1)]));
-        assert!(pending.command.is_some());
+        let first = session
+            .apply(&render(&[("A", 1), ("B", 1)]))
+            .command
+            .unwrap();
+        let old_surface = first.kind.surface();
+        let pending = session
+            .finish(first.id(), surfaces::CommandResult::Applied)
+            .command
+            .unwrap();
         let stopped = session.host_stopped();
         assert!(stopped.command.is_none());
-        assert_eq!(stopped.snapshot.surfaces.failures.len(), 1);
         assert!(!stopped.snapshot.host_ready);
+        assert!(stopped.snapshot.surfaces.applied.is_empty());
+        assert!(stopped.snapshot.surfaces.pending.is_none());
+        assert!(stopped.snapshot.surfaces.failures.is_empty());
+        assert!(
+            !session
+                .finish(pending.id(), surfaces::CommandResult::Applied)
+                .changed
+        );
         let resumed = session.host_ready();
-        assert_eq!(resumed.command.unwrap().kind.output().0, "B");
+        let replacement = resumed.command.as_ref().unwrap();
+        assert_eq!(replacement.kind.output().0, "A");
+        assert_ne!(replacement.kind.surface(), old_surface);
 
         let invalid = Update::Render {
             plan: plan(&["A", "A", "B"]),
@@ -307,7 +331,7 @@ mod tests {
             Some(surfaces::LifecycleError::DuplicatePlanOutput)
         );
         assert_eq!(rejected.snapshot.surfaces.requested_outputs.len(), 2);
-        assert_eq!(rejected.snapshot.surfaces.failures.len(), 1);
+        assert!(rejected.snapshot.surfaces.failures.is_empty());
 
         let health_only = session.apply(&Update::Health(rejected.snapshot.health.clone()));
         assert_eq!(

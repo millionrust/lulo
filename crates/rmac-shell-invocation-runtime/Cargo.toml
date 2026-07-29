@@ -1,5 +1,5 @@
 [package]
-name = "rmac-shell-invocation"
+name = "rmac-shell-invocation-runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,10 +7,9 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-rmac-compositor.workspace = true
-
-[target.'cfg(target_os = "linux")'.dependencies]
 async-channel.workspace = true
 async-io.workspace = true
 futures-util.workspace = true
-wayland-client.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-niri.workspace = true
+rmac-shell-invocation.workspace = true

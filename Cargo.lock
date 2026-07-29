@@ -5550,8 +5550,23 @@ dependencies = [
 name = "rmac-shell-invocation"
 version = "0.1.0"
 dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "futures-util",
  "rmac-compositor",
  "wayland-client",
+]
+
+[[package]]
+name = "rmac-shell-invocation-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "async-io",
+ "futures-util",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-shell-invocation",
 ]
 
 [[package]]

@@ -2,7 +2,13 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
+use std::io;
+use std::os::fd::OwnedFd;
 
+use async_channel::Sender;
+use async_io::Async;
+use futures_util::FutureExt as _;
+use wayland_client::backend::{ReadEventsGuard, WaylandError};
 use wayland_client::protocol::{wl_registry, wl_seat};
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 
@@ -62,6 +68,65 @@ impl Watcher {
             .map_err(Error::Dispatch)?;
         self.state.check_failure()?;
         Ok(self.state.take_latest())
+    }
+
+    fn poll_fd(&mut self) -> Result<OwnedFd, Error> {
+        loop {
+            if let Some(guard) = self.event_queue.prepare_read() {
+                return guard
+                    .connection_fd()
+                    .try_clone_to_owned()
+                    .map_err(Error::Io);
+            }
+            self.dispatch_pending()?;
+        }
+    }
+
+    fn prepare_read(&self) -> Option<ReadEventsGuard> {
+        self.event_queue.prepare_read()
+    }
+
+    fn flush(&self) -> Result<(), Error> {
+        self.event_queue.flush().map_err(Error::Wayland)
+    }
+}
+
+/// Publish complete changed seat inventories using Wayland socket readiness.
+/// The future exits cleanly when its consumer closes and performs no polling.
+pub async fn watch(sender: Sender<SeatInventory>) -> Result<(), Error> {
+    let mut watcher = Watcher::connect()?;
+    let readiness = Async::new(watcher.poll_fd()?).map_err(Error::Io)?;
+    if sender.send(watcher.snapshot().clone()).await.is_err() {
+        return Ok(());
+    }
+
+    loop {
+        if let Some(update) = watcher.dispatch_pending()? {
+            if sender.send(update).await.is_err() {
+                return Ok(());
+            }
+        }
+        let Some(read) = watcher.prepare_read() else {
+            continue;
+        };
+        watcher.flush()?;
+
+        let readable = readiness.readable().fuse();
+        let closed = sender.closed().fuse();
+        futures_util::pin_mut!(readable, closed);
+        futures_util::select! {
+            result = readable => result.map_err(Error::Io)?,
+            _ = closed => return Ok(()),
+        }
+        read_events(read)?;
+    }
+}
+
+fn read_events(read: ReadEventsGuard) -> Result<(), Error> {
+    match read.read() {
+        Ok(_) => Ok(()),
+        Err(WaylandError::Io(error)) if error.kind() == io::ErrorKind::WouldBlock => Ok(()),
+        Err(error) => Err(Error::Wayland(error)),
     }
 }
 
@@ -156,11 +221,24 @@ impl Dispatch<wl_seat::WlSeat, SeatData> for State {
     }
 }
 
-#[derive(Debug)]
 pub enum Error {
     Connect(wayland_client::ConnectError),
     Dispatch(wayland_client::DispatchError),
+    Io(io::Error),
+    Wayland(WaylandError),
     Registry(RegistryError),
+}
+
+impl fmt::Debug for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Connect(_) => "Error::Connect(<redacted>)",
+            Self::Dispatch(_) => "Error::Dispatch(<redacted>)",
+            Self::Io(_) => "Error::Io(<redacted>)",
+            Self::Wayland(_) => "Error::Wayland(<redacted>)",
+            Self::Registry(_) => "Error::Registry(<redacted>)",
+        })
+    }
 }
 
 impl fmt::Display for Error {
@@ -168,6 +246,8 @@ impl fmt::Display for Error {
         match self {
             Self::Connect(_) => formatter.write_str("could not connect to the Wayland compositor"),
             Self::Dispatch(_) => formatter.write_str("could not read Wayland seat events"),
+            Self::Io(_) => formatter.write_str("could not watch the Wayland connection"),
+            Self::Wayland(_) => formatter.write_str("the Wayland connection stopped"),
             Self::Registry(error) => error.fmt(formatter),
         }
     }

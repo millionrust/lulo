@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Settings
+Name[hi]=सेटिंग्स
+GenericName=System Settings
+GenericName[hi]=सिस्टम सेटिंग्स
+Comment=Configure the desktop, devices, and system
+Comment[hi]=डेस्कटॉप, उपकरण और सिस्टम कॉन्फ़िगर करें
+Keywords=settings;preferences;configuration;devices;
+Keywords[hi]=सेटिंग्स;प्राथमिकताएँ;कॉन्फ़िगरेशन;उपकरण;
+TryExec=/usr/bin/rmac-system-settings
+Exec=/usr/bin/rmac-system-settings
+Icon=org.rmac.SystemSettings
+Terminal=false
+Categories=Settings;DesktopSettings;
+StartupWMClass=org.rmac.SystemSettings

@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "rmac-finder"
+name = "rmac-files"
 path = "src/main.rs"
 
 [dependencies]

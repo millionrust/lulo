@@ -495,8 +495,8 @@ fn format_duration(secs: u64) -> String {
     }
 }
 
-/// Path to the persisted visible-columns file.
-fn cols_config_path() -> Result<PathBuf, storage::Failure> {
+/// Current and retired paths to the persisted visible-columns file.
+fn cols_config_paths() -> Result<(PathBuf, PathBuf), storage::Failure> {
     let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
         storage::Failure::message(
             storage::Operation::ResolveConfigPath,
@@ -505,13 +505,16 @@ fn cols_config_path() -> Result<PathBuf, storage::Failure> {
         )
     })?;
     #[cfg(target_os = "macos")]
-    let dir = home.join("Library/Application Support/rmac-activity-monitor");
+    let root = home.join("Library/Application Support");
     #[cfg(not(target_os = "macos"))]
-    let dir = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
-        Some(path) if path.is_absolute() => path.join("rmac-activity-monitor"),
-        _ => home.join(".config/rmac-activity-monitor"),
+    let root = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        _ => home.join(".config"),
     };
-    Ok(dir.join("columns.txt"))
+    Ok((
+        root.join("rmac-system-monitor/columns.txt"),
+        root.join("rmac-activity-monitor/columns.txt"),
+    ))
 }
 
 fn default_visible_cols() -> Vec<ColKey> {
@@ -549,13 +552,15 @@ fn parse_visible_cols(content: &str) -> Result<Vec<ColKey>, String> {
 
 /// Load the visible column set, treating a missing file as first launch.
 fn load_visible_cols() -> Result<Vec<ColKey>, storage::Failure> {
-    let path = cols_config_path()?;
-    match storage::load_optional(&storage::RealStorage, &path)? {
-        Some(content) => parse_visible_cols(&content).map_err(|detail| {
-            storage::Failure::message(storage::Operation::LoadColumns, &path, detail)
-        }),
-        None => Ok(default_visible_cols()),
+    let (path, legacy_path) = cols_config_paths()?;
+    for candidate in [&path, &legacy_path] {
+        if let Some(content) = storage::load_optional(&storage::RealStorage, candidate)? {
+            return parse_visible_cols(&content).map_err(|detail| {
+                storage::Failure::message(storage::Operation::LoadColumns, candidate, detail)
+            });
+        }
     }
+    Ok(default_visible_cols())
 }
 
 fn format_visible_cols(cols: &[ColKey]) -> String {
@@ -566,7 +571,7 @@ fn format_visible_cols(cols: &[ColKey]) -> String {
 }
 
 fn save_visible_cols(cols: &[ColKey]) -> Result<(), storage::Failure> {
-    let path = cols_config_path()?;
+    let (path, _legacy_path) = cols_config_paths()?;
     storage::save(&storage::RealStorage, &path, format_visible_cols(cols))
 }
 
@@ -1742,7 +1747,7 @@ impl Render for MonitorView {
             .v_flex()
             .bg(mac::window())
             .text_color(mac::text())
-            .child(rmac_ui::title_bar("Activity Monitor"))
+            .child(rmac_ui::title_bar("System Monitor"))
             .child(self.render_toolbar(cx))
             .when_some(persistence_error, |monitor, message| {
                 monitor.child(
@@ -1793,8 +1798,8 @@ impl Render for MonitorView {
 
 fn main() {
     rmac_ui::boot_app(
-        rmac_ui::app_id::ACTIVITY_MONITOR,
-        "Activity Monitor",
+        rmac_ui::app_id::SYSTEM_MONITOR,
+        "System Monitor",
         1040.0,
         680.0,
         |window, cx| {

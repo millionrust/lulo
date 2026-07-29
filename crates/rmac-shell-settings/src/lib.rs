@@ -8,9 +8,11 @@ use std::path::{Path, PathBuf};
 use rmac_storage::{Backend, Failure, FileSystem};
 use serde::{Deserialize, Serialize};
 
-const CURRENT_VERSION: u32 = 3;
+const CURRENT_VERSION: u32 = 4;
 const MAX_PINNED_APPS: usize = 128;
 const MAX_SPOTLIGHT_EXCLUSIONS: usize = 128;
+const LEGACY_FILES_APP_ID: &str = "org.rmac.Finder";
+const FILES_APP_ID: &str = "org.rmac.Files";
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -500,10 +502,22 @@ impl<B: Backend> ShellSettingsStore<B> {
                 let stored: StoredSettings = serde_json::from_value(envelope).map_err(|error| {
                     Failure::message(Operation::ParseSettings, path, error.to_string())
                 })?;
-                validate(&stored.settings, path)?;
+                let settings = migrate_application_ids(stored.settings);
+                validate(&settings, path)?;
                 Ok(Some(Loaded {
-                    settings: stored.settings,
+                    settings,
                     migrated_from: Some(2),
+                }))
+            }
+            3 => {
+                let stored: StoredSettings = serde_json::from_value(envelope).map_err(|error| {
+                    Failure::message(Operation::ParseSettings, path, error.to_string())
+                })?;
+                let settings = migrate_application_ids(stored.settings);
+                validate(&settings, path)?;
+                Ok(Some(Loaded {
+                    settings,
+                    migrated_from: Some(3),
                 }))
             }
             version if version == u64::from(CURRENT_VERSION) => {
@@ -520,7 +534,7 @@ impl<B: Backend> ShellSettingsStore<B> {
             other => Err(Failure::message(
                 Operation::ParseSettings,
                 path,
-                format!("unsupported shell settings version {other}; expected 1, 2, or 3"),
+                format!("unsupported shell settings version {other}; expected 1 through 4"),
             )),
         }
     }
@@ -589,7 +603,7 @@ impl<B: Backend> ShellSettingsStore<B> {
 }
 
 fn migrate_v1(legacy: LegacySettings) -> ShellSettings {
-    ShellSettings {
+    migrate_application_ids(ShellSettings {
         pinned_apps: legacy.pinned_apps,
         dock: DockSettings {
             placement: legacy.dock.placement,
@@ -609,7 +623,29 @@ fn migrate_v1(legacy: LegacySettings) -> ShellSettings {
             ..FocusSettings::default()
         },
         ..ShellSettings::default()
-    }
+    })
+}
+
+fn migrate_application_ids(mut settings: ShellSettings) -> ShellSettings {
+    let mut files_origin: Option<bool> = None;
+    settings.pinned_apps.retain_mut(|app| {
+        let legacy = app.0 == LEGACY_FILES_APP_ID;
+        if legacy {
+            app.0 = FILES_APP_ID.into();
+        }
+        if app.0 != FILES_APP_ID {
+            return true;
+        }
+        match files_origin {
+            Some(first_was_legacy) if first_was_legacy != legacy => false,
+            Some(_) => true,
+            None => {
+                files_origin = Some(legacy);
+                true
+            }
+        }
+    });
+    settings
 }
 
 fn validate(settings: &ShellSettings, path: &Path) -> Result<(), Error> {
@@ -792,7 +828,7 @@ mod tests {
     fn settings() -> ShellSettings {
         ShellSettings {
             pinned_apps: vec![
-                AppId("org.rmac.Finder".into()),
+                AppId("org.rmac.Files".into()),
                 AppId("org.rmac.Terminal".into()),
             ],
             dock: DockSettings {
@@ -869,6 +905,10 @@ mod tests {
 
         let snapshot = store.load().unwrap();
         assert_eq!(snapshot.migrated_from, Some(1));
+        assert_eq!(
+            snapshot.settings.pinned_apps,
+            vec![AppId("org.rmac.Files".into())]
+        );
         assert_eq!(snapshot.settings.dock.placement, DockPlacement::Right);
         assert!(snapshot.settings.dock.autohide);
         assert!(!snapshot.settings.dock.magnification);
@@ -879,6 +919,70 @@ mod tests {
         let rewritten: serde_json::Value =
             serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
         assert_eq!(rewritten["version"], CURRENT_VERSION);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn v3_application_identity_is_migrated_without_duplicate_dock_items() {
+        let (root, store) = test_store("v3-application-id");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            store.path(),
+            r#"{
+                "version": 3,
+                "settings": {
+                    "pinned_apps": [
+                        "org.rmac.Terminal",
+                        "org.rmac.Finder",
+                        "org.rmac.Files",
+                        "org.example.Calendar"
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let snapshot = store.load().unwrap();
+        assert_eq!(snapshot.migrated_from, Some(3));
+        assert_eq!(
+            snapshot.settings.pinned_apps,
+            vec![
+                AppId("org.rmac.Terminal".into()),
+                AppId("org.rmac.Files".into()),
+                AppId("org.example.Calendar".into()),
+            ]
+        );
+        let rewritten: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+        assert_eq!(rewritten["version"], CURRENT_VERSION);
+        assert_eq!(
+            rewritten["settings"]["pinned_apps"],
+            serde_json::json!([
+                "org.rmac.Terminal",
+                "org.rmac.Files",
+                "org.example.Calendar"
+            ])
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn v3_migration_does_not_hide_unrelated_duplicate_ids() {
+        let (root, store) = test_store("v3-duplicate");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            store.path(),
+            r#"{
+                "version": 3,
+                "settings": {
+                    "pinned_apps": ["org.rmac.Terminal", "org.rmac.Terminal"]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let error = store.load().unwrap_err();
+        assert_eq!(error.operation, Operation::ValidateSettings);
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Files
+Name[hi]=फ़ाइलें
+GenericName=File Manager
+GenericName[hi]=फ़ाइल प्रबंधक
+Comment=Browse and organize files and folders
+Comment[hi]=फ़ाइलें और फ़ोल्डर देखें और व्यवस्थित करें
+Keywords=files;folders;storage;browse;
+Keywords[hi]=फ़ाइलें;फ़ोल्डर;स्टोरेज;ब्राउज़;
+TryExec=/usr/bin/rmac-files
+Exec=/usr/bin/rmac-files
+Icon=org.rmac.Files
+Terminal=false
+Categories=System;FileTools;FileManager;
+StartupWMClass=org.rmac.Files

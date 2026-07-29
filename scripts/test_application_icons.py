@@ -11,11 +11,11 @@ import xml.etree.ElementTree as ET
 
 ICON_DIR = Path(__file__).parents[1] / "packaging/rmac-apps/icons"
 IDENTITIES = (
-    "org.rmac.Finder",
+    "org.rmac.Files",
     "org.rmac.Terminal",
     "org.rmac.Notes",
     "org.rmac.TextEditor",
-    "org.rmac.ActivityMonitor",
+    "org.rmac.SystemMonitor",
     "org.rmac.AppDrawer",
     "org.rmac.SystemSettings",
 )

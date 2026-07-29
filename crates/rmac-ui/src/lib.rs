@@ -36,11 +36,11 @@ pub use feedback::{EmptyState, Progress, ProgressStatus, Toast, ToastKind, Toolt
 /// Stable Linux desktop identities. Each value matches its installed desktop
 /// file ID (without `.desktop`) and the Wayland toplevel `app_id`.
 pub mod app_id {
-    pub const FINDER: &str = "org.rmac.Finder";
+    pub const FILES: &str = "org.rmac.Files";
     pub const TERMINAL: &str = "org.rmac.Terminal";
     pub const NOTES: &str = "org.rmac.Notes";
     pub const TEXT_EDITOR: &str = "org.rmac.TextEditor";
-    pub const ACTIVITY_MONITOR: &str = "org.rmac.ActivityMonitor";
+    pub const SYSTEM_MONITOR: &str = "org.rmac.SystemMonitor";
     pub const APP_DRAWER: &str = "org.rmac.AppDrawer";
     pub const SYSTEM_SETTINGS: &str = "org.rmac.SystemSettings";
 }
@@ -515,11 +515,11 @@ mod tests {
     #[test]
     fn application_ids_are_unique_reverse_domain_desktop_ids() {
         let identities = [
-            app_id::FINDER,
+            app_id::FILES,
             app_id::TERMINAL,
             app_id::NOTES,
             app_id::TEXT_EDITOR,
-            app_id::ACTIVITY_MONITOR,
+            app_id::SYSTEM_MONITOR,
             app_id::APP_DRAWER,
             app_id::SYSTEM_SETTINGS,
         ];
@@ -542,8 +542,8 @@ mod tests {
             Some(app_id::TEXT_EDITOR.to_owned())
         );
         assert_eq!(
-            window_options_unified_for_app(app_id::FINDER, 800.0, 600.0).app_id,
-            Some(app_id::FINDER.to_owned())
+            window_options_unified_for_app(app_id::FILES, 800.0, 600.0).app_id,
+            Some(app_id::FILES.to_owned())
         );
     }
 }

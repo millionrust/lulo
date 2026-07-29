@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Notes
+Name[hi]=नोट्स
+GenericName=Note Taking
+GenericName[hi]=नोट लिखना
+Comment=Write and organize private local notes
+Comment[hi]=निजी स्थानीय नोट लिखें और व्यवस्थित करें
+Keywords=notes;writing;lists;organize;
+Keywords[hi]=नोट्स;लेखन;सूचियाँ;व्यवस्थित;
+TryExec=/usr/bin/rmac-notes
+Exec=/usr/bin/rmac-notes
+Icon=org.rmac.Notes
+Terminal=false
+Categories=Office;
+StartupWMClass=org.rmac.Notes

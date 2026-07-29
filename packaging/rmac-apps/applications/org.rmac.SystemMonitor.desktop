@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=System Monitor
+Name[hi]=सिस्टम मॉनिटर
+GenericName=Process Viewer
+GenericName[hi]=प्रक्रिया दर्शक
+Comment=Inspect processes and system resource use
+Comment[hi]=प्रक्रियाओं और सिस्टम संसाधनों के उपयोग की जाँच करें
+Keywords=process;cpu;memory;disk;network;
+Keywords[hi]=प्रक्रिया;सीपीयू;मेमोरी;डिस्क;नेटवर्क;
+TryExec=/usr/bin/rmac-system-monitor
+Exec=/usr/bin/rmac-system-monitor
+Icon=org.rmac.SystemMonitor
+Terminal=false
+Categories=System;Monitor;
+StartupWMClass=org.rmac.SystemMonitor

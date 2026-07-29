@@ -7,7 +7,7 @@ platform command code.
 
 ## Schema ownership
 
-The current v3 document stores:
+The current v4 document stores:
 
 - ordered, unique desktop application IDs pinned to the Dock;
 - Dock edge, all/primary/named-output scope, autohide, magnification and scale,
@@ -52,9 +52,12 @@ failure details.
 
 The v1 migration preserves pinned apps, Dock edge/autohide/magnification,
 wallpaper source, and selected Focus mode. The v2 migration adds Spotlight
-scope defaults. Both validate the result and immediately rewrite primary and
-last-known-good documents as v3. Unknown fields in the current version are
-tolerated; unknown document versions are rejected rather than guessed.
+scope defaults. The v3-to-v4 migration replaces rmac's retired
+`org.rmac.Finder` identity with `org.rmac.Files`, preserving Dock order and
+collapsing an old/new alias pair into one logical item. Every migration
+validates the result and immediately rewrites primary and last-known-good
+documents as v4. Unknown fields in the current version are tolerated; unknown
+document versions are rejected rather than guessed.
 
 Validation rejects duplicate/empty/control-character IDs, more than 128 pinned
 apps, invalid named outputs or remote/relative wallpaper sources, non-finite or
@@ -94,6 +97,7 @@ and are then checked again by store validation. External document replacements
 are resampled by the shared watcher; the pane never treats a toggle as proof
 that a provider runtime has applied it.
 
-Tests cover v3 round trips, v1/v2 migration/rewrite, unknown fields and versions,
-corrupt-primary recovery, validation, watcher filtering, and injected primary
-write failure with last-known-good rollback.
+Tests cover v4 round trips, v1/v2/v3 migration/rewrite, the application-identity
+alias, unknown fields and versions, corrupt-primary recovery, validation,
+watcher filtering, and injected primary write failure with last-known-good
+rollback.

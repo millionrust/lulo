@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Text Editor
+Name[hi]=पाठ संपादक
+GenericName=Text Editor
+GenericName[hi]=पाठ संपादक
+Comment=Create and edit plain text documents
+Comment[hi]=सादा पाठ दस्तावेज़ बनाएँ और संपादित करें
+Keywords=text;editor;document;markdown;
+Keywords[hi]=पाठ;संपादक;दस्तावेज़;मार्कडाउन;
+TryExec=/usr/bin/rmac-text-editor
+Exec=/usr/bin/rmac-text-editor %F
+Icon=org.rmac.TextEditor
+Terminal=false
+Categories=Utility;TextEditor;
+MimeType=text/plain;text/markdown;text/x-markdown;text/rtf;application/rtf;
+StartupWMClass=org.rmac.TextEditor
+Actions=NewDocument;
+
+[Desktop Action NewDocument]
+Name=New Document
+Name[hi]=नया दस्तावेज़
+Exec=/usr/bin/rmac-text-editor --new-document

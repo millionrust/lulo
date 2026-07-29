@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Applications
+Name[hi]=अनुप्रयोग
+GenericName=Application Launcher
+GenericName[hi]=अनुप्रयोग लॉन्चर
+Comment=Browse and launch installed applications
+Comment[hi]=इंस्टॉल किए गए अनुप्रयोग देखें और चलाएँ
+Keywords=applications;apps;launcher;programs;
+Keywords[hi]=अनुप्रयोग;ऐप्स;लॉन्चर;प्रोग्राम;
+TryExec=/usr/bin/rmac-app-drawer
+Exec=/usr/bin/rmac-app-drawer
+Icon=org.rmac.AppDrawer
+Terminal=false
+Categories=System;
+StartupWMClass=org.rmac.AppDrawer
+NoDisplay=true

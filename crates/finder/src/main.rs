@@ -2805,7 +2805,7 @@ fn date_label(t: SystemTime) -> String {
 
 fn main() {
     rmac_ui::boot_unified_app_with_assets(
-        rmac_ui::app_id::FINDER,
+        rmac_ui::app_id::FILES,
         CombinedAssets,
         1100.0,
         720.0,

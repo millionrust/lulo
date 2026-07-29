@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.SystemMonitor</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>System Monitor</name>
+  <name xml:lang="hi">सिस्टम मॉनिटर</name>
+  <summary>Inspect processes and system resource use</summary>
+  <summary xml:lang="hi">प्रक्रियाओं और सिस्टम संसाधनों के उपयोग की जाँच करें</summary>
+  <description>
+    <p>System Monitor presents live process, processor, memory, disk, and network information in a sortable native view.</p>
+    <p>Process actions retain Linux permission boundaries and require explicit confirmation for destructive requests.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.SystemMonitor.desktop</launchable>
+  <icon type="stock">org.rmac.SystemMonitor</icon>
+  <provides><binary>rmac-system-monitor</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "rmac-activity-monitor"
+name = "rmac-system-monitor"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,0 +1,99 @@
+# rmac application metadata translations.
+# SPDX-License-Identifier: MIT
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: rmac 0.1.0\n"
+"Report-Msgid-Bugs-To: https://github.com/snehacodex/rmac/issues\n"
+"POT-Creation-Date: 2026-07-29 00:00+0530\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Files"
+msgstr ""
+
+msgid "File Manager"
+msgstr ""
+
+msgid "Browse and organize files and folders"
+msgstr ""
+
+msgid "files;folders;storage;browse;"
+msgstr ""
+
+msgid "Terminal"
+msgstr ""
+
+msgid "Terminal Emulator"
+msgstr ""
+
+msgid "Use the command line in a native terminal"
+msgstr ""
+
+msgid "shell;prompt;command;console;"
+msgstr ""
+
+msgid "Notes"
+msgstr ""
+
+msgid "Note Taking"
+msgstr ""
+
+msgid "Write and organize private local notes"
+msgstr ""
+
+msgid "notes;writing;lists;organize;"
+msgstr ""
+
+msgid "Text Editor"
+msgstr ""
+
+msgid "Create and edit plain text documents"
+msgstr ""
+
+msgid "text;editor;document;markdown;"
+msgstr ""
+
+msgid "New Document"
+msgstr ""
+
+msgid "System Monitor"
+msgstr ""
+
+msgid "Process Viewer"
+msgstr ""
+
+msgid "Inspect processes and system resource use"
+msgstr ""
+
+msgid "process;cpu;memory;disk;network;"
+msgstr ""
+
+msgid "Applications"
+msgstr ""
+
+msgid "Application Launcher"
+msgstr ""
+
+msgid "Browse and launch installed applications"
+msgstr ""
+
+msgid "applications;apps;launcher;programs;"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "System Settings"
+msgstr ""
+
+msgid "Configure the desktop, devices, and system"
+msgstr ""
+
+msgid "settings;preferences;configuration;devices;"
+msgstr ""

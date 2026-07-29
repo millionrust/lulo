@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Terminal
+Name[hi]=टर्मिनल
+GenericName=Terminal Emulator
+GenericName[hi]=टर्मिनल एमुलेटर
+Comment=Use the command line in a native terminal
+Comment[hi]=मूल टर्मिनल में कमांड लाइन का उपयोग करें
+Keywords=shell;prompt;command;console;
+Keywords[hi]=शेल;प्रॉम्प्ट;कमांड;कंसोल;
+TryExec=/usr/bin/rmac-terminal
+Exec=/usr/bin/rmac-terminal
+Icon=org.rmac.Terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupWMClass=org.rmac.Terminal

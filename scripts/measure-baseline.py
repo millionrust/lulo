@@ -18,13 +18,13 @@ import time
 
 
 APPS = (
-    ("Activity Monitor", "rmac-activity-monitor"),
-    ("App Drawer", "rmac-app-drawer"),
-    ("Finder", "rmac-finder"),
-    ("Notes", "rmac-notes"),
-    ("System Settings", "rmac-system-settings"),
-    ("Terminal", "rmac-terminal"),
-    ("Text Editor", "rmac-text-editor"),
+    ("System Monitor", "rmac-activity-monitor", "rmac-system-monitor"),
+    ("App Drawer", "rmac-app-drawer", "rmac-app-drawer"),
+    ("Files", "rmac-finder", "rmac-files"),
+    ("Notes", "rmac-notes", "rmac-notes"),
+    ("System Settings", "rmac-system-settings", "rmac-system-settings"),
+    ("Terminal", "rmac-terminal", "rmac-terminal"),
+    ("Text Editor", "rmac-text-editor", "rmac-text-editor"),
 )
 READY_FILE_ENV = "RMAC_BENCHMARK_READY_FILE"
 
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--package",
         action="append",
-        choices=[package for _, package in APPS],
+        choices=[package for _, package, _ in APPS],
         dest="packages",
         help="measure only this package; may be repeated",
     )
@@ -58,9 +58,9 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def build_apps(repo: Path, apps: tuple[tuple[str, str], ...]) -> None:
+def build_apps(repo: Path, apps: tuple[tuple[str, str, str], ...]) -> None:
     command = ["cargo", "build", "--release", "--locked"]
-    for _, package in apps:
+    for _, package, _ in apps:
         command.extend(("--package", package))
     subprocess.run(command, cwd=repo, check=True)
 
@@ -250,18 +250,18 @@ def main() -> int:
             "settle_seconds": args.settle_seconds,
             "idle_seconds": args.idle_seconds,
             "startup_timeout": args.startup_timeout,
-            "packages": [package for _, package in apps],
+            "packages": [package for _, package, _ in apps],
         },
         "applications": {},
     }
 
     with tempfile.TemporaryDirectory(prefix="rmac-baseline-") as directory:
         temp_root = Path(directory)
-        for display_name, package in apps:
+        for display_name, package, executable in apps:
             print(f"Measuring {display_name}...", flush=True)
             app_temp = temp_root / package
             app_temp.mkdir()
-            binary = repo / "target" / "release" / package
+            binary = repo / "target" / "release" / executable
             if not binary.is_file():
                 raise FileNotFoundError(f"release binary not found: {binary}")
             results["applications"][package] = {

@@ -21,6 +21,13 @@ pub enum LocaleHourCycle {
 pub struct ClockLabel {
     pub visible: String,
     pub accessible: String,
+    pub activation: PanelTarget,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PanelTarget {
+    QuickSettings,
+    NotificationCenter,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,8 +41,23 @@ pub enum IndicatorKind {
     Notifications,
 }
 
+impl IndicatorKind {
+    pub const fn panel_target(self) -> PanelTarget {
+        match self {
+            Self::Notifications => PanelTarget::NotificationCenter,
+            Self::Focus
+            | Self::Vpn
+            | Self::Network
+            | Self::Bluetooth
+            | Self::Sound
+            | Self::Battery => PanelTarget::QuickSettings,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BuiltinIcon {
+    System,
     Focus,
     Vpn,
     Network,
@@ -46,7 +68,8 @@ pub enum BuiltinIcon {
 }
 
 impl BuiltinIcon {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
+        Self::System,
         Self::Focus,
         Self::Vpn,
         Self::Network,
@@ -60,6 +83,7 @@ impl BuiltinIcon {
     /// `currentColor` from the effective top-bar theme.
     pub fn svg(self) -> &'static str {
         match self {
+            Self::System => include_str!("../assets/icons/system.svg"),
             Self::Focus => include_str!("../assets/icons/focus.svg"),
             Self::Vpn => include_str!("../assets/icons/vpn.svg"),
             Self::Network => include_str!("../assets/icons/network.svg"),
@@ -85,10 +109,26 @@ impl From<IndicatorKind> for BuiltinIcon {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SystemMark {
+    pub icon: BuiltinIcon,
+    pub accessible: &'static str,
+}
+
+impl Default for SystemMark {
+    fn default() -> Self {
+        Self {
+            icon: BuiltinIcon::System,
+            accessible: "rmac desktop",
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct IndicatorLabel {
     pub kind: IndicatorKind,
     pub icon: BuiltinIcon,
+    pub activation: PanelTarget,
     pub visible: String,
     pub accessible: String,
     pub urgent: bool,
@@ -100,6 +140,7 @@ impl fmt::Debug for IndicatorLabel {
             .debug_struct("IndicatorLabel")
             .field("kind", &self.kind)
             .field("icon", &self.icon)
+            .field("activation", &self.activation)
             .field("visible", &"<redacted>")
             .field("accessible", &"<redacted>")
             .field("urgent", &self.urgent)
@@ -119,6 +160,7 @@ pub struct Surface {
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Content {
+    pub system_mark: SystemMark,
     pub active_app: String,
     pub workspace: Option<String>,
     pub clock: ClockLabel,
@@ -129,6 +171,7 @@ impl fmt::Debug for Content {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Content")
+            .field("system_mark", &self.system_mark)
             .field("active_app", &"<redacted>")
             .field("workspace", &self.workspace.as_ref().map(|_| "<redacted>"))
             .field("clock", &"<redacted>")
@@ -208,6 +251,7 @@ pub fn project(
     Projection {
         surfaces,
         content: Content {
+            system_mark: SystemMark::default(),
             active_app: active_app_name(status),
             workspace: status
                 .clock
@@ -267,6 +311,7 @@ pub fn clock_label(
                 "%A, %B %-d, %Y, %-I:%M %p"
             })
             .to_string(),
+        activation: PanelTarget::NotificationCenter,
     }
 }
 
@@ -297,6 +342,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Focus,
             icon: IndicatorKind::Focus.into(),
+            activation: IndicatorKind::Focus.panel_target(),
             visible: "Focus".into(),
             accessible: format!("Focus enabled: {mode}"),
             urgent: false,
@@ -321,6 +367,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Vpn,
             icon: IndicatorKind::Vpn.into(),
+            activation: IndicatorKind::Vpn.panel_target(),
             visible: "VPN".into(),
             accessible: if names.is_empty() {
                 "VPN connecting".into()
@@ -338,6 +385,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Network,
             icon: IndicatorKind::Network.into(),
+            activation: IndicatorKind::Network.panel_target(),
             visible: "Wi-Fi".into(),
             accessible: format!("Wi-Fi {}{strength}", network_state_label(network.state)),
             urgent: false,
@@ -347,6 +395,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Bluetooth,
             icon: IndicatorKind::Bluetooth.into(),
+            activation: IndicatorKind::Bluetooth.panel_target(),
             visible: "Bluetooth".into(),
             accessible: if !bluetooth.available {
                 "Bluetooth unavailable".into()
@@ -370,6 +419,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Sound,
             icon: IndicatorKind::Sound.into(),
+            activation: IndicatorKind::Sound.panel_target(),
             visible: if !sound.available {
                 "Sound".into()
             } else if sound.muted {
@@ -392,6 +442,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Battery,
             icon: IndicatorKind::Battery.into(),
+            activation: IndicatorKind::Battery.panel_target(),
             visible: if snapshot.show_battery_percentage {
                 percentage.clone()
             } else {
@@ -408,6 +459,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Notifications,
             icon: IndicatorKind::Notifications.into(),
+            activation: IndicatorKind::Notifications.panel_target(),
             visible: if notifications.unread_count > 99 {
                 "99+".into()
             } else {
@@ -507,6 +559,7 @@ mod tests {
         let twelve = clock_label(now(), &settings, LocaleHourCycle::TwelveHour);
         assert_eq!(twelve.visible, "Sun Jul 19  9:07 PM");
         assert!(twelve.accessible.contains("9:07 PM"));
+        assert_eq!(twelve.activation, PanelTarget::NotificationCenter);
 
         settings.format = rmac_shell_settings::ClockFormat::TwentyFourHour;
         settings.show_date = false;
@@ -531,6 +584,8 @@ mod tests {
         status.focused.workspace_label = Some("Build".repeat(20));
         status.clock.show_workspace = true;
         let content = project(&status, now(), LocaleHourCycle::TwelveHour).content;
+        assert_eq!(content.system_mark.icon, BuiltinIcon::System);
+        assert_eq!(content.system_mark.accessible, "rmac desktop");
         assert_eq!(content.active_app, "Finder");
         assert!(
             content.workspace.as_ref().unwrap().chars().count() <= MAX_WORKSPACE_CHARACTERS + 1
@@ -571,11 +626,15 @@ mod tests {
         assert!(labels
             .iter()
             .all(|label| label.icon == BuiltinIcon::from(label.kind)));
+        assert!(labels[..3]
+            .iter()
+            .all(|label| label.activation == PanelTarget::QuickSettings));
+        assert_eq!(labels[3].activation, PanelTarget::NotificationCenter);
         assert!(!format!("{labels:?}").contains("Private SSID"));
     }
 
     #[test]
-    fn original_indicator_assets_are_embedded_tintable_and_unique() {
+    fn original_top_bar_assets_are_embedded_tintable_and_unique() {
         let mut assets = BTreeSet::new();
         for icon in BuiltinIcon::ALL {
             let svg = icon.svg();

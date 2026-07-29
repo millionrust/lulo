@@ -165,6 +165,10 @@ measured Unicode/resident/idle/active performance.
   movement into Terminal's own find control does not.
 - `rmac-storage` owns the atomic local profile preference under
   `$XDG_CONFIG_HOME/rmac-terminal` or the documented platform fallback.
+- `profiles` owns the stable built-in profile catalog, legacy numeric migration,
+  persisted-name parsing, load/save boundary, and render-pass palette
+  activation. The view retains only the selected profile index and picker
+  interaction; it cannot invent another persistence format or palette fallback.
 
 Terminal does not scrape shell output to infer commands, working directories,
 or job names. Rich tab titles and command-aware close text require a reviewed
@@ -304,6 +308,9 @@ Unit and contract tests cover input encoding, resize arithmetic and bounds,
 selection extraction, child state transitions, foreground-job classification,
 guarded close decisions, bracketed/unbracketed paste construction and review,
 embedded-marker/control rejection, persistence failures, and redraw coalescing.
+Profile contract tests keep every stable name and legacy numeric index
+loadable, reject empty/unknown/out-of-range preferences, and keep the default
+fallback explicit.
 Keyboard mode transitions, navigation/function modifier sequences, control/
 Unicode/Meta input, platform-shortcut suppression, and enhanced-mode
 non-advertisement are checked directly. Aggregate grid-budget tests cover every

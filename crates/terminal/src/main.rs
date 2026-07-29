@@ -5,11 +5,11 @@
 //! background thread reads PTY output and feeds the parser; model changes wake
 //! the view, which renders the grid and writes keystrokes back to the PTY.
 
+mod profiles;
 mod storage;
 
 use std::io::{Read, Write};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     mpsc::{sync_channel, SyncSender},
@@ -34,6 +34,7 @@ use gpui_component::StyledExt as _;
 use portable_pty::{
     native_pty_system, Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
 };
+use profiles::{active, load as load_profile, save as save_profile, PROFILES};
 use rmac_ui::{Button, InputState, SearchField};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor, Processor};
@@ -97,119 +98,6 @@ const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 const FOCUS_IN_REPORT: &[u8] = b"\x1b[I";
 const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
-
-/// A macOS Terminal–style color profile: window chrome + 16-color ANSI palette.
-#[derive(Clone, Copy)]
-struct Profile {
-    name: &'static str,
-    bg: u32,
-    fg: u32,
-    cursor: u32,
-    selection: u32,
-    /// ANSI colors: indices 0-7 normal, 8-15 bright.
-    ansi: [u32; 16],
-}
-
-/// Classic macOS Terminal.app ANSI palette (Basic profile colors).
-const MAC_ANSI: [u32; 16] = [
-    0x000000, 0x990000, 0x00a600, 0x999900, 0x0000b2, 0xb200b2, 0x00a6b2, 0xbfbfbf, 0x666666,
-    0xe50000, 0x00d900, 0xe5e500, 0x0000ff, 0xe500e5, 0x00e5e5, 0xe5e5e5,
-];
-
-/// One Dark ANSI palette (the rmac default look).
-const ONE_DARK: [u32; 16] = [
-    0x282c34, 0xe06c75, 0x98c379, 0xe5c07b, 0x61afef, 0xc678dd, 0x56b6c2, 0xabb2bf, 0x5c6370,
-    0xe06c75, 0x98c379, 0xe5c07b, 0x61afef, 0xc678dd, 0x56b6c2, 0xffffff,
-];
-
-/// Built-in profiles mirroring macOS Terminal.app presets. Index 0 is the
-/// rmac default (a dark One Dark variant); the rest match Terminal.app.
-static PROFILES: &[Profile] = &[
-    Profile {
-        name: "rmac Dark",
-        bg: 0x1e1e1e,
-        fg: 0xd4d4d4,
-        cursor: 0xd4d4d4,
-        selection: 0x2f5d8c,
-        ansi: ONE_DARK,
-    },
-    Profile {
-        name: "Basic",
-        bg: 0xffffff,
-        fg: 0x000000,
-        cursor: 0x000000,
-        selection: 0xb4d5fe,
-        ansi: MAC_ANSI,
-    },
-    Profile {
-        name: "Pro",
-        bg: 0x000000,
-        fg: 0xf2f2f2,
-        cursor: 0x4d4d4d,
-        selection: 0x414141,
-        ansi: MAC_ANSI,
-    },
-    Profile {
-        name: "Homebrew",
-        bg: 0x000000,
-        fg: 0x00ff00,
-        cursor: 0x23ff18,
-        selection: 0x083905,
-        ansi: MAC_ANSI,
-    },
-    Profile {
-        name: "Grass",
-        bg: 0x13773d,
-        fg: 0xfff0a5,
-        cursor: 0x8c1543,
-        selection: 0x004d00,
-        ansi: MAC_ANSI,
-    },
-    Profile {
-        name: "Man Page",
-        bg: 0xfef49c,
-        fg: 0x000000,
-        cursor: 0x7f7f7f,
-        selection: 0xa3d7ff,
-        ansi: MAC_ANSI,
-    },
-    Profile {
-        name: "Novel",
-        bg: 0xdfdbc3,
-        fg: 0x3b2322,
-        cursor: 0x73635a,
-        selection: 0xa4a390,
-        ansi: MAC_ANSI,
-    },
-    Profile {
-        name: "Ocean",
-        bg: 0x224fbc,
-        fg: 0xffffff,
-        cursor: 0x7f7f7f,
-        selection: 0x216dff,
-        ansi: MAC_ANSI,
-    },
-    Profile {
-        name: "Red Sands",
-        bg: 0x7a251e,
-        fg: 0xd7c9a7,
-        cursor: 0xffffff,
-        selection: 0xa4a390,
-        ansi: MAC_ANSI,
-    },
-];
-
-thread_local! {
-    /// The profile in effect for the current render pass, set at the top of
-    /// `render()` so the free color functions (`conv`/`named`/`indexed`) resolve
-    /// against the active palette without threading state through every call.
-    static ACTIVE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-fn active() -> &'static Profile {
-    let i = ACTIVE.with(|a| a.get());
-    PROFILES.get(i).unwrap_or(&PROFILES[0])
-}
 
 gpui::actions!(
     terminal,
@@ -1748,63 +1636,6 @@ struct TerminalView {
     pending_paste: Option<PendingPaste>,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<Point<Pixels>>,
-}
-
-/// Path to the persisted stable profile-name file.
-fn profile_config_path() -> Result<PathBuf, storage::Failure> {
-    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
-        storage::Failure::message(
-            storage::Operation::ResolveConfigPath,
-            Path::new("profile.txt"),
-            "HOME is not set",
-        )
-    })?;
-    #[cfg(target_os = "macos")]
-    let dir = home.join("Library/Application Support/rmac-terminal");
-    #[cfg(not(target_os = "macos"))]
-    let dir = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
-        Some(path) if path.is_absolute() => path.join("rmac-terminal"),
-        _ => home.join(".config/rmac-terminal"),
-    };
-    Ok(dir.join("profile.txt"))
-}
-
-fn parse_profile(content: &str) -> Result<(usize, bool), String> {
-    let value = content.trim();
-    if value.is_empty() {
-        return Err("profile preference is empty".into());
-    }
-    if let Some(index) = PROFILES.iter().position(|profile| profile.name == value) {
-        return Ok((index, false));
-    }
-    if let Ok(index) = value.parse::<usize>() {
-        return (index < PROFILES.len())
-            .then_some((index, true))
-            .ok_or_else(|| format!("legacy profile index {index} is out of range"));
-    }
-    Err(format!("unknown terminal profile '{value}'"))
-}
-
-fn load_profile() -> Result<(usize, bool), storage::Failure> {
-    let path = profile_config_path()?;
-    match storage::load_optional(&storage::RealStorage, &path)? {
-        Some(content) => parse_profile(&content).map_err(|detail| {
-            storage::Failure::message(storage::Operation::LoadProfile, &path, detail)
-        }),
-        None => Ok((0, false)),
-    }
-}
-
-fn save_profile(index: usize) -> Result<(), storage::Failure> {
-    let path = profile_config_path()?;
-    let profile = PROFILES.get(index).ok_or_else(|| {
-        storage::Failure::message(
-            storage::Operation::SaveProfile,
-            &path,
-            format!("profile index {index} is out of range"),
-        )
-    })?;
-    storage::save(&storage::RealStorage, &path, profile.name)
 }
 
 impl TerminalView {
@@ -3420,7 +3251,7 @@ impl EntityInputHandler for TerminalView {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        ACTIVE.with(|a| a.set(self.profile));
+        profiles::set_active(self.profile);
         self.resize_to(window);
         let raw_query = self.search.read(cx).value().to_string();
         let bounded_query = bounded_search_query(&raw_query);
@@ -4044,21 +3875,6 @@ mod tests {
         assert_eq!(shell_program(None), "/bin/sh");
         assert_eq!(shell_program(Some("  ".to_string())), "/bin/sh");
         assert_eq!(shell_program(Some("/bin/fish".to_string())), "/bin/fish");
-    }
-
-    #[test]
-    fn stable_profile_names_and_legacy_indices_are_supported() {
-        for (index, profile) in PROFILES.iter().enumerate() {
-            assert_eq!(parse_profile(profile.name), Ok((index, false)));
-            assert_eq!(parse_profile(&index.to_string()), Ok((index, true)));
-        }
-    }
-
-    #[test]
-    fn malformed_or_unknown_profiles_are_reported() {
-        assert!(parse_profile("").is_err());
-        assert!(parse_profile("Not a Profile").is_err());
-        assert!(parse_profile(&PROFILES.len().to_string()).is_err());
     }
 
     #[test]

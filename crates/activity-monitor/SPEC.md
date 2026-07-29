@@ -1,7 +1,7 @@
-# Activity Monitor application specification
+# System Monitor application specification
 
 This file describes the behavior currently implemented by
-`rmac-activity-monitor`. Metrics are shown only when backed by the local system;
+`rmac-system-monitor`. Metrics are shown only when backed by the local system;
 the application does not fabricate unavailable per-process data.
 
 ## Core journeys
@@ -12,7 +12,8 @@ the application does not fabricate unavailable per-process data.
   system-wide network-interface counters.
 - Choose visible process columns and retain that preference locally.
 - Inspect a selected process, request Quit or Force Quit, review the exact PID
-  and process name in a confirmation dialog, then confirm or cancel.
+  and process name in a confirmation dialog, then confirm or cancel. Confirmation
+  revalidates the PID, start time, and name before sending any signal.
 
 ## Platform authorities
 
@@ -31,9 +32,11 @@ the application does not fabricate unavailable per-process data.
 - The selected PID is retained separately from the visible row index so a
   refresh cannot silently retarget a process action.
 - Column-preference load/save failures appear in the visible error banner.
-- Process disappearance, unsupported signals, permissions, and signal failure
-  must not be reported as confirmed process termination; richer result feedback
-  remains a hardening requirement.
+- Process disappearance, PID reuse, unsupported signals, permission rejection,
+  and signal failure produce distinct visible results. A successful system call
+  is described only as signal delivery, never as proof that the process exited.
+- A targeted confirmation-time refresh cannot add a synthetic history sample or
+  disturb the two-second delta cadence. History retains exactly 60 samples.
 
 ## Keyboard map
 
@@ -49,8 +52,8 @@ the application does not fabricate unavailable per-process data.
   their corresponding sampled data.
 - Selection, sorting, filtering, column chooser, inspector, confirmation,
   empty/unavailable data, and persistence-error states are visually distinct.
-- All Activity Monitor labels, metrics, tables, inspector text, and banners
+- All System Monitor labels, metrics, tables, inspector text, and banners
   follow rmac's bounded 100%, 115%, and 130% application text preference.
-- Linux clipping evidence, full keyboard traversal, accessible table semantics,
-  roles/names/states/actions, announcements, and Orca evidence remain required
-  by roadmap items G4 and I3.
+- Linux clipping and signal evidence, full keyboard traversal, accessible table
+  semantics, roles/names/states/actions, live announcements, measured active
+  refresh budget, and Orca evidence remain required by roadmap items G5 and I3.

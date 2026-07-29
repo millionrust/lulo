@@ -1,10 +1,11 @@
-//! rmac Activity Monitor — a fast, native, GPU-rendered process monitor.
+//! rmac System Monitor — a fast, native, GPU-rendered process monitor.
 //!
 //! Phase 1 of the rmac desktop suite. Built on GPUI + gpui-component, with
 //! `sysinfo` as the data layer. Runs on macOS today (Metal) and targets
 //! Ubuntu/Wayland (Vulkan) later — the same binary, no webview, instant launch.
 
 mod cpu_ticks;
+mod process_action;
 mod storage;
 
 use std::cmp::Ordering;
@@ -206,14 +207,6 @@ impl ColKey {
     }
 }
 
-/// A pending Quit / Force Quit awaiting user confirmation.
-#[derive(Clone)]
-struct PendingKill {
-    pid: u32,
-    name: SharedString,
-    force: bool,
-}
-
 /// One row in the process table — a flat snapshot, cheap to clone/diff.
 #[derive(Clone)]
 struct ProcRow {
@@ -237,6 +230,8 @@ struct ProcRow {
     vmem: u64,
     /// Wall-clock run time in seconds since the process started.
     run_time: u64,
+    /// Process start time binds destructive actions across PID reuse.
+    start_time: u64,
     /// Process status (Running / Sleeping / …), for sorting + display.
     status: SharedString,
 }
@@ -385,6 +380,7 @@ impl ProcessTableDelegate {
                     user,
                     vmem: p.virtual_memory(),
                     run_time: p.run_time(),
+                    start_time: p.start_time(),
                     status: SharedString::from(p.status().to_string()),
                 }
             })
@@ -446,19 +442,15 @@ fn resync_selection(
     state: &mut TableState<ProcessTableDelegate>,
     cx: &mut Context<TableState<ProcessTableDelegate>>,
 ) {
-    let (visible_ix, gone) = {
+    let (visible_ix, retained_pid) = {
         let d = state.delegate();
-        match d.selected_pid {
-            Some(pid) => (
-                d.rows.iter().position(|r| r.pid == pid),
-                !d.all_rows.iter().any(|r| r.pid == pid),
-            ),
-            None => (None, false),
-        }
+        selection_projection(
+            d.selected_pid,
+            d.rows.iter().map(|row| row.pid),
+            d.all_rows.iter().map(|row| row.pid),
+        )
     };
-    if gone {
-        state.delegate_mut().selected_pid = None;
-    }
+    state.delegate_mut().selected_pid = retained_pid;
     match visible_ix {
         Some(ix) => state.set_selected_row(ix, cx),
         None => {
@@ -467,6 +459,22 @@ fn resync_selection(
             }
         }
     }
+}
+
+fn selection_projection(
+    selected_pid: Option<u32>,
+    visible: impl IntoIterator<Item = u32>,
+    all: impl IntoIterator<Item = u32>,
+) -> (Option<usize>, Option<u32>) {
+    let Some(pid) = selected_pid else {
+        return (None, None);
+    };
+    let visible_index = visible.into_iter().position(|candidate| candidate == pid);
+    let retained_pid = all
+        .into_iter()
+        .any(|candidate| candidate == pid)
+        .then_some(pid);
+    (visible_index, retained_pid)
 }
 
 fn format_mem(bytes: u64) -> String {
@@ -759,7 +767,8 @@ struct MonitorView {
     tab: Tab,
     agg: Aggregates,
     history: History,
-    pending_kill: Option<PendingKill>,
+    pending_kill: Option<process_action::Request>,
+    process_action_feedback: Option<process_action::Feedback>,
     /// Whether the column chooser dropdown is open.
     cols_menu_open: bool,
     persistence_error: Option<SharedString>,
@@ -835,6 +844,7 @@ impl MonitorView {
             agg: Aggregates::default(),
             history: History::default(),
             pending_kill: None,
+            process_action_feedback: None,
             cols_menu_open: false,
             persistence_error,
             inspect_pid: None,
@@ -996,18 +1006,19 @@ impl MonitorView {
         cx.notify();
     }
 
-    fn selected_proc(&self, cx: &Context<Self>) -> Option<(u32, SharedString)> {
+    fn selected_proc(&self, cx: &Context<Self>) -> Option<process_action::ProcessIdentity> {
         let state = self.table.read(cx);
         let d = state.delegate();
         let pid = d.selected_pid?;
-        let name = d
-            .rows
+        d.rows
             .iter()
             .find(|r| r.pid == pid)
             .or_else(|| d.all_rows.iter().find(|r| r.pid == pid))
-            .map(|r| r.name.clone())
-            .unwrap_or_else(|| SharedString::from(format!("PID {pid}")));
-        Some((pid, name))
+            .map(|row| process_action::ProcessIdentity {
+                pid,
+                start_time: row.start_time,
+                name: row.name.to_string(),
+            })
     }
 
     fn request_kill(&mut self, force: bool, cx: &mut Context<Self>) {
@@ -1022,21 +1033,73 @@ impl MonitorView {
                 state.delegate_mut().selected_pid = Some(pid);
             }
         });
-        if let Some((pid, name)) = self.selected_proc(cx) {
-            self.pending_kill = Some(PendingKill { pid, name, force });
+        if let Some(process) = self.selected_proc(cx) {
+            self.pending_kill = Some(process_action::Request {
+                process,
+                kind: if force {
+                    process_action::ActionKind::ForceQuit
+                } else {
+                    process_action::ActionKind::Quit
+                },
+            });
+            self.process_action_feedback = None;
+            self.cols_menu_open = false;
             cx.notify();
         }
     }
 
     fn confirm_kill(&mut self, cx: &mut Context<Self>) {
-        if let Some(p) = self.pending_kill.take() {
-            self.table.update(cx, |state, _| {
-                if let Some(proc) = state.delegate().system.process(Pid::from_u32(p.pid)) {
-                    let signal = if p.force { Signal::Kill } else { Signal::Term };
-                    let _ = proc.kill_with(signal);
-                }
-            });
-            self.refresh(cx);
+        if let Some(request) = self.pending_kill.take() {
+            let outcome =
+                self.table.update(cx, |state, cx| {
+                    let delegate = state.delegate_mut();
+                    let pid = Pid::from_u32(request.process.pid);
+                    delegate.system.refresh_processes_specifics(
+                        ProcessesToUpdate::Some(&[pid]),
+                        true,
+                        ProcessRefreshKind::nothing(),
+                    );
+                    let observed = delegate.system.process(pid).map(|process| {
+                        process_action::ProcessIdentity {
+                            pid: process.pid().as_u32(),
+                            start_time: process.start_time(),
+                            name: process.name().to_string_lossy().into_owned(),
+                        }
+                    });
+                    let outcome = match process_action::preflight(&request, observed.as_ref()) {
+                        process_action::Preflight::Missing => process_action::Outcome::Missing,
+                        process_action::Preflight::Replaced => process_action::Outcome::Replaced,
+                        process_action::Preflight::Current => {
+                            let signal = match request.kind {
+                                process_action::ActionKind::Quit => Signal::Term,
+                                process_action::ActionKind::ForceQuit => Signal::Kill,
+                            };
+                            match delegate
+                                .system
+                                .process(pid)
+                                .and_then(|process| process.kill_with(signal))
+                            {
+                                Some(true) => process_action::Outcome::Delivered,
+                                Some(false) => process_action::Outcome::Rejected,
+                                None => process_action::Outcome::Unsupported,
+                            }
+                        }
+                    };
+                    if matches!(
+                        outcome,
+                        process_action::Outcome::Missing | process_action::Outcome::Replaced
+                    ) {
+                        delegate
+                            .all_rows
+                            .retain(|row| row.pid != request.process.pid);
+                        delegate.apply_view();
+                        delegate.selected_pid = None;
+                        resync_selection(state, cx);
+                        state.refresh(cx);
+                    }
+                    outcome
+                });
+            self.process_action_feedback = Some(process_action::feedback(&request, outcome));
             cx.notify();
         }
     }
@@ -1078,11 +1141,16 @@ impl MonitorView {
     /// The column-chooser dropdown: a checklist of every available column.
     fn render_columns_menu(&self, cx: &Context<Self>) -> impl IntoElement {
         let visible = self.table.read(cx).delegate().visible.clone();
-        let top = if self.persistence_error.is_some() {
-            130.0
-        } else {
-            96.0
-        };
+        let top =
+            96.0 + if self.persistence_error.is_some() {
+                34.0
+            } else {
+                0.0
+            } + if self.process_action_feedback.is_some() {
+                52.0
+            } else {
+                0.0
+            };
         div()
             .absolute()
             .top(px(top))
@@ -1587,14 +1655,18 @@ impl MonitorView {
     fn render_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
         let p = self.pending_kill.clone()?;
-        let verb = if p.force { "Force Quit" } else { "Quit" };
+        let verb = p.kind.label();
         let body = format!(
             "Do you want to {} the process \u{201c}{}\u{201d} (PID {})?",
             verb.to_lowercase(),
-            p.name,
-            p.pid
+            p.process.name,
+            p.process.pid
         );
-        let confirm_kind = if p.force { Destructive } else { Primary };
+        let confirm_kind = if p.kind == process_action::ActionKind::ForceQuit {
+            Destructive
+        } else {
+            Primary
+        };
         Some(rmac_ui::alert(
             format!("{verb} Process"),
             body,
@@ -1730,6 +1802,7 @@ impl MonitorView {
 impl Render for MonitorView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let persistence_error = self.persistence_error.clone();
+        let process_feedback = self.process_action_feedback.clone();
         div()
             .track_focus(&self.focus)
             .key_context("ActivityMonitor")
@@ -1769,6 +1842,43 @@ impl Render for MonitorView {
                         .child("Dismiss")
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.persistence_error = None;
+                            cx.notify();
+                        })),
+                )
+            })
+            .when_some(process_feedback, |monitor, feedback| {
+                let (background, border, text) = if feedback.success {
+                    (mac::accent_subtle(), mac::accent_border(), mac::text())
+                } else {
+                    (mac::error_background(), mac::error_border(), mac::danger())
+                };
+                monitor.child(
+                    div()
+                        .id("process-action-feedback")
+                        .min_h(px(52.0))
+                        .flex_none()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .py_2()
+                        .bg(background)
+                        .border_b_1()
+                        .border_color(border)
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(text)
+                        .cursor_pointer()
+                        .child(
+                            div()
+                                .v_flex()
+                                .flex_1()
+                                .gap_1()
+                                .child(div().font_weight(mac::SEMIBOLD).child(feedback.title))
+                                .child(feedback.detail),
+                        )
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.process_action_feedback = None;
                             cx.notify();
                         })),
                 )
@@ -1823,7 +1933,10 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_visible_cols, parse_visible_cols, ColKey};
+    use super::{
+        format_visible_cols, parse_visible_cols, selection_projection, ColKey, History,
+        REFRESH_SECS,
+    };
 
     #[test]
     fn visible_columns_round_trip_in_canonical_order() {
@@ -1847,5 +1960,32 @@ mod tests {
         let parsed = parse_visible_cols("status,pid").unwrap();
 
         assert_eq!(parsed, vec![ColKey::Pid, ColKey::Name, ColKey::Status]);
+    }
+
+    #[test]
+    fn process_churn_clears_only_a_vanished_selection() {
+        assert_eq!(
+            selection_projection(Some(20), [10, 20, 30], [10, 20, 30]),
+            (Some(1), Some(20))
+        );
+        assert_eq!(
+            selection_projection(Some(20), [10, 30], [10, 20, 30]),
+            (None, Some(20))
+        );
+        assert_eq!(
+            selection_projection(Some(20), [10, 30], [10, 30]),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn metric_history_and_refresh_policy_are_strictly_bounded() {
+        let mut history = Vec::new();
+        for sample in 0..(History::CAP + 5) {
+            History::push(&mut history, sample as f32);
+        }
+        assert_eq!(history.len(), History::CAP);
+        assert_eq!(history[0], 5.0);
+        assert_eq!(REFRESH_SECS, 2.0);
     }
 }

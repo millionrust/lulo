@@ -18,10 +18,10 @@ in [`PLAN_V2.md`](PLAN_V2.md).
 
 | Application | Package | Run command |
 |---|---|---|
-| Activity Monitor | `rmac-activity-monitor` | `cargo run -p rmac-activity-monitor` |
+| System Monitor | `rmac-activity-monitor` | `cargo run -p rmac-activity-monitor` |
 | App Drawer | `rmac-app-drawer` | `cargo run -p rmac-app-drawer` |
 | Launcher / Spotlight | `rmac-launcher-app` | `cargo run -p rmac-launcher-app -- --show` |
-| Finder | `rmac-finder` | `cargo run -p rmac-finder` |
+| Files | `rmac-finder` | `cargo run -p rmac-finder` |
 | Notes | `rmac-notes` | `cargo run -p rmac-notes` |
 | System Settings | `rmac-system-settings` | `cargo run -p rmac-system-settings` |
 | Terminal | `rmac-terminal` | `cargo run -p rmac-terminal` |

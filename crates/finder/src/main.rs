@@ -208,6 +208,7 @@ struct QuickLookPanel {
     current: usize,
     content: Option<quick_look::Content>,
     error: Option<SharedString>,
+    cancel: Arc<AtomicBool>,
 }
 
 const MAX_RENAME_HINTS: usize = 16;
@@ -1886,6 +1887,9 @@ impl FinderView {
                 .any(|path| directory_state::lies_under_any(path, &disappeared))
         }) {
             self.quick_look_generation = self.quick_look_generation.wrapping_add(1);
+            if let Some(panel) = &self.quick_look {
+                panel.cancel.store(true, Ordering::Release);
+            }
             self.quick_look = None;
         }
 
@@ -4709,6 +4713,7 @@ impl FinderView {
             current: 0,
             content: None,
             error: None,
+            cancel: Arc::new(AtomicBool::new(false)),
         });
         self.load_quick_look(cx);
     }
@@ -4718,10 +4723,14 @@ impl FinderView {
             return;
         };
         let Some(path) = panel.paths.get(panel.current).cloned() else {
+            panel.cancel.store(true, Ordering::Release);
             self.quick_look = None;
             cx.notify();
             return;
         };
+        panel.cancel.store(true, Ordering::Release);
+        let cancel = Arc::new(AtomicBool::new(false));
+        panel.cancel = cancel.clone();
         panel.content = None;
         panel.error = None;
         self.quick_look_generation = self.quick_look_generation.wrapping_add(1);
@@ -4732,7 +4741,7 @@ impl FinderView {
                 .background_executor()
                 .spawn({
                     let path = path.clone();
-                    async move { quick_look::load(&path) }
+                    async move { quick_look::load_cancellable(&path, &cancel) }
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
@@ -4748,13 +4757,7 @@ impl FinderView {
                 match result {
                     Ok(content) => panel.content = Some(content),
                     Err(error) => {
-                        panel.error = Some(
-                            format!(
-                                "Could not preview this item: {}",
-                                sanitize_dialog_name(&error.to_string())
-                            )
-                            .into(),
-                        );
+                        panel.error = Some(quick_look_error_message(&error).into());
                     }
                 }
                 cx.notify();
@@ -4783,6 +4786,9 @@ impl FinderView {
 
     fn close_quick_look(&mut self, cx: &mut Context<Self>) {
         self.quick_look_generation = self.quick_look_generation.wrapping_add(1);
+        if let Some(panel) = &self.quick_look {
+            panel.cancel.store(true, Ordering::Release);
+        }
         self.quick_look = None;
         cx.notify();
     }
@@ -5453,6 +5459,67 @@ impl FinderView {
                         )
                         .into_any_element(),
                     Some("Image preview".into()),
+                ),
+                Some(quick_look::Content::Media { preview, kind }) => (
+                    div()
+                        .flex_1()
+                        .min_h(px(0.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .p_5()
+                        .child(
+                            img(preview.clone())
+                                .max_w(px(700.0))
+                                .max_h(px(500.0))
+                                .rounded(px(5.0)),
+                        )
+                        .into_any_element(),
+                    Some(
+                        match kind {
+                            rmac_thumbnails::MediaKind::Pdf => "PDF · first page",
+                            rmac_thumbnails::MediaKind::Video => "Video · preview frame",
+                            rmac_thumbnails::MediaKind::Audio => {
+                                "Audio waveform · first 30 seconds"
+                            }
+                        }
+                        .into(),
+                    ),
+                ),
+                Some(quick_look::Content::MediaUnavailable { kind }) => (
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap_3()
+                        .px_8()
+                        .child(icon("icons/file-fill.svg", 84.0, secondary()))
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(15.0))
+                                .text_color(label())
+                                .child(format!("{} Preview Unavailable", kind.label())),
+                        )
+                        .child(
+                            div()
+                                .max_w(px(520.0))
+                                .text_center()
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(secondary())
+                                .child(match kind {
+                                    rmac_thumbnails::MediaKind::Pdf => {
+                                        "Poppler is required to render PDF previews."
+                                    }
+                                    rmac_thumbnails::MediaKind::Video
+                                    | rmac_thumbnails::MediaKind::Audio => {
+                                        "FFmpeg is required to render media previews."
+                                    }
+                                }),
+                        )
+                        .into_any_element(),
+                    Some(format!("{} preview capability unavailable", kind.label())),
                 ),
                 Some(quick_look::Content::Text { text, truncated }) => (
                     div()
@@ -6219,6 +6286,18 @@ fn ranked_search_error_message(error: &rmac_search::Error) -> String {
     match error {
         rmac_search::Error::InvalidQuery(_) => error.to_string(),
         _ => "Search could not safely read this folder".to_string(),
+    }
+}
+
+fn quick_look_error_message(error: &std::io::Error) -> &'static str {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "This item is no longer available.",
+        std::io::ErrorKind::PermissionDenied => {
+            "Files does not have permission to preview this item."
+        }
+        std::io::ErrorKind::WouldBlock => "This item changed while its preview was loading.",
+        std::io::ErrorKind::Interrupted => "Preview loading was cancelled.",
+        _ => "Files could not safely render a preview for this item.",
     }
 }
 
@@ -7483,6 +7562,19 @@ mod tests {
         let detail = entry.search_detail.unwrap().to_string();
         assert_eq!(detail, "Contents · the needle line");
         assert!(!detail.contains(root.0.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn quick_look_errors_expose_state_without_private_diagnostics() {
+        let error = std::io::Error::other("/home/private/document.pdf: decoder failed");
+
+        let message = quick_look_error_message(&error);
+
+        assert_eq!(
+            message,
+            "Files could not safely render a preview for this item."
+        );
+        assert!(!message.contains("/home/private"));
     }
 
     #[test]

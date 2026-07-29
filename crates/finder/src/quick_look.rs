@@ -2,6 +2,7 @@ use std::fs::OpenOptions;
 use std::io::{self, Read as _};
 use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_DIRECTORY_ITEMS: usize = 10_000;
@@ -9,10 +10,27 @@ const MAX_LINK_CHARACTERS: usize = 1_024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Content {
-    Image { preview: PathBuf },
-    Text { text: String, truncated: bool },
-    Folder { items: usize, truncated: bool },
-    Link { target: String },
+    Image {
+        preview: PathBuf,
+    },
+    Media {
+        preview: PathBuf,
+        kind: rmac_thumbnails::MediaKind,
+    },
+    MediaUnavailable {
+        kind: rmac_thumbnails::MediaKind,
+    },
+    Text {
+        text: String,
+        truncated: bool,
+    },
+    Folder {
+        items: usize,
+        truncated: bool,
+    },
+    Link {
+        target: String,
+    },
     Unsupported,
 }
 
@@ -43,11 +61,18 @@ impl Identity {
     }
 }
 
+#[cfg(test)]
 pub fn load(path: &Path) -> io::Result<Content> {
+    let cancel = AtomicBool::new(false);
+    load_cancellable(path, &cancel)
+}
+
+pub fn load_cancellable(path: &Path, cancel: &AtomicBool) -> io::Result<Content> {
+    check_cancelled(cancel)?;
     let metadata = std::fs::symlink_metadata(path)?;
     let identity = Identity::capture(&metadata);
     if metadata.is_dir() {
-        return load_folder(path, identity);
+        return load_folder(path, identity, cancel);
     }
     if metadata.file_type().is_symlink() {
         let target = std::fs::read_link(path)?;
@@ -63,19 +88,42 @@ pub fn load(path: &Path) -> io::Result<Content> {
     }
     if rmac_thumbnails::is_supported(path) {
         let preview = rmac_thumbnails::generate_preview(path).map_err(io::Error::other)?;
+        check_cancelled(cancel)?;
         if !identity.still_matches_path(path)? {
             return Err(changed());
         }
         return Ok(Content::Image { preview });
     }
+    if let Some(kind) = rmac_thumbnails::media_kind(path) {
+        return match rmac_thumbnails::generate_media_preview(path, cancel) {
+            Ok(media) => {
+                if media.kind != kind || !identity.still_matches_path(path)? {
+                    return Err(changed());
+                }
+                Ok(Content::Media {
+                    preview: media.preview,
+                    kind,
+                })
+            }
+            Err(rmac_thumbnails::Error::ConverterUnavailable { .. }) => {
+                if !identity.still_matches_path(path)? {
+                    return Err(changed());
+                }
+                Ok(Content::MediaUnavailable { kind })
+            }
+            Err(rmac_thumbnails::Error::Cancelled) => Err(cancelled()),
+            Err(error) => Err(io::Error::other(error)),
+        };
+    }
 
-    load_regular_text(path, identity)
+    load_regular_text(path, identity, cancel)
 }
 
-fn load_folder(path: &Path, identity: Identity) -> io::Result<Content> {
+fn load_folder(path: &Path, identity: Identity, cancel: &AtomicBool) -> io::Result<Content> {
     let mut items = 0usize;
     let mut truncated = false;
     for entry in std::fs::read_dir(path)? {
+        check_cancelled(cancel)?;
         entry?;
         if items == MAX_DIRECTORY_ITEMS {
             truncated = true;
@@ -89,7 +137,8 @@ fn load_folder(path: &Path, identity: Identity) -> io::Result<Content> {
     Ok(Content::Folder { items, truncated })
 }
 
-fn load_regular_text(path: &Path, expected: Identity) -> io::Result<Content> {
+fn load_regular_text(path: &Path, expected: Identity, cancel: &AtomicBool) -> io::Result<Content> {
+    check_cancelled(cancel)?;
     let mut file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
@@ -103,6 +152,7 @@ fn load_regular_text(path: &Path, expected: Identity) -> io::Result<Content> {
     file.by_ref()
         .take(MAX_TEXT_BYTES.saturating_add(1) as u64)
         .read_to_end(&mut bytes)?;
+    check_cancelled(cancel)?;
     if Identity::capture(&file.metadata()?) != expected || !expected.still_matches_path(path)? {
         return Err(changed());
     }
@@ -160,6 +210,18 @@ fn changed() -> io::Error {
     )
 }
 
+fn cancelled() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, "preview cancelled")
+}
+
+fn check_cancelled(cancel: &AtomicBool) -> io::Result<()> {
+    if cancel.load(Ordering::Acquire) {
+        Err(cancelled())
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +271,18 @@ mod tests {
             }
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cancellation_wins_before_path_or_converter_access() {
+        let cancel = AtomicBool::new(true);
+
+        assert_eq!(
+            load_cancellable(Path::new("/missing/movie.mp4"), &cancel)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::Interrupted
+        );
     }
 
     fn temporary_directory(label: &str) -> PathBuf {

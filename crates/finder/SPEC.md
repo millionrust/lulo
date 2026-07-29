@@ -259,6 +259,21 @@ metadata, icons, and identifiers remain original rmac work.
   size/time invalidation, no-follow opens, a 32,768-pixel source-dimension
   ceiling, a 128 MiB decoder allocation budget, and a 1,024-pixel output edge.
   A source changed during decoding is never published as the accepted preview.
+  PDF, video, and audio extensions enter a separate bounded media authority:
+  Poppler renders only PDF page one, FFmpeg renders one video frame or a
+  waveform from at most the first 30 seconds of audio. Linux invokes only the
+  fixed `/usr/bin/pdftocairo` and `/usr/bin/ffmpeg` package binaries with exact
+  arguments, one worker thread, a null error stream, no shell, and
+  FFmpeg's input protocols restricted to local file/pipe. The source is opened
+  first as an exact no-follow, nonblocking regular-file descriptor and supplied
+  at `/dev/fd/0`; neither converter reopens the mutable source path. Converter
+  stdout is capped at 32 MiB while it is read, cancellation kills and reaps the
+  child, and an eight-second deadline handles stalls. Only a PNG signature is
+  accepted; the result then passes through the same 32,768-pixel/128 MiB
+  decoder limits and 1,024-pixel re-encoding before an atomic private-cache
+  write. Source identity is checked again before publication. Missing Poppler
+  or FFmpeg renders a truthful capability-unavailable state, and failures are
+  presented without source or cache paths.
 - Files watches both the current directory and its parent so an external rename
   can supply an old/new path pair. Callback traffic enters a capacity-one wake
   channel while a mutex-protected accumulator retains at most 16 rename hints

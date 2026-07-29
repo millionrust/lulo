@@ -1,21 +1,19 @@
-//! Cross-platform, invalidation-safe image thumbnail generation.
+//! Cross-platform, invalidation-safe image and bounded media preview generation.
 
 use std::collections::hash_map::DefaultHasher;
-#[cfg(any(not(target_os = "macos"), test))]
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::hash::{Hash, Hasher as _};
 use std::io;
 use std::io::BufReader;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
-#[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
 #[cfg(target_os = "macos")]
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
-use std::time::UNIX_EPOCH;
-#[cfg(target_os = "macos")]
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 #[cfg(unix)]
 use std::{fs::OpenOptions, os::unix::fs::OpenOptionsExt as _};
 
@@ -23,11 +21,37 @@ const THUMBNAIL_DIMENSION: u32 = 96;
 const PREVIEW_DIMENSION: u32 = 1024;
 const MAX_SOURCE_DIMENSION: u32 = 32_768;
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
-#[cfg(target_os = "macos")]
 const CONVERTER_TIMEOUT: Duration = Duration::from_secs(8);
+const MAX_CONVERTER_OUTPUT_BYTES: u64 = 32 * 1024 * 1024;
+const PDF_CACHE_KEY: u32 = 2_001;
+const VIDEO_CACHE_KEY: u32 = 2_002;
+const AUDIO_CACHE_KEY: u32 = 2_003;
 #[cfg(target_os = "macos")]
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static FALLBACK_CACHE: OnceLock<PathBuf> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MediaKind {
+    Pdf,
+    Video,
+    Audio,
+}
+
+impl MediaKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Pdf => "PDF",
+            Self::Video => "video",
+            Self::Audio => "audio",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MediaPreview {
+    pub kind: MediaKind,
+    pub preview: PathBuf,
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -48,6 +72,11 @@ pub enum Error {
         path: PathBuf,
         message: String,
     },
+    ConverterUnavailable {
+        kind: MediaKind,
+        program: &'static str,
+    },
+    Cancelled,
     SourceChanged {
         path: PathBuf,
     },
@@ -82,6 +111,14 @@ impl fmt::Display for Error {
                     path.display()
                 )
             }
+            Self::ConverterUnavailable { kind, program } => {
+                write!(
+                    formatter,
+                    "{} preview support requires {program}",
+                    kind.label()
+                )
+            }
+            Self::Cancelled => formatter.write_str("preview cancelled"),
             Self::SourceChanged { path } => {
                 write!(
                     formatter,
@@ -98,7 +135,10 @@ impl std::error::Error for Error {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Decode { source, .. } | Self::Encode { source, .. } => Some(source),
-            Self::Converter { .. } | Self::SourceChanged { .. } => None,
+            Self::Converter { .. }
+            | Self::ConverterUnavailable { .. }
+            | Self::Cancelled
+            | Self::SourceChanged { .. } => None,
         }
     }
 }
@@ -169,7 +209,430 @@ pub fn generate_preview(source: &Path) -> Result<PathBuf, Error> {
     generate_at(source, PREVIEW_DIMENSION)
 }
 
+pub fn media_kind(path: &Path) -> Option<MediaKind> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    match extension.as_str() {
+        "pdf" => Some(MediaKind::Pdf),
+        "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "mpeg" | "mpg" => Some(MediaKind::Video),
+        "mp3" | "m4a" | "aac" | "flac" | "ogg" | "oga" | "opus" | "wav" => Some(MediaKind::Audio),
+        _ => None,
+    }
+}
+
+/// Generate a bounded PDF first-page, video-frame, or audio-waveform preview.
+///
+/// Linux uses the fixed `/usr/bin/pdftocairo` and `/usr/bin/ffmpeg` package
+/// authorities. Other development hosts resolve the same converter names from
+/// their controlled process path. Converter output is never trusted directly:
+/// it is size-checked, decoded through the portable image limits, resized, and
+/// atomically copied into the private thumbnail cache.
+pub fn generate_media_preview(source: &Path, cancel: &AtomicBool) -> Result<MediaPreview, Error> {
+    check_cancelled(cancel)?;
+    let kind = media_kind(source).ok_or_else(|| Error::Io {
+        operation: "classify media",
+        path: source.to_path_buf(),
+        source: io::Error::new(io::ErrorKind::Unsupported, "unsupported preview type"),
+    })?;
+    let cache = prepare_cache()?;
+    let cache_key = match kind {
+        MediaKind::Pdf => PDF_CACHE_KEY,
+        MediaKind::Video => VIDEO_CACHE_KEY,
+        MediaKind::Audio => AUDIO_CACHE_KEY,
+    };
+    let output = cached_path(source, &cache, cache_key)?;
+    if std::fs::symlink_metadata(&output).is_ok_and(|metadata| metadata.is_file())
+        && cached_path(source, &cache, cache_key)? == output
+    {
+        return Ok(MediaPreview {
+            kind,
+            preview: output,
+        });
+    }
+
+    let input = open_media_source(source)?;
+    let plan = converter_plan(kind, converter_input_path());
+    let converted = run_converter(source, kind, &plan, input, cancel)?;
+    check_cancelled(cancel)?;
+    validate_converter_output(&converted, source)?;
+    let png = render_converted_png(&converted, source, PREVIEW_DIMENSION)?;
+    check_cancelled(cancel)?;
+    if cached_path(source, &cache, cache_key)? != output {
+        return Err(Error::SourceChanged {
+            path: source.to_path_buf(),
+        });
+    }
+    rmac_storage::atomic_write_private(&output, &png).map_err(|source_error| Error::Io {
+        operation: "write media preview",
+        path: output.clone(),
+        source: source_error,
+    })?;
+    Ok(MediaPreview {
+        kind,
+        preview: output,
+    })
+}
+
+struct ConverterPlan {
+    program: &'static str,
+    arguments: Vec<OsString>,
+}
+
+fn converter_plan(kind: MediaKind, input: &OsStr) -> ConverterPlan {
+    match kind {
+        MediaKind::Pdf => ConverterPlan {
+            program: pdftocairo_program(),
+            arguments: vec![
+                "-png".into(),
+                "-f".into(),
+                "1".into(),
+                "-l".into(),
+                "1".into(),
+                "-singlefile".into(),
+                "-scale-to".into(),
+                PREVIEW_DIMENSION.to_string().into(),
+                input.to_owned(),
+                "-".into(),
+            ],
+        },
+        MediaKind::Video => ConverterPlan {
+            program: ffmpeg_program(),
+            arguments: vec![
+                "-nostdin".into(),
+                "-hide_banner".into(),
+                "-loglevel".into(),
+                "error".into(),
+                "-threads".into(),
+                "1".into(),
+                "-protocol_whitelist".into(),
+                "file,pipe".into(),
+                "-ss".into(),
+                "0".into(),
+                "-i".into(),
+                input.to_owned(),
+                "-map".into(),
+                "0:v:0".into(),
+                "-frames:v".into(),
+                "1".into(),
+                "-an".into(),
+                "-sn".into(),
+                "-dn".into(),
+                "-vf".into(),
+                format!(
+                    "scale={PREVIEW_DIMENSION}:{PREVIEW_DIMENSION}:force_original_aspect_ratio=decrease"
+                )
+                .into(),
+                "-f".into(),
+                "image2pipe".into(),
+                "-vcodec".into(),
+                "png".into(),
+                "pipe:1".into(),
+            ],
+        },
+        MediaKind::Audio => ConverterPlan {
+            program: ffmpeg_program(),
+            arguments: vec![
+                "-nostdin".into(),
+                "-hide_banner".into(),
+                "-loglevel".into(),
+                "error".into(),
+                "-threads".into(),
+                "1".into(),
+                "-protocol_whitelist".into(),
+                "file,pipe".into(),
+                "-i".into(),
+                input.to_owned(),
+                "-t".into(),
+                "30".into(),
+                "-filter_complex".into(),
+                format!(
+                    "aformat=channel_layouts=mono,showwavespic=s={PREVIEW_DIMENSION}x360:colors=0x0a84ff"
+                )
+                .into(),
+                "-frames:v".into(),
+                "1".into(),
+                "-f".into(),
+                "image2pipe".into(),
+                "-vcodec".into(),
+                "png".into(),
+                "pipe:1".into(),
+            ],
+        },
+    }
+}
+
+fn run_converter(
+    source: &Path,
+    kind: MediaKind,
+    plan: &ConverterPlan,
+    input: std::fs::File,
+    cancel: &AtomicBool,
+) -> Result<Vec<u8>, Error> {
+    check_cancelled(cancel)?;
+    let mut child = Command::new(plan.program)
+        .args(&plan.arguments)
+        .stdin(Stdio::from(input))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|source_error| {
+            if source_error.kind() == io::ErrorKind::NotFound {
+                Error::ConverterUnavailable {
+                    kind,
+                    program: match kind {
+                        MediaKind::Pdf => "Poppler",
+                        MediaKind::Video | MediaKind::Audio => "FFmpeg",
+                    },
+                }
+            } else {
+                Error::Io {
+                    operation: "start preview converter",
+                    path: source.to_path_buf(),
+                    source: source_error,
+                }
+            }
+        })?;
+    let Some(stdout) = child.stdout.take() else {
+        terminate(&mut child);
+        return Err(Error::Io {
+            operation: "capture preview converter",
+            path: source.to_path_buf(),
+            source: io::Error::other("converter stdout was unavailable"),
+        });
+    };
+    let mut reader = Some(std::thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout
+            .take(MAX_CONVERTER_OUTPUT_BYTES.saturating_add(1))
+            .read_to_end(&mut output)?;
+        Ok::<_, io::Error>(output)
+    }));
+    let mut converted = None;
+    let deadline = Instant::now() + CONVERTER_TIMEOUT;
+    loop {
+        if reader
+            .as_ref()
+            .is_some_and(std::thread::JoinHandle::is_finished)
+        {
+            converted = match join_converter_reader(
+                reader.take().expect("finished converter reader"),
+                source,
+            ) {
+                Ok(output) => Some(output),
+                Err(error) => {
+                    terminate(&mut child);
+                    return Err(error);
+                }
+            };
+            if converted
+                .as_ref()
+                .is_some_and(|bytes| bytes.len() as u64 > MAX_CONVERTER_OUTPUT_BYTES)
+            {
+                terminate(&mut child);
+                return Err(Error::Converter {
+                    path: source.to_path_buf(),
+                    message: "converter output exceeded the preview limit".into(),
+                });
+            }
+        }
+        if cancel.load(Ordering::Acquire) {
+            terminate(&mut child);
+            discard_converter_reader(reader.take());
+            return Err(Error::Cancelled);
+        }
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => {
+                let output = match converted {
+                    Some(output) => output,
+                    None => join_converter_reader(
+                        reader.take().expect("running converter reader"),
+                        source,
+                    )?,
+                };
+                if output.len() as u64 > MAX_CONVERTER_OUTPUT_BYTES {
+                    return Err(Error::Converter {
+                        path: source.to_path_buf(),
+                        message: "converter output exceeded the preview limit".into(),
+                    });
+                }
+                return Ok(output);
+            }
+            Ok(Some(_)) => {
+                discard_converter_reader(reader.take());
+                return Err(Error::Converter {
+                    path: source.to_path_buf(),
+                    message: "the preview converter rejected this file".into(),
+                });
+            }
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Ok(None) => {
+                terminate(&mut child);
+                discard_converter_reader(reader.take());
+                return Err(Error::Converter {
+                    path: source.to_path_buf(),
+                    message: "the preview converter timed out".into(),
+                });
+            }
+            Err(source_error) => {
+                terminate(&mut child);
+                discard_converter_reader(reader.take());
+                return Err(Error::Io {
+                    operation: "wait for preview converter",
+                    path: source.to_path_buf(),
+                    source: source_error,
+                });
+            }
+        }
+    }
+}
+
+fn join_converter_reader(
+    reader: std::thread::JoinHandle<io::Result<Vec<u8>>>,
+    source: &Path,
+) -> Result<Vec<u8>, Error> {
+    reader
+        .join()
+        .map_err(|_| Error::Io {
+            operation: "join preview converter",
+            path: source.to_path_buf(),
+            source: io::Error::other("converter output reader stopped unexpectedly"),
+        })?
+        .map_err(|source_error| Error::Io {
+            operation: "read preview converter",
+            path: source.to_path_buf(),
+            source: source_error,
+        })
+}
+
+fn discard_converter_reader(reader: Option<std::thread::JoinHandle<io::Result<Vec<u8>>>>) {
+    if let Some(reader) = reader {
+        let _ = reader.join();
+    }
+}
+
+fn validate_converter_output(bytes: &[u8], source: &Path) -> Result<(), Error> {
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") || bytes.len() as u64 > MAX_CONVERTER_OUTPUT_BYTES {
+        return Err(Error::Io {
+            operation: "validate converted preview",
+            path: source.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "converter output was not a bounded PNG",
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn terminate(child: &mut std::process::Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn check_cancelled(cancel: &AtomicBool) -> Result<(), Error> {
+    if cancel.load(Ordering::Acquire) {
+        Err(Error::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+fn open_media_source(source: &Path) -> Result<std::fs::File, Error> {
+    let file = {
+        #[cfg(unix)]
+        {
+            OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+                .open(source)
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::File::open(source)
+        }
+    }
+    .map_err(|source_error| Error::Io {
+        operation: "open media preview source",
+        path: source.to_path_buf(),
+        source: source_error,
+    })?;
+    if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
+        return Err(Error::Io {
+            operation: "validate media preview source",
+            path: source.to_path_buf(),
+            source: io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "media preview source is not a regular file",
+            ),
+        });
+    }
+    Ok(file)
+}
+
+#[cfg(unix)]
+fn converter_input_path() -> &'static OsStr {
+    OsStr::new("/dev/fd/0")
+}
+
+#[cfg(not(unix))]
+fn converter_input_path() -> &'static OsStr {
+    OsStr::new("-")
+}
+
+#[cfg(target_os = "linux")]
+fn pdftocairo_program() -> &'static str {
+    "/usr/bin/pdftocairo"
+}
+
+#[cfg(not(target_os = "linux"))]
+fn pdftocairo_program() -> &'static str {
+    "pdftocairo"
+}
+
+#[cfg(target_os = "linux")]
+fn ffmpeg_program() -> &'static str {
+    "/usr/bin/ffmpeg"
+}
+
+#[cfg(not(target_os = "linux"))]
+fn ffmpeg_program() -> &'static str {
+    "ffmpeg"
+}
+
 fn generate_at(source: &Path, dimension: u32) -> Result<PathBuf, Error> {
+    let cache = prepare_cache()?;
+    let output = cached_path(source, &cache, dimension)?;
+    if std::fs::symlink_metadata(&output).is_ok_and(|metadata| metadata.is_file()) {
+        return Ok(output);
+    }
+
+    #[cfg(target_os = "macos")]
+    let png = if source
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("heic"))
+    {
+        render_with_sips(source, &cache, dimension)?
+    } else {
+        render_portable(source, dimension)?
+    };
+    #[cfg(not(target_os = "macos"))]
+    let png = render_portable(source, dimension)?;
+    if cached_path(source, &cache, dimension)? != output {
+        return Err(Error::SourceChanged {
+            path: source.to_path_buf(),
+        });
+    }
+    rmac_storage::atomic_write_private(&output, &png).map_err(|source| Error::Io {
+        operation: "write thumbnail",
+        path: output.clone(),
+        source,
+    })?;
+    Ok(output)
+}
+
+fn prepare_cache() -> Result<PathBuf, Error> {
     let cache = cache_directory();
     std::fs::create_dir_all(&cache).map_err(|source| Error::Io {
         operation: "create thumbnail cache",
@@ -208,34 +671,7 @@ fn generate_at(source: &Path, dimension: u32) -> Result<PathBuf, Error> {
             },
         )?;
     }
-    let output = cached_path(source, &cache, dimension)?;
-    if std::fs::symlink_metadata(&output).is_ok_and(|metadata| metadata.is_file()) {
-        return Ok(output);
-    }
-
-    #[cfg(target_os = "macos")]
-    let png = if source
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("heic"))
-    {
-        render_with_sips(source, &cache, dimension)?
-    } else {
-        render_portable(source, dimension)?
-    };
-    #[cfg(not(target_os = "macos"))]
-    let png = render_portable(source, dimension)?;
-    if cached_path(source, &cache, dimension)? != output {
-        return Err(Error::SourceChanged {
-            path: source.to_path_buf(),
-        });
-    }
-    rmac_storage::atomic_write_private(&output, &png).map_err(|source| Error::Io {
-        operation: "write thumbnail",
-        path: output.clone(),
-        source,
-    })?;
-    Ok(output)
+    Ok(cache)
 }
 
 pub fn is_current(source: &Path, thumbnail: &Path) -> bool {
@@ -331,6 +767,34 @@ fn render_portable(source: &Path, dimension: u32) -> Result<Vec<u8>, Error> {
     Ok(bytes.into_inner())
 }
 
+fn render_converted_png(bytes: &[u8], source: &Path, dimension: u32) -> Result<Vec<u8>, Error> {
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|source_error| Error::Io {
+            operation: "detect converted preview format",
+            path: source.to_path_buf(),
+            source: source_error,
+        })?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_SOURCE_DIMENSION);
+    limits.max_image_height = Some(MAX_SOURCE_DIMENSION);
+    limits.max_alloc = Some(MAX_DECODE_ALLOC);
+    reader.limits(limits);
+    let image = reader.decode().map_err(|source_error| Error::Decode {
+        path: source.to_path_buf(),
+        source: source_error,
+    })?;
+    let thumbnail = image.thumbnail(dimension, dimension);
+    let mut output = std::io::Cursor::new(Vec::new());
+    thumbnail
+        .write_to(&mut output, image::ImageFormat::Png)
+        .map_err(|source_error| Error::Encode {
+            path: source.to_path_buf(),
+            source: source_error,
+        })?;
+    Ok(output.into_inner())
+}
+
 #[cfg(target_os = "macos")]
 fn render_with_sips(source: &Path, cache: &Path, dimension: u32) -> Result<Vec<u8>, Error> {
     let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -416,6 +880,68 @@ mod tests {
             image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap();
         assert_eq!((thumbnail.width(), thumbnail.height()), (96, 48));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn media_classification_and_converter_plans_are_fixed_and_shell_free() {
+        assert_eq!(media_kind(Path::new("document.PDF")), Some(MediaKind::Pdf));
+        assert_eq!(media_kind(Path::new("clip.webm")), Some(MediaKind::Video));
+        assert_eq!(
+            media_kind(Path::new("recording.FLAC")),
+            Some(MediaKind::Audio)
+        );
+        assert_eq!(media_kind(Path::new("archive.zip")), None);
+
+        let input = OsStr::new("/dev/fd/0");
+        let pdf = converter_plan(MediaKind::Pdf, input);
+        assert!(pdf.program.ends_with("pdftocairo"));
+        assert_eq!(pdf.arguments.last(), Some(&OsString::from("-")));
+        assert!(pdf.arguments.iter().any(|argument| argument == input));
+
+        let video = converter_plan(MediaKind::Video, input);
+        assert!(video.program.ends_with("ffmpeg"));
+        assert!(video
+            .arguments
+            .windows(2)
+            .any(|pair| pair == ["-protocol_whitelist", "file,pipe"]));
+        assert_eq!(video.arguments.last(), Some(&OsString::from("pipe:1")));
+        assert!(!video
+            .arguments
+            .iter()
+            .any(|argument| argument == "-c" || argument == "sh"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn converter_runner_captures_and_revalidates_png_stdout() {
+        let root = temporary_directory("converter-stdout");
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("frame.png");
+        image::RgbaImage::new(32, 16).save(&source).unwrap();
+        let plan = ConverterPlan {
+            program: "/bin/cat",
+            arguments: Vec::new(),
+        };
+        let cancel = AtomicBool::new(false);
+        let input = open_media_source(&source).unwrap();
+
+        let converted = run_converter(&source, MediaKind::Video, &plan, input, &cancel).unwrap();
+        validate_converter_output(&converted, &source).unwrap();
+        let bounded = render_converted_png(&converted, &source, PREVIEW_DIMENSION).unwrap();
+        let image = image::load_from_memory_with_format(&bounded, image::ImageFormat::Png).unwrap();
+
+        assert_eq!((image.width(), image.height()), (1024, 512));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn media_preview_honors_cancellation_before_converter_or_cache_work() {
+        let cancel = AtomicBool::new(true);
+
+        assert!(matches!(
+            generate_media_preview(Path::new("/missing/document.pdf"), &cancel),
+            Err(Error::Cancelled)
+        ));
     }
 
     #[test]

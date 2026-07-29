@@ -34,9 +34,61 @@ pub enum IndicatorKind {
     Notifications,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BuiltinIcon {
+    Focus,
+    Vpn,
+    Network,
+    Bluetooth,
+    Sound,
+    Battery,
+    Notifications,
+}
+
+impl BuiltinIcon {
+    pub const ALL: [Self; 7] = [
+        Self::Focus,
+        Self::Vpn,
+        Self::Network,
+        Self::Bluetooth,
+        Self::Sound,
+        Self::Battery,
+        Self::Notifications,
+    ];
+
+    /// A self-contained original monochrome vector asset. The renderer tints
+    /// `currentColor` from the effective top-bar theme.
+    pub fn svg(self) -> &'static str {
+        match self {
+            Self::Focus => include_str!("../assets/icons/focus.svg"),
+            Self::Vpn => include_str!("../assets/icons/vpn.svg"),
+            Self::Network => include_str!("../assets/icons/network.svg"),
+            Self::Bluetooth => include_str!("../assets/icons/bluetooth.svg"),
+            Self::Sound => include_str!("../assets/icons/sound.svg"),
+            Self::Battery => include_str!("../assets/icons/battery.svg"),
+            Self::Notifications => include_str!("../assets/icons/notifications.svg"),
+        }
+    }
+}
+
+impl From<IndicatorKind> for BuiltinIcon {
+    fn from(kind: IndicatorKind) -> Self {
+        match kind {
+            IndicatorKind::Focus => Self::Focus,
+            IndicatorKind::Vpn => Self::Vpn,
+            IndicatorKind::Network => Self::Network,
+            IndicatorKind::Bluetooth => Self::Bluetooth,
+            IndicatorKind::Sound => Self::Sound,
+            IndicatorKind::Battery => Self::Battery,
+            IndicatorKind::Notifications => Self::Notifications,
+        }
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct IndicatorLabel {
     pub kind: IndicatorKind,
+    pub icon: BuiltinIcon,
     pub visible: String,
     pub accessible: String,
     pub urgent: bool,
@@ -47,6 +99,7 @@ impl fmt::Debug for IndicatorLabel {
         formatter
             .debug_struct("IndicatorLabel")
             .field("kind", &self.kind)
+            .field("icon", &self.icon)
             .field("visible", &"<redacted>")
             .field("accessible", &"<redacted>")
             .field("urgent", &self.urgent)
@@ -243,6 +296,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
             .unwrap_or_else(|| "Focus".into());
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Focus,
+            icon: IndicatorKind::Focus.into(),
             visible: "Focus".into(),
             accessible: format!("Focus enabled: {mode}"),
             urgent: false,
@@ -266,6 +320,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         }
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Vpn,
+            icon: IndicatorKind::Vpn.into(),
             visible: "VPN".into(),
             accessible: if names.is_empty() {
                 "VPN connecting".into()
@@ -282,6 +337,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
             .unwrap_or_default();
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Network,
+            icon: IndicatorKind::Network.into(),
             visible: "Wi-Fi".into(),
             accessible: format!("Wi-Fi {}{strength}", network_state_label(network.state)),
             urgent: false,
@@ -290,6 +346,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
     if let Some(bluetooth) = &snapshot.bluetooth {
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Bluetooth,
+            icon: IndicatorKind::Bluetooth.into(),
             visible: "Bluetooth".into(),
             accessible: if !bluetooth.available {
                 "Bluetooth unavailable".into()
@@ -312,6 +369,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
     if let Some(sound) = snapshot.sound {
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Sound,
+            icon: IndicatorKind::Sound.into(),
             visible: if !sound.available {
                 "Sound".into()
             } else if sound.muted {
@@ -333,6 +391,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
         let percentage = format!("{}%", battery.percentage.min(100));
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Battery,
+            icon: IndicatorKind::Battery.into(),
             visible: if snapshot.show_battery_percentage {
                 percentage.clone()
             } else {
@@ -348,6 +407,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
     {
         labels.push(IndicatorLabel {
             kind: IndicatorKind::Notifications,
+            icon: IndicatorKind::Notifications.into(),
             visible: if notifications.unread_count > 99 {
                 "99+".into()
             } else {
@@ -395,6 +455,8 @@ fn bounded(value: &str, limit: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use chrono::TimeZone as _;
 
     use super::*;
@@ -506,7 +568,25 @@ mod tests {
         assert_eq!(labels[2].accessible, "Sound volume 37 percent");
         assert_eq!(labels[3].visible, "99+");
         assert!(labels[3].urgent);
+        assert!(labels
+            .iter()
+            .all(|label| label.icon == BuiltinIcon::from(label.kind)));
         assert!(!format!("{labels:?}").contains("Private SSID"));
+    }
+
+    #[test]
+    fn original_indicator_assets_are_embedded_tintable_and_unique() {
+        let mut assets = BTreeSet::new();
+        for icon in BuiltinIcon::ALL {
+            let svg = icon.svg();
+            assert!(svg.starts_with("<svg "));
+            assert!(svg.contains("viewBox=\"0 0 20 20\""));
+            assert!(svg.contains("currentColor"));
+            assert!(!svg.contains("<script"));
+            assert!(!svg.contains("<image"));
+            assert!(!svg.contains("href="));
+            assert!(assets.insert(svg));
+        }
     }
 
     #[test]

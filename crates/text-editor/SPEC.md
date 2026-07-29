@@ -32,6 +32,10 @@ plain text over a rich-text file.
    Wayland window as parent, preserve exact page choices, and make cancellation
    normal. No control may imply unsupported RTF-format preservation or a
    separate PDF export path exists.
+9. After a successful open or exact save, find the document in Files and
+   Launcher Recents. A failed recent-history update must leave the document
+   open and saved, disclose only that Recents is unavailable, and never expose
+   the path or storage diagnostic.
 
 ## Platform authorities
 
@@ -45,6 +49,11 @@ plain text over a rich-text file.
   exact raw revision opened or last written, conflict preflight, and readback.
 - The XDG state directory owns private crash-recovery records. Recovery data is
   not a substitute for the user document and is never treated as saved content.
+- The shared recent-document authority owns rmac history in separate versioned,
+  owner-only XDG state. Text Editor records only a successfully decoded open or
+  exact saved/read-back regular file, off GPUI. It never treats recent-history
+  failure as document failure, and Files/Launcher remain responsible for
+  merging that source with the desktop XBEL authority.
 - The filesystem remains authoritative. File monitors are refresh hints only;
   an exact fresh preflight is required before overwriting an opened document.
 - Linux printing must export the initiating Wayland window and retain the exact
@@ -97,6 +106,9 @@ for subsequent changes. It must never describe this as a transactional lock.
 - File paths, raw bytes, document text, recovery text, and filesystem details
   are private. User-facing errors describe the operation and safe resolution
   without logging content or exposing unrelated paths.
+- Recent history is secondary metadata, never document authority. Recording
+  follows successful open/save, rejects unsafe or non-regular paths, and cannot
+  make a failed save appear successful or a successful save appear failed.
 
 ## Recovery contract
 
@@ -117,9 +129,10 @@ for subsequent changes. It must never describe this as a transactional lock.
 The UI has distinct states for loading, saving, chooser cancellation, missing
 file, permission denial, read-only destination, unsupported encoding, excessive
 size, malformed UTF-16, external replacement/removal, conflict, disk full,
-atomic-write failure, readback mismatch, recovery failure, and portal failure.
-The editable buffer and last-known-good document metadata remain visible after
-failure. Retry never bypasses conflict validation.
+atomic-write failure, readback mismatch, recovery failure, recent-history
+failure, and portal failure. The editable buffer and last-known-good document
+metadata remain visible after failure. Retry never bypasses conflict
+validation.
 
 External-change choices are precise:
 
@@ -161,8 +174,11 @@ clipboard, atomic and injected storage failures, exact conflict/readback,
 external delete/replace, crash recovery, malformed and maximum-size fixtures,
 multi-window isolation, keyboard-only operation, Orca/AT-SPI semantics, visual
 references, launch/idle/edit/search/save performance, and no private content in
-errors or committed evidence. Printing specifically still needs a native Linux
-build plus live PreparePrint/Print, print-to-PDF, physical-printer,
+errors or committed evidence. Recent-history evidence must cover open, Save As,
+ordinary save refresh, store corruption/recovery, concurrent application
+writes, exclusions, clearing, and path-redacted failures. Printing specifically
+still needs a native Linux build plus live PreparePrint/Print, print-to-PDF,
+physical-printer,
 cancellation, stale-generation, portal-restart, and unsupported/old-portal
 matrix. The transport follows the official
 [`org.freedesktop.portal.Print`](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Print.html)

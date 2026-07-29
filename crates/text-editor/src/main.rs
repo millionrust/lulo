@@ -920,6 +920,34 @@ impl EditorView {
         self.clear_recovery(cx)
     }
 
+    fn record_current_document(&self, cx: &mut Context<Self>) {
+        let Some(path) = self.path.clone() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move {
+                        rmac_recent_documents::Store::from_environment()
+                            .and_then(|store| store.record(&path))
+                    }
+                })
+                .await;
+            if result.is_err() {
+                let _ = this.update(cx, |this, cx| {
+                    if this.path.as_deref() == Some(path.as_path()) {
+                        this.status_notice =
+                            Some("The document is open, but Recents could not be updated.".into());
+                        cx.notify();
+                    }
+                });
+            }
+        })
+        .detach();
+    }
+
     // ── File operations ─────────────────────────────────────────────────
 
     fn new_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -1058,6 +1086,7 @@ impl EditorView {
                         this.rtf_runs = None;
                         this.reset_document_watch();
                         this.mark_clean(document.text, cx);
+                        this.record_current_document(cx);
                     }
                     Ok(LoadedFile::RichText { text, runs }) => {
                         this.input
@@ -1068,6 +1097,7 @@ impl EditorView {
                         this.rtf_runs = Some(runs);
                         this.reset_document_watch();
                         this.mark_clean(text, cx);
+                        this.record_current_document(cx);
                     }
                     Err(message) => {
                         this.alert = Some(ActiveAlert::Error {
@@ -1317,6 +1347,7 @@ impl EditorView {
                 self.text_format = saved.format;
                 self.reset_document_watch();
                 let recovery_cleared = self.mark_clean(saved.text, cx);
+                self.record_current_document(cx);
                 if recovery_cleared {
                     if let Some(pending) = then {
                         self.perform(pending, window, cx);

@@ -159,7 +159,9 @@ pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
 pub async fn open_item(path: PathBuf) -> Result<(), ItemError> {
     rmac_portal::open_item(&path).await.map_err(|_| ItemError {
         operation: ItemOperation::Open,
-    })
+    })?;
+    let _ = record_recent_document(path).await;
+    Ok(())
 }
 
 /// Reveal one local item in the platform file manager.
@@ -198,13 +200,45 @@ pub async fn open_file_with(
     make_default: bool,
 ) -> Result<(), OpenWithError> {
     blocking::unblock(move || {
-        rmac_apps::open_file_with(&path, &expected_mime_type, &application_id, make_default)
+        let result =
+            rmac_apps::open_file_with(&path, &expected_mime_type, &application_id, make_default);
+        if result.is_ok() {
+            let _ = rmac_recent_documents::Store::from_environment()
+                .and_then(|store| store.record(&path));
+        }
+        result
     })
     .await
     .map_err(|error| OpenWithError {
         default_changed: error.default_changed,
     })
 }
+
+/// Record one successfully opened or saved local document.
+///
+/// The store validates and canonicalizes a regular file, performs its
+/// cross-process transaction off the async executor, and returns only
+/// private-safe diagnostics.
+pub async fn record_recent_document(
+    path: PathBuf,
+) -> Result<rmac_recent_documents::RecordOutcome, RecentDocumentError> {
+    blocking::unblock(move || {
+        rmac_recent_documents::Store::from_environment().and_then(|store| store.record(&path))
+    })
+    .await
+    .map_err(|_| RecentDocumentError)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecentDocumentError;
+
+impl fmt::Display for RecentDocumentError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("the document could not be added to Recents")
+    }
+}
+
+impl std::error::Error for RecentDocumentError {}
 
 fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
     matches!(
@@ -270,5 +304,9 @@ mod tests {
         );
         assert!(!diagnostics.contains("/home"));
         assert!(!diagnostics.contains("gio"));
+        assert_eq!(
+            RecentDocumentError.to_string(),
+            "the document could not be added to Recents"
+        );
     }
 }

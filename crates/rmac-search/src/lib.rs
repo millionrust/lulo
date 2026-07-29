@@ -247,6 +247,11 @@ impl SearchProvider for SystemSearchProvider {
     }
 
     fn recents(&self, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
+        check_cancelled(options.cancel)?;
+        let rmac_recents = rmac_recent_documents::Store::from_environment()
+            .and_then(|store| store.load())
+            .map(|snapshot| snapshot.paths)
+            .unwrap_or_default();
         let data_home = std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
@@ -255,10 +260,11 @@ impl SearchProvider for SystemSearchProvider {
                     .map(PathBuf::from)
                     .map(|home| home.join(".local/share"))
             });
-        let Some(data_home) = data_home else {
-            return Ok(Vec::new());
+        let desktop_recents = match data_home {
+            Some(data_home) => recent_from_path(&data_home.join("recently-used.xbel"), options)?,
+            None => Vec::new(),
         };
-        recent_from_path(&data_home.join("recently-used.xbel"), options)
+        merge_recent_paths(rmac_recents, desktop_recents, options)
     }
 
     fn tagged(&self, _tag: &str, _options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
@@ -729,6 +735,33 @@ fn recent_from_path(path: &Path, options: Options<'_>) -> Result<Vec<PathBuf>, E
         .collect())
 }
 
+#[cfg(any(not(target_os = "macos"), test))]
+fn merge_recent_paths(
+    rmac_recents: Vec<PathBuf>,
+    desktop_recents: Vec<PathBuf>,
+    options: Options<'_>,
+) -> Result<Vec<PathBuf>, Error> {
+    if options.limit == 0 {
+        return Ok(Vec::new());
+    }
+    let mut seen = HashSet::new();
+    let mut merged = Vec::new();
+    for path in rmac_recents.into_iter().chain(desktop_recents) {
+        check_cancelled(options.cancel)?;
+        if !path.exists() || is_excluded(&path, options.excluded_roots) {
+            continue;
+        }
+        let identity = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if seen.insert(identity) {
+            merged.push(path);
+            if merged.len() == options.limit {
+                break;
+            }
+        }
+    }
+    Ok(merged)
+}
+
 fn is_excluded(path: &Path, excluded_roots: &[PathBuf]) -> bool {
     if is_lexically_excluded(path, excluded_roots) {
         return true;
@@ -761,6 +794,7 @@ fn device(_: &std::fs::Metadata) -> Option<u64> {
     None
 }
 
+#[cfg(target_os = "macos")]
 fn device_for_path(path: &Path) -> Option<u64> {
     path.metadata().ok().and_then(|metadata| device(&metadata))
 }
@@ -963,6 +997,27 @@ mod tests {
 
         let paths = recent_from_path(&xbel, Options::new(&cancel)).unwrap();
         assert_eq!(paths, [newer, older]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rmac_recents_precede_and_canonically_deduplicate_desktop_recents() {
+        let root = temporary_directory("merged-recents");
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        let stale = root.join("stale.txt");
+        std::fs::write(&first, b"one").unwrap();
+        std::fs::write(&second, b"two").unwrap();
+        let cancel = AtomicBool::new(false);
+
+        let paths = merge_recent_paths(
+            vec![first.clone(), stale],
+            vec![first.clone(), second.clone()],
+            Options::new(&cancel),
+        )
+        .unwrap();
+        assert_eq!(paths, [first, second]);
         std::fs::remove_dir_all(root).unwrap();
     }
 

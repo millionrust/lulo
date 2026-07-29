@@ -4874,6 +4874,7 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-portal",
+ "rmac-recent-documents",
 ]
 
 [[package]]
@@ -5514,11 +5515,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-recent-documents"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "rmac-search"
 version = "0.1.0"
 dependencies = [
  "libc",
  "quick-xml 0.39.4",
+ "rmac-recent-documents",
  "url",
  "walkdir",
 ]
@@ -5765,6 +5778,7 @@ dependencies = [
  "raw-window-handle",
  "rmac-editor",
  "rmac-print-linux",
+ "rmac-recent-documents",
  "rmac-storage",
  "rmac-ui",
 ]

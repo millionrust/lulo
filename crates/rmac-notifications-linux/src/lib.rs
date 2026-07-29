@@ -19,6 +19,7 @@ pub mod icon;
 pub mod icon_worker;
 pub mod media;
 pub mod service;
+pub mod surface_session;
 pub mod surfaces;
 
 pub const FREEDESKTOP_CAPABILITIES: &[&str] = &["actions", "body", "persistence"];

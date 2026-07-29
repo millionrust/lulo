@@ -23,7 +23,9 @@ the application does not fabricate unavailable per-process data.
   shown because the current authority cannot provide one reliably.
 - Energy impact is explicitly an app-local approximation derived from real CPU
   and interval disk-I/O signals, not a kernel or hardware energy measurement.
-- Visible-column preferences use the typed local storage layer.
+- The isolated column domain owns stable identities, display metadata,
+  canonical preference parsing, retired-path migration, and typed atomic
+  load/save. The root view consumes only its validated visible-column set.
 
 ## Sampling and failure states
 

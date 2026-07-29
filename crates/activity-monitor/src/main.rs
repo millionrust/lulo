@@ -4,13 +4,13 @@
 //! `sysinfo` as the data layer. Runs on macOS today (Metal) and targets
 //! Ubuntu/Wayland (Vulkan) later — the same binary, no webview, instant launch.
 
+mod columns;
 mod cpu_ticks;
 mod process_action;
 mod process_signal;
 mod storage;
 
 use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gpui::{
@@ -26,6 +26,9 @@ use rmac_ui::{
 use sysinfo::{
     Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
 };
+
+use columns::{default_visible as default_visible_cols, load as load_visible_cols};
+use columns::{save as save_visible_cols, ColKey};
 
 gpui::actions!(
     activity_monitor,
@@ -81,130 +84,6 @@ impl Tab {
     /// because there is no reliable per-process network data on macOS/Linux here.
     fn has_process_table(self) -> bool {
         !matches!(self, Tab::Network)
-    }
-}
-
-/// A column in the process table. The set is fixed and canonically ordered; the
-/// column chooser toggles which ones are visible. Only columns backed by real
-/// `sysinfo` data exist here — no placeholder/fabricated metrics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ColKey {
-    Pid,
-    Name,
-    Cpu,
-    Mem,
-    Energy,
-    Disk,
-    Ppid,
-    User,
-    Vmem,
-    RunTime,
-    Status,
-}
-
-impl ColKey {
-    /// Canonical order, also the order shown in the chooser.
-    const ALL: [ColKey; 11] = [
-        ColKey::Pid,
-        ColKey::Name,
-        ColKey::Cpu,
-        ColKey::Mem,
-        ColKey::Energy,
-        ColKey::Disk,
-        ColKey::Ppid,
-        ColKey::User,
-        ColKey::Vmem,
-        ColKey::RunTime,
-        ColKey::Status,
-    ];
-
-    fn id(self) -> &'static str {
-        match self {
-            ColKey::Pid => "pid",
-            ColKey::Name => "name",
-            ColKey::Cpu => "cpu",
-            ColKey::Mem => "mem",
-            ColKey::Energy => "energy",
-            ColKey::Disk => "disk",
-            ColKey::Ppid => "ppid",
-            ColKey::User => "user",
-            ColKey::Vmem => "vmem",
-            ColKey::RunTime => "runtime",
-            ColKey::Status => "status",
-        }
-    }
-
-    fn from_id(s: &str) -> Option<ColKey> {
-        ColKey::ALL.into_iter().find(|k| k.id() == s)
-    }
-
-    fn title(self) -> &'static str {
-        match self {
-            ColKey::Pid => "PID",
-            ColKey::Name => "Process Name",
-            ColKey::Cpu => "% CPU",
-            ColKey::Mem => "Memory",
-            ColKey::Energy => "Energy",
-            ColKey::Disk => "Disk I/O",
-            ColKey::Ppid => "Parent PID",
-            ColKey::User => "User",
-            ColKey::Vmem => "Virtual Mem",
-            ColKey::RunTime => "Run Time",
-            ColKey::Status => "Status",
-        }
-    }
-
-    fn width(self) -> f32 {
-        match self {
-            ColKey::Pid => 72.0,
-            ColKey::Name => 280.0,
-            ColKey::Cpu => 96.0,
-            ColKey::Mem => 110.0,
-            ColKey::Energy => 96.0,
-            ColKey::Disk => 120.0,
-            ColKey::Ppid => 96.0,
-            ColKey::User => 130.0,
-            ColKey::Vmem => 120.0,
-            ColKey::RunTime => 110.0,
-            ColKey::Status => 110.0,
-        }
-    }
-
-    fn right(self) -> bool {
-        matches!(
-            self,
-            ColKey::Pid
-                | ColKey::Cpu
-                | ColKey::Mem
-                | ColKey::Energy
-                | ColKey::Disk
-                | ColKey::Ppid
-                | ColKey::Vmem
-                | ColKey::RunTime
-        )
-    }
-
-    fn default_visible(self) -> bool {
-        matches!(
-            self,
-            ColKey::Pid | ColKey::Name | ColKey::Cpu | ColKey::Mem | ColKey::Energy | ColKey::Disk
-        )
-    }
-
-    /// The Process Name column is the human anchor — never hide it.
-    fn required(self) -> bool {
-        matches!(self, ColKey::Name)
-    }
-
-    fn to_column(self) -> Column {
-        let c = Column::new(self.id(), self.title())
-            .width(px(self.width()))
-            .sortable();
-        if self.right() {
-            c.text_right()
-        } else {
-            c
-        }
     }
 }
 
@@ -511,86 +390,6 @@ fn format_duration(secs: u64) -> String {
     } else {
         format!("{m}:{s:02}")
     }
-}
-
-/// Current and retired paths to the persisted visible-columns file.
-fn cols_config_paths() -> Result<(PathBuf, PathBuf), storage::Failure> {
-    let home = std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| {
-        storage::Failure::message(
-            storage::Operation::ResolveConfigPath,
-            Path::new("columns.txt"),
-            "HOME is not set",
-        )
-    })?;
-    #[cfg(target_os = "macos")]
-    let root = home.join("Library/Application Support");
-    #[cfg(not(target_os = "macos"))]
-    let root = match std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from) {
-        Some(path) if path.is_absolute() => path,
-        _ => home.join(".config"),
-    };
-    Ok((
-        root.join("rmac-system-monitor/columns.txt"),
-        root.join("rmac-activity-monitor/columns.txt"),
-    ))
-}
-
-fn default_visible_cols() -> Vec<ColKey> {
-    ColKey::ALL
-        .into_iter()
-        .filter(|key| key.default_visible())
-        .collect()
-}
-
-fn parse_visible_cols(content: &str) -> Result<Vec<ColKey>, String> {
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return Err("column preferences are empty".into());
-    }
-    let mut selected = Vec::new();
-    for token in trimmed.split(',') {
-        let id = token.trim();
-        if id.is_empty() {
-            return Err("column preferences contain an empty id".into());
-        }
-        let key = ColKey::from_id(id).ok_or_else(|| format!("unknown column id '{id}'"))?;
-        if selected.contains(&key) {
-            return Err(format!("column id '{id}' is duplicated"));
-        }
-        selected.push(key);
-    }
-
-    // Always restore the required name anchor and normalize display order to
-    // the canonical table order, even if an older file used another order.
-    Ok(ColKey::ALL
-        .into_iter()
-        .filter(|key| key.required() || selected.contains(key))
-        .collect())
-}
-
-/// Load the visible column set, treating a missing file as first launch.
-fn load_visible_cols() -> Result<Vec<ColKey>, storage::Failure> {
-    let (path, legacy_path) = cols_config_paths()?;
-    for candidate in [&path, &legacy_path] {
-        if let Some(content) = storage::load_optional(&storage::RealStorage, candidate)? {
-            return parse_visible_cols(&content).map_err(|detail| {
-                storage::Failure::message(storage::Operation::LoadColumns, candidate, detail)
-            });
-        }
-    }
-    Ok(default_visible_cols())
-}
-
-fn format_visible_cols(cols: &[ColKey]) -> String {
-    cols.iter()
-        .map(|key| key.id())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn save_visible_cols(cols: &[ColKey]) -> Result<(), storage::Failure> {
-    let (path, _legacy_path) = cols_config_paths()?;
-    storage::save(&storage::RealStorage, &path, format_visible_cols(cols))
 }
 
 /// Format a byte-rate (bytes per second) compactly.
@@ -1968,34 +1767,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        format_visible_cols, parse_visible_cols, selection_projection, ColKey, History,
-        REFRESH_SECS,
-    };
-
-    #[test]
-    fn visible_columns_round_trip_in_canonical_order() {
-        let expected = vec![ColKey::Pid, ColKey::Name, ColKey::Mem, ColKey::Status];
-
-        let parsed = parse_visible_cols(&format_visible_cols(&expected)).unwrap();
-
-        assert_eq!(parsed, expected);
-    }
-
-    #[test]
-    fn malformed_column_preferences_are_reported() {
-        assert!(parse_visible_cols("").is_err());
-        assert!(parse_visible_cols("name,unknown").is_err());
-        assert!(parse_visible_cols("name,name").is_err());
-        assert!(parse_visible_cols("name,").is_err());
-    }
-
-    #[test]
-    fn required_name_column_is_restored_and_order_is_normalized() {
-        let parsed = parse_visible_cols("status,pid").unwrap();
-
-        assert_eq!(parsed, vec![ColKey::Pid, ColKey::Name, ColKey::Status]);
-    }
+    use super::{selection_projection, History, REFRESH_SECS};
 
     #[test]
     fn process_churn_clears_only_a_vanished_selection() {

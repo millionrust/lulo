@@ -5743,6 +5743,7 @@ name = "rmac-thumbnails"
 version = "0.1.0"
 dependencies = [
  "image",
+ "libc",
  "rmac-storage",
 ]
 

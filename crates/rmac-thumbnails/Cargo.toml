@@ -7,4 +7,5 @@ authors.workspace = true
 
 [dependencies]
 image = { workspace = true, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
+libc.workspace = true
 rmac-storage.workspace = true

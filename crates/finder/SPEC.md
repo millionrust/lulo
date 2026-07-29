@@ -245,6 +245,20 @@ metadata, icons, and identifiers remain original rmac work.
   back exactly, and is reported truthfully if application launch then fails.
   MIME/default queries and launch helpers run away from GPUI with bounded
   output and an eight-second deadline.
+- Space opens an in-product Quick Look surface on Linux and macOS instead of
+  invoking the macOS-only `qlmanage` process. It previews bounded images,
+  UTF-8 text, folders, and symbolic-link identities, provides truthful
+  unsupported/error states, and moves through a multi-selection with
+  Left/Right. Space or Escape closes it. All content work runs away from GPUI.
+  Text uses a no-follow, nonblocking regular-file descriptor, reads at most
+  64 KiB plus one truncation byte, refuses binary controls, and revalidates the
+  descriptor and visible path identity after reading. Folder enumeration stops
+  at 10,000 entries and revalidates the directory. Links display only their
+  bounded target identity and are never followed. Image previews use a private
+  user-owned mode-0700 cache, mode-0600 regular artifacts, source device/inode/
+  size/time invalidation, no-follow opens, a 32,768-pixel source-dimension
+  ceiling, a 128 MiB decoder allocation budget, and a 1,024-pixel output edge.
+  A source changed during decoding is never published as the accepted preview.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

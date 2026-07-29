@@ -16,14 +16,18 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 
-use crate::{mac, Button, ButtonRole, ListRow};
+use crate::{mac, shortcuts::Shortcut, Button, ButtonRole, ListRow};
 
 gpui::actions!(rmac_ui, [DismissMenu, RequestClose]);
 
 const MENU_CONTEXT: &str = "RmacContextMenu";
 
 pub(crate) fn init(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("escape", DismissMenu, Some(MENU_CONTEXT))]);
+    cx.bind_keys([KeyBinding::new(
+        crate::shortcuts::ESCAPE.keystroke,
+        DismissMenu,
+        Some(MENU_CONTEXT),
+    )]);
 }
 
 /// Visual role of a dialog button (drives fill / text color).
@@ -178,7 +182,7 @@ impl ContextMenu {
     }
 
     /// Append an item showing a right-aligned shortcut hint (e.g. "⌘C").
-    pub fn item_shortcut(
+    fn item_shortcut(
         mut self,
         label: impl Into<SharedString>,
         shortcut: impl Into<SharedString>,
@@ -193,11 +197,37 @@ impl ContextMenu {
         self
     }
 
+    /// Append a normal item using the shared binding and menu hint.
+    pub fn command_item(
+        self,
+        label: impl Into<SharedString>,
+        shortcut: Shortcut,
+        action: Box<dyn Action>,
+    ) -> Self {
+        self.item_shortcut(label, shortcut.hint, action)
+    }
+
     /// Append a destructive item (red label, e.g. Delete / Move to Trash).
     pub fn danger_item(mut self, label: impl Into<SharedString>, action: Box<dyn Action>) -> Self {
         self.items.push(MenuEntry::Item {
             label: label.into(),
             shortcut: None,
+            action,
+            danger: true,
+        });
+        self
+    }
+
+    /// Append a destructive item using the shared binding and menu hint.
+    pub fn danger_command_item(
+        mut self,
+        label: impl Into<SharedString>,
+        shortcut: Shortcut,
+        action: Box<dyn Action>,
+    ) -> Self {
+        self.items.push(MenuEntry::Item {
+            label: label.into(),
+            shortcut: Some(shortcut.hint.into()),
             action,
             danger: true,
         });

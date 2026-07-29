@@ -592,23 +592,51 @@ impl EditorView {
         });
 
         cx.bind_keys([
-            KeyBinding::new("cmd-n", NewFile, Some(CTX)),
-            KeyBinding::new("cmd-o", OpenFile, Some(CTX)),
-            KeyBinding::new("cmd-s", SaveFile, Some(CTX)),
-            KeyBinding::new("cmd-shift-s", SaveFileAs, Some(CTX)),
-            KeyBinding::new("cmd-f", ToggleFind, Some(CTX)),
-            KeyBinding::new("cmd-shift-f", ToggleReplace, Some(CTX)),
-            KeyBinding::new("cmd-g", FindNext, Some(CTX)),
-            KeyBinding::new("cmd-shift-g", FindPrev, Some(CTX)),
-            KeyBinding::new("escape", CloseBar, Some(CTX)),
-            KeyBinding::new("cmd-=", IncreaseFont, Some(CTX)),
-            KeyBinding::new("cmd-+", IncreaseFont, Some(CTX)),
-            KeyBinding::new("cmd--", DecreaseFont, Some(CTX)),
-            KeyBinding::new("cmd-shift-m", ToggleMono, Some(CTX)),
-            KeyBinding::new("cmd-w", CloseWindow, Some(CTX)),
+            KeyBinding::new(rmac_ui::shortcuts::NEW.keystroke, NewFile, Some(CTX)),
+            KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
+            KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
+            KeyBinding::new(rmac_ui::shortcuts::SAVE_AS.keystroke, SaveFileAs, Some(CTX)),
+            KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, ToggleFind, Some(CTX)),
+            KeyBinding::new(
+                rmac_ui::shortcuts::REPLACE.keystroke,
+                ToggleReplace,
+                Some(CTX),
+            ),
+            KeyBinding::new(rmac_ui::shortcuts::FIND_NEXT.keystroke, FindNext, Some(CTX)),
+            KeyBinding::new(
+                rmac_ui::shortcuts::FIND_PREVIOUS.keystroke,
+                FindPrev,
+                Some(CTX),
+            ),
+            KeyBinding::new(rmac_ui::shortcuts::ESCAPE.keystroke, CloseBar, Some(CTX)),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_IN.keystroke,
+                IncreaseFont,
+                Some(CTX),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_IN_ALTERNATE.keystroke,
+                IncreaseFont,
+                Some(CTX),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_OUT.keystroke,
+                DecreaseFont,
+                Some(CTX),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::TOGGLE_MONOSPACE.keystroke,
+                ToggleMono,
+                Some(CTX),
+            ),
+            KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, Some(CTX)),
         ]);
         #[cfg(target_os = "linux")]
-        cx.bind_keys([KeyBinding::new("cmd-p", PrintFile, Some(CTX))]);
+        cx.bind_keys([KeyBinding::new(
+            rmac_ui::shortcuts::PRINT.keystroke,
+            PrintFile,
+            Some(CTX),
+        )]);
 
         // Recovery discovery can inspect bounded records totaling up to 128
         // MiB. Present the first frame immediately and keep the document gated

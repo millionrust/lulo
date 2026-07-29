@@ -1934,15 +1934,31 @@ fn main() {
         |window, cx| {
             let view = MonitorView::new(window, cx);
             cx.bind_keys([
-                gpui::KeyBinding::new("cmd-f", FocusSearch, Some("ActivityMonitor")),
-                gpui::KeyBinding::new("cmd-backspace", QuitProcess, Some("ActivityMonitor")),
                 gpui::KeyBinding::new(
-                    "shift-cmd-backspace",
+                    rmac_ui::shortcuts::FIND.keystroke,
+                    FocusSearch,
+                    Some("ActivityMonitor"),
+                ),
+                gpui::KeyBinding::new(
+                    rmac_ui::shortcuts::DELETE.keystroke,
+                    QuitProcess,
+                    Some("ActivityMonitor"),
+                ),
+                gpui::KeyBinding::new(
+                    rmac_ui::shortcuts::FORCE_DELETE.keystroke,
                     ForceQuitProcess,
                     Some("ActivityMonitor"),
                 ),
-                gpui::KeyBinding::new("enter", ConfirmKill, Some("ActivityMonitor")),
-                gpui::KeyBinding::new("escape", CancelKill, Some("ActivityMonitor")),
+                gpui::KeyBinding::new(
+                    rmac_ui::shortcuts::ENTER.keystroke,
+                    ConfirmKill,
+                    Some("ActivityMonitor"),
+                ),
+                gpui::KeyBinding::new(
+                    rmac_ui::shortcuts::ESCAPE.keystroke,
+                    CancelKill,
+                    Some("ActivityMonitor"),
+                ),
             ]);
             window.focus(&view.focus);
             view

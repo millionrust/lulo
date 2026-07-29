@@ -20102,7 +20102,11 @@ fn main() {
         1000.0,
         720.0,
         |window, cx| {
-            cx.bind_keys([KeyBinding::new("cmd-[", GoBack, Some("SystemSettings"))]);
+            cx.bind_keys([KeyBinding::new(
+                rmac_ui::shortcuts::BACK.keystroke,
+                GoBack,
+                Some("SystemSettings"),
+            )]);
             Settings::new(window, cx)
         },
     );

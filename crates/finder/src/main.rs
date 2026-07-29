@@ -603,23 +603,79 @@ impl FinderView {
 
         // Keyboard shortcuts → actions (handled on the focused list).
         cx.bind_keys([
-            KeyBinding::new("cmd-a", SelectAll, Some("Finder")),
-            KeyBinding::new("cmd-c", CopyItems, Some("Finder")),
-            KeyBinding::new("cmd-x", CutItems, Some("Finder")),
-            KeyBinding::new("cmd-v", PasteItems, Some("Finder")),
-            KeyBinding::new("cmd-z", UndoOperation, Some("Finder")),
-            KeyBinding::new("cmd-d", Duplicate, Some("Finder")),
-            KeyBinding::new("cmd-backspace", MoveToTrash, Some("Finder")),
-            KeyBinding::new("cmd-option-backspace", DeletePermanently, Some("Finder")),
-            KeyBinding::new("shift-cmd-n", NewFolder, Some("Finder")),
-            KeyBinding::new("cmd-up", GoUp, Some("Finder")),
-            KeyBinding::new("cmd-down", OpenItems, Some("Finder")),
-            KeyBinding::new("enter", RenameItem, Some("Finder")),
-            KeyBinding::new("shift-cmd-.", ToggleHidden, Some("Finder")),
-            KeyBinding::new("space", QuickLook, Some("Finder")),
-            KeyBinding::new("cmd-i", GetInfo, Some("Finder")),
-            KeyBinding::new("cmd-t", NewTab, Some("Finder")),
-            KeyBinding::new("cmd-w", CloseTab, Some("Finder")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::SELECT_ALL.keystroke,
+                SelectAll,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::COPY.keystroke,
+                CopyItems,
+                Some("Finder"),
+            ),
+            KeyBinding::new(rmac_ui::shortcuts::CUT.keystroke, CutItems, Some("Finder")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::PASTE.keystroke,
+                PasteItems,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::UNDO.keystroke,
+                UndoOperation,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::DUPLICATE.keystroke,
+                Duplicate,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::DELETE.keystroke,
+                MoveToTrash,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::DELETE_PERMANENT.keystroke,
+                DeletePermanently,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::NEW_FOLDER.keystroke,
+                NewFolder,
+                Some("Finder"),
+            ),
+            KeyBinding::new(rmac_ui::shortcuts::GO_UP.keystroke, GoUp, Some("Finder")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::OPEN_SELECTION.keystroke,
+                OpenItems,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ENTER.keystroke,
+                RenameItem,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::TOGGLE_HIDDEN.keystroke,
+                ToggleHidden,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::SPACE.keystroke,
+                QuickLook,
+                Some("Finder"),
+            ),
+            KeyBinding::new(rmac_ui::shortcuts::INFO.keystroke, GetInfo, Some("Finder")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::NEW_TAB.keystroke,
+                NewTab,
+                Some("Finder"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::CLOSE.keystroke,
+                CloseTab,
+                Some("Finder"),
+            ),
         ]);
 
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
@@ -4058,37 +4114,63 @@ impl FinderView {
     ) -> rmac_ui::ContextMenu {
         let mut m = rmac_ui::ContextMenu::new(pos);
         if let Some(label) = undo_label {
-            m = m.item(label, Box::new(UndoOperation)).separator();
+            m = m
+                .command_item(label, rmac_ui::shortcuts::UNDO, Box::new(UndoOperation))
+                .separator();
         }
         if trash_view {
             if has_selection {
                 m = m
                     .item("Restore", Box::new(RestoreItems))
                     .separator()
-                    .danger_item("Delete Permanently…", Box::new(DeletePermanently));
+                    .danger_command_item(
+                        "Delete Permanently…",
+                        rmac_ui::shortcuts::DELETE_PERMANENT,
+                        Box::new(DeletePermanently),
+                    );
             }
             return m;
         }
         if has_selection {
-            m = m.item("Open", Box::new(OpenItems));
+            m = m.command_item(
+                "Open",
+                rmac_ui::shortcuts::OPEN_SELECTION,
+                Box::new(OpenItems),
+            );
             if can_open_with {
                 m = m.item("Open With…", Box::new(OpenWith));
             }
             m = m
-                .item("Rename", Box::new(RenameItem))
-                .item("Duplicate", Box::new(Duplicate))
+                .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem))
+                .command_item(
+                    "Duplicate",
+                    rmac_ui::shortcuts::DUPLICATE,
+                    Box::new(Duplicate),
+                )
                 .separator()
-                .item("Copy", Box::new(CopyItems))
-                .item("Cut", Box::new(CutItems));
+                .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems))
+                .command_item("Cut", rmac_ui::shortcuts::CUT, Box::new(CutItems));
         }
         if can_paste {
-            m = m.item("Paste Item", Box::new(PasteItems));
+            m = m.command_item(
+                "Paste Item",
+                rmac_ui::shortcuts::PASTE,
+                Box::new(PasteItems),
+            );
         }
-        m = m.separator().item("New Folder", Box::new(NewFolder));
+        m = m.separator().command_item(
+            "New Folder",
+            rmac_ui::shortcuts::NEW_FOLDER,
+            Box::new(NewFolder),
+        );
         if has_selection {
             m = m
                 .separator()
-                .item("Move to Trash", Box::new(MoveToTrash))
+                .command_item(
+                    "Move to Trash",
+                    rmac_ui::shortcuts::DELETE,
+                    Box::new(MoveToTrash),
+                )
                 .danger_item("Delete Immediately", Box::new(DeleteItem));
         }
         m

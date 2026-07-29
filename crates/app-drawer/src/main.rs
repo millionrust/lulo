@@ -460,7 +460,11 @@ impl AppDrawer {
     /// The right-click menu shared by grid tiles and list rows. Desktop-entry
     /// actions keep their declared order and exact localized labels.
     fn app_menu(&self, pos: Point<Pixels>, cx: &gpui::App) -> rmac_ui::ContextMenu {
-        let mut menu = rmac_ui::ContextMenu::new(pos).item("Open", Box::new(OpenApp));
+        let mut menu = rmac_ui::ContextMenu::new(pos).command_item(
+            "Open",
+            rmac_ui::shortcuts::ENTER,
+            Box::new(OpenApp),
+        );
         if let Some(application) = self.selected_app(cx) {
             for action in application.actions {
                 menu = menu.item(
@@ -1209,12 +1213,32 @@ fn icns_path(app: &Path) -> Option<PathBuf> {
 
 fn key_bindings() -> [KeyBinding; 6] {
     [
-        KeyBinding::new("left", MoveLeft, Some("AppDrawer")),
-        KeyBinding::new("right", MoveRight, Some("AppDrawer")),
-        KeyBinding::new("up", MoveUp, Some("AppDrawer")),
-        KeyBinding::new("down", MoveDown, Some("AppDrawer")),
-        KeyBinding::new("enter", Launch, Some("AppDrawer")),
-        KeyBinding::new("escape", ClearSearch, Some("AppDrawer")),
+        KeyBinding::new(
+            rmac_ui::shortcuts::LEFT.keystroke,
+            MoveLeft,
+            Some("AppDrawer"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::RIGHT.keystroke,
+            MoveRight,
+            Some("AppDrawer"),
+        ),
+        KeyBinding::new(rmac_ui::shortcuts::UP.keystroke, MoveUp, Some("AppDrawer")),
+        KeyBinding::new(
+            rmac_ui::shortcuts::DOWN.keystroke,
+            MoveDown,
+            Some("AppDrawer"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::ENTER.keystroke,
+            Launch,
+            Some("AppDrawer"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::ESCAPE.keystroke,
+            ClearSearch,
+            Some("AppDrawer"),
+        ),
     ]
 }
 

@@ -21,6 +21,7 @@ mod components;
 mod controls;
 mod feedback;
 pub mod gallery;
+pub mod shortcuts;
 pub mod theme;
 pub use components::{
     alert, dialog, dialog_button, ContextMenu, DialogButtonKind, DismissMenu, RequestClose,

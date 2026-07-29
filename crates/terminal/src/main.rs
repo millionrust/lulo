@@ -1823,20 +1823,60 @@ impl TerminalView {
         .detach();
 
         cx.bind_keys([
-            KeyBinding::new("cmd-c", Copy, Some("Terminal")),
-            KeyBinding::new("cmd-v", Paste, Some("Terminal")),
-            KeyBinding::new("cmd-f", Find, Some("Terminal")),
-            KeyBinding::new("cmd-=", ZoomIn, Some("Terminal")),
-            KeyBinding::new("cmd-+", ZoomIn, Some("Terminal")),
-            KeyBinding::new("cmd--", ZoomOut, Some("Terminal")),
-            KeyBinding::new("cmd-0", ZoomReset, Some("Terminal")),
-            KeyBinding::new("cmd-a", SelectAll, Some("Terminal")),
-            KeyBinding::new("cmd-k", Clear, Some("Terminal")),
-            KeyBinding::new("cmd-t", NewTab, Some("Terminal")),
-            KeyBinding::new("cmd-w", CloseTab, Some("Terminal")),
-            KeyBinding::new("cmd-shift-]", NextTab, Some("Terminal")),
-            KeyBinding::new("cmd-shift-[", PrevTab, Some("Terminal")),
-            KeyBinding::new("cmd-shift-p", CycleProfile, Some("Terminal")),
+            KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, Some("Terminal")),
+            KeyBinding::new(rmac_ui::shortcuts::PASTE.keystroke, Paste, Some("Terminal")),
+            KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, Find, Some("Terminal")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_IN.keystroke,
+                ZoomIn,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_IN_ALTERNATE.keystroke,
+                ZoomIn,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_OUT.keystroke,
+                ZoomOut,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::ZOOM_RESET.keystroke,
+                ZoomReset,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::SELECT_ALL.keystroke,
+                SelectAll,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(rmac_ui::shortcuts::CLEAR.keystroke, Clear, Some("Terminal")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::NEW_TAB.keystroke,
+                NewTab,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::CLOSE.keystroke,
+                CloseTab,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::NEXT_TAB.keystroke,
+                NextTab,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::PREVIOUS_TAB.keystroke,
+                PrevTab,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::CYCLE_PROFILE.keystroke,
+                CycleProfile,
+                Some("Terminal"),
+            ),
         ]);
 
         let focus = cx.focus_handle();
@@ -3742,11 +3782,15 @@ impl Render for TerminalView {
             .when_some(self.menu_at, |el: Div, pos| {
                 el.child(
                     rmac_ui::ContextMenu::new(pos)
-                        .item("Copy", Box::new(Copy))
-                        .item("Paste", Box::new(Paste))
-                        .item("Select All", Box::new(SelectAll))
+                        .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(Copy))
+                        .command_item("Paste", rmac_ui::shortcuts::PASTE, Box::new(Paste))
+                        .command_item(
+                            "Select All",
+                            rmac_ui::shortcuts::SELECT_ALL,
+                            Box::new(SelectAll),
+                        )
                         .separator()
-                        .item("Clear", Box::new(Clear))
+                        .command_item("Clear", rmac_ui::shortcuts::CLEAR, Box::new(Clear))
                         .separator()
                         .item("Profiles…", Box::new(ShowProfiles))
                         .render(),

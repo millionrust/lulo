@@ -29,6 +29,7 @@ enum TrashOperation {
     #[default]
     Trash,
     Restore,
+    Delete,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -40,6 +41,10 @@ enum TrashStage {
     RestorePrepared,
     RestoreDataMoved,
     RestoreInfoRemoved,
+    DeletePrepared,
+    DeleteDataStaged,
+    DeleteDataRemoved,
+    DeleteInfoRemoved,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -59,6 +64,8 @@ struct TrashRecord {
     info_identity: Option<EntryIdentity>,
     #[serde(default)]
     restore_parent_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    delete_path_bytes: Option<Vec<u8>>,
 }
 
 impl TrashRecord {
@@ -78,6 +85,12 @@ impl TrashRecord {
         PathBuf::from(OsString::from_vec(self.info_path_bytes.clone()))
     }
 
+    fn delete_path(&self) -> Option<PathBuf> {
+        self.delete_path_bytes
+            .as_ref()
+            .map(|bytes| PathBuf::from(OsString::from_vec(bytes.clone())))
+    }
+
     fn validate(&self, expected_id: &str) -> io::Result<()> {
         if self.version != RECORD_VERSION
             || self.id != expected_id
@@ -89,6 +102,7 @@ impl TrashRecord {
         let root = self.trash_root();
         let data = self.data_path();
         let info = self.info_path();
+        let delete = self.delete_path();
         let files = root.join("files");
         let info_directory = root.join("info");
         if !path_is_normal_absolute(&source)
@@ -121,6 +135,7 @@ impl TrashRecord {
                     self.stage,
                     TrashStage::Prepared | TrashStage::InfoPublished | TrashStage::DataMoved
                 ) || self.restore_parent_identity.is_some()
+                    || delete.is_some()
                 {
                     return Err(invalid_data("trash transaction stage is invalid"));
                 }
@@ -143,8 +158,31 @@ impl TrashRecord {
                         | TrashStage::RestoreInfoRemoved
                 ) || self.info_identity.is_none()
                     || self.restore_parent_identity.is_none()
+                    || delete.is_some()
                 {
                     return Err(invalid_data("restore transaction stage is invalid"));
+                }
+            }
+            TrashOperation::Delete => {
+                let delete = delete
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+                let expected_name = OsString::from(format!(".rmac-delete-{}", self.id));
+                if !matches!(
+                    self.stage,
+                    TrashStage::DeletePrepared
+                        | TrashStage::DeleteDataStaged
+                        | TrashStage::DeleteDataRemoved
+                        | TrashStage::DeleteInfoRemoved
+                ) || self.info_identity.is_none()
+                    || self.restore_parent_identity.is_some()
+                    || !path_is_normal_absolute(delete)
+                    || delete.parent() != Some(files.as_path())
+                    || delete.file_name() != Some(expected_name.as_os_str())
+                    || delete == &data
+                    || delete == &info
+                {
+                    return Err(invalid_data("delete transaction stage is invalid"));
                 }
             }
         }
@@ -881,6 +919,29 @@ fn record_restored_data_matches(record: &TrashRecord) -> io::Result<bool> {
     record_tree_matches(record, &record.source(), true)
 }
 
+fn record_delete_data_matches_exact(record: &TrashRecord) -> io::Result<bool> {
+    let delete = record
+        .delete_path()
+        .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+    record_tree_matches(record, &delete, true)
+}
+
+fn record_delete_directory_root_matches(record: &TrashRecord) -> io::Result<bool> {
+    let delete = record
+        .delete_path()
+        .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+    let metadata = match fs::symlink_metadata(&delete) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Ok(false);
+    }
+    let current = EntryIdentity::capture(&delete)?;
+    Ok(record.source_identity.same_object(&current))
+}
+
 fn record_tree_matches(record: &TrashRecord, path: &Path, published: bool) -> io::Result<bool> {
     let identity = match EntryIdentity::capture(path) {
         Ok(identity) => identity,
@@ -981,6 +1042,30 @@ fn remove_exact_info(record: &TrashRecord) -> io::Result<()> {
     )
 }
 
+fn remove_staged_delete_data(record: &TrashRecord) -> io::Result<()> {
+    let delete = record
+        .delete_path()
+        .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+    let metadata = fs::symlink_metadata(&delete)?;
+    let identity = EntryIdentity::capture(&delete)?;
+    if !record.source_identity.same_object(&identity) {
+        return Err(changed("permanent-delete staging data changed"));
+    }
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(&delete)?;
+    } else {
+        if !record_delete_data_matches_exact(record)? {
+            return Err(changed("permanent-delete staging data changed"));
+        }
+        fs::remove_file(&delete)?;
+    }
+    sync_directory(
+        delete
+            .parent()
+            .ok_or_else(|| invalid_data("permanent-delete staging parent is missing"))?,
+    )
+}
+
 fn entry_exists(path: &Path) -> io::Result<bool> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
@@ -1046,6 +1131,13 @@ fn interrupted() -> io::Error {
 
 fn interrupted_restore() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, "Restore cancelled")
+}
+
+fn interrupted_delete() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::Interrupted,
+        "Permanent deletion cancelled before it began",
+    )
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1207,6 +1299,7 @@ impl TrashStore {
             info_sha256: item.info_sha256,
             info_identity: Some(item.info_identity.clone()),
             restore_parent_identity: Some(EntryIdentity::capture(&canonical_parent)?),
+            delete_path_bytes: None,
         };
         record.validate(&id)?;
         if !record_data_matches_exact(&record)?
@@ -1233,6 +1326,69 @@ impl TrashStore {
             return Err(changed("restored data changed during publication"));
         }
         Ok(destination)
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn delete_permanently(
+        &self,
+        item: &TrashedItem,
+        cancel: &AtomicBool,
+    ) -> io::Result<()> {
+        let _lock = self.lock()?;
+        let recovery = self.recover_locked()?;
+        if recovery.pending != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "unfinished Trash recovery must be reviewed first",
+            ));
+        }
+        validate_existing_layout(&item.layout)?;
+        let id = Uuid::new_v4().to_string();
+        let delete_path = item
+            .data_path
+            .parent()
+            .ok_or_else(|| invalid_data("Trash data parent is missing"))?
+            .join(format!(".rmac-delete-{id}"));
+        let record = TrashRecord {
+            version: RECORD_VERSION,
+            id: id.clone(),
+            operation: TrashOperation::Delete,
+            stage: TrashStage::DeletePrepared,
+            source_path_bytes: item.original_path.as_os_str().as_bytes().to_vec(),
+            trash_root_path_bytes: item.layout.root.as_os_str().as_bytes().to_vec(),
+            data_path_bytes: item.data_path.as_os_str().as_bytes().to_vec(),
+            info_path_bytes: item.info_path.as_os_str().as_bytes().to_vec(),
+            source_identity: item.data_identity.clone(),
+            source_manifest: item.data_manifest.clone(),
+            info_sha256: item.info_sha256,
+            info_identity: Some(item.info_identity.clone()),
+            restore_parent_identity: None,
+            delete_path_bytes: Some(delete_path.as_os_str().as_bytes().to_vec()),
+        };
+        record.validate(&id)?;
+        if !record_data_matches_exact(&record)?
+            || !record_info_matches(&record)?
+            || entry_exists(&delete_path)?
+        {
+            return Err(changed("Trash item changed before permanent deletion"));
+        }
+        let record_path = self.record_path(&id);
+        self.persist(&record_path, &record, true)?;
+        if cancel.load(Ordering::Acquire) {
+            self.finish_record(&record_path)?;
+            return Err(interrupted_delete());
+        }
+        if !record_data_matches_exact(&record)?
+            || !record_info_matches(&record)?
+            || entry_exists(&delete_path)?
+        {
+            return Err(changed("Trash item changed before permanent deletion"));
+        }
+        let mut record = record;
+        if !self.resume_delete_prepared(&record_path, &mut record)? {
+            return Err(changed("Trash item changed during permanent deletion"));
+        }
+        Ok(())
     }
 
     fn trash_in_layout(
@@ -1286,6 +1442,7 @@ impl TrashStore {
                 info_sha256: sha256(&info_bytes),
                 info_identity: None,
                 restore_parent_identity: None,
+                delete_path_bytes: None,
             };
             record.validate(&id)?;
             let record_path = self.record_path(&id);
@@ -1401,6 +1558,7 @@ impl TrashStore {
                     }
                 }
                 TrashOperation::Restore => self.recover_restore_record(&path, &mut record)?,
+                TrashOperation::Delete => self.recover_delete_record(&path, &mut record)?,
             };
             if finalized {
                 report.finalized += 1;
@@ -1445,6 +1603,48 @@ impl TrashStore {
             TrashStage::RestoreInfoRemoved
                 if !data_exists && destination_matches && !info_exists && parent_same =>
             {
+                self.finish_record(path)?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    fn recover_delete_record(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        let delete_path = record
+            .delete_path()
+            .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+        let data_exists = entry_exists(&record.data_path())?;
+        let delete_exists = entry_exists(&delete_path)?;
+        let info_exists = entry_exists(&record.info_path())?;
+        let data_matches = data_exists && record_data_matches_exact(record)?;
+        let delete_matches = delete_exists && record_delete_data_matches_exact(record)?;
+        let delete_directory_matches =
+            delete_exists && record_delete_directory_root_matches(record)?;
+        let info_matches = info_exists && record_info_matches(record)?;
+
+        match record.stage {
+            TrashStage::DeletePrepared if data_matches && !delete_exists && info_matches => {
+                self.resume_delete_prepared(path, record)
+            }
+            TrashStage::DeletePrepared if !data_exists && delete_matches && info_matches => {
+                record.stage = TrashStage::DeleteDataStaged;
+                self.persist(path, record, false)?;
+                self.resume_delete_staged(path, record, false)
+            }
+            TrashStage::DeleteDataStaged
+                if !data_exists
+                    && info_matches
+                    && (!delete_exists || delete_matches || delete_directory_matches) =>
+            {
+                self.resume_delete_staged(path, record, true)
+            }
+            TrashStage::DeleteDataRemoved
+                if !data_exists && !delete_exists && (!info_exists || info_matches) =>
+            {
+                self.finish_delete_info(path, record)
+            }
+            TrashStage::DeleteInfoRemoved if !data_exists && !delete_exists && !info_exists => {
                 self.finish_record(path)?;
                 Ok(true)
             }
@@ -1511,6 +1711,69 @@ impl TrashStore {
             )?;
         }
         record.stage = TrashStage::RestoreInfoRemoved;
+        self.persist(path, record, false)?;
+        self.finish_record(path)?;
+        Ok(true)
+    }
+
+    fn resume_delete_prepared(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        let delete_path = record
+            .delete_path()
+            .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+        rename_noreplace(&record.data_path(), &delete_path)?;
+        sync_directory(
+            delete_path
+                .parent()
+                .ok_or_else(|| invalid_data("permanent-delete staging parent is missing"))?,
+        )?;
+        if !record_delete_data_matches_exact(record)? {
+            return Ok(false);
+        }
+        record.stage = TrashStage::DeleteDataStaged;
+        self.persist(path, record, false)?;
+        self.resume_delete_staged(path, record, false)
+    }
+
+    fn resume_delete_staged(
+        &self,
+        path: &Path,
+        record: &mut TrashRecord,
+        allow_partial_directory: bool,
+    ) -> io::Result<bool> {
+        let delete_path = record
+            .delete_path()
+            .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+        if entry_exists(&delete_path)? {
+            let exact = record_delete_data_matches_exact(record)?;
+            let partial_directory =
+                allow_partial_directory && record_delete_directory_root_matches(record)?;
+            if !exact && !partial_directory {
+                return Ok(false);
+            }
+            remove_staged_delete_data(record)?;
+        }
+        if entry_exists(&delete_path)? || entry_exists(&record.data_path())? {
+            return Ok(false);
+        }
+        record.stage = TrashStage::DeleteDataRemoved;
+        self.persist(path, record, false)?;
+        self.finish_delete_info(path, record)
+    }
+
+    fn finish_delete_info(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        if entry_exists(&record.info_path())? {
+            if !record_info_matches(record)? {
+                return Ok(false);
+            }
+            fs::remove_file(record.info_path())?;
+            sync_directory(
+                record
+                    .info_path()
+                    .parent()
+                    .ok_or_else(|| invalid_data("Trash info parent is missing"))?,
+            )?;
+        }
+        record.stage = TrashStage::DeleteInfoRemoved;
         self.persist(path, record, false)?;
         self.finish_record(path)?;
         Ok(true)
@@ -1733,6 +1996,7 @@ mod tests {
             info_sha256: sha256(&info_bytes),
             info_identity: None,
             restore_parent_identity: None,
+            delete_path_bytes: None,
         };
         let record_path = store.record_path(&id);
         store
@@ -1768,6 +2032,35 @@ mod tests {
             info_sha256: item.info_sha256,
             info_identity: Some(item.info_identity.clone()),
             restore_parent_identity: Some(EntryIdentity::capture(&parent).unwrap()),
+            delete_path_bytes: None,
+        };
+        let record_path = store.record_path(&id);
+        store.persist(&record_path, &record, true).unwrap();
+        (record_path, record)
+    }
+
+    fn prepared_delete_record(store: &TrashStore, item: &TrashedItem) -> (PathBuf, TrashRecord) {
+        let id = Uuid::new_v4().to_string();
+        let delete_path = item
+            .data_path
+            .parent()
+            .unwrap()
+            .join(format!(".rmac-delete-{id}"));
+        let record = TrashRecord {
+            version: RECORD_VERSION,
+            id: id.clone(),
+            operation: TrashOperation::Delete,
+            stage: TrashStage::DeletePrepared,
+            source_path_bytes: item.original_path.as_os_str().as_bytes().to_vec(),
+            trash_root_path_bytes: item.layout.root.as_os_str().as_bytes().to_vec(),
+            data_path_bytes: item.data_path.as_os_str().as_bytes().to_vec(),
+            info_path_bytes: item.info_path.as_os_str().as_bytes().to_vec(),
+            source_identity: item.data_identity.clone(),
+            source_manifest: item.data_manifest.clone(),
+            info_sha256: item.info_sha256,
+            info_identity: Some(item.info_identity.clone()),
+            restore_parent_identity: None,
+            delete_path_bytes: Some(delete_path.as_os_str().as_bytes().to_vec()),
         };
         let record_path = store.record_path(&id);
         store.persist(&record_path, &record, true).unwrap();
@@ -1991,6 +2284,196 @@ mod tests {
         assert!(record_path.exists());
     }
 
+    #[test]
+    fn permanent_delete_removes_bound_data_metadata_and_record() {
+        let (directory, store, layout) = setup("delete");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+
+        store
+            .delete_permanently(&item, &AtomicBool::new(false))
+            .expect("confirmed permanent delete should finish");
+
+        assert!(!source.exists());
+        assert!(!item.data_path.exists());
+        assert!(!item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn permanent_delete_cancellation_keeps_exact_trash_item_and_no_record() {
+        let (directory, store, layout) = setup("delete-cancel");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+
+        let error = store
+            .delete_permanently(&item, &AtomicBool::new(true))
+            .expect_err("cancellation before staging should retain the Trash item");
+
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"important");
+        assert!(item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn permanent_delete_refuses_data_substitution_after_listing() {
+        let (directory, store, layout) = setup("delete-data-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::write(&item.data_path, b"changed").unwrap();
+
+        let error = store
+            .delete_permanently(&item, &AtomicBool::new(false))
+            .expect_err("changed Trash data must not be deleted");
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"changed");
+        assert!(item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn permanent_delete_refuses_metadata_substitution_after_listing() {
+        let (directory, store, layout) = setup("delete-info-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::write(
+            &item.info_path,
+            b"[Trash Info]\nPath=elsewhere\nDeletionDate=2026-07-29T08:09:10\n",
+        )
+        .unwrap();
+
+        let error = store
+            .delete_permanently(&item, &AtomicBool::new(false))
+            .expect_err("changed Trash metadata must not authorize deletion");
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"important");
+        assert!(item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn permanent_delete_never_follows_a_trashed_symlink() {
+        let (directory, store, layout) = setup("delete-symlink");
+        let external = directory.0.join("external");
+        let source = directory.0.join("folder");
+        fs::create_dir(&external).unwrap();
+        fs::write(external.join("keep.txt"), b"keep").unwrap();
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("remove.txt"), b"remove").unwrap();
+        std::os::unix::fs::symlink(&external, source.join("external-link")).unwrap();
+        let item = trash_and_list(&store, &layout, &source);
+
+        store
+            .delete_permanently(&item, &AtomicBool::new(false))
+            .expect("directory deletion should finish");
+
+        assert_eq!(fs::read(external.join("keep.txt")).unwrap(), b"keep");
+        assert!(!item.data_path.exists());
+        assert!(!item.info_path.exists());
+    }
+
+    #[test]
+    fn recovery_finishes_delete_renamed_before_stage_persisted() {
+        let (directory, store, layout) = setup("delete-rename-crash");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        sync_directory(delete_path.parent().unwrap()).unwrap();
+
+        let recovery = store
+            .recover()
+            .expect("identity-proven staged delete should recover");
+
+        assert_eq!(
+            recovery,
+            TrashRecovery {
+                finalized: 1,
+                pending: 0
+            }
+        );
+        assert!(!delete_path.exists());
+        assert!(!item.info_path.exists());
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn recovery_resumes_a_partially_removed_staged_directory() {
+        let (directory, store, layout) = setup("delete-partial-directory");
+        let source = directory.0.join("folder");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("first.txt"), b"first").unwrap();
+        fs::write(source.join("second.txt"), b"second").unwrap();
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::remove_file(delete_path.join("first.txt")).unwrap();
+        sync_directory(&delete_path).unwrap();
+
+        let recovery = store
+            .recover()
+            .expect("the bound partially deleted directory should resume");
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert!(!delete_path.exists());
+        assert!(!item.info_path.exists());
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn recovery_finishes_delete_after_data_removal_before_stage_persisted() {
+        let (directory, store, layout) = setup("delete-data-crash");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::remove_file(&delete_path).unwrap();
+        sync_directory(delete_path.parent().unwrap()).unwrap();
+
+        let recovery = store
+            .recover()
+            .expect("data-removed delete should finish metadata cleanup");
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert!(!item.info_path.exists());
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn recovery_retains_a_changed_staged_delete_for_review() {
+        let (directory, store, layout) = setup("delete-stage-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::write(&delete_path, b"changed").unwrap();
+
+        let recovery = store
+            .recover()
+            .expect("changed staged data should remain pending");
+
+        assert_eq!(recovery.finalized, 0);
+        assert_eq!(recovery.pending, 1);
+        assert_eq!(fs::read(&delete_path).unwrap(), b"changed");
+        assert!(item.info_path.exists());
+        assert!(record_path.exists());
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn trash_identity_preserves_non_utf8_path_bytes() {
@@ -2203,6 +2686,25 @@ mod tests {
     }
 
     #[test]
+    fn malformed_delete_record_cannot_stage_outside_trash_data_directory() {
+        let (directory, store, layout) = setup("delete-record-path");
+        let source = write_source(&directory, OsStr::new("draft.txt"), b"draft");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        record.delete_path_bytes =
+            Some(directory.0.join("outside").as_os_str().as_bytes().to_vec());
+        store.persist(&record_path, &record, false).unwrap();
+
+        let error = store
+            .recover()
+            .expect_err("malformed delete staging path should fail closed");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(item.data_path.exists());
+        assert!(item.info_path.exists());
+    }
+
+    #[test]
     fn percent_encoding_preserves_only_uri_safe_path_bytes() {
         assert_eq!(percent_encode_path(b"/a b/%/\xff\n"), "/a%20b/%25/%FF%0A");
         assert_eq!(
@@ -2301,6 +2803,8 @@ mod tests {
         let _trash: fn(&TrashStore, &Path, &AtomicBool) -> io::Result<()> = TrashStore::trash;
         let _restore: fn(&TrashStore, &TrashedItem, &AtomicBool) -> io::Result<PathBuf> =
             TrashStore::restore;
+        let _delete: fn(&TrashStore, &TrashedItem, &AtomicBool) -> io::Result<()> =
+            TrashStore::delete_permanently;
     }
 
     #[test]

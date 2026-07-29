@@ -40,6 +40,7 @@ actions!(
         Duplicate,
         MoveToTrash,
         RestoreItems,
+        DeletePermanently,
         DeleteItem,
         CopyItems,
         CutItems,
@@ -84,6 +85,7 @@ enum TransferEvent {
 enum TrashTaskKind {
     Move,
     Restore,
+    Delete,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -122,6 +124,12 @@ struct ActiveTrash {
     total: usize,
     cancel: Arc<AtomicBool>,
     cancelling: bool,
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[derive(Clone)]
+struct DeleteConfirmation {
+    items: Vec<trash_store::TrashedItem>,
 }
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -327,6 +335,8 @@ struct FinderView {
     trash_items: Vec<trash_store::TrashedItem>,
     #[cfg(any(target_os = "linux", test))]
     trash_generation: u64,
+    #[cfg(any(target_os = "linux", test))]
+    delete_confirmation: Option<DeleteConfirmation>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
     dragging: bool,
@@ -499,6 +509,7 @@ impl FinderView {
             KeyBinding::new("cmd-v", PasteItems, Some("Finder")),
             KeyBinding::new("cmd-d", Duplicate, Some("Finder")),
             KeyBinding::new("cmd-backspace", MoveToTrash, Some("Finder")),
+            KeyBinding::new("cmd-option-backspace", DeletePermanently, Some("Finder")),
             KeyBinding::new("shift-cmd-n", NewFolder, Some("Finder")),
             KeyBinding::new("cmd-up", GoUp, Some("Finder")),
             KeyBinding::new("cmd-down", OpenItems, Some("Finder")),
@@ -583,6 +594,8 @@ impl FinderView {
             trash_items: Vec::new(),
             #[cfg(any(target_os = "linux", test))]
             trash_generation: 0,
+            #[cfg(any(target_os = "linux", test))]
+            delete_confirmation: None,
             free_bytes: None,
             dragging: false,
             focus,
@@ -754,6 +767,10 @@ impl FinderView {
         if self.trash_view {
             self.reload_trash(cx);
             return;
+        }
+        #[cfg(any(target_os = "linux", test))]
+        {
+            self.delete_confirmation = None;
         }
         self.reload_inner(cx, true);
     }
@@ -1548,6 +1565,13 @@ impl FinderView {
                         "Restore cancelled after restoring {completed} item{}",
                         if completed == 1 { "" } else { "s" }
                     ),
+                    (TrashTaskKind::Delete, 0) => {
+                        "Permanent deletion cancelled; no item was deleted".to_string()
+                    }
+                    (TrashTaskKind::Delete, completed) => format!(
+                        "Permanent deletion cancelled after deleting {completed} item{}",
+                        if completed == 1 { "" } else { "s" }
+                    ),
                 }
                 .into(),
             );
@@ -1561,6 +1585,10 @@ impl FinderView {
                     (TrashTaskKind::Restore, 1) => "Restored 1 item".to_string(),
                     (TrashTaskKind::Restore, completed) => {
                         format!("Restored {completed} items")
+                    }
+                    (TrashTaskKind::Delete, 1) => "Permanently deleted 1 item".to_string(),
+                    (TrashTaskKind::Delete, completed) => {
+                        format!("Permanently deleted {completed} items")
                     }
                 }
                 .into(),
@@ -1851,6 +1879,16 @@ impl FinderView {
         }
     }
 
+    #[cfg(any(target_os = "linux", test))]
+    fn selected_trash_items(&self) -> Vec<trash_store::TrashedItem> {
+        let selected_paths = self.selected_paths().into_iter().collect::<BTreeSet<_>>();
+        self.trash_items
+            .iter()
+            .filter(|item| selected_paths.contains(item.data_path()))
+            .cloned()
+            .collect()
+    }
+
     fn restore_selected(&mut self, cx: &mut Context<Self>) {
         if !self.trash_view {
             self.operation_error = Some("Open Trash to restore items".into());
@@ -1881,13 +1919,7 @@ impl FinderView {
                 cx.notify();
                 return;
             }
-            let selected_paths = self.selected_paths().into_iter().collect::<BTreeSet<_>>();
-            let items = self
-                .trash_items
-                .iter()
-                .filter(|item| selected_paths.contains(item.data_path()))
-                .cloned()
-                .collect::<Vec<_>>();
+            let items = self.selected_trash_items();
             if items.is_empty() {
                 return;
             }
@@ -1958,6 +1990,148 @@ impl FinderView {
             self.operation_error = Some("Trash restore is available on Linux".into());
             cx.notify();
         }
+    }
+
+    fn request_permanent_delete(&mut self, cx: &mut Context<Self>) {
+        if !self.trash_view {
+            self.operation_error =
+                Some("Permanent deletion is available for items in Trash".into());
+            cx.notify();
+            return;
+        }
+        #[cfg(any(target_os = "linux", test))]
+        {
+            if self.transfer.is_some()
+                || self.trash_operation.is_some()
+                || self.recovery_open
+                || self.recovery_busy
+            {
+                self.operation_error = Some("Wait for the current file operation to finish".into());
+                cx.notify();
+                return;
+            }
+            if self.trash_loading {
+                self.operation_error = Some("Files is still verifying Trash recovery".into());
+                cx.notify();
+                return;
+            }
+            if self.trash_store.is_none() {
+                self.operation_error =
+                    Some("Trash recovery is unavailable; no item was changed".into());
+                cx.notify();
+                return;
+            }
+            if self.trash_pending != 0 {
+                self.operation_error = Some(
+                    "A changed Trash operation needs manual recovery before permanent deletion"
+                        .into(),
+                );
+                cx.notify();
+                return;
+            }
+            let items = self.selected_trash_items();
+            if items.is_empty() {
+                return;
+            }
+            self.menu_at = None;
+            self.operation_error = None;
+            self.operation_notice = None;
+            self.delete_confirmation = Some(DeleteConfirmation { items });
+            cx.notify();
+        }
+        #[cfg(not(any(target_os = "linux", test)))]
+        {
+            self.operation_error = Some("Permanent deletion is available on Linux".into());
+            cx.notify();
+        }
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    fn cancel_permanent_delete(&mut self, cx: &mut Context<Self>) {
+        self.delete_confirmation = None;
+        cx.notify();
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    fn confirm_permanent_delete(&mut self, cx: &mut Context<Self>) {
+        let Some(confirmation) = self.delete_confirmation.take() else {
+            return;
+        };
+        let Some(store) = self.trash_store.clone() else {
+            self.operation_error =
+                Some("Trash recovery is unavailable; no item was changed".into());
+            cx.notify();
+            return;
+        };
+        if self.transfer.is_some() || self.trash_operation.is_some() || self.trash_pending != 0 {
+            self.operation_error = Some("Wait for the current file operation to finish".into());
+            cx.notify();
+            return;
+        }
+        let items = confirmation.items;
+        let total = items.len();
+        if total == 0 {
+            return;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.trash_operation = Some(ActiveTrash {
+            label: "Deleting Permanently".into(),
+            processed: 0,
+            total,
+            cancel: cancel.clone(),
+            cancelling: false,
+        });
+        self.operation_error = None;
+        self.operation_notice = None;
+        cx.notify();
+
+        let (events, event_rx) = async_channel::bounded(16);
+        cx.background_executor()
+            .spawn(async move {
+                let mut failures = Vec::new();
+                let mut completed = 0usize;
+                let mut processed = 0usize;
+                let mut cancelled = false;
+                for item in items {
+                    if cancel.load(Ordering::Acquire) {
+                        cancelled = true;
+                        break;
+                    }
+                    match store.delete_permanently(&item, &cancel) {
+                        Ok(()) => completed += 1,
+                        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                            cancelled = true;
+                            break;
+                        }
+                        Err(error) => {
+                            let blocked = error.kind() == std::io::ErrorKind::WouldBlock;
+                            failures.push(file_ops::Failure::message(
+                                file_ops::Operation::PermanentDelete,
+                                &item.original_path,
+                                None,
+                                error.to_string(),
+                            ));
+                            if blocked {
+                                processed += 1;
+                                let _ = events.try_send(TrashEvent::Progress { processed, total });
+                                break;
+                            }
+                        }
+                    }
+                    processed += 1;
+                    let _ = events.try_send(TrashEvent::Progress { processed, total });
+                }
+                let recovery = store.recover();
+                let _ = events.send_blocking(TrashEvent::Finished {
+                    kind: TrashTaskKind::Delete,
+                    completed,
+                    cancelled,
+                    failures,
+                    recovery,
+                });
+            })
+            .detach();
+        self.receive_trash_events(event_rx, cx);
     }
 
     fn delete_immediately(&mut self, cx: &mut Context<Self>) {
@@ -2459,7 +2633,10 @@ impl FinderView {
         let mut m = rmac_ui::ContextMenu::new(pos);
         if trash_view {
             if has_selection {
-                m = m.item("Restore", Box::new(RestoreItems));
+                m = m
+                    .item("Restore", Box::new(RestoreItems))
+                    .separator()
+                    .danger_item("Delete Permanently…", Box::new(DeletePermanently));
             }
             return m;
         }
@@ -2810,6 +2987,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &Duplicate, _, cx| this.duplicate(cx)))
             .on_action(cx.listener(|this, _: &MoveToTrash, _, cx| this.move_to_trash(cx)))
             .on_action(cx.listener(|this, _: &RestoreItems, _, cx| this.restore_selected(cx)))
+            .on_action(
+                cx.listener(|this, _: &DeletePermanently, _, cx| this.request_permanent_delete(cx)),
+            )
             .on_action(cx.listener(|this, _: &DeleteItem, _, cx| this.delete_immediately(cx)))
             .on_action(cx.listener(|this, _: &CopyItems, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &CutItems, _, cx| this.cut(cx)))
@@ -3342,6 +3522,46 @@ impl FinderView {
         Some(rmac_ui::alert(title, presentation.message, buttons).into_any_element())
     }
 
+    #[cfg(any(target_os = "linux", test))]
+    fn render_delete_confirmation(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let confirmation = self.delete_confirmation.as_ref()?;
+        let count = confirmation.items.len();
+        let name = confirmation
+            .items
+            .first()
+            .and_then(|item| item.original_path.file_name())
+            .map(|name| sanitize_dialog_name(&name.to_string_lossy()));
+        let title = if count == 1 {
+            "Delete Item Permanently?"
+        } else {
+            "Delete Items Permanently?"
+        };
+        let buttons = vec![
+            rmac_ui::dialog_button(
+                "permanent-delete-cancel",
+                "Cancel",
+                rmac_ui::DialogButtonKind::Normal,
+            )
+            .on_click(cx.listener(|this, _, _, cx| this.cancel_permanent_delete(cx)))
+            .into_any_element(),
+            rmac_ui::dialog_button(
+                "permanent-delete-confirm",
+                "Delete",
+                rmac_ui::DialogButtonKind::Destructive,
+            )
+            .on_click(cx.listener(|this, _, _, cx| this.confirm_permanent_delete(cx)))
+            .into_any_element(),
+        ];
+        Some(
+            rmac_ui::alert(
+                title,
+                permanent_delete_prompt(count, name.as_deref()),
+                buttons,
+            )
+            .into_any_element(),
+        )
+    }
+
     fn render_info(&self, ix: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(e) = self.entries.get(ix) else {
             return div();
@@ -3451,6 +3671,10 @@ impl Render for FinderView {
         let trash_progress: Option<(SharedString, usize, usize, bool)> = None;
         let recovery_pending = self.pending_operations != 0;
         let recovery_dialog = self.render_recovery(cx);
+        #[cfg(any(target_os = "linux", test))]
+        let delete_dialog = self.render_delete_confirmation(cx);
+        #[cfg(not(any(target_os = "linux", test)))]
+        let delete_dialog: Option<gpui::AnyElement> = None;
         div()
             .id("files-root")
             .size_full()
@@ -3459,6 +3683,14 @@ impl Render for FinderView {
             .bg(list_bg())
             .text_color(label())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                #[cfg(any(target_os = "linux", test))]
+                if this.delete_confirmation.is_some() {
+                    cx.stop_propagation();
+                    if event.keystroke.key.as_str() == "escape" {
+                        this.cancel_permanent_delete(cx);
+                    }
+                    return;
+                }
                 if !this.recovery_open {
                     return;
                 }
@@ -3670,6 +3902,7 @@ impl Render for FinderView {
                 )
             })
             .when_some(recovery_dialog, |el, dialog| el.child(dialog))
+            .when_some(delete_dialog, |el, dialog| el.child(dialog))
     }
 }
 
@@ -3678,6 +3911,41 @@ impl Render for FinderView {
 struct RecoveryPresentation {
     message: String,
     action_label: &'static str,
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn sanitize_dialog_name(name: &str) -> String {
+    let mut output = String::new();
+    let mut truncated = false;
+    for (index, character) in name.chars().enumerate() {
+        if index == 120 {
+            truncated = true;
+            break;
+        }
+        output.push(if character.is_control() {
+            '\u{fffd}'
+        } else {
+            character
+        });
+    }
+    if truncated {
+        output.push('…');
+    }
+    output
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn permanent_delete_prompt(count: usize, name: Option<&str>) -> String {
+    if count == 1 {
+        format!(
+            "“{}” will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins.",
+            name.unwrap_or("This item")
+        )
+    } else {
+        format!(
+            "{count} items will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins."
+        )
+    }
 }
 
 fn recovery_presentation(action: &operation_journal::RecoveryAction) -> RecoveryPresentation {
@@ -4269,5 +4537,29 @@ mod tests {
         assert!(!complete.message.contains("may be incomplete"));
         assert!(complete.message.contains("complete copy"));
         assert!(existing.message.contains("No file will be deleted"));
+    }
+
+    #[test]
+    fn permanent_delete_prompt_is_explicitly_irreversible_and_path_free() {
+        let single = permanent_delete_prompt(1, Some("report.txt"));
+        let multiple = permanent_delete_prompt(3, None);
+
+        assert!(single.contains("“report.txt”"));
+        assert!(single.contains("cannot be undone"));
+        assert!(!single.contains("/home/"));
+        assert_eq!(
+            multiple,
+            "3 items will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins."
+        );
+    }
+
+    #[test]
+    fn permanent_delete_dialog_name_replaces_controls_and_bounds_length() {
+        assert_eq!(sanitize_dialog_name("line\nbreak"), "line\u{fffd}break");
+        let long = "a".repeat(121);
+        let sanitized = sanitize_dialog_name(&long);
+
+        assert_eq!(sanitized.chars().count(), 121);
+        assert!(sanitized.ends_with('…'));
     }
 }

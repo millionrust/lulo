@@ -107,8 +107,22 @@ metadata, icons, and identifiers remain original rmac work.
   no-replace rename before removing only the exact `.trashinfo`. Prepared,
   data-restored, and info-removed stages recover every unambiguous crash
   boundary; data, metadata, parent, and destination races remain pending
-  without replacement or deletion. Permanent delete requires explicit
-  confirmation and is not described as undoable.
+  without replacement or deletion. Permanent delete begins only after a
+  destructive confirmation names the item or bounded count, states that the
+  action is immediate and cannot be undone, and never exposes a private Trash
+  path. The accepted item snapshot is identity- and manifest-bound in a durable
+  delete-prepared record. After a final cancellation and identity check, Files
+  atomically renames the exact data to a journal-derived hidden sibling on the
+  same filesystem, fsyncs the parent, persists the data-staged boundary, then
+  removes the staged tree without following symlinks. Data-removed and
+  info-removed boundaries are persisted and fsynced before the record is
+  cleared. Restart recovery infers a rename completed before its stage write,
+  resumes an identity-bound partially removed directory, and finishes exact
+  metadata cleanup. Changed regular data, substituted metadata or staging
+  paths, malformed records, and ambiguous states remain pending without
+  deleting the changed entry. Cancellation is honored before destructive
+  staging and between top-level items; once one staged tree begins deletion it
+  is completed or retained durably for recovery.
 - Trash is a virtual Files sidebar location, not a browsable implementation
   directory. Its rows use the original item name and deletion timestamp while
   retaining the bound private data identity internally. List, icon, and gallery
@@ -116,10 +130,12 @@ metadata, icons, and identifiers remain original rmac work.
   traverse ordinary filesystem parents. Double-click/Open, Copy, Cut,
   Duplicate, Rename, Quick Look, Get Info, internal drag/drop, and external
   drops do not expose or mutate private Trash paths. The item context menu
-  offers Restore only. Restore runs through the journaled authority away from
-  GPUI with bounded progress, cooperative cancellation, no-clobber failures,
-  startup recovery, a truthful result banner, and a generation-guarded refresh.
-  An empty verified inventory renders a dedicated Trash empty state.
+  offers Restore and the explicitly confirmed Delete Permanently action only.
+  Both run through the journaled authority away from GPUI with bounded
+  progress, cooperative cancellation, startup recovery, truthful result
+  banners, and a generation-guarded refresh; Restore additionally guarantees
+  no-clobber publication. An empty verified inventory renders a dedicated
+  Trash empty state.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

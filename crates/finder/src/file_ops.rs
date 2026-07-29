@@ -20,6 +20,8 @@ pub(crate) enum Operation {
     Move,
     Rename,
     #[cfg(any(target_os = "linux", test))]
+    PermanentDelete,
+    #[cfg(any(target_os = "linux", test))]
     Restore,
     Trash,
 }
@@ -32,6 +34,8 @@ impl Operation {
             Self::Delete => "delete",
             Self::Move => "move",
             Self::Rename => "rename",
+            #[cfg(any(target_os = "linux", test))]
+            Self::PermanentDelete => "permanently delete",
             #[cfg(any(target_os = "linux", test))]
             Self::Restore => "restore",
             Self::Trash => "move to Trash",
@@ -1204,6 +1208,21 @@ mod tests {
             "Could not restore “report.txt”: an item already exists at the original location"
         );
         assert!(!message.contains(".local/share/Trash"));
+    }
+
+    #[test]
+    fn permanent_delete_failure_states_the_irreversible_operation() {
+        let failure = Failure::message(
+            Operation::PermanentDelete,
+            Path::new("/home/alice/Documents/report.txt"),
+            None,
+            "Trash data changed",
+        );
+
+        assert_eq!(
+            failure.to_string(),
+            "Could not permanently delete “report.txt”: Trash data changed"
+        );
     }
 
     #[test]

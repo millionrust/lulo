@@ -9,6 +9,8 @@ use super::{Error, ErrorKind, Operation, MAX_ENTRIES, MAX_URI_BYTES, VERSION};
 pub(super) struct StoredFile {
     version: u32,
     pub(super) entries: Vec<StoredEntry>,
+    #[serde(default)]
+    pub(super) cleared_before_unix_ms: Option<u64>,
 }
 
 impl Default for StoredFile {
@@ -16,11 +18,19 @@ impl Default for StoredFile {
         Self {
             version: VERSION,
             entries: Vec::new(),
+            cleared_before_unix_ms: None,
         }
     }
 }
 
 impl StoredFile {
+    pub(super) fn cleared(cleared_before_unix_ms: Option<u64>) -> Self {
+        Self {
+            cleared_before_unix_ms,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn validate(&self) -> Result<(), Error> {
         if self.version != VERSION {
             return Err(Error::new(

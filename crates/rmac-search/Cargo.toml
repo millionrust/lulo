@@ -6,6 +6,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+chrono.workspace = true
 libc.workspace = true
 quick-xml.workspace = true
 rmac-recent-documents.workspace = true

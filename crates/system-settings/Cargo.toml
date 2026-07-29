@@ -45,6 +45,7 @@ rmac-power.workspace = true
 rmac-privacy.workspace = true
 rmac-privacy-linux.workspace = true
 rmac-portal.workspace = true
+rmac-recent-documents.workspace = true
 rmac-shortcuts.workspace = true
 rmac-sharing.workspace = true
 rmac-sharing-linux.workspace = true

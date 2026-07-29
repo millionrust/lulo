@@ -115,7 +115,7 @@ fn unsafe_paths_and_diagnostics_never_disclose_documents() {
 }
 
 #[test]
-fn clear_is_idempotent_and_durable() {
+fn clear_removes_records_and_advances_the_desktop_boundary() {
     let root = root("clear");
     std::fs::create_dir_all(&root).unwrap();
     let store = store(&root);
@@ -123,9 +123,21 @@ fn clear_is_idempotent_and_durable() {
     std::fs::write(&document, b"text").unwrap();
     store.record(&document).unwrap();
 
-    assert!(store.clear().unwrap());
-    assert!(!store.clear().unwrap());
-    assert!(store.load().unwrap().paths.is_empty());
+    assert_eq!(store.clear().unwrap(), 1);
+    let first = store.load().unwrap();
+    assert!(first.paths.is_empty());
+    let first_boundary = first.cleared_before_unix_ms.unwrap();
+    assert_eq!(store.clear().unwrap(), 0);
+    let second = store.load().unwrap();
+    assert!(second.paths.is_empty());
+    assert!(second.cleared_before_unix_ms.unwrap() > first_boundary);
+    assert_eq!(store.record(&document).unwrap(), RecordOutcome::Added);
+    let repopulated = store.load().unwrap();
+    assert_eq!(repopulated.paths, [document.canonicalize().unwrap()]);
+    assert_eq!(
+        repopulated.cleared_before_unix_ms,
+        second.cleared_before_unix_ms
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 

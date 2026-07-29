@@ -87,6 +87,9 @@ pub enum Recovery {
 pub struct Snapshot {
     pub paths: Vec<PathBuf>,
     pub recovery: Recovery,
+    /// Desktop-history entries at or before this wall-clock boundary are
+    /// intentionally hidden from rmac's merged Recents view.
+    pub cleared_before_unix_ms: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,9 +131,11 @@ impl Store {
 
     pub fn load(&self) -> Result<Snapshot, Error> {
         let (stored, recovery) = self.load_stored()?;
+        let cleared_before_unix_ms = stored.cleared_before_unix_ms;
         Ok(Snapshot {
             paths: stored.live_paths(),
             recovery,
+            cleared_before_unix_ms,
         })
     }
 
@@ -163,16 +168,14 @@ impl Store {
             .map(|entry| entry.used_at_unix_ms)
             .max()
             .unwrap_or(0);
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            .min(u64::MAX as u128) as u64;
+        let now = current_unix_ms();
         stored.entries.insert(
             0,
             StoredEntry {
                 uri,
-                used_at_unix_ms: now.max(newest.saturating_add(1)),
+                used_at_unix_ms: now
+                    .max(newest.saturating_add(1))
+                    .max(stored.cleared_before_unix_ms.unwrap_or(0).saturating_add(1)),
             },
         );
         stored.entries.truncate(MAX_ENTRIES);
@@ -180,7 +183,9 @@ impl Store {
         Ok(outcome)
     }
 
-    pub fn clear(&self) -> Result<bool, Error> {
+    /// Clear rmac records and advance the boundary used to suppress older
+    /// desktop XBEL records. Returns the number of rmac-owned records removed.
+    pub fn clear(&self) -> Result<usize, Error> {
         let parent = self
             .path
             .parent()
@@ -189,9 +194,15 @@ impl Store {
             .map_err(|error| Error::io(Operation::CreateDirectory, error))?;
         let _lock = FileLock::acquire(&parent.join("recent-documents.lock"))?;
         let (stored, _) = self.load_stored()?;
-        let changed = !stored.entries.is_empty();
-        self.save(&StoredFile::default(), Operation::Clear)?;
-        Ok(changed)
+        let removed = stored.entries.len();
+        let cleared_before_unix_ms = Some(
+            current_unix_ms().max(stored.cleared_before_unix_ms.unwrap_or(0).saturating_add(1)),
+        );
+        self.save(
+            &StoredFile::cleared(cleared_before_unix_ms),
+            Operation::Clear,
+        )?;
+        Ok(removed)
     }
 
     fn load_stored(&self) -> Result<(StoredFile, Recovery), Error> {
@@ -255,6 +266,14 @@ fn recoverable(error: Error) -> bool {
         error.kind,
         ErrorKind::Invalid | ErrorKind::UnsupportedVersion | ErrorKind::Limit
     )
+}
+
+fn current_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u64::MAX as u128) as u64
 }
 
 #[cfg(test)]

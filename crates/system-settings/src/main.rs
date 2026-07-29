@@ -872,6 +872,9 @@ struct Settings {
     _wallpaper_preview_watcher: Option<rmac_wallpaper_image::FileWatcher>,
     spotlight_revert: Option<SpotlightAuthority>,
     spotlight_error: Option<SharedString>,
+    recent_history_confirmation: bool,
+    recent_history_busy: bool,
+    recent_history_notice: Option<SharedString>,
     shortcut_status_loading: bool,
     shortcut_status: Option<rmac_shortcuts::BackendStatus>,
     shortcut_status_error: Option<SharedString>,
@@ -2915,6 +2918,9 @@ impl Settings {
             _wallpaper_preview_watcher: None,
             spotlight_revert: None,
             spotlight_error: None,
+            recent_history_confirmation: false,
+            recent_history_busy: false,
+            recent_history_notice: None,
             shortcut_status_loading: true,
             shortcut_status: None,
             shortcut_status_error: None,
@@ -3567,6 +3573,55 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 if this.finish_spotlight_mutation(result, None) {
                     this.refresh_wallpaper_preview(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn request_recent_history_clear(&mut self, cx: &mut Context<Self>) {
+        if self.recent_history_busy {
+            return;
+        }
+        self.recent_history_confirmation = true;
+        self.recent_history_notice = None;
+        self.spotlight_error = None;
+        cx.notify();
+    }
+
+    fn cancel_recent_history_clear(&mut self, cx: &mut Context<Self>) {
+        if !self.recent_history_busy && self.recent_history_confirmation {
+            self.recent_history_confirmation = false;
+            cx.notify();
+        }
+    }
+
+    fn confirm_recent_history_clear(&mut self, cx: &mut Context<Self>) {
+        if self.recent_history_busy || !self.recent_history_confirmation {
+            return;
+        }
+        self.recent_history_confirmation = false;
+        self.recent_history_busy = true;
+        self.recent_history_notice = None;
+        self.spotlight_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                rmac_recent_documents::Store::from_environment().and_then(|store| store.clear())
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.recent_history_busy = false;
+                match result {
+                    Ok(_) => {
+                        this.recent_history_notice =
+                            Some("Recent document history was cleared for rmac Search.".into());
+                    }
+                    Err(_) => {
+                        this.spotlight_error =
+                            Some("Could not clear recent document history.".into());
+                    }
                 }
                 cx.notify();
             });
@@ -9666,6 +9721,7 @@ impl Settings {
         let revert_view = view.clone();
         let choose_view = view.clone();
         let configure_shortcuts_view = view.clone();
+        let clear_history_view = view.clone();
         let mut cards = vec![div()
             .flex()
             .items_center()
@@ -9716,6 +9772,67 @@ impl Settings {
                         }),
                     ),
             )];
+
+        cards.push(section_header("Recent documents"));
+        cards.push(card(vec![row_base()
+            .child(text_block(
+                "rmac recent history".into(),
+                Some(
+                    "Used by Files and Launcher alongside newer desktop XBEL entries; clearing never deletes a document"
+                        .into(),
+                ),
+            ))
+            .child(
+                Button::new(
+                    "spotlight-clear-history",
+                    if self.recent_history_busy {
+                        "Clearing…"
+                    } else {
+                        "Clear…"
+                    },
+                )
+                .disabled(self.recent_history_busy || self.recent_history_confirmation)
+                .on_click(move |_, _, cx| {
+                    clear_history_view.update(cx, |settings, cx| {
+                        settings.request_recent_history_clear(cx)
+                    });
+                }),
+            )
+            .into_any_element()]));
+        if let Some(notice) = &self.recent_history_notice {
+            cards.push(note_card(notice.clone()));
+        }
+        if self.recent_history_confirmation {
+            let cancel_view = view.clone();
+            let confirm_view = view.clone();
+            cards.push(note_card(
+                "Clear recent documents from rmac Search? Files are not deleted. rmac will hide existing desktop-history entries, while other applications continue to manage and display their own history.",
+            ));
+            cards.push(card(vec![row_base()
+                .child(div().flex_1())
+                .child(
+                    Button::new("spotlight-clear-history-cancel", "Cancel").on_click(
+                        move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| {
+                                settings.cancel_recent_history_clear(cx)
+                            });
+                        },
+                    ),
+                )
+                .child(
+                    rmac_ui::dialog_button(
+                        "spotlight-clear-history-confirm",
+                        "Clear History",
+                        rmac_ui::DialogButtonKind::Destructive,
+                    )
+                    .disabled(self.recent_history_busy)
+                    .on_click(move |_, _, cx| {
+                        confirm_view
+                            .update(cx, |settings, cx| settings.confirm_recent_history_clear(cx));
+                    }),
+                )
+                .into_any_element()]));
+        }
 
         if self.shell_settings_loading && self.shell_settings.is_none() {
             cards.push(note_card("Loading authoritative search preferences…"));
@@ -17801,6 +17918,12 @@ impl Render for Settings {
                 } else if event.keystroke.key == "escape" && this.clock_confirmation.is_some() {
                     cx.stop_propagation();
                     this.cancel_clock_confirmation(cx);
+                } else if event.keystroke.key == "escape"
+                    && this.recent_history_confirmation
+                    && !this.recent_history_busy
+                {
+                    cx.stop_propagation();
+                    this.cancel_recent_history_clear(cx);
                 } else if event.keystroke.key == "escape" && this.updates_plan.is_some() {
                     cx.stop_propagation();
                     this.cancel_update_plan(cx);
@@ -17851,6 +17974,13 @@ impl Render for Settings {
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 if this.clock_setting {
+                    return;
+                }
+                if this.recent_history_busy {
+                    return;
+                }
+                if this.recent_history_confirmation {
+                    this.cancel_recent_history_clear(cx);
                     return;
                 }
                 if this.clock_confirmation.take().is_some() {

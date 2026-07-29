@@ -33,6 +33,7 @@ pub enum Error {
     },
     InvalidQuery(&'static str),
     Cancelled,
+    RecentDocuments,
     Unsupported(&'static str),
 }
 
@@ -56,6 +57,9 @@ impl fmt::Display for Error {
             }
             Self::InvalidQuery(message) => write!(formatter, "invalid search: {message}"),
             Self::Cancelled => formatter.write_str("search cancelled"),
+            Self::RecentDocuments => {
+                formatter.write_str("recent documents are temporarily unavailable")
+            }
             Self::Unsupported(capability) => {
                 write!(formatter, "{capability} is not supported on this platform")
             }
@@ -248,10 +252,9 @@ impl SearchProvider for SystemSearchProvider {
 
     fn recents(&self, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
         check_cancelled(options.cancel)?;
-        let rmac_recents = rmac_recent_documents::Store::from_environment()
+        let rmac_snapshot = rmac_recent_documents::Store::from_environment()
             .and_then(|store| store.load())
-            .map(|snapshot| snapshot.paths)
-            .unwrap_or_default();
+            .map_err(|_| Error::RecentDocuments)?;
         let data_home = std::env::var_os("XDG_DATA_HOME")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
@@ -261,10 +264,14 @@ impl SearchProvider for SystemSearchProvider {
                     .map(|home| home.join(".local/share"))
             });
         let desktop_recents = match data_home {
-            Some(data_home) => recent_from_path(&data_home.join("recently-used.xbel"), options)?,
+            Some(data_home) => recent_from_path(
+                &data_home.join("recently-used.xbel"),
+                options,
+                rmac_snapshot.cleared_before_unix_ms,
+            )?,
             None => Vec::new(),
         };
-        merge_recent_paths(rmac_recents, desktop_recents, options)
+        merge_recent_paths(rmac_snapshot.paths, desktop_recents, options)
     }
 
     fn tagged(&self, _tag: &str, _options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
@@ -660,7 +667,11 @@ fn same_content_identity(left: &std::fs::Metadata, right: &std::fs::Metadata) ->
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
-fn recent_from_path(path: &Path, options: Options<'_>) -> Result<Vec<PathBuf>, Error> {
+fn recent_from_path(
+    path: &Path,
+    options: Options<'_>,
+    modified_after_unix_ms: Option<u64>,
+) -> Result<Vec<PathBuf>, Error> {
     use quick_xml::events::Event;
 
     let file = match std::fs::File::open(path) {
@@ -704,13 +715,18 @@ fn recent_from_path(path: &Path, options: Options<'_>) -> Result<Vec<PathBuf>, E
                         _ => {}
                     }
                 }
-                if let Some(path) = href
-                    .and_then(|href| url::Url::parse(&href).ok())
-                    .and_then(|url| url.to_file_path().ok())
-                    .filter(|path| path.exists())
-                    .filter(|path| !is_excluded(path, options.excluded_roots))
-                {
-                    bookmarks.push((modified, path));
+                let admitted_by_clear = modified_after_unix_ms.is_none_or(|boundary| {
+                    recent_modified_unix_ms(&modified).is_some_and(|modified| modified > boundary)
+                });
+                if admitted_by_clear {
+                    if let Some(path) = href
+                        .and_then(|href| url::Url::parse(&href).ok())
+                        .and_then(|url| url.to_file_path().ok())
+                        .filter(|path| path.exists())
+                        .filter(|path| !is_excluded(path, options.excluded_roots))
+                    {
+                        bookmarks.push((modified, path));
+                    }
                 }
             }
             Ok(Event::Eof) => break,
@@ -733,6 +749,14 @@ fn recent_from_path(path: &Path, options: Options<'_>) -> Result<Vec<PathBuf>, E
         .filter(|path| seen.insert(path.clone()))
         .take(options.limit)
         .collect())
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+fn recent_modified_unix_ms(value: &str) -> Option<u64> {
+    let milliseconds = chrono::DateTime::parse_from_rfc3339(value)
+        .ok()?
+        .timestamp_millis();
+    u64::try_from(milliseconds).ok()
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -977,10 +1001,13 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let older = root.join("older file.txt");
         let newer = root.join("newer.txt");
+        let undated = root.join("undated.txt");
         std::fs::write(&older, b"older").unwrap();
         std::fs::write(&newer, b"newer").unwrap();
+        std::fs::write(&undated, b"undated").unwrap();
         let older_url = url::Url::from_file_path(&older).unwrap();
         let newer_url = url::Url::from_file_path(&newer).unwrap();
+        let undated_url = url::Url::from_file_path(&undated).unwrap();
         let xbel = root.join("recently-used.xbel");
         std::fs::write(
             &xbel,
@@ -989,14 +1016,20 @@ mod tests {
                  <bookmark href=\"{older_url}\" modified=\"2026-01-01T00:00:00Z\"/>\
                  <bookmark href=\"https://example.com\" modified=\"2026-03-01T00:00:00Z\"/>\
                  <bookmark href=\"{newer_url}\" modified=\"2026-02-01T00:00:00Z\"/>\
+                 <bookmark href=\"{undated_url}\"/>\
                  </xbel>"
             ),
         )
         .unwrap();
         let cancel = AtomicBool::new(false);
 
-        let paths = recent_from_path(&xbel, Options::new(&cancel)).unwrap();
-        assert_eq!(paths, [newer, older]);
+        let paths = recent_from_path(&xbel, Options::new(&cancel), None).unwrap();
+        assert_eq!(paths, [newer.clone(), older, undated]);
+        let boundary = recent_modified_unix_ms("2026-01-15T00:00:00Z").unwrap();
+        assert_eq!(
+            recent_from_path(&xbel, Options::new(&cancel), Some(boundary)).unwrap(),
+            [newer]
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1058,7 +1091,7 @@ mod tests {
             ),
         )
         .unwrap();
-        assert_eq!(recent_from_path(&xbel, options).unwrap(), [visible]);
+        assert_eq!(recent_from_path(&xbel, options, None).unwrap(), [visible]);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1092,13 +1125,17 @@ mod tests {
         std::fs::write(&malformed, "<xbel><bookmark").unwrap();
         let cancel = AtomicBool::new(false);
 
-        assert!(recent_from_path(&missing, Options::new(&cancel))
+        assert!(recent_from_path(&missing, Options::new(&cancel), None)
             .unwrap()
             .is_empty());
         assert!(matches!(
-            recent_from_path(&malformed, Options::new(&cancel)),
+            recent_from_path(&malformed, Options::new(&cancel), None),
             Err(Error::InvalidData { .. })
         ));
+        assert_eq!(
+            Error::RecentDocuments.to_string(),
+            "recent documents are temporarily unavailable"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

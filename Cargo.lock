@@ -5529,6 +5529,7 @@ dependencies = [
 name = "rmac-search"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "libc",
  "quick-xml 0.39.4",
  "rmac-recent-documents",
@@ -5729,6 +5730,7 @@ dependencies = [
  "rmac-power",
  "rmac-privacy",
  "rmac-privacy-linux",
+ "rmac-recent-documents",
  "rmac-sharing",
  "rmac-sharing-linux",
  "rmac-shell-settings",

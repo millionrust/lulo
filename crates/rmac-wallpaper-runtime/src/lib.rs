@@ -1,5 +1,6 @@
 //! Live, last-known-good orchestration for the wallpaper session process.
 
+pub mod session;
 pub mod surfaces;
 
 use std::collections::BTreeSet;

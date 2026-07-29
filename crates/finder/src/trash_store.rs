@@ -47,6 +47,12 @@ enum TrashStage {
     DeleteInfoRemoved,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum TrashResolutionIntent {
+    ReturnDeleteStage,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 struct TrashRecord {
     version: u32,
@@ -66,6 +72,16 @@ struct TrashRecord {
     restore_parent_identity: Option<EntryIdentity>,
     #[serde(default)]
     delete_path_bytes: Option<Vec<u8>>,
+    #[serde(default)]
+    resolution_intent: Option<TrashResolutionIntent>,
+    #[serde(default)]
+    resolution_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    resolution_manifest: Option<TreeManifest>,
+    #[serde(default)]
+    resolution_info_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    resolution_info_sha256: Option<[u8; 32]>,
 }
 
 impl TrashRecord {
@@ -136,6 +152,7 @@ impl TrashRecord {
                     TrashStage::Prepared | TrashStage::InfoPublished | TrashStage::DataMoved
                 ) || self.restore_parent_identity.is_some()
                     || delete.is_some()
+                    || self.has_resolution_state()
                 {
                     return Err(invalid_data("trash transaction stage is invalid"));
                 }
@@ -159,6 +176,7 @@ impl TrashRecord {
                 ) || self.info_identity.is_none()
                     || self.restore_parent_identity.is_none()
                     || delete.is_some()
+                    || self.has_resolution_state()
                 {
                     return Err(invalid_data("restore transaction stage is invalid"));
                 }
@@ -184,9 +202,34 @@ impl TrashRecord {
                 {
                     return Err(invalid_data("delete transaction stage is invalid"));
                 }
+                match self.resolution_intent {
+                    None if self.resolution_identity.is_none()
+                        && self.resolution_manifest.is_none()
+                        && self.resolution_info_identity.is_none()
+                        && self.resolution_info_sha256.is_none() => {}
+                    Some(TrashResolutionIntent::ReturnDeleteStage)
+                        if self.stage == TrashStage::DeleteDataStaged
+                            && self.resolution_identity.is_some()
+                            && self.resolution_manifest.is_some()
+                            && self.resolution_info_identity.is_some()
+                            && self.resolution_info_sha256.is_some() => {}
+                    _ => {
+                        return Err(invalid_data(
+                            "delete transaction resolution state is invalid",
+                        ));
+                    }
+                }
             }
         }
         Ok(())
+    }
+
+    fn has_resolution_state(&self) -> bool {
+        self.resolution_intent.is_some()
+            || self.resolution_identity.is_some()
+            || self.resolution_manifest.is_some()
+            || self.resolution_info_identity.is_some()
+            || self.resolution_info_sha256.is_some()
     }
 }
 
@@ -974,6 +1017,62 @@ fn record_tree_matches(record: &TrashRecord, path: &Path, published: bool) -> io
     }
 }
 
+fn resolution_tree_matches(record: &TrashRecord, path: &Path, published: bool) -> io::Result<bool> {
+    let (Some(expected_identity), Some(expected_manifest)) = (
+        record.resolution_identity.as_ref(),
+        record.resolution_manifest.as_ref(),
+    ) else {
+        return Ok(false);
+    };
+    let current_identity = match EntryIdentity::capture(path) {
+        Ok(identity) => identity,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let identity_matches = if published {
+        expected_identity.same_entry_after_rename(&current_identity)
+    } else {
+        expected_identity == &current_identity
+    };
+    if !identity_matches {
+        return Ok(false);
+    }
+    let current_manifest = match TreeManifest::capture(path) {
+        Ok(manifest) => manifest,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::WouldBlock
+            ) =>
+        {
+            return Ok(false);
+        }
+        Err(error) => return Err(error),
+    };
+    Ok(if published {
+        expected_manifest.same_after_root_rename(&current_manifest)
+    } else {
+        expected_manifest == &current_manifest
+    })
+}
+
+fn resolution_info_matches(record: &TrashRecord) -> io::Result<bool> {
+    let (Some(expected_identity), Some(expected_sha256)) = (
+        record.resolution_info_identity.as_ref(),
+        record.resolution_info_sha256,
+    ) else {
+        return Ok(false);
+    };
+    let current = match capture_optional_info(&record.info_path()) {
+        Ok(snapshot) => snapshot,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    Ok(current.is_some_and(|snapshot| {
+        &snapshot.identity == expected_identity && snapshot.sha256 == expected_sha256
+    }))
+}
+
 fn restore_parent_matches(record: &TrashRecord, exact: bool) -> io::Result<bool> {
     let Some(expected) = &record.restore_parent_identity else {
         return Ok(false);
@@ -1074,6 +1173,64 @@ fn entry_exists(path: &Path) -> io::Result<bool> {
     }
 }
 
+fn capture_optional_tree(path: &Path) -> io::Result<Option<TreeSnapshot>> {
+    let identity = match EntryIdentity::capture(path) {
+        Ok(identity) => identity,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let manifest = TreeManifest::capture(path)?;
+    if EntryIdentity::capture(path)? != identity {
+        return Err(changed("Trash recovery item changed while it was reviewed"));
+    }
+    Ok(Some(TreeSnapshot { identity, manifest }))
+}
+
+fn capture_optional_info(path: &Path) -> io::Result<Option<InfoSnapshot>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.mode() & 0o022 != 0
+        || metadata.uid() != effective_uid()
+        || metadata.len() > MAX_INFO_BYTES
+    {
+        return Err(changed(
+            "Trash recovery metadata is not a bounded private regular file",
+        ));
+    }
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    let mut file = options.open(path)?;
+    let identity = EntryIdentity::capture_file(&file)?;
+    if EntryIdentity::capture(path)? != identity {
+        return Err(changed(
+            "Trash recovery metadata changed while it was reviewed",
+        ));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    std::io::Read::by_ref(&mut file)
+        .take(MAX_INFO_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INFO_BYTES
+        || EntryIdentity::capture_file(&file)? != identity
+        || EntryIdentity::capture(path)? != identity
+    {
+        return Err(changed(
+            "Trash recovery metadata changed while it was reviewed",
+        ));
+    }
+    Ok(Some(InfoSnapshot {
+        identity,
+        sha256: sha256(&bytes),
+    }))
+}
+
 fn sha256(bytes: &[u8]) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(bytes);
@@ -1123,6 +1280,10 @@ fn invalid_json(error: serde_json::Error) -> io::Error {
 
 fn changed(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::WouldBlock, message)
+}
+
+fn review_changed() -> io::Error {
+    changed("Trash recovery changed; review it again")
 }
 
 fn interrupted() -> io::Error {
@@ -1176,6 +1337,69 @@ impl TrashedItem {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct TreeSnapshot {
+    identity: EntryIdentity,
+    manifest: TreeManifest,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct InfoSnapshot {
+    identity: EntryIdentity,
+    sha256: [u8; 32],
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum TrashRecoveryAction {
+    ReturnRemainingItem { may_be_partial: bool },
+    RemoveOrphanMetadata,
+    KeepExistingItems,
+    RequiresManualRepair,
+}
+
+impl fmt::Debug for TrashRecoveryAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ReturnRemainingItem { may_be_partial } => formatter
+                .debug_struct("ReturnRemainingItem")
+                .field("may_be_partial", may_be_partial)
+                .finish(),
+            Self::RemoveOrphanMetadata => formatter.write_str("RemoveOrphanMetadata"),
+            Self::KeepExistingItems => formatter.write_str("KeepExistingItems"),
+            Self::RequiresManualRepair => formatter.write_str("RequiresManualRepair"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct TrashRecoveryReview {
+    record: TrashRecord,
+    journal_identity: EntryIdentity,
+    source_snapshot: Option<TreeSnapshot>,
+    data_snapshot: Option<TreeSnapshot>,
+    delete_snapshot: Option<TreeSnapshot>,
+    info_snapshot: Option<InfoSnapshot>,
+    pub(crate) action: TrashRecoveryAction,
+}
+
+impl fmt::Debug for TrashRecoveryReview {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TrashRecoveryReview")
+            .field("operation", &self.record.operation)
+            .field("stage", &self.record.stage)
+            .field("action", &self.action)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TrashResolutionOutcome {
+    ReturnedRemainingItem { may_be_partial: bool },
+    RemovedOrphanMetadata,
+    KeptExistingItems,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct TrashRecovery {
     pub(crate) finalized: usize,
@@ -1199,9 +1423,19 @@ impl TrashStore {
         Ok(Self { state_root })
     }
 
+    #[cfg(test)]
     pub(crate) fn recover(&self) -> io::Result<TrashRecovery> {
         let _lock = self.lock()?;
         self.recover_locked()
+    }
+
+    pub(crate) fn recover_and_review(
+        &self,
+    ) -> io::Result<(TrashRecovery, Vec<TrashRecoveryReview>)> {
+        let _lock = self.lock()?;
+        let recovery = self.recover_locked()?;
+        let reviews = self.review_pending_locked()?;
+        Ok((recovery, reviews))
     }
 
     #[cfg(any(target_os = "linux", test))]
@@ -1228,6 +1462,186 @@ impl TrashStore {
                 .then_with(|| left.name.as_bytes().cmp(right.name.as_bytes()))
         });
         Ok(items)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn review_pending(&self) -> io::Result<Vec<TrashRecoveryReview>> {
+        let _lock = self.lock()?;
+        self.recover_locked()?;
+        self.review_pending_locked()
+    }
+
+    fn review_pending_locked(&self) -> io::Result<Vec<TrashRecoveryReview>> {
+        let mut reviews = Vec::new();
+        for (path, record) in self.read_records()? {
+            let journal_identity = EntryIdentity::capture(&path)?;
+            let source_snapshot = capture_optional_tree(&record.source())?;
+            let data_snapshot = capture_optional_tree(&record.data_path())?;
+            let delete_snapshot = match record.delete_path() {
+                Some(path) => capture_optional_tree(&path)?,
+                None => None,
+            };
+            let info_snapshot = capture_optional_info(&record.info_path())?;
+            let action = if record.operation == TrashOperation::Delete
+                && record.stage == TrashStage::DeleteDataStaged
+                && data_snapshot.is_none()
+                && delete_snapshot.is_some()
+                && info_snapshot.is_some()
+            {
+                let snapshot = delete_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("delete review has no staged item"))?;
+                let original_matches = record
+                    .source_identity
+                    .same_entry_after_rename(&snapshot.identity)
+                    && record
+                        .source_manifest
+                        .same_after_root_rename(&snapshot.manifest);
+                TrashRecoveryAction::ReturnRemainingItem {
+                    may_be_partial: !original_matches,
+                }
+            } else if data_snapshot.is_none()
+                && delete_snapshot.is_none()
+                && info_snapshot.is_some()
+            {
+                TrashRecoveryAction::RemoveOrphanMetadata
+            } else if delete_snapshot.is_some()
+                || (data_snapshot.is_some() && info_snapshot.is_none())
+            {
+                TrashRecoveryAction::RequiresManualRepair
+            } else {
+                TrashRecoveryAction::KeepExistingItems
+            };
+            reviews.push(TrashRecoveryReview {
+                record,
+                journal_identity,
+                source_snapshot,
+                data_snapshot,
+                delete_snapshot,
+                info_snapshot,
+                action,
+            });
+        }
+        Ok(reviews)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resolve_review(
+        &self,
+        review: &TrashRecoveryReview,
+    ) -> io::Result<TrashResolutionOutcome> {
+        let _lock = self.lock()?;
+        self.resolve_review_locked(review)
+    }
+
+    pub(crate) fn resolve_review_and_refresh(
+        &self,
+        review: &TrashRecoveryReview,
+    ) -> io::Result<(
+        TrashResolutionOutcome,
+        TrashRecovery,
+        Vec<TrashRecoveryReview>,
+    )> {
+        let _lock = self.lock()?;
+        let outcome = self.resolve_review_locked(review)?;
+        let recovery = self.recover_locked()?;
+        let reviews = self.review_pending_locked()?;
+        Ok((outcome, recovery, reviews))
+    }
+
+    fn resolve_review_locked(
+        &self,
+        review: &TrashRecoveryReview,
+    ) -> io::Result<TrashResolutionOutcome> {
+        self.validate_review(review)?;
+        let record_path = self.record_path(&review.record.id);
+        match &review.action {
+            TrashRecoveryAction::ReturnRemainingItem { may_be_partial } => {
+                let delete_snapshot = review
+                    .delete_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("delete recovery has no staged item"))?;
+                let info_snapshot = review
+                    .info_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("delete recovery has no metadata"))?;
+                if review.data_snapshot.is_some() {
+                    return Err(review_changed());
+                }
+                let mut record = review.record.clone();
+                record.stage = TrashStage::DeleteDataStaged;
+                record.resolution_intent = Some(TrashResolutionIntent::ReturnDeleteStage);
+                record.resolution_identity = Some(delete_snapshot.identity.clone());
+                record.resolution_manifest = Some(delete_snapshot.manifest.clone());
+                record.resolution_info_identity = Some(info_snapshot.identity.clone());
+                record.resolution_info_sha256 = Some(info_snapshot.sha256);
+                record.validate(&record.id)?;
+                self.persist(&record_path, &record, false)?;
+                if !self.recover_returned_delete_stage(&record_path, &mut record)? {
+                    return Err(review_changed());
+                }
+                Ok(TrashResolutionOutcome::ReturnedRemainingItem {
+                    may_be_partial: *may_be_partial,
+                })
+            }
+            TrashRecoveryAction::RemoveOrphanMetadata => {
+                let info_snapshot = review
+                    .info_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("orphan recovery has no metadata"))?;
+                if review.data_snapshot.is_some() || review.delete_snapshot.is_some() {
+                    return Err(review_changed());
+                }
+                if capture_optional_info(&review.record.info_path())?.as_ref()
+                    != Some(info_snapshot)
+                {
+                    return Err(review_changed());
+                }
+                fs::remove_file(review.record.info_path())?;
+                sync_directory(
+                    review
+                        .record
+                        .info_path()
+                        .parent()
+                        .ok_or_else(|| invalid_data("Trash info parent is missing"))?,
+                )?;
+                self.finish_record(&record_path)?;
+                Ok(TrashResolutionOutcome::RemovedOrphanMetadata)
+            }
+            TrashRecoveryAction::KeepExistingItems => {
+                self.finish_record(&record_path)?;
+                Ok(TrashResolutionOutcome::KeptExistingItems)
+            }
+            TrashRecoveryAction::RequiresManualRepair => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Trash recovery requires manual repair",
+            )),
+        }
+    }
+
+    fn validate_review(&self, review: &TrashRecoveryReview) -> io::Result<()> {
+        let record_path = self.record_path(&review.record.id);
+        if EntryIdentity::capture(&record_path)? != review.journal_identity {
+            return Err(review_changed());
+        }
+        let current = self
+            .read_records()?
+            .into_iter()
+            .find_map(|(_, record)| (record.id == review.record.id).then_some(record))
+            .ok_or_else(review_changed)?;
+        let delete_snapshot = match review.record.delete_path() {
+            Some(path) => capture_optional_tree(&path)?,
+            None => None,
+        };
+        if current != review.record
+            || capture_optional_tree(&review.record.source())? != review.source_snapshot
+            || capture_optional_tree(&review.record.data_path())? != review.data_snapshot
+            || delete_snapshot != review.delete_snapshot
+            || capture_optional_info(&review.record.info_path())? != review.info_snapshot
+        {
+            return Err(review_changed());
+        }
+        Ok(())
     }
 
     #[cfg(any(target_os = "linux", test))]
@@ -1300,6 +1714,11 @@ impl TrashStore {
             info_identity: Some(item.info_identity.clone()),
             restore_parent_identity: Some(EntryIdentity::capture(&canonical_parent)?),
             delete_path_bytes: None,
+            resolution_intent: None,
+            resolution_identity: None,
+            resolution_manifest: None,
+            resolution_info_identity: None,
+            resolution_info_sha256: None,
         };
         record.validate(&id)?;
         if !record_data_matches_exact(&record)?
@@ -1364,6 +1783,11 @@ impl TrashStore {
             info_identity: Some(item.info_identity.clone()),
             restore_parent_identity: None,
             delete_path_bytes: Some(delete_path.as_os_str().as_bytes().to_vec()),
+            resolution_intent: None,
+            resolution_identity: None,
+            resolution_manifest: None,
+            resolution_info_identity: None,
+            resolution_info_sha256: None,
         };
         record.validate(&id)?;
         if !record_data_matches_exact(&record)?
@@ -1443,6 +1867,11 @@ impl TrashStore {
                 info_identity: None,
                 restore_parent_identity: None,
                 delete_path_bytes: None,
+                resolution_intent: None,
+                resolution_identity: None,
+                resolution_manifest: None,
+                resolution_info_identity: None,
+                resolution_info_sha256: None,
             };
             record.validate(&id)?;
             let record_path = self.record_path(&id);
@@ -1611,6 +2040,9 @@ impl TrashStore {
     }
 
     fn recover_delete_record(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        if record.resolution_intent == Some(TrashResolutionIntent::ReturnDeleteStage) {
+            return self.recover_returned_delete_stage(path, record);
+        }
         let delete_path = record
             .delete_path()
             .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
@@ -1650,6 +2082,43 @@ impl TrashStore {
             }
             _ => Ok(false),
         }
+    }
+
+    fn recover_returned_delete_stage(
+        &self,
+        path: &Path,
+        record: &mut TrashRecord,
+    ) -> io::Result<bool> {
+        let delete_path = record
+            .delete_path()
+            .ok_or_else(|| invalid_data("delete transaction has no staging path"))?;
+        let delete_exists = entry_exists(&delete_path)?;
+        let data_exists = entry_exists(&record.data_path())?;
+        if !resolution_info_matches(record)? {
+            return Ok(false);
+        }
+        if delete_exists && !data_exists && resolution_tree_matches(record, &delete_path, false)? {
+            rename_noreplace(&delete_path, &record.data_path())?;
+            sync_directory(
+                record
+                    .data_path()
+                    .parent()
+                    .ok_or_else(|| invalid_data("Trash data parent is missing"))?,
+            )?;
+            if !resolution_tree_matches(record, &record.data_path(), true)? {
+                return Ok(false);
+            }
+            self.finish_record(path)?;
+            return Ok(true);
+        }
+        if !delete_exists
+            && data_exists
+            && resolution_tree_matches(record, &record.data_path(), true)?
+        {
+            self.finish_record(path)?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn resume_info_published(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
@@ -1997,6 +2466,11 @@ mod tests {
             info_identity: None,
             restore_parent_identity: None,
             delete_path_bytes: None,
+            resolution_intent: None,
+            resolution_identity: None,
+            resolution_manifest: None,
+            resolution_info_identity: None,
+            resolution_info_sha256: None,
         };
         let record_path = store.record_path(&id);
         store
@@ -2033,6 +2507,11 @@ mod tests {
             info_identity: Some(item.info_identity.clone()),
             restore_parent_identity: Some(EntryIdentity::capture(&parent).unwrap()),
             delete_path_bytes: None,
+            resolution_intent: None,
+            resolution_identity: None,
+            resolution_manifest: None,
+            resolution_info_identity: None,
+            resolution_info_sha256: None,
         };
         let record_path = store.record_path(&id);
         store.persist(&record_path, &record, true).unwrap();
@@ -2061,6 +2540,11 @@ mod tests {
             info_identity: Some(item.info_identity.clone()),
             restore_parent_identity: None,
             delete_path_bytes: Some(delete_path.as_os_str().as_bytes().to_vec()),
+            resolution_intent: None,
+            resolution_identity: None,
+            resolution_manifest: None,
+            resolution_info_identity: None,
+            resolution_info_sha256: None,
         };
         let record_path = store.record_path(&id);
         store.persist(&record_path, &record, true).unwrap();
@@ -2474,6 +2958,180 @@ mod tests {
         assert!(record_path.exists());
     }
 
+    #[test]
+    fn reviewed_restore_collision_keeps_both_items_and_clears_only_record() {
+        let (directory, store, layout) = setup("review-restore-collision");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"trashed");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, _) = prepared_restore_record(&store, &item);
+        fs::write(&source, b"existing").unwrap();
+
+        let reviews = store.review_pending().expect("review should be available");
+
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(reviews[0].action, TrashRecoveryAction::KeepExistingItems);
+        let outcome = store.resolve_review(&reviews[0]).unwrap();
+        assert_eq!(outcome, TrashResolutionOutcome::KeptExistingItems);
+        assert_eq!(fs::read(&source).unwrap(), b"existing");
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"trashed");
+        assert!(item.info_path.exists());
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn reviewed_changed_delete_stage_returns_remaining_item_to_trash() {
+        let (directory, store, layout) = setup("review-delete-stage");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::write(&delete_path, b"changed").unwrap();
+
+        let reviews = store.review_pending().expect("review should be available");
+
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(
+            reviews[0].action,
+            TrashRecoveryAction::ReturnRemainingItem {
+                may_be_partial: true
+            }
+        );
+        let outcome = store.resolve_review(&reviews[0]).unwrap();
+        assert_eq!(
+            outcome,
+            TrashResolutionOutcome::ReturnedRemainingItem {
+                may_be_partial: true
+            }
+        );
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"changed");
+        assert!(!delete_path.exists());
+        assert!(item.info_path.exists());
+        assert!(!record_path.exists());
+        assert_eq!(list_in_layout(&layout).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn accepted_return_intent_recovers_after_rename_before_record_cleanup() {
+        let (directory, store, layout) = setup("review-return-crash");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::write(&delete_path, b"changed").unwrap();
+        let review = store.review_pending().unwrap().remove(0);
+        let staged = review.delete_snapshot.as_ref().unwrap();
+        let info = review.info_snapshot.as_ref().unwrap();
+        record.resolution_intent = Some(TrashResolutionIntent::ReturnDeleteStage);
+        record.resolution_identity = Some(staged.identity.clone());
+        record.resolution_manifest = Some(staged.manifest.clone());
+        record.resolution_info_identity = Some(info.identity.clone());
+        record.resolution_info_sha256 = Some(info.sha256);
+        store.persist(&record_path, &record, false).unwrap();
+        rename_noreplace(&delete_path, &item.data_path).unwrap();
+        sync_directory(item.data_path.parent().unwrap()).unwrap();
+
+        let recovery = store
+            .recover()
+            .expect("accepted returned item should finish after restart");
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"changed");
+        assert!(item.info_path.exists());
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn reviewed_orphan_metadata_removes_no_user_data() {
+        let (directory, store, layout) = setup("review-orphan-info");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::remove_file(&delete_path).unwrap();
+        fs::write(
+            &item.info_path,
+            b"[Trash Info]\nPath=changed\nDeletionDate=2026-07-29T08:09:10\n",
+        )
+        .unwrap();
+
+        let reviews = store.review_pending().expect("review should be available");
+
+        assert_eq!(reviews[0].action, TrashRecoveryAction::RemoveOrphanMetadata);
+        let outcome = store.resolve_review(&reviews[0]).unwrap();
+        assert_eq!(outcome, TrashResolutionOutcome::RemovedOrphanMetadata);
+        assert!(!item.info_path.exists());
+        assert!(!record_path.exists());
+        assert!(!source.exists());
+    }
+
+    #[test]
+    fn review_resolution_refuses_a_tree_changed_after_review() {
+        let (directory, store, layout) = setup("review-race");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"trashed");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, _) = prepared_restore_record(&store, &item);
+        fs::write(&source, b"existing").unwrap();
+        let reviews = store.review_pending().unwrap();
+        fs::write(&item.data_path, b"changed after review").unwrap();
+
+        let error = store
+            .resolve_review(&reviews[0])
+            .expect_err("changed review must be refused");
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(record_path.exists());
+        assert_eq!(fs::read(&source).unwrap(), b"existing");
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"changed after review");
+    }
+
+    #[test]
+    fn trash_recovery_review_debug_never_exposes_paths() {
+        let (directory, store, layout) = setup("review-debug");
+        let source = write_source(&directory, OsStr::new("private-name.txt"), b"trashed");
+        let item = trash_and_list(&store, &layout, &source);
+        let _ = prepared_restore_record(&store, &item);
+        fs::write(&source, b"existing").unwrap();
+
+        let review = store.review_pending().unwrap().remove(0);
+        let debug = format!("{review:?}");
+
+        assert!(!debug.contains("private-name"));
+        assert!(!debug.contains(directory.0.to_string_lossy().as_ref()));
+    }
+
+    #[test]
+    fn review_retains_a_hidden_stage_when_metadata_cannot_be_rebuilt_safely() {
+        let (directory, store, layout) = setup("review-manual");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::remove_file(&item.info_path).unwrap();
+
+        let reviews = store
+            .review_pending()
+            .expect("review should remain available");
+
+        assert_eq!(reviews[0].action, TrashRecoveryAction::RequiresManualRepair);
+        let error = store.resolve_review(&reviews[0]).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+        assert!(delete_path.exists());
+        assert!(record_path.exists());
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn trash_identity_preserves_non_utf8_path_bytes() {
@@ -2805,6 +3463,10 @@ mod tests {
             TrashStore::restore;
         let _delete: fn(&TrashStore, &TrashedItem, &AtomicBool) -> io::Result<()> =
             TrashStore::delete_permanently;
+        let _review: fn(&TrashStore) -> io::Result<Vec<TrashRecoveryReview>> =
+            TrashStore::review_pending;
+        let _resolve: fn(&TrashStore, &TrashRecoveryReview) -> io::Result<TrashResolutionOutcome> =
+            TrashStore::resolve_review;
     }
 
     #[test]

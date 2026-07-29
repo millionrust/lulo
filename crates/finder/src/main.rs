@@ -99,7 +99,10 @@ enum TrashEvent {
         completed: usize,
         cancelled: bool,
         failures: Vec<file_ops::Failure>,
-        recovery: std::io::Result<trash_store::TrashRecovery>,
+        recovery: std::io::Result<(
+            trash_store::TrashRecovery,
+            Vec<trash_store::TrashRecoveryReview>,
+        )>,
     },
 }
 
@@ -328,6 +331,12 @@ struct FinderView {
     trash_loading: bool,
     #[cfg(any(target_os = "linux", test))]
     trash_pending: usize,
+    #[cfg(any(target_os = "linux", test))]
+    trash_recovery_reviews: Vec<trash_store::TrashRecoveryReview>,
+    #[cfg(any(target_os = "linux", test))]
+    trash_recovery_open: bool,
+    #[cfg(any(target_os = "linux", test))]
+    trash_recovery_busy: bool,
     #[cfg(any(target_os = "linux", test))]
     trash_operation: Option<ActiveTrash>,
     trash_view: bool,
@@ -588,6 +597,12 @@ impl FinderView {
             #[cfg(any(target_os = "linux", test))]
             trash_pending: 0,
             #[cfg(any(target_os = "linux", test))]
+            trash_recovery_reviews: Vec::new(),
+            #[cfg(any(target_os = "linux", test))]
+            trash_recovery_open: false,
+            #[cfg(any(target_os = "linux", test))]
+            trash_recovery_busy: false,
+            #[cfg(any(target_os = "linux", test))]
             trash_operation: None,
             trash_view: false,
             #[cfg(any(target_os = "linux", test))]
@@ -673,7 +688,7 @@ impl FinderView {
                 .background_executor()
                 .spawn(async move {
                     let store = Arc::new(trash_store::TrashStore::open_default()?);
-                    let recovery = store.recover();
+                    let recovery = store.recover_and_review();
                     Ok::<_, std::io::Error>((store, recovery))
                 })
                 .await;
@@ -681,9 +696,11 @@ impl FinderView {
                 this.trash_loading = false;
                 match result {
                     Ok((store, recovery)) => match recovery {
-                        Ok(recovery) => {
+                        Ok((recovery, reviews)) => {
                             this.trash_store = Some(store);
                             this.trash_pending = recovery.pending;
+                            this.trash_recovery_reviews = reviews;
+                            this.trash_recovery_open = recovery.pending != 0;
                             if recovery.finalized != 0 {
                                 this.operation_notice = Some(
                                     format!(
@@ -697,7 +714,7 @@ impl FinderView {
                             if recovery.pending != 0 {
                                 this.operation_error = Some(
                                     format!(
-                                        "Files retained {} changed Trash operation{} for manual recovery",
+                                        "Review {} changed Trash operation{} before using Trash",
                                         recovery.pending,
                                         if recovery.pending == 1 { "" } else { "s" }
                                     )
@@ -712,6 +729,8 @@ impl FinderView {
                         }
                         Err(_) => {
                             this.trash_store = None;
+                            this.trash_recovery_reviews.clear();
+                            this.trash_recovery_open = false;
                             this.operation_error = Some(
                                 "Trash recovery data could not be verified; Trash actions are disabled"
                                     .into(),
@@ -720,6 +739,8 @@ impl FinderView {
                     },
                     Err(_) => {
                         this.trash_store = None;
+                        this.trash_recovery_reviews.clear();
+                        this.trash_recovery_open = false;
                         this.operation_error = Some(
                             "Trash recovery data could not be verified; Trash actions are disabled"
                                 .into(),
@@ -1494,13 +1515,18 @@ impl FinderView {
         completed: usize,
         cancelled: bool,
         failures: Vec<file_ops::Failure>,
-        recovery: std::io::Result<trash_store::TrashRecovery>,
+        recovery: std::io::Result<(
+            trash_store::TrashRecovery,
+            Vec<trash_store::TrashRecoveryReview>,
+        )>,
         cx: &mut Context<Self>,
     ) {
         self.trash_operation = None;
         let recovery_unavailable = match recovery {
-            Ok(recovery) => {
+            Ok((recovery, reviews)) => {
                 self.trash_pending = recovery.pending;
+                self.trash_recovery_reviews = reviews;
+                self.trash_recovery_open = recovery.pending != 0;
                 false
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -1511,6 +1537,8 @@ impl FinderView {
             Err(_) => {
                 self.trash_store = None;
                 self.trash_pending = 0;
+                self.trash_recovery_reviews.clear();
+                self.trash_recovery_open = false;
                 self.operation_error = Some(
                     "Trash recovery data could not be verified; Trash actions are disabled".into(),
                 );
@@ -1727,6 +1755,132 @@ impl FinderView {
         .detach();
     }
 
+    #[cfg(any(target_os = "linux", test))]
+    fn close_trash_recovery(&mut self, cx: &mut Context<Self>) {
+        if self.trash_recovery_busy {
+            return;
+        }
+        self.trash_recovery_open = false;
+        cx.notify();
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    fn resolve_current_trash_recovery(&mut self, cx: &mut Context<Self>) {
+        if self.trash_recovery_busy {
+            return;
+        }
+        let Some(review) = self.trash_recovery_reviews.first().cloned() else {
+            self.trash_recovery_open = false;
+            cx.notify();
+            return;
+        };
+        let Some(store) = self.trash_store.clone() else {
+            self.operation_error =
+                Some("Trash recovery is unavailable; no item was changed".into());
+            cx.notify();
+            return;
+        };
+        self.trash_recovery_busy = true;
+        self.operation_error = None;
+        cx.notify();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (outcome, refresh) = cx
+                .background_executor()
+                .spawn(async move {
+                    match store.resolve_review_and_refresh(&review) {
+                        Ok((outcome, recovery, reviews)) => {
+                            (Ok(outcome), Ok((recovery, reviews)))
+                        }
+                        Err(error) => {
+                            let refresh = store.recover_and_review();
+                            (Err(error), refresh)
+                        }
+                    }
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.trash_recovery_busy = false;
+                match refresh {
+                    Ok((recovery, reviews)) => {
+                        this.trash_pending = recovery.pending;
+                        this.trash_recovery_reviews = reviews;
+                        this.trash_recovery_open = recovery.pending != 0;
+                    }
+                    Err(_) => {
+                        this.trash_store = None;
+                        this.trash_pending = 0;
+                        this.trash_recovery_reviews.clear();
+                        this.trash_recovery_open = false;
+                        this.operation_error = Some(
+                            "Trash recovery data could not be verified; Trash actions are disabled"
+                                .into(),
+                        );
+                        cx.notify();
+                        return;
+                    }
+                }
+
+                match outcome {
+                    Ok(trash_store::TrashResolutionOutcome::ReturnedRemainingItem {
+                        may_be_partial,
+                    }) => {
+                        this.operation_notice = Some(
+                            if may_be_partial {
+                                "Remaining data returned to Trash; it may be incomplete"
+                            } else {
+                                "Item returned safely to Trash"
+                            }
+                            .into(),
+                        );
+                        this.operation_error = None;
+                    }
+                    Ok(trash_store::TrashResolutionOutcome::RemovedOrphanMetadata) => {
+                        this.operation_notice =
+                            Some("Orphaned Trash metadata removed; no user file was deleted".into());
+                        this.operation_error = None;
+                    }
+                    Ok(trash_store::TrashResolutionOutcome::KeptExistingItems) => {
+                        this.operation_notice = Some(
+                            "Existing items kept; only the exact recovery record was cleared"
+                                .into(),
+                        );
+                        this.operation_error = None;
+                    }
+                    Err(error) => {
+                        this.operation_error = Some(
+                            match error.kind() {
+                                std::io::ErrorKind::AlreadyExists => {
+                                    "The Trash item location is no longer available; review the updated state"
+                                }
+                                std::io::ErrorKind::WouldBlock => {
+                                    "Trash recovery changed; review it again before continuing"
+                                }
+                                _ => {
+                                    "Files could not resolve Trash recovery; no existing item was replaced"
+                                }
+                            }
+                            .into(),
+                        );
+                        this.trash_recovery_open = !this.trash_recovery_reviews.is_empty();
+                    }
+                }
+                if this.trash_pending != 0 && this.operation_error.is_none() {
+                    this.operation_error = Some(
+                        format!(
+                            "Review {} remaining Trash operation{} before using Trash",
+                            this.trash_pending,
+                            if this.trash_pending == 1 { "" } else { "s" }
+                        )
+                        .into(),
+                    );
+                }
+                this.reload(cx);
+            });
+        })
+        .detach();
+    }
+
     // ---- operations ----
     fn new_folder(&mut self, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
@@ -1848,7 +2002,7 @@ impl FinderView {
                         processed += 1;
                         let _ = events.try_send(TrashEvent::Progress { processed, total });
                     }
-                    let recovery = store.recover();
+                    let recovery = store.recover_and_review();
                     let _ = events.send_blocking(TrashEvent::Finished {
                         kind: TrashTaskKind::Move,
                         completed,
@@ -1973,7 +2127,7 @@ impl FinderView {
                         processed += 1;
                         let _ = events.try_send(TrashEvent::Progress { processed, total });
                     }
-                    let recovery = store.recover();
+                    let recovery = store.recover_and_review();
                     let _ = events.send_blocking(TrashEvent::Finished {
                         kind: TrashTaskKind::Restore,
                         completed,
@@ -2005,6 +2159,8 @@ impl FinderView {
                 || self.trash_operation.is_some()
                 || self.recovery_open
                 || self.recovery_busy
+                || self.trash_recovery_open
+                || self.trash_recovery_busy
             {
                 self.operation_error = Some("Wait for the current file operation to finish".into());
                 cx.notify();
@@ -2121,7 +2277,7 @@ impl FinderView {
                     processed += 1;
                     let _ = events.try_send(TrashEvent::Progress { processed, total });
                 }
-                let recovery = store.recover();
+                let recovery = store.recover_and_review();
                 let _ = events.send_blocking(TrashEvent::Finished {
                     kind: TrashTaskKind::Delete,
                     completed,
@@ -3523,6 +3679,48 @@ impl FinderView {
     }
 
     #[cfg(any(target_os = "linux", test))]
+    fn render_trash_recovery(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        if !self.trash_recovery_open || self.recovery_open {
+            return None;
+        }
+        let review = self.trash_recovery_reviews.first()?;
+        let presentation = trash_recovery_presentation(&review.action);
+        let title = format!(
+            "Recover Trash Operation (1 of {})",
+            self.trash_recovery_reviews.len()
+        );
+        let busy = self.trash_recovery_busy;
+        let resolvable = !matches!(
+            &review.action,
+            trash_store::TrashRecoveryAction::RequiresManualRepair
+        );
+        let buttons = vec![
+            rmac_ui::dialog_button(
+                "trash-recovery-later",
+                "Later",
+                rmac_ui::DialogButtonKind::Normal,
+            )
+            .disabled(busy)
+            .on_click(cx.listener(|this, _, _, cx| this.close_trash_recovery(cx)))
+            .into_any_element(),
+            rmac_ui::dialog_button(
+                "trash-recovery-confirm",
+                if busy {
+                    "Resolving…"
+                } else {
+                    presentation.action_label
+                },
+                rmac_ui::DialogButtonKind::Primary,
+            )
+            .busy(busy)
+            .disabled(busy || !resolvable)
+            .on_click(cx.listener(|this, _, _, cx| this.resolve_current_trash_recovery(cx)))
+            .into_any_element(),
+        ];
+        Some(rmac_ui::alert(title, presentation.message, buttons).into_any_element())
+    }
+
+    #[cfg(any(target_os = "linux", test))]
     fn render_delete_confirmation(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let confirmation = self.delete_confirmation.as_ref()?;
         let count = confirmation.items.len();
@@ -3670,7 +3868,16 @@ impl Render for FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_progress: Option<(SharedString, usize, usize, bool)> = None;
         let recovery_pending = self.pending_operations != 0;
+        #[cfg(any(target_os = "linux", test))]
+        let trash_recovery_pending = self.trash_pending != 0;
+        #[cfg(not(any(target_os = "linux", test)))]
+        let trash_recovery_pending = false;
+        let any_recovery_pending = recovery_pending || trash_recovery_pending;
         let recovery_dialog = self.render_recovery(cx);
+        #[cfg(any(target_os = "linux", test))]
+        let trash_recovery_dialog = self.render_trash_recovery(cx);
+        #[cfg(not(any(target_os = "linux", test)))]
+        let trash_recovery_dialog: Option<gpui::AnyElement> = None;
         #[cfg(any(target_os = "linux", test))]
         let delete_dialog = self.render_delete_confirmation(cx);
         #[cfg(not(any(target_os = "linux", test)))]
@@ -3691,13 +3898,28 @@ impl Render for FinderView {
                     }
                     return;
                 }
-                if !this.recovery_open {
-                    return;
-                }
-                match recovery_key_intent(event.keystroke.key.as_str(), this.recovery_busy) {
-                    Some(RecoveryKeyIntent::Close) => this.close_recovery(cx),
-                    Some(RecoveryKeyIntent::Resolve) => this.resolve_current_recovery(cx),
-                    None => {}
+                if this.recovery_open {
+                    cx.stop_propagation();
+                    match recovery_key_intent(event.keystroke.key.as_str(), this.recovery_busy) {
+                        Some(RecoveryKeyIntent::Close) => this.close_recovery(cx),
+                        Some(RecoveryKeyIntent::Resolve) => this.resolve_current_recovery(cx),
+                        None => {}
+                    }
+                } else {
+                    #[cfg(any(target_os = "linux", test))]
+                    if this.trash_recovery_open {
+                        cx.stop_propagation();
+                        match recovery_key_intent(
+                            event.keystroke.key.as_str(),
+                            this.trash_recovery_busy,
+                        ) {
+                            Some(RecoveryKeyIntent::Close) => this.close_trash_recovery(cx),
+                            Some(RecoveryKeyIntent::Resolve) => {
+                                this.resolve_current_trash_recovery(cx)
+                            }
+                            None => {}
+                        }
+                    }
                 }
             }))
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
@@ -3773,7 +3995,7 @@ impl Render for FinderView {
                                 .child("!"),
                         )
                         .child(div().flex_1().child(message))
-                        .child(if recovery_pending {
+                        .child(if any_recovery_pending {
                             "Review"
                         } else {
                             "Dismiss"
@@ -3782,6 +4004,12 @@ impl Render for FinderView {
                             if recovery_pending {
                                 this.recovery_open = true;
                             } else {
+                                #[cfg(any(target_os = "linux", test))]
+                                if trash_recovery_pending {
+                                    this.trash_recovery_open = true;
+                                    cx.notify();
+                                    return;
+                                }
                                 this.operation_error = None;
                             }
                             cx.notify();
@@ -3902,6 +4130,7 @@ impl Render for FinderView {
                 )
             })
             .when_some(recovery_dialog, |el, dialog| el.child(dialog))
+            .when_some(trash_recovery_dialog, |el, dialog| el.child(dialog))
             .when_some(delete_dialog, |el, dialog| el.child(dialog))
     }
 }
@@ -3945,6 +4174,41 @@ fn permanent_delete_prompt(count: usize, name: Option<&str>) -> String {
         format!(
             "{count} items will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins."
         )
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn trash_recovery_presentation(action: &trash_store::TrashRecoveryAction) -> RecoveryPresentation {
+    match action {
+        trash_store::TrashRecoveryAction::ReturnRemainingItem {
+            may_be_partial: true,
+        } => RecoveryPresentation {
+            message: "Files found remaining data from an interrupted permanent deletion. It may be incomplete. Return it to Trash without deleting or replacing any existing item."
+                .to_string(),
+            action_label: "Return to Trash",
+        },
+        trash_store::TrashRecoveryAction::ReturnRemainingItem {
+            may_be_partial: false,
+        } => RecoveryPresentation {
+            message: "Files found an item hidden by an interrupted permanent deletion. Return it to Trash without deleting or replacing any existing item."
+                .to_string(),
+            action_label: "Return to Trash",
+        },
+        trash_store::TrashRecoveryAction::RemoveOrphanMetadata => RecoveryPresentation {
+            message: "No file data remains for this transaction. Remove only its reviewed Trash metadata; no user file will be deleted."
+                .to_string(),
+            action_label: "Remove Metadata",
+        },
+        trash_store::TrashRecoveryAction::KeepExistingItems => RecoveryPresentation {
+            message: "Keep every existing source, Trash, and destination item. Files will clear only the exact recovery record and will not delete, move, or replace a file."
+                .to_string(),
+            action_label: "Keep Existing Items",
+        },
+        trash_store::TrashRecoveryAction::RequiresManualRepair => RecoveryPresentation {
+            message: "Files cannot prove a safe automatic repair for this state. Keep it for later; no item or recovery record will be changed."
+                .to_string(),
+            action_label: "Manual Repair Required",
+        },
     }
 }
 
@@ -4561,5 +4825,33 @@ mod tests {
 
         assert_eq!(sanitized.chars().count(), 121);
         assert!(sanitized.ends_with('…'));
+    }
+
+    #[test]
+    fn trash_recovery_presentations_never_overstate_safe_actions() {
+        let partial =
+            trash_recovery_presentation(&trash_store::TrashRecoveryAction::ReturnRemainingItem {
+                may_be_partial: true,
+            });
+        let orphan =
+            trash_recovery_presentation(&trash_store::TrashRecoveryAction::RemoveOrphanMetadata);
+        let keep =
+            trash_recovery_presentation(&trash_store::TrashRecoveryAction::KeepExistingItems);
+        let manual =
+            trash_recovery_presentation(&trash_store::TrashRecoveryAction::RequiresManualRepair);
+
+        assert!(partial.message.contains("may be incomplete"));
+        assert!(partial.message.contains("without deleting or replacing"));
+        assert!(orphan.message.contains("no user file will be deleted"));
+        assert!(keep
+            .message
+            .contains("clear only the exact recovery record"));
+        assert!(keep.message.contains("will not delete, move, or replace"));
+        assert!(manual
+            .message
+            .contains("cannot prove a safe automatic repair"));
+        assert!(manual
+            .message
+            .contains("no item or recovery record will be changed"));
     }
 }

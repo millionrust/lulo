@@ -136,6 +136,21 @@ metadata, icons, and identifiers remain original rmac work.
   banners, and a generation-guarded refresh; Restore additionally guarantees
   no-clobber publication. An empty verified inventory renders a dedicated
   Trash empty state.
+- Changed Trash, Restore, and permanent-delete records open a sequential
+  recovery sheet before Trash actions can resume. Review captures the exact
+  private journal identity plus bounded source, destination, Trash-data,
+  delete-stage, and metadata snapshots; acceptance reacquires the process lock
+  and recaptures every tree and metadata hash before changing anything. A
+  changed or partially deleted hidden stage can be returned to Trash through a
+  persisted return intent and one atomic no-replace rename. If no data remains,
+  explicit review can remove only the identity-bound orphan metadata. Other
+  states can keep every existing item and clear only the exact record. Wording
+  distinguishes possibly incomplete data and never claims an orphan metadata
+  cleanup deletes a user file. States for which Files cannot prove a safe
+  automatic action expose a disabled manual-repair result and retain both
+  items and journal. The sheet uses shared semantic controls, supports
+  Enter/Escape while idle, blocks duplicate resolution while busy, processes
+  records in stable order, and redacts all paths from `Debug`.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

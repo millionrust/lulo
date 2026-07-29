@@ -56,6 +56,11 @@ plain text over a rich-text file.
   merging that source with the desktop XBEL authority.
 - The filesystem remains authoritative. File monitors are refresh hints only;
   an exact fresh preflight is required before overwriting an opened document.
+- A dedicated view-render boundary owns the toolbar, find/replace bar, RTF
+  preview, format/status controls, recovery/external-change banners, alerts,
+  editable surface projection, and semantic action wiring. It invokes
+  controller intents without owning document bytes, recovery, portal,
+  conflict, print, watcher, or generation policy.
 - Linux printing must export the initiating Wayland window and retain the exact
   window/document generations through XDG PreparePrint, background rendering,
   and Print. The shared transaction advertises only PDF, refuses stale portal

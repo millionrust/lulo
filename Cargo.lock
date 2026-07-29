@@ -5033,6 +5033,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "libc",
  "notify",
  "objc2",
  "objc2-app-kit",

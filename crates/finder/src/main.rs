@@ -8,6 +8,8 @@
 mod file_ops;
 mod operation_journal;
 mod pasteboard;
+#[cfg(any(target_os = "linux", test))]
+mod trash_store;
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -76,6 +78,20 @@ enum TransferEvent {
     },
 }
 
+#[cfg(any(target_os = "linux", test))]
+enum TrashEvent {
+    Progress {
+        processed: usize,
+        total: usize,
+    },
+    Finished {
+        completed: usize,
+        cancelled: bool,
+        failures: Vec<file_ops::Failure>,
+        recovery: std::io::Result<trash_store::TrashRecovery>,
+    },
+}
+
 #[derive(Clone)]
 struct ActiveTransfer {
     label: SharedString,
@@ -87,6 +103,15 @@ struct ActiveTransfer {
     cancel: Arc<AtomicBool>,
     cancelling: bool,
     keep_unfinished_in_clipboard: bool,
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[derive(Clone)]
+struct ActiveTrash {
+    processed: usize,
+    total: usize,
+    cancel: Arc<AtomicBool>,
+    cancelling: bool,
 }
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -278,6 +303,14 @@ struct FinderView {
     recovery_open: bool,
     recovery_busy: bool,
     transfer: Option<ActiveTransfer>,
+    #[cfg(any(target_os = "linux", test))]
+    trash_store: Option<Arc<trash_store::TrashStore>>,
+    #[cfg(any(target_os = "linux", test))]
+    trash_loading: bool,
+    #[cfg(any(target_os = "linux", test))]
+    trash_pending: usize,
+    #[cfg(any(target_os = "linux", test))]
+    trash_operation: Option<ActiveTrash>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
     dragging: bool,
@@ -292,6 +325,10 @@ impl Drop for FinderView {
     fn drop(&mut self) {
         if let Some(transfer) = &self.transfer {
             transfer.cancel.store(true, Ordering::Release);
+        }
+        #[cfg(any(target_os = "linux", test))]
+        if let Some(trash) = &self.trash_operation {
+            trash.cancel.store(true, Ordering::Release);
         }
         if let Some(cancel) = &self.search_cancel {
             cancel.store(true, Ordering::Release);
@@ -509,6 +546,14 @@ impl FinderView {
             recovery_open: false,
             recovery_busy: false,
             transfer: None,
+            #[cfg(any(target_os = "linux", test))]
+            trash_store: None,
+            #[cfg(any(target_os = "linux", test))]
+            trash_loading: true,
+            #[cfg(any(target_os = "linux", test))]
+            trash_pending: 0,
+            #[cfg(any(target_os = "linux", test))]
+            trash_operation: None,
             free_bytes: None,
             dragging: false,
             focus,
@@ -571,6 +616,70 @@ impl FinderView {
                         this.operation_journal = None;
                         this.operation_error = Some(
                             "File-operation recovery data could not be verified; transfers are disabled"
+                                .into(),
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+
+        #[cfg(any(target_os = "linux", test))]
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let store = Arc::new(trash_store::TrashStore::open_default()?);
+                    let recovery = store.recover();
+                    Ok::<_, std::io::Error>((store, recovery))
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.trash_loading = false;
+                match result {
+                    Ok((store, recovery)) => match recovery {
+                        Ok(recovery) => {
+                            this.trash_store = Some(store);
+                            this.trash_pending = recovery.pending;
+                            if recovery.finalized != 0 {
+                                this.operation_notice = Some(
+                                    format!(
+                                        "Files safely completed {} interrupted Trash operation{}",
+                                        recovery.finalized,
+                                        if recovery.finalized == 1 { "" } else { "s" }
+                                    )
+                                    .into(),
+                                );
+                            }
+                            if recovery.pending != 0 {
+                                this.operation_error = Some(
+                                    format!(
+                                        "Files retained {} changed Trash operation{} for manual recovery",
+                                        recovery.pending,
+                                        if recovery.pending == 1 { "" } else { "s" }
+                                    )
+                                    .into(),
+                                );
+                            }
+                        }
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            this.trash_store = Some(store);
+                            this.operation_notice =
+                                Some("Another Files window is safely handling Trash".into());
+                        }
+                        Err(_) => {
+                            this.trash_store = None;
+                            this.operation_error = Some(
+                                "Trash recovery data could not be verified; Move to Trash is disabled"
+                                    .into(),
+                            );
+                        }
+                    },
+                    Err(_) => {
+                        this.trash_store = None;
+                        this.operation_error = Some(
+                            "Trash recovery data could not be verified; Move to Trash is disabled"
                                 .into(),
                         );
                     }
@@ -971,7 +1080,11 @@ impl FinderView {
     }
 
     fn block_mutation_during_transfer(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.transfer.is_none() {
+        #[cfg(any(target_os = "linux", test))]
+        let trash_busy = self.trash_operation.is_some();
+        #[cfg(not(any(target_os = "linux", test)))]
+        let trash_busy = false;
+        if self.transfer.is_none() && !trash_busy {
             return false;
         }
         self.operation_error = Some("Wait for the current file operation to finish".into());
@@ -1147,6 +1260,17 @@ impl FinderView {
         }
     }
 
+    fn cancel_trash(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "linux", test))]
+        if let Some(operation) = self.trash_operation.as_mut() {
+            operation.cancel.store(true, Ordering::Release);
+            operation.cancelling = true;
+            cx.notify();
+        }
+        #[cfg(not(any(target_os = "linux", test)))]
+        let _ = cx;
+    }
+
     fn close_recovery(&mut self, cx: &mut Context<Self>) {
         if self.recovery_busy {
             return;
@@ -1316,7 +1440,205 @@ impl FinderView {
             return;
         }
         let paths = self.selected_paths();
-        if !paths.is_empty() {
+        if paths.is_empty() {
+            return;
+        }
+
+        #[cfg(any(target_os = "linux", test))]
+        {
+            if self.trash_loading {
+                self.operation_error = Some("Files is still verifying Trash recovery".into());
+                cx.notify();
+                return;
+            }
+            let Some(store) = self.trash_store.clone() else {
+                self.operation_error =
+                    Some("Trash recovery is unavailable; no item was changed".into());
+                cx.notify();
+                return;
+            };
+            if self.trash_pending != 0 {
+                self.operation_error = Some(
+                    "A changed Trash operation needs manual recovery before another item can be moved"
+                        .into(),
+                );
+                cx.notify();
+                return;
+            }
+            let total = paths.len();
+            let cancel = Arc::new(AtomicBool::new(false));
+            self.trash_operation = Some(ActiveTrash {
+                processed: 0,
+                total,
+                cancel: cancel.clone(),
+                cancelling: false,
+            });
+            self.operation_error = None;
+            self.operation_notice = None;
+            cx.notify();
+
+            let (events, event_rx) = async_channel::bounded(16);
+            cx.background_executor()
+                .spawn(async move {
+                    let mut failures = Vec::new();
+                    let mut completed = 0usize;
+                    let mut processed = 0usize;
+                    let mut cancelled = false;
+                    for path in paths {
+                        if cancel.load(Ordering::Acquire) {
+                            cancelled = true;
+                            break;
+                        }
+                        match store.trash(&path, &cancel) {
+                            Ok(()) => completed += 1,
+                            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                                cancelled = true;
+                                break;
+                            }
+                            Err(error) => {
+                                let blocked = error.kind() == std::io::ErrorKind::WouldBlock;
+                                failures.push(file_ops::Failure::message(
+                                    file_ops::Operation::Trash,
+                                    &path,
+                                    None,
+                                    error.to_string(),
+                                ));
+                                if blocked {
+                                    processed += 1;
+                                    let _ =
+                                        events.try_send(TrashEvent::Progress { processed, total });
+                                    break;
+                                }
+                            }
+                        }
+                        processed += 1;
+                        let _ = events.try_send(TrashEvent::Progress { processed, total });
+                    }
+                    let recovery = store.recover();
+                    let _ = events.send_blocking(TrashEvent::Finished {
+                        completed,
+                        cancelled,
+                        failures,
+                        recovery,
+                    });
+                })
+                .detach();
+
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                while let Ok(event) = event_rx.recv().await {
+                    let finished = matches!(event, TrashEvent::Finished { .. });
+                    if this
+                        .update(cx, |this: &mut FinderView, cx| match event {
+                            TrashEvent::Progress { processed, total } => {
+                                if let Some(operation) = this.trash_operation.as_mut() {
+                                    operation.processed = processed;
+                                    operation.total = total;
+                                }
+                                cx.notify();
+                            }
+                            TrashEvent::Finished {
+                                completed,
+                                cancelled,
+                                failures,
+                                recovery,
+                            } => {
+                                this.trash_operation = None;
+                                let recovery_unavailable = match recovery {
+                                    Ok(recovery) => {
+                                        this.trash_pending = recovery.pending;
+                                        false
+                                    }
+                                    Err(error)
+                                        if error.kind() == std::io::ErrorKind::WouldBlock =>
+                                    {
+                                        this.operation_notice = Some(
+                                            "Another Files window is safely handling Trash".into(),
+                                        );
+                                        false
+                                    }
+                                    Err(_) => {
+                                        this.trash_store = None;
+                                        this.trash_pending = 0;
+                                        this.operation_error = Some(
+                                            "Trash recovery data could not be verified; Move to Trash is disabled"
+                                                .into(),
+                                        );
+                                        true
+                                    }
+                                };
+                                if !failures.is_empty() {
+                                    this.operation_notice = None;
+                                    this.record_operation_failures(failures, cx);
+                                }
+                                if recovery_unavailable {
+                                    let unavailable =
+                                        "Trash recovery is unavailable; Move to Trash is disabled";
+                                    this.operation_error = Some(
+                                        match this.operation_error.take() {
+                                            Some(failure) => {
+                                                format!("{failure}. {unavailable}")
+                                            }
+                                            None => unavailable.to_string(),
+                                        }
+                                        .into(),
+                                    );
+                                }
+                                if this.trash_pending != 0 {
+                                    let retained = format!(
+                                        "{} changed Trash operation{} retained for manual recovery",
+                                        this.trash_pending,
+                                        if this.trash_pending == 1 {
+                                            " was"
+                                        } else {
+                                            "s were"
+                                        }
+                                    );
+                                    this.operation_error = Some(
+                                        match this.operation_error.take() {
+                                            Some(failure) => format!("{failure}. {retained}"),
+                                            None => retained,
+                                        }
+                                        .into(),
+                                    );
+                                } else if cancelled && this.operation_error.is_none() {
+                                    this.operation_notice = Some(
+                                        if completed == 0 {
+                                            "Move to Trash cancelled; no item was moved".to_string()
+                                        } else {
+                                            format!(
+                                                "Move to Trash cancelled after moving {completed} item{}",
+                                                if completed == 1 { "" } else { "s" }
+                                            )
+                                        }
+                                        .into(),
+                                    );
+                                } else if this.operation_error.is_none() {
+                                    this.operation_notice = Some(
+                                        if completed == 1 {
+                                            "Moved 1 item to Trash".to_string()
+                                        } else {
+                                            format!("Moved {completed} items to Trash")
+                                        }
+                                        .into(),
+                                    );
+                                }
+                                this.reload(cx);
+                            }
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                    if finished {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
+
+        #[cfg(not(any(target_os = "linux", test)))]
+        {
             let failures = trash::delete_all(&paths)
                 .err()
                 .map(|error| {
@@ -2715,6 +3037,13 @@ impl Render for FinderView {
         let operation_notice = self.operation_notice.clone();
         let operation_error = self.operation_error.clone();
         let transfer = self.transfer.clone();
+        #[cfg(any(target_os = "linux", test))]
+        let trash_progress = self
+            .trash_operation
+            .as_ref()
+            .map(|operation| (operation.processed, operation.total, operation.cancelling));
+        #[cfg(not(any(target_os = "linux", test)))]
+        let trash_progress: Option<(usize, usize, bool)> = None;
         let recovery_pending = self.pending_operations != 0;
         let recovery_dialog = self.render_recovery(cx);
         div()
@@ -2820,6 +3149,44 @@ impl Render for FinderView {
                             }
                             cx.notify();
                         })),
+                )
+            })
+            .when_some(trash_progress, |el, (processed, total, cancelling)| {
+                el.child(
+                    div()
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(rmac_ui::mac::accent_subtle())
+                        .border_b_1()
+                        .border_color(rmac_ui::mac::accent_border())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(label())
+                        .child(
+                            div()
+                                .flex_1()
+                                .child(format!("Moving to Trash — {processed} of {total} items")),
+                        )
+                        .child(
+                            div()
+                                .id("cancel-trash")
+                                .px_2()
+                                .py_0p5()
+                                .rounded(px(5.0))
+                                .bg(rmac_ui::mac::raised())
+                                .border_1()
+                                .border_color(rmac_ui::mac::accent_border())
+                                .cursor_pointer()
+                                .child(if cancelling {
+                                    "Cancelling…"
+                                } else {
+                                    "Cancel"
+                                })
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_trash(cx))),
+                        ),
                 )
             })
             .when_some(transfer, |el, transfer| {

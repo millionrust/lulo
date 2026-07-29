@@ -5,6 +5,7 @@ use std::io::{self, Read as _, Write as _};
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
 use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -41,7 +42,7 @@ enum ResolutionIntent {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-struct EntryIdentity {
+pub(crate) struct EntryIdentity {
     device: u64,
     inode: u64,
     mode: u32,
@@ -53,12 +54,12 @@ struct EntryIdentity {
 }
 
 impl EntryIdentity {
-    fn capture(path: &Path) -> io::Result<Self> {
+    pub(crate) fn capture(path: &Path) -> io::Result<Self> {
         let metadata = fs::symlink_metadata(path)?;
         Ok(Self::from_metadata(&metadata))
     }
 
-    fn capture_file(file: &File) -> io::Result<Self> {
+    pub(crate) fn capture_file(file: &File) -> io::Result<Self> {
         Ok(Self::from_metadata(&file.metadata()?))
     }
 
@@ -77,7 +78,7 @@ impl EntryIdentity {
 
     /// Renaming an entry can legitimately update ctime. The durable content
     /// identity must otherwise remain the same across publication.
-    fn same_entry_after_rename(&self, other: &Self) -> bool {
+    pub(crate) fn same_entry_after_rename(&self, other: &Self) -> bool {
         self.device == other.device
             && self.inode == other.inode
             && self.mode == other.mode
@@ -88,7 +89,7 @@ impl EntryIdentity {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-struct TreeManifest {
+pub(crate) struct TreeManifest {
     entries: u64,
     path_bytes: u64,
     sha256: [u8; 32],
@@ -97,7 +98,16 @@ struct TreeManifest {
 }
 
 impl TreeManifest {
-    fn capture(root: &Path) -> io::Result<Self> {
+    pub(crate) fn capture(root: &Path) -> io::Result<Self> {
+        Self::capture_inner(root, None)
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn capture_cancellable(root: &Path, cancel: &AtomicBool) -> io::Result<Self> {
+        Self::capture_inner(root, Some(cancel))
+    }
+
+    fn capture_inner(root: &Path, cancel: Option<&AtomicBool>) -> io::Result<Self> {
         let mut builder = ManifestBuilder {
             exact: Sha256::new(),
             rename_stable: Sha256::new(),
@@ -105,7 +115,7 @@ impl TreeManifest {
             path_bytes: 0,
         };
         builder.update(b"rmac-tree-manifest-v1\0");
-        capture_manifest_entry(root, Path::new(""), 0, &mut builder)?;
+        capture_manifest_entry(root, Path::new(""), 0, &mut builder, cancel)?;
         Ok(Self {
             entries: builder.entries,
             path_bytes: builder.path_bytes,
@@ -114,7 +124,7 @@ impl TreeManifest {
         })
     }
 
-    fn same_after_root_rename(&self, other: &Self) -> bool {
+    pub(crate) fn same_after_root_rename(&self, other: &Self) -> bool {
         self.entries == other.entries
             && self.path_bytes == other.path_bytes
             && self.rename_stable_sha256 == other.rename_stable_sha256
@@ -149,7 +159,14 @@ fn capture_manifest_entry(
     relative: &Path,
     depth: usize,
     builder: &mut ManifestBuilder,
+    cancel: Option<&AtomicBool>,
 ) -> io::Result<()> {
+    if cancel.is_some_and(|cancel| cancel.load(Ordering::Acquire)) {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "tree manifest cancelled",
+        ));
+    }
     if depth > MAX_MANIFEST_DEPTH {
         return Err(invalid_data(
             "source folder nesting exceeds the manifest safety limit",
@@ -208,7 +225,13 @@ fn capture_manifest_entry(
         }
         names.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
         for name in names {
-            capture_manifest_entry(&path.join(&name), &relative.join(&name), depth + 1, builder)?;
+            capture_manifest_entry(
+                &path.join(&name),
+                &relative.join(&name),
+                depth + 1,
+                builder,
+                cancel,
+            )?;
         }
         if EntryIdentity::capture(path)? != before {
             return Err(manifest_changed());

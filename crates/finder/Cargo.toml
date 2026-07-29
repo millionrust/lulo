@@ -19,6 +19,7 @@ rmac-ui.workspace = true
 rmac-search.workspace = true
 rmac-thumbnails.workspace = true
 chrono.workspace = true
+libc.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true

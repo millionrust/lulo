@@ -82,9 +82,24 @@ metadata, icons, and identifiers remain original rmac work.
   identity checks. A lock with no record is removed only after the kernel
   proves its owner is gone; lock identity, type, mode, and size are revalidated
   before unlink. Unsupported or malformed locking fails closed.
-- Trash follows the freedesktop Trash specification on Linux and records enough
-  identity to offer restore. Permanent delete requires explicit confirmation
-  and is not described as undoable.
+- Linux move-to-Trash follows the freedesktop Trash specification and runs off
+  GPUI through a Files-owned private transaction authority. It resolves the
+  source's actual mount, uses the home Trash only on that filesystem, otherwise
+  selects a valid sticky `.Trash/$UID` or private `.Trash-$UID`, and never
+  copies across volumes. The `.trashinfo` file is written and fsynced before
+  one atomic no-replace rename; home identities are absolute and mounted-volume
+  identities are top-directory-relative, with raw path bytes percent-encoded.
+  Source, data, and metadata identities plus bounded no-follow SHA-256 tree
+  manifests survive prepared, metadata-published, and data-moved stages. Both
+  rename parents and all private state are fsynced. The bounded UI bridge shows
+  completed top-level items and supports cooperative cancellation during tree
+  scanning and between items; cancellation before rename removes only the
+  transaction's exact metadata and record while retaining the source. Startup
+  completes only identity-proven interrupted work, retains changed state for
+  manual recovery, and serializes Files processes with a private nonblocking
+  kernel lock. Restore still must revalidate the exact current Trash identity.
+  Permanent delete requires explicit confirmation and is not described as
+  undoable.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

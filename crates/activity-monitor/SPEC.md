@@ -29,6 +29,10 @@ the application does not fabricate unavailable per-process data.
 - The metric domain owns tab-to-sort policy, the Network summary-only rule,
   aggregate/interface snapshots, bounded 60-sample history, refresh interval,
   and exact byte/rate/duration presentation.
+- The process-table domain owns the retained `System` authority, complete and
+  bounded visible snapshots, filtering, sorting, column projection, PID-stable
+  selection, row rendering, and row-scoped Quit/Force Quit actions. The root
+  view coordinates that domain without owning its table-widget implementation.
 
 ## Sampling and failure states
 

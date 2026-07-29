@@ -9,24 +9,19 @@ mod cpu_ticks;
 mod metrics;
 mod process_action;
 mod process_signal;
+mod process_table;
 mod storage;
 
-use std::cmp::Ordering;
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, Entity,
-    InteractiveElement as _, IntoElement, MouseButton, ParentElement, Render, SharedString,
-    Stateful, StatefulInteractiveElement as _, Styled, Window,
+    div, prelude::FluentBuilder as _, px, AppContext as _, Context, Entity,
+    InteractiveElement as _, IntoElement, ParentElement, Render, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::{menu::PopupMenu, StyledExt as _};
-use rmac_ui::{
-    mac, Button, Column, ColumnSort, InputState, SearchField, Table, TableDelegate, TableEvent,
-    TableState, Tabs,
-};
-use sysinfo::{
-    Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal, System, UpdateKind, Users,
-};
+use gpui_component::StyledExt as _;
+use rmac_ui::{mac, Button, InputState, SearchField, Table, TableEvent, TableState, Tabs};
+use sysinfo::{Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal};
 
 use columns::{default_visible as default_visible_cols, load as load_visible_cols};
 use columns::{save as save_visible_cols, ColKey};
@@ -34,6 +29,7 @@ use metrics::{
     format_bytes, format_duration, format_mem, format_rate, Aggregates, History, NetIface, Tab,
     REFRESH_SECS,
 };
+use process_table::{resync_selection, ProcessTableDelegate};
 
 gpui::actions!(
     activity_monitor,
@@ -46,386 +42,12 @@ gpui::actions!(
     ]
 );
 
-/// One row in the process table — a flat snapshot, cheap to clone/diff.
-#[derive(Clone)]
-struct ProcRow {
-    pid: u32,
-    name: SharedString,
-    /// Lower-cased command line / executable path, used for search matching only.
-    cmd_search: SharedString,
-    cpu: f32,
-    mem: u64,
-    /// Bytes read+written since the last refresh (a per-tick I/O proxy).
-    disk: u64,
-    /// Energy-impact approximation. macOS's exact figure is proprietary; we
-    /// combine the two real energy-relevant signals sysinfo exposes — CPU usage
-    /// plus this interval's disk I/O — so it isn't merely a copy of %CPU.
-    energy: f32,
-    /// Parent process id (real, from sysinfo).
-    ppid: Option<u32>,
-    /// Owning user name, resolved from the process uid.
-    user: SharedString,
-    /// Virtual memory size in bytes.
-    vmem: u64,
-    /// Wall-clock run time in seconds since the process started.
-    run_time: u64,
-    /// Process start time binds destructive actions across PID reuse.
-    start_time: u64,
-    /// Process status (Running / Sleeping / …), for sorting + display.
-    status: SharedString,
-}
-
-/// Table delegate: owns the live `System` handle plus the current snapshot.
-///
-/// We keep a single `System` instance and refresh it in place so `sysinfo`
-/// can compute per-process CPU deltas between ticks (it works on diffs).
-struct ProcessTableDelegate {
-    system: System,
-    /// Full unfiltered snapshot.
-    all_rows: Vec<ProcRow>,
-    /// Filtered + sorted rows actually shown.
-    rows: Vec<ProcRow>,
-    /// The visible columns, in display order — a subset of `ColKey::ALL`.
-    visible: Vec<ColKey>,
-    /// `gpui-component` column descriptors mirroring `visible`.
-    columns: Vec<Column>,
-    /// uid → username resolution table. Accounts are stable over a monitor
-    /// session, so this is loaded once rather than refreshed every two seconds.
-    users: Users,
-    cpu_count: usize,
-    filter: String,
-    /// The column the rows are sorted by — identity-based so it survives the
-    /// visible set changing under it.
-    sort_key: ColKey,
-    sort_asc: bool,
-    /// The PID the user has selected. This is the source of truth for the
-    /// selection — the table re-sorts every tick, so a stored row index would
-    /// drift onto a different process. The row index is derived from this for
-    /// rendering (and re-synced after every refresh/filter/sort).
-    selected_pid: Option<u32>,
-}
-
-impl ProcessTableDelegate {
-    fn new(visible: Vec<ColKey>) -> Self {
-        let mut delegate = Self {
-            system: System::new(),
-            all_rows: Vec::new(),
-            rows: Vec::new(),
-            columns: visible.iter().map(|k| k.to_column()).collect(),
-            visible,
-            users: Users::new_with_refreshed_list(),
-            cpu_count: 1,
-            filter: String::new(),
-            // Default: busiest CPU first.
-            sort_key: ColKey::Cpu,
-            sort_asc: false,
-            selected_pid: None,
-        };
-        delegate.refresh();
-        delegate
-    }
-
-    /// Rebuild the `gpui-component` column list from the visible set.
-    fn rebuild_columns(&mut self) {
-        self.columns = self.visible.iter().map(|k| k.to_column()).collect();
-    }
-
-    /// Show or hide a column. The Process Name anchor can't be hidden, and we
-    /// never drop the last column. Returns whether anything changed.
-    fn toggle_col(&mut self, key: ColKey) -> bool {
-        if let Some(pos) = self.visible.iter().position(|&k| k == key) {
-            if key.required() || self.visible.len() <= 1 {
-                return false;
-            }
-            self.visible.remove(pos);
-            // If we hid the sort column, fall back to the first visible one.
-            if self.sort_key == key {
-                self.sort_key = self.visible[0];
-            }
-        } else {
-            // Re-insert in canonical order.
-            let canon = ColKey::ALL.iter().position(|&k| k == key).unwrap_or(0);
-            let insert_at = self
-                .visible
-                .iter()
-                .position(|&k| ColKey::ALL.iter().position(|&c| c == k).unwrap_or(0) > canon)
-                .unwrap_or(self.visible.len());
-            self.visible.insert(insert_at, key);
-        }
-        self.rebuild_columns();
-        true
-    }
-
-    /// Pull a fresh snapshot from `sysinfo`, then re-apply the active filter/sort.
-    fn refresh(&mut self) {
-        // Frequency and static CPU metadata do not change on this screen; only
-        // refresh usage deltas on the two-second sampling path.
-        self.system.refresh_cpu_usage();
-        self.system.refresh_memory();
-        self.system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing()
-                .with_cpu()
-                .with_memory()
-                .with_disk_usage()
-                .with_exe(UpdateKind::OnlyIfNotSet)
-                .with_cmd(UpdateKind::OnlyIfNotSet)
-                .with_user(UpdateKind::OnlyIfNotSet),
-        );
-        self.cpu_count = self.system.cpus().len().max(1);
-
-        let users = &self.users;
-        self.all_rows = self
-            .system
-            .processes()
-            .values()
-            .map(|p| {
-                let du = p.disk_usage();
-                // Build a searchable haystack from the exe path + full command line
-                // so search can match on path/command, not just the process name.
-                let mut cmd_search = String::new();
-                if let Some(exe) = p.exe() {
-                    cmd_search.push_str(&exe.to_string_lossy());
-                }
-                for arg in p.cmd() {
-                    cmd_search.push(' ');
-                    cmd_search.push_str(&arg.to_string_lossy());
-                }
-                cmd_search.make_ascii_lowercase();
-                let cpu = p.cpu_usage();
-                let disk = du.read_bytes + du.written_bytes;
-                let user = p
-                    .user_id()
-                    .and_then(|uid| users.get_user_by_id(uid))
-                    .map(|u| SharedString::from(u.name().to_string()))
-                    .or_else(|| {
-                        p.user_id()
-                            .map(|uid| SharedString::from(format!("uid {}", **uid)))
-                    })
-                    .unwrap_or_else(|| SharedString::from("—"));
-                ProcRow {
-                    pid: p.pid().as_u32(),
-                    name: p.name().to_string_lossy().into_owned().into(),
-                    cmd_search: cmd_search.into(),
-                    cpu,
-                    mem: p.memory(),
-                    disk,
-                    // Approximate energy impact from the two real signals we have:
-                    // CPU usage (the dominant term) plus this interval's disk I/O
-                    // (≈0.5 per MB). Distinct from raw %CPU, not a copy of it.
-                    energy: cpu + (disk as f32 / 1_048_576.0) * 0.5,
-                    ppid: p.parent().map(|pp| pp.as_u32()),
-                    user,
-                    vmem: p.virtual_memory(),
-                    run_time: p.run_time(),
-                    start_time: p.start_time(),
-                    status: SharedString::from(p.status().to_string()),
-                }
-            })
-            .collect();
-
-        self.apply_view();
-    }
-
-    /// Rebuild `rows` from `all_rows` using the current filter and sort.
-    fn apply_view(&mut self) {
-        let needle = self.filter.to_lowercase();
-        // `all_rows` has no externally meaningful order. Sort it in place, then
-        // clone only the at-most-300 visible rows instead of cloning the entire
-        // process list before sorting and truncating it.
-        Self::sort_rows(&mut self.all_rows, self.sort_key, self.sort_asc);
-        self.rows = self
-            .all_rows
-            .iter()
-            .filter(|r| {
-                needle.is_empty()
-                    || r.name.to_lowercase().contains(&needle)
-                    || r.pid.to_string().contains(&needle)
-                    || r.cmd_search.contains(&needle)
-            })
-            .take(300)
-            .cloned()
-            .collect();
-    }
-
-    fn sort_rows(rows: &mut [ProcRow], key: ColKey, asc: bool) {
-        rows.sort_by(|a, b| {
-            let o = match key {
-                ColKey::Pid => a.pid.cmp(&b.pid),
-                ColKey::Name => a.name.cmp(&b.name),
-                ColKey::Cpu => a.cpu.partial_cmp(&b.cpu).unwrap_or(Ordering::Equal),
-                ColKey::Mem => a.mem.cmp(&b.mem),
-                ColKey::Energy => a.energy.partial_cmp(&b.energy).unwrap_or(Ordering::Equal),
-                ColKey::Disk => a.disk.cmp(&b.disk),
-                ColKey::Ppid => a.ppid.cmp(&b.ppid),
-                ColKey::User => a.user.cmp(&b.user),
-                ColKey::Vmem => a.vmem.cmp(&b.vmem),
-                ColKey::RunTime => a.run_time.cmp(&b.run_time),
-                ColKey::Status => a.status.cmp(&b.status),
-            };
-            if asc {
-                o
-            } else {
-                o.reverse()
-            }
-        });
-    }
-}
-
-/// Re-point the table's selected row at the stored PID after the rows have been
-/// rebuilt/re-sorted/filtered. If the PID has vanished entirely, forget it; if
-/// it is merely hidden by the current filter, keep the PID but clear the visible
-/// highlight so it returns when the filter is cleared.
-fn resync_selection(
-    state: &mut TableState<ProcessTableDelegate>,
-    cx: &mut Context<TableState<ProcessTableDelegate>>,
-) {
-    let (visible_ix, retained_pid) = {
-        let d = state.delegate();
-        selection_projection(
-            d.selected_pid,
-            d.rows.iter().map(|row| row.pid),
-            d.all_rows.iter().map(|row| row.pid),
-        )
-    };
-    state.delegate_mut().selected_pid = retained_pid;
-    match visible_ix {
-        Some(ix) => state.set_selected_row(ix, cx),
-        None => {
-            if state.selected_row().is_some() {
-                state.clear_selection(cx);
-            }
-        }
-    }
-}
-
-fn selection_projection(
-    selected_pid: Option<u32>,
-    visible: impl IntoIterator<Item = u32>,
-    all: impl IntoIterator<Item = u32>,
-) -> (Option<usize>, Option<u32>) {
-    let Some(pid) = selected_pid else {
-        return (None, None);
-    };
-    let visible_index = visible.into_iter().position(|candidate| candidate == pid);
-    let retained_pid = all
-        .into_iter()
-        .any(|candidate| candidate == pid)
-        .then_some(pid);
-    (visible_index, retained_pid)
-}
-
 fn process_signal_outcome(outcome: process_signal::SignalOutcome) -> process_action::Outcome {
     match outcome {
         process_signal::SignalOutcome::Delivered => process_action::Outcome::Delivered,
         process_signal::SignalOutcome::Missing => process_action::Outcome::Missing,
         process_signal::SignalOutcome::Unsupported => process_action::Outcome::Unsupported,
         process_signal::SignalOutcome::Rejected => process_action::Outcome::Rejected,
-    }
-}
-
-impl TableDelegate for ProcessTableDelegate {
-    fn columns_count(&self, _cx: &App) -> usize {
-        self.columns.len()
-    }
-
-    fn rows_count(&self, _cx: &App) -> usize {
-        self.rows.len()
-    }
-
-    fn column(&self, col_ix: usize, _cx: &App) -> &Column {
-        &self.columns[col_ix]
-    }
-
-    fn perform_sort(
-        &mut self,
-        col_ix: usize,
-        sort: ColumnSort,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        if let Some(&key) = self.visible.get(col_ix) {
-            self.sort_key = key;
-        }
-        self.sort_asc = matches!(sort, ColumnSort::Ascending);
-        self.apply_view();
-        // Rows just re-sorted, so the stored row index is stale — re-point the
-        // highlight at the selected PID once the table is back on the stack.
-        cx.defer_in(window, |state, _window, cx| resync_selection(state, cx));
-    }
-
-    /// Right-clicking a row should also select it, so the context menu and the
-    /// toolbar/keyboard actions all act on the same target.
-    fn render_tr(
-        &mut self,
-        row_ix: usize,
-        _window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) -> Stateful<gpui::Div> {
-        div()
-            .id(("row", row_ix))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |state, _, _, cx| {
-                    let pid = state.delegate().rows.get(row_ix).map(|r| r.pid);
-                    state.delegate_mut().selected_pid = pid;
-                    state.set_selected_row(row_ix, cx);
-                }),
-            )
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(move |state, _, _, cx| {
-                    let pid = state.delegate().rows.get(row_ix).map(|r| r.pid);
-                    state.delegate_mut().selected_pid = pid;
-                    state.set_selected_row(row_ix, cx);
-                }),
-            )
-    }
-
-    fn context_menu(
-        &mut self,
-        row_ix: usize,
-        menu: PopupMenu,
-        _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
-    ) -> PopupMenu {
-        // The Table doesn't select a row on right-click, so target the row under
-        // the cursor here — otherwise Quit/Force Quit would act on a previously
-        // left-selected (different) row. This menu stays on gpui-component's
-        // Table widget: its right-click menu is intrinsic to the widget (the
-        // right-clicked row index isn't otherwise exposed), so swapping in
-        // rmac_ui::ContextMenu would mean reimplementing the table's hit-testing.
-        if let Some(row) = self.rows.get(row_ix) {
-            self.selected_pid = Some(row.pid);
-        }
-        menu.menu("Quit", Box::new(QuitProcess))
-            .menu("Force Quit", Box::new(ForceQuitProcess))
-    }
-
-    fn render_td(
-        &mut self,
-        row_ix: usize,
-        col_ix: usize,
-        _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
-    ) -> impl IntoElement {
-        let row = &self.rows[row_ix];
-        let key = self.visible.get(col_ix).copied().unwrap_or(ColKey::Name);
-        let text: SharedString = match key {
-            ColKey::Pid => row.pid.to_string().into(),
-            ColKey::Name => row.name.clone(),
-            ColKey::Cpu => format!("{:.1}", row.cpu).into(),
-            ColKey::Mem => format_mem(row.mem).into(),
-            ColKey::Energy => format!("{:.1}", row.energy).into(),
-            ColKey::Disk => format_mem(row.disk).into(),
-            ColKey::Ppid => row.ppid.map(|p| p.to_string()).unwrap_or_default().into(),
-            ColKey::User => row.user.clone(),
-            ColKey::Vmem => format_mem(row.vmem).into(),
-            ColKey::RunTime => format_duration(row.run_time).into(),
-            ColKey::Status => row.status.clone(),
-        };
-        div().child(text)
     }
 }
 
@@ -535,8 +157,7 @@ impl MonitorView {
     fn apply_filter(&mut self, cx: &mut Context<Self>) {
         let q = self.search.read(cx).value().to_string();
         self.table.update(cx, |state, cx| {
-            state.delegate_mut().filter = q;
-            state.delegate_mut().apply_view();
+            state.delegate_mut().set_filter(q);
             resync_selection(state, cx);
             state.refresh(cx);
         });
@@ -1615,25 +1236,4 @@ fn main() {
             view
         },
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::selection_projection;
-
-    #[test]
-    fn process_churn_clears_only_a_vanished_selection() {
-        assert_eq!(
-            selection_projection(Some(20), [10, 20, 30], [10, 20, 30]),
-            (Some(1), Some(20))
-        );
-        assert_eq!(
-            selection_projection(Some(20), [10, 30], [10, 20, 30]),
-            (None, Some(20))
-        );
-        assert_eq!(
-            selection_projection(Some(20), [10, 30], [10, 30]),
-            (None, None)
-        );
-    }
 }

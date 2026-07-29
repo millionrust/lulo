@@ -6,6 +6,7 @@
 
 mod columns;
 mod cpu_ticks;
+mod metrics;
 mod process_action;
 mod process_signal;
 mod storage;
@@ -29,6 +30,10 @@ use sysinfo::{
 
 use columns::{default_visible as default_visible_cols, load as load_visible_cols};
 use columns::{save as save_visible_cols, ColKey};
+use metrics::{
+    format_bytes, format_duration, format_mem, format_rate, Aggregates, History, NetIface, Tab,
+    REFRESH_SECS,
+};
 
 gpui::actions!(
     activity_monitor,
@@ -40,52 +45,6 @@ gpui::actions!(
         ConfirmKill
     ]
 );
-
-/// Which top-level pane is active. Each tab re-focuses the table on a different
-/// metric (default sort) and surfaces a different aggregate summary + sparkline.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
-    Cpu,
-    Memory,
-    Energy,
-    Disk,
-    Network,
-}
-
-impl Tab {
-    const ALL: [Tab; 5] = [Tab::Cpu, Tab::Memory, Tab::Energy, Tab::Disk, Tab::Network];
-
-    fn label(self) -> &'static str {
-        match self {
-            Tab::Cpu => "CPU",
-            Tab::Memory => "Memory",
-            Tab::Energy => "Energy",
-            Tab::Disk => "Disk",
-            Tab::Network => "Network",
-        }
-    }
-
-    /// The column the table sorts by (descending) when this tab is activated.
-    ///
-    /// Network has no per-process data source (sysinfo only exposes system-wide
-    /// interface counters), so it is summary-only and hides the table — the
-    /// returned column is unused there but kept sensible for safety.
-    fn default_sort_key(self) -> ColKey {
-        match self {
-            Tab::Cpu => ColKey::Cpu,
-            Tab::Memory => ColKey::Mem,
-            Tab::Energy => ColKey::Energy,
-            Tab::Disk => ColKey::Disk,
-            Tab::Network => ColKey::Cpu,
-        }
-    }
-
-    /// Whether this tab shows the per-process table. Network is summary-only
-    /// because there is no reliable per-process network data on macOS/Linux here.
-    fn has_process_table(self) -> bool {
-        !matches!(self, Tab::Network)
-    }
-}
 
 /// One row in the process table — a flat snapshot, cheap to clone/diff.
 #[derive(Clone)]
@@ -366,63 +325,6 @@ fn process_signal_outcome(outcome: process_signal::SignalOutcome) -> process_act
     }
 }
 
-fn format_mem(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    let b = bytes as f64;
-    if b >= GB {
-        format!("{:.2} GB", b / GB)
-    } else if b >= MB {
-        format!("{:.1} MB", b / MB)
-    } else {
-        format!("{:.0} KB", b / KB)
-    }
-}
-
-/// Format an elapsed-seconds duration as `H:MM:SS` (or `M:SS` under an hour).
-fn format_duration(secs: u64) -> String {
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
-    if h > 0 {
-        format!("{h}:{m:02}:{s:02}")
-    } else {
-        format!("{m}:{s:02}")
-    }
-}
-
-/// Format a byte-rate (bytes per second) compactly.
-fn format_rate(bytes_per_s: f64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    if bytes_per_s >= GB {
-        format!("{:.2} GB/s", bytes_per_s / GB)
-    } else if bytes_per_s >= MB {
-        format!("{:.1} MB/s", bytes_per_s / MB)
-    } else {
-        format!("{:.0} KB/s", bytes_per_s / KB)
-    }
-}
-
-/// Format a cumulative byte count compactly (e.g. "3.42 GB").
-fn format_bytes(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    let b = bytes as f64;
-    if b >= GB {
-        format!("{:.2} GB", b / GB)
-    } else if b >= MB {
-        format!("{:.1} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.0} KB", b / KB)
-    } else {
-        format!("{bytes} B")
-    }
-}
-
 impl TableDelegate for ProcessTableDelegate {
     fn columns_count(&self, _cx: &App) -> usize {
         self.columns.len()
@@ -527,46 +429,6 @@ impl TableDelegate for ProcessTableDelegate {
     }
 }
 
-/// Aggregate readings recomputed every tick, used by the summary strip + graphs.
-#[derive(Default)]
-struct Aggregates {
-    cpu_total: f32,
-    per_core: Vec<f32>,
-    mem_used: u64,
-    mem_total: u64,
-    mem_available: u64,
-    swap_used: u64,
-    swap_total: u64,
-    energy_total: f32,
-    disk_read_rate: f64,
-    disk_write_rate: f64,
-    net_recv_rate: f64,
-    net_sent_rate: f64,
-}
-
-/// A short ring of recent samples for each metric, drawn as a bar sparkline.
-#[derive(Default)]
-struct History {
-    cpu: Vec<f32>,
-    mem: Vec<f32>,
-    energy: Vec<f32>,
-    disk: Vec<f32>,
-    net: Vec<f32>,
-}
-
-impl History {
-    const CAP: usize = 60;
-
-    fn push(buf: &mut Vec<f32>, v: f32) {
-        buf.push(v);
-        if buf.len() > Self::CAP {
-            buf.remove(0);
-        }
-    }
-}
-
-const REFRESH_SECS: f64 = 2.0;
-
 /// Root view: a tabbed summary + the live process table.
 struct MonitorView {
     table: Entity<TableState<ProcessTableDelegate>>,
@@ -591,16 +453,6 @@ struct MonitorView {
     /// delta. `cpu_split` is the latest (user%, system%, idle%) breakdown.
     prev_cpu_ticks: Option<[u64; 4]>,
     cpu_split: Option<(f32, f32, f32)>,
-}
-
-/// One row in the Network tab's per-interface table.
-#[derive(Clone)]
-struct NetIface {
-    name: String,
-    total_recv: u64,
-    total_sent: u64,
-    recv_rate: f64,
-    sent_rate: f64,
 }
 
 impl MonitorView {
@@ -1767,7 +1619,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{selection_projection, History, REFRESH_SECS};
+    use super::selection_projection;
 
     #[test]
     fn process_churn_clears_only_a_vanished_selection() {
@@ -1783,16 +1635,5 @@ mod tests {
             selection_projection(Some(20), [10, 30], [10, 30]),
             (None, None)
         );
-    }
-
-    #[test]
-    fn metric_history_and_refresh_policy_are_strictly_bounded() {
-        let mut history = Vec::new();
-        for sample in 0..(History::CAP + 5) {
-            History::push(&mut history, sample as f32);
-        }
-        assert_eq!(history.len(), History::CAP);
-        assert_eq!(history[0], 5.0);
-        assert_eq!(REFRESH_SECS, 2.0);
     }
 }

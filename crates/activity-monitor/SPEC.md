@@ -26,6 +26,9 @@ the application does not fabricate unavailable per-process data.
 - The isolated column domain owns stable identities, display metadata,
   canonical preference parsing, retired-path migration, and typed atomic
   load/save. The root view consumes only its validated visible-column set.
+- The metric domain owns tab-to-sort policy, the Network summary-only rule,
+  aggregate/interface snapshots, bounded 60-sample history, refresh interval,
+  and exact byte/rate/duration presentation.
 
 ## Sampling and failure states
 

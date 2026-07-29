@@ -37,6 +37,10 @@ the application does not fabricate unavailable per-process data.
   network rows, toolbar, process table, column chooser, inspector, confirmation,
   feedback, and shortcuts. It invokes controller operations without owning
   metric sampling, persistence, process identity, or signal-delivery policy.
+- The 64-line binary entrypoint owns only module composition, semantic shortcut
+  registration, application boot, and initial focus. A separate view controller
+  owns subscriptions, sampling coordination, user intents, and process-action
+  orchestration, with its renderer nested beneath that controller.
 
 ## Sampling and failure states
 

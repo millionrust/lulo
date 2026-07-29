@@ -8,10 +8,9 @@ use sysinfo::Pid;
 
 use crate::columns::ColKey;
 use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab};
-use crate::{
-    process_action, CancelKill, ConfirmKill, FocusSearch, ForceQuitProcess, MonitorView,
-    QuitProcess,
-};
+use crate::{process_action, CancelKill, ConfirmKill, FocusSearch, ForceQuitProcess, QuitProcess};
+
+use super::MonitorView;
 
 impl MonitorView {
     /// The column-chooser dropdown: a checklist of every available column.

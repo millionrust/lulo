@@ -6,6 +6,7 @@
 
 mod cpu_ticks;
 mod process_action;
+mod process_signal;
 mod storage;
 
 use std::cmp::Ordering;
@@ -475,6 +476,15 @@ fn selection_projection(
         .any(|candidate| candidate == pid)
         .then_some(pid);
     (visible_index, retained_pid)
+}
+
+fn process_signal_outcome(outcome: process_signal::SignalOutcome) -> process_action::Outcome {
+    match outcome {
+        process_signal::SignalOutcome::Delivered => process_action::Outcome::Delivered,
+        process_signal::SignalOutcome::Missing => process_action::Outcome::Missing,
+        process_signal::SignalOutcome::Unsupported => process_action::Outcome::Unsupported,
+        process_signal::SignalOutcome::Rejected => process_action::Outcome::Rejected,
+    }
 }
 
 fn format_mem(bytes: u64) -> String {
@@ -1050,6 +1060,7 @@ impl MonitorView {
 
     fn confirm_kill(&mut self, cx: &mut Context<Self>) {
         if let Some(request) = self.pending_kill.take() {
+            let process_handle = process_signal::ProcessHandle::open(request.process.pid);
             let outcome =
                 self.table.update(cx, |state, cx| {
                     let delegate = state.delegate_mut();
@@ -1069,21 +1080,29 @@ impl MonitorView {
                     let outcome = match process_action::preflight(&request, observed.as_ref()) {
                         process_action::Preflight::Missing => process_action::Outcome::Missing,
                         process_action::Preflight::Replaced => process_action::Outcome::Replaced,
-                        process_action::Preflight::Current => {
-                            let signal = match request.kind {
-                                process_action::ActionKind::Quit => Signal::Term,
-                                process_action::ActionKind::ForceQuit => Signal::Kill,
-                            };
-                            match delegate
-                                .system
-                                .process(pid)
-                                .and_then(|process| process.kill_with(signal))
-                            {
-                                Some(true) => process_action::Outcome::Delivered,
-                                Some(false) => process_action::Outcome::Rejected,
-                                None => process_action::Outcome::Unsupported,
-                            }
-                        }
+                        process_action::Preflight::Current => match process_handle {
+                            Ok(handle) => process_signal_outcome(handle.send(
+                                match request.kind {
+                                    process_action::ActionKind::Quit => {
+                                        process_signal::SignalKind::Terminate
+                                    }
+                                    process_action::ActionKind::ForceQuit => {
+                                        process_signal::SignalKind::Kill
+                                    }
+                                },
+                                || {
+                                    let signal = match request.kind {
+                                        process_action::ActionKind::Quit => Signal::Term,
+                                        process_action::ActionKind::ForceQuit => Signal::Kill,
+                                    };
+                                    delegate
+                                        .system
+                                        .process(pid)
+                                        .and_then(|process| process.kill_with(signal))
+                                },
+                            )),
+                            Err(outcome) => process_signal_outcome(outcome),
+                        },
                     };
                     if matches!(
                         outcome,

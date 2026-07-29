@@ -4843,6 +4843,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui-component",
+ "libc",
  "rmac-storage",
  "rmac-ui",
  "sysinfo 0.33.1",

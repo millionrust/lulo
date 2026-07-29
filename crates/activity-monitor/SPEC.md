@@ -35,6 +35,10 @@ the application does not fabricate unavailable per-process data.
 - Process disappearance, PID reuse, unsupported signals, permission rejection,
   and signal failure produce distinct visible results. A successful system call
   is described only as signal delivery, never as proof that the process exited.
+- Linux opens a kernel pidfd before the confirmation-time identity refresh and
+  sends `SIGTERM`/`SIGKILL` through that handle. A kernel without pidfd support
+  fails closed as unavailable; it never falls back to a reuse-prone numeric PID.
+  Non-Linux development retains the identity-checked `sysinfo` signal path.
 - A targeted confirmation-time refresh cannot add a synthetic history sample or
   disturb the two-second delta cadence. History retains exactly 60 samples.
 
@@ -54,6 +58,7 @@ the application does not fabricate unavailable per-process data.
   empty/unavailable data, and persistence-error states are visually distinct.
 - All System Monitor labels, metrics, tables, inspector text, and banners
   follow rmac's bounded 100%, 115%, and 130% application text preference.
-- Linux clipping and signal evidence, full keyboard traversal, accessible table
-  semantics, roles/names/states/actions, live announcements, measured active
-  refresh budget, and Orca evidence remain required by roadmap items G5 and I3.
+- Linux clipping, pidfd runtime, permission, and signal evidence; full keyboard
+  traversal; accessible table semantics, roles/names/states/actions, live
+  announcements; measured active refresh budget; and Orca evidence remain
+  required by roadmap items G5 and I3.

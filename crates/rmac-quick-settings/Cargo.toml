@@ -12,4 +12,5 @@ rmac-bluetooth.workspace = true
 rmac-compositor.workspace = true
 rmac-network.workspace = true
 rmac-power.workspace = true
+rmac-shell-invocation.workspace = true
 rmac-shell-settings.workspace = true

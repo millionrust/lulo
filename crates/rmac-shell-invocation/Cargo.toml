@@ -1,5 +1,5 @@
 [package]
-name = "rmac-launcher"
+name = "rmac-shell-invocation"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,4 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-rmac-apps.workspace = true
 rmac-compositor.workspace = true
-rmac-shell-invocation.workspace = true
-rmac-shell-settings.workspace = true

@@ -183,6 +183,21 @@ pub fn plan(
     })
 }
 
+pub fn plan_invocation(
+    invocation: &rmac_shell_invocation::Invocation,
+    compositor: &rmac_compositor::Snapshot,
+) -> Result<Description, PlanError> {
+    let mut description = plan(
+        invocation.output(),
+        SeatId::new(invocation.seat().as_str())?,
+        compositor,
+    )?;
+    description.invocation.restore_window = invocation
+        .restore_window()
+        .filter(|window| compositor.windows.iter().any(|item| item.id == *window));
+    Ok(description)
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct FocusRestoreRequest {
     pub seat: SeatId,
@@ -716,7 +731,17 @@ mod tests {
 
     #[test]
     fn planner_targets_exact_output_and_fails_closed() {
-        let description = planned("DP-2", "seat-main").unwrap();
+        let snapshot = rmac_compositor::Snapshot {
+            outputs: vec![output("DP-2", true, 1920.0, 1080.0)],
+            focus: rmac_compositor::FocusState {
+                output: Some("DP-2".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let seats = rmac_shell_invocation::SeatInventory::new(vec!["seat-main".into()]).unwrap();
+        let invocation = rmac_shell_invocation::global_shortcut(&snapshot, &seats).unwrap();
+        let description = plan_invocation(&invocation, &snapshot).unwrap();
         assert_eq!(description.invocation.output.0, "DP-2");
         assert_eq!(description.output_scale, 1.5);
         assert_eq!(description.logical_width, LOGICAL_WIDTH);

@@ -5137,6 +5137,7 @@ version = "0.1.0"
 dependencies = [
  "rmac-apps",
  "rmac-compositor",
+ "rmac-shell-invocation",
  "rmac-shell-settings",
 ]
 
@@ -5363,6 +5364,7 @@ dependencies = [
  "rmac-notifications",
  "rmac-notifications-runtime",
  "rmac-notifications-store",
+ "rmac-shell-invocation",
  "zbus",
 ]
 
@@ -5474,6 +5476,7 @@ dependencies = [
  "rmac-compositor",
  "rmac-network",
  "rmac-power",
+ "rmac-shell-invocation",
  "rmac-shell-settings",
 ]
 
@@ -5541,6 +5544,13 @@ dependencies = [
  "notify",
  "rmac-sharing",
  "zbus",
+]
+
+[[package]]
+name = "rmac-shell-invocation"
+version = "0.1.0"
+dependencies = [
+ "rmac-compositor",
 ]
 
 [[package]]

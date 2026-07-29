@@ -174,6 +174,12 @@ Loading, partial degradation, empty, unavailable, opening, and private-safe
 failure states are visible. The footer mirrors the runtime's bounded live
 announcement while detailed provider errors remain out of the UI.
 
+The executable's isolated view-render boundary owns application tiles,
+categorized rows, fallback icons, phase/empty/degraded presentation, the search
+surface, footer, and keyboard/pointer intent wiring. Query generations,
+provider dispatch, selection/activation policy, settings resampling, and
+overlay/service lifetime remain outside the renderer.
+
 Application discovery and C4 settings are watched for the lifetime of the
 service. A complete settings replacement rebuilds file scope and provider
 privacy, cancels the old generation, and reissues an open query once. Invalid

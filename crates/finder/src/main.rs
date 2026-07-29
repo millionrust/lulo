@@ -69,8 +69,14 @@ struct DragPreview {
 }
 
 enum TransferEvent {
-    Progress { processed: usize, total: usize },
-    Finished(file_ops::TransferReport),
+    Progress {
+        processed: usize,
+        total: usize,
+    },
+    Finished {
+        report: file_ops::TransferReport,
+        recovery_reviews: std::io::Result<Vec<operation_journal::RecoveryReview>>,
+    },
 }
 
 #[derive(Clone)]
@@ -263,9 +269,14 @@ struct FinderView {
     sections: Vec<Section>,
     info: Option<usize>,
     result_title: Option<SharedString>,
+    operation_notice: Option<SharedString>,
     operation_error: Option<SharedString>,
     operation_journal: Option<Arc<operation_journal::Journal>>,
+    journal_loading: bool,
     pending_operations: usize,
+    recovery_reviews: Vec<operation_journal::RecoveryReview>,
+    recovery_open: bool,
+    recovery_busy: bool,
     transfer: Option<ActiveTransfer>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
@@ -461,42 +472,6 @@ impl FinderView {
         let focus = cx.focus_handle();
         window.focus(&focus);
 
-        let (operation_journal, pending_operations, journal_error) =
-            match operation_journal::Journal::open_default() {
-                Ok(journal) => match journal.recover_unambiguous() {
-                    Ok(report) if report.pending == 0 => {
-                        (Some(Arc::new(journal)), 0, None)
-                    }
-                    Ok(report) => (
-                        Some(Arc::new(journal)),
-                        report.pending,
-                        Some(
-                            format!(
-                                "Files found {} unfinished file operation{}; new transfers are paused until recovery",
-                                report.pending,
-                                if report.pending == 1 { "" } else { "s" }
-                            )
-                            .into(),
-                        ),
-                    ),
-                    Err(_) => (
-                        None,
-                        0,
-                        Some(
-                            "File-operation recovery data could not be verified; transfers are disabled"
-                                .into(),
-                        ),
-                    ),
-                },
-                Err(_) => (
-                    None,
-                    0,
-                    Some(
-                        "File-operation recovery is unavailable; transfers are disabled".into(),
-                    ),
-                ),
-            };
-
         let mut view = Self {
             cwd: home.clone(),
             tabs: vec![Tab {
@@ -525,9 +500,14 @@ impl FinderView {
             sections,
             info: None,
             result_title: None,
-            operation_error: journal_error.or(mount_error),
-            operation_journal,
-            pending_operations,
+            operation_notice: None,
+            operation_error: mount_error,
+            operation_journal: None,
+            journal_loading: true,
+            pending_operations: 0,
+            recovery_reviews: Vec::new(),
+            recovery_open: false,
+            recovery_busy: false,
             transfer: None,
             free_bytes: None,
             dragging: false,
@@ -538,6 +518,58 @@ impl FinderView {
             search_cancel: None,
         };
         view.reload(cx);
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let journal = Arc::new(operation_journal::Journal::open_default()?);
+                    let recovery = journal.recover_unambiguous()?;
+                    let reviews = journal.review_pending()?;
+                    Ok::<_, std::io::Error>((journal, recovery, reviews))
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.journal_loading = false;
+                match result {
+                    Ok((journal, recovery, reviews)) => {
+                        this.operation_journal = Some(journal);
+                        this.pending_operations = reviews.len();
+                        this.recovery_open = !reviews.is_empty();
+                        this.recovery_reviews = reviews;
+                        if recovery.finalized != 0 {
+                            this.operation_notice = Some(
+                                format!(
+                                    "Files safely completed {} interrupted file operation{}",
+                                    recovery.finalized,
+                                    if recovery.finalized == 1 { "" } else { "s" }
+                                )
+                                .into(),
+                            );
+                        }
+                        if this.pending_operations != 0 {
+                            this.operation_error = Some(
+                                format!(
+                                    "Review {} unfinished file operation{} before starting another transfer",
+                                    this.pending_operations,
+                                    if this.pending_operations == 1 { "" } else { "s" }
+                                )
+                                .into(),
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        this.operation_journal = None;
+                        this.operation_error = Some(
+                            "File-operation recovery data could not be verified; transfers are disabled"
+                                .into(),
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
 
         // Live directory watching → reload on filesystem changes.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -951,6 +983,11 @@ impl FinderView {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
+        if self.journal_loading {
+            self.operation_error = Some("Files is still verifying file-operation recovery".into());
+            cx.notify();
+            return;
+        }
         let Some(journal) = self.operation_journal.clone() else {
             self.operation_error =
                 Some("File-operation recovery is unavailable; transfers are disabled".into());
@@ -970,6 +1007,7 @@ impl FinderView {
                 )
                 .into(),
             );
+            self.recovery_open = true;
             cx.notify();
             return;
         }
@@ -1000,13 +1038,19 @@ impl FinderView {
                             .send_blocking(TransferEvent::Progress { processed, total });
                     },
                 );
-                let _ = events.send_blocking(TransferEvent::Finished(report));
+                let recovery_reviews = journal
+                    .recover_unambiguous()
+                    .and_then(|_| journal.review_pending());
+                let _ = events.send_blocking(TransferEvent::Finished {
+                    report,
+                    recovery_reviews,
+                });
             })
             .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while let Ok(event) = event_rx.recv().await {
-                let finished = matches!(event, TransferEvent::Finished(_));
+                let finished = matches!(event, TransferEvent::Finished { .. });
                 if this
                     .update(cx, |this: &mut FinderView, cx| match event {
                         TransferEvent::Progress { processed, total } => {
@@ -1016,7 +1060,10 @@ impl FinderView {
                             }
                             cx.notify();
                         }
-                        TransferEvent::Finished(report) => {
+                        TransferEvent::Finished {
+                            report,
+                            recovery_reviews,
+                        } => {
                             let keep_clipboard = this
                                 .transfer
                                 .as_ref()
@@ -1029,15 +1076,17 @@ impl FinderView {
                                     this.write_clip_text(cx);
                                 }
                             }
-                            if let Some(journal) = this.operation_journal.as_ref() {
-                                match journal.recover_unambiguous() {
-                                    Ok(recovery) => {
-                                        this.pending_operations = recovery.pending
-                                    }
-                                    Err(_) => {
-                                        this.operation_journal = None;
-                                        this.pending_operations = 0;
-                                    }
+                            match recovery_reviews {
+                                Ok(reviews) => {
+                                    this.pending_operations = reviews.len();
+                                    this.recovery_open = !reviews.is_empty();
+                                    this.recovery_reviews = reviews;
+                                }
+                                Err(_) => {
+                                    this.operation_journal = None;
+                                    this.pending_operations = 0;
+                                    this.recovery_reviews.clear();
+                                    this.recovery_open = false;
                                 }
                             }
                             this.record_operation_failures(report.failures, cx);
@@ -1079,6 +1128,136 @@ impl FinderView {
             transfer.cancelling = true;
             cx.notify();
         }
+    }
+
+    fn close_recovery(&mut self, cx: &mut Context<Self>) {
+        if self.recovery_busy {
+            return;
+        }
+        self.recovery_open = false;
+        cx.notify();
+    }
+
+    fn resolve_current_recovery(&mut self, cx: &mut Context<Self>) {
+        if self.recovery_busy {
+            return;
+        }
+        let Some(review) = self.recovery_reviews.first().cloned() else {
+            self.recovery_open = false;
+            cx.notify();
+            return;
+        };
+        let Some(journal) = self.operation_journal.clone() else {
+            self.operation_error =
+                Some("File-operation recovery is unavailable; no item was changed".into());
+            cx.notify();
+            return;
+        };
+        self.recovery_busy = true;
+        self.operation_error = None;
+        cx.notify();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (outcome, refresh) = cx
+                .background_executor()
+                .spawn(async move {
+                    let outcome = journal.resolve_review(&review);
+                    let refresh = journal
+                        .recover_unambiguous()
+                        .and_then(|recovery| {
+                            journal
+                                .review_pending()
+                                .map(|reviews| (recovery, reviews))
+                        });
+                    (outcome, refresh)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.recovery_busy = false;
+                match refresh {
+                    Ok((recovery, reviews)) => {
+                        this.pending_operations = reviews.len();
+                        this.recovery_reviews = reviews;
+                        this.recovery_open = this.pending_operations != 0;
+                        if recovery.finalized != 0 && outcome.is_err() {
+                            this.operation_notice = Some(
+                                format!(
+                                    "Files safely completed {} interrupted file operation{}",
+                                    recovery.finalized,
+                                    if recovery.finalized == 1 { "" } else { "s" }
+                                )
+                                .into(),
+                            );
+                        }
+                    }
+                    Err(_) => {
+                        this.operation_journal = None;
+                        this.pending_operations = 0;
+                        this.recovery_reviews.clear();
+                        this.recovery_open = false;
+                        this.operation_error = Some(
+                            "File-operation recovery data could not be verified; transfers are disabled"
+                                .into(),
+                        );
+                        cx.notify();
+                        return;
+                    }
+                }
+
+                match outcome {
+                    Ok(operation_journal::ResolutionOutcome::PreservedCopy {
+                        complete,
+                        name,
+                    }) => {
+                        this.operation_notice = Some(
+                            if complete {
+                                format!("Recovery copy preserved as “{name}”")
+                            } else {
+                                format!(
+                                    "Partial recovery copy preserved as “{name}”; inspect it before relying on it"
+                                )
+                            }
+                            .into(),
+                        );
+                        this.operation_error = None;
+                    }
+                    Ok(operation_journal::ResolutionOutcome::KeptExistingItems) => {
+                        this.operation_notice =
+                            Some("Existing items kept; no file was deleted".into());
+                        this.operation_error = None;
+                    }
+                    Err(error) => {
+                        this.operation_error = Some(
+                            match error.kind() {
+                                std::io::ErrorKind::AlreadyExists => {
+                                    "The recovery name is no longer available; review the updated choice"
+                                }
+                                std::io::ErrorKind::WouldBlock => {
+                                    "Recovery state changed; review it again before continuing"
+                                }
+                                _ => {
+                                    "Files could not preserve the recovery copy; no existing item was overwritten"
+                                }
+                            }
+                            .into(),
+                        );
+                        this.recovery_open = !this.recovery_reviews.is_empty();
+                    }
+                }
+                if this.pending_operations != 0 && this.operation_error.is_none() {
+                    this.operation_error = Some(
+                        format!(
+                            "Review {} remaining file operation{} before starting another transfer",
+                            this.pending_operations,
+                            if this.pending_operations == 1 { "" } else { "s" }
+                        )
+                        .into(),
+                    );
+                }
+                this.reload(cx);
+            });
+        })
+        .detach();
     }
 
     // ---- operations ----
@@ -2390,6 +2569,39 @@ impl FinderView {
         .detach();
     }
 
+    fn render_recovery(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        if !self.recovery_open {
+            return None;
+        }
+        let review = self.recovery_reviews.first()?;
+        let presentation = recovery_presentation(&review.action);
+        let title = format!(
+            "Recover File Operation (1 of {})",
+            self.recovery_reviews.len()
+        );
+        let busy = self.recovery_busy;
+        let buttons = vec![
+            rmac_ui::dialog_button("recovery-later", "Later", rmac_ui::DialogButtonKind::Normal)
+                .disabled(busy)
+                .on_click(cx.listener(|this, _, _, cx| this.close_recovery(cx)))
+                .into_any_element(),
+            rmac_ui::dialog_button(
+                "recovery-confirm",
+                if busy {
+                    "Resolving…"
+                } else {
+                    presentation.action_label
+                },
+                rmac_ui::DialogButtonKind::Primary,
+            )
+            .busy(busy)
+            .disabled(busy)
+            .on_click(cx.listener(|this, _, _, cx| this.resolve_current_recovery(cx)))
+            .into_any_element(),
+        ];
+        Some(rmac_ui::alert(title, presentation.message, buttons).into_any_element())
+    }
+
     fn render_info(&self, ix: usize, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(e) = self.entries.get(ix) else {
             return div();
@@ -2483,14 +2695,28 @@ impl Render for FinderView {
         let menu_at = self.menu_at;
         let has_sel = !self.selected.is_empty();
         let can_paste = !self.clipboard.is_empty();
+        let operation_notice = self.operation_notice.clone();
         let operation_error = self.operation_error.clone();
         let transfer = self.transfer.clone();
+        let recovery_pending = self.pending_operations != 0;
+        let recovery_dialog = self.render_recovery(cx);
         div()
+            .id("files-root")
             .size_full()
             .relative()
             .v_flex()
             .bg(list_bg())
             .text_color(label())
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                if !this.recovery_open {
+                    return;
+                }
+                match recovery_key_intent(event.keystroke.key.as_str(), this.recovery_busy) {
+                    Some(RecoveryKeyIntent::Close) => this.close_recovery(cx),
+                    Some(RecoveryKeyIntent::Resolve) => this.resolve_current_recovery(cx),
+                    None => {}
+                }
+            }))
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
                 this.menu_at = None;
                 cx.notify();
@@ -2499,6 +2725,42 @@ impl Render for FinderView {
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
             .child(self.render_toolbar(cx))
+            .when_some(operation_notice, |el, message| {
+                el.child(
+                    div()
+                        .id("operation-notice")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(rmac_ui::mac::accent_subtle())
+                        .border_b_1()
+                        .border_color(rmac_ui::mac::accent_border())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(label())
+                        .cursor_pointer()
+                        .child(
+                            div()
+                                .w(px(16.0))
+                                .h(px(16.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .bg(rmac_ui::mac::accent())
+                                .text_color(rmac_ui::mac::on_accent())
+                                .child("✓"),
+                        )
+                        .child(div().flex_1().child(message))
+                        .child("Dismiss")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.operation_notice = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .when_some(operation_error, |el, message| {
                 el.child(
                     div()
@@ -2528,9 +2790,17 @@ impl Render for FinderView {
                                 .child("!"),
                         )
                         .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.operation_error = None;
+                        .child(if recovery_pending {
+                            "Review"
+                        } else {
+                            "Dismiss"
+                        })
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if recovery_pending {
+                                this.recovery_open = true;
+                            } else {
+                                this.operation_error = None;
+                            }
                             cx.notify();
                         })),
                 )
@@ -2573,7 +2843,7 @@ impl Render for FinderView {
                         ),
                 )
             })
-            .when(multi, |el: Div| el.child(self.render_tabs(cx)))
+            .when(multi, |el| el.child(self.render_tabs(cx)))
             .child(
                 div()
                     .flex_1()
@@ -2586,10 +2856,57 @@ impl Render for FinderView {
             .when_some(menu_at, |el, pos| {
                 el.child(Self::build_context_menu(pos, has_sel, can_paste).render())
             })
+            .when_some(recovery_dialog, |el, dialog| el.child(dialog))
     }
 }
 
 // ---- helpers ----
+
+struct RecoveryPresentation {
+    message: String,
+    action_label: &'static str,
+}
+
+fn recovery_presentation(action: &operation_journal::RecoveryAction) -> RecoveryPresentation {
+    match action {
+        operation_journal::RecoveryAction::PreserveCopy {
+            complete,
+            suggested_name,
+        } => RecoveryPresentation {
+            message: if *complete {
+                format!(
+                    "Files has a complete copy from an interrupted move. Preserve it as “{suggested_name}”. Existing items will not be changed."
+                )
+            } else {
+                format!(
+                    "The interrupted copy may be incomplete. Preserve it as “{suggested_name}” so you can inspect it. Existing items will not be changed."
+                )
+            },
+            action_label: "Preserve Copy",
+        },
+        operation_journal::RecoveryAction::KeepExistingItems => RecoveryPresentation {
+            message: "No staged recovery copy remains. Keep every existing item and clear only this recovery record. No file will be deleted.".to_string(),
+            action_label: "Keep Existing Items",
+        },
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RecoveryKeyIntent {
+    Close,
+    Resolve,
+}
+
+fn recovery_key_intent(key: &str, busy: bool) -> Option<RecoveryKeyIntent> {
+    if busy {
+        return None;
+    }
+    match key {
+        "escape" => Some(RecoveryKeyIntent::Close),
+        "enter" => Some(RecoveryKeyIntent::Resolve),
+        _ => None,
+    }
+}
 
 fn unique_path(path: PathBuf) -> PathBuf {
     unique_path_avoiding(path, &BTreeSet::new())
@@ -3065,5 +3382,38 @@ mod tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
         assert_eq!(std::fs::read(&destination).unwrap(), b"destination bytes");
+    }
+
+    #[test]
+    fn recovery_keyboard_policy_blocks_shortcuts_while_busy() {
+        assert_eq!(
+            recovery_key_intent("escape", false),
+            Some(RecoveryKeyIntent::Close)
+        );
+        assert_eq!(
+            recovery_key_intent("enter", false),
+            Some(RecoveryKeyIntent::Resolve)
+        );
+        assert_eq!(recovery_key_intent("space", false), None);
+        assert_eq!(recovery_key_intent("escape", true), None);
+        assert_eq!(recovery_key_intent("enter", true), None);
+    }
+
+    #[test]
+    fn recovery_presentation_never_claims_a_partial_copy_is_complete() {
+        let partial = recovery_presentation(&operation_journal::RecoveryAction::PreserveCopy {
+            complete: false,
+            suggested_name: "Recovered item".to_string(),
+        });
+        let complete = recovery_presentation(&operation_journal::RecoveryAction::PreserveCopy {
+            complete: true,
+            suggested_name: "Recovered item".to_string(),
+        });
+        let existing = recovery_presentation(&operation_journal::RecoveryAction::KeepExistingItems);
+
+        assert!(partial.message.contains("may be incomplete"));
+        assert!(!complete.message.contains("may be incomplete"));
+        assert!(complete.message.contains("complete copy"));
+        assert!(existing.message.contains("No file will be deleted"));
     }
 }

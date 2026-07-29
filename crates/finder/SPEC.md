@@ -37,6 +37,19 @@ metadata, icons, and identifiers remain original rmac work.
   fsynced, and bind no-follow device/inode/type/size/time identities. Startup
   finishes only identity-proven publication or journal cleanup; unknown,
   substituted, partial, or conflicting states remain visible and fail closed.
+- Ambiguous records open a sequential recovery sheet before new transfers are
+  allowed. Its review is bound to the exact journal, source, staged copy,
+  destination, and proposed visible recovery name. A second validation occurs
+  off GPUI at acceptance. Complete and possibly-partial copies use distinct
+  wording; both are preserved with one atomic no-replace rename. When no staged
+  copy exists, acceptance clears only the exact record and keeps every existing
+  item. Recovery never offers deletion or replacement, persists its intent
+  before publication, survives interruption, caps one scan at 512 records, and
+  redacts private paths/names from `Debug`.
+- The recovery sheet uses shared semantic buttons, opens automatically, moves
+  sequentially through every record, supports Enter/Escape while idle, blocks
+  dismissal and duplicate activation while busy, and reports completion,
+  partial-copy preservation, changed review state, and name races truthfully.
 - Trash follows the freedesktop Trash specification on Linux and records enough
   identity to offer restore. Permanent delete requires explicit confirmation
   and is not described as undoable.

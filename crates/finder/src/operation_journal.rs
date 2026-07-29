@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
@@ -10,6 +11,7 @@ use uuid::Uuid;
 
 const JOURNAL_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 64 * 1024;
+const MAX_RECORDS: usize = 512;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -18,6 +20,12 @@ pub(crate) enum MoveStage {
     DestinationComplete,
     SourceRemoved,
     Published,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ResolutionIntent {
+    PreserveCopy,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -59,7 +67,7 @@ impl EntryIdentity {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 struct MoveRecord {
     version: u32,
     id: String,
@@ -69,6 +77,8 @@ struct MoveRecord {
     staging_path_bytes: Vec<u8>,
     source_identity: EntryIdentity,
     destination_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    resolution_intent: Option<ResolutionIntent>,
 }
 
 impl MoveRecord {
@@ -121,6 +131,16 @@ impl MoveRecord {
                 "advanced journal is missing its destination identity",
             ));
         }
+        if self.resolution_intent == Some(ResolutionIntent::PreserveCopy)
+            && !matches!(
+                self.stage,
+                MoveStage::DestinationComplete | MoveStage::Published
+            )
+        {
+            return Err(invalid_data(
+                "preserve-copy intent has an invalid journal stage",
+            ));
+        }
         Ok(())
     }
 }
@@ -134,6 +154,66 @@ pub(crate) struct Journal {
 pub(crate) struct RecoveryReport {
     pub(crate) finalized: usize,
     pub(crate) pending: usize,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum RecoveryAction {
+    PreserveCopy {
+        complete: bool,
+        suggested_name: String,
+    },
+    KeepExistingItems,
+}
+
+impl fmt::Debug for RecoveryAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PreserveCopy { complete, .. } => formatter
+                .debug_struct("PreserveCopy")
+                .field("complete", complete)
+                .finish_non_exhaustive(),
+            Self::KeepExistingItems => formatter.write_str("KeepExistingItems"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RecoveryReview {
+    record: MoveRecord,
+    journal_identity: EntryIdentity,
+    source_snapshot: Option<EntryIdentity>,
+    staging_snapshot: Option<EntryIdentity>,
+    destination_snapshot: Option<EntryIdentity>,
+    preserve_destination: Option<PathBuf>,
+    pub(crate) action: RecoveryAction,
+}
+
+impl fmt::Debug for RecoveryReview {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecoveryReview")
+            .field("stage", &self.record.stage)
+            .field("action", &self.action)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum ResolutionOutcome {
+    PreservedCopy { complete: bool, name: String },
+    KeptExistingItems,
+}
+
+impl fmt::Debug for ResolutionOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PreservedCopy { complete, .. } => formatter
+                .debug_struct("PreservedCopy")
+                .field("complete", complete)
+                .finish_non_exhaustive(),
+            Self::KeptExistingItems => formatter.write_str("KeptExistingItems"),
+        }
+    }
 }
 
 impl Journal {
@@ -234,6 +314,23 @@ impl Journal {
             .zip(ticket.record.destination_identity.as_ref())
             .is_some_and(|(current, recorded)| recorded.same_entry_after_rename(current));
 
+        if ticket.record.resolution_intent == Some(ResolutionIntent::PreserveCopy) {
+            return match ticket.record.stage {
+                MoveStage::DestinationComplete if staging_matches && destination.is_none() => {
+                    ticket.publish_preserved()?;
+                    self.finish_recovered_ticket(ticket)
+                }
+                MoveStage::DestinationComplete if staging.is_none() && destination_matches => {
+                    ticket.record.destination_identity = destination;
+                    ticket.record.stage = MoveStage::Published;
+                    self.persist(&ticket.path, &ticket.record, false)?;
+                    self.finish_recovered_ticket(ticket)
+                }
+                MoveStage::Published if destination_matches => self.finish_recovered_ticket(ticket),
+                _ => Ok(false),
+            };
+        }
+
         match ticket.record.stage {
             MoveStage::Prepared => Ok(false),
             MoveStage::DestinationComplete
@@ -260,6 +357,115 @@ impl Journal {
             }
             _ => Ok(false),
         }
+    }
+
+    pub(crate) fn review_pending(&self) -> io::Result<Vec<RecoveryReview>> {
+        let mut reviews = Vec::new();
+        for record in self.read_records()? {
+            let journal_path = self.record_path(&record.id);
+            let journal_identity = EntryIdentity::capture(&journal_path)?;
+            let source_snapshot = capture_optional(&record.source())?;
+            let staging_snapshot = capture_optional(&record.staging_destination())?;
+            let destination_snapshot = capture_optional(&record.destination())?;
+            let (action, preserve_destination) = if let Some(staging) = &staging_snapshot {
+                let complete = record
+                    .destination_identity
+                    .as_ref()
+                    .is_some_and(|expected| expected == staging)
+                    && record.stage != MoveStage::Prepared;
+                let candidate = available_recovery_destination(&record.destination())?;
+                let suggested_name = candidate
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Recovered item".to_string());
+                (
+                    RecoveryAction::PreserveCopy {
+                        complete,
+                        suggested_name,
+                    },
+                    Some(candidate),
+                )
+            } else {
+                (RecoveryAction::KeepExistingItems, None)
+            };
+            reviews.push(RecoveryReview {
+                record,
+                journal_identity,
+                source_snapshot,
+                staging_snapshot,
+                destination_snapshot,
+                preserve_destination,
+                action,
+            });
+        }
+        Ok(reviews)
+    }
+
+    pub(crate) fn resolve_review(&self, review: &RecoveryReview) -> io::Result<ResolutionOutcome> {
+        self.validate_review(review)?;
+        match &review.action {
+            RecoveryAction::PreserveCopy {
+                complete,
+                suggested_name,
+            } => {
+                let candidate = review
+                    .preserve_destination
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("recovery review has no preserve destination"))?;
+                if capture_optional(candidate)?.is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "recovery destination is no longer available",
+                    ));
+                }
+                let staging_identity = review
+                    .staging_snapshot
+                    .clone()
+                    .ok_or_else(|| invalid_data("recovery copy is no longer available"))?;
+                let mut ticket = MoveTicket {
+                    journal: self.clone(),
+                    path: self.record_path(&review.record.id),
+                    record: review.record.clone(),
+                };
+                ticket.record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
+                ticket.record.destination_identity = Some(staging_identity);
+                ticket.record.stage = MoveStage::DestinationComplete;
+                ticket.record.resolution_intent = Some(ResolutionIntent::PreserveCopy);
+                self.persist(&ticket.path, &ticket.record, false)?;
+                ticket.publish_preserved()?;
+                ticket.commit()?;
+                Ok(ResolutionOutcome::PreservedCopy {
+                    complete: *complete,
+                    name: suggested_name.clone(),
+                })
+            }
+            RecoveryAction::KeepExistingItems => {
+                let path = self.record_path(&review.record.id);
+                fs::remove_file(path)?;
+                sync_directory(&self.root)?;
+                Ok(ResolutionOutcome::KeptExistingItems)
+            }
+        }
+    }
+
+    fn validate_review(&self, review: &RecoveryReview) -> io::Result<()> {
+        let path = self.record_path(&review.record.id);
+        if EntryIdentity::capture(&path)? != review.journal_identity {
+            return Err(review_changed());
+        }
+        let current = self
+            .read_records()?
+            .into_iter()
+            .find(|record| record.id == review.record.id)
+            .ok_or_else(review_changed)?;
+        if current != review.record
+            || capture_optional(&review.record.source())? != review.source_snapshot
+            || capture_optional(&review.record.staging_destination())? != review.staging_snapshot
+            || capture_optional(&review.record.destination())? != review.destination_snapshot
+        {
+            return Err(review_changed());
+        }
+        Ok(())
     }
 
     fn publish_recovered_ticket(&self, ticket: &mut MoveTicket) -> io::Result<bool> {
@@ -303,6 +509,7 @@ impl Journal {
             staging_path_bytes: staging.as_os_str().as_bytes().to_vec(),
             source_identity: EntryIdentity::capture(source)?,
             destination_identity: None,
+            resolution_intent: None,
         };
         record.validate(&id)?;
         let path = self.record_path(&id);
@@ -360,6 +567,9 @@ impl Journal {
                 return Err(invalid_data("unexpected file in operation journal"));
             }
             paths.push(path);
+            if paths.len() > MAX_RECORDS {
+                return Err(invalid_data("too many unfinished file-operation records"));
+            }
         }
         paths.sort();
 
@@ -478,6 +688,22 @@ impl MoveTicket {
                 "move cannot publish before source removal",
             ));
         }
+        self.publish_entry()
+    }
+
+    fn publish_preserved(&mut self) -> io::Result<()> {
+        if self.record.stage != MoveStage::DestinationComplete
+            || self.record.resolution_intent != Some(ResolutionIntent::PreserveCopy)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "recovery copy is not ready for publication",
+            ));
+        }
+        self.publish_entry()
+    }
+
+    fn publish_entry(&mut self) -> io::Result<()> {
         if !self.destination_still_matches()? {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -532,6 +758,41 @@ fn capture_optional(path: &Path) -> io::Result<Option<EntryIdentity>> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
     }
+}
+
+fn available_recovery_destination(destination: &Path) -> io::Result<PathBuf> {
+    if capture_optional(destination)?.is_none() {
+        return Ok(destination.to_path_buf());
+    }
+    let parent = destination
+        .parent()
+        .ok_or_else(|| invalid_data("recovery destination has no parent"))?;
+    let name = destination
+        .file_name()
+        .ok_or_else(|| invalid_data("recovery destination has no file name"))?;
+    let mut base = name.as_bytes().to_vec();
+    base.extend_from_slice(b" (Recovered)");
+    for index in 1..=10_000 {
+        let mut bytes = base.clone();
+        if index > 1 {
+            bytes.extend_from_slice(format!(" {index}").as_bytes());
+        }
+        let candidate = parent.join(OsString::from_vec(bytes));
+        if capture_optional(&candidate)?.is_none() {
+            return Ok(candidate);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "no recovery destination name is available",
+    ))
+}
+
+fn review_changed() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::WouldBlock,
+        "file-operation recovery changed; review it again",
+    )
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -678,6 +939,7 @@ mod tests {
                 changed_nanoseconds: 7,
             },
             destination_identity: None,
+            resolution_intent: None,
         };
 
         let bytes = serde_json::to_vec(&record).unwrap();
@@ -769,5 +1031,185 @@ mod tests {
         assert_eq!(fs::read(destination).unwrap(), b"conflict");
         assert_eq!(fs::read(staging).unwrap(), b"source");
         assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn reviewed_conflict_preserves_complete_copy_under_a_new_name() {
+        let root = TestDirectory::new("review-complete");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_move(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::remove_file(&source).unwrap();
+        ticket.mark_source_removed().unwrap();
+        fs::write(&destination, b"conflict").unwrap();
+        drop(ticket);
+
+        let reviews = journal.review_pending().unwrap();
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(
+            reviews[0].action,
+            RecoveryAction::PreserveCopy {
+                complete: true,
+                suggested_name: "destination (Recovered)".to_string(),
+            }
+        );
+        assert!(!format!("{:?}", reviews[0]).contains("destination"));
+
+        let outcome = journal.resolve_review(&reviews[0]).unwrap();
+
+        assert_eq!(
+            outcome,
+            ResolutionOutcome::PreservedCopy {
+                complete: true,
+                name: "destination (Recovered)".to_string(),
+            }
+        );
+        assert_eq!(fs::read(&destination).unwrap(), b"conflict");
+        assert_eq!(
+            fs::read(root.0.join("destination (Recovered)")).unwrap(),
+            b"source"
+        );
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn reviewed_partial_copy_is_preserved_without_removing_source() {
+        let root = TestDirectory::new("review-partial");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        fs::write(ticket.staging_destination(), b"partial").unwrap();
+        drop(ticket);
+
+        let review = journal.review_pending().unwrap().remove(0);
+        assert_eq!(
+            review.action,
+            RecoveryAction::PreserveCopy {
+                complete: false,
+                suggested_name: "destination".to_string(),
+            }
+        );
+
+        let outcome = journal.resolve_review(&review).unwrap();
+
+        assert_eq!(
+            outcome,
+            ResolutionOutcome::PreservedCopy {
+                complete: false,
+                name: "destination".to_string(),
+            }
+        );
+        assert_eq!(fs::read(&source).unwrap(), b"source");
+        assert_eq!(fs::read(&destination).unwrap(), b"partial");
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn reviewed_record_without_staged_data_keeps_existing_items() {
+        let root = TestDirectory::new("review-no-stage");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let _ticket = journal.prepare_move(&source, &destination).unwrap();
+
+        let review = journal.review_pending().unwrap().remove(0);
+        assert_eq!(review.action, RecoveryAction::KeepExistingItems);
+
+        let outcome = journal.resolve_review(&review).unwrap();
+
+        assert_eq!(outcome, ResolutionOutcome::KeptExistingItems);
+        assert_eq!(fs::read(source).unwrap(), b"source");
+        assert!(!destination.exists());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn substituted_recovery_copy_invalidates_the_review() {
+        let root = TestDirectory::new("review-substitution");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"partial").unwrap();
+        drop(ticket);
+        let review = journal.review_pending().unwrap().remove(0);
+        fs::remove_file(&staging).unwrap();
+        fs::write(&staging, b"substituted recovery bytes").unwrap();
+
+        let error = journal.resolve_review(&review).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(staging).unwrap(), b"substituted recovery bytes");
+        assert_eq!(fs::read(source).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn racing_recovery_name_never_gets_replaced() {
+        let root = TestDirectory::new("review-name-race");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        fs::write(&destination, b"existing destination").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"recovery").unwrap();
+        drop(ticket);
+        let review = journal.review_pending().unwrap().remove(0);
+        let candidate = review.preserve_destination.clone().unwrap();
+        fs::write(&candidate, b"racing recovery name").unwrap();
+
+        let error = journal.resolve_review(&review).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&destination).unwrap(), b"existing destination");
+        assert_eq!(fs::read(&candidate).unwrap(), b"racing recovery name");
+        assert_eq!(fs::read(&staging).unwrap(), b"recovery");
+        assert_eq!(fs::read(&source).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn persisted_preserve_intent_recovers_after_interruption() {
+        let root = TestDirectory::new("review-intent-recovery");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        fs::write(&destination, b"conflict").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"recovery").unwrap();
+        drop(ticket);
+        let review = journal.review_pending().unwrap().remove(0);
+        let candidate = review.preserve_destination.clone().unwrap();
+        let mut record = review.record.clone();
+        record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
+        record.destination_identity = review.staging_snapshot.clone();
+        record.stage = MoveStage::DestinationComplete;
+        record.resolution_intent = Some(ResolutionIntent::PreserveCopy);
+        journal
+            .persist(&journal.record_path(&record.id), &record, false)
+            .unwrap();
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 1);
+        assert_eq!(report.pending, 0);
+        assert_eq!(fs::read(source).unwrap(), b"source");
+        assert_eq!(fs::read(destination).unwrap(), b"conflict");
+        assert_eq!(fs::read(candidate).unwrap(), b"recovery");
+        assert_eq!(journal.pending_count().unwrap(), 0);
     }
 }

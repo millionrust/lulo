@@ -1,4 +1,5 @@
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
@@ -6,7 +7,7 @@ use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
@@ -19,6 +20,16 @@ const MAX_RECORDS: usize = 256;
 const MAX_INFO_BYTES: u64 = 16 * 1024;
 const MAX_FILENAME_BYTES: usize = 255;
 const TRASHINFO_SUFFIX: &str = ".trashinfo";
+const MAX_TRASH_ITEMS: usize = 100_000;
+const MAX_TRASH_PATH_BYTES: usize = 64 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum TrashOperation {
+    #[default]
+    Trash,
+    Restore,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -26,12 +37,17 @@ enum TrashStage {
     Prepared,
     InfoPublished,
     DataMoved,
+    RestorePrepared,
+    RestoreDataMoved,
+    RestoreInfoRemoved,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 struct TrashRecord {
     version: u32,
     id: String,
+    #[serde(default)]
+    operation: TrashOperation,
     stage: TrashStage,
     source_path_bytes: Vec<u8>,
     trash_root_path_bytes: Vec<u8>,
@@ -41,6 +57,8 @@ struct TrashRecord {
     source_manifest: TreeManifest,
     info_sha256: [u8; 32],
     info_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    restore_parent_identity: Option<EntryIdentity>,
 }
 
 impl TrashRecord {
@@ -97,15 +115,38 @@ impl TrashRecord {
         if info_name != expected_info {
             return Err(invalid_data("trash data and info names do not match"));
         }
-        if self.stage == TrashStage::Prepared && self.info_identity.is_some() {
-            return Err(invalid_data(
-                "prepared trash transaction has an info identity",
-            ));
-        }
-        if self.stage != TrashStage::Prepared && self.info_identity.is_none() {
-            return Err(invalid_data(
-                "advanced trash transaction is missing its info identity",
-            ));
+        match self.operation {
+            TrashOperation::Trash => {
+                if !matches!(
+                    self.stage,
+                    TrashStage::Prepared | TrashStage::InfoPublished | TrashStage::DataMoved
+                ) || self.restore_parent_identity.is_some()
+                {
+                    return Err(invalid_data("trash transaction stage is invalid"));
+                }
+                if self.stage == TrashStage::Prepared && self.info_identity.is_some() {
+                    return Err(invalid_data(
+                        "prepared trash transaction has an info identity",
+                    ));
+                }
+                if self.stage != TrashStage::Prepared && self.info_identity.is_none() {
+                    return Err(invalid_data(
+                        "advanced trash transaction is missing its info identity",
+                    ));
+                }
+            }
+            TrashOperation::Restore => {
+                if !matches!(
+                    self.stage,
+                    TrashStage::RestorePrepared
+                        | TrashStage::RestoreDataMoved
+                        | TrashStage::RestoreInfoRemoved
+                ) || self.info_identity.is_none()
+                    || self.restore_parent_identity.is_none()
+                {
+                    return Err(invalid_data("restore transaction stage is invalid"));
+                }
+            }
         }
         Ok(())
     }
@@ -387,6 +428,9 @@ fn linux_mount_points() -> io::Result<Vec<PathBuf>> {
             return Err(invalid_data("mount table path is not absolute"));
         }
         points.push(path);
+        if points.len() > 4_096 {
+            return Err(invalid_data("mount table contains too many entries"));
+        }
     }
     points.sort_by(|left, right| {
         right
@@ -436,6 +480,281 @@ fn containing_mount<'a>(path: &Path, mount_points: &'a [PathBuf]) -> io::Result<
         .find(|mount| path.starts_with(mount))
         .map(PathBuf::as_path)
         .ok_or_else(|| invalid_data("path is outside the mounted filesystem table"))
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn existing_trash_layouts() -> io::Result<Vec<TrashLayout>> {
+    let mount_points = linux_mount_points()?;
+    let home_root = canonicalize_path_or_parents(&home_trash_root()?)?;
+    let home_topdir = containing_mount(&home_root, &mount_points)?.to_path_buf();
+    let mut layouts = Vec::new();
+    if entry_exists(&home_root)? {
+        layouts.push(TrashLayout {
+            topdir: home_topdir.clone(),
+            root: home_root,
+            path_relative_to_topdir: false,
+        });
+    }
+
+    let uid = effective_uid().to_string();
+    for topdir in mount_points {
+        if topdir == home_topdir {
+            continue;
+        }
+        let shared = topdir.join(".Trash");
+        if let Ok(metadata) = fs::symlink_metadata(&shared) {
+            if metadata.is_dir()
+                && !metadata.file_type().is_symlink()
+                && metadata.mode() & 0o1000 != 0
+            {
+                let root = shared.join(&uid);
+                match entry_exists(&root) {
+                    Ok(true) => layouts.push(TrashLayout {
+                        topdir: topdir.clone(),
+                        root,
+                        path_relative_to_topdir: true,
+                    }),
+                    Ok(false) => {}
+                    Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        let root = topdir.join(format!(".Trash-{uid}"));
+        match entry_exists(&root) {
+            Ok(true) => layouts.push(TrashLayout {
+                topdir,
+                root,
+                path_relative_to_topdir: true,
+            }),
+            Ok(false) => {}
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {}
+            Err(error) => return Err(error),
+        }
+    }
+    layouts.sort_by(|left, right| left.root.cmp(&right.root));
+    layouts.dedup_by(|left, right| left.root == right.root);
+    Ok(layouts)
+}
+
+fn validate_existing_layout(layout: &TrashLayout) -> io::Result<()> {
+    if !path_is_normal_absolute(&layout.topdir)
+        || !path_is_normal_absolute(&layout.root)
+        || !layout.root.starts_with(&layout.topdir)
+        || !trash_root_is_structurally_valid(&layout.root)
+    {
+        return Err(invalid_data("existing Trash layout is invalid"));
+    }
+    let files = layout.root.join("files");
+    let info = layout.root.join("info");
+    for path in [layout.root.as_path(), files.as_path(), info.as_path()] {
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.is_dir()
+            || metadata.file_type().is_symlink()
+            || metadata.uid() != effective_uid()
+            || metadata.mode() & 0o077 != 0
+        {
+            return Err(invalid_data(
+                "Trash layout is not a private user-owned directory",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn list_in_layout(layout: &TrashLayout) -> io::Result<Vec<TrashedItem>> {
+    validate_existing_layout(layout)?;
+    let info_directory = layout.root.join("info");
+    let mut info_paths = Vec::new();
+    for entry in fs::read_dir(&info_directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if !name.as_bytes().ends_with(TRASHINFO_SUFFIX.as_bytes()) {
+            return Err(invalid_data("unexpected entry in Trash metadata"));
+        }
+        info_paths.push(entry.path());
+        if info_paths.len() > MAX_TRASH_ITEMS {
+            return Err(invalid_data("Trash contains too many items"));
+        }
+    }
+    info_paths.sort_by(|left, right| {
+        left.as_os_str()
+            .as_bytes()
+            .cmp(right.as_os_str().as_bytes())
+    });
+
+    let mut path_bytes = 0usize;
+    let mut items = Vec::with_capacity(info_paths.len());
+    for info_path in info_paths {
+        let file_name = info_path
+            .file_name()
+            .ok_or_else(|| invalid_data("Trash metadata name is missing"))?;
+        let name_bytes = file_name.as_bytes();
+        let data_name = &name_bytes[..name_bytes.len() - TRASHINFO_SUFFIX.len()];
+        if data_name.is_empty() {
+            return Err(invalid_data("Trash data name is empty"));
+        }
+        let name = OsString::from_vec(data_name.to_vec());
+        let data_path = layout.root.join("files").join(&name);
+        let (original_path, deleted_at, info_identity, info_sha256) =
+            parse_trash_info(layout, &info_path)?;
+        path_bytes = path_bytes
+            .checked_add(original_path.as_os_str().as_bytes().len())
+            .and_then(|bytes| bytes.checked_add(data_path.as_os_str().as_bytes().len()))
+            .filter(|bytes| *bytes <= MAX_TRASH_PATH_BYTES)
+            .ok_or_else(|| invalid_data("Trash paths exceed the safety limit"))?;
+        let data_identity = EntryIdentity::capture(&data_path)?;
+        let data_manifest = TreeManifest::capture(&data_path)?;
+        if EntryIdentity::capture(&data_path)? != data_identity {
+            return Err(changed("Trash data changed while it was listed"));
+        }
+        items.push(TrashedItem {
+            name,
+            original_path,
+            deleted_at,
+            layout: layout.clone(),
+            data_path,
+            info_path,
+            data_identity,
+            data_manifest,
+            info_identity,
+            info_sha256,
+        });
+    }
+    items.sort_by(|left, right| {
+        right
+            .deleted_at
+            .cmp(&left.deleted_at)
+            .then_with(|| left.name.as_bytes().cmp(right.name.as_bytes()))
+    });
+    Ok(items)
+}
+
+fn parse_trash_info(
+    layout: &TrashLayout,
+    info_path: &Path,
+) -> io::Result<(PathBuf, String, EntryIdentity, [u8; 32])> {
+    let metadata = fs::symlink_metadata(info_path)?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.uid() != effective_uid()
+        || metadata.mode() & 0o022 != 0
+        || metadata.len() > MAX_INFO_BYTES
+    {
+        return Err(invalid_data("Trash metadata is not a safe regular file"));
+    }
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    let file = options.open(info_path)?;
+    let before = EntryIdentity::capture_file(&file)?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(MAX_INFO_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INFO_BYTES || EntryIdentity::capture(info_path)? != before {
+        return Err(changed("Trash metadata changed while it was read"));
+    }
+    let text = std::str::from_utf8(&bytes)
+        .map_err(|_| invalid_data("Trash metadata is not valid UTF-8"))?;
+    let mut lines = text.lines();
+    if lines.next() != Some("[Trash Info]") {
+        return Err(invalid_data("Trash metadata header is invalid"));
+    }
+    let mut encoded_path = None;
+    let mut deleted_at = None;
+    for line in lines {
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            return Err(invalid_data("Trash metadata entry is invalid"));
+        };
+        match key {
+            "Path" => {
+                if encoded_path.replace(value).is_some() {
+                    return Err(invalid_data("Trash metadata has duplicate Path"));
+                }
+            }
+            "DeletionDate" => {
+                if deleted_at.replace(value).is_some() {
+                    return Err(invalid_data("Trash metadata has duplicate DeletionDate"));
+                }
+            }
+            _ => {}
+        }
+    }
+    let encoded_path = encoded_path.ok_or_else(|| invalid_data("Trash metadata has no Path"))?;
+    let deleted_at =
+        deleted_at.ok_or_else(|| invalid_data("Trash metadata has no DeletionDate"))?;
+    NaiveDateTime::parse_from_str(deleted_at, "%Y-%m-%dT%H:%M:%S")
+        .map_err(|_| invalid_data("Trash deletion date is invalid"))?;
+    let decoded = percent_decode_path(encoded_path.as_bytes())?;
+    let decoded = PathBuf::from(OsString::from_vec(decoded));
+    let original_path = if layout.path_relative_to_topdir {
+        if decoded.is_absolute()
+            || decoded.as_os_str().is_empty()
+            || !relative_path_is_normal(&decoded)
+        {
+            return Err(invalid_data("mounted Trash identity is invalid"));
+        }
+        layout.topdir.join(decoded)
+    } else {
+        if !path_is_normal_absolute(&decoded) {
+            return Err(invalid_data("home Trash identity is invalid"));
+        }
+        decoded
+    };
+    Ok((
+        original_path,
+        deleted_at.to_string(),
+        before,
+        sha256(&bytes),
+    ))
+}
+
+fn percent_decode_path(encoded: &[u8]) -> io::Result<Vec<u8>> {
+    let mut decoded = Vec::with_capacity(encoded.len());
+    let mut index = 0;
+    while index < encoded.len() {
+        if encoded[index] != b'%' {
+            if encoded[index] == 0 {
+                return Err(invalid_data("Trash identity contains NUL"));
+            }
+            decoded.push(encoded[index]);
+            index += 1;
+            continue;
+        }
+        if index + 2 >= encoded.len() {
+            return Err(invalid_data("Trash identity escape is incomplete"));
+        }
+        let high = hex_value(encoded[index + 1])
+            .ok_or_else(|| invalid_data("Trash identity escape is invalid"))?;
+        let low = hex_value(encoded[index + 2])
+            .ok_or_else(|| invalid_data("Trash identity escape is invalid"))?;
+        let byte = high * 16 + low;
+        if byte == 0 {
+            return Err(invalid_data("Trash identity contains NUL"));
+        }
+        decoded.push(byte);
+        index += 3;
+    }
+    Ok(decoded)
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn relative_path_is_normal(path: &Path) -> bool {
+    !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
 }
 
 fn suffixed_name(original: &OsStr, suffix: usize) -> OsString {
@@ -551,16 +870,37 @@ fn record_source_matches_with_cancel(
 }
 
 fn record_data_matches_after_rename(record: &TrashRecord) -> io::Result<bool> {
-    let identity = match EntryIdentity::capture(&record.data_path()) {
+    record_tree_matches(record, &record.data_path(), true)
+}
+
+fn record_data_matches_exact(record: &TrashRecord) -> io::Result<bool> {
+    record_tree_matches(record, &record.data_path(), false)
+}
+
+fn record_restored_data_matches(record: &TrashRecord) -> io::Result<bool> {
+    record_tree_matches(record, &record.source(), true)
+}
+
+fn record_tree_matches(record: &TrashRecord, path: &Path, published: bool) -> io::Result<bool> {
+    let identity = match EntryIdentity::capture(path) {
         Ok(identity) => identity,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
-    if !record.source_identity.same_entry_after_rename(&identity) {
+    let identity_matches = if published {
+        record.source_identity.same_entry_after_rename(&identity)
+    } else {
+        record.source_identity == identity
+    };
+    if !identity_matches {
         return Ok(false);
     }
-    match TreeManifest::capture(&record.data_path()) {
-        Ok(manifest) => Ok(record.source_manifest.same_after_root_rename(&manifest)),
+    match TreeManifest::capture(path) {
+        Ok(manifest) => Ok(if published {
+            record.source_manifest.same_after_root_rename(&manifest)
+        } else {
+            record.source_manifest == manifest
+        }),
         Err(error)
             if matches!(
                 error.kind(),
@@ -573,6 +913,31 @@ fn record_data_matches_after_rename(record: &TrashRecord) -> io::Result<bool> {
     }
 }
 
+fn restore_parent_matches(record: &TrashRecord, exact: bool) -> io::Result<bool> {
+    let Some(expected) = &record.restore_parent_identity else {
+        return Ok(false);
+    };
+    let parent = record
+        .source()
+        .parent()
+        .ok_or_else(|| invalid_data("restore destination has no parent"))?
+        .to_path_buf();
+    let current = match EntryIdentity::capture(&parent) {
+        Ok(identity) => identity,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let metadata = fs::symlink_metadata(parent)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Ok(false);
+    }
+    Ok(if exact {
+        expected == &current
+    } else {
+        expected.same_object(&current)
+    })
+}
+
 fn record_info_matches(record: &TrashRecord) -> io::Result<bool> {
     let metadata = match fs::symlink_metadata(record.info_path()) {
         Ok(metadata) => metadata,
@@ -581,7 +946,7 @@ fn record_info_matches(record: &TrashRecord) -> io::Result<bool> {
     };
     if !metadata.is_file()
         || metadata.file_type().is_symlink()
-        || metadata.mode() & 0o777 != 0o600
+        || metadata.mode() & 0o022 != 0
         || metadata.uid() != effective_uid()
         || metadata.len() > MAX_INFO_BYTES
     {
@@ -679,11 +1044,38 @@ fn interrupted() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, "Move to Trash cancelled")
 }
 
-#[derive(Clone, Debug)]
+fn interrupted_restore() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, "Restore cancelled")
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct TrashLayout {
     topdir: PathBuf,
     root: PathBuf,
     path_relative_to_topdir: bool,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct TrashedItem {
+    pub(crate) name: OsString,
+    pub(crate) original_path: PathBuf,
+    pub(crate) deleted_at: String,
+    layout: TrashLayout,
+    data_path: PathBuf,
+    info_path: PathBuf,
+    data_identity: EntryIdentity,
+    data_manifest: TreeManifest,
+    info_identity: EntryIdentity,
+    info_sha256: [u8; 32],
+}
+
+impl fmt::Debug for TrashedItem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TrashedItem")
+            .field("deleted_at", &self.deleted_at)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -715,6 +1107,32 @@ impl TrashStore {
     }
 
     #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn list(&self) -> io::Result<Vec<TrashedItem>> {
+        let _lock = self.lock()?;
+        let recovery = self.recover_locked()?;
+        if recovery.pending != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "unfinished Trash recovery must be reviewed first",
+            ));
+        }
+        let mut items = Vec::new();
+        for layout in existing_trash_layouts()? {
+            items.extend(list_in_layout(&layout)?);
+            if items.len() > MAX_TRASH_ITEMS {
+                return Err(invalid_data("Trash contains too many items"));
+            }
+        }
+        items.sort_by(|left, right| {
+            right
+                .deleted_at
+                .cmp(&left.deleted_at)
+                .then_with(|| left.name.as_bytes().cmp(right.name.as_bytes()))
+        });
+        Ok(items)
+    }
+
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn trash(&self, source: &Path, cancel: &AtomicBool) -> io::Result<()> {
         let _lock = self.lock()?;
         let recovery = self.recover_locked()?;
@@ -727,6 +1145,88 @@ impl TrashStore {
         let source = canonical_source_path(source)?;
         let layout = resolve_layout(&source)?;
         self.trash_in_layout(&source, &layout, Local::now(), Some(cancel))
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn restore(&self, item: &TrashedItem, cancel: &AtomicBool) -> io::Result<PathBuf> {
+        let _lock = self.lock()?;
+        let recovery = self.recover_locked()?;
+        if recovery.pending != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "unfinished Trash recovery must be reviewed first",
+            ));
+        }
+        validate_existing_layout(&item.layout)?;
+        let original_name = item
+            .original_path
+            .file_name()
+            .ok_or_else(|| invalid_data("restore identity has no file name"))?;
+        let original_parent = item
+            .original_path
+            .parent()
+            .ok_or_else(|| invalid_data("restore identity has no parent"))?;
+        let canonical_parent = fs::canonicalize(original_parent)?;
+        let destination = canonical_parent.join(original_name);
+        if !path_is_normal_absolute(&destination)
+            || destination.starts_with(&item.layout.root)
+            || item.layout.root.starts_with(&destination)
+        {
+            return Err(invalid_data("restore destination is invalid"));
+        }
+        let parent_metadata = fs::symlink_metadata(&canonical_parent)?;
+        if !parent_metadata.is_dir() || parent_metadata.file_type().is_symlink() {
+            return Err(invalid_data(
+                "restore destination parent is not a real directory",
+            ));
+        }
+        if entry_exists(&destination)? {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "an item already exists at the restore destination",
+            ));
+        }
+        let id = Uuid::new_v4().to_string();
+        let record = TrashRecord {
+            version: RECORD_VERSION,
+            id: id.clone(),
+            operation: TrashOperation::Restore,
+            stage: TrashStage::RestorePrepared,
+            source_path_bytes: destination.as_os_str().as_bytes().to_vec(),
+            trash_root_path_bytes: item.layout.root.as_os_str().as_bytes().to_vec(),
+            data_path_bytes: item.data_path.as_os_str().as_bytes().to_vec(),
+            info_path_bytes: item.info_path.as_os_str().as_bytes().to_vec(),
+            source_identity: item.data_identity.clone(),
+            source_manifest: item.data_manifest.clone(),
+            info_sha256: item.info_sha256,
+            info_identity: Some(item.info_identity.clone()),
+            restore_parent_identity: Some(EntryIdentity::capture(&canonical_parent)?),
+        };
+        record.validate(&id)?;
+        if !record_data_matches_exact(&record)?
+            || !record_info_matches(&record)?
+            || !restore_parent_matches(&record, true)?
+        {
+            return Err(changed("Trash item changed before restore"));
+        }
+        let record_path = self.record_path(&id);
+        self.persist(&record_path, &record, true)?;
+        if cancel.load(Ordering::Acquire) {
+            self.finish_record(&record_path)?;
+            return Err(interrupted_restore());
+        }
+        if entry_exists(&destination)?
+            || !record_data_matches_exact(&record)?
+            || !record_info_matches(&record)?
+            || !restore_parent_matches(&record, true)?
+        {
+            return Err(changed("Trash item or restore destination changed"));
+        }
+        let mut record = record;
+        if !self.resume_restore_prepared(&record_path, &mut record)? {
+            return Err(changed("restored data changed during publication"));
+        }
+        Ok(destination)
     }
 
     fn trash_in_layout(
@@ -769,6 +1269,7 @@ impl TrashStore {
             let mut record = TrashRecord {
                 version: RECORD_VERSION,
                 id: id.clone(),
+                operation: TrashOperation::Trash,
                 stage: TrashStage::Prepared,
                 source_path_bytes: source.as_os_str().as_bytes().to_vec(),
                 trash_root_path_bytes: layout.root.as_os_str().as_bytes().to_vec(),
@@ -778,6 +1279,7 @@ impl TrashStore {
                 source_manifest: source_manifest.clone(),
                 info_sha256: sha256(&info_bytes),
                 info_identity: None,
+                restore_parent_identity: None,
             };
             record.validate(&id)?;
             let record_path = self.record_path(&id);
@@ -858,34 +1360,41 @@ impl TrashStore {
     fn recover_locked(&self) -> io::Result<TrashRecovery> {
         let mut report = TrashRecovery::default();
         for (path, mut record) in self.read_records()? {
-            let source_exists = entry_exists(&record.source())?;
-            let data_exists = entry_exists(&record.data_path())?;
-            let info_exists = entry_exists(&record.info_path())?;
-            let source_matches = source_exists && record_source_matches(&record)?;
-            let data_matches = data_exists && record_data_matches_after_rename(&record)?;
-            let info_matches = info_exists && record_info_matches(&record)?;
-
-            let finalized = match record.stage {
-                TrashStage::Prepared if source_matches && !data_exists && !info_exists => {
-                    self.finish_record(&path)?;
-                    true
+            let finalized = match record.operation {
+                TrashOperation::Trash => {
+                    let source_exists = entry_exists(&record.source())?;
+                    let data_exists = entry_exists(&record.data_path())?;
+                    let info_exists = entry_exists(&record.info_path())?;
+                    let source_matches = source_exists && record_source_matches(&record)?;
+                    let data_matches = data_exists && record_data_matches_after_rename(&record)?;
+                    let info_matches = info_exists && record_info_matches(&record)?;
+                    match record.stage {
+                        TrashStage::Prepared if source_matches && !data_exists && !info_exists => {
+                            self.finish_record(&path)?;
+                            true
+                        }
+                        TrashStage::Prepared if source_matches && !data_exists && info_matches => {
+                            record.info_identity =
+                                Some(EntryIdentity::capture(&record.info_path())?);
+                            record.stage = TrashStage::InfoPublished;
+                            self.persist(&path, &record, false)?;
+                            self.resume_info_published(&path, &mut record)?
+                        }
+                        TrashStage::InfoPublished
+                            if source_matches && !data_exists && info_matches =>
+                        {
+                            self.resume_info_published(&path, &mut record)?
+                        }
+                        TrashStage::InfoPublished | TrashStage::DataMoved
+                            if !source_exists && data_matches && info_matches =>
+                        {
+                            self.finish_record(&path)?;
+                            true
+                        }
+                        _ => false,
+                    }
                 }
-                TrashStage::Prepared if source_matches && !data_exists && info_matches => {
-                    record.info_identity = Some(EntryIdentity::capture(&record.info_path())?);
-                    record.stage = TrashStage::InfoPublished;
-                    self.persist(&path, &record, false)?;
-                    self.resume_info_published(&path, &mut record)?
-                }
-                TrashStage::InfoPublished if source_matches && !data_exists && info_matches => {
-                    self.resume_info_published(&path, &mut record)?
-                }
-                TrashStage::InfoPublished | TrashStage::DataMoved
-                    if !source_exists && data_matches && info_matches =>
-                {
-                    self.finish_record(&path)?;
-                    true
-                }
-                _ => false,
+                TrashOperation::Restore => self.recover_restore_record(&path, &mut record)?,
             };
             if finalized {
                 report.finalized += 1;
@@ -894,6 +1403,47 @@ impl TrashStore {
             }
         }
         Ok(report)
+    }
+
+    fn recover_restore_record(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        let data_exists = entry_exists(&record.data_path())?;
+        let destination_exists = entry_exists(&record.source())?;
+        let info_exists = entry_exists(&record.info_path())?;
+        let data_matches = data_exists && record_data_matches_exact(record)?;
+        let destination_matches = destination_exists && record_restored_data_matches(record)?;
+        let info_matches = info_exists && record_info_matches(record)?;
+        let parent_exact = restore_parent_matches(record, true)?;
+        let parent_same = restore_parent_matches(record, false)?;
+
+        match record.stage {
+            TrashStage::RestorePrepared
+                if data_matches && !destination_exists && info_matches && parent_exact =>
+            {
+                self.resume_restore_prepared(path, record)
+            }
+            TrashStage::RestorePrepared
+                if !data_exists && destination_matches && info_matches && parent_same =>
+            {
+                record.stage = TrashStage::RestoreDataMoved;
+                self.persist(path, record, false)?;
+                self.finish_restore_info(path, record)
+            }
+            TrashStage::RestoreDataMoved
+                if !data_exists
+                    && destination_matches
+                    && parent_same
+                    && (!info_exists || info_matches) =>
+            {
+                self.finish_restore_info(path, record)
+            }
+            TrashStage::RestoreInfoRemoved
+                if !data_exists && destination_matches && !info_exists && parent_same =>
+            {
+                self.finish_record(path)?;
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 
     fn resume_info_published(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
@@ -914,6 +1464,47 @@ impl TrashStore {
             return Ok(false);
         }
         record.stage = TrashStage::DataMoved;
+        self.persist(path, record, false)?;
+        self.finish_record(path)?;
+        Ok(true)
+    }
+
+    fn resume_restore_prepared(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        rename_noreplace(&record.data_path(), &record.source())?;
+        sync_directory(
+            record
+                .data_path()
+                .parent()
+                .ok_or_else(|| invalid_data("Trash data parent is missing"))?,
+        )?;
+        sync_directory(
+            record
+                .source()
+                .parent()
+                .ok_or_else(|| invalid_data("restore destination parent is missing"))?,
+        )?;
+        if !record_restored_data_matches(record)? {
+            return Ok(false);
+        }
+        record.stage = TrashStage::RestoreDataMoved;
+        self.persist(path, record, false)?;
+        self.finish_restore_info(path, record)
+    }
+
+    fn finish_restore_info(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        if entry_exists(&record.info_path())? {
+            if !record_info_matches(record)? {
+                return Ok(false);
+            }
+            fs::remove_file(record.info_path())?;
+            sync_directory(
+                record
+                    .info_path()
+                    .parent()
+                    .ok_or_else(|| invalid_data("Trash info parent is missing"))?,
+            )?;
+        }
+        record.stage = TrashStage::RestoreInfoRemoved;
         self.persist(path, record, false)?;
         self.finish_record(path)?;
         Ok(true)
@@ -1123,6 +1714,7 @@ mod tests {
         let record = TrashRecord {
             version: RECORD_VERSION,
             id: id.clone(),
+            operation: TrashOperation::Trash,
             stage: TrashStage::Prepared,
             source_path_bytes: source.as_os_str().as_bytes().to_vec(),
             trash_root_path_bytes: layout.root.as_os_str().as_bytes().to_vec(),
@@ -1134,12 +1726,46 @@ mod tests {
                 .expect("source manifest should be captured"),
             info_sha256: sha256(&info_bytes),
             info_identity: None,
+            restore_parent_identity: None,
         };
         let record_path = store.record_path(&id);
         store
             .persist(&record_path, &record, true)
             .expect("prepared transaction should persist");
         (record_path, record, info_bytes)
+    }
+
+    fn trash_and_list(store: &TrashStore, layout: &TrashLayout, source: &Path) -> TrashedItem {
+        store
+            .trash_in_layout(source, layout, deleted_at(), None)
+            .expect("fixture should move to Trash");
+        let mut items = list_in_layout(layout).expect("fixture Trash should list");
+        assert_eq!(items.len(), 1);
+        items.remove(0)
+    }
+
+    fn prepared_restore_record(store: &TrashStore, item: &TrashedItem) -> (PathBuf, TrashRecord) {
+        let parent = fs::canonicalize(item.original_path.parent().unwrap()).unwrap();
+        let destination = parent.join(item.original_path.file_name().unwrap());
+        let id = Uuid::new_v4().to_string();
+        let record = TrashRecord {
+            version: RECORD_VERSION,
+            id: id.clone(),
+            operation: TrashOperation::Restore,
+            stage: TrashStage::RestorePrepared,
+            source_path_bytes: destination.as_os_str().as_bytes().to_vec(),
+            trash_root_path_bytes: item.layout.root.as_os_str().as_bytes().to_vec(),
+            data_path_bytes: item.data_path.as_os_str().as_bytes().to_vec(),
+            info_path_bytes: item.info_path.as_os_str().as_bytes().to_vec(),
+            source_identity: item.data_identity.clone(),
+            source_manifest: item.data_manifest.clone(),
+            info_sha256: item.info_sha256,
+            info_identity: Some(item.info_identity.clone()),
+            restore_parent_identity: Some(EntryIdentity::capture(&parent).unwrap()),
+        };
+        let record_path = store.record_path(&id);
+        store.persist(&record_path, &record, true).unwrap();
+        (record_path, record)
     }
 
     #[test]
@@ -1160,6 +1786,203 @@ mod tests {
             "[Trash Info]\nPath=report.txt\nDeletionDate=2026-07-29T08:09:10\n"
         );
         assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn listing_decodes_exact_restore_identity_without_debug_path_leak() {
+        let (directory, store, layout) = setup("list");
+        let source = write_source(&directory, OsStr::new("report 1.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+
+        assert_eq!(item.name, OsStr::new("report 1.txt"));
+        assert_eq!(item.original_path, source);
+        assert_eq!(item.deleted_at, "2026-07-29T08:09:10");
+        assert!(!format!("{item:?}").contains("report"));
+    }
+
+    #[test]
+    fn listing_rejects_relative_identity_escape() {
+        let (_directory, _store, layout) = setup("list-escape");
+        ensure_trash_layout(&layout).unwrap();
+        fs::write(layout.root.join("files/report.txt"), b"report").unwrap();
+        create_info_file(
+            &layout.root.join("info/report.txt.trashinfo"),
+            b"[Trash Info]\nPath=../escape\nDeletionDate=2026-07-29T08:09:10\n",
+        )
+        .unwrap();
+
+        let error = list_in_layout(&layout).expect_err("path traversal must fail closed");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn restore_moves_exact_data_back_and_removes_metadata() {
+        let (directory, store, layout) = setup("restore");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let cancel = AtomicBool::new(false);
+
+        let restored = store.restore(&item, &cancel).expect("item should restore");
+
+        assert_eq!(restored, source);
+        assert_eq!(fs::read(&source).unwrap(), b"important");
+        assert!(!item.data_path.exists());
+        assert!(!item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn restore_collision_preserves_both_items_without_record() {
+        let (directory, store, layout) = setup("restore-collision");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"trashed");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::write(&source, b"existing").unwrap();
+
+        let error = store
+            .restore(&item, &AtomicBool::new(false))
+            .expect_err("restore must not replace a collision");
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&source).unwrap(), b"existing");
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"trashed");
+        assert!(item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn restore_cancellation_keeps_trash_item_and_no_record() {
+        let (directory, store, layout) = setup("restore-cancel");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let cancel = AtomicBool::new(true);
+
+        let error = store
+            .restore(&item, &cancel)
+            .expect_err("cancelled restore should retain Trash item");
+
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert!(!source.exists());
+        assert!(item.data_path.exists());
+        assert!(item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn restore_refuses_data_substitution_after_listing() {
+        let (directory, store, layout) = setup("restore-data-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::write(&item.data_path, b"changed").unwrap();
+
+        let error = store
+            .restore(&item, &AtomicBool::new(false))
+            .expect_err("changed Trash data must not restore");
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(!source.exists());
+        assert!(item.info_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn restore_refuses_metadata_substitution_after_listing() {
+        let (directory, store, layout) = setup("restore-info-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::write(
+            &item.info_path,
+            b"[Trash Info]\nPath=elsewhere\nDeletionDate=2026-07-29T08:09:10\n",
+        )
+        .unwrap();
+
+        let error = store
+            .restore(&item, &AtomicBool::new(false))
+            .expect_err("changed Trash metadata must not restore");
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(!source.exists());
+        assert!(item.data_path.exists());
+        assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn recovery_finishes_restore_renamed_before_stage_persisted() {
+        let (directory, store, layout) = setup("restore-rename-crash");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, record) = prepared_restore_record(&store, &item);
+        rename_noreplace(&item.data_path, &record.source()).unwrap();
+        sync_directory(record.source().parent().unwrap()).unwrap();
+        sync_directory(item.data_path.parent().unwrap()).unwrap();
+
+        let recovery = store.recover().expect("interrupted restore should recover");
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert_eq!(fs::read(&source).unwrap(), b"important");
+        assert!(!item.info_path.exists());
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn recovery_finishes_restore_after_metadata_removed() {
+        let (directory, store, layout) = setup("restore-info-crash");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_restore_record(&store, &item);
+        rename_noreplace(&item.data_path, &record.source()).unwrap();
+        record.stage = TrashStage::RestoreDataMoved;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::remove_file(&item.info_path).unwrap();
+        sync_directory(item.info_path.parent().unwrap()).unwrap();
+
+        let recovery = store
+            .recover()
+            .expect("metadata removal crash should recover");
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert!(source.exists());
+        assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn recovery_never_replaces_a_restore_destination_race() {
+        let (directory, store, layout) = setup("restore-race");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"trashed");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, _) = prepared_restore_record(&store, &item);
+        fs::write(&source, b"racing").unwrap();
+
+        let recovery = store.recover().expect("collision should remain pending");
+
+        assert_eq!(recovery.finalized, 0);
+        assert_eq!(recovery.pending, 1);
+        assert_eq!(fs::read(&source).unwrap(), b"racing");
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"trashed");
+        assert!(item.info_path.exists());
+        assert!(record_path.exists());
+    }
+
+    #[test]
+    fn recovery_refuses_a_changed_restore_parent() {
+        let (directory, store, layout) = setup("restore-parent-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"trashed");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, _) = prepared_restore_record(&store, &item);
+        fs::write(directory.0.join("concurrent.txt"), b"change").unwrap();
+
+        let recovery = store
+            .recover()
+            .expect("changed parent should remain pending");
+
+        assert_eq!(recovery.finalized, 0);
+        assert_eq!(recovery.pending, 1);
+        assert!(!source.exists());
+        assert!(item.data_path.exists());
+        assert!(item.info_path.exists());
+        assert!(record_path.exists());
     }
 
     #[cfg(target_os = "linux")]
@@ -1376,6 +2199,30 @@ mod tests {
     #[test]
     fn percent_encoding_preserves_only_uri_safe_path_bytes() {
         assert_eq!(percent_encode_path(b"/a b/%/\xff\n"), "/a%20b/%25/%FF%0A");
+        assert_eq!(
+            percent_decode_path(b"/a%20b/%25/%FF%0A").unwrap(),
+            b"/a b/%/\xff\n"
+        );
+        assert_eq!(
+            percent_decode_path(b"%0").unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn version_one_trash_record_without_operation_remains_compatible() {
+        let (directory, store, layout) = setup("legacy-record");
+        let source = write_source(&directory, OsStr::new("draft.txt"), b"draft");
+        let (_, record, _) = prepared_record(&store, &layout, &source);
+        let mut value = serde_json::to_value(&record).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("operation");
+        object.remove("restore_parent_identity");
+
+        let decoded: TrashRecord = serde_json::from_value(value).unwrap();
+
+        assert_eq!(decoded.operation, TrashOperation::Trash);
+        decoded.validate(&decoded.id).unwrap();
     }
 
     #[test]
@@ -1444,7 +2291,10 @@ mod tests {
     #[test]
     fn linux_entry_points_are_type_checked_in_host_tests() {
         let _open: fn() -> io::Result<TrashStore> = TrashStore::open_default;
+        let _list: fn(&TrashStore) -> io::Result<Vec<TrashedItem>> = TrashStore::list;
         let _trash: fn(&TrashStore, &Path, &AtomicBool) -> io::Result<()> = TrashStore::trash;
+        let _restore: fn(&TrashStore, &TrashedItem, &AtomicBool) -> io::Result<PathBuf> =
+            TrashStore::restore;
     }
 
     #[test]

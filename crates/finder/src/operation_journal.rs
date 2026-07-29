@@ -86,6 +86,11 @@ impl EntryIdentity {
             && self.modified_seconds == other.modified_seconds
             && self.modified_nanoseconds == other.modified_nanoseconds
     }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn same_object(&self, other: &Self) -> bool {
+        self.device == other.device && self.inode == other.inode && self.mode == other.mode
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]

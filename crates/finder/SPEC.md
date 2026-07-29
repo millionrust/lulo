@@ -97,9 +97,18 @@ metadata, icons, and identifiers remain original rmac work.
   transaction's exact metadata and record while retaining the source. Startup
   completes only identity-proven interrupted work, retains changed state for
   manual recovery, and serializes Files processes with a private nonblocking
-  kernel lock. Restore still must revalidate the exact current Trash identity.
-  Permanent delete requires explicit confirmation and is not described as
-  undoable.
+  kernel lock. Bounded Trash enumeration accepts only private user-owned roots
+  and safe regular metadata, strictly parses one percent-decoded absolute or
+  mount-relative `Path` plus a valid deletion timestamp, rejects traversal,
+  NUL, malformed escapes, and excess inventory, and binds the exact data tree
+  and metadata identities without exposing paths through diagnostics. Restore
+  snapshots that identity into the same private journal, binds the real
+  destination parent, refuses an occupied or changed destination, and uses one
+  no-replace rename before removing only the exact `.trashinfo`. Prepared,
+  data-restored, and info-removed stages recover every unambiguous crash
+  boundary; data, metadata, parent, and destination races remain pending
+  without replacement or deletion. Permanent delete requires explicit
+  confirmation and is not described as undoable.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

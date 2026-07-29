@@ -290,13 +290,39 @@ impl Registry {
                     }
                 }
             }
-            CommandResult::Failed => {
+            CommandResult::Failed if self.failure_is_relevant(&command.kind) => {
                 self.failures.insert(output, command.kind.operation());
             }
+            CommandResult::Failed => {}
         }
         Transition {
             snapshot: self.snapshot(),
             visible: true,
+        }
+    }
+
+    /// Reconcile an authoritative compositor close. A still-desired output is
+    /// recreated with a fresh physical identity; late acknowledgements naming
+    /// the closed surface are inert.
+    pub fn surface_closed(&mut self, surface: SurfaceId) -> Transition {
+        let output = self
+            .applied
+            .iter()
+            .find_map(|(output, applied)| (applied.surface == surface).then(|| output.clone()));
+        let pending_matches = self
+            .pending
+            .as_ref()
+            .is_some_and(|command| command.kind.surface() == surface);
+        if pending_matches {
+            self.pending = None;
+        }
+        if let Some(output) = &output {
+            self.applied.remove(output);
+            self.failures.remove(output);
+        }
+        Transition {
+            snapshot: self.snapshot(),
+            visible: pending_matches || output.is_some(),
         }
     }
 
@@ -368,6 +394,36 @@ impl Registry {
             }));
         }
         Ok(None)
+    }
+
+    fn failure_is_relevant(&self, kind: &CommandKind) -> bool {
+        match kind {
+            CommandKind::Create { description, .. } => {
+                self.desired
+                    .get(&description.output)
+                    .is_some_and(|desired| desired == description)
+                    && !self.applied.contains_key(&description.output)
+            }
+            CommandKind::Reconfigure {
+                surface,
+                description,
+            } => {
+                self.desired
+                    .get(&description.output)
+                    .is_some_and(|desired| desired == description)
+                    && self
+                        .applied
+                        .get(&description.output)
+                        .is_some_and(|applied| applied.surface == *surface)
+            }
+            CommandKind::Remove { surface, output } => {
+                !self.desired.contains_key(output)
+                    && self
+                        .applied
+                        .get(output)
+                        .is_some_and(|applied| applied.surface == *surface)
+            }
+        }
     }
 }
 
@@ -580,5 +636,61 @@ mod tests {
         assert!(stale.snapshot.applied.is_empty());
         registry.finish(replacement.id(), CommandResult::Applied);
         assert_eq!(registry.snapshot().applied.len(), 1);
+    }
+
+    #[test]
+    fn failed_superseded_command_does_not_block_newer_work() {
+        let mut registry = Registry::default();
+        registry
+            .set_desired(&Ok(vec![description(
+                "A",
+                rmac_shell_settings::DockPlacement::Bottom,
+            )]))
+            .unwrap();
+        let old = registry.next_command().unwrap().unwrap();
+        registry
+            .set_desired(&Ok(vec![description(
+                "A",
+                rmac_shell_settings::DockPlacement::Left,
+            )]))
+            .unwrap();
+        registry.finish(old.id(), CommandResult::Failed);
+        assert!(registry.snapshot().failures.is_empty());
+        let replacement = registry.next_command().unwrap().unwrap();
+        assert_eq!(
+            match &replacement.kind {
+                CommandKind::Create { description, .. } => description.placement,
+                _ => panic!("the superseding plan should create"),
+            },
+            rmac_shell_settings::DockPlacement::Left
+        );
+    }
+
+    #[test]
+    fn authoritative_close_recreates_and_makes_late_acknowledgement_inert() {
+        let mut registry = Registry::default();
+        registry
+            .set_desired(&Ok(vec![description(
+                "A",
+                rmac_shell_settings::DockPlacement::Bottom,
+            )]))
+            .unwrap();
+        let created = apply_next(&mut registry);
+        registry
+            .set_desired(&Ok(vec![description(
+                "A",
+                rmac_shell_settings::DockPlacement::Left,
+            )]))
+            .unwrap();
+        let pending = registry.next_command().unwrap().unwrap();
+        assert!(registry.surface_closed(created.kind.surface()).visible);
+        let replacement = registry.next_command().unwrap().unwrap();
+        assert!(matches!(replacement.kind, CommandKind::Create { .. }));
+        assert_ne!(replacement.kind.surface(), created.kind.surface());
+        assert!(
+            !registry
+                .finish(pending.id(), CommandResult::Applied)
+                .visible
+        );
     }
 }

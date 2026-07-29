@@ -4,7 +4,8 @@ use gpui::{
 };
 use gpui_component::Root;
 
-use crate::{AppDrawer, ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp};
+use crate::view::AppDrawer;
+use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp};
 
 #[derive(Clone)]
 struct ActiveDrawer {

@@ -398,3 +398,19 @@ fn icns_path(app: &Path) -> Option<PathBuf> {
         .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("icns"))
         .max_by_key(|path| path.metadata().map(|metadata| metadata.len()).unwrap_or(0))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::signal_change;
+
+    #[test]
+    fn catalog_change_bursts_coalesce() {
+        let (sender, receiver) = async_channel::bounded(1);
+
+        signal_change(&sender);
+        signal_change(&sender);
+        signal_change(&sender);
+
+        assert_eq!(receiver.len(), 1);
+    }
+}

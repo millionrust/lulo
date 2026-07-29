@@ -36,6 +36,10 @@ software store, package manager, or imitation of Apple Launchpad.
   owns shortcut watching/readiness, key registration, active-window tokens,
   repeat-invocation dismissal, window creation, and release cleanup. The view
   can request token release but cannot mutate service-global state directly.
+- The 39-line binary entrypoint owns only module composition, run-mode
+  selection, semantic action registration, and standalone boot. A separate
+  controller owns catalog subscriptions, stable selection, launch/reveal
+  intents, and filter state, with the renderer nested beneath it.
 
 ## Primary journeys
 

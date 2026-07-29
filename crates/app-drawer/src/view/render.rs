@@ -7,10 +7,9 @@ use gpui_component::StyledExt as _;
 use rmac_ui::{mac, EmptyState, SearchField};
 
 use crate::catalog::{App, Category};
-use crate::{
-    AppDrawer, ClearSearch, Launch, LaunchDesktopAction, MoveDown, MoveLeft, MoveRight, MoveUp,
-    OpenApp, RevealInFinder, ViewMode, ICON, ROW_ICON, TILE_W,
-};
+use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp, OpenApp, RevealInFinder};
+
+use super::{AppDrawer, LaunchDesktopAction, ViewMode, ICON, ROW_ICON, TILE_W};
 
 impl AppDrawer {
     fn icon_element(&self, app: &App, size: f32) -> gpui::AnyElement {

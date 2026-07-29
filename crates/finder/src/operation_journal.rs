@@ -43,7 +43,15 @@ struct EntryIdentity {
 impl EntryIdentity {
     fn capture(path: &Path) -> io::Result<Self> {
         let metadata = fs::symlink_metadata(path)?;
-        Ok(Self {
+        Ok(Self::from_metadata(&metadata))
+    }
+
+    fn capture_file(file: &File) -> io::Result<Self> {
+        Ok(Self::from_metadata(&file.metadata()?))
+    }
+
+    fn from_metadata(metadata: &fs::Metadata) -> Self {
+        Self {
             device: metadata.dev(),
             inode: metadata.ino(),
             mode: metadata.mode(),
@@ -52,7 +60,7 @@ impl EntryIdentity {
             modified_nanoseconds: metadata.mtime_nsec(),
             changed_seconds: metadata.ctime(),
             changed_nanoseconds: metadata.ctime_nsec(),
-        })
+        }
     }
 
     /// Renaming an entry can legitimately update ctime. The durable content
@@ -150,10 +158,28 @@ pub(crate) struct Journal {
     root: PathBuf,
 }
 
+struct RecordLock {
+    file: File,
+    path: PathBuf,
+    identity: EntryIdentity,
+}
+
+impl RecordLock {
+    fn remove_path(&self) -> io::Result<()> {
+        if EntryIdentity::capture(&self.path)? != self.identity
+            || EntryIdentity::capture_file(&self.file)? != self.identity
+        {
+            return Err(invalid_data("file-operation lock identity changed"));
+        }
+        fs::remove_file(&self.path)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct RecoveryReport {
     pub(crate) finalized: usize,
     pub(crate) pending: usize,
+    pub(crate) active: usize,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -270,6 +296,7 @@ impl Journal {
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
         let journal = Self { root };
         journal.remove_abandoned_temps()?;
+        journal.remove_orphan_locks()?;
         Ok(journal)
     }
 
@@ -285,11 +312,16 @@ impl Journal {
         let records = self.read_records()?;
         let mut report = RecoveryReport::default();
         for record in records {
+            let Some(lock) = self.try_lock_record(&record.id)? else {
+                report.active += 1;
+                continue;
+            };
             let path = self.record_path(&record.id);
             let mut ticket = MoveTicket {
                 journal: self.clone(),
                 path,
                 record,
+                lock,
             };
             if self.recover_ticket(&mut ticket)? {
                 report.finalized += 1;
@@ -362,6 +394,9 @@ impl Journal {
     pub(crate) fn review_pending(&self) -> io::Result<Vec<RecoveryReview>> {
         let mut reviews = Vec::new();
         for record in self.read_records()? {
+            let Some(_lock) = self.try_lock_record(&record.id)? else {
+                continue;
+            };
             let journal_path = self.record_path(&record.id);
             let journal_identity = EntryIdentity::capture(&journal_path)?;
             let source_snapshot = capture_optional(&record.source())?;
@@ -402,6 +437,9 @@ impl Journal {
     }
 
     pub(crate) fn resolve_review(&self, review: &RecoveryReview) -> io::Result<ResolutionOutcome> {
+        let lock = self
+            .try_lock_record(&review.record.id)?
+            .ok_or_else(review_changed)?;
         self.validate_review(review)?;
         match &review.action {
             RecoveryAction::PreserveCopy {
@@ -426,6 +464,7 @@ impl Journal {
                     journal: self.clone(),
                     path: self.record_path(&review.record.id),
                     record: review.record.clone(),
+                    lock,
                 };
                 ticket.record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
                 ticket.record.destination_identity = Some(staging_identity);
@@ -441,8 +480,7 @@ impl Journal {
             }
             RecoveryAction::KeepExistingItems => {
                 let path = self.record_path(&review.record.id);
-                fs::remove_file(path)?;
-                sync_directory(&self.root)?;
+                self.finish_record(&path, &lock)?;
                 Ok(ResolutionOutcome::KeptExistingItems)
             }
         }
@@ -480,8 +518,7 @@ impl Journal {
         if ticket.record.stage != MoveStage::Published {
             return Err(invalid_data("recovered move did not reach published state"));
         }
-        fs::remove_file(&ticket.path)?;
-        sync_directory(&self.root)?;
+        self.finish_record(&ticket.path, &ticket.lock)?;
         Ok(true)
     }
 
@@ -493,6 +530,7 @@ impl Journal {
             ));
         }
         let id = Uuid::new_v4().to_string();
+        let lock = self.create_active_lock(&id)?;
         let destination_parent = destination.parent().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -513,16 +551,104 @@ impl Journal {
         };
         record.validate(&id)?;
         let path = self.record_path(&id);
-        self.persist(&path, &record, true)?;
+        if let Err(error) = self.persist(&path, &record, true) {
+            let _ = lock.remove_path();
+            let _ = sync_directory(&self.root);
+            return Err(error);
+        }
         Ok(MoveTicket {
             journal: self.clone(),
             path,
             record,
+            lock,
         })
     }
 
     fn record_path(&self, id: &str) -> PathBuf {
         self.root.join(format!("{id}.json"))
+    }
+
+    fn lock_path(&self, id: &str) -> PathBuf {
+        self.root.join(format!("{id}.lock"))
+    }
+
+    fn create_active_lock(&self, id: &str) -> io::Result<RecordLock> {
+        let lock = self.open_record_lock(id, true)?;
+        rustix::fs::flock(&lock.file, rustix::fs::FlockOperation::LockExclusive)
+            .map_err(io::Error::from)?;
+        lock.file.sync_all()?;
+        sync_directory(&self.root)?;
+        Ok(lock)
+    }
+
+    fn try_lock_record(&self, id: &str) -> io::Result<Option<RecordLock>> {
+        let lock = match self.open_record_lock(id, false) {
+            Ok(lock) => lock,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                match self.open_record_lock(id, true) {
+                    Ok(lock) => {
+                        lock.file.sync_all()?;
+                        sync_directory(&self.root)?;
+                        lock
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                        self.open_record_lock(id, false)?
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            Err(error) => return Err(error),
+        };
+        match rustix::fs::flock(
+            &lock.file,
+            rustix::fs::FlockOperation::NonBlockingLockExclusive,
+        )
+        .map_err(io::Error::from)
+        {
+            Ok(()) => Ok(Some(lock)),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn open_record_lock(&self, id: &str, create: bool) -> io::Result<RecordLock> {
+        if Uuid::parse_str(id).is_err() {
+            return Err(invalid_data("file-operation lock identity is invalid"));
+        }
+        let path = self.lock_path(id);
+        let mut flags =
+            rustix::fs::OFlags::RDWR | rustix::fs::OFlags::CLOEXEC | rustix::fs::OFlags::NOFOLLOW;
+        if create {
+            flags |= rustix::fs::OFlags::CREATE | rustix::fs::OFlags::EXCL;
+        }
+        let descriptor = rustix::fs::open(
+            &path,
+            flags,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        )
+        .map_err(io::Error::from)?;
+        let file = File::from(descriptor);
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.mode() & 0o777 != 0o600 {
+            return Err(invalid_data(
+                "file-operation lock is not a private regular file",
+            ));
+        }
+        let identity = EntryIdentity::from_metadata(&metadata);
+        if EntryIdentity::capture(&path)? != identity {
+            return Err(invalid_data("file-operation lock identity changed"));
+        }
+        Ok(RecordLock {
+            file,
+            path,
+            identity,
+        })
+    }
+
+    fn finish_record(&self, record_path: &Path, lock: &RecordLock) -> io::Result<()> {
+        fs::remove_file(record_path)?;
+        lock.remove_path()?;
+        sync_directory(&self.root)
     }
 
     fn persist(&self, path: &Path, record: &MoveRecord, create: bool) -> io::Result<()> {
@@ -563,6 +689,35 @@ impl Journal {
             let name = name
                 .to_str()
                 .ok_or_else(|| invalid_data("journal entry name is not UTF-8"))?;
+            if let Some(id) = lock_record_id(name) {
+                let metadata = fs::symlink_metadata(&path)?;
+                if !metadata.is_file()
+                    || metadata.file_type().is_symlink()
+                    || metadata.mode() & 0o777 != 0o600
+                    || metadata.len() != 0
+                {
+                    return Err(invalid_data(
+                        "file-operation lock is not a private empty regular file",
+                    ));
+                }
+                if Uuid::parse_str(id).is_err() {
+                    return Err(invalid_data("file-operation lock identity is invalid"));
+                }
+                continue;
+            }
+            if temp_record_id(name).is_some() {
+                let metadata = fs::symlink_metadata(&path)?;
+                if !metadata.is_file()
+                    || metadata.file_type().is_symlink()
+                    || metadata.mode() & 0o777 != 0o600
+                    || metadata.len() > MAX_RECORD_BYTES
+                {
+                    return Err(invalid_data(
+                        "journal temporary is not a bounded private regular file",
+                    ));
+                }
+                continue;
+            }
             if !name.ends_with(".json") {
                 return Err(invalid_data("unexpected file in operation journal"));
             }
@@ -608,16 +763,51 @@ impl Journal {
             let Some(name) = name.to_str() else {
                 continue;
             };
-            if !(name.starts_with('.') && name.ends_with(".tmp")) {
+            let Some(id) = temp_record_id(name) else {
                 continue;
-            }
+            };
             let metadata = fs::symlink_metadata(entry.path())?;
-            if !metadata.is_file() || metadata.file_type().is_symlink() {
+            if !metadata.is_file()
+                || metadata.file_type().is_symlink()
+                || metadata.mode() & 0o777 != 0o600
+                || metadata.len() > MAX_RECORD_BYTES
+            {
                 return Err(invalid_data(
-                    "abandoned journal temporary is not a regular file",
+                    "abandoned journal temporary is not a bounded private regular file",
                 ));
             }
+            let Some(_lock) = self.try_lock_record(id)? else {
+                continue;
+            };
             fs::remove_file(entry.path())?;
+            removed = true;
+        }
+        if removed {
+            sync_directory(&self.root)?;
+        }
+        Ok(())
+    }
+
+    fn remove_orphan_locks(&self) -> io::Result<()> {
+        let mut removed = false;
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            let Some(id) = lock_record_id(name) else {
+                continue;
+            };
+            match fs::symlink_metadata(self.record_path(id)) {
+                Ok(_) => continue,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+            let Some(lock) = self.try_lock_record(id)? else {
+                continue;
+            };
+            lock.remove_path()?;
             removed = true;
         }
         if removed {
@@ -631,6 +821,7 @@ pub(crate) struct MoveTicket {
     journal: Journal,
     path: PathBuf,
     record: MoveRecord,
+    lock: RecordLock,
 }
 
 impl MoveTicket {
@@ -743,8 +934,7 @@ impl MoveTicket {
                 "move journal cannot commit before destination publication",
             ));
         }
-        fs::remove_file(self.path)?;
-        sync_directory(&self.journal.root)
+        self.journal.finish_record(&self.path, &self.lock)
     }
 }
 
@@ -793,6 +983,16 @@ fn review_changed() -> io::Error {
         io::ErrorKind::WouldBlock,
         "file-operation recovery changed; review it again",
     )
+}
+
+fn lock_record_id(name: &str) -> Option<&str> {
+    name.strip_suffix(".lock")
+}
+
+fn temp_record_id(name: &str) -> Option<&str> {
+    let body = name.strip_prefix('.')?.strip_suffix(".tmp")?;
+    let (record, nonce) = body.split_once('.')?;
+    (Uuid::parse_str(record).is_ok() && Uuid::parse_str(nonce).is_ok()).then_some(record)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -872,6 +1072,130 @@ mod tests {
     }
 
     #[test]
+    fn second_instance_skips_an_active_operation() {
+        let root = TestDirectory::new("active-record");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal_root = root.0.join("journal");
+        let first = Journal::open(journal_root.clone()).unwrap();
+        let ticket = first.prepare_move(&source, &destination).unwrap();
+        let second = Journal::open(journal_root).unwrap();
+
+        let active = second.recover_unambiguous().unwrap();
+        let active_reviews = second.review_pending().unwrap();
+
+        assert_eq!(active.finalized, 0);
+        assert_eq!(active.pending, 0);
+        assert_eq!(active.active, 1);
+        assert!(active_reviews.is_empty());
+
+        drop(ticket);
+        let abandoned = second.recover_unambiguous().unwrap();
+        assert_eq!(abandoned.active, 0);
+        assert_eq!(abandoned.pending, 1);
+        assert_eq!(second.review_pending().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn active_journal_temporary_is_not_collected_by_another_instance() {
+        let root = TestDirectory::new("active-temporary");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal_root = root.0.join("journal");
+        let first = Journal::open(journal_root.clone()).unwrap();
+        let ticket = first.prepare_move(&source, &destination).unwrap();
+        let temporary = first
+            .root
+            .join(format!(".{}.{}.tmp", ticket.record.id, Uuid::new_v4()));
+        let mut temporary_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)
+            .unwrap();
+        temporary_file.write_all(b"active atomic update").unwrap();
+        temporary_file.sync_all().unwrap();
+        drop(temporary_file);
+
+        let _second = Journal::open(journal_root.clone()).unwrap();
+
+        assert!(temporary.exists());
+        drop(ticket);
+        let _third = Journal::open(journal_root).unwrap();
+        assert!(!temporary.exists());
+    }
+
+    #[test]
+    fn orphan_lock_is_removed_only_after_its_owner_exits() {
+        let root = TestDirectory::new("orphan-lock");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal_root = root.0.join("journal");
+        let first = Journal::open(journal_root.clone()).unwrap();
+        let ticket = first.prepare_move(&source, &destination).unwrap();
+        let lock_path = ticket.lock.path.clone();
+        fs::remove_file(&ticket.path).unwrap();
+
+        let _second = Journal::open(journal_root.clone()).unwrap();
+        assert!(lock_path.exists());
+
+        drop(ticket);
+        let _third = Journal::open(journal_root).unwrap();
+        assert!(!lock_path.exists());
+    }
+
+    #[test]
+    fn review_resolution_refuses_a_record_locked_after_review() {
+        let root = TestDirectory::new("review-lock-race");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        let id = ticket.record.id.clone();
+        drop(ticket);
+        let review = journal.review_pending().unwrap().remove(0);
+        let competing_lock = journal.try_lock_record(&id).unwrap().unwrap();
+
+        let error = journal.resolve_review(&review).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(&source).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 1);
+
+        drop(competing_lock);
+        assert_eq!(
+            journal.resolve_review(&review).unwrap(),
+            ResolutionOutcome::KeptExistingItems
+        );
+    }
+
+    #[test]
+    fn symlinked_record_lock_fails_closed() {
+        let root = TestDirectory::new("symlink-lock");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        let lock_path = ticket.lock.path.clone();
+        let record_path = ticket.path.clone();
+        drop(ticket);
+        fs::remove_file(&lock_path).unwrap();
+        std::os::unix::fs::symlink(&source, &lock_path).unwrap();
+
+        let error = journal.recover_unambiguous().unwrap_err();
+
+        assert_ne!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(fs::read(source).unwrap(), b"source");
+        assert!(!destination.exists());
+        assert!(record_path.exists());
+    }
+
+    #[test]
     fn successful_move_lifecycle_removes_the_durable_record() {
         let root = TestDirectory::new("commit");
         let source = root.0.join("source");
@@ -879,6 +1203,11 @@ mod tests {
         fs::write(&source, b"source").unwrap();
         let journal = Journal::open(root.0.join("journal")).unwrap();
         let mut ticket = journal.prepare_move(&source, &destination).unwrap();
+        let lock_path = ticket.lock.path.clone();
+        let lock_metadata = fs::symlink_metadata(&lock_path).unwrap();
+        assert!(lock_metadata.is_file());
+        assert_eq!(lock_metadata.mode() & 0o777, 0o600);
+        assert_eq!(lock_metadata.len(), 0);
         fs::write(ticket.staging_destination(), b"source").unwrap();
 
         ticket.mark_destination_complete().unwrap();
@@ -891,6 +1220,7 @@ mod tests {
 
         assert_eq!(journal.pending_count().unwrap(), 0);
         assert_eq!(fs::read(&destination).unwrap(), b"source");
+        assert!(!lock_path.exists());
     }
 
     #[test]
@@ -981,7 +1311,8 @@ mod tests {
             report,
             RecoveryReport {
                 finalized: 1,
-                pending: 0
+                pending: 0,
+                active: 0,
             }
         );
         assert_eq!(fs::read(destination).unwrap(), b"source");
@@ -1118,7 +1449,8 @@ mod tests {
         let destination = root.0.join("destination");
         fs::write(&source, b"source").unwrap();
         let journal = Journal::open(root.0.join("journal")).unwrap();
-        let _ticket = journal.prepare_move(&source, &destination).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        drop(ticket);
 
         let review = journal.review_pending().unwrap().remove(0);
         assert_eq!(review.action, RecoveryAction::KeepExistingItems);

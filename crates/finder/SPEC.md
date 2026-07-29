@@ -50,6 +50,14 @@ metadata, icons, and identifiers remain original rmac work.
   sequentially through every record, supports Enter/Escape while idle, blocks
   dismissal and duplicate activation while busy, and reports completion,
   partial-copy preservation, changed review state, and name races truthfully.
+- Each journal record has a private empty no-follow lock file held with the
+  kernel's exclusive advisory lock from preparation through commit. Other
+  Files processes use a nonblocking exclusive probe: active records and their
+  atomic temporary writes are excluded from recovery/review, while unrelated
+  transfers continue. Review acceptance reacquires the same lock before its
+  identity checks. A lock with no record is removed only after the kernel
+  proves its owner is gone; lock identity, type, mode, and size are revalidated
+  before unlink. Unsupported or malformed locking fails closed.
 - Trash follows the freedesktop Trash specification on Linux and records enough
   identity to offer restore. Permanent delete requires explicit confirmation
   and is not described as undoable.

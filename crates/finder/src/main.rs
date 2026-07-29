@@ -546,6 +546,15 @@ impl FinderView {
                                 )
                                 .into(),
                             );
+                        } else if recovery.active != 0 {
+                            this.operation_notice = Some(
+                                format!(
+                                    "Another Files window is safely handling {} file operation{}",
+                                    recovery.active,
+                                    if recovery.active == 1 { "" } else { "s" }
+                                )
+                                .into(),
+                            );
                         }
                         if this.pending_operations != 0 {
                             this.operation_error = Some(

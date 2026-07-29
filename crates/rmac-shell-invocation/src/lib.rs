@@ -1,10 +1,14 @@
 //! Truthful output and Wayland-seat context for shell-surface invocations.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub const MAX_SEATS: usize = 16;
 pub const MAX_SEAT_ID_BYTES: usize = 128;
+pub const REQUIRED_WL_SEAT_VERSION: u32 = 2;
+
+#[cfg(target_os = "linux")]
+pub mod wayland;
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct SeatId(String);
@@ -94,6 +98,129 @@ impl fmt::Display for InventoryError {
 }
 
 impl std::error::Error for InventoryError {}
+
+/// Platform-neutral reducer for live `wl_registry` and `wl_seat.name` events.
+/// A snapshot is published only when every currently bound seat has delivered
+/// its immutable name.
+#[derive(Debug, Default)]
+pub struct SeatRegistry {
+    seats: BTreeMap<u32, Option<SeatId>>,
+    published: Option<SeatInventory>,
+}
+
+impl SeatRegistry {
+    pub fn add(&mut self, global: u32, version: u32) -> Result<(), RegistryError> {
+        if version < REQUIRED_WL_SEAT_VERSION {
+            return Err(RegistryError::SeatVersion {
+                advertised: version,
+                required: REQUIRED_WL_SEAT_VERSION,
+            });
+        }
+        if self.seats.contains_key(&global) {
+            return Err(RegistryError::DuplicateGlobal);
+        }
+        if self.seats.len() >= MAX_SEATS {
+            return Err(RegistryError::TooManySeats {
+                count: self.seats.len() + 1,
+            });
+        }
+        self.seats.insert(global, None);
+        Ok(())
+    }
+
+    pub fn name(
+        &mut self,
+        global: u32,
+        value: impl Into<String>,
+    ) -> Result<Option<SeatInventory>, RegistryError> {
+        let seat = SeatId::new(value).map_err(RegistryError::Inventory)?;
+        let current = self
+            .seats
+            .get_mut(&global)
+            .ok_or(RegistryError::UnknownSeat)?;
+        match current {
+            Some(existing) if existing != &seat => return Err(RegistryError::SeatRenamed),
+            Some(_) => return Ok(None),
+            None => *current = Some(seat),
+        }
+        self.publish_if_complete()
+    }
+
+    pub fn remove(&mut self, global: u32) -> Result<Option<SeatInventory>, RegistryError> {
+        if self.seats.remove(&global).is_none() {
+            return Ok(None);
+        }
+        self.publish_if_complete()
+    }
+
+    pub fn require_complete(&mut self) -> Result<Option<SeatInventory>, RegistryError> {
+        if self.seats.values().any(Option::is_none) {
+            return Err(RegistryError::IncompleteSeat);
+        }
+        self.publish_if_complete()
+    }
+
+    pub fn snapshot(&self) -> Option<&SeatInventory> {
+        self.published.as_ref()
+    }
+
+    fn publish_if_complete(&mut self) -> Result<Option<SeatInventory>, RegistryError> {
+        if self.seats.values().any(Option::is_none) {
+            return Ok(None);
+        }
+        let inventory = SeatInventory::new(
+            self.seats
+                .values()
+                .filter_map(Clone::clone)
+                .map(|seat| seat.0),
+        )
+        .map_err(RegistryError::Inventory)?;
+        if self.published.as_ref() == Some(&inventory) {
+            return Ok(None);
+        }
+        self.published = Some(inventory.clone());
+        Ok(Some(inventory))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RegistryError {
+    SeatVersion { advertised: u32, required: u32 },
+    DuplicateGlobal,
+    TooManySeats { count: usize },
+    UnknownSeat,
+    SeatRenamed,
+    IncompleteSeat,
+    Inventory(InventoryError),
+}
+
+impl fmt::Display for RegistryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SeatVersion {
+                advertised,
+                required,
+            } => write!(
+                formatter,
+                "wl_seat version {advertised} is below required version {required}"
+            ),
+            Self::DuplicateGlobal => {
+                formatter.write_str("the Wayland registry repeated a seat global")
+            }
+            Self::TooManySeats { count } => {
+                write!(formatter, "the Wayland registry has {count} seats")
+            }
+            Self::UnknownSeat => {
+                formatter.write_str("a Wayland seat event referenced an unknown global")
+            }
+            Self::SeatRenamed => formatter.write_str("a Wayland seat changed its immutable name"),
+            Self::IncompleteSeat => formatter.write_str("a Wayland seat did not publish its name"),
+            Self::Inventory(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl std::error::Error for RegistryError {}
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Invocation {
@@ -335,6 +462,45 @@ mod tests {
                 &SeatInventory::new(vec!["seat-a".into()]).unwrap()
             ),
             Err(ResolveError::NoFocusedOutput)
+        );
+    }
+
+    #[test]
+    fn registry_publishes_only_complete_hotplug_snapshots() {
+        let mut registry = SeatRegistry::default();
+        assert_eq!(registry.require_complete().unwrap().unwrap().len(), 0);
+        registry.add(8, REQUIRED_WL_SEAT_VERSION).unwrap();
+        assert!(registry.snapshot().unwrap().is_empty());
+        assert!(registry.name(8, "seat-a").unwrap().is_some());
+        registry.add(9, REQUIRED_WL_SEAT_VERSION).unwrap();
+        assert!(registry.name(8, "seat-a").unwrap().is_none());
+        let two = registry.name(9, "seat-b").unwrap().unwrap();
+        assert_eq!(two.len(), 2);
+        let one = registry.remove(8).unwrap().unwrap();
+        assert_eq!(one.len(), 1);
+    }
+
+    #[test]
+    fn registry_rejects_incomplete_duplicate_and_renamed_seats() {
+        let mut registry = SeatRegistry::default();
+        assert_eq!(
+            registry.add(1, REQUIRED_WL_SEAT_VERSION - 1),
+            Err(RegistryError::SeatVersion {
+                advertised: REQUIRED_WL_SEAT_VERSION - 1,
+                required: REQUIRED_WL_SEAT_VERSION,
+            })
+        );
+        registry.add(1, REQUIRED_WL_SEAT_VERSION).unwrap();
+        assert_eq!(
+            registry.require_complete(),
+            Err(RegistryError::IncompleteSeat)
+        );
+        registry.name(1, "seat-a").unwrap();
+        assert_eq!(registry.name(1, "seat-b"), Err(RegistryError::SeatRenamed));
+        registry.add(2, REQUIRED_WL_SEAT_VERSION).unwrap();
+        assert_eq!(
+            registry.name(2, "seat-a"),
+            Err(RegistryError::Inventory(InventoryError::DuplicateSeat))
         );
     }
 }

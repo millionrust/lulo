@@ -5551,6 +5551,7 @@ name = "rmac-shell-invocation"
 version = "0.1.0"
 dependencies = [
  "rmac-compositor",
+ "wayland-client",
 ]
 
 [[package]]

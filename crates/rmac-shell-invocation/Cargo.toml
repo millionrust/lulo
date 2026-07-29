@@ -8,3 +8,6 @@ publish = false
 
 [dependencies]
 rmac-compositor.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client.workspace = true

@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
-use crate::operation_journal::{EntryIdentity, TreeManifest};
+use crate::operation_journal::{EntryIdentity, TreeManifest, TreeSnapshot as TransferTreeSnapshot};
+use crate::undo_journal::{TrashUndoSeed, UndoKind, UndoOutcome, UndoStore};
 
 const RECORD_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 64 * 1024;
@@ -82,6 +83,10 @@ struct TrashRecord {
     resolution_info_identity: Option<EntryIdentity>,
     #[serde(default)]
     resolution_info_sha256: Option<[u8; 32]>,
+    #[serde(default)]
+    create_undo_receipt: bool,
+    #[serde(default)]
+    trash_source_parent_identity: Option<EntryIdentity>,
 }
 
 impl TrashRecord {
@@ -156,6 +161,11 @@ impl TrashRecord {
                 {
                     return Err(invalid_data("trash transaction stage is invalid"));
                 }
+                if self.create_undo_receipt != self.trash_source_parent_identity.is_some() {
+                    return Err(invalid_data(
+                        "Trash Undo parent evidence is missing or unexpected",
+                    ));
+                }
                 if self.stage == TrashStage::Prepared && self.info_identity.is_some() {
                     return Err(invalid_data(
                         "prepared trash transaction has an info identity",
@@ -177,6 +187,7 @@ impl TrashRecord {
                     || self.restore_parent_identity.is_none()
                     || delete.is_some()
                     || self.has_resolution_state()
+                    || self.trash_source_parent_identity.is_some()
                 {
                     return Err(invalid_data("restore transaction stage is invalid"));
                 }
@@ -199,6 +210,8 @@ impl TrashRecord {
                     || delete.file_name() != Some(expected_name.as_os_str())
                     || delete == &data
                     || delete == &info
+                    || self.create_undo_receipt
+                    || self.trash_source_parent_identity.is_some()
                 {
                     return Err(invalid_data("delete transaction stage is invalid"));
                 }
@@ -1128,6 +1141,50 @@ fn record_info_matches(record: &TrashRecord) -> io::Result<bool> {
     Ok(bytes.len() as u64 <= MAX_INFO_BYTES && sha256(&bytes) == record.info_sha256)
 }
 
+fn read_bound_info_bytes(record: &TrashRecord) -> io::Result<Option<Vec<u8>>> {
+    let path = record.info_path();
+    let metadata = match fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.mode() & 0o022 != 0
+        || metadata.uid() != effective_uid()
+        || metadata.len() > MAX_INFO_BYTES
+    {
+        return Err(changed(
+            "Trash metadata is not a bounded private regular file",
+        ));
+    }
+    let expected = record
+        .info_identity
+        .as_ref()
+        .ok_or_else(|| invalid_data("Trash transaction has no metadata identity"))?;
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    let mut file = options.open(&path)?;
+    let identity = EntryIdentity::capture_file(&file)?;
+    if &identity != expected || EntryIdentity::capture(&path)? != identity {
+        return Err(changed("Trash metadata changed before Undo was archived"));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    std::io::Read::by_ref(&mut file)
+        .take(MAX_INFO_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INFO_BYTES
+        || sha256(&bytes) != record.info_sha256
+        || EntryIdentity::capture_file(&file)? != identity
+        || EntryIdentity::capture(&path)? != identity
+    {
+        return Err(changed("Trash metadata changed before Undo was archived"));
+    }
+    Ok(Some(bytes))
+}
+
 fn remove_exact_info(record: &TrashRecord) -> io::Result<()> {
     if !record_info_matches(record)? {
         return Err(changed("Trash metadata changed before cleanup"));
@@ -1409,6 +1466,7 @@ pub(crate) struct TrashRecovery {
 #[derive(Clone, Debug)]
 pub(crate) struct TrashStore {
     state_root: PathBuf,
+    undo: UndoStore,
 }
 
 impl TrashStore {
@@ -1420,7 +1478,34 @@ impl TrashStore {
 
     pub(crate) fn open(state_root: PathBuf) -> io::Result<Self> {
         ensure_private_directory(&state_root)?;
-        Ok(Self { state_root })
+        let operations_root = state_root
+            .parent()
+            .ok_or_else(|| invalid_input("Trash state root has no parent"))?
+            .join("operations");
+        ensure_private_directory(&operations_root)?;
+        let undo = UndoStore::open(operations_root.join("undo"))?;
+        Ok(Self { state_root, undo })
+    }
+
+    pub(crate) fn undo_store(&self) -> &UndoStore {
+        &self.undo
+    }
+
+    pub(crate) fn execute_latest_undo(
+        &self,
+        fs: &impl crate::file_ops::FileSystem,
+        cancel: &AtomicBool,
+        progress: &mut dyn FnMut(crate::file_ops::CopyActivity),
+    ) -> io::Result<Option<UndoOutcome>> {
+        let _lock = self.lock()?;
+        let recovery = self.recover_locked()?;
+        if recovery.pending != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "unfinished Trash recovery must be reviewed before Undo",
+            ));
+        }
+        self.undo.execute_latest(fs, cancel, progress)
     }
 
     #[cfg(test)]
@@ -1719,6 +1804,8 @@ impl TrashStore {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            create_undo_receipt: true,
+            trash_source_parent_identity: None,
         };
         record.validate(&id)?;
         if !record_data_matches_exact(&record)?
@@ -1788,6 +1875,8 @@ impl TrashStore {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            create_undo_receipt: false,
+            trash_source_parent_identity: None,
         };
         record.validate(&id)?;
         if !record_data_matches_exact(&record)?
@@ -1872,6 +1961,12 @@ impl TrashStore {
                 resolution_manifest: None,
                 resolution_info_identity: None,
                 resolution_info_sha256: None,
+                create_undo_receipt: true,
+                trash_source_parent_identity: Some(EntryIdentity::capture(
+                    source
+                        .parent()
+                        .ok_or_else(|| invalid_data("Trash source parent is missing"))?,
+                )?),
             };
             record.validate(&id)?;
             let record_path = self.record_path(&id);
@@ -1940,7 +2035,7 @@ impl TrashStore {
             }
             record.stage = TrashStage::DataMoved;
             self.persist(&record_path, &record, false)?;
-            self.finish_record(&record_path)?;
+            self.finish_undoable_record(&record_path, &record)?;
             return Ok(());
         }
         Err(io::Error::new(
@@ -1980,7 +2075,7 @@ impl TrashStore {
                         TrashStage::InfoPublished | TrashStage::DataMoved
                             if !source_exists && data_matches && info_matches =>
                         {
-                            self.finish_record(&path)?;
+                            self.finish_undoable_record(&path, &record)?;
                             true
                         }
                         _ => false,
@@ -2032,7 +2127,7 @@ impl TrashStore {
             TrashStage::RestoreInfoRemoved
                 if !data_exists && destination_matches && !info_exists && parent_same =>
             {
-                self.finish_record(path)?;
+                self.finish_undoable_record(path, record)?;
                 Ok(true)
             }
             _ => Ok(false),
@@ -2077,6 +2172,8 @@ impl TrashStore {
                 self.finish_delete_info(path, record)
             }
             TrashStage::DeleteInfoRemoved if !data_exists && !delete_exists && !info_exists => {
+                self.undo
+                    .discard_trash_item(&record.data_path(), &record.info_path())?;
                 self.finish_record(path)?;
                 Ok(true)
             }
@@ -2140,7 +2237,7 @@ impl TrashStore {
         }
         record.stage = TrashStage::DataMoved;
         self.persist(path, record, false)?;
-        self.finish_record(path)?;
+        self.finish_undoable_record(path, record)?;
         Ok(true)
     }
 
@@ -2171,6 +2268,7 @@ impl TrashStore {
             if !record_info_matches(record)? {
                 return Ok(false);
             }
+            self.archive_undo_receipt(path, record)?;
             fs::remove_file(record.info_path())?;
             sync_directory(
                 record
@@ -2178,10 +2276,12 @@ impl TrashStore {
                     .parent()
                     .ok_or_else(|| invalid_data("Trash info parent is missing"))?,
             )?;
+        } else if record.create_undo_receipt && !self.undo.has_receipt(&record.id)? {
+            return Ok(false);
         }
         record.stage = TrashStage::RestoreInfoRemoved;
         self.persist(path, record, false)?;
-        self.finish_record(path)?;
+        self.finish_undoable_record(path, record)?;
         Ok(true)
     }
 
@@ -2230,6 +2330,8 @@ impl TrashStore {
     }
 
     fn finish_delete_info(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
+        self.undo
+            .discard_trash_item(&record.data_path(), &record.info_path())?;
         if entry_exists(&record.info_path())? {
             if !record_info_matches(record)? {
                 return Ok(false);
@@ -2310,6 +2412,70 @@ impl TrashStore {
     fn finish_record(&self, path: &Path) -> io::Result<()> {
         fs::remove_file(path)?;
         sync_directory(&self.state_root)
+    }
+
+    fn finish_undoable_record(&self, path: &Path, record: &TrashRecord) -> io::Result<()> {
+        if !record.create_undo_receipt {
+            return self.finish_record(path);
+        }
+        self.archive_undo_receipt(path, record)?;
+        self.finish_record(path)?;
+        self.undo.activate(&record.id)
+    }
+
+    fn archive_undo_receipt(&self, path: &Path, record: &TrashRecord) -> io::Result<()> {
+        if !record.create_undo_receipt {
+            return Ok(());
+        }
+        let kind = match record.operation {
+            TrashOperation::Trash => UndoKind::Trash,
+            TrashOperation::Restore => UndoKind::Restore,
+            TrashOperation::Delete => {
+                return Err(invalid_data(
+                    "permanent deletion cannot create an Undo receipt",
+                ));
+            }
+        };
+        let info_bytes = match read_bound_info_bytes(record)? {
+            Some(bytes) => bytes,
+            None if kind == UndoKind::Restore && self.undo.has_receipt(&record.id)? => {
+                return Ok(());
+            }
+            None => {
+                return Err(changed(
+                    "Trash metadata disappeared before Undo could be archived",
+                ));
+            }
+        };
+        let source_parent_identity = match kind {
+            UndoKind::Trash => record
+                .trash_source_parent_identity
+                .clone()
+                .ok_or_else(|| invalid_data("Move-to-Trash Undo has no source parent"))?,
+            UndoKind::Restore => record
+                .restore_parent_identity
+                .clone()
+                .ok_or_else(|| invalid_data("Restore Undo has no source parent"))?,
+            _ => unreachable!("Trash operation kind was checked above"),
+        };
+        let item_snapshot = TransferTreeSnapshot::from_parts(
+            record.source_identity.clone(),
+            record.source_manifest.clone(),
+        );
+        self.undo.archive_trash(TrashUndoSeed {
+            id: record.id.clone(),
+            kind,
+            source: record.source(),
+            data: record.data_path(),
+            info: record.info_path(),
+            source_parent_identity,
+            item_snapshot,
+            info_bytes,
+            info_identity: (kind == UndoKind::Trash)
+                .then(|| record.info_identity.clone())
+                .flatten(),
+            forward_record: path.to_path_buf(),
+        })
     }
 
     fn read_records(&self) -> io::Result<Vec<(PathBuf, TrashRecord)>> {
@@ -2471,6 +2637,8 @@ mod tests {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            create_undo_receipt: false,
+            trash_source_parent_identity: None,
         };
         let record_path = store.record_path(&id);
         store
@@ -2512,6 +2680,8 @@ mod tests {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            create_undo_receipt: false,
+            trash_source_parent_identity: None,
         };
         let record_path = store.record_path(&id);
         store.persist(&record_path, &record, true).unwrap();
@@ -2545,6 +2715,8 @@ mod tests {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            create_undo_receipt: false,
+            trash_source_parent_identity: None,
         };
         let record_path = store.record_path(&id);
         store.persist(&record_path, &record, true).unwrap();
@@ -2569,6 +2741,148 @@ mod tests {
             "[Trash Info]\nPath=report.txt\nDeletionDate=2026-07-29T08:09:10\n"
         );
         assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn completed_trash_is_the_latest_durable_undo_and_restores_exactly() {
+        let (directory, store, layout) = setup("trash-undo");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+
+        let available = store.undo_store().latest().unwrap().unwrap();
+        assert_eq!(available.label, "Undo Move to Trash “report.txt”");
+        assert!(available.uses_trash);
+        assert_eq!(store.undo_store().count().unwrap(), 1);
+
+        let outcome = store
+            .execute_latest_undo(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(outcome.label, "Undo Move to Trash “report.txt”");
+        assert_eq!(fs::read(&source).unwrap(), b"important");
+        assert!(!item.data_path.exists());
+        assert!(!item.info_path.exists());
+        assert_eq!(store.undo_store().count().unwrap(), 0);
+    }
+
+    #[test]
+    fn completed_restore_undo_recreates_exact_metadata_and_returns_item_to_trash() {
+        let (directory, store, layout) = setup("restore-undo");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let info_bytes = fs::read(&item.info_path).unwrap();
+
+        store
+            .restore(&item, &AtomicBool::new(false))
+            .expect("restore should complete");
+
+        let available = store.undo_store().latest().unwrap().unwrap();
+        assert_eq!(available.label, "Undo Restore “report.txt”");
+        assert!(source.exists());
+        assert!(!item.data_path.exists());
+        assert!(!item.info_path.exists());
+
+        store
+            .execute_latest_undo(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap()
+            .unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"important");
+        assert_eq!(fs::read(&item.info_path).unwrap(), info_bytes);
+        assert_eq!(list_in_layout(&layout).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn trash_undo_never_replaces_a_racing_original_location() {
+        let (directory, store, layout) = setup("trash-undo-source-race");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::write(&source, b"racing item").unwrap();
+
+        let error = store
+            .execute_latest_undo(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&source).unwrap(), b"racing item");
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"important");
+        assert!(item.info_path.exists());
+        assert_eq!(store.undo_store().count().unwrap(), 1);
+    }
+
+    #[test]
+    fn changed_trash_data_is_never_removed_by_undo() {
+        let (directory, store, layout) = setup("trash-undo-data-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::write(&item.data_path, b"changed").unwrap();
+
+        let error = store
+            .execute_latest_undo(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(!source.exists());
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"changed");
+        assert!(item.info_path.exists());
+    }
+
+    #[test]
+    fn changed_trash_metadata_is_never_removed_by_undo() {
+        let (directory, store, layout) = setup("trash-undo-info-change");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        fs::remove_file(&item.info_path).unwrap();
+        fs::write(&item.info_path, b"[Trash Info]\nPath=/different\n").unwrap();
+
+        let error = store
+            .execute_latest_undo(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(!source.exists());
+        assert!(item.data_path.exists());
+        assert!(item.info_path.exists());
+    }
+
+    #[test]
+    fn permanent_delete_discards_stale_trash_undo_without_creating_a_receipt() {
+        let (directory, store, layout) = setup("delete-invalidates-undo");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        assert_eq!(store.undo_store().count().unwrap(), 1);
+
+        store
+            .delete_permanently(&item, &AtomicBool::new(false))
+            .expect("permanent delete should complete");
+
+        assert_eq!(store.undo_store().count().unwrap(), 0);
+        assert!(store.undo_store().latest().unwrap().is_none());
+        assert!(!source.exists());
+        assert!(!item.data_path.exists());
+        assert!(!item.info_path.exists());
     }
 
     #[test]
@@ -3278,6 +3592,72 @@ mod tests {
     }
 
     #[test]
+    fn recovery_activates_a_trash_receipt_archived_before_forward_cleanup() {
+        let (directory, store, layout) = setup("trash-receipt-crash");
+        let source = write_source(&directory, OsStr::new("draft.txt"), b"draft");
+        let (record_path, mut record, info_bytes) = prepared_record(&store, &layout, &source);
+        record.create_undo_receipt = true;
+        record.trash_source_parent_identity =
+            Some(EntryIdentity::capture(source.parent().unwrap()).unwrap());
+        store.persist(&record_path, &record, false).unwrap();
+        record.info_identity = Some(create_info_file(&record.info_path(), &info_bytes).unwrap());
+        record.stage = TrashStage::InfoPublished;
+        store.persist(&record_path, &record, false).unwrap();
+        rename_noreplace(&source, &record.data_path()).unwrap();
+        sync_directory(source.parent().unwrap()).unwrap();
+        sync_directory(record.data_path().parent().unwrap()).unwrap();
+        record.stage = TrashStage::DataMoved;
+        store.persist(&record_path, &record, false).unwrap();
+        store.archive_undo_receipt(&record_path, &record).unwrap();
+
+        assert!(store.undo_store().latest().unwrap().is_none());
+
+        let recovery = store.recover().unwrap();
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert!(!record_path.exists());
+        assert_eq!(
+            store.undo_store().latest().unwrap().unwrap().label,
+            "Undo Move to Trash “draft.txt”"
+        );
+    }
+
+    #[test]
+    fn recovery_finishes_restore_after_receipt_archive_and_metadata_removal() {
+        let (directory, store, layout) = setup("restore-receipt-crash");
+        let source = write_source(&directory, OsStr::new("draft.txt"), b"draft");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_restore_record(&store, &item);
+        record.create_undo_receipt = true;
+        store.persist(&record_path, &record, false).unwrap();
+        rename_noreplace(&record.data_path(), &record.source()).unwrap();
+        sync_directory(record.data_path().parent().unwrap()).unwrap();
+        sync_directory(record.source().parent().unwrap()).unwrap();
+        record.stage = TrashStage::RestoreDataMoved;
+        store.persist(&record_path, &record, false).unwrap();
+        store.archive_undo_receipt(&record_path, &record).unwrap();
+        fs::remove_file(record.info_path()).unwrap();
+        sync_directory(record.info_path().parent().unwrap()).unwrap();
+
+        assert_eq!(store.undo_store().count().unwrap(), 2);
+        assert_eq!(
+            store.undo_store().latest().unwrap().unwrap().label,
+            "Undo Move to Trash “draft.txt”"
+        );
+
+        let recovery = store.recover().unwrap();
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert!(!record_path.exists());
+        assert_eq!(
+            store.undo_store().latest().unwrap().unwrap().label,
+            "Undo Restore “draft.txt”"
+        );
+    }
+
+    #[test]
     fn recovery_retains_changed_metadata_for_review_without_moving_source() {
         let (directory, store, layout) = setup("metadata-substitution");
         let source = write_source(&directory, OsStr::new("draft.txt"), b"draft");
@@ -3324,6 +3704,15 @@ mod tests {
             .recover()
             .expect_err("second recovery should not run concurrently");
 
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+
+        let error = second
+            .execute_latest_undo(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .expect_err("Undo should share the Trash transaction lock");
         assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
     }
 
@@ -3384,10 +3773,13 @@ mod tests {
         let object = value.as_object_mut().unwrap();
         object.remove("operation");
         object.remove("restore_parent_identity");
+        object.remove("create_undo_receipt");
+        object.remove("trash_source_parent_identity");
 
         let decoded: TrashRecord = serde_json::from_value(value).unwrap();
 
         assert_eq!(decoded.operation, TrashOperation::Trash);
+        assert!(!decoded.create_undo_receipt);
         decoded.validate(&decoded.id).unwrap();
     }
 

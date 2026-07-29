@@ -2,7 +2,9 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
-use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
+use std::os::unix::fs::{
+    DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _,
+};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,6 +19,7 @@ const UNDO_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 64 * 1024;
 const MAX_RECORDS: usize = 512;
 const RETAIN_READY_RECORDS: usize = 20;
+const MAX_TRASH_INFO_BYTES: u64 = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +28,8 @@ pub(crate) enum UndoKind {
     Move,
     Replace,
     MoveReplace,
+    Trash,
+    Restore,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -37,6 +42,9 @@ enum UndoStage {
     SourceCopyComplete,
     SourceRestored,
     CleanupStaged,
+    TrashDataRestored,
+    RestoreInfoPublished,
+    RestoreDataMoved,
 }
 
 pub(crate) struct UndoSeed {
@@ -48,6 +56,21 @@ pub(crate) struct UndoSeed {
     pub(crate) source_snapshot: TreeSnapshot,
     pub(crate) destination_snapshot: TreeSnapshot,
     pub(crate) replaced_snapshot: Option<TreeSnapshot>,
+    pub(crate) forward_record: PathBuf,
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub(crate) struct TrashUndoSeed {
+    pub(crate) id: String,
+    pub(crate) kind: UndoKind,
+    pub(crate) source: PathBuf,
+    pub(crate) data: PathBuf,
+    pub(crate) info: PathBuf,
+    pub(crate) source_parent_identity: EntryIdentity,
+    pub(crate) item_snapshot: TreeSnapshot,
+    pub(crate) info_bytes: Vec<u8>,
+    pub(crate) info_identity: Option<EntryIdentity>,
+    pub(crate) forward_record: PathBuf,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -69,6 +92,14 @@ struct UndoRecord {
     replaced_snapshot: Option<TreeSnapshot>,
     restore_container_identity: Option<EntryIdentity>,
     restored_snapshot: Option<TreeSnapshot>,
+    #[serde(default)]
+    trash_info_path_bytes: Option<Vec<u8>>,
+    #[serde(default)]
+    trash_info_bytes: Option<Vec<u8>>,
+    #[serde(default)]
+    trash_info_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    forward_record_path_bytes: Vec<u8>,
 }
 
 impl UndoRecord {
@@ -105,6 +136,59 @@ impl UndoRecord {
             replaced_snapshot: seed.replaced_snapshot,
             restore_container_identity: None,
             restored_snapshot: None,
+            trash_info_path_bytes: None,
+            trash_info_bytes: None,
+            trash_info_identity: None,
+            forward_record_path_bytes: seed.forward_record.as_os_str().as_bytes().to_vec(),
+        };
+        record.validate(&record.id)?;
+        Ok(record)
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    fn from_trash_seed(seed: TrashUndoSeed) -> io::Result<Self> {
+        if !matches!(seed.kind, UndoKind::Trash | UndoKind::Restore) {
+            return Err(invalid_data("Trash Undo seed has an invalid operation"));
+        }
+        if seed.info_bytes.len() as u64 > MAX_TRASH_INFO_BYTES {
+            return Err(invalid_data("Trash Undo metadata is too large"));
+        }
+        let created = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| invalid_data("system clock precedes the Unix epoch"))?;
+        let source_parent = seed
+            .source
+            .parent()
+            .ok_or_else(|| invalid_data("Trash Undo source has no parent"))?;
+        let destination_parent = seed
+            .data
+            .parent()
+            .ok_or_else(|| invalid_data("Trash Undo destination has no parent"))?;
+        let id = seed.id;
+        let restore_staging = source_parent.join(format!(".rmac-undo-restore-{id}"));
+        let cleanup = destination_parent.join(format!(".rmac-undo-remove-{id}"));
+        let record = Self {
+            version: UNDO_VERSION,
+            id,
+            kind: seed.kind,
+            stage: UndoStage::ForwardPending,
+            created_seconds: created.as_secs(),
+            created_nanoseconds: created.subsec_nanos(),
+            source_path_bytes: seed.source.as_os_str().as_bytes().to_vec(),
+            destination_path_bytes: seed.data.as_os_str().as_bytes().to_vec(),
+            backup_path_bytes: None,
+            restore_staging_path_bytes: restore_staging.as_os_str().as_bytes().to_vec(),
+            cleanup_path_bytes: cleanup.as_os_str().as_bytes().to_vec(),
+            source_parent_identity: seed.source_parent_identity,
+            source_snapshot: seed.item_snapshot.clone(),
+            destination_snapshot: seed.item_snapshot,
+            replaced_snapshot: None,
+            restore_container_identity: None,
+            restored_snapshot: None,
+            trash_info_path_bytes: Some(seed.info.as_os_str().as_bytes().to_vec()),
+            trash_info_bytes: Some(seed.info_bytes),
+            trash_info_identity: seed.info_identity,
+            forward_record_path_bytes: seed.forward_record.as_os_str().as_bytes().to_vec(),
         };
         record.validate(&record.id)?;
         Ok(record)
@@ -136,6 +220,22 @@ impl UndoRecord {
         PathBuf::from(OsString::from_vec(self.cleanup_path_bytes.clone()))
     }
 
+    fn trash_info(&self) -> Option<PathBuf> {
+        self.trash_info_path_bytes
+            .as_ref()
+            .map(|bytes| PathBuf::from(OsString::from_vec(bytes.clone())))
+    }
+
+    fn forward_record(&self, undo_root: &Path) -> PathBuf {
+        if self.forward_record_path_bytes.is_empty() {
+            return undo_root
+                .parent()
+                .unwrap_or(undo_root)
+                .join(format!("{}.json", self.id));
+        }
+        PathBuf::from(OsString::from_vec(self.forward_record_path_bytes.clone()))
+    }
+
     fn matches_seed(&self, seed: &UndoSeed) -> bool {
         self.id == seed.id
             && self.kind == seed.kind
@@ -145,6 +245,24 @@ impl UndoRecord {
             && self.source_snapshot == seed.source_snapshot
             && self.destination_snapshot == seed.destination_snapshot
             && self.replaced_snapshot == seed.replaced_snapshot
+            && (self.forward_record_path_bytes.is_empty()
+                || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_bytes())
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    fn matches_trash_seed(&self, seed: &TrashUndoSeed) -> bool {
+        self.id == seed.id
+            && self.kind == seed.kind
+            && self.source() == seed.source
+            && self.destination() == seed.data
+            && self.trash_info().as_ref() == Some(&seed.info)
+            && self.source_parent_identity == seed.source_parent_identity
+            && self.source_snapshot == seed.item_snapshot
+            && self.destination_snapshot == seed.item_snapshot
+            && self.trash_info_bytes.as_ref() == Some(&seed.info_bytes)
+            && self.trash_info_identity == seed.info_identity
+            && (self.forward_record_path_bytes.is_empty()
+                || self.forward_record_path_bytes == seed.forward_record.as_os_str().as_bytes())
     }
 
     fn validate(&self, expected_id: &str) -> io::Result<()> {
@@ -188,6 +306,55 @@ impl UndoRecord {
                 return Err(invalid_data("undo replacement backup path is invalid"));
             }
         }
+        if !self.forward_record_path_bytes.is_empty() {
+            let forward = PathBuf::from(OsString::from_vec(self.forward_record_path_bytes.clone()));
+            let expected_name = OsString::from(format!("{}.json", self.id));
+            if !forward.is_absolute() || forward.file_name() != Some(expected_name.as_os_str()) {
+                return Err(invalid_data("Undo forward-record path is invalid"));
+            }
+        }
+        let trash = matches!(self.kind, UndoKind::Trash | UndoKind::Restore);
+        if trash != (self.trash_info_path_bytes.is_some() && self.trash_info_bytes.is_some()) {
+            return Err(invalid_data("Trash Undo metadata is missing or unexpected"));
+        }
+        if trash {
+            self.validate_trash_paths()?;
+            if self
+                .trash_info_bytes
+                .as_ref()
+                .is_some_and(|bytes| bytes.len() as u64 > MAX_TRASH_INFO_BYTES)
+            {
+                return Err(invalid_data("Trash Undo metadata is too large"));
+            }
+            match self.kind {
+                UndoKind::Trash if self.trash_info_identity.is_none() => {
+                    return Err(invalid_data("Trash Undo has no metadata identity"));
+                }
+                UndoKind::Restore
+                    if matches!(self.stage, UndoStage::ForwardPending | UndoStage::Ready)
+                        && self.trash_info_identity.is_some() =>
+                {
+                    return Err(invalid_data(
+                        "Restore Undo has metadata identity before publication",
+                    ));
+                }
+                UndoKind::Restore
+                    if matches!(
+                        self.stage,
+                        UndoStage::RestoreInfoPublished | UndoStage::RestoreDataMoved
+                    ) && self.trash_info_identity.is_none() =>
+                {
+                    return Err(invalid_data(
+                        "Restore Undo is missing published metadata identity",
+                    ));
+                }
+                _ => {}
+            }
+        } else if self.trash_info_identity.is_some() {
+            return Err(invalid_data(
+                "transfer Undo unexpectedly has Trash metadata identity",
+            ));
+        }
         match self.kind {
             UndoKind::Copy
                 if !matches!(
@@ -212,6 +379,25 @@ impl UndoRecord {
                 return Err(invalid_data("move undo has an impossible stage"));
             }
             UndoKind::MoveReplace if self.stage == UndoStage::Ready => {}
+            UndoKind::Trash
+                if !matches!(
+                    self.stage,
+                    UndoStage::ForwardPending | UndoStage::Ready | UndoStage::TrashDataRestored
+                ) =>
+            {
+                return Err(invalid_data("Trash Undo has an impossible stage"));
+            }
+            UndoKind::Restore
+                if !matches!(
+                    self.stage,
+                    UndoStage::ForwardPending
+                        | UndoStage::Ready
+                        | UndoStage::RestoreInfoPublished
+                        | UndoStage::RestoreDataMoved
+                ) =>
+            {
+                return Err(invalid_data("Restore Undo has an impossible stage"));
+            }
             _ => {}
         }
         if matches!(
@@ -237,6 +423,37 @@ impl UndoRecord {
         }
         Ok(())
     }
+
+    fn validate_trash_paths(&self) -> io::Result<()> {
+        let info = self
+            .trash_info()
+            .ok_or_else(|| invalid_data("Trash Undo has no metadata path"))?;
+        let data = self.destination();
+        if !info.is_absolute() || info == data {
+            return Err(invalid_data("Trash Undo metadata path is invalid"));
+        }
+        let data_parent = data
+            .parent()
+            .ok_or_else(|| invalid_data("Trash Undo data has no parent"))?;
+        let info_parent = info
+            .parent()
+            .ok_or_else(|| invalid_data("Trash Undo metadata has no parent"))?;
+        if data_parent.file_name() != Some(std::ffi::OsStr::new("files"))
+            || info_parent.file_name() != Some(std::ffi::OsStr::new("info"))
+            || data_parent.parent() != info_parent.parent()
+        {
+            return Err(invalid_data("Trash Undo layout is invalid"));
+        }
+        let data_name = data
+            .file_name()
+            .ok_or_else(|| invalid_data("Trash Undo data has no name"))?;
+        let mut expected_info = data_name.to_os_string();
+        expected_info.push(".trashinfo");
+        if info.file_name() != Some(expected_info.as_os_str()) {
+            return Err(invalid_data("Trash Undo data and metadata names differ"));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -247,6 +464,8 @@ pub(crate) struct UndoStore {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoAvailability {
     pub(crate) label: String,
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) uses_trash: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -313,6 +532,63 @@ impl UndoStore {
         self.prune_ready()
     }
 
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn archive_trash(&self, seed: TrashUndoSeed) -> io::Result<()> {
+        let _lock = self.acquire_lock()?;
+        let path = self.record_path(&seed.id);
+        match self.read_record_path(&path) {
+            Ok(existing) => {
+                if !existing.matches_trash_seed(&seed) {
+                    return Err(invalid_data(
+                        "existing Undo receipt does not match the completed Trash operation",
+                    ));
+                }
+                return self.prune_ready();
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        self.prune_ready()?;
+        if self.read_records()?.len() >= MAX_RECORDS {
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "Undo history is full because retained data could not be pruned safely",
+            ));
+        }
+        let record = UndoRecord::from_trash_seed(seed)?;
+        self.persist(&record, true)?;
+        self.prune_ready()
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn has_receipt(&self, id: &str) -> io::Result<bool> {
+        let _lock = self.acquire_lock()?;
+        match self.read_record_path(&self.record_path(id)) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn discard_trash_item(&self, data: &Path, info: &Path) -> io::Result<()> {
+        let _lock = self.acquire_lock()?;
+        let mut changed = false;
+        for record in self.read_records()? {
+            if matches!(record.kind, UndoKind::Trash | UndoKind::Restore)
+                && record.destination() == data
+                && record.trash_info().as_deref() == Some(info)
+            {
+                fs::remove_file(self.record_path(&record.id))?;
+                changed = true;
+            }
+        }
+        if changed {
+            sync_directory(&self.root)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn latest(&self) -> io::Result<Option<UndoAvailability>> {
         let _lock = self.acquire_lock()?;
         self.promote_detached_forward_receipts()?;
@@ -321,6 +597,8 @@ impl UndoStore {
         };
         Ok(Some(UndoAvailability {
             label: undo_label(&record),
+            #[cfg(any(target_os = "linux", test))]
+            uses_trash: matches!(record.kind, UndoKind::Trash | UndoKind::Restore),
         }))
     }
 
@@ -348,6 +626,8 @@ impl UndoStore {
             UndoKind::Move => self.undo_move(fs, &mut record, cancel, progress)?,
             UndoKind::Replace => self.undo_replace(&mut record, cancel, progress)?,
             UndoKind::MoveReplace => self.undo_move_replace(fs, &mut record, cancel, progress)?,
+            UndoKind::Trash => self.undo_trash(&mut record, cancel, progress)?,
+            UndoKind::Restore => self.undo_restore(&mut record, cancel, progress)?,
         }
         Ok(Some(UndoOutcome { label }))
     }
@@ -385,7 +665,7 @@ impl UndoStore {
                 "undo receipt advanced before its forward operation committed",
             ));
         }
-        if self.forward_record_path(id).exists() {
+        if record.forward_record(&self.root).exists() {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "forward operation is still committing",
@@ -399,7 +679,7 @@ impl UndoStore {
     fn promote_detached_forward_receipts(&self) -> io::Result<()> {
         for mut record in self.read_records()? {
             if record.stage == UndoStage::ForwardPending
-                && !self.forward_record_path(&record.id).exists()
+                && !record.forward_record(&self.root).exists()
             {
                 record.stage = UndoStage::Ready;
                 self.persist(&record, false)?;
@@ -408,14 +688,10 @@ impl UndoStore {
         self.prune_ready()
     }
 
-    fn forward_record_path(&self, id: &str) -> PathBuf {
-        self.root
-            .parent()
-            .unwrap_or(&self.root)
-            .join(format!("{id}.json"))
-    }
-
     fn resume_inferred(&self, record: &mut UndoRecord) -> io::Result<()> {
+        if matches!(record.kind, UndoKind::Trash | UndoKind::Restore) {
+            return self.resume_trash_inferred(record);
+        }
         if record.stage == UndoStage::SourceCopying {
             self.discard_partial_restore(record)?;
         }
@@ -478,6 +754,9 @@ impl UndoStore {
                         self.persist(record, false)?;
                     }
                 }
+                UndoKind::Trash | UndoKind::Restore => {
+                    return Err(invalid_data("Trash receipt entered transfer Undo recovery"));
+                }
             }
         }
 
@@ -524,6 +803,228 @@ impl UndoStore {
             }
         }
         Ok(())
+    }
+
+    fn resume_trash_inferred(&self, record: &mut UndoRecord) -> io::Result<()> {
+        match record.kind {
+            UndoKind::Trash => {
+                if record.stage == UndoStage::Ready
+                    && record
+                        .source_snapshot
+                        .still_matches_after_rename(&record.source())?
+                    && !entry_exists(&record.destination())?
+                {
+                    record.stage = UndoStage::TrashDataRestored;
+                    self.persist(record, false)?;
+                }
+                if record.stage == UndoStage::TrashDataRestored {
+                    if !record
+                        .source_snapshot
+                        .still_matches_after_rename(&record.source())?
+                        || entry_exists(&record.destination())?
+                    {
+                        return Err(changed());
+                    }
+                    self.remove_trash_info(record)?;
+                    self.finish(record)?;
+                }
+            }
+            UndoKind::Restore => {
+                if record.stage == UndoStage::Ready
+                    && !entry_exists(&record.source())?
+                    && record
+                        .destination_snapshot
+                        .still_matches_after_rename(&record.destination())?
+                    && self.trash_info_matches(record, false)?
+                {
+                    record.trash_info_identity =
+                        Some(EntryIdentity::capture(&record.trash_info().ok_or_else(
+                            || invalid_data("Restore Undo has no metadata path"),
+                        )?)?);
+                    record.stage = UndoStage::RestoreDataMoved;
+                    self.persist(record, false)?;
+                } else if record.stage == UndoStage::Ready
+                    && record
+                        .source_snapshot
+                        .still_matches_after_rename(&record.source())?
+                    && !entry_exists(&record.destination())?
+                    && self.trash_info_matches(record, false)?
+                {
+                    record.trash_info_identity =
+                        Some(EntryIdentity::capture(&record.trash_info().ok_or_else(
+                            || invalid_data("Restore Undo has no metadata path"),
+                        )?)?);
+                    record.stage = UndoStage::RestoreInfoPublished;
+                    self.persist(record, false)?;
+                }
+                if record.stage == UndoStage::RestoreInfoPublished
+                    && !entry_exists(&record.source())?
+                    && record
+                        .destination_snapshot
+                        .still_matches_after_rename(&record.destination())?
+                    && self.trash_info_matches(record, true)?
+                {
+                    record.stage = UndoStage::RestoreDataMoved;
+                    self.persist(record, false)?;
+                }
+                if record.stage == UndoStage::RestoreDataMoved {
+                    if entry_exists(&record.source())?
+                        || !record
+                            .destination_snapshot
+                            .still_matches_after_rename(&record.destination())?
+                        || !self.trash_info_matches(record, true)?
+                    {
+                        return Err(changed());
+                    }
+                    self.finish(record)?;
+                }
+            }
+            _ => return Err(invalid_data("non-Trash receipt entered Trash recovery")),
+        }
+        Ok(())
+    }
+
+    fn undo_trash(
+        &self,
+        record: &mut UndoRecord,
+        cancel: &AtomicBool,
+        progress: &mut dyn FnMut(CopyActivity),
+    ) -> io::Result<()> {
+        if record.stage == UndoStage::TrashDataRestored {
+            self.remove_trash_info(record)?;
+            return self.finish(record);
+        }
+        if record.stage != UndoStage::Ready {
+            return Err(invalid_data(
+                "Move-to-Trash Undo is in an unsupported state",
+            ));
+        }
+        self.require_vacant_source(record)?;
+        if !record
+            .destination_snapshot
+            .still_matches_after_rename(&record.destination())?
+            || !self.trash_info_matches(record, true)?
+        {
+            return Err(changed());
+        }
+        if cancel.load(Ordering::Acquire) {
+            return Err(interrupted());
+        }
+        rename_noreplace(&record.destination(), &record.source())?;
+        sync_rename_parents(&record.destination(), &record.source())?;
+        if !record
+            .source_snapshot
+            .still_matches_after_rename(&record.source())?
+        {
+            return Err(invalid_data(
+                "Trash item identity changed while Undo restored it",
+            ));
+        }
+        record.stage = UndoStage::TrashDataRestored;
+        self.persist(record, false)?;
+        progress(CopyActivity::Finishing);
+        self.remove_trash_info(record)?;
+        self.finish(record)
+    }
+
+    fn undo_restore(
+        &self,
+        record: &mut UndoRecord,
+        cancel: &AtomicBool,
+        progress: &mut dyn FnMut(CopyActivity),
+    ) -> io::Result<()> {
+        if record.stage == UndoStage::Ready {
+            self.require_source_parent(record)?;
+            if !record
+                .source_snapshot
+                .still_matches_after_rename(&record.source())?
+                || entry_exists(&record.destination())?
+                || entry_exists(
+                    &record
+                        .trash_info()
+                        .ok_or_else(|| invalid_data("Restore Undo has no metadata path"))?,
+                )?
+            {
+                return Err(changed());
+            }
+            if cancel.load(Ordering::Acquire) {
+                return Err(interrupted());
+            }
+            let info = record
+                .trash_info()
+                .ok_or_else(|| invalid_data("Restore Undo has no metadata path"))?;
+            let bytes = record
+                .trash_info_bytes
+                .as_ref()
+                .ok_or_else(|| invalid_data("Restore Undo has no metadata bytes"))?;
+            record.trash_info_identity = Some(create_trash_info(&info, bytes)?);
+            record.stage = UndoStage::RestoreInfoPublished;
+            self.persist(record, false)?;
+        }
+        if record.stage != UndoStage::RestoreInfoPublished {
+            return Err(invalid_data("Restore Undo is in an unsupported state"));
+        }
+        if cancel.load(Ordering::Acquire) {
+            return Err(interrupted());
+        }
+        self.require_source_parent(record)?;
+        if !record
+            .source_snapshot
+            .still_matches_after_rename(&record.source())?
+            || entry_exists(&record.destination())?
+            || !self.trash_info_matches(record, true)?
+        {
+            return Err(changed());
+        }
+        rename_noreplace(&record.source(), &record.destination())?;
+        sync_rename_parents(&record.source(), &record.destination())?;
+        if !record
+            .destination_snapshot
+            .still_matches_after_rename(&record.destination())?
+        {
+            return Err(invalid_data(
+                "restored Trash item identity changed during Undo",
+            ));
+        }
+        record.stage = UndoStage::RestoreDataMoved;
+        self.persist(record, false)?;
+        progress(CopyActivity::Finishing);
+        self.finish(record)
+    }
+
+    fn trash_info_matches(&self, record: &UndoRecord, require_identity: bool) -> io::Result<bool> {
+        let info = record
+            .trash_info()
+            .ok_or_else(|| invalid_data("Trash Undo has no metadata path"))?;
+        let Some((identity, bytes)) = read_trash_info(&info)? else {
+            return Ok(false);
+        };
+        if require_identity
+            && record
+                .trash_info_identity
+                .as_ref()
+                .is_none_or(|expected| expected != &identity)
+        {
+            return Ok(false);
+        }
+        Ok(record.trash_info_bytes.as_ref() == Some(&bytes))
+    }
+
+    fn remove_trash_info(&self, record: &UndoRecord) -> io::Result<()> {
+        let info = record
+            .trash_info()
+            .ok_or_else(|| invalid_data("Trash Undo has no metadata path"))?;
+        if !entry_exists(&info)? {
+            return Ok(());
+        }
+        if !self.trash_info_matches(record, true)? {
+            return Err(changed());
+        }
+        fs::remove_file(&info)?;
+        sync_directory(
+            info.parent()
+                .ok_or_else(|| invalid_data("Trash metadata has no parent"))?,
+        )
     }
 
     fn undo_copy(
@@ -1165,7 +1666,7 @@ impl UndoStore {
 
 fn undo_label(record: &UndoRecord) -> String {
     let name = match record.kind {
-        UndoKind::Move | UndoKind::MoveReplace => record
+        UndoKind::Move | UndoKind::MoveReplace | UndoKind::Trash | UndoKind::Restore => record
             .source()
             .file_name()
             .map(|name| name.to_string_lossy().into_owned()),
@@ -1181,6 +1682,8 @@ fn undo_label(record: &UndoRecord) -> String {
         UndoKind::Move => "Undo Move",
         UndoKind::Replace => "Undo Replace",
         UndoKind::MoveReplace => "Undo Move and Replace",
+        UndoKind::Trash => "Undo Move to Trash",
+        UndoKind::Restore => "Undo Restore",
     };
     format!("{verb} “{name}”")
 }
@@ -1261,6 +1764,66 @@ fn entry_exists(path: &Path) -> io::Result<bool> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+fn read_trash_info(path: &Path) -> io::Result<Option<(EntryIdentity, Vec<u8>)>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.mode() & 0o022 != 0
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.len() > MAX_TRASH_INFO_BYTES
+    {
+        return Err(changed());
+    }
+    let mut options = OpenOptions::new();
+    options
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    let mut file = options.open(path)?;
+    let identity = EntryIdentity::capture_file(&file)?;
+    if EntryIdentity::capture(path)? != identity {
+        return Err(changed());
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    std::io::Read::by_ref(&mut file)
+        .take(MAX_TRASH_INFO_BYTES + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_TRASH_INFO_BYTES
+        || EntryIdentity::capture_file(&file)? != identity
+        || EntryIdentity::capture(path)? != identity
+    {
+        return Err(changed());
+    }
+    Ok(Some((identity, bytes)))
+}
+
+fn create_trash_info(path: &Path, bytes: &[u8]) -> io::Result<EntryIdentity> {
+    if bytes.len() as u64 > MAX_TRASH_INFO_BYTES {
+        return Err(invalid_data("Trash Undo metadata is too large"));
+    }
+    let mut options = OpenOptions::new();
+    options
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    let identity = EntryIdentity::capture_file(&file)?;
+    if EntryIdentity::capture(path)? != identity {
+        return Err(changed());
+    }
+    sync_directory(
+        path.parent()
+            .ok_or_else(|| invalid_data("Trash metadata has no parent"))?,
+    )?;
+    Ok(identity)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -1424,6 +1987,172 @@ mod tests {
         ticket.mark_source_removed().unwrap();
         ticket.publish().unwrap();
         ticket.commit().unwrap();
+    }
+
+    struct TrashUndoFixture {
+        store: UndoStore,
+        source: PathBuf,
+        data: PathBuf,
+        info: PathBuf,
+        info_bytes: Vec<u8>,
+        forward: PathBuf,
+    }
+
+    fn trash_undo_fixture(
+        root: &TestDirectory,
+        kind: UndoKind,
+        forward_pending: bool,
+    ) -> TrashUndoFixture {
+        let original = root.0.join("original");
+        let trash = root.0.join("Trash");
+        let files = trash.join("files");
+        let info_directory = trash.join("info");
+        let forward_directory = root.0.join("forward");
+        fs::create_dir(&original).unwrap();
+        fs::create_dir(&trash).unwrap();
+        fs::create_dir(&files).unwrap();
+        fs::create_dir(&info_directory).unwrap();
+        fs::create_dir(&forward_directory).unwrap();
+        let source = original.join("report.txt");
+        let data = files.join("report.txt");
+        let info = info_directory.join("report.txt.trashinfo");
+        let info_bytes =
+            b"[Trash Info]\nPath=/original/report.txt\nDeletionDate=2026-07-29T08:09:10\n".to_vec();
+        let info_identity = match kind {
+            UndoKind::Trash => {
+                fs::write(&data, b"important").unwrap();
+                Some(create_trash_info(&info, &info_bytes).unwrap())
+            }
+            UndoKind::Restore => {
+                fs::write(&source, b"important").unwrap();
+                None
+            }
+            _ => panic!("fixture requires a Trash operation"),
+        };
+        let item = if kind == UndoKind::Trash {
+            &data
+        } else {
+            &source
+        };
+        let id = Uuid::new_v4().to_string();
+        let forward = forward_directory.join(format!("{id}.json"));
+        if forward_pending {
+            fs::write(&forward, b"forward").unwrap();
+        }
+        let store = UndoStore::open(root.0.join("undo")).unwrap();
+        store
+            .archive_trash(TrashUndoSeed {
+                id: id.clone(),
+                kind,
+                source: source.clone(),
+                data: data.clone(),
+                info: info.clone(),
+                source_parent_identity: EntryIdentity::capture(&original).unwrap(),
+                item_snapshot: TreeSnapshot::capture(item).unwrap(),
+                info_bytes: info_bytes.clone(),
+                info_identity,
+                forward_record: forward.clone(),
+            })
+            .unwrap();
+        if !forward_pending {
+            store.activate(&id).unwrap();
+        }
+        TrashUndoFixture {
+            store,
+            source,
+            data,
+            info,
+            info_bytes,
+            forward,
+        }
+    }
+
+    #[test]
+    fn trash_receipt_stays_hidden_until_its_exact_forward_record_is_removed() {
+        let root = TestDirectory::new("trash-two-phase");
+        let fixture = trash_undo_fixture(&root, UndoKind::Trash, true);
+
+        assert!(fixture.store.latest().unwrap().is_none());
+        fs::remove_file(&fixture.forward).unwrap();
+
+        let available = fixture.store.latest().unwrap().unwrap();
+        assert_eq!(available.label, "Undo Move to Trash “report.txt”");
+        assert!(available.uses_trash);
+    }
+
+    #[test]
+    fn trash_undo_infers_a_data_rename_before_stage_persistence() {
+        let root = TestDirectory::new("trash-rename-crash");
+        let fixture = trash_undo_fixture(&root, UndoKind::Trash, false);
+        rename_noreplace(&fixture.data, &fixture.source).unwrap();
+        sync_rename_parents(&fixture.data, &fixture.source).unwrap();
+
+        fixture
+            .store
+            .execute_latest(&RealFileSystem, &AtomicBool::new(false), &mut |_| {})
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(fs::read(&fixture.source).unwrap(), b"important");
+        assert!(!fixture.data.exists());
+        assert!(!fixture.info.exists());
+        assert_eq!(fixture.store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn restore_undo_infers_metadata_publication_before_stage_persistence() {
+        let root = TestDirectory::new("restore-info-crash");
+        let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
+        create_trash_info(&fixture.info, &fixture.info_bytes).unwrap();
+
+        fixture
+            .store
+            .execute_latest(&RealFileSystem, &AtomicBool::new(false), &mut |_| {})
+            .unwrap()
+            .unwrap();
+
+        assert!(!fixture.source.exists());
+        assert_eq!(fs::read(&fixture.data).unwrap(), b"important");
+        assert_eq!(fs::read(&fixture.info).unwrap(), fixture.info_bytes);
+        assert_eq!(fixture.store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn restore_undo_infers_data_movement_before_stage_persistence() {
+        let root = TestDirectory::new("restore-rename-crash");
+        let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
+        create_trash_info(&fixture.info, &fixture.info_bytes).unwrap();
+        rename_noreplace(&fixture.source, &fixture.data).unwrap();
+        sync_rename_parents(&fixture.source, &fixture.data).unwrap();
+
+        fixture
+            .store
+            .execute_latest(&RealFileSystem, &AtomicBool::new(false), &mut |_| {})
+            .unwrap()
+            .unwrap();
+
+        assert!(!fixture.source.exists());
+        assert_eq!(fs::read(&fixture.data).unwrap(), b"important");
+        assert_eq!(fs::read(&fixture.info).unwrap(), fixture.info_bytes);
+        assert_eq!(fixture.store.count().unwrap(), 0);
+    }
+
+    #[test]
+    fn restore_undo_never_replaces_racing_trash_metadata() {
+        let root = TestDirectory::new("restore-info-race");
+        let fixture = trash_undo_fixture(&root, UndoKind::Restore, false);
+        fs::write(&fixture.info, b"racing metadata").unwrap();
+
+        let error = fixture
+            .store
+            .execute_latest(&RealFileSystem, &AtomicBool::new(false), &mut |_| {})
+            .unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(&fixture.source).unwrap(), b"important");
+        assert!(!fixture.data.exists());
+        assert_eq!(fs::read(&fixture.info).unwrap(), b"racing metadata");
+        assert_eq!(fixture.store.count().unwrap(), 1);
     }
 
     #[test]

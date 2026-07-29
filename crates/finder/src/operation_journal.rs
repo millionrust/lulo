@@ -1352,7 +1352,8 @@ impl Journal {
             ));
         }
         if ticket.record.create_undo_receipt {
-            self.undo.archive(undo_seed_from_record(&ticket.record)?)?;
+            self.undo
+                .archive(undo_seed_from_record(&ticket.record, &ticket.path)?)?;
         }
         self.finish_record(&ticket.path, &ticket.lock)?;
         if ticket.record.create_undo_receipt {
@@ -2138,7 +2139,7 @@ impl TransferTicket {
         if self.record.create_undo_receipt {
             self.journal
                 .undo
-                .archive(undo_seed_from_record(&self.record)?)?;
+                .archive(undo_seed_from_record(&self.record, &self.path)?)?;
         }
         self.journal.finish_record(&self.path, &self.lock)?;
         if self.record.create_undo_receipt {
@@ -2148,7 +2149,7 @@ impl TransferTicket {
     }
 }
 
-fn undo_seed_from_record(record: &TransferRecord) -> io::Result<UndoSeed> {
+fn undo_seed_from_record(record: &TransferRecord, forward_path: &Path) -> io::Result<UndoSeed> {
     let source_manifest = record
         .source_manifest
         .clone()
@@ -2184,6 +2185,7 @@ fn undo_seed_from_record(record: &TransferRecord) -> io::Result<UndoSeed> {
         source_snapshot: TreeSnapshot::from_parts(record.source_identity.clone(), source_manifest),
         destination_snapshot: TreeSnapshot::from_parts(destination_identity, destination_manifest),
         replaced_snapshot: replaced,
+        forward_record: forward_path.to_path_buf(),
     })
 }
 
@@ -2602,7 +2604,7 @@ mod tests {
         ticket.publish_copy().unwrap();
         journal
             .undo
-            .archive(undo_seed_from_record(&ticket.record).unwrap())
+            .archive(undo_seed_from_record(&ticket.record, &ticket.path).unwrap())
             .unwrap();
 
         assert!(journal.undo_store().latest().unwrap().is_none());

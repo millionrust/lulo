@@ -82,8 +82,9 @@ metadata, icons, and identifiers remain original rmac work.
   keeps changed source/destination/backup state for an exact review. Batch-only
   conflicts still disable Replace because no existing destination snapshot was
   reviewed.
-- Every completed journaled copy, move, copy replacement, and move replacement
-  commits a versioned Undo receipt before its forward record is cleared.
+- Every completed journaled copy, move, copy replacement, move replacement,
+  move-to-Trash, and restore commits a versioned Undo receipt before its exact
+  forward record is cleared.
   Same-volume moves now pass through the same private source stage instead of
   bypassing the journal. Receipts retain raw path bytes, exact no-follow source/
   destination manifests, the original source-parent identity, deterministic
@@ -106,7 +107,12 @@ metadata, icons, and identifiers remain original rmac work.
   destination. Replacement Undo first atomically exchanges the retained prior
   destination back into place; copy replacement removes the displaced new copy
   only while its source still matches, while move replacement restores that
-  exact item to its original source before cleanup.
+  exact item to its original source before cleanup. Move-to-Trash Undo atomically
+  restores the exact data to a still-vacant original path before removing only
+  its bound metadata. Restore Undo first recreates the exact bounded
+  `.trashinfo` bytes exclusively and durably, then atomically returns the exact
+  item to its vacant Trash slot. Both share the Trash transaction lock across
+  Files processes.
 - Undo has visible checking/copying/finishing states and cooperative
   cancellation. Cancellation before publication leaves the durable copy-back
   stage for a safe Command-Z retry. Restart inference covers cleanup renamed
@@ -116,8 +122,10 @@ metadata, icons, and identifiers remain original rmac work.
   their bound private container. Changed source, destination, prior-item
   backup, source parent, occupied original location, insufficient capacity, or
   unsafe private state fails closed without deleting, replacing, or guessing.
-  Trash and restore transactions are not in this Undo history yet; permanent
-  deletion remains intentionally irreversible.
+  Trash/restore recovery infers exact metadata publication and data renames
+  interrupted before stage persistence. Permanent deletion remains
+  intentionally irreversible and discards older receipts for the exact deleted
+  Trash identity instead of advertising a stale Undo.
 - Every destructive or multi-step operation has a durable, versioned journal
   whose recovery distinguishes prepared, destination-complete,
   source-removed, replacement-exchanged, published, committed, and ambiguous

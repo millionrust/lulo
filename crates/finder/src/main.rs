@@ -100,21 +100,22 @@ enum TrashTaskKind {
 }
 
 #[cfg(any(target_os = "linux", test))]
+struct TrashCompletion {
+    kind: TrashTaskKind,
+    completed: usize,
+    cancelled: bool,
+    failures: Vec<file_ops::Failure>,
+    recovery: std::io::Result<(
+        trash_store::TrashRecovery,
+        Vec<trash_store::TrashRecoveryReview>,
+    )>,
+    undo_availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
+}
+
+#[cfg(any(target_os = "linux", test))]
 enum TrashEvent {
-    Progress {
-        processed: usize,
-        total: usize,
-    },
-    Finished {
-        kind: TrashTaskKind,
-        completed: usize,
-        cancelled: bool,
-        failures: Vec<file_ops::Failure>,
-        recovery: std::io::Result<(
-            trash_store::TrashRecovery,
-            Vec<trash_store::TrashRecoveryReview>,
-        )>,
-    },
+    Progress { processed: usize, total: usize },
+    Finished(TrashCompletion),
 }
 
 #[derive(Clone)]
@@ -759,15 +760,23 @@ impl FinderView {
                 .spawn(async move {
                     let store = Arc::new(trash_store::TrashStore::open_default()?);
                     let recovery = store.recover_and_review();
-                    Ok::<_, std::io::Error>((store, recovery))
+                    let undo_availability = store.undo_store().latest();
+                    Ok::<_, std::io::Error>((store, recovery, undo_availability))
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 this.trash_loading = false;
                 match result {
-                    Ok((store, recovery)) => match recovery {
+                    Ok((store, recovery, undo_availability)) => match recovery {
                         Ok((recovery, reviews)) => {
                             this.trash_store = Some(store);
+                            match undo_availability {
+                                Ok(availability) => this.undo_available = availability,
+                                Err(_) => {
+                                    this.undo_available = None;
+                                    this.operation_journal = None;
+                                }
+                            }
                             this.trash_pending = recovery.pending;
                             this.trash_recovery_reviews = reviews;
                             this.trash_recovery_open = recovery.pending != 0;
@@ -1780,12 +1789,33 @@ impl FinderView {
             cx.notify();
             return;
         }
+        #[cfg(any(target_os = "linux", test))]
+        if self.trash_loading
+            || self.trash_pending != 0
+            || self.trash_recovery_busy
+            || self.trash_recovery_open
+        {
+            self.operation_error =
+                Some("Review unfinished Trash operations before using Undo".into());
+            self.trash_recovery_open = self.trash_pending != 0;
+            cx.notify();
+            return;
+        }
         let Some(available) = self.undo_available.clone() else {
             self.operation_notice = Some("There are no completed file operations to undo".into());
             self.operation_error = None;
             cx.notify();
             return;
         };
+        #[cfg(any(target_os = "linux", test))]
+        let trash_store = self.trash_store.clone();
+        #[cfg(any(target_os = "linux", test))]
+        if available.uses_trash && trash_store.is_none() {
+            self.operation_error =
+                Some("Trash recovery is unavailable; this Undo cannot run safely".into());
+            cx.notify();
+            return;
+        }
 
         let cancel = Arc::new(AtomicBool::new(false));
         self.operation_error = None;
@@ -1803,12 +1833,27 @@ impl FinderView {
         cx.background_executor()
             .spawn(async move {
                 let progress_events = events.clone();
+                let mut report_progress = |activity| {
+                    let _ = progress_events.try_send(UndoEvent::Progress(activity));
+                };
+                #[cfg(any(target_os = "linux", test))]
+                let outcome = match trash_store {
+                    Some(store) => store.execute_latest_undo(
+                        &file_ops::RealFileSystem,
+                        &cancel,
+                        &mut report_progress,
+                    ),
+                    None => journal.undo_store().execute_latest(
+                        &file_ops::RealFileSystem,
+                        &cancel,
+                        &mut report_progress,
+                    ),
+                };
+                #[cfg(not(any(target_os = "linux", test)))]
                 let outcome = journal.undo_store().execute_latest(
                     &file_ops::RealFileSystem,
                     &cancel,
-                    &mut |activity| {
-                        let _ = progress_events.try_send(UndoEvent::Progress(activity));
-                    },
+                    &mut report_progress,
                 );
                 let availability = journal.undo_store().latest();
                 let _ = events.send_blocking(UndoEvent::Finished {
@@ -1945,7 +1990,7 @@ impl FinderView {
     ) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             while let Ok(event) = event_rx.recv().await {
-                let finished = matches!(event, TrashEvent::Finished { .. });
+                let finished = matches!(event, TrashEvent::Finished(_));
                 if this
                     .update(cx, |this: &mut FinderView, cx| match event {
                         TrashEvent::Progress { processed, total } => {
@@ -1955,14 +2000,7 @@ impl FinderView {
                             }
                             cx.notify();
                         }
-                        TrashEvent::Finished {
-                            kind,
-                            completed,
-                            cancelled,
-                            failures,
-                            recovery,
-                        } => this
-                            .finish_trash_task(kind, completed, cancelled, failures, recovery, cx),
+                        TrashEvent::Finished(completion) => this.finish_trash_task(completion, cx),
                     })
                     .is_err()
                 {
@@ -1977,19 +2015,23 @@ impl FinderView {
     }
 
     #[cfg(any(target_os = "linux", test))]
-    fn finish_trash_task(
-        &mut self,
-        kind: TrashTaskKind,
-        completed: usize,
-        cancelled: bool,
-        failures: Vec<file_ops::Failure>,
-        recovery: std::io::Result<(
-            trash_store::TrashRecovery,
-            Vec<trash_store::TrashRecoveryReview>,
-        )>,
-        cx: &mut Context<Self>,
-    ) {
+    fn finish_trash_task(&mut self, completion: TrashCompletion, cx: &mut Context<Self>) {
+        let TrashCompletion {
+            kind,
+            completed,
+            cancelled,
+            failures,
+            recovery,
+            undo_availability,
+        } = completion;
         self.trash_operation = None;
+        match undo_availability {
+            Ok(availability) => self.undo_available = availability,
+            Err(_) => {
+                self.undo_available = None;
+                self.operation_journal = None;
+            }
+        }
         let recovery_unavailable = match recovery {
             Ok((recovery, reviews)) => {
                 self.trash_pending = recovery.pending;
@@ -2489,13 +2531,15 @@ impl FinderView {
                         let _ = events.try_send(TrashEvent::Progress { processed, total });
                     }
                     let recovery = store.recover_and_review();
-                    let _ = events.send_blocking(TrashEvent::Finished {
+                    let undo_availability = store.undo_store().latest();
+                    let _ = events.send_blocking(TrashEvent::Finished(TrashCompletion {
                         kind: TrashTaskKind::Move,
                         completed,
                         cancelled,
                         failures,
                         recovery,
-                    });
+                        undo_availability,
+                    }));
                 })
                 .detach();
             self.receive_trash_events(event_rx, cx);
@@ -2537,7 +2581,10 @@ impl FinderView {
         }
         #[cfg(any(target_os = "linux", test))]
         {
-            if self.transfer.is_some() || self.trash_operation.is_some() {
+            if self.transfer.is_some()
+                || self.undo_operation.is_some()
+                || self.trash_operation.is_some()
+            {
                 self.operation_error = Some("Wait for the current file operation to finish".into());
                 cx.notify();
                 return;
@@ -2614,13 +2661,15 @@ impl FinderView {
                         let _ = events.try_send(TrashEvent::Progress { processed, total });
                     }
                     let recovery = store.recover_and_review();
-                    let _ = events.send_blocking(TrashEvent::Finished {
+                    let undo_availability = store.undo_store().latest();
+                    let _ = events.send_blocking(TrashEvent::Finished(TrashCompletion {
                         kind: TrashTaskKind::Restore,
                         completed,
                         cancelled,
                         failures,
                         recovery,
-                    });
+                        undo_availability,
+                    }));
                 })
                 .detach();
             self.receive_trash_events(event_rx, cx);
@@ -2642,6 +2691,7 @@ impl FinderView {
         #[cfg(any(target_os = "linux", test))]
         {
             if self.transfer.is_some()
+                || self.undo_operation.is_some()
                 || self.trash_operation.is_some()
                 || self.recovery_open
                 || self.recovery_busy
@@ -2705,7 +2755,11 @@ impl FinderView {
             cx.notify();
             return;
         };
-        if self.transfer.is_some() || self.trash_operation.is_some() || self.trash_pending != 0 {
+        if self.transfer.is_some()
+            || self.undo_operation.is_some()
+            || self.trash_operation.is_some()
+            || self.trash_pending != 0
+        {
             self.operation_error = Some("Wait for the current file operation to finish".into());
             cx.notify();
             return;
@@ -2764,13 +2818,15 @@ impl FinderView {
                     let _ = events.try_send(TrashEvent::Progress { processed, total });
                 }
                 let recovery = store.recover_and_review();
-                let _ = events.send_blocking(TrashEvent::Finished {
+                let undo_availability = store.undo_store().latest();
+                let _ = events.send_blocking(TrashEvent::Finished(TrashCompletion {
                     kind: TrashTaskKind::Delete,
                     completed,
                     cancelled,
                     failures,
                     recovery,
-                });
+                    undo_availability,
+                }));
             })
             .detach();
         self.receive_trash_events(event_rx, cx);

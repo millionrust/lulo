@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 pub mod surface;
+pub mod surface_session;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Inputs {

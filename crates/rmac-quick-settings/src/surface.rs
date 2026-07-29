@@ -398,7 +398,9 @@ impl Registry {
     }
 
     pub fn close(&mut self) -> bool {
-        self.desired.take().is_some() || self.failure.take().is_some()
+        let desired = self.desired.take().is_some();
+        let failure = self.failure.take().is_some();
+        desired || failure
     }
 
     pub fn next_command(&mut self) -> Result<Option<Command>, LifecycleError> {

@@ -21,6 +21,7 @@ rmac-launcher.workspace = true
 rmac-launcher-providers.workspace = true
 rmac-launcher-runtime.workspace = true
 rmac-launcher-system.workspace = true
+rmac-shell-activation-runtime.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shortcuts.workspace = true
 rmac-ui.workspace = true

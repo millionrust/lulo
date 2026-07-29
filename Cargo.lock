@@ -5155,6 +5155,7 @@ dependencies = [
  "rmac-launcher-providers",
  "rmac-launcher-runtime",
  "rmac-launcher-system",
+ "rmac-shell-activation-runtime",
  "rmac-shell-settings",
  "rmac-shortcuts",
  "rmac-ui",
@@ -5336,6 +5337,7 @@ dependencies = [
  "rmac-notifications",
  "rmac-notifications-linux",
  "rmac-notifications-store",
+ "rmac-shell-activation-runtime",
  "rmac-shortcuts",
  "rmac-ui",
 ]
@@ -5492,6 +5494,7 @@ dependencies = [
  "gpui-component-assets",
  "rmac-quick-settings",
  "rmac-quick-settings-system",
+ "rmac-shell-activation-runtime",
  "rmac-shell-runtime",
  "rmac-shortcuts",
  "rmac-ui",
@@ -5544,6 +5547,18 @@ dependencies = [
  "notify",
  "rmac-sharing",
  "zbus",
+]
+
+[[package]]
+name = "rmac-shell-activation-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-channel 2.5.0",
+ "futures-util",
+ "rmac-compositor",
+ "rmac-shell-invocation",
+ "rmac-shell-invocation-runtime",
+ "rmac-shortcuts",
 ]
 
 [[package]]

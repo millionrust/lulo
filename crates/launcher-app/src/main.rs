@@ -12,6 +12,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled as _, WeakEntity, Window, WindowBackgroundAppearance,
     WindowBounds, WindowDecorations, WindowKind, WindowOptions,
 };
+use gpui::{point, Bounds};
 use gpui_component::{Root, StyledExt as _};
 use rmac_launcher::{ActivationMode, Category, ResultId};
 use rmac_launcher_runtime::{
@@ -21,7 +22,9 @@ use rmac_launcher_runtime::{
 use rmac_launcher_system::{BackendError, FailureKind, Surface, SystemBackend};
 use rmac_ui::{mac, InputEvent, InputState, SearchField};
 
+#[cfg(not(target_os = "linux"))]
 const WIDTH: f32 = 720.0;
+#[cfg(not(target_os = "linux"))]
 const HEIGHT: f32 = 540.0;
 
 #[derive(Clone)]
@@ -686,9 +689,9 @@ fn build_registry_with_home(
         .map_err(|_| "Search provider registry is unavailable".into())
 }
 
-fn overlay_options(cx: &App) -> WindowOptions {
+fn overlay_options(bounds: WindowBounds) -> WindowOptions {
     WindowOptions {
-        window_bounds: Some(WindowBounds::centered(size(px(WIDTH), px(HEIGHT)), cx)),
+        window_bounds: Some(bounds),
         titlebar: None,
         focus: true,
         show: true,
@@ -703,13 +706,18 @@ fn overlay_options(cx: &App) -> WindowOptions {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn fallback_options(cx: &App) -> WindowOptions {
+    overlay_options(WindowBounds::centered(size(px(WIDTH), px(HEIGHT)), cx))
+}
+
 fn notify_ready() -> Result<(), String> {
     if std::env::var_os("NOTIFY_SOCKET").is_none() {
         return Ok(());
     }
     let status = Command::new("/usr/bin/systemd-notify")
         .arg("--ready")
-        .arg("--status=Launcher shortcut endpoint ready")
+        .arg("--status=Launcher live invocation endpoint ready")
         .status()
         .map_err(|error| error.to_string())?;
     status
@@ -718,18 +726,21 @@ fn notify_ready() -> Result<(), String> {
         .ok_or_else(|| "systemd rejected Launcher readiness".to_owned())
 }
 
-fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
+fn route_existing(event: &rmac_shortcuts::Event, cx: &mut App) -> bool {
     let active = cx.read_global::<LauncherService, _>(|service, _| service.active.clone());
     if let Some(active) = active {
         if let Some(view) = active.view.upgrade() {
             let _ = cx.update_window(active.window, |_, window, cx| {
-                view.update(cx, |view, cx| view.handle_shortcut(&event, window, cx));
+                view.update(cx, |view, cx| view.handle_shortcut(event, window, cx));
             });
-            return;
+            return true;
         }
         cx.update_global::<LauncherService, _>(|service, _| service.active = None);
     }
+    false
+}
 
+fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut App) {
     let (token, registry, settings, error, clipboard) =
         cx.update_global::<LauncherService, _>(|service, _| {
             service.next_overlay = service.next_overlay.wrapping_add(1).max(1);
@@ -742,7 +753,7 @@ fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
             )
         });
     let mut launcher = None;
-    let handle = cx.open_window(overlay_options(cx), |window, cx| {
+    let handle = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {
             LauncherView::new(
@@ -771,6 +782,49 @@ fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
         });
         cx.activate(true);
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn route_shortcut(event: rmac_shortcuts::Event, cx: &mut App) {
+    if route_existing(&event, cx) {
+        return;
+    }
+    open_launcher(event, fallback_options(cx), cx);
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &mut App) {
+    let (event, context) = activation.into_parts();
+    if route_existing(&event, cx) {
+        return;
+    }
+    let context = match context {
+        Ok(context) => context,
+        Err(error) => {
+            eprintln!("Launcher activation rejected: {error}");
+            return;
+        }
+    };
+    let description =
+        match rmac_launcher::surface::plan_invocation(context.invocation(), context.compositor()) {
+            Ok(description) => description,
+            Err(error) => {
+                eprintln!("Launcher surface plan rejected: {error}");
+                return;
+            }
+        };
+    let bounds =
+        match context.centered_bounds(description.logical_width, description.logical_height) {
+            Ok(bounds) => Bounds::new(
+                point(px(bounds.x), px(bounds.y)),
+                size(px(bounds.width), px(bounds.height)),
+            ),
+            Err(error) => {
+                eprintln!("Launcher surface bounds rejected: {error}");
+                return;
+            }
+        };
+    open_launcher(event, overlay_options(WindowBounds::Windowed(bounds)), cx);
 }
 
 fn update_active_catalog(update: CatalogUpdate, cx: &mut App) {
@@ -859,39 +913,77 @@ fn main() {
             })
             .detach();
 
-            let (shortcut_tx, shortcut_rx) = async_channel::bounded(16);
-            let (ready_tx, ready_rx) = async_channel::bounded(1);
-            let shortcut_done = cx.background_executor().spawn(async move {
-                rmac_shortcuts::watch_dispatches_ready(
+            #[cfg(target_os = "linux")]
+            let (activation_tx, activation_rx) = async_channel::bounded(16);
+            #[cfg(target_os = "linux")]
+            let activation_done = cx.background_executor().spawn(async move {
+                rmac_shell_activation_runtime::watch(
                     rmac_shortcuts::ShortcutId("launcher".into()),
-                    shortcut_tx,
-                    ready_tx,
+                    activation_tx,
                 )
                 .await
             });
+            #[cfg(target_os = "linux")]
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                 let consume = async {
-                    while let Ok(event) = shortcut_rx.recv().await {
-                        if cx.update(|cx| route_shortcut(event, cx)).is_err() {
-                            return Err("Launcher application context stopped".to_owned());
+                    while let Ok(update) = activation_rx.recv().await {
+                        match update {
+                            rmac_shell_activation_runtime::Update::Ready => {
+                                blocking::unblock(notify_ready).await?;
+                            }
+                            rmac_shell_activation_runtime::Update::Activated(activation) => {
+                                if cx.update(|cx| route_activation(*activation, cx)).is_err() {
+                                    return Err("Launcher application context stopped".to_owned());
+                                }
+                            }
                         }
                     }
                     Ok::<(), String>(())
                 };
-                let watcher = async { shortcut_done.await.map_err(|error| error.to_string()) };
-                let readiness = async {
-                    ready_rx
-                        .recv()
-                        .await
-                        .map_err(|_| "Launcher endpoint stopped before readiness".to_owned())?;
-                    blocking::unblock(notify_ready).await
-                };
-                if let Err(error) = futures_util::try_join!(watcher, consume, readiness) {
+                let watcher = async { activation_done.await.map_err(|error| error.to_string()) };
+                if let Err(error) = futures_util::try_join!(watcher, consume) {
                     eprintln!("{error}");
                     std::process::exit(1);
                 }
             })
             .detach();
+
+            #[cfg(not(target_os = "linux"))]
+            {
+                let (shortcut_tx, shortcut_rx) = async_channel::bounded(16);
+                let (ready_tx, ready_rx) = async_channel::bounded(1);
+                let shortcut_done = cx.background_executor().spawn(async move {
+                    rmac_shortcuts::watch_dispatches_ready(
+                        rmac_shortcuts::ShortcutId("launcher".into()),
+                        shortcut_tx,
+                        ready_tx,
+                    )
+                    .await
+                });
+                cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+                    let consume = async {
+                        while let Ok(event) = shortcut_rx.recv().await {
+                            if cx.update(|cx| route_shortcut(event, cx)).is_err() {
+                                return Err("Launcher application context stopped".to_owned());
+                            }
+                        }
+                        Ok::<(), String>(())
+                    };
+                    let watcher = async { shortcut_done.await.map_err(|error| error.to_string()) };
+                    let readiness = async {
+                        ready_rx
+                            .recv()
+                            .await
+                            .map_err(|_| "Launcher endpoint stopped before readiness".to_owned())?;
+                        blocking::unblock(notify_ready).await
+                    };
+                    if let Err(error) = futures_util::try_join!(watcher, consume, readiness) {
+                        eprintln!("{error}");
+                        std::process::exit(1);
+                    }
+                })
+                .detach();
+            }
 
             let (catalog_tx, catalog_rx) = async_channel::bounded(8);
             cx.background_executor()
@@ -922,6 +1014,7 @@ fn main() {
             })
             .detach();
 
+            #[cfg(not(target_os = "linux"))]
             if std::env::args().any(|argument| argument == "--show") {
                 route_shortcut(
                     rmac_shortcuts::Event::Activated {

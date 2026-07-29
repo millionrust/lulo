@@ -23,5 +23,6 @@ rmac-apps.workspace = true
 rmac-notifications.workspace = true
 rmac-notifications-linux.workspace = true
 rmac-notifications-store.workspace = true
+rmac-shell-activation-runtime.workspace = true
 rmac-shortcuts.workspace = true
 rmac-ui.workspace = true

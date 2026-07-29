@@ -88,6 +88,7 @@ rmac-places-system = { version = "=0.1.0", path = "crates/rmac-places-system" }
 rmac-search = { version = "=0.1.0", path = "crates/rmac-search" }
 rmac-session = { version = "=0.1.0", path = "crates/rmac-session" }
 rmac-shell-settings = { version = "=0.1.0", path = "crates/rmac-shell-settings" }
+rmac-shell-activation-runtime = { version = "=0.1.0", path = "crates/rmac-shell-activation-runtime" }
 rmac-shell-invocation = { version = "=0.1.0", path = "crates/rmac-shell-invocation" }
 rmac-shell-invocation-runtime = { version = "=0.1.0", path = "crates/rmac-shell-invocation-runtime" }
 rmac-shell-status = { version = "=0.1.0", path = "crates/rmac-shell-status" }

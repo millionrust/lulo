@@ -10,11 +10,10 @@
 //!   * a category derived per app (from its folder + a name keyword map) and a
 //!     category filter bar.
 
+mod catalog;
+
 #[cfg(target_os = "macos")]
-use std::path::Path;
 use std::path::PathBuf;
-#[cfg(target_os = "macos")]
-use std::process::Command;
 use std::time::Duration;
 
 use gpui::{
@@ -27,6 +26,8 @@ use gpui::{
 use gpui_component::{Root, StyledExt as _};
 use rmac_app_drawer::{run_mode, RunMode};
 use rmac_ui::{mac, EmptyState, InputState, SearchField};
+
+use catalog::{App, Category};
 
 const TILE_W: f32 = 116.0;
 const ICON: f32 = 60.0;
@@ -50,63 +51,6 @@ actions!(
 enum ViewMode {
     Grid,
     List,
-}
-
-/// App-Library-style buckets. Derived per app from its install folder and a
-/// keyword map over its name (see [`categorize`]).
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Category {
-    Productivity,
-    Internet,
-    Media,
-    Developer,
-    Utilities,
-    Games,
-    System,
-    Other,
-}
-
-impl Category {
-    fn label(self) -> &'static str {
-        match self {
-            Category::Productivity => "Productivity",
-            Category::Internet => "Internet",
-            Category::Media => "Media",
-            Category::Developer => "Developer",
-            Category::Utilities => "Utilities",
-            Category::Games => "Games",
-            Category::System => "System",
-            Category::Other => "Other",
-        }
-    }
-
-    /// Display order for the filter bar.
-    const ORDER: [Category; 8] = [
-        Category::Productivity,
-        Category::Internet,
-        Category::Media,
-        Category::Developer,
-        Category::Utilities,
-        Category::Games,
-        Category::System,
-        Category::Other,
-    ];
-}
-
-#[derive(Clone)]
-struct App {
-    id: String,
-    name: SharedString,
-    generic_name: Option<String>,
-    keywords: Vec<String>,
-    path: PathBuf,
-    icon: Option<PathBuf>,
-    category: Category,
-    source_categories: Vec<String>,
-    mime_types: Vec<String>,
-    search_text: String,
-    launch: rmac_apps::LaunchSpec,
-    actions: Vec<rmac_apps::DesktopAction>,
 }
 
 #[derive(Clone, PartialEq, gpui::Action)]
@@ -151,7 +95,7 @@ impl Global for AppDrawerService {}
 
 impl AppDrawer {
     fn new(service_token: Option<u64>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let (apps, mut catalog_error) = scan_apps();
+        let (apps, mut catalog_error) = catalog::scan();
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
 
         if let Some(token) = service_token {
@@ -200,11 +144,11 @@ impl AppDrawer {
                 let icons = cx
                     .background_executor()
                     .spawn(async move {
-                        let cache = cache_dir();
+                        let cache = catalog::cache_dir();
                         snapshot
                             .into_iter()
                             .map(|(name, path)| {
-                                let icon = extract_icon(&name, &path, &cache);
+                                let icon = catalog::extract_icon(&name, &path, &cache);
                                 (path, icon)
                             })
                             .collect::<Vec<_>>()
@@ -227,7 +171,7 @@ impl AppDrawer {
         // discovery and icon/category work runs off the UI thread.
         let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
         let catalog_watcher = match rmac_apps::watch_catalog(move || {
-            signal_catalog_change(&catalog_events);
+            catalog::signal_change(&catalog_events);
         }) {
             Ok(watcher) => Some(watcher),
             Err(error) => {
@@ -255,9 +199,9 @@ impl AppDrawer {
                 let result = cx
                     .background_executor()
                     .spawn(async move {
-                        let (mut apps, error) = scan_apps();
+                        let (mut apps, error) = catalog::scan();
                         #[cfg(target_os = "macos")]
-                        hydrate_icons(&mut apps);
+                        catalog::hydrate_icons(&mut apps);
                         (apps, error)
                     })
                     .await;
@@ -871,346 +815,6 @@ impl Render for AppDrawer {
     }
 }
 
-// ---- app discovery & icon extraction ----
-
-fn scan_apps() -> (Vec<App>, Option<SharedString>) {
-    let catalog = match rmac_apps::discover() {
-        Ok(catalog) => catalog,
-        Err(error) => {
-            return (
-                Vec::new(),
-                Some(format!("Could not load applications: {error}").into()),
-            );
-        }
-    };
-
-    #[cfg(target_os = "macos")]
-    let categories = {
-        let pairs = catalog
-            .iter()
-            .map(|application| (application.name.clone(), application.source.clone()))
-            .collect::<Vec<_>>();
-        parallel_categorize(&pairs)
-    };
-    #[cfg(not(target_os = "macos"))]
-    let categories = catalog
-        .iter()
-        .map(|application| categorize_desktop(&application.categories))
-        .collect::<Vec<_>>();
-
-    let apps = catalog
-        .into_iter()
-        .zip(categories)
-        .map(|(application, category)| App {
-            search_text: format!(
-                "{}\n{}",
-                application.searchable_text(),
-                category.label().to_lowercase()
-            ),
-            id: application.id,
-            name: application.name.into(),
-            generic_name: application.generic_name,
-            keywords: application.keywords,
-            path: application.source,
-            icon: application.icon,
-            category,
-            source_categories: application.categories,
-            mime_types: application.mime_types,
-            launch: application.launch,
-            actions: application.actions,
-        })
-        .collect();
-    (apps, None)
-}
-
-fn signal_catalog_change(sender: &async_channel::Sender<()>) {
-    let _ = sender.try_send(());
-}
-
-/// Resolve every app's category concurrently (each read is an independent
-/// subprocess), preserving input order.
-#[cfg(target_os = "macos")]
-fn parallel_categorize(pairs: &[(String, PathBuf)]) -> Vec<Category> {
-    let n = pairs.len();
-    if n == 0 {
-        return Vec::new();
-    }
-    let workers = 8.min(n);
-    let chunk = n.div_ceil(workers);
-    let mut result = vec![Category::Other; n];
-    std::thread::scope(|s| {
-        let mut handles = Vec::new();
-        for (ci, slice) in pairs.chunks(chunk).enumerate() {
-            handles.push((
-                ci,
-                s.spawn(move || {
-                    slice
-                        .iter()
-                        .map(|(name, path)| categorize(name, path))
-                        .collect::<Vec<_>>()
-                }),
-            ));
-        }
-        for (ci, h) in handles {
-            if let Ok(part) = h.join() {
-                let start = ci * chunk;
-                for (i, c) in part.into_iter().enumerate() {
-                    result[start + i] = c;
-                }
-            }
-        }
-    });
-    result
-}
-
-/// The real `LSApplicationCategoryType` from an app's Info.plist, mapped to a
-/// bucket — or `None` if the app declares no category.
-#[cfg(target_os = "macos")]
-fn real_category(path: &Path) -> Option<Category> {
-    let info = path.join("Contents/Info");
-    let out = Command::new("defaults")
-        .arg("read")
-        .arg(&info)
-        .arg("LSApplicationCategoryType")
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_lowercase();
-    if s.is_empty() {
-        return None;
-    }
-    // Apple values look like "public.app-category.developer-tools".
-    Some(if s.contains("developer") {
-        Category::Developer
-    } else if s.contains("game") {
-        Category::Games
-    } else if s.contains("music")
-        || s.contains("video")
-        || s.contains("photo")
-        || s.contains("entertainment")
-        || s.contains("graphics")
-    {
-        Category::Media
-    } else if s.contains("social") || s.contains("news") {
-        Category::Internet
-    } else if s.contains("utilit") {
-        Category::Utilities
-    } else if s.contains("productivity")
-        || s.contains("business")
-        || s.contains("finance")
-        || s.contains("reference")
-        || s.contains("education")
-        || s.contains("weather")
-    {
-        Category::Productivity
-    } else {
-        Category::Other
-    })
-}
-
-/// Derive an App-Library-style category. The app's real declared
-/// `LSApplicationCategoryType` wins; only when a bundle declares none do we fall
-/// back to install-folder rules and a best-effort name match.
-#[cfg(target_os = "macos")]
-fn categorize(name: &str, path: &Path) -> Category {
-    // Prefer the app's real declared category; fall back to the heuristic only
-    // when the bundle declares none.
-    if let Some(c) = real_category(path) {
-        return c;
-    }
-    let p = path.to_string_lossy();
-    if p.contains("/Utilities/") {
-        return Category::Utilities;
-    }
-    let n = name.to_lowercase();
-
-    const INTERNET: &[&str] = &[
-        "safari", "mail", "messages", "facetime", "chrome", "firefox", "edge", "news", "contacts",
-        "freeform", "maps",
-    ];
-    const MEDIA: &[&str] = &[
-        "music",
-        "tv",
-        "photos",
-        "podcasts",
-        "quicktime",
-        "books",
-        "voice memos",
-        "image capture",
-        "photo booth",
-        "garageband",
-        "imovie",
-    ];
-    const PRODUCTIVITY: &[&str] = &[
-        "calendar",
-        "notes",
-        "reminders",
-        "numbers",
-        "pages",
-        "keynote",
-        "stocks",
-        "weather",
-        "calculator",
-        "dictionary",
-        "home",
-        "clock",
-        "shortcuts",
-        "preview",
-        "stickies",
-        "textedit",
-        "font book",
-    ];
-    const DEVELOPER: &[&str] = &[
-        "xcode",
-        "terminal",
-        "script editor",
-        "automator",
-        "console",
-        "instruments",
-        "simulator",
-        "visual studio",
-        "code",
-    ];
-    const GAMES: &[&str] = &["chess", "game center"];
-
-    let any = |list: &[&str]| list.iter().any(|k| n.contains(k));
-
-    if any(GAMES) {
-        Category::Games
-    } else if any(DEVELOPER) {
-        Category::Developer
-    } else if any(INTERNET) {
-        Category::Internet
-    } else if any(MEDIA) {
-        Category::Media
-    } else if any(PRODUCTIVITY) {
-        Category::Productivity
-    } else if name == "System Settings"
-        || name == "App Store"
-        || name == "Find My"
-        || name == "Passwords"
-        || name == "Tips"
-        || p.starts_with("/System/Applications")
-    {
-        Category::System
-    } else {
-        Category::Other
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn categorize_desktop(categories: &[String]) -> Category {
-    let has = |names: &[&str]| {
-        categories
-            .iter()
-            .any(|category| names.contains(&category.as_str()))
-    };
-    if has(&["Game"]) {
-        Category::Games
-    } else if has(&["Development", "IDE", "Building", "Debugger"]) {
-        Category::Developer
-    } else if has(&["Network", "WebBrowser", "Email", "InstantMessaging"]) {
-        Category::Internet
-    } else if has(&["AudioVideo", "Audio", "Video", "Graphics", "Photography"]) {
-        Category::Media
-    } else if has(&["Office", "Education", "Science", "Finance"]) {
-        Category::Productivity
-    } else if has(&["Settings", "System"]) {
-        Category::System
-    } else if has(&["Utility", "FileTools", "Archiving"]) {
-        Category::Utilities
-    } else {
-        Category::Other
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn cache_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let dir = PathBuf::from(home).join("Library/Caches/rmac-app-drawer");
-    std::fs::create_dir_all(&dir).ok();
-    dir
-}
-
-#[cfg(target_os = "macos")]
-fn hydrate_icons(apps: &mut [App]) {
-    let cache = cache_dir();
-    for app in apps {
-        app.icon = extract_icon(&app.name, &app.path, &cache);
-    }
-}
-
-/// Find an app's `.icns`, convert to a cached 128px PNG (cached across launches).
-#[cfg(target_os = "macos")]
-fn extract_icon(name: &str, app: &Path, cache: &Path) -> Option<PathBuf> {
-    let safe: String = name
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
-    let out = cache.join(format!("{safe}.png"));
-    if out.exists() {
-        return Some(out);
-    }
-    let icns = icns_path(app)?;
-    let ok = Command::new("sips")
-        .args([
-            "-s",
-            "format",
-            "png",
-            "-Z",
-            "128",
-            icns.to_str()?,
-            "--out",
-            out.to_str()?,
-        ])
-        .output()
-        .ok()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if ok && out.exists() {
-        Some(out)
-    } else {
-        None
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn icns_path(app: &Path) -> Option<PathBuf> {
-    let resources = app.join("Contents/Resources");
-    let plist = app.join("Contents/Info.plist");
-
-    // Preferred: the icon named by CFBundleIconFile.
-    if let Ok(out) = Command::new("/usr/libexec/PlistBuddy")
-        .args([
-            "-c",
-            "Print :CFBundleIconFile",
-            plist.to_string_lossy().as_ref(),
-        ])
-        .output()
-    {
-        let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !name.is_empty() {
-            let mut p = resources.join(&name);
-            if p.extension().is_none() {
-                p.set_extension("icns");
-            }
-            if p.exists() {
-                return Some(p);
-            }
-        }
-    }
-
-    // Fallback: the largest `.icns` in Resources.
-    std::fs::read_dir(&resources)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("icns"))
-        .max_by_key(|p| p.metadata().map(|m| m.len()).unwrap_or(0))
-}
-
 fn key_bindings() -> [KeyBinding; 6] {
     [
         KeyBinding::new(
@@ -1375,9 +979,9 @@ mod tests {
     fn catalog_change_bursts_coalesce() {
         let (sender, receiver) = async_channel::bounded(1);
 
-        signal_catalog_change(&sender);
-        signal_catalog_change(&sender);
-        signal_catalog_change(&sender);
+        catalog::signal_change(&sender);
+        catalog::signal_change(&sender);
+        catalog::signal_change(&sender);
 
         assert_eq!(receiver.len(), 1);
     }

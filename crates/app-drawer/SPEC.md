@@ -12,6 +12,10 @@ software store, package manager, or imitation of Apple Launchpad.
 - `rmac-apps` owns discovery from XDG application directories, desktop-entry
   precedence, localization, visibility, `TryExec`, icon-theme inheritance,
   categories, launch specifications, declared actions, and filesystem watches.
+- App Drawer's isolated catalog projection converts that authoritative catalog
+  into category/search/render records while retaining the exact parsed launch
+  specifications and desktop actions. It also owns the development-only macOS
+  category and cached icon fallbacks; neither fallback is compiled on Linux.
 - Linux parsing follows the freedesktop Desktop Entry Specification 1.5.
   Desktop actions come only from identifiers named by `Actions=` and matching
   `[Desktop Action <id>]` groups. Labels use the active message locale.

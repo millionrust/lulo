@@ -27,6 +27,28 @@ metadata, icons, and identifiers remain original rmac work.
   After source removal, the copy is atomically published with no-replace
   semantics. A racing final name therefore leaves the complete staged copy
   recoverable and never overwrites the conflicting entry.
+- Ordinary copy uses the same typed, private, versioned journal and
+  destination-volume staging boundary as cross-volume move. No partial copy is
+  exposed at its requested final name. After durable staging, Files revalidates
+  the staged identity and original source identity, publishes with one atomic
+  no-replace rename, fsyncs the destination parent, and only then removes the
+  journal record. A version-1 record with no operation field remains a move for
+  upgrade compatibility. Each new copy or cross-volume move persists
+  deterministic SHA-256 manifests for both the source tree and completed
+  destination stage over raw relative path bytes, no-follow device/inode/mode/
+  size/timestamps, and exact symlink payloads. Each manifest is bounded to
+  1,000,000 entries, 256 levels, and 128 MiB of path/link bytes; each directory
+  identity is rechecked after its sorted children. A second destination digest
+  ignores only the published tree root's ctime, which is expected to change
+  during rename, while continuing to bind every nested identity. Live
+  publication, recovery review acceptance, and restart recovery rescan these
+  manifests, so a nested source or hidden-stage mutation invalidates the entire
+  copy even when the corresponding root directory metadata did not change. An
+  unchanged manifest-proven file, symlink, or directory can finish
+  automatically, including a rename completed just before stage persistence. A
+  changed source or stage, conflicting final name, or partial stage remains
+  available for explicit recovery review rather than being guessed or
+  discarded.
 - Cancellation never removes the move source. Partial destinations remain
   visible for explicit recovery and are never silently deleted after a path
   race.

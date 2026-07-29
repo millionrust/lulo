@@ -22,6 +22,7 @@ chrono.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 trash.workspace = true
 notify.workspace = true
 rustix.workspace = true

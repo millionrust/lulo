@@ -7,15 +7,27 @@ use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 const JOURNAL_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 64 * 1024;
 const MAX_RECORDS: usize = 512;
+const MAX_MANIFEST_ENTRIES: u64 = 1_000_000;
+const MAX_MANIFEST_DEPTH: usize = 256;
+const MAX_MANIFEST_PATH_BYTES: u64 = 128 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum JournalOperation {
+    Copy,
+    #[default]
+    Move,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum MoveStage {
+pub(crate) enum TransferStage {
     Prepared,
     DestinationComplete,
     SourceRemoved,
@@ -76,20 +88,185 @@ impl EntryIdentity {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-struct MoveRecord {
+struct TreeManifest {
+    entries: u64,
+    path_bytes: u64,
+    sha256: [u8; 32],
+    #[serde(default)]
+    rename_stable_sha256: [u8; 32],
+}
+
+impl TreeManifest {
+    fn capture(root: &Path) -> io::Result<Self> {
+        let mut builder = ManifestBuilder {
+            exact: Sha256::new(),
+            rename_stable: Sha256::new(),
+            entries: 0,
+            path_bytes: 0,
+        };
+        builder.update(b"rmac-tree-manifest-v1\0");
+        capture_manifest_entry(root, Path::new(""), 0, &mut builder)?;
+        Ok(Self {
+            entries: builder.entries,
+            path_bytes: builder.path_bytes,
+            sha256: builder.exact.finalize().into(),
+            rename_stable_sha256: builder.rename_stable.finalize().into(),
+        })
+    }
+
+    fn same_after_root_rename(&self, other: &Self) -> bool {
+        self.entries == other.entries
+            && self.path_bytes == other.path_bytes
+            && self.rename_stable_sha256 == other.rename_stable_sha256
+    }
+}
+
+struct ManifestBuilder {
+    exact: Sha256,
+    rename_stable: Sha256,
+    entries: u64,
+    path_bytes: u64,
+}
+
+impl ManifestBuilder {
+    fn update(&mut self, bytes: &[u8]) {
+        self.exact.update(bytes);
+        self.rename_stable.update(bytes);
+    }
+
+    fn hash_u64(&mut self, value: u64) {
+        self.update(&value.to_le_bytes());
+    }
+
+    fn hash_identity(&mut self, identity: &EntryIdentity, is_root: bool) {
+        hash_identity(&mut self.exact, identity, true);
+        hash_identity(&mut self.rename_stable, identity, !is_root);
+    }
+}
+
+fn capture_manifest_entry(
+    path: &Path,
+    relative: &Path,
+    depth: usize,
+    builder: &mut ManifestBuilder,
+) -> io::Result<()> {
+    if depth > MAX_MANIFEST_DEPTH {
+        return Err(invalid_data(
+            "source folder nesting exceeds the manifest safety limit",
+        ));
+    }
+    builder.entries = builder
+        .entries
+        .checked_add(1)
+        .filter(|entries| *entries <= MAX_MANIFEST_ENTRIES)
+        .ok_or_else(|| invalid_data("source contains too many manifest entries"))?;
+    let relative_bytes = relative.as_os_str().as_bytes();
+    builder.path_bytes = builder
+        .path_bytes
+        .checked_add(relative_bytes.len() as u64)
+        .filter(|bytes| *bytes <= MAX_MANIFEST_PATH_BYTES)
+        .ok_or_else(|| invalid_data("source manifest paths exceed the safety limit"))?;
+
+    let before = EntryIdentity::capture(path)?;
+    builder.hash_u64(relative_bytes.len() as u64);
+    builder.update(relative_bytes);
+    builder.hash_identity(&before, depth == 0);
+
+    let metadata = fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() {
+        let target = fs::read_link(path)?;
+        let target = target.as_os_str().as_bytes();
+        builder.path_bytes = builder
+            .path_bytes
+            .checked_add(target.len() as u64)
+            .filter(|bytes| *bytes <= MAX_MANIFEST_PATH_BYTES)
+            .ok_or_else(|| invalid_data("source manifest paths exceed the safety limit"))?;
+        builder.hash_u64(target.len() as u64);
+        builder.update(target);
+        if EntryIdentity::capture(path)? != before {
+            return Err(manifest_changed());
+        }
+        return Ok(());
+    }
+
+    builder.hash_u64(u64::MAX);
+    if metadata.is_dir() {
+        let mut names = Vec::<OsString>::new();
+        let mut directory_name_bytes = 0u64;
+        for entry in fs::read_dir(path)? {
+            let name = entry?.file_name();
+            if names.len() >= MAX_MANIFEST_ENTRIES as usize {
+                return Err(invalid_data(
+                    "source directory contains too many manifest entries",
+                ));
+            }
+            directory_name_bytes = directory_name_bytes
+                .checked_add(name.as_bytes().len() as u64)
+                .filter(|bytes| *bytes <= MAX_MANIFEST_PATH_BYTES)
+                .ok_or_else(|| invalid_data("source directory names exceed the safety limit"))?;
+            names.push(name);
+        }
+        names.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+        for name in names {
+            capture_manifest_entry(&path.join(&name), &relative.join(&name), depth + 1, builder)?;
+        }
+        if EntryIdentity::capture(path)? != before {
+            return Err(manifest_changed());
+        }
+    } else if EntryIdentity::capture(path)? != before {
+        return Err(manifest_changed());
+    }
+    Ok(())
+}
+
+fn hash_identity(hasher: &mut Sha256, identity: &EntryIdentity, include_changed_time: bool) {
+    hash_u64(hasher, identity.device);
+    hash_u64(hasher, identity.inode);
+    hasher.update(identity.mode.to_le_bytes());
+    hash_u64(hasher, identity.size);
+    hasher.update(identity.modified_seconds.to_le_bytes());
+    hasher.update(identity.modified_nanoseconds.to_le_bytes());
+    if include_changed_time {
+        hasher.update(identity.changed_seconds.to_le_bytes());
+        hasher.update(identity.changed_nanoseconds.to_le_bytes());
+    }
+}
+
+fn hash_u64(hasher: &mut Sha256, value: u64) {
+    hasher.update(value.to_le_bytes());
+}
+
+fn manifest_changed() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::WouldBlock,
+        "tree changed while its transfer manifest was being captured",
+    )
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+struct TransferRecord {
     version: u32,
     id: String,
-    stage: MoveStage,
+    /// Version-1 records created before copy journaling omitted this field and
+    /// are moves. Keep that durable compatibility instead of forcing users to
+    /// discard an unfinished operation during upgrade.
+    #[serde(default)]
+    operation: JournalOperation,
+    stage: TransferStage,
     source_path_bytes: Vec<u8>,
     destination_path_bytes: Vec<u8>,
     staging_path_bytes: Vec<u8>,
     source_identity: EntryIdentity,
+    #[serde(default)]
+    source_manifest: Option<TreeManifest>,
     destination_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    destination_manifest: Option<TreeManifest>,
     #[serde(default)]
     resolution_intent: Option<ResolutionIntent>,
 }
 
-impl MoveRecord {
+impl TransferRecord {
     fn source(&self) -> PathBuf {
         PathBuf::from(OsString::from_vec(self.source_path_bytes.clone()))
     }
@@ -100,6 +277,67 @@ impl MoveRecord {
 
     fn staging_destination(&self) -> PathBuf {
         PathBuf::from(OsString::from_vec(self.staging_path_bytes.clone()))
+    }
+
+    fn source_still_matches(&self) -> io::Result<bool> {
+        if let Some(expected) = &self.source_manifest {
+            return match TreeManifest::capture(&self.source()) {
+                Ok(current) => Ok(&current == expected),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::NotFound | io::ErrorKind::WouldBlock
+                    ) =>
+                {
+                    Ok(false)
+                }
+                Err(error) => Err(error),
+            };
+        }
+        match EntryIdentity::capture(&self.source()) {
+            Ok(identity) => Ok(identity == self.source_identity),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn destination_path_matches(&self, path: &Path, published: bool) -> io::Result<bool> {
+        let Some(expected_identity) = &self.destination_identity else {
+            return Ok(false);
+        };
+        let current_identity = match EntryIdentity::capture(path) {
+            Ok(identity) => identity,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let identity_matches = if published {
+            expected_identity.same_entry_after_rename(&current_identity)
+        } else {
+            expected_identity == &current_identity
+        };
+        if !identity_matches {
+            return Ok(false);
+        }
+        let Some(expected_manifest) = &self.destination_manifest else {
+            return Ok(true);
+        };
+        let current_manifest = match TreeManifest::capture(path) {
+            Ok(manifest) => manifest,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(if published {
+            expected_manifest.same_after_root_rename(&current_manifest)
+        } else {
+            expected_manifest == &current_manifest
+        })
     }
 
     fn validate(&self, expected_id: &str) -> io::Result<()> {
@@ -129,20 +367,38 @@ impl MoveRecord {
                 "file-operation journal path relationship is invalid",
             ));
         }
-        if self.stage == MoveStage::Prepared && self.destination_identity.is_some() {
+        if self.stage == TransferStage::Prepared
+            && (self.destination_identity.is_some() || self.destination_manifest.is_some())
+        {
             return Err(invalid_data(
-                "prepared journal unexpectedly has a destination identity",
+                "prepared journal unexpectedly has destination evidence",
             ));
         }
-        if self.stage != MoveStage::Prepared && self.destination_identity.is_none() {
+        if self.stage != TransferStage::Prepared && self.destination_identity.is_none() {
             return Err(invalid_data(
                 "advanced journal is missing its destination identity",
+            ));
+        }
+        if self.operation == JournalOperation::Copy && self.stage == TransferStage::SourceRemoved {
+            return Err(invalid_data(
+                "copy journal cannot contain a source-removed stage",
+            ));
+        }
+        if self.operation == JournalOperation::Copy && self.source_manifest.is_none() {
+            return Err(invalid_data("copy journal is missing its source manifest"));
+        }
+        if self.stage != TransferStage::Prepared
+            && self.source_manifest.is_some()
+            && self.destination_manifest.is_none()
+        {
+            return Err(invalid_data(
+                "advanced journal is missing its destination manifest",
             ));
         }
         if self.resolution_intent == Some(ResolutionIntent::PreserveCopy)
             && !matches!(
                 self.stage,
-                MoveStage::DestinationComplete | MoveStage::Published
+                TransferStage::DestinationComplete | TransferStage::Published
             )
         {
             return Err(invalid_data(
@@ -205,10 +461,12 @@ impl fmt::Debug for RecoveryAction {
 
 #[derive(Clone)]
 pub(crate) struct RecoveryReview {
-    record: MoveRecord,
+    record: TransferRecord,
     journal_identity: EntryIdentity,
     source_snapshot: Option<EntryIdentity>,
+    source_manifest_matches: bool,
     staging_snapshot: Option<EntryIdentity>,
+    staging_manifest_matches: bool,
     destination_snapshot: Option<EntryIdentity>,
     preserve_destination: Option<PathBuf>,
     pub(crate) action: RecoveryAction,
@@ -218,6 +476,7 @@ impl fmt::Debug for RecoveryReview {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RecoveryReview")
+            .field("operation", &self.record.operation)
             .field("stage", &self.record.stage)
             .field("action", &self.action)
             .finish_non_exhaustive()
@@ -317,7 +576,7 @@ impl Journal {
                 continue;
             };
             let path = self.record_path(&record.id);
-            let mut ticket = MoveTicket {
+            let mut ticket = TransferTicket {
                 journal: self.clone(),
                 path,
                 record,
@@ -332,62 +591,92 @@ impl Journal {
         Ok(report)
     }
 
-    fn recover_ticket(&self, ticket: &mut MoveTicket) -> io::Result<bool> {
+    fn recover_ticket(&self, ticket: &mut TransferTicket) -> io::Result<bool> {
         let source = capture_optional(&ticket.record.source())?;
         let staging = capture_optional(&ticket.record.staging_destination())?;
         let destination = capture_optional(&ticket.record.destination())?;
         let source_missing = source.is_none();
-        let staging_matches = staging
-            .as_ref()
-            .zip(ticket.record.destination_identity.as_ref())
-            .is_some_and(|(current, recorded)| current == recorded);
-        let destination_matches = destination
-            .as_ref()
-            .zip(ticket.record.destination_identity.as_ref())
-            .is_some_and(|(current, recorded)| recorded.same_entry_after_rename(current));
+        let staging_matches = staging.is_some()
+            && ticket
+                .record
+                .destination_path_matches(&ticket.record.staging_destination(), false)?;
+        let destination_matches = destination.is_some()
+            && ticket
+                .record
+                .destination_path_matches(&ticket.record.destination(), true)?;
 
         if ticket.record.resolution_intent == Some(ResolutionIntent::PreserveCopy) {
             return match ticket.record.stage {
-                MoveStage::DestinationComplete if staging_matches && destination.is_none() => {
+                TransferStage::DestinationComplete if staging_matches && destination.is_none() => {
                     ticket.publish_preserved()?;
                     self.finish_recovered_ticket(ticket)
                 }
-                MoveStage::DestinationComplete if staging.is_none() && destination_matches => {
+                TransferStage::DestinationComplete if staging.is_none() && destination_matches => {
                     ticket.record.destination_identity = destination;
-                    ticket.record.stage = MoveStage::Published;
+                    ticket.record.stage = TransferStage::Published;
                     self.persist(&ticket.path, &ticket.record, false)?;
                     self.finish_recovered_ticket(ticket)
                 }
-                MoveStage::Published if destination_matches => self.finish_recovered_ticket(ticket),
+                TransferStage::Published if destination_matches => {
+                    self.finish_recovered_ticket(ticket)
+                }
                 _ => Ok(false),
             };
         }
 
-        match ticket.record.stage {
-            MoveStage::Prepared => Ok(false),
-            MoveStage::DestinationComplete
-                if source_missing && staging_matches && destination.is_none() =>
-            {
-                ticket.mark_source_removed()?;
-                self.publish_recovered_ticket(ticket)
+        match ticket.record.operation {
+            JournalOperation::Move => match ticket.record.stage {
+                TransferStage::Prepared => Ok(false),
+                TransferStage::DestinationComplete
+                    if source_missing && staging_matches && destination.is_none() =>
+                {
+                    ticket.mark_source_removed()?;
+                    self.publish_recovered_move(ticket)
+                }
+                TransferStage::SourceRemoved
+                    if source_missing && staging_matches && destination.is_none() =>
+                {
+                    self.publish_recovered_move(ticket)
+                }
+                TransferStage::SourceRemoved
+                    if source_missing && staging.is_none() && destination_matches =>
+                {
+                    ticket.record.destination_identity = destination;
+                    ticket.record.stage = TransferStage::Published;
+                    self.persist(&ticket.path, &ticket.record, false)?;
+                    self.finish_recovered_ticket(ticket)
+                }
+                TransferStage::Published if source_missing && destination_matches => {
+                    self.finish_recovered_ticket(ticket)
+                }
+                _ => Ok(false),
+            },
+            JournalOperation::Copy => {
+                let source_matches = ticket.source_still_matches()?;
+                match ticket.record.stage {
+                    TransferStage::Prepared => Ok(false),
+                    TransferStage::DestinationComplete
+                        if source_matches && staging_matches && destination.is_none() =>
+                    {
+                        self.publish_recovered_copy(ticket)
+                    }
+                    TransferStage::DestinationComplete
+                        if staging.is_none() && destination_matches =>
+                    {
+                        ticket.record.destination_identity = destination;
+                        ticket.record.stage = TransferStage::Published;
+                        self.persist(&ticket.path, &ticket.record, false)?;
+                        self.finish_recovered_ticket(ticket)
+                    }
+                    TransferStage::Published if destination_matches => {
+                        self.finish_recovered_ticket(ticket)
+                    }
+                    TransferStage::SourceRemoved => Err(invalid_data(
+                        "copy journal reached an impossible source-removed stage",
+                    )),
+                    _ => Ok(false),
+                }
             }
-            MoveStage::SourceRemoved
-                if source_missing && staging_matches && destination.is_none() =>
-            {
-                self.publish_recovered_ticket(ticket)
-            }
-            MoveStage::SourceRemoved
-                if source_missing && staging.is_none() && destination_matches =>
-            {
-                ticket.record.destination_identity = destination;
-                ticket.record.stage = MoveStage::Published;
-                self.persist(&ticket.path, &ticket.record, false)?;
-                self.finish_recovered_ticket(ticket)
-            }
-            MoveStage::Published if source_missing && destination_matches => {
-                self.finish_recovered_ticket(ticket)
-            }
-            _ => Ok(false),
         }
     }
 
@@ -402,12 +691,13 @@ impl Journal {
             let source_snapshot = capture_optional(&record.source())?;
             let staging_snapshot = capture_optional(&record.staging_destination())?;
             let destination_snapshot = capture_optional(&record.destination())?;
-            let (action, preserve_destination) = if let Some(staging) = &staging_snapshot {
-                let complete = record
-                    .destination_identity
-                    .as_ref()
-                    .is_some_and(|expected| expected == staging)
-                    && record.stage != MoveStage::Prepared;
+            let source_matches =
+                record.operation != JournalOperation::Copy || record.source_still_matches()?;
+            let staging_matches = staging_snapshot.is_some()
+                && record.destination_path_matches(&record.staging_destination(), false)?;
+            let (action, preserve_destination) = if staging_snapshot.is_some() {
+                let complete =
+                    staging_matches && record.stage != TransferStage::Prepared && source_matches;
                 let candidate = available_recovery_destination(&record.destination())?;
                 let suggested_name = candidate
                     .file_name()
@@ -427,7 +717,9 @@ impl Journal {
                 record,
                 journal_identity,
                 source_snapshot,
+                source_manifest_matches: source_matches,
                 staging_snapshot,
+                staging_manifest_matches: staging_matches,
                 destination_snapshot,
                 preserve_destination,
                 action,
@@ -460,7 +752,8 @@ impl Journal {
                     .staging_snapshot
                     .clone()
                     .ok_or_else(|| invalid_data("recovery copy is no longer available"))?;
-                let mut ticket = MoveTicket {
+                let staging_manifest = TreeManifest::capture(&review.record.staging_destination())?;
+                let mut ticket = TransferTicket {
                     journal: self.clone(),
                     path: self.record_path(&review.record.id),
                     record: review.record.clone(),
@@ -468,7 +761,8 @@ impl Journal {
                 };
                 ticket.record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
                 ticket.record.destination_identity = Some(staging_identity);
-                ticket.record.stage = MoveStage::DestinationComplete;
+                ticket.record.destination_manifest = Some(staging_manifest);
+                ticket.record.stage = TransferStage::DestinationComplete;
                 ticket.record.resolution_intent = Some(ResolutionIntent::PreserveCopy);
                 self.persist(&ticket.path, &ticket.record, false)?;
                 ticket.publish_preserved()?;
@@ -498,7 +792,14 @@ impl Journal {
             .ok_or_else(review_changed)?;
         if current != review.record
             || capture_optional(&review.record.source())? != review.source_snapshot
+            || (review.record.operation == JournalOperation::Copy
+                && review.record.source_still_matches()? != review.source_manifest_matches)
             || capture_optional(&review.record.staging_destination())? != review.staging_snapshot
+            || (review.staging_snapshot.is_some()
+                && review
+                    .record
+                    .destination_path_matches(&review.record.staging_destination(), false)?
+                    != review.staging_manifest_matches)
             || capture_optional(&review.record.destination())? != review.destination_snapshot
         {
             return Err(review_changed());
@@ -506,7 +807,7 @@ impl Journal {
         Ok(())
     }
 
-    fn publish_recovered_ticket(&self, ticket: &mut MoveTicket) -> io::Result<bool> {
+    fn publish_recovered_move(&self, ticket: &mut TransferTicket) -> io::Result<bool> {
         match ticket.publish() {
             Ok(()) => self.finish_recovered_ticket(ticket),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(false),
@@ -514,49 +815,88 @@ impl Journal {
         }
     }
 
-    fn finish_recovered_ticket(&self, ticket: &MoveTicket) -> io::Result<bool> {
-        if ticket.record.stage != MoveStage::Published {
-            return Err(invalid_data("recovered move did not reach published state"));
+    fn publish_recovered_copy(&self, ticket: &mut TransferTicket) -> io::Result<bool> {
+        match ticket.publish_copy() {
+            Ok(()) => self.finish_recovered_ticket(ticket),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn finish_recovered_ticket(&self, ticket: &TransferTicket) -> io::Result<bool> {
+        if ticket.record.stage != TransferStage::Published {
+            return Err(invalid_data(
+                "recovered transfer did not reach published state",
+            ));
         }
         self.finish_record(&ticket.path, &ticket.lock)?;
         Ok(true)
     }
 
-    pub(crate) fn prepare_move(&self, source: &Path, destination: &Path) -> io::Result<MoveTicket> {
+    pub(crate) fn prepare_move(
+        &self,
+        source: &Path,
+        destination: &Path,
+    ) -> io::Result<TransferTicket> {
+        self.prepare_transfer(JournalOperation::Move, source, destination)
+    }
+
+    pub(crate) fn prepare_copy(
+        &self,
+        source: &Path,
+        destination: &Path,
+    ) -> io::Result<TransferTicket> {
+        self.prepare_transfer(JournalOperation::Copy, source, destination)
+    }
+
+    fn prepare_transfer(
+        &self,
+        operation: JournalOperation,
+        source: &Path,
+        destination: &Path,
+    ) -> io::Result<TransferTicket> {
         if !source.is_absolute() || !destination.is_absolute() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "journaled moves require absolute paths",
+                "journaled transfers require absolute paths",
             ));
         }
         let id = Uuid::new_v4().to_string();
-        let lock = self.create_active_lock(&id)?;
         let destination_parent = destination.parent().ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "journaled move destination has no parent",
+                "journaled transfer destination has no parent",
             )
         })?;
         let staging = destination_parent.join(format!(".rmac-transfer-{id}"));
-        let record = MoveRecord {
+        let source_identity = EntryIdentity::capture(source)?;
+        let source_manifest = TreeManifest::capture(source)?;
+        if EntryIdentity::capture(source)? != source_identity {
+            return Err(manifest_changed());
+        }
+        let record = TransferRecord {
             version: JOURNAL_VERSION,
             id: id.clone(),
-            stage: MoveStage::Prepared,
+            operation,
+            stage: TransferStage::Prepared,
             source_path_bytes: source.as_os_str().as_bytes().to_vec(),
             destination_path_bytes: destination.as_os_str().as_bytes().to_vec(),
             staging_path_bytes: staging.as_os_str().as_bytes().to_vec(),
-            source_identity: EntryIdentity::capture(source)?,
+            source_identity,
+            source_manifest: Some(source_manifest),
             destination_identity: None,
+            destination_manifest: None,
             resolution_intent: None,
         };
         record.validate(&id)?;
+        let lock = self.create_active_lock(&id)?;
         let path = self.record_path(&id);
         if let Err(error) = self.persist(&path, &record, true) {
             let _ = lock.remove_path();
             let _ = sync_directory(&self.root);
             return Err(error);
         }
-        Ok(MoveTicket {
+        Ok(TransferTicket {
             journal: self.clone(),
             path,
             record,
@@ -651,7 +991,7 @@ impl Journal {
         sync_directory(&self.root)
     }
 
-    fn persist(&self, path: &Path, record: &MoveRecord, create: bool) -> io::Result<()> {
+    fn persist(&self, path: &Path, record: &TransferRecord, create: bool) -> io::Result<()> {
         let mut bytes = serde_json::to_vec(record).map_err(invalid_json)?;
         bytes.push(b'\n');
         if bytes.len() as u64 > MAX_RECORD_BYTES {
@@ -680,7 +1020,7 @@ impl Journal {
         result
     }
 
-    fn read_records(&self) -> io::Result<Vec<MoveRecord>> {
+    fn read_records(&self) -> io::Result<Vec<TransferRecord>> {
         let mut paths = Vec::new();
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
@@ -744,7 +1084,7 @@ impl Journal {
             if bytes.len() as u64 > MAX_RECORD_BYTES {
                 return Err(invalid_data("file-operation journal record is too large"));
             }
-            let record: MoveRecord = serde_json::from_slice(&bytes).map_err(invalid_json)?;
+            let record: TransferRecord = serde_json::from_slice(&bytes).map_err(invalid_json)?;
             let file_name = path
                 .file_stem()
                 .and_then(|name| name.to_str())
@@ -817,47 +1157,52 @@ impl Journal {
     }
 }
 
-pub(crate) struct MoveTicket {
+pub(crate) struct TransferTicket {
     journal: Journal,
     path: PathBuf,
-    record: MoveRecord,
+    record: TransferRecord,
     lock: RecordLock,
 }
 
-impl MoveTicket {
+impl TransferTicket {
     pub(crate) fn staging_destination(&self) -> PathBuf {
         self.record.staging_destination()
     }
 
     pub(crate) fn source_still_matches(&self) -> io::Result<bool> {
-        match EntryIdentity::capture(&self.record.source()) {
-            Ok(identity) => Ok(identity == self.record.source_identity),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(error),
-        }
+        self.record.source_still_matches()
     }
 
     pub(crate) fn mark_destination_complete(&mut self) -> io::Result<()> {
-        self.record.destination_identity =
-            Some(EntryIdentity::capture(&self.record.staging_destination())?);
-        self.record.stage = MoveStage::DestinationComplete;
+        let staging = self.record.staging_destination();
+        let identity = EntryIdentity::capture(&staging)?;
+        let manifest = TreeManifest::capture(&staging)?;
+        if EntryIdentity::capture(&staging)? != identity {
+            return Err(manifest_changed());
+        }
+        self.record.destination_identity = Some(identity);
+        self.record.destination_manifest = Some(manifest);
+        self.record.stage = TransferStage::DestinationComplete;
         self.journal.persist(&self.path, &self.record, false)
     }
 
     pub(crate) fn destination_still_matches(&self) -> io::Result<bool> {
-        let path = if self.record.stage == MoveStage::Published {
+        let published = self.record.stage == TransferStage::Published;
+        let path = if published {
             self.record.destination()
         } else {
             self.record.staging_destination()
         };
-        match EntryIdentity::capture(&path) {
-            Ok(identity) => Ok(Some(identity) == self.record.destination_identity),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(error),
-        }
+        self.record.destination_path_matches(&path, published)
     }
 
     pub(crate) fn mark_source_removed(&mut self) -> io::Result<()> {
+        if self.record.operation != JournalOperation::Move {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "copy journal cannot remove its source",
+            ));
+        }
         match fs::symlink_metadata(self.record.source()) {
             Ok(_) => {
                 return Err(io::Error::new(
@@ -868,12 +1213,14 @@ impl MoveTicket {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
-        self.record.stage = MoveStage::SourceRemoved;
+        self.record.stage = TransferStage::SourceRemoved;
         self.journal.persist(&self.path, &self.record, false)
     }
 
     pub(crate) fn publish(&mut self) -> io::Result<()> {
-        if self.record.stage != MoveStage::SourceRemoved {
+        if self.record.operation != JournalOperation::Move
+            || self.record.stage != TransferStage::SourceRemoved
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "move cannot publish before source removal",
@@ -882,8 +1229,20 @@ impl MoveTicket {
         self.publish_entry()
     }
 
+    pub(crate) fn publish_copy(&mut self) -> io::Result<()> {
+        if self.record.operation != JournalOperation::Copy
+            || self.record.stage != TransferStage::DestinationComplete
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "copy is not ready for publication",
+            ));
+        }
+        self.publish_entry()
+    }
+
     fn publish_preserved(&mut self) -> io::Result<()> {
-        if self.record.stage != MoveStage::DestinationComplete
+        if self.record.stage != TransferStage::DestinationComplete
             || self.record.resolution_intent != Some(ResolutionIntent::PreserveCopy)
         {
             return Err(io::Error::new(
@@ -909,7 +1268,7 @@ impl MoveTicket {
             self.record
                 .destination()
                 .parent()
-                .ok_or_else(|| invalid_data("move destination has no parent"))?,
+                .ok_or_else(|| invalid_data("transfer destination has no parent"))?,
         )?;
         let published_identity = EntryIdentity::capture(&self.record.destination())?;
         if !self
@@ -922,16 +1281,24 @@ impl MoveTicket {
                 "published destination identity changed unexpectedly",
             ));
         }
+        if let Some(expected) = &self.record.destination_manifest {
+            let published_manifest = TreeManifest::capture(&self.record.destination())?;
+            if !expected.same_after_root_rename(&published_manifest) {
+                return Err(invalid_data(
+                    "published destination tree changed unexpectedly",
+                ));
+            }
+        }
         self.record.destination_identity = Some(published_identity);
-        self.record.stage = MoveStage::Published;
+        self.record.stage = TransferStage::Published;
         self.journal.persist(&self.path, &self.record, false)
     }
 
     pub(crate) fn commit(self) -> io::Result<()> {
-        if self.record.stage != MoveStage::Published {
+        if self.record.stage != TransferStage::Published {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "move journal cannot commit before destination publication",
+                "transfer journal cannot commit before destination publication",
             ));
         }
         self.journal.finish_record(&self.path, &self.lock)
@@ -1224,6 +1591,309 @@ mod tests {
     }
 
     #[test]
+    fn successful_copy_lifecycle_preserves_source_and_removes_record() {
+        let root = TestDirectory::new("copy-commit");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        fs::write(ticket.staging_destination(), b"source").unwrap();
+
+        ticket.mark_destination_complete().unwrap();
+        assert!(ticket.source_still_matches().unwrap());
+        assert!(ticket.destination_still_matches().unwrap());
+        ticket.publish_copy().unwrap();
+        ticket.commit().unwrap();
+
+        assert_eq!(fs::read(source).unwrap(), b"source");
+        assert_eq!(fs::read(destination).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn recovery_publishes_identity_proven_regular_copy() {
+        let root = TestDirectory::new("copy-recover");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        fs::write(ticket.staging_destination(), b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(
+            report,
+            RecoveryReport {
+                finalized: 1,
+                pending: 0,
+                active: 0,
+            }
+        );
+        assert_eq!(fs::read(source).unwrap(), b"source");
+        assert_eq!(fs::read(destination).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn recovery_finishes_copy_published_before_stage_persisted() {
+        let root = TestDirectory::new("copy-publish-interruption");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        rename_noreplace(&staging, &destination).unwrap();
+        sync_directory(&root.0).unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 1);
+        assert_eq!(report.pending, 0);
+        assert_eq!(fs::read(source).unwrap(), b"source");
+        assert_eq!(fs::read(destination).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn changed_copy_source_keeps_complete_stage_for_review() {
+        let root = TestDirectory::new("copy-source-change");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::write(&source, b"changed source bytes").unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+        let review = journal.review_pending().unwrap().remove(0);
+
+        assert_eq!(report.finalized, 0);
+        assert_eq!(report.pending, 1);
+        assert_eq!(
+            review.action,
+            RecoveryAction::PreserveCopy {
+                complete: false,
+                suggested_name: "destination".to_string(),
+            }
+        );
+        assert!(!destination.exists());
+        assert_eq!(fs::read(staging).unwrap(), b"source");
+        assert_eq!(fs::read(source).unwrap(), b"changed source bytes");
+    }
+
+    #[test]
+    fn recovery_publishes_unchanged_manifest_proven_directory_copy() {
+        let root = TestDirectory::new("copy-directory-recovery");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("item"), b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("item"), b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 1);
+        assert_eq!(report.pending, 0);
+        assert_eq!(fs::read(destination.join("item")).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn nested_source_mutation_invalidates_directory_copy_manifest() {
+        let root = TestDirectory::new("copy-directory-mutation");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("item"), b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("item"), b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::write(source.join("item"), b"changed nested bytes").unwrap();
+
+        assert!(!ticket.source_still_matches().unwrap());
+        drop(ticket);
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 0);
+        assert_eq!(report.pending, 1);
+        assert!(!destination.exists());
+        assert_eq!(fs::read(staging.join("item")).unwrap(), b"source");
+    }
+
+    #[test]
+    fn nested_staging_mutation_invalidates_destination_manifest() {
+        let root = TestDirectory::new("copy-staging-mutation");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("item"), b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("item"), b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::write(staging.join("item"), b"substituted stage").unwrap();
+
+        assert!(!ticket.destination_still_matches().unwrap());
+        drop(ticket);
+        let report = journal.recover_unambiguous().unwrap();
+        let review = journal.review_pending().unwrap().remove(0);
+
+        assert_eq!(report.finalized, 0);
+        assert_eq!(report.pending, 1);
+        assert_eq!(
+            review.action,
+            RecoveryAction::PreserveCopy {
+                complete: false,
+                suggested_name: "destination".to_string(),
+            }
+        );
+        assert!(!destination.exists());
+        assert_eq!(
+            fs::read(staging.join("item")).unwrap(),
+            b"substituted stage"
+        );
+    }
+
+    #[test]
+    fn source_manifest_is_deterministic_and_never_follows_symlink_target() {
+        let root = TestDirectory::new("manifest-symlink");
+        let source = root.0.join("source");
+        let outside = root.0.join("outside");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(source.join("z"), b"last").unwrap();
+        fs::write(source.join("a"), b"first").unwrap();
+        fs::write(outside.join("private"), b"private one").unwrap();
+        std::os::unix::fs::symlink(&outside, source.join("link")).unwrap();
+
+        let first = TreeManifest::capture(&source).unwrap();
+        let second = TreeManifest::capture(&source).unwrap();
+        fs::write(outside.join("private"), b"private target changed").unwrap();
+        let after_target_change = TreeManifest::capture(&source).unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(
+            first, after_target_change,
+            "manifest must bind the link itself, not private target content"
+        );
+
+        fs::remove_file(source.join("link")).unwrap();
+        std::os::unix::fs::symlink("different-target", source.join("link")).unwrap();
+        assert_ne!(first, TreeManifest::capture(&source).unwrap());
+    }
+
+    #[test]
+    fn nested_source_change_invalidates_copy_recovery_review() {
+        let root = TestDirectory::new("copy-review-manifest-race");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("item"), b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("item"), b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::write(&destination, b"conflict").unwrap();
+        drop(ticket);
+        let review = journal.review_pending().unwrap().remove(0);
+        assert_eq!(
+            review.action,
+            RecoveryAction::PreserveCopy {
+                complete: true,
+                suggested_name: "destination (Recovered)".to_string(),
+            }
+        );
+        fs::write(source.join("item"), b"changed after review").unwrap();
+
+        let error = journal.resolve_review(&review).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(destination).unwrap(), b"conflict");
+        assert_eq!(fs::read(staging.join("item")).unwrap(), b"source");
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn nested_stage_change_invalidates_copy_recovery_review() {
+        let root = TestDirectory::new("copy-review-stage-race");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("item"), b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("item"), b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::write(&destination, b"conflict").unwrap();
+        drop(ticket);
+        let review = journal.review_pending().unwrap().remove(0);
+        assert!(matches!(
+            review.action,
+            RecoveryAction::PreserveCopy { complete: true, .. }
+        ));
+        fs::write(staging.join("item"), b"substituted after review").unwrap();
+
+        let error = journal.resolve_review(&review).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(destination).unwrap(), b"conflict");
+        assert_eq!(
+            fs::read(staging.join("item")).unwrap(),
+            b"substituted after review"
+        );
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn copy_recovery_never_replaces_a_conflicting_destination() {
+        let root = TestDirectory::new("copy-recovery-conflict");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::write(&destination, b"conflict").unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 0);
+        assert_eq!(report.pending, 1);
+        assert_eq!(fs::read(destination).unwrap(), b"conflict");
+        assert_eq!(fs::read(staging).unwrap(), b"source");
+    }
+
+    #[test]
     fn replaced_source_identity_is_detected_before_removal() {
         let root = TestDirectory::new("replacement");
         let source = root.0.join("source");
@@ -1247,10 +1917,11 @@ mod tests {
         let destination =
             PathBuf::from("/").join(OsString::from_vec(vec![b'd', b'e', b's', b't', 0xfe]));
         let id = Uuid::new_v4().to_string();
-        let record = MoveRecord {
+        let record = TransferRecord {
             version: JOURNAL_VERSION,
             id: id.clone(),
-            stage: MoveStage::Prepared,
+            operation: JournalOperation::Move,
+            stage: TransferStage::Prepared,
             source_path_bytes: source.as_os_str().as_bytes().to_vec(),
             destination_path_bytes: destination.as_os_str().as_bytes().to_vec(),
             staging_path_bytes: PathBuf::from("/")
@@ -1268,16 +1939,27 @@ mod tests {
                 changed_seconds: 6,
                 changed_nanoseconds: 7,
             },
+            source_manifest: None,
             destination_identity: None,
+            destination_manifest: None,
             resolution_intent: None,
         };
 
         let bytes = serde_json::to_vec(&record).unwrap();
-        let decoded: MoveRecord = serde_json::from_slice(&bytes).unwrap();
+        let decoded: TransferRecord = serde_json::from_slice(&bytes).unwrap();
 
         decoded.validate(&id).unwrap();
+        assert_eq!(decoded.operation, JournalOperation::Move);
         assert_eq!(decoded.source(), source);
         assert_eq!(decoded.destination(), destination);
+
+        let mut legacy: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        let legacy_object = legacy.as_object_mut().unwrap();
+        legacy_object.remove("operation");
+        legacy_object.remove("source_manifest");
+        let legacy: TransferRecord = serde_json::from_value(legacy).unwrap();
+        legacy.validate(&id).unwrap();
+        assert_eq!(legacy.operation, JournalOperation::Move);
     }
 
     #[test]
@@ -1529,7 +2211,9 @@ mod tests {
         let mut record = review.record.clone();
         record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
         record.destination_identity = review.staging_snapshot.clone();
-        record.stage = MoveStage::DestinationComplete;
+        record.destination_manifest =
+            Some(TreeManifest::capture(&record.staging_destination()).unwrap());
+        record.stage = TransferStage::DestinationComplete;
         record.resolution_intent = Some(ResolutionIntent::PreserveCopy);
         journal
             .persist(&journal.record_path(&record.id), &record, false)

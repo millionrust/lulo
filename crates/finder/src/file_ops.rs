@@ -350,16 +350,78 @@ fn copy_cancellable(
     source: &Path,
     destination: &Path,
     cancel: &AtomicBool,
+    journal: Option<&operation_journal::Journal>,
     progress: &mut dyn FnMut(CopyActivity),
 ) -> Result<(), Failure> {
-    fs.copy_cancellable(source, destination, cancel, progress)
+    let Some(journal) = journal else {
+        return fs
+            .copy_cancellable(source, destination, cancel, progress)
+            .map_err(|error| {
+                Failure::from_io(Operation::Copy, source, Some(destination), error)
+                    .with_recovery_detail(format!(
+                        "A partial destination may remain at {}",
+                        destination.display()
+                    ))
+            });
+    };
+
+    let mut ticket = journal.prepare_copy(source, destination).map_err(|error| {
+        Failure::from_io(Operation::Copy, source, Some(destination), error)
+            .with_recovery_detail("Recovery could not be prepared, so no copy was created")
+    })?;
+    fs.copy_cancellable(source, &ticket.staging_destination(), cancel, progress)
         .map_err(|error| {
             Failure::from_io(Operation::Copy, source, Some(destination), error)
-                .with_recovery_detail(format!(
-                    "A partial destination may remain at {}",
-                    destination.display()
-                ))
-        })
+                .with_recovery_detail("The source was retained; a partial recovery copy may remain")
+        })?;
+    if cancel.load(Ordering::Acquire) {
+        return Err(Failure::from_io(
+            Operation::Copy,
+            source,
+            Some(destination),
+            io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
+        )
+        .with_recovery_detail("The source was retained; a complete recovery copy may remain"));
+    }
+    ticket.mark_destination_complete().map_err(|error| {
+        Failure::from_io(Operation::Copy, source, Some(destination), error)
+            .with_recovery_detail("The source was retained; a completed recovery copy may remain")
+    })?;
+    if !ticket.destination_still_matches().map_err(|error| {
+        Failure::from_io(Operation::Copy, source, Some(destination), error)
+            .with_recovery_detail("The source was retained; the staged copy could not be rechecked")
+    })? {
+        return Err(Failure::message(
+            Operation::Copy,
+            source,
+            Some(destination),
+            "the staged copy changed before publication",
+        )
+        .with_recovery_detail("The source was retained for safe recovery"));
+    }
+    if !ticket.source_still_matches().map_err(|error| {
+        Failure::from_io(Operation::Copy, source, Some(destination), error)
+            .with_recovery_detail("The complete staged copy was retained for review")
+    })? {
+        return Err(Failure::message(
+            Operation::Copy,
+            source,
+            Some(destination),
+            "the source changed while it was being copied",
+        )
+        .with_recovery_detail(
+            "The source was retained; the complete staged copy remains for review",
+        ));
+    }
+    ticket.publish_copy().map_err(|error| {
+        Failure::from_io(Operation::Copy, source, Some(destination), error).with_recovery_detail(
+            "The source was retained; the complete copy remains in recovery storage",
+        )
+    })?;
+    ticket.commit().map_err(|error| {
+        Failure::from_io(Operation::Copy, source, Some(destination), error)
+            .with_recovery_detail("The copy is complete, but Files retained a recovery record")
+    })
 }
 
 pub(crate) fn delete(fs: &impl FileSystem, path: &Path) -> Result<(), Failure> {
@@ -457,7 +519,7 @@ fn move_item_cancellable(
                     )
             })?;
     } else {
-        copy_cancellable(fs, source, destination, cancel, progress)?;
+        copy_cancellable(fs, source, destination, cancel, None, progress)?;
     }
     if cancel.load(Ordering::Acquire) {
         let failure = Failure::from_io(
@@ -823,6 +885,7 @@ pub(crate) fn execute_transfers(
                     &task.source,
                     &task.destination,
                     cancel,
+                    journal,
                     &mut copy_progress,
                 ),
                 TransferKind::Move => move_item_cancellable(
@@ -1426,6 +1489,227 @@ mod tests {
             b"source bytes"
         );
         assert_eq!(report.unfinished_moves, vec![source]);
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn journaled_copy_publishes_atomically_and_preserves_source() {
+        let root = TestDirectory::new("journaled-copy");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"source bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Copy,
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report = execute_transfers(
+            &RealFileSystem,
+            Some(&journal),
+            &tasks,
+            &AtomicBool::new(false),
+            |_| {},
+        );
+
+        assert!(report.failures.is_empty());
+        assert_eq!(std::fs::read(source).unwrap(), b"source bytes");
+        assert_eq!(std::fs::read(destination).unwrap(), b"source bytes");
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn journaled_copy_never_publishes_a_changed_source() {
+        let root = TestDirectory::new("journaled-copy-source-change");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"original bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let fs = CrossDeviceFixture {
+            replace_source_during_copy: true,
+            fail_source_removal: false,
+            racing_destination: None,
+            cancel_after_copy: None,
+            remove_calls: Cell::new(0),
+        };
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Copy,
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
+
+        assert_eq!(report.failures.len(), 1);
+        assert!(report.failures[0]
+            .detail
+            .contains("source changed while it was being copied"));
+        assert_eq!(std::fs::read(source).unwrap(), b"replacement bytes");
+        assert!(!destination.exists());
+        assert_eq!(
+            std::fs::read(staged_transfer_in(&root.0)).unwrap(),
+            b"original bytes"
+        );
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn cancellation_after_journaled_ordinary_copy_keeps_hidden_stage() {
+        let root = TestDirectory::new("journaled-copy-cancellation");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"source bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let cancel = AtomicBool::new(false);
+        let fs = CrossDeviceFixture {
+            replace_source_during_copy: false,
+            fail_source_removal: false,
+            racing_destination: None,
+            cancel_after_copy: Some(&cancel),
+            remove_calls: Cell::new(0),
+        };
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Copy,
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report = execute_transfers(&fs, Some(&journal), &tasks, &cancel, |_| {});
+
+        assert!(report.cancelled);
+        assert_eq!(std::fs::read(source).unwrap(), b"source bytes");
+        assert!(!destination.exists());
+        assert_eq!(
+            std::fs::read(staged_transfer_in(&root.0)).unwrap(),
+            b"source bytes"
+        );
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn journaled_copy_name_race_preserves_complete_hidden_stage() {
+        struct CopyConflictFixture {
+            destination: PathBuf,
+        }
+
+        impl FileSystem for CopyConflictFixture {
+            fn create_dir(&self, path: &Path) -> io::Result<()> {
+                std::fs::create_dir(path)
+            }
+
+            fn rename(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+                unreachable!("ordinary copy does not use the fixture rename")
+            }
+
+            fn copy(&self, source: &Path, staging: &Path) -> io::Result<()> {
+                let mut options = std::fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                let mut output = options.open(staging)?;
+                io::copy(&mut std::fs::File::open(source)?, &mut output)?;
+                output.sync_all()?;
+                std::fs::write(&self.destination, b"racing destination")?;
+                Ok(())
+            }
+
+            fn remove(&self, _path: &Path) -> io::Result<()> {
+                unreachable!("ordinary copy never removes the source")
+            }
+        }
+
+        let root = TestDirectory::new("journaled-copy-conflict");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"source bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let fs = CopyConflictFixture {
+            destination: destination.clone(),
+        };
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Copy,
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report =
+            execute_transfers(&fs, Some(&journal), &tasks, &AtomicBool::new(false), |_| {});
+
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].error_kind, io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(source).unwrap(), b"source bytes");
+        assert_eq!(std::fs::read(destination).unwrap(), b"racing destination");
+        assert_eq!(
+            std::fs::read(staged_transfer_in(&root.0)).unwrap(),
+            b"source bytes"
+        );
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn mid_copy_enospc_never_exposes_partial_final_name() {
+        struct PartialCopyFixture;
+
+        impl FileSystem for PartialCopyFixture {
+            fn create_dir(&self, path: &Path) -> io::Result<()> {
+                std::fs::create_dir(path)
+            }
+
+            fn rename(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+                unreachable!("ordinary copy does not use the fixture rename")
+            }
+
+            fn copy(&self, _source: &Path, _destination: &Path) -> io::Result<()> {
+                unreachable!("the cancellable copy fixture is authoritative")
+            }
+
+            fn copy_cancellable(
+                &self,
+                _source: &Path,
+                staging: &Path,
+                _cancel: &AtomicBool,
+                progress: &mut dyn FnMut(CopyActivity),
+            ) -> io::Result<()> {
+                std::fs::write(staging, b"partial")?;
+                progress(CopyActivity::Bytes(7));
+                Err(io::Error::new(
+                    io::ErrorKind::StorageFull,
+                    "fixture destination is full",
+                ))
+            }
+
+            fn remove(&self, _path: &Path) -> io::Result<()> {
+                unreachable!("ordinary copy never removes the source")
+            }
+        }
+
+        let root = TestDirectory::new("journaled-copy-enospc");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"source bytes").unwrap();
+        let journal = operation_journal::Journal::open(root.0.join("operation-journal")).unwrap();
+        let tasks = vec![TransferTask {
+            kind: TransferKind::Copy,
+            source: source.clone(),
+            destination: destination.clone(),
+        }];
+
+        let report = execute_transfers(
+            &PartialCopyFixture,
+            Some(&journal),
+            &tasks,
+            &AtomicBool::new(false),
+            |_| {},
+        );
+
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].error_kind, io::ErrorKind::StorageFull);
+        assert_eq!(std::fs::read(source).unwrap(), b"source bytes");
+        assert!(!destination.exists());
+        assert_eq!(
+            std::fs::read(staged_transfer_in(&root.0)).unwrap(),
+            b"partial"
+        );
         assert_eq!(journal.pending_count().unwrap(), 1);
     }
 

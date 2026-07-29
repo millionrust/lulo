@@ -4,6 +4,17 @@ The installed product is **Files** (`org.rmac.Files`, `rmac-files`). This
 document may use another desktop as a visual reference, but installed labels,
 metadata, icons, and identifiers remain original rmac work.
 
+## Module boundaries
+
+- `main.rs` owns the GPUI entity, orchestration, and composition of visible
+  Files surfaces.
+- `recovery_ui.rs` owns renderer-independent recovery wording and idle/busy
+  keyboard policy for transfer and Trash recovery sheets. Its focused tests
+  protect safe defaults and prevent completeness or deletion overclaims.
+- `watchers.rs` owns bounded filesystem-event accumulation, native watcher
+  construction, mount-watcher health transitions, and retry policy. The GPUI
+  root consumes these typed results without duplicating their invariants.
+
 ## File-operation invariants
 
 - Copy, duplicate, move, rename, trash, restore, and permanent delete run away

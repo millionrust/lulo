@@ -10,9 +10,11 @@ mod file_ops;
 mod operation_journal;
 mod pasteboard;
 mod quick_look;
+mod recovery_ui;
 #[cfg(any(target_os = "linux", test))]
 mod trash_store;
 mod undo_journal;
+mod watchers;
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, VecDeque};
@@ -34,6 +36,20 @@ use gpui::{
 use gpui_component::StyledExt as _;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use rmac_ui::{InputEvent, InputState, SearchField, TextField};
+
+#[cfg(any(target_os = "linux", test))]
+use recovery_ui::trash_recovery_presentation;
+use recovery_ui::{
+    conflict_key_intent, recovery_key_intent, recovery_presentation, RecoveryKeyIntent,
+};
+#[cfg(target_os = "linux")]
+use watchers::MOUNT_WATCH_UNAVAILABLE_MESSAGE;
+use watchers::{
+    filesystem_watcher, FilesystemHints, DIRECTORY_STALL_NOTICE, DIRECTORY_STALL_NOTICE_DELAY,
+    FILESYSTEM_WATCH_INTERRUPTED_MESSAGE, FILESYSTEM_WATCH_UNAVAILABLE_MESSAGE,
+};
+#[cfg(target_os = "linux")]
+use watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
 
 actions!(
     finder,
@@ -211,103 +227,6 @@ struct QuickLookPanel {
     cancel: Arc<AtomicBool>,
 }
 
-const MAX_RENAME_HINTS: usize = 16;
-const DIRECTORY_STALL_NOTICE_DELAY: Duration = Duration::from_secs(8);
-const DIRECTORY_STALL_NOTICE: &str =
-    "This location is responding slowly; you can navigate elsewhere while Files keeps checking";
-const FILESYSTEM_WATCH_INTERRUPTED_MESSAGE: &str =
-    "Live folder updates were interrupted; Files is rechecking";
-const FILESYSTEM_WATCH_UNAVAILABLE_MESSAGE: &str =
-    "This folder could not be watched; Files will verify every refresh";
-#[cfg(target_os = "linux")]
-const MOUNT_WATCH_UNAVAILABLE_MESSAGE: &str =
-    "Automatic mounted-volume updates are temporarily unavailable";
-#[cfg(any(target_os = "linux", test))]
-const MOUNT_WATCH_STABLE_PERIOD: Duration = Duration::from_secs(60);
-#[cfg(any(target_os = "linux", test))]
-const MOUNT_WATCH_MAX_RETRY: Duration = Duration::from_secs(30);
-
-#[derive(Default)]
-struct FilesystemHints {
-    watch_error: bool,
-    renames: Vec<(PathBuf, PathBuf)>,
-}
-
-impl FilesystemHints {
-    fn record(&mut self, result: notify::Result<notify::Event>) {
-        match result {
-            Ok(event) => {
-                if matches!(
-                    event.kind,
-                    notify::EventKind::Modify(notify::event::ModifyKind::Name(_))
-                ) && event.paths.len() == 2
-                    && event.paths[0] != event.paths[1]
-                    && self.renames.len() < MAX_RENAME_HINTS
-                {
-                    self.renames
-                        .push((event.paths[0].clone(), event.paths[1].clone()));
-                }
-            }
-            Err(_) => self.watch_error = true,
-        }
-    }
-}
-
-fn filesystem_watcher(
-    events: async_channel::Sender<()>,
-    hints: Arc<Mutex<FilesystemHints>>,
-) -> notify::Result<RecommendedWatcher> {
-    notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
-        if let Ok(mut hints) = hints.lock() {
-            hints.record(result);
-        }
-        let _ = events.try_send(());
-    })
-}
-
-#[cfg(any(target_os = "linux", test))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MountWatchNotice {
-    None,
-    Unavailable,
-    Restored,
-}
-
-#[cfg(any(target_os = "linux", test))]
-#[derive(Default)]
-struct MountWatchHealth {
-    unavailable: bool,
-}
-
-#[cfg(any(target_os = "linux", test))]
-impl MountWatchHealth {
-    fn record(&mut self, event: rmac_mounts::WatchEvent) -> MountWatchNotice {
-        match event {
-            rmac_mounts::WatchEvent::Unavailable if !self.unavailable => {
-                self.unavailable = true;
-                MountWatchNotice::Unavailable
-            }
-            rmac_mounts::WatchEvent::Unavailable => MountWatchNotice::None,
-            rmac_mounts::WatchEvent::Changed if self.unavailable => {
-                self.unavailable = false;
-                MountWatchNotice::Restored
-            }
-            rmac_mounts::WatchEvent::Changed => MountWatchNotice::None,
-        }
-    }
-}
-
-#[cfg(any(target_os = "linux", test))]
-fn next_mount_watch_retry(failures: u32, previous_attempt_lifetime: Duration) -> (u32, Duration) {
-    let failures = if previous_attempt_lifetime >= MOUNT_WATCH_STABLE_PERIOD {
-        1
-    } else {
-        failures.saturating_add(1)
-    };
-    let shift = failures.saturating_sub(1).min(5);
-    let delay = Duration::from_secs(1u64 << shift).min(MOUNT_WATCH_MAX_RETRY);
-    (failures, delay)
-}
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let n = self.count;
@@ -6403,11 +6322,6 @@ impl Render for FinderView {
 
 // ---- helpers ----
 
-struct RecoveryPresentation {
-    message: String,
-    action_label: &'static str,
-}
-
 fn sanitize_dialog_name(name: &str) -> String {
     let mut output = String::new();
     let mut truncated = false;
@@ -6544,141 +6458,6 @@ fn permanent_delete_prompt(count: usize, name: Option<&str>) -> String {
         format!(
             "{count} items will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins."
         )
-    }
-}
-
-#[cfg(any(target_os = "linux", test))]
-fn trash_recovery_presentation(action: &trash_store::TrashRecoveryAction) -> RecoveryPresentation {
-    match action {
-        trash_store::TrashRecoveryAction::ReturnRemainingItem {
-            may_be_partial: true,
-        } => RecoveryPresentation {
-            message: "Files found remaining data from an interrupted permanent deletion. It may be incomplete. Return it to Trash without deleting or replacing any existing item."
-                .to_string(),
-            action_label: "Return to Trash",
-        },
-        trash_store::TrashRecoveryAction::ReturnRemainingItem {
-            may_be_partial: false,
-        } => RecoveryPresentation {
-            message: "Files found an item hidden by an interrupted permanent deletion. Return it to Trash without deleting or replacing any existing item."
-                .to_string(),
-            action_label: "Return to Trash",
-        },
-        trash_store::TrashRecoveryAction::ReturnRemainingItemAndRebuildMetadata {
-            may_be_partial: true,
-        } => RecoveryPresentation {
-            message: "Files found remaining data from an interrupted permanent deletion, but its Trash metadata is missing. It may be incomplete. Return the exact reviewed data and rebuild its metadata using the recovery time."
-                .to_string(),
-            action_label: "Return and Rebuild",
-        },
-        trash_store::TrashRecoveryAction::ReturnRemainingItemAndRebuildMetadata {
-            may_be_partial: false,
-        } => RecoveryPresentation {
-            message: "Files found an item hidden by an interrupted permanent deletion, but its Trash metadata is missing. Return the exact reviewed item and rebuild its metadata using the recovery time."
-                .to_string(),
-            action_label: "Return and Rebuild",
-        },
-        trash_store::TrashRecoveryAction::PreserveConflictingItems {
-            rebuild_metadata: true,
-        } => RecoveryPresentation {
-            message: "Files found two different copies from an interrupted permanent deletion, and their Trash metadata is missing. Keep the visible copy unchanged, publish the exact hidden copy under a separate recovered name, and rebuild metadata for both. You can then compare, restore, or copy out either item."
-                .to_string(),
-            action_label: "Keep Both in Trash",
-        },
-        trash_store::TrashRecoveryAction::PreserveConflictingItems {
-            rebuild_metadata: false,
-        } => RecoveryPresentation {
-            message: "Files found two different copies from an interrupted permanent deletion. Keep the visible copy unchanged and publish the exact hidden copy under a separate recovered name. Neither copy will be replaced or deleted, so you can compare, restore, or copy out either item."
-                .to_string(),
-            action_label: "Keep Both in Trash",
-        },
-        trash_store::TrashRecoveryAction::RebuildMetadata => RecoveryPresentation {
-            message: "The exact reviewed item remains in Trash, but its metadata is missing. Rebuild only the metadata using the recovery time; the item data will not be changed."
-                .to_string(),
-            action_label: "Rebuild Metadata",
-        },
-        trash_store::TrashRecoveryAction::RemoveOrphanMetadata => RecoveryPresentation {
-            message: "No file data remains for this transaction. Remove only its reviewed Trash metadata; no user file will be deleted."
-                .to_string(),
-            action_label: "Remove Metadata",
-        },
-        trash_store::TrashRecoveryAction::KeepExistingItems => RecoveryPresentation {
-            message: "Keep every existing source, Trash, and destination item. Files will clear only the exact recovery record and will not delete, move, or replace a file."
-                .to_string(),
-            action_label: "Keep Existing Items",
-        },
-        trash_store::TrashRecoveryAction::RequiresManualRepair => RecoveryPresentation {
-            message: "Files cannot prove a safe automatic repair for this state. Keep it for later; no item or recovery record will be changed."
-                .to_string(),
-            action_label: "Manual Repair Required",
-        },
-    }
-}
-
-fn recovery_presentation(action: &operation_journal::RecoveryAction) -> RecoveryPresentation {
-    match action {
-        operation_journal::RecoveryAction::PreserveCopy {
-            complete,
-            suggested_name,
-        } => RecoveryPresentation {
-            message: if *complete {
-                format!(
-                    "Files has a complete copy from an interrupted file operation. Preserve it as “{suggested_name}”. Existing items will not be changed."
-                )
-            } else {
-                format!(
-                    "The interrupted copy may be incomplete. Preserve it as “{suggested_name}” so you can inspect it. Existing items will not be changed."
-                )
-            },
-            action_label: "Preserve Copy",
-        },
-        operation_journal::RecoveryAction::PreserveReplacementBackup {
-            complete,
-            suggested_name,
-        } => RecoveryPresentation {
-            message: if *complete {
-                format!(
-                    "Files retained the previous destination from an interrupted replacement. Preserve it as “{suggested_name}”. The replacement and other existing items will not be changed."
-                )
-            } else {
-                format!(
-                    "The item retained from an interrupted replacement may have changed or may be incomplete. Preserve it as “{suggested_name}” so you can inspect it. Existing items will not be changed."
-                )
-            },
-            action_label: "Preserve Previous Item",
-        },
-        operation_journal::RecoveryAction::KeepExistingItems => RecoveryPresentation {
-            message: "No staged recovery copy remains. Keep every existing item and clear only this recovery record. No file will be deleted.".to_string(),
-            action_label: "Keep Existing Items",
-        },
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RecoveryKeyIntent {
-    Close,
-    Resolve,
-}
-
-fn recovery_key_intent(key: &str, busy: bool) -> Option<RecoveryKeyIntent> {
-    if busy {
-        return None;
-    }
-    match key {
-        "escape" => Some(RecoveryKeyIntent::Close),
-        "enter" => Some(RecoveryKeyIntent::Resolve),
-        _ => None,
-    }
-}
-
-fn conflict_key_intent(key: &str, busy: bool) -> Option<ConflictDecision> {
-    if busy {
-        return None;
-    }
-    match key {
-        "escape" => Some(ConflictDecision::Skip),
-        "enter" => Some(ConflictDecision::KeepBoth),
-        _ => None,
     }
 }
 
@@ -7269,38 +7048,6 @@ mod tests {
     }
 
     #[test]
-    fn filesystem_event_bursts_coalesce_until_consumed() {
-        let (sender, receiver) = async_channel::bounded(1);
-
-        sender.try_send(()).expect("first event should wake the UI");
-        assert!(sender.try_send(()).is_err(), "burst should stay bounded");
-        receiver
-            .try_recv()
-            .expect("the queued wake should be available");
-        sender
-            .try_send(())
-            .expect("a new event should queue after consumption");
-    }
-
-    #[test]
-    fn filesystem_hints_bound_renames_and_retain_watch_failure() {
-        use notify::event::{ModifyKind, RenameMode};
-
-        let mut hints = FilesystemHints::default();
-        for index in 0..(MAX_RENAME_HINTS + 5) {
-            hints.record(Ok(notify::Event::new(notify::EventKind::Modify(
-                ModifyKind::Name(RenameMode::Both),
-            ))
-            .add_path(PathBuf::from(format!("/old/{index}")))
-            .add_path(PathBuf::from(format!("/new/{index}")))));
-        }
-        hints.record(Err(notify::Error::generic("watch failed")));
-
-        assert_eq!(hints.renames.len(), MAX_RENAME_HINTS);
-        assert!(hints.watch_error);
-    }
-
-    #[test]
     fn checked_listing_rejects_a_replacement_at_the_same_path() {
         let root = TestDirectory::new("directory-replacement");
         let current = root.0.join("current");
@@ -7337,60 +7084,6 @@ mod tests {
         assert_eq!(
             disappeared_mount_roots(&previous, &[mount("linux:99", "Drive", "/media/drive")]),
             [PathBuf::from("/media/drive")]
-        );
-    }
-
-    #[test]
-    fn mount_watch_health_reports_only_real_outage_transitions() {
-        let mut health = MountWatchHealth::default();
-
-        assert_eq!(
-            health.record(rmac_mounts::WatchEvent::Changed),
-            MountWatchNotice::None
-        );
-        assert_eq!(
-            health.record(rmac_mounts::WatchEvent::Unavailable),
-            MountWatchNotice::Unavailable
-        );
-        assert_eq!(
-            health.record(rmac_mounts::WatchEvent::Unavailable),
-            MountWatchNotice::None
-        );
-        assert_eq!(
-            health.record(rmac_mounts::WatchEvent::Changed),
-            MountWatchNotice::Restored
-        );
-        assert_eq!(
-            health.record(rmac_mounts::WatchEvent::Changed),
-            MountWatchNotice::None
-        );
-    }
-
-    #[test]
-    fn mount_watch_restart_backoff_is_bounded_and_resets_after_stability() {
-        let mut failures = 0;
-        let mut delays = Vec::new();
-        for _ in 0..7 {
-            let retry = next_mount_watch_retry(failures, Duration::from_secs(1));
-            failures = retry.0;
-            delays.push(retry.1);
-        }
-
-        assert_eq!(
-            delays,
-            [
-                Duration::from_secs(1),
-                Duration::from_secs(2),
-                Duration::from_secs(4),
-                Duration::from_secs(8),
-                Duration::from_secs(16),
-                Duration::from_secs(30),
-                Duration::from_secs(30),
-            ]
-        );
-        assert_eq!(
-            next_mount_watch_retry(failures, MOUNT_WATCH_STABLE_PERIOD),
-            (1, Duration::from_secs(1))
         );
     }
 
@@ -7588,21 +7281,6 @@ mod tests {
     }
 
     #[test]
-    fn conflict_keyboard_policy_uses_safe_defaults_and_blocks_while_busy() {
-        assert_eq!(
-            conflict_key_intent("escape", false),
-            Some(ConflictDecision::Skip)
-        );
-        assert_eq!(
-            conflict_key_intent("enter", false),
-            Some(ConflictDecision::KeepBoth)
-        );
-        assert_eq!(conflict_key_intent("space", false), None);
-        assert_eq!(conflict_key_intent("escape", true), None);
-        assert_eq!(conflict_key_intent("enter", true), None);
-    }
-
-    #[test]
     fn recursive_copy_refuses_a_destination_inside_the_source() {
         let root = TestDirectory::new("copy-descendant");
         let source = root.0.join("source");
@@ -7683,47 +7361,6 @@ mod tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
         assert!(!destination.exists());
-    }
-
-    #[test]
-    fn recovery_keyboard_policy_blocks_shortcuts_while_busy() {
-        assert_eq!(
-            recovery_key_intent("escape", false),
-            Some(RecoveryKeyIntent::Close)
-        );
-        assert_eq!(
-            recovery_key_intent("enter", false),
-            Some(RecoveryKeyIntent::Resolve)
-        );
-        assert_eq!(recovery_key_intent("space", false), None);
-        assert_eq!(recovery_key_intent("escape", true), None);
-        assert_eq!(recovery_key_intent("enter", true), None);
-    }
-
-    #[test]
-    fn recovery_presentation_never_claims_a_partial_copy_is_complete() {
-        let partial = recovery_presentation(&operation_journal::RecoveryAction::PreserveCopy {
-            complete: false,
-            suggested_name: "Recovered item".to_string(),
-        });
-        let complete = recovery_presentation(&operation_journal::RecoveryAction::PreserveCopy {
-            complete: true,
-            suggested_name: "Recovered item".to_string(),
-        });
-        let replacement = recovery_presentation(
-            &operation_journal::RecoveryAction::PreserveReplacementBackup {
-                complete: true,
-                suggested_name: "Recovered item".to_string(),
-            },
-        );
-        let existing = recovery_presentation(&operation_journal::RecoveryAction::KeepExistingItems);
-
-        assert!(partial.message.contains("may be incomplete"));
-        assert!(!complete.message.contains("may be incomplete"));
-        assert!(complete.message.contains("complete copy"));
-        assert!(replacement.message.contains("previous destination"));
-        assert_eq!(replacement.action_label, "Preserve Previous Item");
-        assert!(existing.message.contains("No file will be deleted"));
     }
 
     #[test]
@@ -7810,45 +7447,5 @@ mod tests {
             "Files could not safely render a preview for this item."
         );
         assert!(!message.contains("/home/private"));
-    }
-
-    #[test]
-    fn trash_recovery_presentations_never_overstate_safe_actions() {
-        let partial =
-            trash_recovery_presentation(&trash_store::TrashRecoveryAction::ReturnRemainingItem {
-                may_be_partial: true,
-            });
-        let orphan =
-            trash_recovery_presentation(&trash_store::TrashRecoveryAction::RemoveOrphanMetadata);
-        let keep =
-            trash_recovery_presentation(&trash_store::TrashRecoveryAction::KeepExistingItems);
-        let conflicting = trash_recovery_presentation(
-            &trash_store::TrashRecoveryAction::PreserveConflictingItems {
-                rebuild_metadata: false,
-            },
-        );
-        let manual =
-            trash_recovery_presentation(&trash_store::TrashRecoveryAction::RequiresManualRepair);
-
-        assert!(partial.message.contains("may be incomplete"));
-        assert!(partial.message.contains("without deleting or replacing"));
-        assert!(orphan.message.contains("no user file will be deleted"));
-        assert!(keep
-            .message
-            .contains("clear only the exact recovery record"));
-        assert!(keep.message.contains("will not delete, move, or replace"));
-        assert_eq!(conflicting.action_label, "Keep Both in Trash");
-        assert!(conflicting
-            .message
-            .contains("Neither copy will be replaced or deleted"));
-        assert!(conflicting
-            .message
-            .contains("compare, restore, or copy out"));
-        assert!(manual
-            .message
-            .contains("cannot prove a safe automatic repair"));
-        assert!(manual
-            .message
-            .contains("no item or recovery record will be changed"));
     }
 }

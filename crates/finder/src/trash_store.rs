@@ -13,7 +13,7 @@ use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use crate::operation_journal::{EntryIdentity, TreeManifest, TreeSnapshot as TransferTreeSnapshot};
-use crate::undo_journal::{TrashUndoSeed, UndoKind, UndoOutcome, UndoStore};
+use crate::undo_journal::{TrashUndoSeed, UndoAvailability, UndoKind, UndoOutcome, UndoStore};
 
 const RECORD_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 64 * 1024;
@@ -52,6 +52,8 @@ enum TrashStage {
 #[serde(rename_all = "snake_case")]
 enum TrashResolutionIntent {
     ReturnDeleteStage,
+    RebuildMetadata,
+    ReturnDeleteStageAndRebuildMetadata,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -83,6 +85,8 @@ struct TrashRecord {
     resolution_info_identity: Option<EntryIdentity>,
     #[serde(default)]
     resolution_info_sha256: Option<[u8; 32]>,
+    #[serde(default)]
+    resolution_info_bytes: Option<Vec<u8>>,
     #[serde(default)]
     create_undo_receipt: bool,
     #[serde(default)]
@@ -150,6 +154,7 @@ impl TrashRecord {
         if info_name != expected_info {
             return Err(invalid_data("trash data and info names do not match"));
         }
+        self.validate_resolution_state()?;
         match self.operation {
             TrashOperation::Trash => {
                 if !matches!(
@@ -157,7 +162,6 @@ impl TrashRecord {
                     TrashStage::Prepared | TrashStage::InfoPublished | TrashStage::DataMoved
                 ) || self.restore_parent_identity.is_some()
                     || delete.is_some()
-                    || self.has_resolution_state()
                 {
                     return Err(invalid_data("trash transaction stage is invalid"));
                 }
@@ -186,7 +190,6 @@ impl TrashRecord {
                 ) || self.info_identity.is_none()
                     || self.restore_parent_identity.is_none()
                     || delete.is_some()
-                    || self.has_resolution_state()
                     || self.trash_source_parent_identity.is_some()
                 {
                     return Err(invalid_data("restore transaction stage is invalid"));
@@ -215,26 +218,53 @@ impl TrashRecord {
                 {
                     return Err(invalid_data("delete transaction stage is invalid"));
                 }
-                match self.resolution_intent {
-                    None if self.resolution_identity.is_none()
-                        && self.resolution_manifest.is_none()
-                        && self.resolution_info_identity.is_none()
-                        && self.resolution_info_sha256.is_none() => {}
-                    Some(TrashResolutionIntent::ReturnDeleteStage)
-                        if self.stage == TrashStage::DeleteDataStaged
-                            && self.resolution_identity.is_some()
-                            && self.resolution_manifest.is_some()
-                            && self.resolution_info_identity.is_some()
-                            && self.resolution_info_sha256.is_some() => {}
-                    _ => {
-                        return Err(invalid_data(
-                            "delete transaction resolution state is invalid",
-                        ));
-                    }
-                }
             }
         }
         Ok(())
+    }
+
+    fn validate_resolution_state(&self) -> io::Result<()> {
+        match self.resolution_intent {
+            None if !self.has_resolution_state() => Ok(()),
+            Some(TrashResolutionIntent::ReturnDeleteStage)
+                if self.operation == TrashOperation::Delete
+                    && self.stage == TrashStage::DeleteDataStaged
+                    && self.resolution_identity.is_some()
+                    && self.resolution_manifest.is_some()
+                    && self.resolution_info_identity.is_some()
+                    && self.resolution_info_sha256.is_some()
+                    && self.resolution_info_bytes.is_none() =>
+            {
+                Ok(())
+            }
+            Some(TrashResolutionIntent::RebuildMetadata)
+                if self.resolution_identity.is_some()
+                    && self.resolution_manifest.is_some()
+                    && self.resolution_info_sha256.is_some()
+                    && self.resolution_info_bytes.as_ref().is_some_and(|bytes| {
+                        bytes.len() as u64 <= MAX_INFO_BYTES
+                            && Some(sha256(bytes)) == self.resolution_info_sha256
+                    }) =>
+            {
+                Ok(())
+            }
+            Some(TrashResolutionIntent::ReturnDeleteStageAndRebuildMetadata)
+                if self.operation == TrashOperation::Delete
+                    && self.stage == TrashStage::DeleteDataStaged
+                    && self.resolution_identity.is_some()
+                    && self.resolution_manifest.is_some()
+                    && self.resolution_info_sha256.is_some()
+                    && self.resolution_info_bytes.as_ref().is_some_and(|bytes| {
+                        bytes.len() as u64 <= MAX_INFO_BYTES
+                            && Some(sha256(bytes)) == self.resolution_info_sha256
+                    }) =>
+            {
+                Ok(())
+            }
+            _ => Err(invalid_data(
+                "Trash transaction resolution state is invalid",
+            )),
+        }
     }
 
     fn has_resolution_state(&self) -> bool {
@@ -243,6 +273,7 @@ impl TrashRecord {
             || self.resolution_manifest.is_some()
             || self.resolution_info_identity.is_some()
             || self.resolution_info_sha256.is_some()
+            || self.resolution_info_bytes.is_some()
     }
 }
 
@@ -892,6 +923,52 @@ fn trash_info_bytes(
     Ok(bytes)
 }
 
+fn recovery_layout(record: &TrashRecord) -> io::Result<TrashLayout> {
+    let root = record.trash_root();
+    let uid = effective_uid().to_string();
+    let name = root
+        .file_name()
+        .ok_or_else(|| invalid_data("Trash recovery root has no name"))?;
+    if name == OsStr::new("Trash") {
+        return Ok(TrashLayout {
+            topdir: PathBuf::from("/"),
+            root,
+            path_relative_to_topdir: false,
+        });
+    }
+    if name == OsStr::new(&format!(".Trash-{uid}")) {
+        let topdir = root
+            .parent()
+            .ok_or_else(|| invalid_data("mounted Trash root has no top directory"))?
+            .to_path_buf();
+        return Ok(TrashLayout {
+            topdir,
+            root,
+            path_relative_to_topdir: true,
+        });
+    }
+    if name == OsStr::new(&uid)
+        && root
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|parent| parent == OsStr::new(".Trash"))
+    {
+        let topdir = root
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| invalid_data("shared Trash root has no top directory"))?
+            .to_path_buf();
+        return Ok(TrashLayout {
+            topdir,
+            root,
+            path_relative_to_topdir: true,
+        });
+    }
+    Err(invalid_data(
+        "Trash recovery root cannot rebuild metadata safely",
+    ))
+}
+
 fn percent_encode_path(path: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut encoded = String::with_capacity(path.len());
@@ -1409,6 +1486,8 @@ struct InfoSnapshot {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum TrashRecoveryAction {
     ReturnRemainingItem { may_be_partial: bool },
+    ReturnRemainingItemAndRebuildMetadata { may_be_partial: bool },
+    RebuildMetadata,
     RemoveOrphanMetadata,
     KeepExistingItems,
     RequiresManualRepair,
@@ -1421,6 +1500,11 @@ impl fmt::Debug for TrashRecoveryAction {
                 .debug_struct("ReturnRemainingItem")
                 .field("may_be_partial", may_be_partial)
                 .finish(),
+            Self::ReturnRemainingItemAndRebuildMetadata { may_be_partial } => formatter
+                .debug_struct("ReturnRemainingItemAndRebuildMetadata")
+                .field("may_be_partial", may_be_partial)
+                .finish(),
+            Self::RebuildMetadata => formatter.write_str("RebuildMetadata"),
             Self::RemoveOrphanMetadata => formatter.write_str("RemoveOrphanMetadata"),
             Self::KeepExistingItems => formatter.write_str("KeepExistingItems"),
             Self::RequiresManualRepair => formatter.write_str("RequiresManualRepair"),
@@ -1453,6 +1537,8 @@ impl fmt::Debug for TrashRecoveryReview {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TrashResolutionOutcome {
     ReturnedRemainingItem { may_be_partial: bool },
+    ReturnedRemainingItemAndRebuiltMetadata { may_be_partial: bool },
+    RebuiltMetadata,
     RemovedOrphanMetadata,
     KeptExistingItems,
 }
@@ -1585,6 +1671,29 @@ impl TrashStore {
                 TrashRecoveryAction::ReturnRemainingItem {
                     may_be_partial: !original_matches,
                 }
+            } else if record.operation == TrashOperation::Delete
+                && record.stage == TrashStage::DeleteDataStaged
+                && data_snapshot.is_none()
+                && delete_snapshot.is_some()
+                && info_snapshot.is_none()
+            {
+                let snapshot = delete_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("delete review has no staged item"))?;
+                let original_matches = record
+                    .source_identity
+                    .same_entry_after_rename(&snapshot.identity)
+                    && record
+                        .source_manifest
+                        .same_after_root_rename(&snapshot.manifest);
+                TrashRecoveryAction::ReturnRemainingItemAndRebuildMetadata {
+                    may_be_partial: !original_matches,
+                }
+            } else if data_snapshot.is_some()
+                && delete_snapshot.is_none()
+                && info_snapshot.is_none()
+            {
+                TrashRecoveryAction::RebuildMetadata
             } else if data_snapshot.is_none()
                 && delete_snapshot.is_none()
                 && info_snapshot.is_some()
@@ -1626,12 +1735,14 @@ impl TrashStore {
         TrashResolutionOutcome,
         TrashRecovery,
         Vec<TrashRecoveryReview>,
+        Option<UndoAvailability>,
     )> {
         let _lock = self.lock()?;
         let outcome = self.resolve_review_locked(review)?;
         let recovery = self.recover_locked()?;
         let reviews = self.review_pending_locked()?;
-        Ok((outcome, recovery, reviews))
+        let undo = self.undo.latest()?;
+        Ok((outcome, recovery, reviews, undo))
     }
 
     fn resolve_review_locked(
@@ -1668,6 +1779,50 @@ impl TrashStore {
                 Ok(TrashResolutionOutcome::ReturnedRemainingItem {
                     may_be_partial: *may_be_partial,
                 })
+            }
+            TrashRecoveryAction::ReturnRemainingItemAndRebuildMetadata { may_be_partial } => {
+                let delete_snapshot = review
+                    .delete_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("delete recovery has no staged item"))?;
+                if review.data_snapshot.is_some() || review.info_snapshot.is_some() {
+                    return Err(review_changed());
+                }
+                let mut record = review.record.clone();
+                self.begin_metadata_rebuild(
+                    &record_path,
+                    &mut record,
+                    TrashResolutionIntent::ReturnDeleteStageAndRebuildMetadata,
+                    delete_snapshot,
+                )?;
+                if !self.recover_rebuilt_metadata(&record_path, &mut record)? {
+                    return Err(review_changed());
+                }
+                Ok(
+                    TrashResolutionOutcome::ReturnedRemainingItemAndRebuiltMetadata {
+                        may_be_partial: *may_be_partial,
+                    },
+                )
+            }
+            TrashRecoveryAction::RebuildMetadata => {
+                let data_snapshot = review
+                    .data_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("metadata recovery has no Trash item"))?;
+                if review.delete_snapshot.is_some() || review.info_snapshot.is_some() {
+                    return Err(review_changed());
+                }
+                let mut record = review.record.clone();
+                self.begin_metadata_rebuild(
+                    &record_path,
+                    &mut record,
+                    TrashResolutionIntent::RebuildMetadata,
+                    data_snapshot,
+                )?;
+                if !self.recover_rebuilt_metadata(&record_path, &mut record)? {
+                    return Err(review_changed());
+                }
+                Ok(TrashResolutionOutcome::RebuiltMetadata)
             }
             TrashRecoveryAction::RemoveOrphanMetadata => {
                 let info_snapshot = review
@@ -1727,6 +1882,107 @@ impl TrashStore {
             return Err(review_changed());
         }
         Ok(())
+    }
+
+    fn begin_metadata_rebuild(
+        &self,
+        record_path: &Path,
+        record: &mut TrashRecord,
+        intent: TrashResolutionIntent,
+        item: &TreeSnapshot,
+    ) -> io::Result<()> {
+        let layout = recovery_layout(record)?;
+        let info_bytes = trash_info_bytes(&record.source(), &layout, Local::now())?;
+        record.resolution_intent = Some(intent);
+        record.resolution_identity = Some(item.identity.clone());
+        record.resolution_manifest = Some(item.manifest.clone());
+        record.resolution_info_identity = None;
+        record.resolution_info_sha256 = Some(sha256(&info_bytes));
+        record.resolution_info_bytes = Some(info_bytes);
+        record.validate(&record.id)?;
+        self.persist(record_path, record, false)
+    }
+
+    fn recover_rebuilt_metadata(
+        &self,
+        record_path: &Path,
+        record: &mut TrashRecord,
+    ) -> io::Result<bool> {
+        let return_staged = match record.resolution_intent {
+            Some(TrashResolutionIntent::RebuildMetadata) => false,
+            Some(TrashResolutionIntent::ReturnDeleteStageAndRebuildMetadata) => true,
+            _ => return Err(invalid_data("record has no metadata-rebuild intent")),
+        };
+        let data = record.data_path();
+        if return_staged {
+            let delete = record
+                .delete_path()
+                .ok_or_else(|| invalid_data("metadata recovery has no delete stage"))?;
+            if entry_exists(&delete)?
+                && !entry_exists(&data)?
+                && resolution_tree_matches(record, &delete, false)?
+            {
+                rename_noreplace(&delete, &data)?;
+                sync_directory(
+                    data.parent()
+                        .ok_or_else(|| invalid_data("Trash data parent is missing"))?,
+                )?;
+            }
+            if entry_exists(&delete)? || !resolution_tree_matches(record, &data, true)? {
+                return Ok(false);
+            }
+        } else if !resolution_tree_matches(record, &data, false)? {
+            return Ok(false);
+        }
+
+        let expected_sha = record
+            .resolution_info_sha256
+            .ok_or_else(|| invalid_data("metadata recovery has no digest"))?;
+        let info_identity = match capture_optional_info(&record.info_path())? {
+            Some(snapshot)
+                if snapshot.sha256 == expected_sha
+                    && record
+                        .resolution_info_identity
+                        .as_ref()
+                        .is_none_or(|expected| expected == &snapshot.identity) =>
+            {
+                snapshot.identity
+            }
+            Some(_) => return Ok(false),
+            None => {
+                let bytes = record
+                    .resolution_info_bytes
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("metadata recovery has no bytes"))?;
+                create_info_file(&record.info_path(), bytes)?
+            }
+        };
+        record.resolution_info_identity = Some(info_identity.clone());
+        let complete_trash = record.operation == TrashOperation::Trash
+            && !entry_exists(&record.source())?
+            && record_data_matches_after_rename(record)?;
+        if record.operation != TrashOperation::Trash
+            || record.stage != TrashStage::Prepared
+            || complete_trash
+        {
+            record.info_identity = Some(info_identity);
+            record.info_sha256 = expected_sha;
+        }
+        if complete_trash {
+            record.stage = TrashStage::DataMoved;
+        }
+        self.persist(record_path, record, false)?;
+        if !resolution_info_matches(record)? {
+            return Ok(false);
+        }
+        self.undo
+            .discard_trash_item(&record.data_path(), &record.info_path())?;
+        if complete_trash {
+            self.finish_undoable_record(record_path, record)?;
+        } else {
+            self.finish_record(record_path)?;
+        }
+        Ok(true)
     }
 
     #[cfg(any(target_os = "linux", test))]
@@ -1804,6 +2060,7 @@ impl TrashStore {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            resolution_info_bytes: None,
             create_undo_receipt: true,
             trash_source_parent_identity: None,
         };
@@ -1875,6 +2132,7 @@ impl TrashStore {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            resolution_info_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -1961,6 +2219,7 @@ impl TrashStore {
                 resolution_manifest: None,
                 resolution_info_identity: None,
                 resolution_info_sha256: None,
+                resolution_info_bytes: None,
                 create_undo_receipt: true,
                 trash_source_parent_identity: Some(EntryIdentity::capture(
                     source
@@ -2047,42 +2306,57 @@ impl TrashStore {
     fn recover_locked(&self) -> io::Result<TrashRecovery> {
         let mut report = TrashRecovery::default();
         for (path, mut record) in self.read_records()? {
-            let finalized = match record.operation {
-                TrashOperation::Trash => {
-                    let source_exists = entry_exists(&record.source())?;
-                    let data_exists = entry_exists(&record.data_path())?;
-                    let info_exists = entry_exists(&record.info_path())?;
-                    let source_matches = source_exists && record_source_matches(&record)?;
-                    let data_matches = data_exists && record_data_matches_after_rename(&record)?;
-                    let info_matches = info_exists && record_info_matches(&record)?;
-                    match record.stage {
-                        TrashStage::Prepared if source_matches && !data_exists && !info_exists => {
-                            self.finish_record(&path)?;
-                            true
+            let finalized = if matches!(
+                record.resolution_intent,
+                Some(
+                    TrashResolutionIntent::RebuildMetadata
+                        | TrashResolutionIntent::ReturnDeleteStageAndRebuildMetadata
+                )
+            ) {
+                self.recover_rebuilt_metadata(&path, &mut record)?
+            } else {
+                match record.operation {
+                    TrashOperation::Trash => {
+                        let source_exists = entry_exists(&record.source())?;
+                        let data_exists = entry_exists(&record.data_path())?;
+                        let info_exists = entry_exists(&record.info_path())?;
+                        let source_matches = source_exists && record_source_matches(&record)?;
+                        let data_matches =
+                            data_exists && record_data_matches_after_rename(&record)?;
+                        let info_matches = info_exists && record_info_matches(&record)?;
+                        match record.stage {
+                            TrashStage::Prepared
+                                if source_matches && !data_exists && !info_exists =>
+                            {
+                                self.finish_record(&path)?;
+                                true
+                            }
+                            TrashStage::Prepared
+                                if source_matches && !data_exists && info_matches =>
+                            {
+                                record.info_identity =
+                                    Some(EntryIdentity::capture(&record.info_path())?);
+                                record.stage = TrashStage::InfoPublished;
+                                self.persist(&path, &record, false)?;
+                                self.resume_info_published(&path, &mut record)?
+                            }
+                            TrashStage::InfoPublished
+                                if source_matches && !data_exists && info_matches =>
+                            {
+                                self.resume_info_published(&path, &mut record)?
+                            }
+                            TrashStage::InfoPublished | TrashStage::DataMoved
+                                if !source_exists && data_matches && info_matches =>
+                            {
+                                self.finish_undoable_record(&path, &record)?;
+                                true
+                            }
+                            _ => false,
                         }
-                        TrashStage::Prepared if source_matches && !data_exists && info_matches => {
-                            record.info_identity =
-                                Some(EntryIdentity::capture(&record.info_path())?);
-                            record.stage = TrashStage::InfoPublished;
-                            self.persist(&path, &record, false)?;
-                            self.resume_info_published(&path, &mut record)?
-                        }
-                        TrashStage::InfoPublished
-                            if source_matches && !data_exists && info_matches =>
-                        {
-                            self.resume_info_published(&path, &mut record)?
-                        }
-                        TrashStage::InfoPublished | TrashStage::DataMoved
-                            if !source_exists && data_matches && info_matches =>
-                        {
-                            self.finish_undoable_record(&path, &record)?;
-                            true
-                        }
-                        _ => false,
                     }
+                    TrashOperation::Restore => self.recover_restore_record(&path, &mut record)?,
+                    TrashOperation::Delete => self.recover_delete_record(&path, &mut record)?,
                 }
-                TrashOperation::Restore => self.recover_restore_record(&path, &mut record)?,
-                TrashOperation::Delete => self.recover_delete_record(&path, &mut record)?,
             };
             if finalized {
                 report.finalized += 1;
@@ -2637,6 +2911,7 @@ mod tests {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            resolution_info_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -2680,6 +2955,7 @@ mod tests {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            resolution_info_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -2715,6 +2991,7 @@ mod tests {
             resolution_manifest: None,
             resolution_info_identity: None,
             resolution_info_sha256: None,
+            resolution_info_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -3424,8 +3701,9 @@ mod tests {
     }
 
     #[test]
-    fn review_retains_a_hidden_stage_when_metadata_cannot_be_rebuilt_safely() {
-        let (directory, store, layout) = setup("review-manual");
+    fn review_returns_a_hidden_stage_and_rebuilds_missing_metadata() {
+        let (directory, store, mut layout) = setup("review-rebuild-hidden");
+        layout.path_relative_to_topdir = false;
         let source = write_source(&directory, OsStr::new("report.txt"), b"important");
         let item = trash_and_list(&store, &layout, &source);
         let (record_path, mut record) = prepared_delete_record(&store, &item);
@@ -3439,11 +3717,80 @@ mod tests {
             .review_pending()
             .expect("review should remain available");
 
-        assert_eq!(reviews[0].action, TrashRecoveryAction::RequiresManualRepair);
-        let error = store.resolve_review(&reviews[0]).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
-        assert!(delete_path.exists());
-        assert!(record_path.exists());
+        assert_eq!(
+            reviews[0].action,
+            TrashRecoveryAction::ReturnRemainingItemAndRebuildMetadata {
+                may_be_partial: false
+            }
+        );
+        let outcome = store.resolve_review(&reviews[0]).unwrap();
+        assert_eq!(
+            outcome,
+            TrashResolutionOutcome::ReturnedRemainingItemAndRebuiltMetadata {
+                may_be_partial: false
+            }
+        );
+        assert!(!delete_path.exists());
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"important");
+        assert!(item.info_path.exists());
+        assert!(!record_path.exists());
+        assert_eq!(list_in_layout(&layout).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn review_rebuilds_missing_metadata_without_changing_trash_data() {
+        let (directory, store, mut layout) = setup("review-rebuild-info");
+        layout.path_relative_to_topdir = false;
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, _) = prepared_restore_record(&store, &item);
+        fs::remove_file(&item.info_path).unwrap();
+
+        let review = store.review_pending().unwrap().remove(0);
+        assert_eq!(review.action, TrashRecoveryAction::RebuildMetadata);
+
+        let outcome = store.resolve_review(&review).unwrap();
+
+        assert_eq!(outcome, TrashResolutionOutcome::RebuiltMetadata);
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"important");
+        assert!(item.info_path.exists());
+        assert!(!record_path.exists());
+        assert_eq!(list_in_layout(&layout).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn accepted_metadata_rebuild_recovers_after_create_before_identity_persist() {
+        let (directory, store, mut layout) = setup("review-rebuild-crash");
+        layout.path_relative_to_topdir = false;
+        let source = write_source(&directory, OsStr::new("report.txt"), b"important");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, _) = prepared_restore_record(&store, &item);
+        fs::remove_file(&item.info_path).unwrap();
+        let review = store.review_pending().unwrap().remove(0);
+        let mut record = review.record;
+        let data = review.data_snapshot.unwrap();
+        store
+            .begin_metadata_rebuild(
+                &record_path,
+                &mut record,
+                TrashResolutionIntent::RebuildMetadata,
+                &data,
+            )
+            .unwrap();
+        create_info_file(
+            &record.info_path(),
+            record.resolution_info_bytes.as_ref().unwrap(),
+        )
+        .unwrap();
+
+        let recovery = store.recover().unwrap();
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"important");
+        assert!(item.info_path.exists());
+        assert!(!record_path.exists());
+        assert_eq!(list_in_layout(&layout).unwrap().len(), 1);
     }
 
     #[cfg(target_os = "linux")]
@@ -3775,6 +4122,7 @@ mod tests {
         object.remove("restore_parent_identity");
         object.remove("create_undo_receipt");
         object.remove("trash_source_parent_identity");
+        object.remove("resolution_info_bytes");
 
         let decoded: TrashRecord = serde_json::from_value(value).unwrap();
 

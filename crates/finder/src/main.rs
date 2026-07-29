@@ -2317,11 +2317,15 @@ impl FinderView {
                 .background_executor()
                 .spawn(async move {
                     match store.resolve_review_and_refresh(&review) {
-                        Ok((outcome, recovery, reviews)) => {
-                            (Ok(outcome), Ok((recovery, reviews)))
+                        Ok((outcome, recovery, reviews, undo)) => {
+                            (Ok(outcome), Ok((recovery, reviews, undo)))
                         }
                         Err(error) => {
-                            let refresh = store.recover_and_review();
+                            let refresh =
+                                store.recover_and_review().and_then(|(recovery, reviews)| {
+                                    let undo = store.undo_store().latest()?;
+                                    Ok((recovery, reviews, undo))
+                                });
                             (Err(error), refresh)
                         }
                     }
@@ -2330,10 +2334,11 @@ impl FinderView {
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 this.trash_recovery_busy = false;
                 match refresh {
-                    Ok((recovery, reviews)) => {
+                    Ok((recovery, reviews, undo)) => {
                         this.trash_pending = recovery.pending;
                         this.trash_recovery_reviews = reviews;
                         this.trash_recovery_open = recovery.pending != 0;
+                        this.undo_available = undo;
                     }
                     Err(_) => {
                         this.trash_store = None;
@@ -2361,6 +2366,26 @@ impl FinderView {
                             }
                             .into(),
                         );
+                        this.operation_error = None;
+                    }
+                    Ok(
+                        trash_store::TrashResolutionOutcome::ReturnedRemainingItemAndRebuiltMetadata {
+                            may_be_partial,
+                        },
+                    ) => {
+                        this.operation_notice = Some(
+                            if may_be_partial {
+                                "Remaining data returned to Trash with rebuilt metadata; it may be incomplete"
+                            } else {
+                                "Item returned to Trash with rebuilt metadata"
+                            }
+                            .into(),
+                        );
+                        this.operation_error = None;
+                    }
+                    Ok(trash_store::TrashResolutionOutcome::RebuiltMetadata) => {
+                        this.operation_notice =
+                            Some("Trash metadata rebuilt without changing the item".into());
                         this.operation_error = None;
                     }
                     Ok(trash_store::TrashResolutionOutcome::RemovedOrphanMetadata) => {
@@ -4886,6 +4911,25 @@ fn trash_recovery_presentation(action: &trash_store::TrashRecoveryAction) -> Rec
             message: "Files found an item hidden by an interrupted permanent deletion. Return it to Trash without deleting or replacing any existing item."
                 .to_string(),
             action_label: "Return to Trash",
+        },
+        trash_store::TrashRecoveryAction::ReturnRemainingItemAndRebuildMetadata {
+            may_be_partial: true,
+        } => RecoveryPresentation {
+            message: "Files found remaining data from an interrupted permanent deletion, but its Trash metadata is missing. It may be incomplete. Return the exact reviewed data and rebuild its metadata using the recovery time."
+                .to_string(),
+            action_label: "Return and Rebuild",
+        },
+        trash_store::TrashRecoveryAction::ReturnRemainingItemAndRebuildMetadata {
+            may_be_partial: false,
+        } => RecoveryPresentation {
+            message: "Files found an item hidden by an interrupted permanent deletion, but its Trash metadata is missing. Return the exact reviewed item and rebuild its metadata using the recovery time."
+                .to_string(),
+            action_label: "Return and Rebuild",
+        },
+        trash_store::TrashRecoveryAction::RebuildMetadata => RecoveryPresentation {
+            message: "The exact reviewed item remains in Trash, but its metadata is missing. Rebuild only the metadata using the recovery time; the item data will not be changed."
+                .to_string(),
+            action_label: "Rebuild Metadata",
         },
         trash_store::TrashRecoveryAction::RemoveOrphanMetadata => RecoveryPresentation {
             message: "No file data remains for this transaction. Remove only its reviewed Trash metadata; no user file will be deleted."

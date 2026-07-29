@@ -955,6 +955,7 @@ fn service_feedback_reason(kind: ServiceErrorKind) -> FeedbackReason {
             | ActionError::InvalidTarget
             | ActionError::InvalidApplication,
         ) => FeedbackReason::InvalidRequest,
+        ServiceErrorKind::Action(ActionError::DocumentUnavailable) => FeedbackReason::Failed,
         ServiceErrorKind::Action(ActionError::PersistentNotification) => FeedbackReason::Rejected,
         ServiceErrorKind::Action(ActionError::Transport) => FeedbackReason::ConnectionLost,
         ServiceErrorKind::Action(ActionError::RuntimeUnavailable) => {

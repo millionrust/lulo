@@ -87,6 +87,18 @@ emit the backend `ActionInvoked` parameter array. `app.*` actions call
 the standardized object path, and passing the target plus activation token.
 Opaque target decoding is bounded and rejects trailing or malformed bytes.
 
+The portal also advertises the vendor purpose `x-rmac.document-open` for an
+explicitly labeled first-party button. It is accepted only from the exact
+authenticated Files, Notes, or Text Editor application identities centralized
+in `rmac-apps`; a prefix lookalike is not trusted. The opaque target must decode
+to one hostless local `file:` URI with no query or fragment. Relative paths,
+remote authorities, other URI schemes, malformed variants, missing targets,
+directories, and final symlinks fail with private-content-free feedback.
+Successful activation uses `rmac-app-launch` rather than interpreting a shell
+command, then records the regular document through the shared recent-document
+authority only after the desktop accepts Open. Every other legacy or portal
+action retains the standard application-owned dispatch above.
+
 `hide-on-lockscreen` and `hide-content-on-lockscreen` normalize to a typed lock
 visibility policy. No lock UI may weaken that policy. An unspecified hint stays
 `Policy`; `Center::lock_previews` resolves it through trusted per-app settings

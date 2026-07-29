@@ -10,6 +10,10 @@ use super::{
 };
 use std::borrow::Cow;
 
+/// First-party portal button purpose for opening one local document through
+/// the desktop's shared open/recent-document boundary.
+pub const DOCUMENT_OPEN_PURPOSE: &str = "x-rmac.document-open";
+
 pub const SUPPORTED_BUTTON_PURPOSES: &[&str] = &[
     "system.custom-alert",
     "im.reply-with-text",
@@ -18,6 +22,7 @@ pub const SUPPORTED_BUTTON_PURPOSES: &[&str] = &[
     "call.hang-up",
     "call.enable-speakerphone",
     "call.disable-speakerphone",
+    DOCUMENT_OPEN_PURPOSE,
 ];
 
 pub const SUPPORTED_CATEGORIES: &[&str] = &[
@@ -403,6 +408,28 @@ mod tests {
             ..PortalInput::default()
         };
         assert_eq!(portal(unknown), Err(ProtocolError::InvalidButton));
+    }
+
+    #[test]
+    fn first_party_document_purpose_is_advertised_and_preserved() {
+        assert!(SUPPORTED_BUTTON_PURPOSES.contains(&DOCUMENT_OPEN_PURPOSE));
+        let request = portal(PortalInput {
+            app_id: "org.rmac.TextEditor".into(),
+            id: "saved".into(),
+            buttons: vec![PortalButton {
+                label: Some("Open".into()),
+                action: "open-document".into(),
+                target: Some(ActionTarget::new("v", b"opaque".to_vec()).unwrap()),
+                purpose: Some(DOCUMENT_OPEN_PURPOSE.into()),
+            }],
+            ..PortalInput::default()
+        })
+        .unwrap();
+        assert_eq!(request.actions[0].purpose(), Some(DOCUMENT_OPEN_PURPOSE));
+        assert_eq!(
+            visible_action_label(&request.actions[0]).as_deref(),
+            Some("Open")
+        );
     }
 
     #[test]

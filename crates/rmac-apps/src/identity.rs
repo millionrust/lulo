@@ -1,0 +1,55 @@
+//! Stable first-party desktop identities shared by UI and system services.
+
+pub const FILES: &str = "org.rmac.Files";
+pub const TERMINAL: &str = "org.rmac.Terminal";
+pub const NOTES: &str = "org.rmac.Notes";
+pub const TEXT_EDITOR: &str = "org.rmac.TextEditor";
+pub const SYSTEM_MONITOR: &str = "org.rmac.SystemMonitor";
+pub const APP_DRAWER: &str = "org.rmac.AppDrawer";
+pub const SYSTEM_SETTINGS: &str = "org.rmac.SystemSettings";
+
+pub const ALL: [&str; 7] = [
+    FILES,
+    TERMINAL,
+    NOTES,
+    TEXT_EDITOR,
+    SYSTEM_MONITOR,
+    APP_DRAWER,
+    SYSTEM_SETTINGS,
+];
+
+/// Only applications that own local document journeys may ask the rmac
+/// notification service to open one reviewed document target.
+pub fn is_document_application(app_id: &str) -> bool {
+    matches!(app_id, FILES | NOTES | TEXT_EDITOR)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn identities_are_unique_reverse_domain_desktop_ids() {
+        assert_eq!(
+            ALL.iter().copied().collect::<BTreeSet<_>>().len(),
+            ALL.len()
+        );
+        assert!(ALL.iter().all(|identity| {
+            identity.starts_with("org.rmac.")
+                && identity
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+        }));
+    }
+
+    #[test]
+    fn document_authority_is_an_exact_allow_list() {
+        assert!(is_document_application(FILES));
+        assert!(is_document_application(NOTES));
+        assert!(is_document_application(TEXT_EDITOR));
+        assert!(!is_document_application(TERMINAL));
+        assert!(!is_document_application("org.rmac.TextEditor.Forged"));
+        assert!(!is_document_application("org.example.TextEditor"));
+    }
+}

@@ -470,6 +470,9 @@ fn center_action_error(error: ActionError) -> fdo::Error {
         ActionError::InvalidTarget | ActionError::InvalidApplication => {
             fdo::Error::Failed("Notification Center action is invalid".into())
         }
+        ActionError::DocumentUnavailable => {
+            fdo::Error::Failed("Notification document could not be opened".into())
+        }
         ActionError::PersistentNotification
         | ActionError::Transport
         | ActionError::RuntimeUnavailable => {
@@ -539,6 +542,7 @@ pub enum ActionError {
     UnknownAction,
     InvalidTarget,
     InvalidApplication,
+    DocumentUnavailable,
     PersistentNotification,
     Transport,
     RuntimeUnavailable,
@@ -1074,6 +1078,11 @@ impl ServiceHandle {
         invocation: &ActionInvocation,
         activation_token: Option<&str>,
     ) -> Result<(), ActionError> {
+        if let Some(path) = notification_document_path(source, invocation)? {
+            return rmac_app_launch::open_document(path)
+                .await
+                .map_err(|_| ActionError::DocumentUnavailable);
+        }
         match source {
             Source::Freedesktop { .. } => {
                 let emitter = SignalEmitter::new(&self.connection, LEGACY_PATH)
@@ -1274,6 +1283,43 @@ fn portal_parameters(
     Ok(parameters)
 }
 
+fn notification_document_path(
+    source: &Source,
+    invocation: &ActionInvocation,
+) -> Result<Option<std::path::PathBuf>, ActionError> {
+    if invocation.purpose.as_deref() != Some(rmac_notifications::protocol::DOCUMENT_OPEN_PURPOSE) {
+        return Ok(None);
+    }
+    let Source::Portal { app_id, .. } = source else {
+        return Err(ActionError::InvalidApplication);
+    };
+    if &invocation.app_id != app_id
+        || !rmac_apps::identity::is_document_application(app_id.as_str())
+    {
+        return Err(ActionError::InvalidApplication);
+    }
+    let target = invocation
+        .target
+        .as_ref()
+        .ok_or(ActionError::InvalidTarget)?;
+    let uri = String::try_from(decode_target(target)?).map_err(|_| ActionError::InvalidTarget)?;
+    let uri = url::Url::parse(&uri).map_err(|_| ActionError::InvalidTarget)?;
+    if uri.scheme() != "file"
+        || uri.host_str().is_some()
+        || uri.query().is_some()
+        || uri.fragment().is_some()
+    {
+        return Err(ActionError::InvalidTarget);
+    }
+    let path = uri
+        .to_file_path()
+        .map_err(|()| ActionError::InvalidTarget)?;
+    if !path.is_absolute() {
+        return Err(ActionError::InvalidTarget);
+    }
+    Ok(Some(path))
+}
+
 fn application_object_path(app_id: &str) -> Result<String, ActionError> {
     if app_id.is_empty() {
         return Err(ActionError::InvalidApplication);
@@ -1381,6 +1427,29 @@ mod tests {
                 SEQUENCE.fetch_add(1, Ordering::Relaxed)
             ))
             .join("history.json")
+    }
+
+    fn string_target(value: &str) -> ActionTarget {
+        let value = OwnedValue::from(Str::from(value.to_owned()));
+        let encoded = to_bytes(Context::new_dbus(Endian::Little, 0), &value).unwrap();
+        ActionTarget::new("v", encoded.bytes().to_vec()).unwrap()
+    }
+
+    fn document_invocation(
+        app_id: &str,
+        uri: &str,
+    ) -> (Source, rmac_notifications::ActionInvocation) {
+        let app_id = AppId::parse(app_id).unwrap();
+        (
+            Source::portal(app_id.clone(), "document-ready").unwrap(),
+            rmac_notifications::ActionInvocation {
+                notification_id: NotificationId::from_protocol(1).unwrap(),
+                app_id,
+                action_id: "open-document".into(),
+                target: Some(string_target(uri)),
+                purpose: Some(rmac_notifications::protocol::DOCUMENT_OPEN_PURPOSE.into()),
+            },
+        )
     }
 
     #[test]
@@ -1690,7 +1759,9 @@ mod tests {
     #[test]
     fn public_protocol_metadata_is_truthful() {
         assert_eq!(protocol_categories().len(), 14);
-        assert_eq!(protocol_button_purposes().len(), 7);
+        assert_eq!(protocol_button_purposes().len(), 8);
+        assert!(protocol_button_purposes()
+            .contains(&rmac_notifications::protocol::DOCUMENT_OPEN_PURPOSE));
         assert_eq!(NotificationId::from_protocol(0), None);
         assert_eq!(NotificationId::from_protocol(7).unwrap().get(), 7);
     }
@@ -1775,6 +1846,69 @@ mod tests {
         assert_eq!(
             String::try_from(platform.into_iter().next().unwrap().1).unwrap(),
             "activation-8472"
+        );
+    }
+
+    #[test]
+    fn first_party_document_action_decodes_one_local_file_uri() {
+        let (source, invocation) = document_invocation(
+            rmac_apps::identity::TEXT_EDITOR,
+            "file:///home/private/Report%20Draft.txt",
+        );
+        assert_eq!(
+            notification_document_path(&source, &invocation),
+            Ok(Some(std::path::PathBuf::from(
+                "/home/private/Report Draft.txt"
+            )))
+        );
+        let debug = format!("{invocation:?}");
+        assert!(!debug.contains("Report"));
+        assert!(!debug.contains("open-document"));
+    }
+
+    #[test]
+    fn document_action_rejects_untrusted_sources_and_ambiguous_targets() {
+        let (untrusted_source, untrusted) =
+            document_invocation("org.example.TextEditor", "file:///home/private/report.txt");
+        assert_eq!(
+            notification_document_path(&untrusted_source, &untrusted),
+            Err(ActionError::InvalidApplication)
+        );
+
+        let (remote_source, remote) = document_invocation(
+            rmac_apps::identity::FILES,
+            "file://server/private/report.txt",
+        );
+        assert_eq!(
+            notification_document_path(&remote_source, &remote),
+            Err(ActionError::InvalidTarget)
+        );
+
+        let (query_source, query) = document_invocation(
+            rmac_apps::identity::NOTES,
+            "file:///home/private/report.txt?revision=secret",
+        );
+        assert_eq!(
+            notification_document_path(&query_source, &query),
+            Err(ActionError::InvalidTarget)
+        );
+
+        let (ordinary_source, mut ordinary) =
+            document_invocation("org.example.App", "https://example.com/private");
+        ordinary.purpose = None;
+        assert_eq!(
+            notification_document_path(&ordinary_source, &ordinary),
+            Ok(None)
+        );
+
+        let (missing_source, mut missing) = document_invocation(
+            rmac_apps::identity::TEXT_EDITOR,
+            "file:///home/private/report.txt",
+        );
+        missing.target = None;
+        assert_eq!(
+            notification_document_path(&missing_source, &missing),
+            Err(ActionError::InvalidTarget)
         );
     }
 

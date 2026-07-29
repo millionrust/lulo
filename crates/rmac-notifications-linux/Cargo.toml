@@ -15,6 +15,7 @@ image = { workspace = true, features = ["jpeg", "png"] }
 libc.workspace = true
 quick-xml.workspace = true
 rmac-appearance.workspace = true
+rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-audio.workspace = true
 rmac-compositor.workspace = true
@@ -24,4 +25,5 @@ rmac-notifications.workspace = true
 rmac-notifications-runtime.workspace = true
 rmac-notifications-store.workspace = true
 rmac-shell-invocation.workspace = true
+url.workspace = true
 zbus.workspace = true

@@ -6,7 +6,7 @@
 //! fallback. A compositor rejection is never bypassed.
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Delivery {
@@ -164,6 +164,22 @@ pub async fn open_item(path: PathBuf) -> Result<(), ItemError> {
     Ok(())
 }
 
+/// Open one existing local regular document selected through a trusted
+/// cross-application boundary.
+///
+/// Notification targets and similar deferred requests must not turn a
+/// directory, relative path, or final symlink into a document activation.
+pub async fn open_document(path: PathBuf) -> Result<(), ItemError> {
+    let candidate = path.clone();
+    let valid = blocking::unblock(move || is_regular_document(&candidate)).await;
+    if !valid {
+        return Err(ItemError {
+            operation: ItemOperation::Open,
+        });
+    }
+    open_item(path).await
+}
+
 /// Reveal one local item in the platform file manager.
 ///
 /// Callers receive only the operation class so a private path or portal detail
@@ -249,9 +265,17 @@ fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
     )
 }
 
+fn is_regular_document(path: &Path) -> bool {
+    path.is_absolute()
+        && std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn errors_are_actionable_and_redact_commands() {
@@ -308,5 +332,29 @@ mod tests {
             RecentDocumentError.to_string(),
             "the document could not be added to Recents"
         );
+    }
+
+    #[test]
+    fn notification_documents_are_absolute_regular_files_without_final_symlinks() {
+        let root = std::env::temp_dir().join(format!(
+            "rmac-app-launch-document-{}-{}",
+            std::process::id(),
+            TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let document = root.join("document.txt");
+        std::fs::write(&document, b"private").unwrap();
+        assert!(is_regular_document(&document));
+        assert!(!is_regular_document(&root));
+        assert!(!is_regular_document(Path::new("document.txt")));
+
+        #[cfg(unix)]
+        {
+            let link = root.join("document-link.txt");
+            std::os::unix::fs::symlink(&document, &link).unwrap();
+            assert!(!is_regular_document(&link));
+        }
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

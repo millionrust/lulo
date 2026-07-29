@@ -5357,6 +5357,7 @@ dependencies = [
  "image",
  "libc",
  "quick-xml 0.39.4",
+ "rmac-app-launch",
  "rmac-appearance",
  "rmac-apps",
  "rmac-audio",
@@ -5367,6 +5368,7 @@ dependencies = [
  "rmac-notifications-runtime",
  "rmac-notifications-store",
  "rmac-shell-invocation",
+ "url",
  "zbus",
 ]
 
@@ -5865,6 +5867,7 @@ dependencies = [
  "gpui-component-assets",
  "rmac-appearance",
  "rmac-appearance-portal",
+ "rmac-apps",
  "rmac-theme",
 ]
 

@@ -2,6 +2,8 @@
 
 #![cfg_attr(target_os = "macos", allow(dead_code))]
 
+pub mod identity;
+
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io;

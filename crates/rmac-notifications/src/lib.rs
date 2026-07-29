@@ -530,6 +530,7 @@ pub struct ActionInvocation {
     pub app_id: AppId,
     pub action_id: String,
     pub target: Option<ActionTarget>,
+    pub purpose: Option<String>,
 }
 
 impl fmt::Debug for ActionInvocation {
@@ -540,6 +541,7 @@ impl fmt::Debug for ActionInvocation {
             .field("app_id", &self.app_id)
             .field("action_id", &"<redacted>")
             .field("target", &self.target)
+            .field("purpose", &self.purpose.as_ref().map(|_| "<redacted>"))
             .finish()
     }
 }
@@ -811,6 +813,7 @@ impl Server {
             app_id: notification.source.app_id().clone(),
             action_id: action.id.clone(),
             target: action.target.clone(),
+            purpose: action.purpose.clone(),
         };
         let closed = if notification.display.resident {
             None
@@ -1301,6 +1304,8 @@ mod tests {
                 "Second",
                 Some(ActionTarget::new("s", b"second".to_vec()).unwrap()),
             )
+            .unwrap()
+            .with_purpose(protocol::DOCUMENT_OPEN_PURPOSE)
             .unwrap(),
         ];
         let posted = server
@@ -1308,6 +1313,10 @@ mod tests {
             .unwrap();
         let (invocation, _) = server.invoke_button(posted.id, 1).unwrap();
         assert_eq!(invocation.target.unwrap().bytes(), b"second");
+        assert_eq!(
+            invocation.purpose.as_deref(),
+            Some(protocol::DOCUMENT_OPEN_PURPOSE)
+        );
     }
 
     #[test]

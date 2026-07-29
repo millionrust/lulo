@@ -74,13 +74,50 @@ metadata, icons, and identifiers remain original rmac work.
   after the completed-stage record is durable, Files first converts that record
   into a non-destructive retained-copy review so restart cannot resume the
   cancelled replacement. The exchanged stage is fsynced and persisted before
-  the previous destination is removed without following symlinks. Restart
-  recovery never removes a source that still exists, but infers a same-volume
-  source rename, cross-volume source removal, or exchange interrupted before
-  its stage write; it resumes identity-bound partial directory cleanup and
+  the exact previous destination is handed to the private Undo history.
+  Restart recovery never removes a source that still exists, but infers a
+  same-volume source rename, cross-volume source removal, or exchange
+  interrupted before its stage write; it resumes identity-bound partial
+  directory cleanup and
   keeps changed source/destination/backup state for an exact review. Batch-only
   conflicts still disable Replace because no existing destination snapshot was
-  reviewed. User-facing Undo is not implemented yet.
+  reviewed.
+- Every completed journaled copy, move, copy replacement, and move replacement
+  commits a versioned Undo receipt before its forward record is cleared.
+  Same-volume moves now pass through the same private source stage instead of
+  bypassing the journal. Receipts retain raw path bytes, exact no-follow source/
+  destination manifests, the original source-parent identity, deterministic
+  private restore/cleanup paths, and the exact prior destination for a
+  replacement. A private kernel lock serializes receipt publication, pruning,
+  and execution across Files processes. A receipt remains `forward_pending`
+  and invisible until its exact forward record has been removed; startup
+  promotes a detached pending receipt, closing the cross-process commit window.
+  Normal ready history is bounded to the latest 20 operations, with a
+  512-record safety ceiling; pruning removes a replacement backup only while
+  its identity is still proven.
+- Command-Z and the context menu expose the latest operation by its bounded,
+  control-sanitized item name. Copy Undo removes a published destination only
+  while both the exact copy and its unchanged source still exist, so it cannot
+  discard the only proven copy. Move Undo requires the original source path to
+  remain vacant and never replaces a racing item. Same-volume restoration is
+  one atomic no-replace rename. Cross-volume restoration preflights capacity,
+  copies into a private mode-0700 source-volume container, publishes with one
+  no-replace rename, and only then privately stages and removes the still-bound
+  destination. Replacement Undo first atomically exchanges the retained prior
+  destination back into place; copy replacement removes the displaced new copy
+  only while its source still matches, while move replacement restores that
+  exact item to its original source before cleanup.
+- Undo has visible checking/copying/finishing states and cooperative
+  cancellation. Cancellation before publication leaves the durable copy-back
+  stage for a safe Command-Z retry. Restart inference covers cleanup renamed
+  before receipt persistence, replacement exchange before stage persistence,
+  completed source copy, source publication, and same-volume restoration
+  before receipt deletion. Partial cross-volume copies are removed only from
+  their bound private container. Changed source, destination, prior-item
+  backup, source parent, occupied original location, insufficient capacity, or
+  unsafe private state fails closed without deleting, replacing, or guessing.
+  Trash and restore transactions are not in this Undo history yet; permanent
+  deletion remains intentionally irreversible.
 - Every destructive or multi-step operation has a durable, versioned journal
   whose recovery distinguishes prepared, destination-complete,
   source-removed, replacement-exchanged, published, committed, and ambiguous

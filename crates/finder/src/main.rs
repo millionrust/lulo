@@ -10,6 +10,7 @@ mod operation_journal;
 mod pasteboard;
 #[cfg(any(target_os = "linux", test))]
 mod trash_store;
+mod undo_journal;
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, VecDeque};
@@ -45,6 +46,7 @@ actions!(
         CopyItems,
         CutItems,
         PasteItems,
+        UndoOperation,
         SelectAll,
         GoUp,
         ToggleHidden,
@@ -77,6 +79,15 @@ enum TransferEvent {
     Finished {
         report: file_ops::TransferReport,
         recovery_reviews: std::io::Result<Vec<operation_journal::RecoveryReview>>,
+        undo_availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
+    },
+}
+
+enum UndoEvent {
+    Progress(file_ops::CopyActivity),
+    Finished {
+        outcome: std::io::Result<Option<undo_journal::UndoOutcome>>,
+        availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
     },
 }
 
@@ -118,6 +129,15 @@ struct ActiveTransfer {
     cancelling: bool,
     keep_unfinished_in_clipboard: bool,
     retained_clipboard: Vec<PathBuf>,
+}
+
+#[derive(Clone)]
+struct ActiveUndo {
+    label: SharedString,
+    phase: file_ops::TransferPhase,
+    bytes_processed: u64,
+    cancel: Arc<AtomicBool>,
+    cancelling: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -353,6 +373,8 @@ struct FinderView {
     operation_error: Option<SharedString>,
     operation_journal: Option<Arc<operation_journal::Journal>>,
     journal_loading: bool,
+    undo_available: Option<undo_journal::UndoAvailability>,
+    undo_operation: Option<ActiveUndo>,
     pending_operations: usize,
     recovery_reviews: Vec<operation_journal::RecoveryReview>,
     recovery_open: bool,
@@ -396,6 +418,9 @@ impl Drop for FinderView {
     fn drop(&mut self) {
         if let Some(transfer) = &self.transfer {
             transfer.cancel.store(true, Ordering::Release);
+        }
+        if let Some(undo) = &self.undo_operation {
+            undo.cancel.store(true, Ordering::Release);
         }
         #[cfg(any(target_os = "linux", test))]
         if let Some(trash) = &self.trash_operation {
@@ -552,6 +577,7 @@ impl FinderView {
             KeyBinding::new("cmd-c", CopyItems, Some("Finder")),
             KeyBinding::new("cmd-x", CutItems, Some("Finder")),
             KeyBinding::new("cmd-v", PasteItems, Some("Finder")),
+            KeyBinding::new("cmd-z", UndoOperation, Some("Finder")),
             KeyBinding::new("cmd-d", Duplicate, Some("Finder")),
             KeyBinding::new("cmd-backspace", MoveToTrash, Some("Finder")),
             KeyBinding::new("cmd-option-backspace", DeletePermanently, Some("Finder")),
@@ -621,6 +647,8 @@ impl FinderView {
             operation_error: mount_error,
             operation_journal: None,
             journal_loading: true,
+            undo_available: None,
+            undo_operation: None,
             pending_operations: 0,
             recovery_reviews: Vec::new(),
             recovery_open: false,
@@ -667,14 +695,16 @@ impl FinderView {
                     let journal = Arc::new(operation_journal::Journal::open_default()?);
                     let recovery = journal.recover_unambiguous()?;
                     let reviews = journal.review_pending()?;
-                    Ok::<_, std::io::Error>((journal, recovery, reviews))
+                    let undo = journal.undo_store().latest()?;
+                    Ok::<_, std::io::Error>((journal, recovery, reviews, undo))
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 this.journal_loading = false;
                 match result {
-                    Ok((journal, recovery, reviews)) => {
+                    Ok((journal, recovery, reviews, undo)) => {
                         this.operation_journal = Some(journal);
+                        this.undo_available = undo;
                         this.pending_operations = reviews.len();
                         this.recovery_open = !reviews.is_empty();
                         this.recovery_reviews = reviews;
@@ -710,6 +740,7 @@ impl FinderView {
                     }
                     Err(_) => {
                         this.operation_journal = None;
+                        this.undo_available = None;
                         this.operation_error = Some(
                             "File-operation recovery data could not be verified; transfers are disabled"
                                 .into(),
@@ -1322,6 +1353,7 @@ impl FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_busy = false;
         if self.transfer.is_none()
+            && self.undo_operation.is_none()
             && !trash_busy
             && !self.conflict_preflight
             && self.conflict_batch.is_none()
@@ -1599,9 +1631,11 @@ impl FinderView {
                 let recovery_reviews = journal
                     .recover_unambiguous()
                     .and_then(|_| journal.review_pending());
+                let undo_availability = journal.undo_store().latest();
                 let _ = events.send_blocking(TransferEvent::Finished {
                     report,
                     recovery_reviews,
+                    undo_availability,
                 });
             })
             .detach();
@@ -1624,6 +1658,7 @@ impl FinderView {
                         TransferEvent::Finished {
                             report,
                             recovery_reviews,
+                            undo_availability,
                         } => {
                             let keep_clipboard = this
                                 .transfer
@@ -1658,6 +1693,16 @@ impl FinderView {
                                     this.recovery_reviews.clear();
                                     this.recovery_open = false;
                                 }
+                            }
+                            match undo_availability {
+                                Ok(availability) => this.undo_available = availability,
+                                Err(_) => {
+                                    this.undo_available = None;
+                                    this.operation_journal = None;
+                                }
+                            }
+                            if this.operation_journal.is_none() {
+                                this.undo_available = None;
                             }
                             this.record_operation_failures(report.failures, cx);
                             if this.operation_journal.is_none() {
@@ -1696,6 +1741,187 @@ impl FinderView {
         if let Some(transfer) = self.transfer.as_mut() {
             transfer.cancel.store(true, Ordering::Release);
             transfer.cancelling = true;
+            cx.notify();
+        }
+    }
+
+    fn start_undo(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "linux", test))]
+        let trash_busy = self.trash_operation.is_some();
+        #[cfg(not(any(target_os = "linux", test)))]
+        let trash_busy = false;
+        if self.transfer.is_some()
+            || self.undo_operation.is_some()
+            || trash_busy
+            || self.conflict_preflight
+            || self.conflict_batch.is_some()
+            || self.recovery_busy
+        {
+            self.operation_error = Some("Wait for the current file operation to finish".into());
+            cx.notify();
+            return;
+        }
+        if self.journal_loading {
+            self.operation_error = Some("Files is still verifying file-operation recovery".into());
+            cx.notify();
+            return;
+        }
+        let Some(journal) = self.operation_journal.clone() else {
+            self.operation_error =
+                Some("File-operation recovery is unavailable; Undo is disabled".into());
+            cx.notify();
+            return;
+        };
+        if self.pending_operations != 0 {
+            self.operation_error = Some(
+                "Review unfinished file operations before undoing a completed operation".into(),
+            );
+            self.recovery_open = true;
+            cx.notify();
+            return;
+        }
+        let Some(available) = self.undo_available.clone() else {
+            self.operation_notice = Some("There are no completed file operations to undo".into());
+            self.operation_error = None;
+            cx.notify();
+            return;
+        };
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.operation_error = None;
+        self.operation_notice = None;
+        self.undo_operation = Some(ActiveUndo {
+            label: available.label.into(),
+            phase: file_ops::TransferPhase::Scanning,
+            bytes_processed: 0,
+            cancel: cancel.clone(),
+            cancelling: false,
+        });
+        cx.notify();
+
+        let (events, event_rx) = async_channel::bounded(64);
+        cx.background_executor()
+            .spawn(async move {
+                let progress_events = events.clone();
+                let outcome = journal.undo_store().execute_latest(
+                    &file_ops::RealFileSystem,
+                    &cancel,
+                    &mut |activity| {
+                        let _ = progress_events.try_send(UndoEvent::Progress(activity));
+                    },
+                );
+                let availability = journal.undo_store().latest();
+                let _ = events.send_blocking(UndoEvent::Finished {
+                    outcome,
+                    availability,
+                });
+            })
+            .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = event_rx.recv().await {
+                let finished = matches!(event, UndoEvent::Finished { .. });
+                if this
+                    .update(cx, |this: &mut FinderView, cx| match event {
+                        UndoEvent::Progress(activity) => {
+                            if let Some(undo) = this.undo_operation.as_mut() {
+                                match activity {
+                                    file_ops::CopyActivity::Bytes(bytes) => {
+                                        undo.phase = file_ops::TransferPhase::Copying;
+                                        undo.bytes_processed =
+                                            undo.bytes_processed.saturating_add(bytes);
+                                    }
+                                    file_ops::CopyActivity::Finishing => {
+                                        undo.phase = file_ops::TransferPhase::Finishing;
+                                    }
+                                }
+                            }
+                            cx.notify();
+                        }
+                        UndoEvent::Finished {
+                            outcome,
+                            availability,
+                        } => {
+                            this.undo_operation = None;
+                            match availability {
+                                Ok(availability) => this.undo_available = availability,
+                                Err(_) => {
+                                    this.undo_available = None;
+                                    this.operation_journal = None;
+                                }
+                            }
+                            match outcome {
+                                Ok(Some(outcome)) => {
+                                    this.operation_notice =
+                                        Some(format!("{} completed", outcome.label).into());
+                                    this.operation_error = None;
+                                }
+                                Ok(None) => {
+                                    this.operation_notice =
+                                        Some("There are no completed file operations to undo".into());
+                                    this.operation_error = None;
+                                }
+                                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                                    this.operation_notice = Some(
+                                        "Undo paused at a durable boundary; press Command-Z to continue"
+                                            .into(),
+                                    );
+                                    this.operation_error = None;
+                                }
+                                Err(error)
+                                    if error.kind() == std::io::ErrorKind::WouldBlock =>
+                                {
+                                    this.operation_error = Some(
+                                        "Undo stopped because an involved item changed; no changed item was removed or replaced"
+                                            .into(),
+                                    );
+                                }
+                                Err(error)
+                                    if error.kind() == std::io::ErrorKind::AlreadyExists =>
+                                {
+                                    this.operation_error = Some(
+                                        "Undo stopped because the original location is no longer available; no item was overwritten"
+                                            .into(),
+                                    );
+                                }
+                                Err(error)
+                                    if error.kind() == std::io::ErrorKind::StorageFull =>
+                                {
+                                    this.operation_error =
+                                        Some(format!("Undo needs more free space: {error}").into());
+                                }
+                                Err(_) => {
+                                    this.operation_error = Some(
+                                        "Files could not complete Undo; its durable receipt was retained for a safe retry"
+                                            .into(),
+                                    );
+                                }
+                            }
+                            if this.operation_journal.is_none() {
+                                this.operation_error = Some(
+                                    "Undo history could not be verified; transfers are disabled until recovery data is repaired"
+                                        .into(),
+                                );
+                            }
+                            this.reload(cx);
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                if finished {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn cancel_undo(&mut self, cx: &mut Context<Self>) {
+        if let Some(undo) = self.undo_operation.as_mut() {
+            undo.cancel.store(true, Ordering::Release);
+            undo.cancelling = true;
             cx.notify();
         }
     }
@@ -1899,23 +2125,22 @@ impl FinderView {
                 .background_executor()
                 .spawn(async move {
                     let outcome = journal.resolve_review(&review);
-                    let refresh = journal
-                        .recover_unambiguous()
-                        .and_then(|recovery| {
-                            journal
-                                .review_pending()
-                                .map(|reviews| (recovery, reviews))
-                        });
+                    let refresh = journal.recover_unambiguous().and_then(|recovery| {
+                        let reviews = journal.review_pending()?;
+                        let undo = journal.undo_store().latest()?;
+                        Ok((recovery, reviews, undo))
+                    });
                     (outcome, refresh)
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 this.recovery_busy = false;
                 match refresh {
-                    Ok((recovery, reviews)) => {
+                    Ok((recovery, reviews, undo)) => {
                         this.pending_operations = reviews.len();
                         this.recovery_reviews = reviews;
                         this.recovery_open = this.pending_operations != 0;
+                        this.undo_available = undo;
                         if recovery.finalized != 0 && outcome.is_err() {
                             this.operation_notice = Some(
                                 format!(
@@ -1929,6 +2154,7 @@ impl FinderView {
                     }
                     Err(_) => {
                         this.operation_journal = None;
+                        this.undo_available = None;
                         this.pending_operations = 0;
                         this.recovery_reviews.clear();
                         this.recovery_open = false;
@@ -3056,8 +3282,12 @@ impl FinderView {
         has_selection: bool,
         can_paste: bool,
         trash_view: bool,
+        undo_label: Option<String>,
     ) -> rmac_ui::ContextMenu {
         let mut m = rmac_ui::ContextMenu::new(pos);
+        if let Some(label) = undo_label {
+            m = m.item(label, Box::new(UndoOperation)).separator();
+        }
         if trash_view {
             if has_selection {
                 m = m
@@ -3421,6 +3651,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &CopyItems, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &CutItems, _, cx| this.cut(cx)))
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
+            .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
@@ -4165,9 +4396,14 @@ impl Render for FinderView {
         let menu_at = self.menu_at;
         let has_sel = !self.selected.is_empty();
         let can_paste = !self.clipboard.is_empty();
+        let undo_label = self
+            .undo_available
+            .as_ref()
+            .map(|available| available.label.clone());
         let operation_notice = self.operation_notice.clone();
         let operation_error = self.operation_error.clone();
         let transfer = self.transfer.clone();
+        let undo_progress = self.undo_operation.clone();
         #[cfg(any(target_os = "linux", test))]
         let trash_progress = self.trash_operation.as_ref().map(|operation| {
             (
@@ -4381,6 +4617,57 @@ impl Render for FinderView {
                     )
                 },
             )
+            .when_some(undo_progress, |el, undo| {
+                let status = match undo.phase {
+                    file_ops::TransferPhase::Scanning => {
+                        format!("{} — Checking items", undo.label)
+                    }
+                    file_ops::TransferPhase::Copying if undo.bytes_processed != 0 => format!(
+                        "{} — Restoring {}",
+                        undo.label,
+                        human_size(undo.bytes_processed)
+                    ),
+                    file_ops::TransferPhase::Copying => {
+                        format!("{} — Restoring item", undo.label)
+                    }
+                    file_ops::TransferPhase::Finishing => {
+                        format!("{} — Finishing safely", undo.label)
+                    }
+                };
+                el.child(
+                    div()
+                        .id("undo-progress")
+                        .h(px(34.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .bg(rmac_ui::mac::accent_subtle())
+                        .border_b_1()
+                        .border_color(rmac_ui::mac::accent_border())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(label())
+                        .child(div().flex_1().child(status))
+                        .child(
+                            div()
+                                .id("cancel-undo")
+                                .px_2()
+                                .py_0p5()
+                                .rounded(px(5.0))
+                                .bg(rmac_ui::mac::raised())
+                                .border_1()
+                                .border_color(rmac_ui::mac::accent_border())
+                                .cursor_pointer()
+                                .child(if undo.cancelling {
+                                    "Cancelling…"
+                                } else {
+                                    "Cancel"
+                                })
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_undo(cx))),
+                        ),
+                )
+            })
             .when_some(transfer, |el, transfer| {
                 let action = if transfer.cancelling {
                     "Cancelling…"
@@ -4450,7 +4737,8 @@ impl Render for FinderView {
             .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))
             .when_some(menu_at, |el, pos| {
                 el.child(
-                    Self::build_context_menu(pos, has_sel, can_paste, self.trash_view).render(),
+                    Self::build_context_menu(pos, has_sel, can_paste, self.trash_view, undo_label)
+                        .render(),
                 )
             })
             .when_some(conflict_dialog, |el, dialog| el.child(dialog))
@@ -4503,11 +4791,11 @@ fn conflict_prompt(conflict: &TransferConflict) -> String {
     let choice = if conflict.destination_snapshot.is_none() {
         "Another item in this batch needs the same name. Keep Both chooses an available numbered name. Replace is unavailable because no existing destination was reviewed."
     } else if conflict.kind == ConflictTransferKind::Move {
-        "Keep Both moves this item under an available numbered name. Replace durably stages the move, atomically publishes it, and removes the reviewed previous item only after the source-removal boundary is safe. Replace cannot be undone yet. Skip leaves both items unchanged."
+        "Keep Both moves this item under an available numbered name. Replace durably stages the move, atomically publishes it, and retains the reviewed previous item for Command-Z Undo. Skip leaves both items unchanged."
     } else if conflict.source == conflict.destination {
         "Keep Both creates a copy under an available numbered name. An item cannot replace itself, so Replace is disabled. Skip leaves it unchanged."
     } else {
-        "Keep Both uses an available numbered name. Replace atomically publishes the new copy before removing the reviewed previous item. Replace cannot be undone yet. Skip leaves both items unchanged."
+        "Keep Both uses an available numbered name. Replace atomically publishes the new copy and retains the reviewed previous item for Command-Z Undo. Skip leaves both items unchanged."
     };
     format!("An item named “{name}” already exists in “{folder}”. {choice}")
 }

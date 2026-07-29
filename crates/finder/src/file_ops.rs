@@ -181,7 +181,7 @@ pub(crate) struct SourceUsage {
 }
 
 impl SourceUsage {
-    fn required_bytes(self) -> io::Result<u64> {
+    pub(crate) fn required_bytes(self) -> io::Result<u64> {
         self.entries
             .checked_mul(ENTRY_SPACE_ALLOWANCE)
             .and_then(|overhead| self.logical_bytes.checked_add(overhead))
@@ -194,6 +194,45 @@ pub(crate) struct VolumeSpace {
     device: u64,
     total_bytes: u64,
     available_bytes: u64,
+}
+
+impl VolumeSpace {
+    pub(crate) fn device(self) -> u64 {
+        self.device
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_value(device: u64) -> Self {
+        Self {
+            device,
+            total_bytes: u64::MAX,
+            available_bytes: u64::MAX,
+        }
+    }
+}
+
+pub(crate) fn ensure_copy_capacity(
+    fs: &impl FileSystem,
+    source: &Path,
+    destination_parent: &Path,
+    cancel: &AtomicBool,
+) -> io::Result<()> {
+    let usage = fs.source_usage(source, cancel)?;
+    let space = fs.destination_space(destination_parent)?;
+    let reserve = (space.total_bytes / 20).min(MAX_FREE_SPACE_RESERVE);
+    let usable = space.available_bytes.saturating_sub(reserve);
+    let required = usage.required_bytes()?;
+    if required > usable {
+        return Err(io::Error::new(
+            io::ErrorKind::StorageFull,
+            format!(
+                "not enough free space to undo this move ({} needed while keeping a {} reserve)",
+                format_bytes(required),
+                format_bytes(reserve)
+            ),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) struct RealFileSystem;
@@ -823,27 +862,57 @@ fn move_item_cancellable(
             io::Error::new(io::ErrorKind::Interrupted, "cancelled"),
         ));
     }
-    match fs.rename(source, destination) {
-        Ok(()) => return Ok(()),
-        Err(error)
-            if error.kind() == io::ErrorKind::CrossesDevices && !cross_volume_copy_allowed =>
-        {
-            return Err(Failure::message(
-                Operation::Move,
-                source,
-                Some(destination),
-                "the destination volume changed after the transfer was checked; try again",
-            ));
+    if let Some(journal) = journal {
+        if !cross_volume_copy_allowed {
+            let mut ticket = journal.prepare_move(source, destination).map_err(|error| {
+                Failure::from_io(Operation::Move, source, Some(destination), error)
+                    .with_recovery_detail(
+                        "Recovery could not be prepared, so the source was not changed",
+                    )
+            })?;
+            ticket.stage_source_for_move().map_err(|error| {
+                Failure::from_io(Operation::Move, source, Some(destination), error)
+                    .with_recovery_detail(
+                        "Files retained the exact same-volume move state for recovery",
+                    )
+            })?;
+            progress(CopyActivity::Finishing);
+            ticket.publish().map_err(|error| {
+                Failure::from_io(Operation::Move, source, Some(destination), error)
+                    .with_source_removed()
+                    .with_recovery_detail("The exact source remains in private recovery storage")
+            })?;
+            return ticket.commit().map_err(|error| {
+                Failure::from_io(Operation::Move, source, Some(destination), error)
+                    .with_source_removed()
+                    .with_recovery_detail(
+                        "The move is complete, but Files retained a recovery record",
+                    )
+            });
         }
-        Err(error) if error.kind() != io::ErrorKind::CrossesDevices => {
-            return Err(Failure::from_io(
-                Operation::Move,
-                source,
-                Some(destination),
-                error,
-            ));
+    } else {
+        match fs.rename(source, destination) {
+            Ok(()) => return Ok(()),
+            Err(error)
+                if error.kind() == io::ErrorKind::CrossesDevices && !cross_volume_copy_allowed =>
+            {
+                return Err(Failure::message(
+                    Operation::Move,
+                    source,
+                    Some(destination),
+                    "the destination volume changed after the transfer was checked; try again",
+                ));
+            }
+            Err(error) if error.kind() != io::ErrorKind::CrossesDevices => {
+                return Err(Failure::from_io(
+                    Operation::Move,
+                    source,
+                    Some(destination),
+                    error,
+                ));
+            }
+            Err(_) => {}
         }
-        Err(_) => {}
     }
 
     let mut ticket = match journal {

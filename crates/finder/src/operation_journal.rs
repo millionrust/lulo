@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
+use crate::undo_journal::{UndoKind, UndoSeed, UndoStore};
+
 const JOURNAL_VERSION: u32 = 1;
 const MAX_RECORD_BYTES: u64 = 64 * 1024;
 const MAX_RECORDS: usize = 512;
@@ -138,13 +140,17 @@ impl TreeManifest {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct TreeSnapshot {
     identity: EntryIdentity,
     manifest: TreeManifest,
 }
 
 impl TreeSnapshot {
+    pub(crate) fn from_parts(identity: EntryIdentity, manifest: TreeManifest) -> Self {
+        Self { identity, manifest }
+    }
+
     pub(crate) fn capture(path: &Path) -> io::Result<Self> {
         let identity = EntryIdentity::capture(path)?;
         let manifest = TreeManifest::capture(path)?;
@@ -165,6 +171,31 @@ impl TreeSnapshot {
             {
                 Ok(false)
             }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(crate) fn still_matches_after_rename(&self, path: &Path) -> io::Result<bool> {
+        let current = match Self::capture(path) {
+            Ok(current) => current,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(self.identity.same_entry_after_rename(&current.identity)
+            && self.manifest.same_after_root_rename(&current.manifest))
+    }
+
+    pub(crate) fn same_root_object(&self, path: &Path) -> io::Result<bool> {
+        match EntryIdentity::capture(path) {
+            Ok(current) => Ok(self.identity.same_object(&current)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error),
         }
     }
@@ -330,6 +361,11 @@ struct TransferRecord {
     replaced_manifest: Option<TreeManifest>,
     #[serde(default)]
     resolution_intent: Option<ResolutionIntent>,
+    /// New transfers retain enough exact state to create a durable Undo
+    /// receipt. Older version-1 records default to false and keep their
+    /// original cleanup behavior during recovery.
+    #[serde(default)]
+    create_undo_receipt: bool,
 }
 
 impl TransferRecord {
@@ -588,6 +624,7 @@ impl TransferRecord {
 #[derive(Clone, Debug)]
 pub(crate) struct Journal {
     root: PathBuf,
+    undo: UndoStore,
 }
 
 struct RecordLock {
@@ -743,7 +780,8 @@ impl Journal {
             ));
         }
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
-        let journal = Self { root };
+        let undo = UndoStore::open(root.join("undo"))?;
+        let journal = Self { root, undo };
         journal.remove_abandoned_temps()?;
         journal.remove_orphan_locks()?;
         Ok(journal)
@@ -816,6 +854,33 @@ impl Journal {
 
         match ticket.record.operation {
             JournalOperation::Move => match ticket.record.stage {
+                TransferStage::Prepared
+                    if source_missing
+                        && staging.is_some()
+                        && destination.is_none()
+                        && ticket.record.source_path_matches_after_rename(
+                            &ticket.record.staging_destination(),
+                        )? =>
+                {
+                    let staged = TreeSnapshot::capture(&ticket.record.staging_destination())?;
+                    if !ticket
+                        .record
+                        .source_identity
+                        .same_entry_after_rename(&staged.identity)
+                        || ticket
+                            .record
+                            .source_manifest
+                            .as_ref()
+                            .is_some_and(|source| !source.same_after_root_rename(&staged.manifest))
+                    {
+                        return Ok(false);
+                    }
+                    ticket.record.destination_identity = Some(staged.identity);
+                    ticket.record.destination_manifest = Some(staged.manifest);
+                    ticket.record.stage = TransferStage::SourceRemoved;
+                    self.persist(&ticket.path, &ticket.record, false)?;
+                    self.publish_recovered_move(ticket)
+                }
                 TransferStage::Prepared => Ok(false),
                 TransferStage::DestinationComplete
                     if source_missing && staging_matches && destination.is_none() =>
@@ -920,7 +985,11 @@ impl Journal {
                         ticket.finish_replacement(true)?;
                         self.finish_recovered_ticket(ticket)
                     }
-                    TransferStage::Published if destination_matches && staging.is_none() => {
+                    TransferStage::Published
+                        if destination_matches
+                            && ((!ticket.record.create_undo_receipt && staging.is_none())
+                                || (ticket.record.create_undo_receipt && staging_old_matches)) =>
+                    {
                         self.finish_recovered_ticket(ticket)
                     }
                     TransferStage::SourceRemoved => Err(invalid_data(
@@ -1044,7 +1113,10 @@ impl Journal {
                         self.finish_recovered_ticket(ticket)
                     }
                     TransferStage::Published
-                        if source_missing && destination_matches && staging.is_none() =>
+                        if source_missing
+                            && destination_matches
+                            && ((!ticket.record.create_undo_receipt && staging.is_none())
+                                || (ticket.record.create_undo_receipt && staging_old_matches)) =>
                     {
                         self.finish_recovered_ticket(ticket)
                     }
@@ -1200,6 +1272,7 @@ impl Journal {
                 ticket.record.destination_manifest = Some(staging_manifest);
                 ticket.record.stage = TransferStage::DestinationComplete;
                 ticket.record.resolution_intent = Some(ResolutionIntent::PreserveCopy);
+                ticket.record.create_undo_receipt = false;
                 self.persist(&ticket.path, &ticket.record, false)?;
                 ticket.publish_preserved()?;
                 ticket.commit()?;
@@ -1278,7 +1351,13 @@ impl Journal {
                 "recovered transfer did not reach published state",
             ));
         }
+        if ticket.record.create_undo_receipt {
+            self.undo.archive(undo_seed_from_record(&ticket.record)?)?;
+        }
         self.finish_record(&ticket.path, &ticket.lock)?;
+        if ticket.record.create_undo_receipt {
+            self.undo.activate(&ticket.record.id)?;
+        }
         Ok(true)
     }
 
@@ -1418,6 +1497,7 @@ impl Journal {
             replaced_identity,
             replaced_manifest,
             resolution_intent: None,
+            create_undo_receipt: true,
         };
         record.validate(&id)?;
         let lock = self.create_active_lock(&id)?;
@@ -1522,6 +1602,10 @@ impl Journal {
         sync_directory(&self.root)
     }
 
+    pub(crate) fn undo_store(&self) -> &UndoStore {
+        &self.undo
+    }
+
     fn persist(&self, path: &Path, record: &TransferRecord, create: bool) -> io::Result<()> {
         let mut bytes = serde_json::to_vec(record).map_err(invalid_json)?;
         bytes.push(b'\n');
@@ -1585,6 +1669,18 @@ impl Journal {
                 {
                     return Err(invalid_data(
                         "journal temporary is not a bounded private regular file",
+                    ));
+                }
+                continue;
+            }
+            if name == "undo" {
+                let metadata = fs::symlink_metadata(&path)?;
+                if !metadata.is_dir()
+                    || metadata.file_type().is_symlink()
+                    || metadata.mode() & 0o777 != 0o700
+                {
+                    return Err(invalid_data(
+                        "file-operation undo root is not a private real directory",
                     ));
                 }
                 continue;
@@ -1802,6 +1898,40 @@ impl TransferTicket {
         self.journal.persist(&self.path, &self.record, false)
     }
 
+    pub(crate) fn stage_source_for_move(&mut self) -> io::Result<()> {
+        if self.record.operation != JournalOperation::Move
+            || self.record.stage != TransferStage::Prepared
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "move is not ready to stage its source",
+            ));
+        }
+        if !self.source_still_matches()? || entry_exists(&self.record.destination())? {
+            return Err(review_changed());
+        }
+        let staging = self.record.staging_destination();
+        rename_noreplace(&self.record.source(), &staging)?;
+        sync_rename_parents(&self.record.source(), &staging)?;
+        let staged = TreeSnapshot::capture(&staging)?;
+        if !self
+            .record
+            .source_identity
+            .same_entry_after_rename(&staged.identity)
+            || !self
+                .record
+                .source_manifest
+                .as_ref()
+                .is_some_and(|source| source.same_after_root_rename(&staged.manifest))
+        {
+            return Err(invalid_data("move source changed during private staging"));
+        }
+        self.record.destination_identity = Some(staged.identity);
+        self.record.destination_manifest = Some(staged.manifest);
+        self.record.stage = TransferStage::SourceRemoved;
+        self.journal.persist(&self.path, &self.record, false)
+    }
+
     pub(crate) fn mark_source_removed(&mut self) -> io::Result<()> {
         if !matches!(
             self.record.operation,
@@ -1925,7 +2055,7 @@ impl TransferTicket {
             return Err(invalid_data("replacement cleanup state is invalid"));
         }
         let staging = self.record.staging_destination();
-        if entry_exists(&staging)? {
+        if entry_exists(&staging)? && !self.record.create_undo_receipt {
             let exact = self.record.replaced_path_matches(&staging, true)?;
             let partial_directory = allow_partial_directory
                 && replacement_directory_root_matches(&self.record, &staging)?;
@@ -1934,7 +2064,11 @@ impl TransferTicket {
             }
             remove_replacement_entry(&self.record, &staging)?;
         }
-        if entry_exists(&staging)? {
+        if self.record.create_undo_receipt {
+            if !self.record.replaced_path_matches(&staging, true)? {
+                return Err(review_changed());
+            }
+        } else if entry_exists(&staging)? {
             return Err(review_changed());
         }
         self.record.stage = TransferStage::Published;
@@ -2001,8 +2135,56 @@ impl TransferTicket {
                 "transfer journal cannot commit before destination publication",
             ));
         }
-        self.journal.finish_record(&self.path, &self.lock)
+        if self.record.create_undo_receipt {
+            self.journal
+                .undo
+                .archive(undo_seed_from_record(&self.record)?)?;
+        }
+        self.journal.finish_record(&self.path, &self.lock)?;
+        if self.record.create_undo_receipt {
+            self.journal.undo.activate(&self.record.id)?;
+        }
+        Ok(())
     }
+}
+
+fn undo_seed_from_record(record: &TransferRecord) -> io::Result<UndoSeed> {
+    let source_manifest = record
+        .source_manifest
+        .clone()
+        .ok_or_else(|| invalid_data("completed transfer has no source manifest"))?;
+    let destination_identity = record
+        .destination_identity
+        .clone()
+        .ok_or_else(|| invalid_data("completed transfer has no destination identity"))?;
+    let destination_manifest = record
+        .destination_manifest
+        .clone()
+        .ok_or_else(|| invalid_data("completed transfer has no destination manifest"))?;
+    let kind = match record.operation {
+        JournalOperation::Copy => UndoKind::Copy,
+        JournalOperation::Move => UndoKind::Move,
+        JournalOperation::Replace => UndoKind::Replace,
+        JournalOperation::MoveReplace => UndoKind::MoveReplace,
+    };
+    let replaced = match (
+        record.replaced_identity.clone(),
+        record.replaced_manifest.clone(),
+    ) {
+        (Some(identity), Some(manifest)) => Some(TreeSnapshot::from_parts(identity, manifest)),
+        (None, None) => None,
+        _ => return Err(invalid_data("replacement evidence is incomplete")),
+    };
+    Ok(UndoSeed {
+        id: record.id.clone(),
+        kind,
+        source: record.source(),
+        destination: record.destination(),
+        backup: replaced.as_ref().map(|_| record.staging_destination()),
+        source_snapshot: TreeSnapshot::from_parts(record.source_identity.clone(), source_manifest),
+        destination_snapshot: TreeSnapshot::from_parts(destination_identity, destination_manifest),
+        replaced_snapshot: replaced,
+    })
 }
 
 fn sync_directory(path: &Path) -> io::Result<()> {
@@ -2408,7 +2590,64 @@ mod tests {
     }
 
     #[test]
-    fn successful_replacement_atomically_publishes_copy_and_removes_previous_item() {
+    fn undo_receipt_is_not_visible_before_forward_record_commit() {
+        let root = TestDirectory::new("undo-forward-pending");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_copy(&source, &destination).unwrap();
+        fs::write(ticket.staging_destination(), b"source").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        ticket.publish_copy().unwrap();
+        journal
+            .undo
+            .archive(undo_seed_from_record(&ticket.record).unwrap())
+            .unwrap();
+
+        assert!(journal.undo_store().latest().unwrap().is_none());
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 1);
+        assert!(journal.undo_store().latest().unwrap().is_some());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn recovery_infers_same_volume_move_staging_before_record_persistence() {
+        let root = TestDirectory::new("move-staging-interruption");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"source").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let ticket = journal.prepare_move(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        rename_noreplace(&source, &staging).unwrap();
+        sync_rename_parents(&source, &staging).unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(
+            report,
+            RecoveryReport {
+                finalized: 1,
+                pending: 0,
+                active: 0,
+            }
+        );
+        assert!(!source.exists());
+        assert_eq!(fs::read(&destination).unwrap(), b"source");
+        assert!(!staging.exists());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
+    }
+
+    #[test]
+    fn successful_replacement_atomically_publishes_copy_and_retains_undo_backup() {
         let root = TestDirectory::new("replace-commit");
         let source = root.0.join("source");
         let destination = root.0.join("destination");
@@ -2429,9 +2668,10 @@ mod tests {
 
         assert_eq!(fs::read(&source).unwrap(), b"new bytes");
         assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
-        assert!(!staging.exists());
+        assert_eq!(fs::read(&staging).unwrap(), b"previous bytes");
         assert!(!lock_path.exists());
         assert_eq!(journal.pending_count().unwrap(), 0);
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
     #[test]
@@ -2486,8 +2726,9 @@ mod tests {
 
         assert!(!source.exists());
         assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
-        assert!(!staging.exists());
+        assert_eq!(fs::read(&staging).unwrap(), b"previous bytes");
         assert_eq!(journal.pending_count().unwrap(), 0);
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
     #[test]
@@ -2510,8 +2751,9 @@ mod tests {
         assert_eq!(report.pending, 0);
         assert!(!source.exists());
         assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
-        assert!(!staging.exists());
+        assert_eq!(fs::read(&staging).unwrap(), b"previous bytes");
         assert_eq!(journal.pending_count().unwrap(), 0);
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
     #[test]
@@ -2535,8 +2777,9 @@ mod tests {
         assert_eq!(report.pending, 0);
         assert!(!source.exists());
         assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
-        assert!(!staging.exists());
+        assert_eq!(fs::read(&staging).unwrap(), b"previous bytes");
         assert_eq!(journal.pending_count().unwrap(), 0);
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
     #[test]
@@ -2660,8 +2903,9 @@ mod tests {
         );
         assert_eq!(fs::read(&source).unwrap(), b"new bytes");
         assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
-        assert!(!staging.exists());
+        assert_eq!(fs::read(&staging).unwrap(), b"previous bytes");
         assert_eq!(journal.pending_count().unwrap(), 0);
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
     #[test]
@@ -2690,8 +2934,9 @@ mod tests {
         assert_eq!(report.pending, 0);
         assert_eq!(fs::read(&source).unwrap(), b"new bytes");
         assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
-        assert!(!staging.exists());
+        assert_eq!(fs::read(&staging).unwrap(), b"previous bytes");
         assert_eq!(journal.pending_count().unwrap(), 0);
+        assert_eq!(journal.undo_store().count().unwrap(), 1);
     }
 
     #[test]
@@ -2716,6 +2961,7 @@ mod tests {
         rename_exchange(&staging, &destination).unwrap();
         sync_directory(&root.0).unwrap();
         ticket.record.stage = TransferStage::Replaced;
+        ticket.record.create_undo_receipt = false;
         journal
             .persist(&ticket.path, &ticket.record, false)
             .unwrap();
@@ -3160,6 +3406,7 @@ mod tests {
             replaced_identity: None,
             replaced_manifest: None,
             resolution_intent: None,
+            create_undo_receipt: false,
         };
 
         let bytes = serde_json::to_vec(&record).unwrap();

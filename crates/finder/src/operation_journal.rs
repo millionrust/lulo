@@ -24,6 +24,7 @@ enum JournalOperation {
     Copy,
     #[default]
     Move,
+    Replace,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -32,6 +33,7 @@ pub(crate) enum TransferStage {
     Prepared,
     DestinationComplete,
     SourceRemoved,
+    Replaced,
     Published,
 }
 
@@ -87,7 +89,6 @@ impl EntryIdentity {
             && self.modified_nanoseconds == other.modified_nanoseconds
     }
 
-    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn same_object(&self, other: &Self) -> bool {
         self.device == other.device && self.inode == other.inode && self.mode == other.mode
     }
@@ -133,6 +134,38 @@ impl TreeManifest {
         self.entries == other.entries
             && self.path_bytes == other.path_bytes
             && self.rename_stable_sha256 == other.rename_stable_sha256
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TreeSnapshot {
+    identity: EntryIdentity,
+    manifest: TreeManifest,
+}
+
+impl TreeSnapshot {
+    pub(crate) fn capture(path: &Path) -> io::Result<Self> {
+        let identity = EntryIdentity::capture(path)?;
+        let manifest = TreeManifest::capture(path)?;
+        if EntryIdentity::capture(path)? != identity {
+            return Err(manifest_changed());
+        }
+        Ok(Self { identity, manifest })
+    }
+
+    pub(crate) fn still_matches(&self, path: &Path) -> io::Result<bool> {
+        match Self::capture(path) {
+            Ok(current) => Ok(&current == self),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                Ok(false)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -291,6 +324,10 @@ struct TransferRecord {
     #[serde(default)]
     destination_manifest: Option<TreeManifest>,
     #[serde(default)]
+    replaced_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    replaced_manifest: Option<TreeManifest>,
+    #[serde(default)]
     resolution_intent: Option<ResolutionIntent>,
 }
 
@@ -368,6 +405,45 @@ impl TransferRecord {
         })
     }
 
+    fn replaced_path_matches(&self, path: &Path, published: bool) -> io::Result<bool> {
+        let Some(expected_identity) = &self.replaced_identity else {
+            return Ok(false);
+        };
+        let current_identity = match EntryIdentity::capture(path) {
+            Ok(identity) => identity,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        let identity_matches = if published {
+            expected_identity.same_entry_after_rename(&current_identity)
+        } else {
+            expected_identity == &current_identity
+        };
+        if !identity_matches {
+            return Ok(false);
+        }
+        let Some(expected_manifest) = &self.replaced_manifest else {
+            return Ok(true);
+        };
+        let current_manifest = match TreeManifest::capture(path) {
+            Ok(manifest) => manifest,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(if published {
+            expected_manifest.same_after_root_rename(&current_manifest)
+        } else {
+            expected_manifest == &current_manifest
+        })
+    }
+
     fn validate(&self, expected_id: &str) -> io::Result<()> {
         if self.version != JOURNAL_VERSION {
             return Err(invalid_data("unsupported file-operation journal version"));
@@ -407,13 +483,38 @@ impl TransferRecord {
                 "advanced journal is missing its destination identity",
             ));
         }
-        if self.operation == JournalOperation::Copy && self.stage == TransferStage::SourceRemoved {
+        if self.operation != JournalOperation::Move && self.stage == TransferStage::SourceRemoved {
             return Err(invalid_data(
-                "copy journal cannot contain a source-removed stage",
+                "journal operation cannot contain a source-removed stage",
             ));
         }
-        if self.operation == JournalOperation::Copy && self.source_manifest.is_none() {
-            return Err(invalid_data("copy journal is missing its source manifest"));
+        if self.operation != JournalOperation::Replace && self.stage == TransferStage::Replaced {
+            return Err(invalid_data(
+                "only a replacement journal can contain a replaced stage",
+            ));
+        }
+        if matches!(
+            self.operation,
+            JournalOperation::Copy | JournalOperation::Replace
+        ) && self.source_manifest.is_none()
+        {
+            return Err(invalid_data(
+                "copying journal is missing its source manifest",
+            ));
+        }
+        let replacement_evidence_complete =
+            self.replaced_identity.is_some() && self.replaced_manifest.is_some();
+        if self.operation == JournalOperation::Replace && !replacement_evidence_complete {
+            return Err(invalid_data(
+                "replacement journal is missing destination evidence",
+            ));
+        }
+        if self.operation != JournalOperation::Replace
+            && (self.replaced_identity.is_some() || self.replaced_manifest.is_some())
+        {
+            return Err(invalid_data(
+                "ordinary journal unexpectedly contains replacement evidence",
+            ));
         }
         if self.stage != TransferStage::Prepared
             && self.source_manifest.is_some()
@@ -431,6 +532,11 @@ impl TransferRecord {
         {
             return Err(invalid_data(
                 "preserve-copy intent has an invalid journal stage",
+            ));
+        }
+        if self.operation == JournalOperation::Replace && self.resolution_intent.is_some() {
+            return Err(invalid_data(
+                "replacement journal has an unsupported resolution intent",
             ));
         }
         Ok(())
@@ -472,6 +578,10 @@ pub(crate) enum RecoveryAction {
         complete: bool,
         suggested_name: String,
     },
+    PreserveReplacementBackup {
+        complete: bool,
+        suggested_name: String,
+    },
     KeepExistingItems,
 }
 
@@ -480,6 +590,10 @@ impl fmt::Debug for RecoveryAction {
         match self {
             Self::PreserveCopy { complete, .. } => formatter
                 .debug_struct("PreserveCopy")
+                .field("complete", complete)
+                .finish_non_exhaustive(),
+            Self::PreserveReplacementBackup { complete, .. } => formatter
+                .debug_struct("PreserveReplacementBackup")
                 .field("complete", complete)
                 .finish_non_exhaustive(),
             Self::KeepExistingItems => formatter.write_str("KeepExistingItems"),
@@ -494,6 +608,7 @@ pub(crate) struct RecoveryReview {
     source_snapshot: Option<EntryIdentity>,
     source_manifest_matches: bool,
     staging_snapshot: Option<EntryIdentity>,
+    staging_review_manifest: Option<TreeManifest>,
     staging_manifest_matches: bool,
     destination_snapshot: Option<EntryIdentity>,
     preserve_destination: Option<PathBuf>,
@@ -514,6 +629,7 @@ impl fmt::Debug for RecoveryReview {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum ResolutionOutcome {
     PreservedCopy { complete: bool, name: String },
+    PreservedReplacementBackup { complete: bool, name: String },
     KeptExistingItems,
 }
 
@@ -522,6 +638,10 @@ impl fmt::Debug for ResolutionOutcome {
         match self {
             Self::PreservedCopy { complete, .. } => formatter
                 .debug_struct("PreservedCopy")
+                .field("complete", complete)
+                .finish_non_exhaustive(),
+            Self::PreservedReplacementBackup { complete, .. } => formatter
+                .debug_struct("PreservedReplacementBackup")
                 .field("complete", complete)
                 .finish_non_exhaustive(),
             Self::KeptExistingItems => formatter.write_str("KeptExistingItems"),
@@ -705,6 +825,68 @@ impl Journal {
                     _ => Ok(false),
                 }
             }
+            JournalOperation::Replace => {
+                let source_matches = ticket.source_still_matches()?;
+                let destination_old_matches = destination.is_some()
+                    && ticket
+                        .record
+                        .replaced_path_matches(&ticket.record.destination(), false)?;
+                let staging_old_matches = staging.is_some()
+                    && ticket
+                        .record
+                        .replaced_path_matches(&ticket.record.staging_destination(), true)?;
+                let staging_partial_directory = staging.is_some()
+                    && replacement_directory_root_matches(
+                        &ticket.record,
+                        &ticket.record.staging_destination(),
+                    )?;
+                match ticket.record.stage {
+                    TransferStage::Prepared => Ok(false),
+                    TransferStage::DestinationComplete
+                        if source_matches && staging_matches && destination_old_matches =>
+                    {
+                        match ticket.replace_copy() {
+                            Ok(()) => self.finish_recovered_ticket(ticket),
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    io::ErrorKind::InvalidInput | io::ErrorKind::Unsupported
+                                ) =>
+                            {
+                                Ok(false)
+                            }
+                            Err(error) => Err(error),
+                        }
+                    }
+                    TransferStage::DestinationComplete
+                        if destination_matches && staging_old_matches =>
+                    {
+                        sync_directory(ticket.record.destination().parent().ok_or_else(|| {
+                            invalid_data("replacement destination has no parent")
+                        })?)?;
+                        ticket.record.stage = TransferStage::Replaced;
+                        self.persist(&ticket.path, &ticket.record, false)?;
+                        ticket.finish_replacement(false)?;
+                        self.finish_recovered_ticket(ticket)
+                    }
+                    TransferStage::Replaced
+                        if destination_matches
+                            && (staging.is_none()
+                                || staging_old_matches
+                                || staging_partial_directory) =>
+                    {
+                        ticket.finish_replacement(true)?;
+                        self.finish_recovered_ticket(ticket)
+                    }
+                    TransferStage::Published if destination_matches && staging.is_none() => {
+                        self.finish_recovered_ticket(ticket)
+                    }
+                    TransferStage::SourceRemoved => Err(invalid_data(
+                        "replacement journal reached an impossible source-removed stage",
+                    )),
+                    _ => Ok(false),
+                }
+            }
         }
     }
 
@@ -718,26 +900,52 @@ impl Journal {
             let journal_identity = EntryIdentity::capture(&journal_path)?;
             let source_snapshot = capture_optional(&record.source())?;
             let staging_snapshot = capture_optional(&record.staging_destination())?;
+            let staging_review_manifest = if staging_snapshot.is_some() {
+                Some(TreeManifest::capture(&record.staging_destination())?)
+            } else {
+                None
+            };
             let destination_snapshot = capture_optional(&record.destination())?;
-            let source_matches =
-                record.operation != JournalOperation::Copy || record.source_still_matches()?;
+            let source_matches = !matches!(
+                record.operation,
+                JournalOperation::Copy | JournalOperation::Replace
+            ) || record.source_still_matches()?;
             let staging_matches = staging_snapshot.is_some()
                 && record.destination_path_matches(&record.staging_destination(), false)?;
+            let replacement_was_published = record.operation == JournalOperation::Replace
+                && destination_snapshot.is_some()
+                && record.destination_path_matches(&record.destination(), true)?;
+            let replacement_backup = record.operation == JournalOperation::Replace
+                && staging_snapshot.is_some()
+                && (record.replaced_path_matches(&record.staging_destination(), true)?
+                    || (replacement_was_published && record.stage == TransferStage::Replaced));
             let (action, preserve_destination) = if staging_snapshot.is_some() {
-                let complete =
-                    staging_matches && record.stage != TransferStage::Prepared && source_matches;
                 let candidate = available_recovery_destination(&record.destination())?;
                 let suggested_name = candidate
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "Recovered item".to_string());
-                (
-                    RecoveryAction::PreserveCopy {
-                        complete,
-                        suggested_name,
-                    },
-                    Some(candidate),
-                )
+                if replacement_backup {
+                    (
+                        RecoveryAction::PreserveReplacementBackup {
+                            complete: record
+                                .replaced_path_matches(&record.staging_destination(), true)?,
+                            suggested_name,
+                        },
+                        Some(candidate),
+                    )
+                } else {
+                    let complete = staging_matches
+                        && record.stage != TransferStage::Prepared
+                        && source_matches;
+                    (
+                        RecoveryAction::PreserveCopy {
+                            complete,
+                            suggested_name,
+                        },
+                        Some(candidate),
+                    )
+                }
             } else {
                 (RecoveryAction::KeepExistingItems, None)
             };
@@ -747,6 +955,7 @@ impl Journal {
                 source_snapshot,
                 source_manifest_matches: source_matches,
                 staging_snapshot,
+                staging_review_manifest,
                 staging_manifest_matches: staging_matches,
                 destination_snapshot,
                 preserve_destination,
@@ -765,6 +974,10 @@ impl Journal {
             RecoveryAction::PreserveCopy {
                 complete,
                 suggested_name,
+            }
+            | RecoveryAction::PreserveReplacementBackup {
+                complete,
+                suggested_name,
             } => {
                 let candidate = review
                     .preserve_destination
@@ -780,13 +993,25 @@ impl Journal {
                     .staging_snapshot
                     .clone()
                     .ok_or_else(|| invalid_data("recovery copy is no longer available"))?;
-                let staging_manifest = TreeManifest::capture(&review.record.staging_destination())?;
+                let staging_manifest = review
+                    .staging_review_manifest
+                    .clone()
+                    .ok_or_else(|| invalid_data("recovery copy has no reviewed tree manifest"))?;
                 let mut ticket = TransferTicket {
                     journal: self.clone(),
                     path: self.record_path(&review.record.id),
                     record: review.record.clone(),
                     lock,
                 };
+                let preserved_replacement = matches!(
+                    review.action,
+                    RecoveryAction::PreserveReplacementBackup { .. }
+                );
+                if ticket.record.operation == JournalOperation::Replace {
+                    ticket.record.operation = JournalOperation::Copy;
+                    ticket.record.replaced_identity = None;
+                    ticket.record.replaced_manifest = None;
+                }
                 ticket.record.destination_path_bytes = candidate.as_os_str().as_bytes().to_vec();
                 ticket.record.destination_identity = Some(staging_identity);
                 ticket.record.destination_manifest = Some(staging_manifest);
@@ -795,10 +1020,17 @@ impl Journal {
                 self.persist(&ticket.path, &ticket.record, false)?;
                 ticket.publish_preserved()?;
                 ticket.commit()?;
-                Ok(ResolutionOutcome::PreservedCopy {
-                    complete: *complete,
-                    name: suggested_name.clone(),
-                })
+                if preserved_replacement {
+                    Ok(ResolutionOutcome::PreservedReplacementBackup {
+                        complete: *complete,
+                        name: suggested_name.clone(),
+                    })
+                } else {
+                    Ok(ResolutionOutcome::PreservedCopy {
+                        complete: *complete,
+                        name: suggested_name.clone(),
+                    })
+                }
             }
             RecoveryAction::KeepExistingItems => {
                 let path = self.record_path(&review.record.id);
@@ -820,9 +1052,14 @@ impl Journal {
             .ok_or_else(review_changed)?;
         if current != review.record
             || capture_optional(&review.record.source())? != review.source_snapshot
-            || (review.record.operation == JournalOperation::Copy
-                && review.record.source_still_matches()? != review.source_manifest_matches)
+            || (matches!(
+                review.record.operation,
+                JournalOperation::Copy | JournalOperation::Replace
+            ) && review.record.source_still_matches()? != review.source_manifest_matches)
             || capture_optional(&review.record.staging_destination())? != review.staging_snapshot
+            || (review.staging_snapshot.is_some()
+                && Some(TreeManifest::capture(&review.record.staging_destination())?)
+                    != review.staging_review_manifest)
             || (review.staging_snapshot.is_some()
                 && review
                     .record
@@ -866,7 +1103,7 @@ impl Journal {
         source: &Path,
         destination: &Path,
     ) -> io::Result<TransferTicket> {
-        self.prepare_transfer(JournalOperation::Move, source, destination)
+        self.prepare_transfer(JournalOperation::Move, source, destination, None, None)
     }
 
     pub(crate) fn prepare_copy(
@@ -874,7 +1111,32 @@ impl Journal {
         source: &Path,
         destination: &Path,
     ) -> io::Result<TransferTicket> {
-        self.prepare_transfer(JournalOperation::Copy, source, destination)
+        self.prepare_transfer(JournalOperation::Copy, source, destination, None, None)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prepare_replace(
+        &self,
+        source: &Path,
+        destination: &Path,
+    ) -> io::Result<TransferTicket> {
+        self.prepare_transfer(JournalOperation::Replace, source, destination, None, None)
+    }
+
+    pub(crate) fn prepare_replace_bound(
+        &self,
+        source: &Path,
+        destination: &Path,
+        expected_source: &TreeSnapshot,
+        expected_destination: &TreeSnapshot,
+    ) -> io::Result<TransferTicket> {
+        self.prepare_transfer(
+            JournalOperation::Replace,
+            source,
+            destination,
+            Some(expected_source),
+            Some(expected_destination),
+        )
     }
 
     fn prepare_transfer(
@@ -882,6 +1144,8 @@ impl Journal {
         operation: JournalOperation,
         source: &Path,
         destination: &Path,
+        expected_source: Option<&TreeSnapshot>,
+        expected_destination: Option<&TreeSnapshot>,
     ) -> io::Result<TransferTicket> {
         if !source.is_absolute() || !destination.is_absolute() {
             return Err(io::Error::new(
@@ -897,11 +1161,29 @@ impl Journal {
             )
         })?;
         let staging = destination_parent.join(format!(".rmac-transfer-{id}"));
-        let source_identity = EntryIdentity::capture(source)?;
-        let source_manifest = TreeManifest::capture(source)?;
-        if EntryIdentity::capture(source)? != source_identity {
-            return Err(manifest_changed());
+        let source_snapshot = TreeSnapshot::capture(source)?;
+        if expected_source.is_some_and(|expected| expected != &source_snapshot) {
+            return Err(review_changed());
         }
+        let source_identity = source_snapshot.identity;
+        let source_manifest = source_snapshot.manifest;
+        let (replaced_identity, replaced_manifest) = if operation == JournalOperation::Replace {
+            let destination_snapshot = TreeSnapshot::capture(destination)?;
+            if expected_destination.is_some_and(|expected| expected != &destination_snapshot) {
+                return Err(review_changed());
+            }
+            (
+                Some(destination_snapshot.identity),
+                Some(destination_snapshot.manifest),
+            )
+        } else {
+            if expected_destination.is_some() {
+                return Err(invalid_data(
+                    "ordinary transfer unexpectedly has replacement evidence",
+                ));
+            }
+            (None, None)
+        };
         let record = TransferRecord {
             version: JOURNAL_VERSION,
             id: id.clone(),
@@ -914,6 +1196,8 @@ impl Journal {
             source_manifest: Some(source_manifest),
             destination_identity: None,
             destination_manifest: None,
+            replaced_identity,
+            replaced_manifest,
             resolution_intent: None,
         };
         record.validate(&id)?;
@@ -1224,6 +1508,37 @@ impl TransferTicket {
         self.record.destination_path_matches(&path, published)
     }
 
+    pub(crate) fn replacement_still_matches(&self) -> io::Result<bool> {
+        match self.record.stage {
+            TransferStage::Prepared | TransferStage::DestinationComplete => self
+                .record
+                .replaced_path_matches(&self.record.destination(), false),
+            TransferStage::Replaced => self
+                .record
+                .replaced_path_matches(&self.record.staging_destination(), true),
+            TransferStage::Published => Ok(!entry_exists(&self.record.staging_destination())?),
+            TransferStage::SourceRemoved => Ok(false),
+        }
+    }
+
+    pub(crate) fn retain_cancelled_replacement(&mut self) -> io::Result<()> {
+        if self.record.operation != JournalOperation::Replace
+            || self.record.stage != TransferStage::DestinationComplete
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "replacement is not ready for cancellation retention",
+            ));
+        }
+        let mut retained = self.record.clone();
+        retained.operation = JournalOperation::Copy;
+        retained.replaced_identity = None;
+        retained.replaced_manifest = None;
+        self.journal.persist(&self.path, &retained, false)?;
+        self.record = retained;
+        Ok(())
+    }
+
     pub(crate) fn mark_source_removed(&mut self) -> io::Result<()> {
         if self.record.operation != JournalOperation::Move {
             return Err(io::Error::new(
@@ -1267,6 +1582,73 @@ impl TransferTicket {
             ));
         }
         self.publish_entry()
+    }
+
+    pub(crate) fn replace_copy(&mut self) -> io::Result<()> {
+        if self.record.operation != JournalOperation::Replace
+            || self.record.stage != TransferStage::DestinationComplete
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "replacement is not ready for its atomic swap",
+            ));
+        }
+        if !self.source_still_matches()?
+            || !self.destination_still_matches()?
+            || !self.replacement_still_matches()?
+        {
+            return Err(review_changed());
+        }
+        rename_exchange(
+            &self.record.staging_destination(),
+            &self.record.destination(),
+        )?;
+        sync_directory(
+            self.record
+                .destination()
+                .parent()
+                .ok_or_else(|| invalid_data("replacement destination has no parent"))?,
+        )?;
+        if !self
+            .record
+            .destination_path_matches(&self.record.destination(), true)?
+            || !self
+                .record
+                .replaced_path_matches(&self.record.staging_destination(), true)?
+        {
+            return Err(invalid_data(
+                "replacement identities changed during the atomic swap",
+            ));
+        }
+        self.record.stage = TransferStage::Replaced;
+        self.journal.persist(&self.path, &self.record, false)?;
+        self.finish_replacement(false)
+    }
+
+    fn finish_replacement(&mut self, allow_partial_directory: bool) -> io::Result<()> {
+        if self.record.operation != JournalOperation::Replace
+            || self.record.stage != TransferStage::Replaced
+            || !self
+                .record
+                .destination_path_matches(&self.record.destination(), true)?
+        {
+            return Err(invalid_data("replacement cleanup state is invalid"));
+        }
+        let staging = self.record.staging_destination();
+        if entry_exists(&staging)? {
+            let exact = self.record.replaced_path_matches(&staging, true)?;
+            let partial_directory = allow_partial_directory
+                && replacement_directory_root_matches(&self.record, &staging)?;
+            if !exact && !partial_directory {
+                return Err(review_changed());
+            }
+            remove_replacement_entry(&self.record, &staging)?;
+        }
+        if entry_exists(&staging)? {
+            return Err(review_changed());
+        }
+        self.record.stage = TransferStage::Published;
+        self.journal.persist(&self.path, &self.record, false)
     }
 
     fn publish_preserved(&mut self) -> io::Result<()> {
@@ -1345,6 +1727,50 @@ fn capture_optional(path: &Path) -> io::Result<Option<EntryIdentity>> {
     }
 }
 
+fn entry_exists(path: &Path) -> io::Result<bool> {
+    Ok(capture_optional(path)?.is_some())
+}
+
+fn replacement_directory_root_matches(record: &TransferRecord, path: &Path) -> io::Result<bool> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Ok(false);
+    }
+    let Some(expected) = record.replaced_identity.as_ref() else {
+        return Ok(false);
+    };
+    Ok(expected.same_object(&EntryIdentity::capture(path)?))
+}
+
+fn remove_replacement_entry(record: &TransferRecord, path: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    let identity = EntryIdentity::capture(path)?;
+    let Some(expected) = record.replaced_identity.as_ref() else {
+        return Err(invalid_data(
+            "replacement cleanup has no original destination identity",
+        ));
+    };
+    if !expected.same_object(&identity) {
+        return Err(review_changed());
+    }
+    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+        fs::remove_dir_all(path)?;
+    } else {
+        if !record.replaced_path_matches(path, true)? {
+            return Err(review_changed());
+        }
+        fs::remove_file(path)?;
+    }
+    sync_directory(
+        path.parent()
+            .ok_or_else(|| invalid_data("replacement backup has no parent"))?,
+    )
+}
+
 fn available_recovery_destination(destination: &Path) -> io::Result<PathBuf> {
     if capture_optional(destination)?.is_none() {
         return Ok(destination.to_path_buf());
@@ -1407,6 +1833,26 @@ fn rename_noreplace(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "atomic no-replace rename is unavailable on this platform",
+    ))
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn rename_exchange(left: &Path, right: &Path) -> io::Result<()> {
+    rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        left,
+        rustix::fs::CWD,
+        right,
+        rustix::fs::RenameFlags::EXCHANGE,
+    )
+    .map_err(io::Error::from)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn rename_exchange(_left: &Path, _right: &Path) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "atomic replacement exchange is unavailable on this platform",
     ))
 }
 
@@ -1637,6 +2083,285 @@ mod tests {
         assert_eq!(fs::read(source).unwrap(), b"source");
         assert_eq!(fs::read(destination).unwrap(), b"source");
         assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn successful_replacement_atomically_publishes_copy_and_removes_previous_item() {
+        let root = TestDirectory::new("replace-commit");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"new bytes").unwrap();
+        fs::write(&destination, b"previous bytes").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        let lock_path = ticket.lock.path.clone();
+        fs::write(&staging, b"new bytes").unwrap();
+
+        ticket.mark_destination_complete().unwrap();
+        assert!(ticket.source_still_matches().unwrap());
+        assert!(ticket.destination_still_matches().unwrap());
+        assert!(ticket.replacement_still_matches().unwrap());
+        ticket.replace_copy().unwrap();
+        ticket.commit().unwrap();
+
+        assert_eq!(fs::read(&source).unwrap(), b"new bytes");
+        assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
+        assert!(!staging.exists());
+        assert!(!lock_path.exists());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn cancellation_after_staging_cannot_restart_as_a_replacement() {
+        let root = TestDirectory::new("replace-cancelled-after-stage");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"new bytes").unwrap();
+        fs::write(&destination, b"previous bytes").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"new bytes").unwrap();
+        ticket.mark_destination_complete().unwrap();
+
+        ticket.retain_cancelled_replacement().unwrap();
+        drop(ticket);
+        let report = journal.recover_unambiguous().unwrap();
+        let review = journal.review_pending().unwrap().remove(0);
+
+        assert_eq!(report.finalized, 0);
+        assert_eq!(report.pending, 1);
+        assert_eq!(
+            review.action,
+            RecoveryAction::PreserveCopy {
+                complete: true,
+                suggested_name: "destination (Recovered)".to_string(),
+            }
+        );
+        assert_eq!(fs::read(&source).unwrap(), b"new bytes");
+        assert_eq!(fs::read(&destination).unwrap(), b"previous bytes");
+        assert_eq!(fs::read(&staging).unwrap(), b"new bytes");
+    }
+
+    #[test]
+    fn replacement_refuses_a_substituted_destination_without_losing_any_item() {
+        let root = TestDirectory::new("replace-destination-race");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        let retained_previous = root.0.join("retained-previous");
+        fs::write(&source, b"new bytes").unwrap();
+        fs::write(&destination, b"previous bytes").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"new bytes").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        fs::rename(&destination, &retained_previous).unwrap();
+        fs::write(&destination, b"racing destination").unwrap();
+
+        let error = ticket.replace_copy().unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(fs::read(&source).unwrap(), b"new bytes");
+        assert_eq!(fs::read(&staging).unwrap(), b"new bytes");
+        assert_eq!(fs::read(&destination).unwrap(), b"racing destination");
+        assert_eq!(fs::read(&retained_previous).unwrap(), b"previous bytes");
+        assert_eq!(journal.pending_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn recovery_infers_an_exchange_interrupted_before_stage_persistence() {
+        let root = TestDirectory::new("replace-exchange-interruption");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"new bytes").unwrap();
+        fs::write(&destination, b"previous bytes").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"new bytes").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        rename_exchange(&staging, &destination).unwrap();
+        sync_directory(&root.0).unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(
+            report,
+            RecoveryReport {
+                finalized: 1,
+                pending: 0,
+                active: 0,
+            }
+        );
+        assert_eq!(fs::read(&source).unwrap(), b"new bytes");
+        assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
+        assert!(!staging.exists());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn recovery_finishes_replacement_cleanup_after_replaced_stage_persistence() {
+        let root = TestDirectory::new("replace-cleanup-interruption");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"new bytes").unwrap();
+        fs::write(&destination, b"previous bytes").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"new bytes").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        rename_exchange(&staging, &destination).unwrap();
+        sync_directory(&root.0).unwrap();
+        ticket.record.stage = TransferStage::Replaced;
+        journal
+            .persist(&ticket.path, &ticket.record, false)
+            .unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 1);
+        assert_eq!(report.pending, 0);
+        assert_eq!(fs::read(&source).unwrap(), b"new bytes");
+        assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
+        assert!(!staging.exists());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn replacement_recovery_resumes_partial_directory_cleanup_without_following_symlinks() {
+        let root = TestDirectory::new("replace-partial-directory");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        let outside = root.0.join("outside");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("new-item"), b"new bytes").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("removed-before-restart"), b"old").unwrap();
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("must-survive"), b"private").unwrap();
+        std::os::unix::fs::symlink(&outside, destination.join("outside-link")).unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("new-item"), b"new bytes").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        rename_exchange(&staging, &destination).unwrap();
+        sync_directory(&root.0).unwrap();
+        ticket.record.stage = TransferStage::Replaced;
+        journal
+            .persist(&ticket.path, &ticket.record, false)
+            .unwrap();
+        fs::remove_file(staging.join("removed-before-restart")).unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+
+        assert_eq!(report.finalized, 1);
+        assert_eq!(report.pending, 0);
+        assert_eq!(
+            fs::read(destination.join("new-item")).unwrap(),
+            b"new bytes"
+        );
+        assert_eq!(fs::read(outside.join("must-survive")).unwrap(), b"private");
+        assert!(!staging.exists());
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn changed_replacement_backup_is_preserved_only_after_bound_review() {
+        let root = TestDirectory::new("replace-backup-review");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::write(&source, b"new bytes").unwrap();
+        fs::write(&destination, b"previous bytes").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::write(&staging, b"new bytes").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        rename_exchange(&staging, &destination).unwrap();
+        sync_directory(&root.0).unwrap();
+        ticket.record.stage = TransferStage::Replaced;
+        journal
+            .persist(&ticket.path, &ticket.record, false)
+            .unwrap();
+        fs::write(&staging, b"changed previous bytes").unwrap();
+        drop(ticket);
+
+        let report = journal.recover_unambiguous().unwrap();
+        let review = journal.review_pending().unwrap().remove(0);
+
+        assert_eq!(report.finalized, 0);
+        assert_eq!(report.pending, 1);
+        assert_eq!(
+            review.action,
+            RecoveryAction::PreserveReplacementBackup {
+                complete: false,
+                suggested_name: "destination (Recovered)".to_string(),
+            }
+        );
+        let outcome = journal.resolve_review(&review).unwrap();
+
+        assert_eq!(
+            outcome,
+            ResolutionOutcome::PreservedReplacementBackup {
+                complete: false,
+                name: "destination (Recovered)".to_string(),
+            }
+        );
+        assert_eq!(fs::read(&source).unwrap(), b"new bytes");
+        assert_eq!(fs::read(&destination).unwrap(), b"new bytes");
+        assert_eq!(
+            fs::read(root.0.join("destination (Recovered)")).unwrap(),
+            b"changed previous bytes"
+        );
+        assert_eq!(journal.pending_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn replacement_backup_review_rejects_a_nested_change_after_review() {
+        let root = TestDirectory::new("replace-backup-review-race");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("new-item"), b"new bytes").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("old-item"), b"previous bytes").unwrap();
+        let journal = Journal::open(root.0.join("journal")).unwrap();
+        let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
+        let staging = ticket.staging_destination();
+        fs::create_dir(&staging).unwrap();
+        fs::write(staging.join("new-item"), b"new bytes").unwrap();
+        ticket.mark_destination_complete().unwrap();
+        rename_exchange(&staging, &destination).unwrap();
+        sync_directory(&root.0).unwrap();
+        ticket.record.stage = TransferStage::Replaced;
+        journal
+            .persist(&ticket.path, &ticket.record, false)
+            .unwrap();
+        fs::remove_file(staging.join("old-item")).unwrap();
+        drop(ticket);
+        let review = journal.review_pending().unwrap().remove(0);
+        fs::write(staging.join("changed-after-review"), b"racing bytes").unwrap();
+
+        let error = journal.resolve_review(&review).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(
+            fs::read(destination.join("new-item")).unwrap(),
+            b"new bytes"
+        );
+        assert_eq!(
+            fs::read(staging.join("changed-after-review")).unwrap(),
+            b"racing bytes"
+        );
+        assert_eq!(journal.pending_count().unwrap(), 1);
     }
 
     #[test]
@@ -1970,6 +2695,8 @@ mod tests {
             source_manifest: None,
             destination_identity: None,
             destination_manifest: None,
+            replaced_identity: None,
+            replaced_manifest: None,
             resolution_intent: None,
         };
 
@@ -1985,6 +2712,8 @@ mod tests {
         let legacy_object = legacy.as_object_mut().unwrap();
         legacy_object.remove("operation");
         legacy_object.remove("source_manifest");
+        legacy_object.remove("replaced_identity");
+        legacy_object.remove("replaced_manifest");
         let legacy: TransferRecord = serde_json::from_value(legacy).unwrap();
         legacy.validate(&id).unwrap();
         assert_eq!(legacy.operation, JournalOperation::Move);

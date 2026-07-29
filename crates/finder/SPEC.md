@@ -52,11 +52,34 @@ metadata, icons, and identifiers remain original rmac work.
 - Cancellation never removes the move source. Partial destinations remain
   visible for explicit recovery and are never silently deleted after a path
   race.
-- Conflicts require an explicit reviewed choice: keep both, replace, or skip.
-  Replace must use a recoverable journaled swap rather than delete-then-copy.
+- Paste and drag/drop conflicts are preflighted away from GPUI and presented
+  sequentially with explicit Keep Both, Replace, and Skip choices. Each review
+  binds bounded no-follow source and existing-destination tree snapshots and
+  revalidates them off-thread at acceptance. Keep Both chooses an unoccupied
+  numbered name without clobbering another item; Skip leaves both reviewed
+  items unchanged and retains skipped cut items on the clipboard. Enter chooses
+  Keep Both, Escape chooses Skip, and duplicate activation is blocked while a
+  choice is being revalidated.
+- Copy replacement never uses delete-then-copy. The reviewed snapshots are
+  revalidated again while preparing a private journal; the source is copied to
+  a durable hidden destination-volume stage; source, stage, and previous
+  destination are checked again; then one kernel atomic exchange publishes the
+  new copy while retaining the previous destination at the hidden name.
+  Cancellation is honored only before that exchange. If it arrives after the
+  completed-stage record is durable, Files first converts that record into a
+  non-destructive retained-copy review so restart cannot resume the cancelled
+  replacement. The exchanged stage is fsynced and persisted before the
+  previous destination is removed without following symlinks. Restart recovery
+  infers an exchange interrupted before
+  its stage write, resumes identity-bound partial directory cleanup, and keeps
+  changed backup state for an exact review that can preserve it under a
+  no-clobber recovered name. Safe move replacement and user-facing undo are not
+  implemented yet; Replace is visibly disabled for move and batch-only
+  conflicts instead of claiming unsupported safety.
 - Every destructive or multi-step operation has a durable, versioned journal
   whose recovery distinguishes prepared, destination-complete,
-  source-removed, published, committed, and ambiguous states. Journal files
+  source-removed, replacement-exchanged, published, committed, and ambiguous
+  states. Journal files
   preserve raw Unix path bytes, use private modes, are atomically replaced and
   fsynced, and bind no-follow device/inode/type/size/time identities. Startup
   finishes only identity-proven publication or journal cleanup; unknown,

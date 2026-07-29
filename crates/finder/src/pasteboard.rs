@@ -34,6 +34,10 @@ mod imp {
         pb.writeObjects(&array);
     }
 
+    pub fn clear_file_urls() {
+        NSPasteboard::generalPasteboard().clearContents();
+    }
+
     /// Read any `file://` URLs currently on the general pasteboard.
     pub fn read_file_urls() -> Vec<PathBuf> {
         let pb = NSPasteboard::generalPasteboard();
@@ -58,13 +62,14 @@ mod imp {
 #[cfg(not(target_os = "macos"))]
 mod imp {
     use std::path::PathBuf;
+    pub fn clear_file_urls() {}
     pub fn write_file_urls(_paths: &[PathBuf]) {}
     pub fn read_file_urls() -> Vec<PathBuf> {
         Vec::new()
     }
 }
 
-pub use imp::{read_file_urls, write_file_urls};
+pub use imp::{clear_file_urls, read_file_urls, write_file_urls};
 
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
@@ -85,5 +90,7 @@ mod tests {
             "all read paths exist: {got:?}"
         );
         assert!(got.iter().any(|p| p.ends_with("true")));
+        clear_file_urls();
+        assert!(read_file_urls().is_empty());
     }
 }

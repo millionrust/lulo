@@ -12,7 +12,7 @@ mod pasteboard;
 mod trash_store;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -117,6 +117,39 @@ struct ActiveTransfer {
     cancel: Arc<AtomicBool>,
     cancelling: bool,
     keep_unfinished_in_clipboard: bool,
+    retained_clipboard: Vec<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConflictTransferKind {
+    Copy,
+    Move,
+}
+
+#[derive(Clone)]
+struct TransferConflict {
+    kind: ConflictTransferKind,
+    source: PathBuf,
+    destination: PathBuf,
+    source_snapshot: operation_journal::TreeSnapshot,
+    destination_snapshot: Option<operation_journal::TreeSnapshot>,
+}
+
+struct ConflictBatch {
+    label: &'static str,
+    ready: Vec<file_ops::TransferTask>,
+    conflicts: VecDeque<TransferConflict>,
+    conflict_total: usize,
+    reserved_destinations: BTreeSet<PathBuf>,
+    skipped_moves: Vec<PathBuf>,
+    keep_unfinished_in_clipboard: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConflictDecision {
+    KeepBoth,
+    Replace,
+    Skip,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -325,6 +358,9 @@ struct FinderView {
     recovery_open: bool,
     recovery_busy: bool,
     transfer: Option<ActiveTransfer>,
+    conflict_preflight: bool,
+    conflict_batch: Option<ConflictBatch>,
+    conflict_busy: bool,
     #[cfg(any(target_os = "linux", test))]
     trash_store: Option<Arc<trash_store::TrashStore>>,
     #[cfg(any(target_os = "linux", test))]
@@ -590,6 +626,9 @@ impl FinderView {
             recovery_open: false,
             recovery_busy: false,
             transfer: None,
+            conflict_preflight: false,
+            conflict_batch: None,
+            conflict_busy: false,
             #[cfg(any(target_os = "linux", test))]
             trash_store: None,
             #[cfg(any(target_os = "linux", test))]
@@ -1282,7 +1321,11 @@ impl FinderView {
         let trash_busy = self.trash_operation.is_some();
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_busy = false;
-        if self.transfer.is_none() && !trash_busy {
+        if self.transfer.is_none()
+            && !trash_busy
+            && !self.conflict_preflight
+            && self.conflict_batch.is_none()
+        {
             return false;
         }
         self.operation_error = Some("Wait for the current file operation to finish".into());
@@ -1290,11 +1333,201 @@ impl FinderView {
         true
     }
 
+    fn start_transfer_with_conflicts(
+        &mut self,
+        label: &'static str,
+        tasks: Vec<file_ops::TransferTask>,
+        keep_unfinished_in_clipboard: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if tasks.is_empty() || self.block_mutation_during_transfer(cx) {
+            return;
+        }
+        if self.journal_loading {
+            self.operation_error = Some("Files is still verifying file-operation recovery".into());
+            cx.notify();
+            return;
+        }
+        if self.operation_journal.is_none() {
+            self.operation_error =
+                Some("File-operation recovery is unavailable; transfers are disabled".into());
+            cx.notify();
+            return;
+        }
+        if self.pending_operations != 0 {
+            self.operation_error = Some(
+                format!(
+                    "Resolve {} unfinished file operation{} before starting another transfer",
+                    self.pending_operations,
+                    if self.pending_operations == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
+                )
+                .into(),
+            );
+            self.recovery_open = true;
+            cx.notify();
+            return;
+        }
+
+        self.conflict_preflight = true;
+        self.operation_error = None;
+        self.operation_notice = Some("Checking for file-name conflicts…".into());
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let prepared =
+                cx.background_executor()
+                    .spawn(async move {
+                        prepare_conflict_batch(label, tasks, keep_unfinished_in_clipboard)
+                    })
+                    .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.conflict_preflight = false;
+                this.operation_notice = None;
+                match prepared {
+                    Ok(batch) if batch.conflicts.is_empty() => {
+                        this.start_transfer_with_retained(
+                            batch.label,
+                            batch.ready,
+                            batch.keep_unfinished_in_clipboard,
+                            batch.skipped_moves,
+                            cx,
+                        );
+                    }
+                    Ok(batch) => {
+                        this.conflict_batch = Some(batch);
+                        this.conflict_busy = false;
+                        cx.notify();
+                    }
+                    Err(_) => {
+                        this.operation_error = Some(
+                            "Files could not verify the conflicting items; nothing was changed"
+                                .into(),
+                        );
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn resolve_current_conflict(&mut self, decision: ConflictDecision, cx: &mut Context<Self>) {
+        if self.conflict_busy {
+            return;
+        }
+        let Some(batch) = self.conflict_batch.as_ref() else {
+            return;
+        };
+        let Some(conflict) = batch.conflicts.front().cloned() else {
+            return;
+        };
+        let reserved = batch.reserved_destinations.clone();
+        if decision == ConflictDecision::Replace
+            && (conflict.kind != ConflictTransferKind::Copy
+                || conflict.destination_snapshot.is_none())
+        {
+            return;
+        }
+
+        self.conflict_busy = true;
+        self.operation_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    resolve_conflict_task(&conflict, decision, &reserved)
+                        .map(|task| (task, conflict))
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.conflict_busy = false;
+                let (task, resolved) = match result {
+                    Ok(result) => result,
+                    Err(_) => {
+                        this.conflict_batch = None;
+                        this.operation_error = Some(
+                            "The source or destination changed while the conflict was open; nothing was changed. Start the operation again to review the current items."
+                                .into(),
+                        );
+                        cx.notify();
+                        return;
+                    }
+                };
+                let Some(batch) = this.conflict_batch.as_mut() else {
+                    return;
+                };
+                batch.conflicts.pop_front();
+                if decision == ConflictDecision::Skip
+                    && resolved.kind == ConflictTransferKind::Move
+                    && batch.keep_unfinished_in_clipboard
+                {
+                    batch.skipped_moves.push(resolved.source);
+                }
+                if let Some(task) = task {
+                    batch.reserved_destinations.insert(task.destination.clone());
+                    batch.ready.push(task);
+                }
+                if batch.conflicts.is_empty() {
+                    let batch = this
+                        .conflict_batch
+                        .take()
+                        .expect("completed conflict batch should still exist");
+                    if batch.ready.is_empty() {
+                        if batch.keep_unfinished_in_clipboard {
+                            this.clipboard = batch.skipped_moves;
+                            this.clipboard.sort();
+                            this.clipboard.dedup();
+                            this.clip_cut = !this.clipboard.is_empty();
+                            if this.clip_cut {
+                                this.write_clip_text(cx);
+                            }
+                        }
+                        this.operation_notice =
+                            Some("Skipped the conflicting items; nothing was changed".into());
+                        cx.notify();
+                    } else {
+                        this.start_transfer_with_retained(
+                            batch.label,
+                            batch.ready,
+                            batch.keep_unfinished_in_clipboard,
+                            batch.skipped_moves,
+                            cx,
+                        );
+                    }
+                } else {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
     fn start_transfer(
         &mut self,
         label: &'static str,
         tasks: Vec<file_ops::TransferTask>,
         keep_unfinished_in_clipboard: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_transfer_with_retained(
+            label,
+            tasks,
+            keep_unfinished_in_clipboard,
+            Vec::new(),
+            cx,
+        );
+    }
+
+    fn start_transfer_with_retained(
+        &mut self,
+        label: &'static str,
+        tasks: Vec<file_ops::TransferTask>,
+        keep_unfinished_in_clipboard: bool,
+        retained_clipboard: Vec<PathBuf>,
         cx: &mut Context<Self>,
     ) {
         if tasks.is_empty() {
@@ -1344,6 +1577,7 @@ impl FinderView {
             cancel: cancel.clone(),
             cancelling: false,
             keep_unfinished_in_clipboard,
+            retained_clipboard,
         });
         cx.notify();
 
@@ -1396,9 +1630,18 @@ impl FinderView {
                                 .transfer
                                 .as_ref()
                                 .is_some_and(|transfer| transfer.keep_unfinished_in_clipboard);
+                            let retained_clipboard = this
+                                .transfer
+                                .as_ref()
+                                .map(|transfer| transfer.retained_clipboard.clone())
+                                .unwrap_or_default();
                             this.transfer = None;
                             if keep_clipboard {
-                                this.clipboard = report.unfinished_moves;
+                                let mut unfinished = retained_clipboard;
+                                unfinished.extend(report.unfinished_moves);
+                                unfinished.sort();
+                                unfinished.dedup();
+                                this.clipboard = unfinished;
                                 this.clip_cut = !this.clipboard.is_empty();
                                 if this.clip_cut {
                                     this.write_clip_text(cx);
@@ -1710,6 +1953,24 @@ impl FinderView {
                             } else {
                                 format!(
                                     "Partial recovery copy preserved as “{name}”; inspect it before relying on it"
+                                )
+                            }
+                            .into(),
+                        );
+                        this.operation_error = None;
+                    }
+                    Ok(
+                        operation_journal::ResolutionOutcome::PreservedReplacementBackup {
+                            complete,
+                            name,
+                        },
+                    ) => {
+                        this.operation_notice = Some(
+                            if complete {
+                                format!("Previous destination preserved as “{name}”")
+                            } else {
+                                format!(
+                                    "Possibly changed previous destination preserved as “{name}”; inspect it before relying on it"
                                 )
                             }
                             .into(),
@@ -2371,18 +2632,29 @@ impl FinderView {
             file_ops::TransferKind::Copy
         };
         let mut tasks = Vec::new();
-        let mut destinations = BTreeSet::new();
         for src in self.clipboard.clone() {
+            if self.clip_cut && src.parent() == Some(self.cwd.as_path()) {
+                continue;
+            }
             let name = src.file_name().map(|n| n.to_owned()).unwrap_or_default();
-            let dst = unique_path_avoiding(self.cwd.join(name), &destinations);
-            destinations.insert(dst.clone());
             tasks.push(file_ops::TransferTask {
-                kind,
+                kind: kind.clone(),
                 source: src,
-                destination: dst,
+                destination: self.cwd.join(name),
             });
         }
-        self.start_transfer(
+        if tasks.is_empty() {
+            if self.clip_cut {
+                self.clipboard.clear();
+                self.clip_cut = false;
+                pasteboard::clear_file_urls();
+                self.operation_notice =
+                    Some("The items are already in this folder; nothing was moved".into());
+                cx.notify();
+            }
+            return;
+        }
+        self.start_transfer_with_conflicts(
             if self.clip_cut { "Moving" } else { "Copying" },
             tasks,
             self.clip_cut,
@@ -3459,7 +3731,6 @@ impl FinderView {
 
     fn drop_into(&mut self, dir: PathBuf, paths: &[PathBuf], cx: &mut Context<Self>) {
         let mut tasks = Vec::new();
-        let mut destinations = BTreeSet::new();
         for src in paths {
             if src == &dir || src.parent() == Some(dir.as_path()) {
                 continue;
@@ -3467,33 +3738,28 @@ impl FinderView {
             let Some(name) = src.file_name() else {
                 continue;
             };
-            let dst = unique_path_avoiding(dir.join(name), &destinations);
-            destinations.insert(dst.clone());
             tasks.push(file_ops::TransferTask {
                 kind: file_ops::TransferKind::Move,
                 source: src.clone(),
-                destination: dst,
+                destination: dir.join(name),
             });
         }
-        self.start_transfer("Moving", tasks, false, cx);
+        self.start_transfer_with_conflicts("Moving", tasks, false, cx);
     }
 
     /// Files dropped from another app (Finder, etc.) → copy into the current dir.
     fn drop_external(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let mut tasks = Vec::new();
-        let mut destinations = BTreeSet::new();
         for src in paths {
-            if let Some(name) = src.file_name() {
-                let dst = unique_path_avoiding(self.cwd.join(name), &destinations);
-                destinations.insert(dst.clone());
+            if let Some(name) = src.file_name().map(|name| name.to_owned()) {
                 tasks.push(file_ops::TransferTask {
                     kind: file_ops::TransferKind::Copy,
                     source: src,
-                    destination: dst,
+                    destination: self.cwd.join(name),
                 });
             }
         }
-        self.start_transfer("Copying", tasks, false, cx);
+        self.start_transfer_with_conflicts("Copying", tasks, false, cx);
     }
 
     fn get_info(&mut self, cx: &mut Context<Self>) {
@@ -3676,6 +3942,54 @@ impl FinderView {
             .into_any_element(),
         ];
         Some(rmac_ui::alert(title, presentation.message, buttons).into_any_element())
+    }
+
+    fn render_conflict(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let batch = self.conflict_batch.as_ref()?;
+        let conflict = batch.conflicts.front()?;
+        let current = batch
+            .conflict_total
+            .saturating_sub(batch.conflicts.len())
+            .saturating_add(1);
+        let title = format!(
+            "An Item With This Name Already Exists ({current} of {})",
+            batch.conflict_total
+        );
+        let busy = self.conflict_busy;
+        let replace_available = conflict.kind == ConflictTransferKind::Copy
+            && conflict.destination_snapshot.is_some()
+            && conflict.source != conflict.destination;
+        let buttons = vec![
+            rmac_ui::dialog_button("conflict-skip", "Skip", rmac_ui::DialogButtonKind::Normal)
+                .disabled(busy)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.resolve_current_conflict(ConflictDecision::Skip, cx)
+                }))
+                .into_any_element(),
+            rmac_ui::dialog_button(
+                "conflict-replace",
+                "Replace",
+                rmac_ui::DialogButtonKind::Destructive,
+            )
+            .busy(busy)
+            .disabled(busy || !replace_available)
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.resolve_current_conflict(ConflictDecision::Replace, cx)
+            }))
+            .into_any_element(),
+            rmac_ui::dialog_button(
+                "conflict-keep-both",
+                if busy { "Checking…" } else { "Keep Both" },
+                rmac_ui::DialogButtonKind::Primary,
+            )
+            .busy(busy)
+            .disabled(busy)
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.resolve_current_conflict(ConflictDecision::KeepBoth, cx)
+            }))
+            .into_any_element(),
+        ];
+        Some(rmac_ui::alert(title, conflict_prompt(conflict), buttons).into_any_element())
     }
 
     #[cfg(any(target_os = "linux", test))]
@@ -3873,6 +4187,7 @@ impl Render for FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_recovery_pending = false;
         let any_recovery_pending = recovery_pending || trash_recovery_pending;
+        let conflict_dialog = self.render_conflict(cx);
         let recovery_dialog = self.render_recovery(cx);
         #[cfg(any(target_os = "linux", test))]
         let trash_recovery_dialog = self.render_trash_recovery(cx);
@@ -3898,7 +4213,18 @@ impl Render for FinderView {
                     }
                     return;
                 }
-                if this.recovery_open {
+                if this.conflict_batch.is_some() {
+                    cx.stop_propagation();
+                    match conflict_key_intent(event.keystroke.key.as_str(), this.conflict_busy) {
+                        Some(ConflictDecision::Skip) => {
+                            this.resolve_current_conflict(ConflictDecision::Skip, cx)
+                        }
+                        Some(ConflictDecision::KeepBoth) => {
+                            this.resolve_current_conflict(ConflictDecision::KeepBoth, cx)
+                        }
+                        _ => {}
+                    }
+                } else if this.recovery_open {
                     cx.stop_propagation();
                     match recovery_key_intent(event.keystroke.key.as_str(), this.recovery_busy) {
                         Some(RecoveryKeyIntent::Close) => this.close_recovery(cx),
@@ -4129,6 +4455,7 @@ impl Render for FinderView {
                     Self::build_context_menu(pos, has_sel, can_paste, self.trash_view).render(),
                 )
             })
+            .when_some(conflict_dialog, |el, dialog| el.child(dialog))
             .when_some(recovery_dialog, |el, dialog| el.child(dialog))
             .when_some(trash_recovery_dialog, |el, dialog| el.child(dialog))
             .when_some(delete_dialog, |el, dialog| el.child(dialog))
@@ -4142,7 +4469,6 @@ struct RecoveryPresentation {
     action_label: &'static str,
 }
 
-#[cfg(any(target_os = "linux", test))]
 fn sanitize_dialog_name(name: &str) -> String {
     let mut output = String::new();
     let mut truncated = false;
@@ -4161,6 +4487,31 @@ fn sanitize_dialog_name(name: &str) -> String {
         output.push('…');
     }
     output
+}
+
+fn conflict_prompt(conflict: &TransferConflict) -> String {
+    let name = conflict
+        .destination
+        .file_name()
+        .map(|name| sanitize_dialog_name(&name.to_string_lossy()))
+        .unwrap_or_else(|| "this item".to_string());
+    let folder = conflict
+        .destination
+        .parent()
+        .and_then(Path::file_name)
+        .map(|name| sanitize_dialog_name(&name.to_string_lossy()))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "the destination folder".to_string());
+    let choice = if conflict.destination_snapshot.is_none() {
+        "Another item in this batch needs the same name. Keep Both chooses an available numbered name. Replace is unavailable because no existing destination was reviewed."
+    } else if conflict.kind == ConflictTransferKind::Move {
+        "Keep Both moves this item under an available numbered name. Safe replacement while moving is not available yet, so Replace is disabled. Skip leaves both items unchanged."
+    } else if conflict.source == conflict.destination {
+        "Keep Both creates a copy under an available numbered name. An item cannot replace itself, so Replace is disabled. Skip leaves it unchanged."
+    } else {
+        "Keep Both uses an available numbered name. Replace atomically publishes the new copy before removing the reviewed previous item. Replace cannot be undone yet. Skip leaves both items unchanged."
+    };
+    format!("An item named “{name}” already exists in “{folder}”. {choice}")
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -4220,7 +4571,7 @@ fn recovery_presentation(action: &operation_journal::RecoveryAction) -> Recovery
         } => RecoveryPresentation {
             message: if *complete {
                 format!(
-                    "Files has a complete copy from an interrupted move. Preserve it as “{suggested_name}”. Existing items will not be changed."
+                    "Files has a complete copy from an interrupted file operation. Preserve it as “{suggested_name}”. Existing items will not be changed."
                 )
             } else {
                 format!(
@@ -4228,6 +4579,21 @@ fn recovery_presentation(action: &operation_journal::RecoveryAction) -> Recovery
                 )
             },
             action_label: "Preserve Copy",
+        },
+        operation_journal::RecoveryAction::PreserveReplacementBackup {
+            complete,
+            suggested_name,
+        } => RecoveryPresentation {
+            message: if *complete {
+                format!(
+                    "Files retained the previous destination from an interrupted replacement. Preserve it as “{suggested_name}”. The replacement and other existing items will not be changed."
+                )
+            } else {
+                format!(
+                    "The item retained from an interrupted replacement may have changed or may be incomplete. Preserve it as “{suggested_name}” so you can inspect it. Existing items will not be changed."
+                )
+            },
+            action_label: "Preserve Previous Item",
         },
         operation_journal::RecoveryAction::KeepExistingItems => RecoveryPresentation {
             message: "No staged recovery copy remains. Keep every existing item and clear only this recovery record. No file will be deleted.".to_string(),
@@ -4253,8 +4619,140 @@ fn recovery_key_intent(key: &str, busy: bool) -> Option<RecoveryKeyIntent> {
     }
 }
 
+fn conflict_key_intent(key: &str, busy: bool) -> Option<ConflictDecision> {
+    if busy {
+        return None;
+    }
+    match key {
+        "escape" => Some(ConflictDecision::Skip),
+        "enter" => Some(ConflictDecision::KeepBoth),
+        _ => None,
+    }
+}
+
 fn unique_path(path: PathBuf) -> PathBuf {
     unique_path_avoiding(path, &BTreeSet::new())
+}
+
+fn prepare_conflict_batch(
+    label: &'static str,
+    tasks: Vec<file_ops::TransferTask>,
+    keep_unfinished_in_clipboard: bool,
+) -> std::io::Result<ConflictBatch> {
+    let mut ready = Vec::with_capacity(tasks.len());
+    let mut conflicts = VecDeque::new();
+    let mut reserved_destinations = BTreeSet::new();
+
+    for task in tasks {
+        let requested_destination = task.destination.clone();
+        let kind = match &task.kind {
+            file_ops::TransferKind::Copy => ConflictTransferKind::Copy,
+            file_ops::TransferKind::Move => ConflictTransferKind::Move,
+            file_ops::TransferKind::Replace(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "replacement task cannot enter conflict preflight",
+                ));
+            }
+        };
+        let destination_exists = match std::fs::symlink_metadata(&task.destination) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error),
+        };
+        if destination_exists || reserved_destinations.contains(&task.destination) {
+            let source_snapshot = operation_journal::TreeSnapshot::capture(&task.source)?;
+            let destination_snapshot = destination_exists
+                .then(|| operation_journal::TreeSnapshot::capture(&task.destination))
+                .transpose()?;
+            conflicts.push_back(TransferConflict {
+                kind,
+                source: task.source,
+                destination: requested_destination.clone(),
+                source_snapshot,
+                destination_snapshot,
+            });
+        } else {
+            ready.push(task);
+        }
+        reserved_destinations.insert(requested_destination);
+    }
+    let conflict_total = conflicts.len();
+    Ok(ConflictBatch {
+        label,
+        ready,
+        conflicts,
+        conflict_total,
+        reserved_destinations,
+        skipped_moves: Vec::new(),
+        keep_unfinished_in_clipboard,
+    })
+}
+
+fn resolve_conflict_task(
+    conflict: &TransferConflict,
+    decision: ConflictDecision,
+    reserved: &BTreeSet<PathBuf>,
+) -> std::io::Result<Option<file_ops::TransferTask>> {
+    if !conflict.source_snapshot.still_matches(&conflict.source)? {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "conflict source changed",
+        ));
+    }
+    let destination_matches = match &conflict.destination_snapshot {
+        Some(snapshot) => snapshot.still_matches(&conflict.destination)?,
+        None => match std::fs::symlink_metadata(&conflict.destination) {
+            Ok(_) => false,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+            Err(error) => return Err(error),
+        },
+    };
+    if !destination_matches {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            "conflict destination changed",
+        ));
+    }
+
+    match decision {
+        ConflictDecision::KeepBoth => {
+            let destination = unique_path_avoiding(conflict.destination.clone(), reserved);
+            Ok(Some(file_ops::TransferTask {
+                kind: match conflict.kind {
+                    ConflictTransferKind::Copy => file_ops::TransferKind::Copy,
+                    ConflictTransferKind::Move => file_ops::TransferKind::Move,
+                },
+                source: conflict.source.clone(),
+                destination,
+            }))
+        }
+        ConflictDecision::Replace => {
+            let destination_snapshot = conflict.destination_snapshot.clone().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "batch-only conflict cannot replace a destination",
+                )
+            })?;
+            if conflict.kind != ConflictTransferKind::Copy
+                || conflict.source == conflict.destination
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Unsupported,
+                    "safe replacement is unavailable for this transfer",
+                ));
+            }
+            Ok(Some(file_ops::TransferTask {
+                kind: file_ops::TransferKind::Replace(Box::new(file_ops::ReplacementBinding {
+                    expected_source: conflict.source_snapshot.clone(),
+                    expected_destination: destination_snapshot,
+                })),
+                source: conflict.source.clone(),
+                destination: conflict.destination.clone(),
+            }))
+        }
+        ConflictDecision::Skip => Ok(None),
+    }
 }
 
 fn unique_path_avoiding(path: PathBuf, reserved: &BTreeSet<PathBuf>) -> PathBuf {
@@ -4688,6 +5186,192 @@ mod tests {
     }
 
     #[test]
+    fn existing_transfer_destination_opens_a_bound_keep_replace_skip_conflict() {
+        let root = TestDirectory::new("conflict-preflight");
+        let source = root.0.join("incoming").join("report.txt");
+        let destination = root.0.join("destination").join("report.txt");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"incoming bytes").unwrap();
+        std::fs::write(&destination, b"previous bytes").unwrap();
+
+        let batch = prepare_conflict_batch(
+            "Copying",
+            vec![file_ops::TransferTask {
+                kind: file_ops::TransferKind::Copy,
+                source: source.clone(),
+                destination: destination.clone(),
+            }],
+            false,
+        )
+        .unwrap();
+        let conflict = batch.conflicts.front().unwrap();
+
+        assert_eq!(batch.conflict_total, 1);
+        assert!(batch.ready.is_empty());
+        assert!(conflict.destination_snapshot.is_some());
+        assert!(conflict_prompt(conflict).contains("Keep Both"));
+        assert!(conflict_prompt(conflict).contains("Replace"));
+
+        let keep_both = resolve_conflict_task(
+            conflict,
+            ConflictDecision::KeepBoth,
+            &batch.reserved_destinations,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(keep_both.kind, file_ops::TransferKind::Copy);
+        assert!(keep_both.destination.ends_with("report 2.txt"));
+
+        let replace = resolve_conflict_task(
+            conflict,
+            ConflictDecision::Replace,
+            &batch.reserved_destinations,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(replace.kind, file_ops::TransferKind::Replace(_)));
+        assert_eq!(std::fs::read(source).unwrap(), b"incoming bytes");
+        assert_eq!(std::fs::read(destination).unwrap(), b"previous bytes");
+    }
+
+    #[test]
+    fn conflict_decision_rejects_a_nested_destination_change() {
+        let root = TestDirectory::new("conflict-destination-change");
+        let source = root.0.join("incoming");
+        let destination = root.0.join("destination");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(source.join("new"), b"new bytes").unwrap();
+        std::fs::write(destination.join("old"), b"previous bytes").unwrap();
+        let batch = prepare_conflict_batch(
+            "Copying",
+            vec![file_ops::TransferTask {
+                kind: file_ops::TransferKind::Copy,
+                source: source.clone(),
+                destination: destination.clone(),
+            }],
+            false,
+        )
+        .unwrap();
+        let conflict = batch.conflicts.front().unwrap();
+        std::fs::write(destination.join("changed"), b"racing bytes").unwrap();
+
+        let error = resolve_conflict_task(
+            conflict,
+            ConflictDecision::Replace,
+            &batch.reserved_destinations,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+        assert_eq!(std::fs::read(source.join("new")).unwrap(), b"new bytes");
+        assert_eq!(
+            std::fs::read(destination.join("old")).unwrap(),
+            b"previous bytes"
+        );
+        assert_eq!(
+            std::fs::read(destination.join("changed")).unwrap(),
+            b"racing bytes"
+        );
+    }
+
+    #[test]
+    fn duplicate_names_inside_one_batch_require_a_non_destructive_choice() {
+        let root = TestDirectory::new("conflict-batch-name");
+        let first = root.0.join("one").join("item");
+        let second = root.0.join("two").join("item");
+        let destination = root.0.join("destination").join("item");
+        std::fs::create_dir_all(first.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(second.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        std::fs::write(&first, b"first").unwrap();
+        std::fs::write(&second, b"second").unwrap();
+        let batch = prepare_conflict_batch(
+            "Copying",
+            vec![
+                file_ops::TransferTask {
+                    kind: file_ops::TransferKind::Copy,
+                    source: first,
+                    destination: destination.clone(),
+                },
+                file_ops::TransferTask {
+                    kind: file_ops::TransferKind::Copy,
+                    source: second,
+                    destination: destination.clone(),
+                },
+            ],
+            false,
+        )
+        .unwrap();
+        let conflict = batch.conflicts.front().unwrap();
+
+        assert_eq!(batch.ready.len(), 1);
+        assert_eq!(batch.conflict_total, 1);
+        assert!(conflict.destination_snapshot.is_none());
+        assert!(resolve_conflict_task(
+            conflict,
+            ConflictDecision::Replace,
+            &batch.reserved_destinations,
+        )
+        .is_err());
+        let keep_both = resolve_conflict_task(
+            conflict,
+            ConflictDecision::KeepBoth,
+            &batch.reserved_destinations,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(keep_both.destination.ends_with("item 2"));
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn moved_item_conflict_never_offers_unsafe_replacement() {
+        let root = TestDirectory::new("move-conflict");
+        let source = root.0.join("incoming").join("item");
+        let destination = root.0.join("destination").join("item");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"incoming").unwrap();
+        std::fs::write(&destination, b"existing").unwrap();
+        let batch = prepare_conflict_batch(
+            "Moving",
+            vec![file_ops::TransferTask {
+                kind: file_ops::TransferKind::Move,
+                source,
+                destination,
+            }],
+            true,
+        )
+        .unwrap();
+        let conflict = batch.conflicts.front().unwrap();
+
+        assert!(conflict_prompt(conflict).contains("Replace is disabled"));
+        assert!(resolve_conflict_task(
+            conflict,
+            ConflictDecision::Replace,
+            &batch.reserved_destinations,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn conflict_keyboard_policy_uses_safe_defaults_and_blocks_while_busy() {
+        assert_eq!(
+            conflict_key_intent("escape", false),
+            Some(ConflictDecision::Skip)
+        );
+        assert_eq!(
+            conflict_key_intent("enter", false),
+            Some(ConflictDecision::KeepBoth)
+        );
+        assert_eq!(conflict_key_intent("space", false), None);
+        assert_eq!(conflict_key_intent("escape", true), None);
+        assert_eq!(conflict_key_intent("enter", true), None);
+    }
+
+    #[test]
     fn recursive_copy_refuses_a_destination_inside_the_source() {
         let root = TestDirectory::new("copy-descendant");
         let source = root.0.join("source");
@@ -4795,11 +5479,19 @@ mod tests {
             complete: true,
             suggested_name: "Recovered item".to_string(),
         });
+        let replacement = recovery_presentation(
+            &operation_journal::RecoveryAction::PreserveReplacementBackup {
+                complete: true,
+                suggested_name: "Recovered item".to_string(),
+            },
+        );
         let existing = recovery_presentation(&operation_journal::RecoveryAction::KeepExistingItems);
 
         assert!(partial.message.contains("may be incomplete"));
         assert!(!complete.message.contains("may be incomplete"));
         assert!(complete.message.contains("complete copy"));
+        assert!(replacement.message.contains("previous destination"));
+        assert_eq!(replacement.action_label, "Preserve Previous Item");
         assert!(existing.message.contains("No file will be deleted"));
     }
 

@@ -32,6 +32,10 @@ software store, package manager, or imitation of Apple Launchpad.
   endpoint and one on-demand window. Its explicit `--service` mode reports ready
   only after binding; standalone launches remain available for development and
   performance measurement without competing for the shortcut.
+- That supervised authority is implemented in an isolated service module which
+  owns shortcut watching/readiness, key registration, active-window tokens,
+  repeat-invocation dismissal, window creation, and release cleanup. The view
+  can request token release but cannot mutate service-global state directly.
 
 ## Primary journeys
 

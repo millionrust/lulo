@@ -8,7 +8,7 @@ use rmac_launcher::{ActivationMode, Category};
 use rmac_launcher_runtime::{KeyCommand, Phase, Row};
 use rmac_ui::{mac, SearchField};
 
-use crate::LauncherView;
+use super::LauncherView;
 
 impl LauncherView {
     fn result_icon(row: &Row, size: f32) -> AnyElement {

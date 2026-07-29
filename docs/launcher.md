@@ -180,6 +180,15 @@ surface, footer, and keyboard/pointer intent wiring. Query generations,
 provider dispatch, selection/activation policy, settings resampling, and
 overlay/service lifetime remain outside the renderer.
 
+The binary entrypoint owns only module composition and service startup. The
+view controller owns query subscriptions, generation dispatch, stable
+selection, activation execution, focus-loss dismissal, and the validated
+Settings/clipboard surface. The service module exclusively owns provider
+registry construction, privacy-setting resampling, catalog/settings/shortcut
+watchers, placement planning, readiness, active-overlay tokens, and window
+creation. Window release, dismissal, and successful activation all use one
+token-checked service release boundary.
+
 Application discovery and C4 settings are watched for the lifetime of the
 service. A complete settings replacement rebuilds file scope and provider
 privacy, cancels the old generation, and reissues an open query once. Invalid

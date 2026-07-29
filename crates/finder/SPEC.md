@@ -222,11 +222,18 @@ metadata, icons, and identifiers remain original rmac work.
   persistence. The same reconstruction can repair metadata around an item
   already in Trash without changing its data. If no data remains, explicit
   review can remove only the identity-bound orphan metadata. Other states can
-  keep every existing item and clear only the exact record. Wording
-  distinguishes possibly incomplete data and never claims an orphan metadata
-  cleanup deletes a user file. States for which Files cannot prove a safe
-  automatic action, including conflicting visible and hidden data, expose a
-  disabled manual-repair result and retain both items and journal. The sheet
+  keep every existing item and clear only the exact record. When both visible
+  and hidden data genuinely remain, an explicit Keep Both action persists the
+  exact two tree snapshots, a unique recovered data/metadata destination, and
+  bounded metadata bytes before changing anything. It leaves the visible copy
+  untouched, exclusively publishes the hidden copy under a recovered name,
+  preserves trustworthy original metadata or rebuilds missing metadata for
+  both copies, and resumes every accepted publication boundary after restart.
+  Both copies then remain ordinary Trash items available for comparison,
+  restore, or copying out. Wording distinguishes possibly incomplete data and
+  never claims an orphan metadata cleanup deletes a user file. States with an
+  additional metadata conflict or no provably safe action still expose a
+  disabled manual-repair result and retain all items and the journal. The sheet
   uses shared semantic controls, supports
   Enter/Escape while idle, blocks duplicate resolution while busy, processes
   records in stable order, and redacts all paths from `Debug`.

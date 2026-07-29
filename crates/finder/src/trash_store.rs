@@ -54,6 +54,7 @@ enum TrashResolutionIntent {
     ReturnDeleteStage,
     RebuildMetadata,
     ReturnDeleteStageAndRebuildMetadata,
+    PreserveConflictingItems,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -88,6 +89,16 @@ struct TrashRecord {
     #[serde(default)]
     resolution_info_bytes: Option<Vec<u8>>,
     #[serde(default)]
+    resolution_primary_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    resolution_primary_manifest: Option<TreeManifest>,
+    #[serde(default)]
+    resolution_primary_info_identity: Option<EntryIdentity>,
+    #[serde(default)]
+    resolution_data_path_bytes: Option<Vec<u8>>,
+    #[serde(default)]
+    resolution_info_path_bytes: Option<Vec<u8>>,
+    #[serde(default)]
     create_undo_receipt: bool,
     #[serde(default)]
     trash_source_parent_identity: Option<EntryIdentity>,
@@ -112,6 +123,18 @@ impl TrashRecord {
 
     fn delete_path(&self) -> Option<PathBuf> {
         self.delete_path_bytes
+            .as_ref()
+            .map(|bytes| PathBuf::from(OsString::from_vec(bytes.clone())))
+    }
+
+    fn resolution_data_path(&self) -> Option<PathBuf> {
+        self.resolution_data_path_bytes
+            .as_ref()
+            .map(|bytes| PathBuf::from(OsString::from_vec(bytes.clone())))
+    }
+
+    fn resolution_info_path(&self) -> Option<PathBuf> {
+        self.resolution_info_path_bytes
             .as_ref()
             .map(|bytes| PathBuf::from(OsString::from_vec(bytes.clone())))
     }
@@ -233,7 +256,8 @@ impl TrashRecord {
                     && self.resolution_manifest.is_some()
                     && self.resolution_info_identity.is_some()
                     && self.resolution_info_sha256.is_some()
-                    && self.resolution_info_bytes.is_none() =>
+                    && self.resolution_info_bytes.is_none()
+                    && !self.has_conflict_resolution_state() =>
             {
                 Ok(())
             }
@@ -244,7 +268,8 @@ impl TrashRecord {
                     && self.resolution_info_bytes.as_ref().is_some_and(|bytes| {
                         bytes.len() as u64 <= MAX_INFO_BYTES
                             && Some(sha256(bytes)) == self.resolution_info_sha256
-                    }) =>
+                    })
+                    && !self.has_conflict_resolution_state() =>
             {
                 Ok(())
             }
@@ -253,6 +278,42 @@ impl TrashRecord {
                     && self.stage == TrashStage::DeleteDataStaged
                     && self.resolution_identity.is_some()
                     && self.resolution_manifest.is_some()
+                    && self.resolution_info_sha256.is_some()
+                    && self.resolution_info_bytes.as_ref().is_some_and(|bytes| {
+                        bytes.len() as u64 <= MAX_INFO_BYTES
+                            && Some(sha256(bytes)) == self.resolution_info_sha256
+                    })
+                    && !self.has_conflict_resolution_state() =>
+            {
+                Ok(())
+            }
+            Some(TrashResolutionIntent::PreserveConflictingItems)
+                if self.operation == TrashOperation::Delete
+                    && self.stage == TrashStage::DeleteDataStaged
+                    && self.resolution_identity.is_some()
+                    && self.resolution_manifest.is_some()
+                    && self.resolution_primary_identity.is_some()
+                    && self.resolution_primary_manifest.is_some()
+                    && self.resolution_data_path().is_some_and(|path| {
+                        path_is_normal_absolute(&path)
+                            && path.parent() == Some(self.trash_root().join("files").as_path())
+                            && path != self.data_path()
+                            && self.delete_path().as_ref() != Some(&path)
+                    })
+                    && self.resolution_info_path().is_some_and(|path| {
+                        let Some(data_name) = self
+                            .resolution_data_path()
+                            .and_then(|data| data.file_name().map(OsStr::to_os_string))
+                        else {
+                            return false;
+                        };
+                        let mut expected = data_name;
+                        expected.push(TRASHINFO_SUFFIX);
+                        path_is_normal_absolute(&path)
+                            && path.parent() == Some(self.trash_root().join("info").as_path())
+                            && path.file_name() == Some(expected.as_os_str())
+                            && path != self.info_path()
+                    })
                     && self.resolution_info_sha256.is_some()
                     && self.resolution_info_bytes.as_ref().is_some_and(|bytes| {
                         bytes.len() as u64 <= MAX_INFO_BYTES
@@ -274,6 +335,19 @@ impl TrashRecord {
             || self.resolution_info_identity.is_some()
             || self.resolution_info_sha256.is_some()
             || self.resolution_info_bytes.is_some()
+            || self.resolution_primary_identity.is_some()
+            || self.resolution_primary_manifest.is_some()
+            || self.resolution_primary_info_identity.is_some()
+            || self.resolution_data_path_bytes.is_some()
+            || self.resolution_info_path_bytes.is_some()
+    }
+
+    fn has_conflict_resolution_state(&self) -> bool {
+        self.resolution_primary_identity.is_some()
+            || self.resolution_primary_manifest.is_some()
+            || self.resolution_primary_info_identity.is_some()
+            || self.resolution_data_path_bytes.is_some()
+            || self.resolution_info_path_bytes.is_some()
     }
 }
 
@@ -896,6 +970,21 @@ fn suffixed_name(original: &OsStr, suffix: usize) -> OsString {
     OsString::from_vec(bytes)
 }
 
+fn recovered_name(original: &OsStr, id: &str, suffix: usize) -> OsString {
+    let short_id = id.get(..8).unwrap_or(id);
+    let suffix = if suffix == 1 {
+        format!(" (Recovered {short_id})")
+    } else {
+        format!(" (Recovered {short_id}-{suffix})")
+    };
+    let available = MAX_FILENAME_BYTES
+        .saturating_sub(TRASHINFO_SUFFIX.len())
+        .saturating_sub(suffix.len());
+    let mut bytes = original.as_bytes()[..original.as_bytes().len().min(available)].to_vec();
+    bytes.extend_from_slice(suffix.as_bytes());
+    OsString::from_vec(bytes)
+}
+
 fn trash_info_bytes(
     source: &Path,
     layout: &TrashLayout,
@@ -1146,6 +1235,37 @@ fn resolution_tree_matches(record: &TrashRecord, path: &Path, published: bool) -
     })
 }
 
+fn resolution_primary_tree_matches(record: &TrashRecord) -> io::Result<bool> {
+    let (Some(expected_identity), Some(expected_manifest)) = (
+        record.resolution_primary_identity.as_ref(),
+        record.resolution_primary_manifest.as_ref(),
+    ) else {
+        return Ok(false);
+    };
+    let path = record.data_path();
+    let current_identity = match EntryIdentity::capture(&path) {
+        Ok(identity) => identity,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if expected_identity != &current_identity {
+        return Ok(false);
+    }
+    let current_manifest = match TreeManifest::capture(&path) {
+        Ok(manifest) => manifest,
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::WouldBlock
+            ) =>
+        {
+            return Ok(false);
+        }
+        Err(error) => return Err(error),
+    };
+    Ok(expected_manifest == &current_manifest)
+}
+
 fn resolution_info_matches(record: &TrashRecord) -> io::Result<bool> {
     let (Some(expected_identity), Some(expected_sha256)) = (
         record.resolution_info_identity.as_ref(),
@@ -1154,6 +1274,24 @@ fn resolution_info_matches(record: &TrashRecord) -> io::Result<bool> {
         return Ok(false);
     };
     let current = match capture_optional_info(&record.info_path()) {
+        Ok(snapshot) => snapshot,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    Ok(current.is_some_and(|snapshot| {
+        &snapshot.identity == expected_identity && snapshot.sha256 == expected_sha256
+    }))
+}
+
+fn recovered_resolution_info_matches(record: &TrashRecord) -> io::Result<bool> {
+    let (Some(path), Some(expected_identity), Some(expected_sha256)) = (
+        record.resolution_info_path(),
+        record.resolution_info_identity.as_ref(),
+        record.resolution_info_sha256,
+    ) else {
+        return Ok(false);
+    };
+    let current = match capture_optional_info(&path) {
         Ok(snapshot) => snapshot,
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
         Err(error) => return Err(error),
@@ -1487,6 +1625,7 @@ struct InfoSnapshot {
 pub(crate) enum TrashRecoveryAction {
     ReturnRemainingItem { may_be_partial: bool },
     ReturnRemainingItemAndRebuildMetadata { may_be_partial: bool },
+    PreserveConflictingItems { rebuild_metadata: bool },
     RebuildMetadata,
     RemoveOrphanMetadata,
     KeepExistingItems,
@@ -1503,6 +1642,10 @@ impl fmt::Debug for TrashRecoveryAction {
             Self::ReturnRemainingItemAndRebuildMetadata { may_be_partial } => formatter
                 .debug_struct("ReturnRemainingItemAndRebuildMetadata")
                 .field("may_be_partial", may_be_partial)
+                .finish(),
+            Self::PreserveConflictingItems { rebuild_metadata } => formatter
+                .debug_struct("PreserveConflictingItems")
+                .field("rebuild_metadata", rebuild_metadata)
                 .finish(),
             Self::RebuildMetadata => formatter.write_str("RebuildMetadata"),
             Self::RemoveOrphanMetadata => formatter.write_str("RemoveOrphanMetadata"),
@@ -1538,6 +1681,7 @@ impl fmt::Debug for TrashRecoveryReview {
 pub(crate) enum TrashResolutionOutcome {
     ReturnedRemainingItem { may_be_partial: bool },
     ReturnedRemainingItemAndRebuiltMetadata { may_be_partial: bool },
+    PreservedConflictingItems { rebuilt_metadata: bool },
     RebuiltMetadata,
     RemovedOrphanMetadata,
     KeptExistingItems,
@@ -1694,6 +1838,18 @@ impl TrashStore {
                 && info_snapshot.is_none()
             {
                 TrashRecoveryAction::RebuildMetadata
+            } else if record.operation == TrashOperation::Delete
+                && record.stage == TrashStage::DeleteDataStaged
+                && data_snapshot.is_some()
+                && delete_snapshot.is_some()
+                && info_snapshot.as_ref().is_none_or(|snapshot| {
+                    record.info_identity.as_ref() == Some(&snapshot.identity)
+                        && record.info_sha256 == snapshot.sha256
+                })
+            {
+                TrashRecoveryAction::PreserveConflictingItems {
+                    rebuild_metadata: info_snapshot.is_none(),
+                }
             } else if data_snapshot.is_none()
                 && delete_snapshot.is_none()
                 && info_snapshot.is_some()
@@ -1804,6 +1960,33 @@ impl TrashStore {
                     },
                 )
             }
+            TrashRecoveryAction::PreserveConflictingItems { rebuild_metadata } => {
+                let primary = review
+                    .data_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("conflict recovery has no visible item"))?;
+                let staged = review
+                    .delete_snapshot
+                    .as_ref()
+                    .ok_or_else(|| invalid_data("conflict recovery has no staged item"))?;
+                if review.info_snapshot.is_none() != *rebuild_metadata {
+                    return Err(review_changed());
+                }
+                let mut record = review.record.clone();
+                self.begin_conflicting_items_recovery(
+                    &record_path,
+                    &mut record,
+                    primary,
+                    staged,
+                    review.info_snapshot.as_ref(),
+                )?;
+                if !self.recover_conflicting_items(&record_path, &mut record)? {
+                    return Err(review_changed());
+                }
+                Ok(TrashResolutionOutcome::PreservedConflictingItems {
+                    rebuilt_metadata: *rebuild_metadata,
+                })
+            }
             TrashRecoveryAction::RebuildMetadata => {
                 let data_snapshot = review
                     .data_snapshot
@@ -1901,6 +2084,203 @@ impl TrashStore {
         record.resolution_info_bytes = Some(info_bytes);
         record.validate(&record.id)?;
         self.persist(record_path, record, false)
+    }
+
+    fn begin_conflicting_items_recovery(
+        &self,
+        record_path: &Path,
+        record: &mut TrashRecord,
+        primary: &TreeSnapshot,
+        staged: &TreeSnapshot,
+        primary_info: Option<&InfoSnapshot>,
+    ) -> io::Result<()> {
+        if record.operation != TrashOperation::Delete
+            || record.stage != TrashStage::DeleteDataStaged
+        {
+            return Err(invalid_data(
+                "conflicting-item recovery requires a staged deletion",
+            ));
+        }
+        if primary_info.is_some_and(|snapshot| {
+            record.info_identity.as_ref() != Some(&snapshot.identity)
+                || record.info_sha256 != snapshot.sha256
+        }) {
+            return Err(review_changed());
+        }
+
+        let layout = recovery_layout(record)?;
+        let info_bytes = if primary_info.is_some() {
+            read_bound_info_bytes(record)?
+                .ok_or_else(|| changed("reviewed Trash metadata disappeared"))?
+        } else {
+            trash_info_bytes(&record.source(), &layout, Local::now())?
+        };
+        let original_name = record
+            .data_path()
+            .file_name()
+            .ok_or_else(|| invalid_data("Trash item name is missing"))?
+            .to_os_string();
+        let (data_path, info_path) = (1..=10_000usize)
+            .find_map(|suffix| {
+                let name = recovered_name(&original_name, &record.id, suffix);
+                let data_path = layout.root.join("files").join(&name);
+                let mut info_name = name;
+                info_name.push(TRASHINFO_SUFFIX);
+                let info_path = layout.root.join("info").join(info_name);
+                match (entry_exists(&data_path), entry_exists(&info_path)) {
+                    (Ok(false), Ok(false)) => Some(Ok((data_path, info_path))),
+                    (Ok(_), Ok(_)) => None,
+                    (Err(error), _) | (_, Err(error)) => Some(Err(error)),
+                }
+            })
+            .transpose()?
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "no unique recovered Trash name is available",
+                )
+            })?;
+
+        record.resolution_intent = Some(TrashResolutionIntent::PreserveConflictingItems);
+        record.resolution_identity = Some(staged.identity.clone());
+        record.resolution_manifest = Some(staged.manifest.clone());
+        record.resolution_info_identity = None;
+        record.resolution_info_sha256 = Some(sha256(&info_bytes));
+        record.resolution_info_bytes = Some(info_bytes);
+        record.resolution_primary_identity = Some(primary.identity.clone());
+        record.resolution_primary_manifest = Some(primary.manifest.clone());
+        record.resolution_primary_info_identity =
+            primary_info.map(|snapshot| snapshot.identity.clone());
+        record.resolution_data_path_bytes = Some(data_path.as_os_str().as_bytes().to_vec());
+        record.resolution_info_path_bytes = Some(info_path.as_os_str().as_bytes().to_vec());
+        record.validate(&record.id)?;
+        self.persist(record_path, record, false)
+    }
+
+    fn recover_conflicting_items(
+        &self,
+        record_path: &Path,
+        record: &mut TrashRecord,
+    ) -> io::Result<bool> {
+        if record.resolution_intent != Some(TrashResolutionIntent::PreserveConflictingItems)
+            || !resolution_primary_tree_matches(record)?
+        {
+            return Ok(false);
+        }
+        let expected_info_sha = record
+            .resolution_info_sha256
+            .ok_or_else(|| invalid_data("conflict recovery has no metadata digest"))?;
+        let info_bytes = record
+            .resolution_info_bytes
+            .as_ref()
+            .ok_or_else(|| invalid_data("conflict recovery has no metadata bytes"))?
+            .clone();
+
+        let primary_info = capture_optional_info(&record.info_path())?;
+        match (
+            record.resolution_primary_info_identity.as_ref(),
+            primary_info,
+        ) {
+            (Some(expected), Some(snapshot))
+                if expected == &snapshot.identity && record.info_sha256 == snapshot.sha256 => {}
+            (Some(_), _) => return Ok(false),
+            (None, Some(snapshot)) if snapshot.sha256 == expected_info_sha => {
+                record.info_identity = Some(snapshot.identity.clone());
+                record.info_sha256 = expected_info_sha;
+                record.resolution_primary_info_identity = Some(snapshot.identity);
+                self.persist(record_path, record, false)?;
+            }
+            (None, Some(_)) => return Ok(false),
+            (None, None) => {
+                let identity = match create_info_file(&record.info_path(), &info_bytes) {
+                    Ok(identity) => identity,
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                        return Ok(false);
+                    }
+                    Err(error) => return Err(error),
+                };
+                record.info_identity = Some(identity.clone());
+                record.info_sha256 = expected_info_sha;
+                record.resolution_primary_info_identity = Some(identity);
+                self.persist(record_path, record, false)?;
+            }
+        }
+        if !resolution_primary_tree_matches(record)? || !record_info_matches(record)? {
+            return Ok(false);
+        }
+
+        let delete_path = record
+            .delete_path()
+            .ok_or_else(|| invalid_data("conflict recovery has no delete stage"))?;
+        let recovered_data = record
+            .resolution_data_path()
+            .ok_or_else(|| invalid_data("conflict recovery has no recovered path"))?;
+        let delete_exists = entry_exists(&delete_path)?;
+        let recovered_exists = entry_exists(&recovered_data)?;
+        if delete_exists && recovered_exists {
+            return Ok(false);
+        }
+        if delete_exists && !resolution_tree_matches(record, &delete_path, false)? {
+            return Ok(false);
+        }
+
+        let recovered_info = record
+            .resolution_info_path()
+            .ok_or_else(|| invalid_data("conflict recovery has no recovered metadata path"))?;
+        let info_identity = match capture_optional_info(&recovered_info)? {
+            Some(snapshot)
+                if snapshot.sha256 == expected_info_sha
+                    && record
+                        .resolution_info_identity
+                        .as_ref()
+                        .is_none_or(|expected| expected == &snapshot.identity) =>
+            {
+                snapshot.identity
+            }
+            Some(_) => return Ok(false),
+            None => match create_info_file(&recovered_info, &info_bytes) {
+                Ok(identity) => identity,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => return Ok(false),
+                Err(error) => return Err(error),
+            },
+        };
+        record.resolution_info_identity = Some(info_identity);
+        self.persist(record_path, record, false)?;
+        if delete_exists {
+            match rename_noreplace(&delete_path, &recovered_data) {
+                Ok(()) => {
+                    sync_directory(
+                        recovered_data
+                            .parent()
+                            .ok_or_else(|| invalid_data("Trash data parent is missing"))?,
+                    )?;
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    if recovered_resolution_info_matches(record)? {
+                        fs::remove_file(&recovered_info)?;
+                        sync_directory(
+                            recovered_info
+                                .parent()
+                                .ok_or_else(|| invalid_data("Trash info parent is missing"))?,
+                        )?;
+                        record.resolution_info_identity = None;
+                        self.persist(record_path, record, false)?;
+                    }
+                    return Ok(false);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        if !resolution_primary_tree_matches(record)?
+            || !record_info_matches(record)?
+            || entry_exists(&delete_path)?
+            || !resolution_tree_matches(record, &recovered_data, true)?
+            || !recovered_resolution_info_matches(record)?
+        {
+            return Ok(false);
+        }
+        self.finish_record(record_path)?;
+        Ok(true)
     }
 
     fn recover_rebuilt_metadata(
@@ -2061,6 +2441,11 @@ impl TrashStore {
             resolution_info_identity: None,
             resolution_info_sha256: None,
             resolution_info_bytes: None,
+            resolution_primary_identity: None,
+            resolution_primary_manifest: None,
+            resolution_primary_info_identity: None,
+            resolution_data_path_bytes: None,
+            resolution_info_path_bytes: None,
             create_undo_receipt: true,
             trash_source_parent_identity: None,
         };
@@ -2133,6 +2518,11 @@ impl TrashStore {
             resolution_info_identity: None,
             resolution_info_sha256: None,
             resolution_info_bytes: None,
+            resolution_primary_identity: None,
+            resolution_primary_manifest: None,
+            resolution_primary_info_identity: None,
+            resolution_data_path_bytes: None,
+            resolution_info_path_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -2220,6 +2610,11 @@ impl TrashStore {
                 resolution_info_identity: None,
                 resolution_info_sha256: None,
                 resolution_info_bytes: None,
+                resolution_primary_identity: None,
+                resolution_primary_manifest: None,
+                resolution_primary_info_identity: None,
+                resolution_data_path_bytes: None,
+                resolution_info_path_bytes: None,
                 create_undo_receipt: true,
                 trash_source_parent_identity: Some(EntryIdentity::capture(
                     source
@@ -2306,16 +2701,15 @@ impl TrashStore {
     fn recover_locked(&self) -> io::Result<TrashRecovery> {
         let mut report = TrashRecovery::default();
         for (path, mut record) in self.read_records()? {
-            let finalized = if matches!(
-                record.resolution_intent,
+            let finalized = match record.resolution_intent {
                 Some(
                     TrashResolutionIntent::RebuildMetadata
-                        | TrashResolutionIntent::ReturnDeleteStageAndRebuildMetadata
-                )
-            ) {
-                self.recover_rebuilt_metadata(&path, &mut record)?
-            } else {
-                match record.operation {
+                    | TrashResolutionIntent::ReturnDeleteStageAndRebuildMetadata,
+                ) => self.recover_rebuilt_metadata(&path, &mut record)?,
+                Some(TrashResolutionIntent::PreserveConflictingItems) => {
+                    self.recover_conflicting_items(&path, &mut record)?
+                }
+                _ => match record.operation {
                     TrashOperation::Trash => {
                         let source_exists = entry_exists(&record.source())?;
                         let data_exists = entry_exists(&record.data_path())?;
@@ -2356,7 +2750,7 @@ impl TrashStore {
                     }
                     TrashOperation::Restore => self.recover_restore_record(&path, &mut record)?,
                     TrashOperation::Delete => self.recover_delete_record(&path, &mut record)?,
-                }
+                },
             };
             if finalized {
                 report.finalized += 1;
@@ -2912,6 +3306,11 @@ mod tests {
             resolution_info_identity: None,
             resolution_info_sha256: None,
             resolution_info_bytes: None,
+            resolution_primary_identity: None,
+            resolution_primary_manifest: None,
+            resolution_primary_info_identity: None,
+            resolution_data_path_bytes: None,
+            resolution_info_path_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -2956,6 +3355,11 @@ mod tests {
             resolution_info_identity: None,
             resolution_info_sha256: None,
             resolution_info_bytes: None,
+            resolution_primary_identity: None,
+            resolution_primary_manifest: None,
+            resolution_primary_info_identity: None,
+            resolution_data_path_bytes: None,
+            resolution_info_path_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -2992,6 +3396,11 @@ mod tests {
             resolution_info_identity: None,
             resolution_info_sha256: None,
             resolution_info_bytes: None,
+            resolution_primary_identity: None,
+            resolution_primary_manifest: None,
+            resolution_primary_info_identity: None,
+            resolution_data_path_bytes: None,
+            resolution_info_path_bytes: None,
             create_undo_receipt: false,
             trash_source_parent_identity: None,
         };
@@ -3636,6 +4045,121 @@ mod tests {
         assert_eq!(fs::read(&item.data_path).unwrap(), b"changed");
         assert!(item.info_path.exists());
         assert!(!record_path.exists());
+    }
+
+    #[test]
+    fn reviewed_conflicting_delete_data_keeps_both_trash_items() {
+        let (directory, store, layout) = setup("review-conflicting-delete-data");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"staged copy");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::write(&item.data_path, b"visible copy").unwrap();
+
+        let review = store.review_pending().unwrap().remove(0);
+        assert_eq!(
+            review.action,
+            TrashRecoveryAction::PreserveConflictingItems {
+                rebuild_metadata: false
+            }
+        );
+
+        let outcome = store.resolve_review(&review).unwrap();
+
+        assert_eq!(
+            outcome,
+            TrashResolutionOutcome::PreservedConflictingItems {
+                rebuilt_metadata: false
+            }
+        );
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"visible copy");
+        assert!(!delete_path.exists());
+        assert!(!record_path.exists());
+        let items = list_in_layout(&layout).unwrap();
+        assert_eq!(items.len(), 2);
+        assert!(items
+            .iter()
+            .any(|item| fs::read(&item.data_path).unwrap() == b"visible copy"));
+        assert!(items
+            .iter()
+            .any(|item| fs::read(&item.data_path).unwrap() == b"staged copy"));
+    }
+
+    #[test]
+    fn conflicting_delete_data_rebuilds_missing_metadata_for_both_items() {
+        let (directory, store, mut layout) = setup("review-conflicting-delete-no-info");
+        layout.path_relative_to_topdir = false;
+        let source = write_source(&directory, OsStr::new("report.txt"), b"staged copy");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::write(&item.data_path, b"visible copy").unwrap();
+        fs::remove_file(&item.info_path).unwrap();
+
+        let review = store.review_pending().unwrap().remove(0);
+        assert_eq!(
+            review.action,
+            TrashRecoveryAction::PreserveConflictingItems {
+                rebuild_metadata: true
+            }
+        );
+
+        let outcome = store.resolve_review(&review).unwrap();
+
+        assert_eq!(
+            outcome,
+            TrashResolutionOutcome::PreservedConflictingItems {
+                rebuilt_metadata: true
+            }
+        );
+        assert!(!delete_path.exists());
+        assert!(!record_path.exists());
+        assert_eq!(list_in_layout(&layout).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn accepted_keep_both_intent_recovers_after_hidden_item_publication() {
+        let (directory, store, layout) = setup("review-conflicting-delete-crash");
+        let source = write_source(&directory, OsStr::new("report.txt"), b"staged copy");
+        let item = trash_and_list(&store, &layout, &source);
+        let (record_path, mut record) = prepared_delete_record(&store, &item);
+        let delete_path = record.delete_path().unwrap();
+        rename_noreplace(&item.data_path, &delete_path).unwrap();
+        record.stage = TrashStage::DeleteDataStaged;
+        store.persist(&record_path, &record, false).unwrap();
+        fs::write(&item.data_path, b"visible copy").unwrap();
+        let review = store.review_pending().unwrap().remove(0);
+        let primary = review.data_snapshot.as_ref().unwrap();
+        let staged = review.delete_snapshot.as_ref().unwrap();
+        store
+            .begin_conflicting_items_recovery(
+                &record_path,
+                &mut record,
+                primary,
+                staged,
+                review.info_snapshot.as_ref(),
+            )
+            .unwrap();
+        let recovered_path = record.resolution_data_path().unwrap();
+        let recovered_info = record.resolution_info_path().unwrap();
+        rename_noreplace(&delete_path, &recovered_path).unwrap();
+        sync_directory(recovered_path.parent().unwrap()).unwrap();
+
+        let recovery = store.recover().unwrap();
+
+        assert_eq!(recovery.finalized, 1);
+        assert_eq!(recovery.pending, 0);
+        assert_eq!(fs::read(&item.data_path).unwrap(), b"visible copy");
+        assert_eq!(fs::read(&recovered_path).unwrap(), b"staged copy");
+        assert!(recovered_info.exists());
+        assert!(!record_path.exists());
+        assert_eq!(list_in_layout(&layout).unwrap().len(), 2);
     }
 
     #[test]

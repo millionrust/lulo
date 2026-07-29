@@ -3019,6 +3019,21 @@ impl FinderView {
                         );
                         this.operation_error = None;
                     }
+                    Ok(
+                        trash_store::TrashResolutionOutcome::PreservedConflictingItems {
+                            rebuilt_metadata,
+                        },
+                    ) => {
+                        this.operation_notice = Some(
+                            if rebuilt_metadata {
+                                "Both Trash copies kept under separate names; missing metadata was rebuilt"
+                            } else {
+                                "Both Trash copies kept safely under separate names"
+                            }
+                            .into(),
+                        );
+                        this.operation_error = None;
+                    }
                     Ok(trash_store::TrashResolutionOutcome::RebuiltMetadata) => {
                         this.operation_notice =
                             Some("Trash metadata rebuilt without changing the item".into());
@@ -6411,6 +6426,20 @@ fn trash_recovery_presentation(action: &trash_store::TrashRecoveryAction) -> Rec
                 .to_string(),
             action_label: "Return and Rebuild",
         },
+        trash_store::TrashRecoveryAction::PreserveConflictingItems {
+            rebuild_metadata: true,
+        } => RecoveryPresentation {
+            message: "Files found two different copies from an interrupted permanent deletion, and their Trash metadata is missing. Keep the visible copy unchanged, publish the exact hidden copy under a separate recovered name, and rebuild metadata for both. You can then compare, restore, or copy out either item."
+                .to_string(),
+            action_label: "Keep Both in Trash",
+        },
+        trash_store::TrashRecoveryAction::PreserveConflictingItems {
+            rebuild_metadata: false,
+        } => RecoveryPresentation {
+            message: "Files found two different copies from an interrupted permanent deletion. Keep the visible copy unchanged and publish the exact hidden copy under a separate recovered name. Neither copy will be replaced or deleted, so you can compare, restore, or copy out either item."
+                .to_string(),
+            action_label: "Keep Both in Trash",
+        },
         trash_store::TrashRecoveryAction::RebuildMetadata => RecoveryPresentation {
             message: "The exact reviewed item remains in Trash, but its metadata is missing. Rebuild only the metadata using the recovery time; the item data will not be changed."
                 .to_string(),
@@ -7587,6 +7616,11 @@ mod tests {
             trash_recovery_presentation(&trash_store::TrashRecoveryAction::RemoveOrphanMetadata);
         let keep =
             trash_recovery_presentation(&trash_store::TrashRecoveryAction::KeepExistingItems);
+        let conflicting = trash_recovery_presentation(
+            &trash_store::TrashRecoveryAction::PreserveConflictingItems {
+                rebuild_metadata: false,
+            },
+        );
         let manual =
             trash_recovery_presentation(&trash_store::TrashRecoveryAction::RequiresManualRepair);
 
@@ -7597,6 +7631,13 @@ mod tests {
             .message
             .contains("clear only the exact recovery record"));
         assert!(keep.message.contains("will not delete, move, or replace"));
+        assert_eq!(conflicting.action_label, "Keep Both in Trash");
+        assert!(conflicting
+            .message
+            .contains("Neither copy will be replaced or deleted"));
+        assert!(conflicting
+            .message
+            .contains("compare, restore, or copy out"));
         assert!(manual
             .message
             .contains("cannot prove a safe automatic repair"));

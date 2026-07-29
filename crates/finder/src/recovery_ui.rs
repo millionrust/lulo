@@ -1,6 +1,6 @@
 //! Renderer-independent wording and keyboard policy for Files recovery sheets.
 
-use crate::{operation_journal, ConflictDecision};
+use crate::{conflict::ConflictDecision, operation_journal};
 
 #[cfg(any(target_os = "linux", test))]
 use crate::trash_store;

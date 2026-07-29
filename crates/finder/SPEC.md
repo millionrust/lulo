@@ -8,6 +8,10 @@ metadata, icons, and identifiers remain original rmac work.
 
 - `main.rs` owns the GPUI entity, orchestration, and composition of visible
   Files surfaces.
+- `conflict.rs` owns snapshot-bound transfer preflight, Keep Both/Replace/Skip
+  decisions, collision-free destination naming, and path-redacted conflict
+  wording. Its focused tests keep replacement bound to the exact reviewed
+  source and destination trees.
 - `recovery_ui.rs` owns renderer-independent recovery wording and idle/busy
   keyboard policy for transfer and Trash recovery sheets. Its focused tests
   protect safe defaults and prevent completeness or deletion overclaims.

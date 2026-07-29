@@ -1,5 +1,7 @@
 //! Event-driven process boundary for the rmac top bar.
 
+pub mod surfaces;
+
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 

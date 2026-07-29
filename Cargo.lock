@@ -5786,6 +5786,7 @@ dependencies = [
  "blocking",
  "chrono",
  "futures-util",
+ "rmac-compositor",
  "rmac-locale",
  "rmac-locale-linux",
  "rmac-shell-runtime",

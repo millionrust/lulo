@@ -247,6 +247,7 @@ fn watch_mount_changes(sender: &async_channel::Sender<WatchEvent>) -> Result<(),
         path: path.to_path_buf(),
         source,
     })?;
+    let _ = sender.try_send(WatchEvent::Changed);
     let timeout = Timespec {
         tv_sec: MOUNT_WATCH_TIMEOUT_SECONDS,
         tv_nsec: 0,

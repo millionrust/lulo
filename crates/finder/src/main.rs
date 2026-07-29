@@ -212,6 +212,20 @@ struct QuickLookPanel {
 }
 
 const MAX_RENAME_HINTS: usize = 16;
+const DIRECTORY_STALL_NOTICE_DELAY: Duration = Duration::from_secs(8);
+const DIRECTORY_STALL_NOTICE: &str =
+    "This location is responding slowly; you can navigate elsewhere while Files keeps checking";
+const FILESYSTEM_WATCH_INTERRUPTED_MESSAGE: &str =
+    "Live folder updates were interrupted; Files is rechecking";
+const FILESYSTEM_WATCH_UNAVAILABLE_MESSAGE: &str =
+    "This folder could not be watched; Files will verify every refresh";
+#[cfg(target_os = "linux")]
+const MOUNT_WATCH_UNAVAILABLE_MESSAGE: &str =
+    "Automatic mounted-volume updates are temporarily unavailable";
+#[cfg(any(target_os = "linux", test))]
+const MOUNT_WATCH_STABLE_PERIOD: Duration = Duration::from_secs(60);
+#[cfg(any(target_os = "linux", test))]
+const MOUNT_WATCH_MAX_RETRY: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 struct FilesystemHints {
@@ -237,6 +251,62 @@ impl FilesystemHints {
             Err(_) => self.watch_error = true,
         }
     }
+}
+
+fn filesystem_watcher(
+    events: async_channel::Sender<()>,
+    hints: Arc<Mutex<FilesystemHints>>,
+) -> notify::Result<RecommendedWatcher> {
+    notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+        if let Ok(mut hints) = hints.lock() {
+            hints.record(result);
+        }
+        let _ = events.try_send(());
+    })
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MountWatchNotice {
+    None,
+    Unavailable,
+    Restored,
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[derive(Default)]
+struct MountWatchHealth {
+    unavailable: bool,
+}
+
+#[cfg(any(target_os = "linux", test))]
+impl MountWatchHealth {
+    fn record(&mut self, event: rmac_mounts::WatchEvent) -> MountWatchNotice {
+        match event {
+            rmac_mounts::WatchEvent::Unavailable if !self.unavailable => {
+                self.unavailable = true;
+                MountWatchNotice::Unavailable
+            }
+            rmac_mounts::WatchEvent::Unavailable => MountWatchNotice::None,
+            rmac_mounts::WatchEvent::Changed if self.unavailable => {
+                self.unavailable = false;
+                MountWatchNotice::Restored
+            }
+            rmac_mounts::WatchEvent::Changed => MountWatchNotice::None,
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn next_mount_watch_retry(failures: u32, previous_attempt_lifetime: Duration) -> (u32, Duration) {
+    let failures = if previous_attempt_lifetime >= MOUNT_WATCH_STABLE_PERIOD {
+        1
+    } else {
+        failures.saturating_add(1)
+    };
+    let shift = failures.saturating_sub(1).min(5);
+    let delay = Duration::from_secs(1u64 << shift).min(MOUNT_WATCH_MAX_RETRY);
+    (failures, delay)
 }
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -404,6 +474,8 @@ struct FinderView {
     home: PathBuf,
     mounts: Vec<rmac_mounts::Mount>,
     mount_generation: u64,
+    #[cfg(target_os = "linux")]
+    mount_watch_health: MountWatchHealth,
     cwd_identity: Option<directory_state::Identity>,
     directory_generation: u64,
     thumbs: std::collections::HashMap<PathBuf, PathBuf>,
@@ -472,6 +544,8 @@ struct FinderView {
     dragging: bool,
     focus: FocusHandle,
     watcher: Option<RecommendedWatcher>,
+    filesystem_events: async_channel::Sender<()>,
+    filesystem_hints: Arc<Mutex<FilesystemHints>>,
     watched: Option<PathBuf>,
     watched_parent: Option<PathBuf>,
     search_generation: u64,
@@ -670,16 +744,9 @@ impl FinderView {
         // capacity of one coalesces filesystem-event bursts into one reload.
         let (fs_events, fs_event_rx) = async_channel::bounded(1);
         let fs_hints = Arc::new(Mutex::new(FilesystemHints::default()));
-        let callback_hints = fs_hints.clone();
-        let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if let Ok(mut hints) = callback_hints.lock() {
-                hints.record(res);
-            }
-            let _ = fs_events.try_send(());
-        })
-        .ok();
+        let watcher = filesystem_watcher(fs_events.clone(), fs_hints.clone()).ok();
         #[cfg(target_os = "linux")]
-        let (mount_events, mount_event_rx) = async_channel::bounded(1);
+        let (mount_events, mount_event_rx) = async_channel::bounded(8);
 
         let focus = cx.focus_handle();
         window.focus(&focus);
@@ -696,6 +763,8 @@ impl FinderView {
             home: home.clone(),
             mounts: mounts.clone(),
             mount_generation: 0,
+            #[cfg(target_os = "linux")]
+            mount_watch_health: MountWatchHealth::default(),
             cwd_identity: None,
             directory_generation: 0,
             thumbs: std::collections::HashMap::new(),
@@ -762,6 +831,8 @@ impl FinderView {
             dragging: false,
             focus,
             watcher,
+            filesystem_events: fs_events,
+            filesystem_hints: fs_hints.clone(),
             watched: None,
             watched_parent: None,
             search_generation: 0,
@@ -949,17 +1020,46 @@ impl FinderView {
         #[cfg(target_os = "linux")]
         {
             let watch_sender = mount_events.clone();
-            cx.spawn(async move |_, _| {
-                let _ = rmac_mounts::watch(watch_sender).await;
+            cx.spawn(async move |_, cx: &mut gpui::AsyncApp| {
+                let mut failures = 0;
+                loop {
+                    let started = std::time::Instant::now();
+                    let _ = rmac_mounts::watch(watch_sender.clone()).await;
+                    if watch_sender.is_closed() {
+                        break;
+                    }
+                    let retry = next_mount_watch_retry(failures, started.elapsed());
+                    failures = retry.0;
+                    cx.background_executor().timer(retry.1).await;
+                }
             })
             .detach();
             cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-                while let Ok(event) = mount_event_rx.recv().await {
-                    while mount_event_rx.try_recv().is_ok() {}
-                    let unavailable = event == rmac_mounts::WatchEvent::Unavailable;
+                while let Ok(mut event) = mount_event_rx.recv().await {
+                    while let Ok(next) = mount_event_rx.try_recv() {
+                        event = next;
+                    }
                     if this
                         .update(cx, |this: &mut FinderView, cx| {
-                            this.refresh_mounts(unavailable, cx)
+                            match this.mount_watch_health.record(event) {
+                                MountWatchNotice::Unavailable => {
+                                    if this.operation_error.is_none() {
+                                        this.operation_error =
+                                            Some(MOUNT_WATCH_UNAVAILABLE_MESSAGE.into());
+                                    }
+                                }
+                                MountWatchNotice::Restored => {
+                                    if this.operation_error.as_ref().is_some_and(|message| {
+                                        message.as_ref() == MOUNT_WATCH_UNAVAILABLE_MESSAGE
+                                    }) {
+                                        this.operation_error = None;
+                                    }
+                                    this.operation_notice =
+                                        Some("Automatic mounted-volume updates resumed".into());
+                                }
+                                MountWatchNotice::None => {}
+                            }
+                            this.refresh_mounts(cx);
                         })
                         .is_err()
                     {
@@ -968,7 +1068,7 @@ impl FinderView {
                 }
             })
             .detach();
-            view.refresh_mounts(false, cx);
+            view.refresh_mounts(cx);
         }
 
         view
@@ -1001,9 +1101,9 @@ impl FinderView {
                     let _ = watcher.unwatch(&parent);
                 }
             }
+            self.watcher = None;
             if self.operation_error.is_none() {
-                self.operation_error =
-                    Some("Live folder updates were interrupted; Files is rechecking".into());
+                self.operation_error = Some(FILESYSTEM_WATCH_INTERRUPTED_MESSAGE.into());
             }
         }
         let Some(expected) = self.cwd_identity else {
@@ -1170,7 +1270,23 @@ impl FinderView {
         // Reconfigure the watcher only after navigation. Re-watching the same
         // directory in response to its own event can create a reload storm.
         let mut watch_failed = false;
-        if self.watched.as_ref() != Some(&self.cwd) {
+        let rebuilding_watcher = self.watcher.is_none();
+        if rebuilding_watcher {
+            self.watcher = filesystem_watcher(
+                self.filesystem_events.clone(),
+                self.filesystem_hints.clone(),
+            )
+            .ok();
+            watch_failed = self.watcher.is_none();
+        }
+        let expected_parent = self
+            .cwd
+            .parent()
+            .filter(|parent| *parent != self.cwd)
+            .map(Path::to_path_buf);
+        if self.watched.as_ref() != Some(&self.cwd)
+            || self.watched_parent.as_ref() != expected_parent.as_ref()
+        {
             if let Some(w) = self.watcher.as_mut() {
                 if let Some(old) = self.watched.take() {
                     let _ = w.unwatch(&old);
@@ -1183,18 +1299,30 @@ impl FinderView {
                 } else {
                     watch_failed = true;
                 }
-                if let Some(parent) = self.cwd.parent().filter(|parent| *parent != self.cwd) {
-                    if w.watch(parent, RecursiveMode::NonRecursive).is_ok() {
-                        self.watched_parent = Some(parent.to_path_buf());
+                if let Some(parent) = expected_parent {
+                    if w.watch(&parent, RecursiveMode::NonRecursive).is_ok() {
+                        self.watched_parent = Some(parent);
                     } else {
                         watch_failed = true;
                     }
                 }
             }
         }
-        if watch_failed && self.operation_error.is_none() {
-            self.operation_error =
-                Some("This folder could not be watched; Files will verify every refresh".into());
+        if watch_failed
+            && self.operation_error.as_ref().is_none_or(|message| {
+                message.as_ref() == FILESYSTEM_WATCH_INTERRUPTED_MESSAGE
+                    || message.as_ref() == FILESYSTEM_WATCH_UNAVAILABLE_MESSAGE
+            })
+        {
+            self.operation_error = Some(FILESYSTEM_WATCH_UNAVAILABLE_MESSAGE.into());
+        } else if rebuilding_watcher
+            && self.operation_error.as_ref().is_some_and(|message| {
+                message.as_ref() == FILESYSTEM_WATCH_INTERRUPTED_MESSAGE
+                    || message.as_ref() == FILESYSTEM_WATCH_UNAVAILABLE_MESSAGE
+            })
+        {
+            self.operation_error = None;
+            self.operation_notice = Some("Live folder updates resumed".into());
         }
 
         let path = self.cwd.clone();
@@ -1202,6 +1330,22 @@ impl FinderView {
         let expected_identity = self.cwd_identity;
         self.directory_generation = self.directory_generation.wrapping_add(1);
         let generation = self.directory_generation;
+        let stalled_path = path.clone();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            cx.background_executor()
+                .timer(DIRECTORY_STALL_NOTICE_DELAY)
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.cwd == stalled_path
+                    && this.directory_generation == generation
+                    && this.operation_error.is_none()
+                {
+                    this.operation_error = Some(DIRECTORY_STALL_NOTICE.into());
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
         // Compared on completion so a slow read for a directory we've since
         // navigated away from doesn't clobber the current listing.
         let read_path = path.clone();
@@ -1232,6 +1376,13 @@ impl FinderView {
                 }
                 match result {
                     Ok((identity, entries, free)) => {
+                        if this
+                            .operation_error
+                            .as_ref()
+                            .is_some_and(|message| message.as_ref() == DIRECTORY_STALL_NOTICE)
+                        {
+                            this.operation_error = None;
+                        }
                         this.cwd_identity = Some(identity);
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);
@@ -1812,11 +1963,12 @@ impl FinderView {
         self.search_generation = self.search_generation.wrapping_add(1);
     }
 
-    fn refresh_mounts(&mut self, watcher_unavailable: bool, cx: &mut Context<Self>) {
+    fn refresh_mounts(&mut self, cx: &mut Context<Self>) {
         self.mount_generation = self.mount_generation.wrapping_add(1);
         let generation = self.mount_generation;
-        if watcher_unavailable && self.operation_error.is_none() {
-            self.operation_error = Some("Automatic mounted-volume updates are unavailable".into());
+        #[cfg(target_os = "linux")]
+        if self.mount_watch_health.unavailable && self.operation_error.is_none() {
+            self.operation_error = Some(MOUNT_WATCH_UNAVAILABLE_MESSAGE.into());
         }
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
@@ -1972,7 +2124,7 @@ impl FinderView {
                 match result {
                     Ok(()) => {
                         this.operation_error = None;
-                        this.refresh_mounts(false, cx);
+                        this.refresh_mounts(cx);
                         return;
                     }
                     Err(error) => {
@@ -7185,6 +7337,60 @@ mod tests {
         assert_eq!(
             disappeared_mount_roots(&previous, &[mount("linux:99", "Drive", "/media/drive")]),
             [PathBuf::from("/media/drive")]
+        );
+    }
+
+    #[test]
+    fn mount_watch_health_reports_only_real_outage_transitions() {
+        let mut health = MountWatchHealth::default();
+
+        assert_eq!(
+            health.record(rmac_mounts::WatchEvent::Changed),
+            MountWatchNotice::None
+        );
+        assert_eq!(
+            health.record(rmac_mounts::WatchEvent::Unavailable),
+            MountWatchNotice::Unavailable
+        );
+        assert_eq!(
+            health.record(rmac_mounts::WatchEvent::Unavailable),
+            MountWatchNotice::None
+        );
+        assert_eq!(
+            health.record(rmac_mounts::WatchEvent::Changed),
+            MountWatchNotice::Restored
+        );
+        assert_eq!(
+            health.record(rmac_mounts::WatchEvent::Changed),
+            MountWatchNotice::None
+        );
+    }
+
+    #[test]
+    fn mount_watch_restart_backoff_is_bounded_and_resets_after_stability() {
+        let mut failures = 0;
+        let mut delays = Vec::new();
+        for _ in 0..7 {
+            let retry = next_mount_watch_retry(failures, Duration::from_secs(1));
+            failures = retry.0;
+            delays.push(retry.1);
+        }
+
+        assert_eq!(
+            delays,
+            [
+                Duration::from_secs(1),
+                Duration::from_secs(2),
+                Duration::from_secs(4),
+                Duration::from_secs(8),
+                Duration::from_secs(16),
+                Duration::from_secs(30),
+                Duration::from_secs(30),
+            ]
+        );
+        assert_eq!(
+            next_mount_watch_retry(failures, MOUNT_WATCH_STABLE_PERIOD),
+            (1, Duration::from_secs(1))
         );
     }
 

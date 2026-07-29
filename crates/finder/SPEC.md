@@ -293,8 +293,11 @@ metadata, icons, and identifiers remain original rmac work.
   afterward. Missing, replaced, or newly inaccessible locations fall back to
   the nearest accessible parent with a visible explanation instead of showing
   a false empty folder. Generation checks prevent slow old reads or rename
-  resolutions from replacing newer navigation state, and watcher failures are
-  visible while Files attempts to re-establish the watches.
+  resolutions from replacing newer navigation state. A read still outstanding
+  after eight seconds produces a truthful slow-location notice while remaining
+  off GPUI, and navigating away invalidates its eventual result. A native
+  watcher error drops and recreates the backend before re-arming the current
+  directory and parent; setup/re-arm failures remain visible.
 - On Linux, Files consumes the existing bounded mount-namespace watcher and
   performs a complete fresh mount snapshot for every coalesced hint. Sidebar
   Locations are rebuilt from authoritative opaque mount identity/path/class,
@@ -304,7 +307,12 @@ metadata, icons, and identifiers remain original rmac work.
   sidebar entries. Every tab below it returns to Home; the active tab reloads
   there with a visible disconnect notice. This prevents Files from silently
   exposing the underlying mountpoint directory after an unmount. Manual Eject
-  uses the same authoritative refresh/recovery path.
+  uses the same authoritative refresh/recovery path. The mount watcher now
+  publishes a fresh-snapshot hint immediately after attachment and Files
+  supervises unexpected exits with 1, 2, 4, 8, 16, then at most 30-second
+  retries. A stable minute resets the backoff. Repeated failures coalesce into
+  one degraded state; the first successful reattachment clears only that exact
+  warning, announces recovery, and takes another complete snapshot.
 - Return in the Search field starts one generation-bound recursive search away
   from GPUI. Results rank exact filename, filename prefix, filename substring,
   then regular UTF-8 file content; relevance order is preserved until the user

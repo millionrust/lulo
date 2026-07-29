@@ -16,6 +16,10 @@ software store, package manager, or imitation of Apple Launchpad.
   into category/search/render records while retaining the exact parsed launch
   specifications and desktop actions. It also owns the development-only macOS
   category and cached icon fallbacks; neither fallback is compiled on Linux.
+- A separate view-render boundary owns grid/list cells, icon fallback
+  presentation, category controls, empty/error/busy states, context-menu
+  placement, toolbar, and semantic action dispatch. Catalog refresh, selection
+  policy, launch/reveal work, and supervised lifetime remain outside it.
 - Linux parsing follows the freedesktop Desktop Entry Specification 1.5.
   Desktop actions come only from identifiers named by `Actions=` and matching
   `[Desktop Action <id>]` groups. Labels use the active message locale.

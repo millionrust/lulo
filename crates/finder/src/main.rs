@@ -352,6 +352,7 @@ struct Entry {
     kind: SharedString,
     size_bytes: u64,
     mtime: SystemTime,
+    search_detail: Option<SharedString>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -428,6 +429,8 @@ struct FinderView {
     quick_look: Option<QuickLookPanel>,
     quick_look_generation: u64,
     result_title: Option<SharedString>,
+    search_summary: Option<SharedString>,
+    search_relevance_order: bool,
     operation_notice: Option<SharedString>,
     operation_error: Option<SharedString>,
     operation_journal: Option<Arc<operation_journal::Journal>>,
@@ -717,6 +720,8 @@ impl FinderView {
             quick_look: None,
             quick_look_generation: 0,
             result_title: None,
+            search_summary: None,
+            search_relevance_order: false,
             operation_notice: None,
             operation_error: mount_error,
             operation_journal: None,
@@ -1064,6 +1069,8 @@ impl FinderView {
         {
             self.cancel_search();
             self.result_title = Some("Trash".into());
+            self.search_summary = None;
+            self.search_relevance_order = false;
             self.selected.clear();
             self.anchor = None;
             self.renaming = None;
@@ -1152,6 +1159,8 @@ impl FinderView {
     fn reload_inner(&mut self, cx: &mut Context<Self>, refresh_free_space: bool) {
         self.cancel_search();
         self.result_title = None;
+        self.search_summary = None;
+        self.search_relevance_order = false;
         self.col_stack = vec![self.cwd.clone()];
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
@@ -1788,6 +1797,8 @@ impl FinderView {
         self.cancel_search();
         self.search_generation = self.search_generation.wrapping_add(1);
         self.operation_error = None;
+        self.search_summary = None;
+        self.search_relevance_order = false;
         let cancel = Arc::new(AtomicBool::new(false));
         self.search_cancel = Some(cancel.clone());
         (self.search_generation, cancel)
@@ -3591,7 +3602,11 @@ impl FinderView {
 
     fn select_all(&mut self, cx: &mut Context<Self>) {
         // Only the entries currently visible (after the search filter).
-        let q = self.query.read(cx).value().to_lowercase();
+        let q = if self.search_summary.is_some() {
+            String::new()
+        } else {
+            self.query.read(cx).value().to_lowercase()
+        };
         self.selected = self
             .entries
             .iter()
@@ -3615,6 +3630,7 @@ impl FinderView {
             self.sort_asc = true;
         }
         sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+        self.search_relevance_order = false;
         self.selected.clear();
         cx.notify();
     }
@@ -4027,10 +4043,16 @@ impl FinderView {
 
     // ---- list ----
     fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let q = self.query.read(cx).value().to_lowercase();
+        // Recursive content matches may not contain the query in their names.
+        // Local filtering remains active until Return starts a ranked search.
+        let q = if self.search_summary.is_some() {
+            String::new()
+        } else {
+            self.query.read(cx).value().to_lowercase()
+        };
 
         let sort_caret = |key: SortKey| -> Option<Svg> {
-            if self.sort_key == key {
+            if !self.search_relevance_order && self.sort_key == key {
                 Some(icon(
                     if self.sort_asc {
                         "icons/chevron-up.svg"
@@ -4105,6 +4127,8 @@ impl FinderView {
             let drag_count = drag_paths.len();
             let drop_dir = e.path.clone();
             let row_is_dir = e.is_dir;
+            let search_detail = e.search_detail.clone();
+            let has_search_detail = search_detail.is_some();
 
             let name_cell: gpui::AnyElement = match &self.renaming {
                 Some((ri, input)) if *ri == ix => div()
@@ -4114,9 +4138,20 @@ impl FinderView {
                     .into_any_element(),
                 _ => div()
                     .pl(px(6.0))
-                    .text_color(primary)
-                    .truncate()
-                    .child(e.name.clone())
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .v_flex()
+                    .justify_center()
+                    .child(div().truncate().text_color(primary).child(e.name.clone()))
+                    .when_some(search_detail, |el, detail| {
+                        el.child(
+                            div()
+                                .truncate()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(sub)
+                                .child(detail),
+                        )
+                    })
                     .into_any_element(),
             };
 
@@ -4125,7 +4160,7 @@ impl FinderView {
                     .id(("row", ix))
                     .flex()
                     .items_center()
-                    .h(px(24.0))
+                    .h(px(if has_search_detail { 38.0 } else { 24.0 }))
                     .px_2()
                     .text_size(rmac_ui::text_px(13.0))
                     .when(selected, |el: Stateful<Div>| el.bg(sel()))
@@ -4568,10 +4603,12 @@ impl FinderView {
     fn render_status_bar(&self) -> impl IntoElement {
         let n = self.entries.len();
         let sel = self.selected.len();
-        let count = if sel > 0 {
-            format!("{sel} of {n} selected")
+        let count: SharedString = if sel > 0 {
+            format!("{sel} of {n} selected").into()
+        } else if let Some(summary) = &self.search_summary {
+            summary.clone()
         } else {
-            format!("{n} item{}", if n == 1 { "" } else { "s" })
+            format!("{n} item{}", if n == 1 { "" } else { "s" }).into()
         };
         let free = self
             .free_bytes
@@ -4801,28 +4838,39 @@ impl FinderView {
             cx.notify();
             return;
         }
-        let q = self.query.read(cx).value().to_string();
-        if q.trim().is_empty() {
+        let q = self.query.read(cx).value().trim().to_string();
+        if q.is_empty() {
             return;
         }
         let cwd = self.cwd.clone();
-        let title: SharedString = format!("Search: {q}").into();
-        let key = self.sort_key;
-        let asc = self.sort_asc;
+        let title: SharedString = format!("Search: {}", sanitize_dialog_name(&q)).into();
         let include_hidden = self.show_hidden;
         let (generation, cancel) = self.begin_search();
+        self.entries.clear();
+        self.selected.clear();
+        self.anchor = None;
+        self.result_title = Some(title.clone());
+        self.search_summary = Some("Searching…".into());
+        self.search_relevance_order = true;
+        self.view = ViewMode::List;
+        cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
                 .spawn(async move {
                     let mut options = rmac_search::Options::new(&cancel);
                     options.include_hidden = include_hidden;
-                    let mut v = rmac_search::filenames(&cwd, &q, options)?
+                    let mut report = rmac_search::ranked(&cwd, &q, options)?;
+                    let reported_matches = report.matches.len();
+                    let entries = std::mem::take(&mut report.matches)
                         .into_iter()
-                        .filter_map(|path| entry_for(&path))
+                        .filter_map(|search_match| search_entry_for(&cwd, search_match))
                         .collect::<Vec<_>>();
-                    sort_entries(&mut v, key, asc);
-                    Ok::<_, rmac_search::Error>(v)
+                    report.skipped_errors = report
+                        .skipped_errors
+                        .saturating_add(reported_matches.saturating_sub(entries.len()));
+                    let summary = ranked_search_summary(&report, entries.len());
+                    Ok::<_, rmac_search::Error>((entries, summary))
                 })
                 .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
@@ -4831,14 +4879,19 @@ impl FinderView {
                 }
                 this.search_cancel = None;
                 match result {
-                    Ok(entries) => {
+                    Ok((entries, summary)) => {
                         this.entries = entries;
                         this.result_title = Some(title);
+                        this.search_summary = Some(summary.into());
                         this.selected.clear();
                         this.anchor = None;
                     }
                     Err(rmac_search::Error::Cancelled) => {}
-                    Err(error) => this.operation_error = Some(error.to_string().into()),
+                    Err(error) => {
+                        this.search_summary = None;
+                        this.search_relevance_order = false;
+                        this.operation_error = Some(ranked_search_error_message(&error).into());
+                    }
                 }
                 cx.notify();
             });
@@ -6141,6 +6194,74 @@ fn sanitize_dialog_name(name: &str) -> String {
     output
 }
 
+fn ranked_search_summary(report: &rmac_search::SearchReport, visible_count: usize) -> String {
+    let mut summary = format!(
+        "{visible_count} result{} · {} items checked",
+        if visible_count == 1 { "" } else { "s" },
+        report.scanned_entries
+    );
+    if report.results_truncated {
+        summary.push_str(" · result limit reached");
+    }
+    if report.entry_limit_reached {
+        summary.push_str(" · item limit reached");
+    }
+    if report.content_partially_scanned {
+        summary.push_str(" · some content not searched");
+    }
+    if report.skipped_errors > 0 {
+        summary.push_str(&format!(" · {} unavailable", report.skipped_errors));
+    }
+    summary
+}
+
+fn ranked_search_error_message(error: &rmac_search::Error) -> String {
+    match error {
+        rmac_search::Error::InvalidQuery(_) => error.to_string(),
+        _ => "Search could not safely read this folder".to_string(),
+    }
+}
+
+fn search_entry_for(root: &Path, search_match: rmac_search::SearchMatch) -> Option<Entry> {
+    std::fs::symlink_metadata(&search_match.path).ok()?;
+    let mut entry = entry_for(&search_match.path)?;
+    let detail = match search_match.kind {
+        rmac_search::MatchKind::ExactName => {
+            format!(
+                "Exact name · {}",
+                search_parent_label(root, &search_match.path)
+            )
+        }
+        rmac_search::MatchKind::NamePrefix => {
+            format!(
+                "Name begins with · {}",
+                search_parent_label(root, &search_match.path)
+            )
+        }
+        rmac_search::MatchKind::NameSubstring => {
+            format!(
+                "Name contains · {}",
+                search_parent_label(root, &search_match.path)
+            )
+        }
+        rmac_search::MatchKind::Content => format!(
+            "Contents · {}",
+            sanitize_dialog_name(search_match.excerpt.as_deref().unwrap_or("Matching text"))
+        ),
+    };
+    entry.search_detail = Some(detail.into());
+    Some(entry)
+}
+
+fn search_parent_label(root: &Path, path: &Path) -> String {
+    let parent = path.parent().unwrap_or(root);
+    match parent.strip_prefix(root) {
+        Ok(relative) if relative.as_os_str().is_empty() => "This folder".to_string(),
+        Ok(relative) => sanitize_dialog_name(&relative.to_string_lossy()),
+        Err(_) => "Current search scope".to_string(),
+    }
+}
+
 fn conflict_prompt(conflict: &TransferConflict) -> String {
     let name = conflict
         .destination
@@ -6618,6 +6739,7 @@ fn entry_for(path: &Path) -> Option<Entry> {
         kind: kind.into(),
         size_bytes,
         mtime,
+        search_detail: None,
     })
 }
 
@@ -7312,6 +7434,55 @@ mod tests {
 
         assert_eq!(sanitized.chars().count(), 121);
         assert!(sanitized.ends_with('…'));
+    }
+
+    #[test]
+    fn ranked_search_summary_discloses_every_incomplete_scope() {
+        let report = rmac_search::SearchReport {
+            matches: vec![rmac_search::SearchMatch {
+                path: PathBuf::from("/scope/result"),
+                kind: rmac_search::MatchKind::Content,
+                excerpt: Some("match".to_string()),
+            }],
+            scanned_entries: 100_000,
+            content_bytes: 64 * 1024 * 1024,
+            results_truncated: true,
+            entry_limit_reached: true,
+            content_partially_scanned: true,
+            skipped_errors: 2,
+        };
+
+        let summary = ranked_search_summary(&report, 1);
+
+        assert!(summary.contains("1 result"));
+        assert!(summary.contains("100000 items checked"));
+        assert!(summary.contains("result limit reached"));
+        assert!(summary.contains("item limit reached"));
+        assert!(summary.contains("some content not searched"));
+        assert!(summary.contains("2 unavailable"));
+    }
+
+    #[test]
+    fn ranked_search_entry_presents_match_reason_without_private_absolute_path() {
+        let root = TestDirectory::new("search-presentation");
+        let folder = root.0.join("Documents");
+        let path = folder.join("notes.txt");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(&path, b"needle").unwrap();
+
+        let entry = search_entry_for(
+            &root.0,
+            rmac_search::SearchMatch {
+                path,
+                kind: rmac_search::MatchKind::Content,
+                excerpt: Some("the needle line".to_string()),
+            },
+        )
+        .unwrap();
+
+        let detail = entry.search_detail.unwrap().to_string();
+        assert_eq!(detail, "Contents · the needle line");
+        assert!(!detail.contains(root.0.to_string_lossy().as_ref()));
     }
 
     #[test]

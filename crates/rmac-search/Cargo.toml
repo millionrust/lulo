@@ -6,6 +6,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+libc.workspace = true
 quick-xml.workspace = true
 url.workspace = true
 walkdir.workspace = true

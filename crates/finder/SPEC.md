@@ -283,6 +283,22 @@ metadata, icons, and identifiers remain original rmac work.
   there with a visible disconnect notice. This prevents Files from silently
   exposing the underlying mountpoint directory after an unmount. Manual Eject
   uses the same authoritative refresh/recovery path.
+- Return in the Search field starts one generation-bound recursive search away
+  from GPUI. Results rank exact filename, filename prefix, filename substring,
+  then regular UTF-8 file content; relevance order is preserved until the user
+  explicitly chooses another table sort. Content results carry a sanitized
+  single-line excerpt, while name results identify both their match reason and
+  relative parent. Search never follows symbolic links or opens directories,
+  FIFOs, sockets, devices, or other special files as content. A regular file is
+  opened no-follow and nonblocking, and its descriptor plus visible path
+  identity are revalidated after reading before any excerpt is accepted.
+  Queries are capped at 512 bytes, results at 500, traversal at 100,000
+  entries, each content prefix at 1 MiB, total inspected content at 64 MiB, and
+  excerpts at 240 characters. Hidden and excluded roots are pruned, filesystem
+  boundaries are retained by default, cancellation is checked during traversal
+  and every read, and the status bar truthfully discloses result, entry, and
+  content limits plus unavailable entries. Content-only results remain visible
+  even though their filenames do not contain the query.
 - Before creating any batch destination, a cancellable no-follow scan is
   bounded to 1,000,000 entries and 256 levels. It accounts for each regular
   file's logical bytes plus 4 KiB per destination entry, groups requirements by

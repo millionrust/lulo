@@ -5042,7 +5042,11 @@ dependencies = [
  "rmac-thumbnails",
  "rmac-ui",
  "rust-embed",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
  "trash",
+ "uuid",
 ]
 
 [[package]]

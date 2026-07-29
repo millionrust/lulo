@@ -1,4 +1,47 @@
-# Finder fidelity spec (from Apple docs + screenshot)
+# Files fidelity and safety specification
+
+The installed product is **Files** (`org.rmac.Files`, `rmac-files`). This
+document may use another desktop as a visual reference, but installed labels,
+metadata, icons, and identifiers remain original rmac work.
+
+## File-operation invariants
+
+- Copy, duplicate, move, rename, trash, restore, and permanent delete run away
+  from the GPUI thread. A visible operation owns progress, cancellation, and a
+  dismissible result.
+- No operation overwrites an item merely because it appeared after a UI
+  conflict check. Copy creates every destination node exclusively. Same-volume
+  move and rename use an atomic no-replace primitive and fail closed where that
+  primitive is unavailable.
+- A directory is never copied into itself or a real descendant, including a
+  descendant reached through a symlinked destination parent.
+- Recursive copy uses `symlink_metadata`, recreates a symlink itself, and never
+  traverses the symlink target. Dangling and relative links retain their exact
+  link payload.
+- Cross-volume move is copy-then-source-removal only for the kernel's
+  cross-device result. Any other rename failure stops without copying. Source
+  removal begins only after a durable hidden copy on the destination volume,
+  journal persistence, identity revalidation, and a final cancellation check.
+  After source removal, the copy is atomically published with no-replace
+  semantics. A racing final name therefore leaves the complete staged copy
+  recoverable and never overwrites the conflicting entry.
+- Cancellation never removes the move source. Partial destinations remain
+  visible for explicit recovery and are never silently deleted after a path
+  race.
+- Conflicts require an explicit reviewed choice: keep both, replace, or skip.
+  Replace must use a recoverable journaled swap rather than delete-then-copy.
+- Every destructive or multi-step operation has a durable, versioned journal
+  whose recovery distinguishes prepared, destination-complete,
+  source-removed, published, committed, and ambiguous states. Journal files
+  preserve raw Unix path bytes, use private modes, are atomically replaced and
+  fsynced, and bind no-follow device/inode/type/size/time identities. Startup
+  finishes only identity-proven publication or journal cleanup; unknown,
+  substituted, partial, or conflicting states remain visible and fail closed.
+- Trash follows the freedesktop Trash specification on Linux and records enough
+  identity to offer restore. Permanent delete requires explicit confirmation
+  and is not described as undoable.
+- Low-space preflight and mid-operation `ENOSPC` preserve the source, retain
+  truthful partial-destination recovery, and never claim completion.
 
 Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light mode.
 

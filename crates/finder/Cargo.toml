@@ -20,8 +20,12 @@ rmac-search.workspace = true
 rmac-thumbnails.workspace = true
 chrono.workspace = true
 rust-embed.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 trash.workspace = true
 notify.workspace = true
+rustix.workspace = true
+uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true

@@ -6,6 +6,7 @@
 //! hidden-file toggle, and live directory watching.
 
 mod file_ops;
+mod operation_journal;
 mod pasteboard;
 
 use std::borrow::Cow;
@@ -263,6 +264,8 @@ struct FinderView {
     info: Option<usize>,
     result_title: Option<SharedString>,
     operation_error: Option<SharedString>,
+    operation_journal: Option<Arc<operation_journal::Journal>>,
+    pending_operations: usize,
     transfer: Option<ActiveTransfer>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
@@ -458,6 +461,42 @@ impl FinderView {
         let focus = cx.focus_handle();
         window.focus(&focus);
 
+        let (operation_journal, pending_operations, journal_error) =
+            match operation_journal::Journal::open_default() {
+                Ok(journal) => match journal.recover_unambiguous() {
+                    Ok(report) if report.pending == 0 => {
+                        (Some(Arc::new(journal)), 0, None)
+                    }
+                    Ok(report) => (
+                        Some(Arc::new(journal)),
+                        report.pending,
+                        Some(
+                            format!(
+                                "Files found {} unfinished file operation{}; new transfers are paused until recovery",
+                                report.pending,
+                                if report.pending == 1 { "" } else { "s" }
+                            )
+                            .into(),
+                        ),
+                    ),
+                    Err(_) => (
+                        None,
+                        0,
+                        Some(
+                            "File-operation recovery data could not be verified; transfers are disabled"
+                                .into(),
+                        ),
+                    ),
+                },
+                Err(_) => (
+                    None,
+                    0,
+                    Some(
+                        "File-operation recovery is unavailable; transfers are disabled".into(),
+                    ),
+                ),
+            };
+
         let mut view = Self {
             cwd: home.clone(),
             tabs: vec![Tab {
@@ -486,7 +525,9 @@ impl FinderView {
             sections,
             info: None,
             result_title: None,
-            operation_error: mount_error,
+            operation_error: journal_error.or(mount_error),
+            operation_journal,
+            pending_operations,
             transfer: None,
             free_bytes: None,
             dragging: false,
@@ -910,6 +951,28 @@ impl FinderView {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
+        let Some(journal) = self.operation_journal.clone() else {
+            self.operation_error =
+                Some("File-operation recovery is unavailable; transfers are disabled".into());
+            cx.notify();
+            return;
+        };
+        if self.pending_operations != 0 {
+            self.operation_error = Some(
+                format!(
+                    "Resolve {} unfinished file operation{} before starting another transfer",
+                    self.pending_operations,
+                    if self.pending_operations == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
+                )
+                .into(),
+            );
+            cx.notify();
+            return;
+        }
 
         let cancel = Arc::new(AtomicBool::new(false));
         self.operation_error = None;
@@ -929,6 +992,7 @@ impl FinderView {
                 let progress_events = events.clone();
                 let report = file_ops::execute_transfers(
                     &file_ops::RealFileSystem,
+                    Some(journal.as_ref()),
                     &tasks,
                     &cancel,
                     move |processed, total| {
@@ -965,7 +1029,35 @@ impl FinderView {
                                     this.write_clip_text(cx);
                                 }
                             }
+                            if let Some(journal) = this.operation_journal.as_ref() {
+                                match journal.recover_unambiguous() {
+                                    Ok(recovery) => {
+                                        this.pending_operations = recovery.pending
+                                    }
+                                    Err(_) => {
+                                        this.operation_journal = None;
+                                        this.pending_operations = 0;
+                                    }
+                                }
+                            }
                             this.record_operation_failures(report.failures, cx);
+                            if this.operation_journal.is_none() {
+                                this.operation_error = Some(
+                                    "File-operation recovery data could not be verified; transfers are disabled"
+                                        .into(),
+                                );
+                            } else if this.pending_operations != 0
+                                && this.operation_error.is_none()
+                            {
+                                this.operation_error = Some(
+                                    format!(
+                                        "Files retained {} unfinished file-operation record{} for recovery",
+                                        this.pending_operations,
+                                        if this.pending_operations == 1 { "" } else { "s" }
+                                    )
+                                    .into(),
+                                );
+                            }
                             this.reload(cx);
                         }
                     })
@@ -2526,8 +2618,10 @@ fn unique_path_avoiding(path: PathBuf, reserved: &BTreeSet<PathBuf>) -> PathBuf 
     path
 }
 
-/// Copy preserving macOS metadata (xattrs, resource forks, ACLs, packages) via
-/// `ditto`, falling back to a plain recursive copy if ditto is unavailable.
+/// Copy without following symlinks or replacing any destination entry.
+///
+/// Every destination node is created exclusively. A concurrent writer can
+/// therefore make the operation fail, but can never have its data overwritten.
 fn copy_item(src: &Path, dst: &Path) -> std::io::Result<()> {
     copy_item_cancellable(src, dst, &AtomicBool::new(false))
 }
@@ -2539,29 +2633,44 @@ fn copy_item_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> std::io
             "copy cancelled",
         ));
     }
-    match Command::new("ditto").arg(src).arg(dst).spawn() {
-        Ok(mut child) => loop {
-            if cancel.load(Ordering::Acquire) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Interrupted,
-                    "copy cancelled",
-                ));
-            }
-            match child.try_wait()? {
-                Some(status) if status.success() => return Ok(()),
-                Some(status) => {
-                    return Err(std::io::Error::other(format!("ditto failed with {status}")));
-                }
-                None => std::thread::sleep(Duration::from_millis(25)),
-            }
-        },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            copy_recursive_cancellable(src, dst, cancel)
-        }
-        Err(error) => Err(error),
+    validate_copy_destination(src, dst)?;
+    copy_recursive_cancellable(src, dst, cancel)?;
+    sync_copied_tree(dst)?;
+    if let Some(parent) = dst.parent() {
+        std::fs::File::open(parent)?.sync_all()?;
     }
+    Ok(())
+}
+
+/// Reject a directory copy into itself or any real descendant before creating
+/// the first destination node. Canonicalizing the existing destination parent
+/// also catches a path routed back into the source through a symlink.
+fn validate_copy_destination(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let metadata = std::fs::symlink_metadata(src)?;
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+    let source = std::fs::canonicalize(src)?;
+    let parent = dst.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "copy destination has no parent",
+        )
+    })?;
+    let destination_name = dst.file_name().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "copy destination has no file name",
+        )
+    })?;
+    let destination = std::fs::canonicalize(parent)?.join(destination_name);
+    if destination == source || destination.starts_with(&source) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "a folder cannot be copied into itself",
+        ));
+    }
+    Ok(())
 }
 
 fn copy_recursive_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> std::io::Result<()> {
@@ -2605,6 +2714,22 @@ fn copy_recursive_cancellable(src: &Path, dst: &Path, cancel: &AtomicBool) -> st
         }
         destination.sync_all()?;
         std::fs::set_permissions(dst, metadata.permissions())?;
+    }
+    Ok(())
+}
+
+/// Durably flush the completed copy before a cross-volume move can remove its
+/// source. Symlinks are never opened or followed; their directory entry is
+/// covered by the parent-directory sync.
+fn sync_copied_tree(path: &Path) -> std::io::Result<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            sync_copied_tree(&entry?.path())?;
+        }
+        std::fs::File::open(path)?.sync_all()?;
+    } else if !metadata.file_type().is_symlink() {
+        std::fs::File::open(path)?.sync_all()?;
     }
     Ok(())
 }
@@ -2816,6 +2941,30 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new(label: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("test clock should follow the Unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "rmac-files-main-{label}-{}-{unique}",
+                std::process::id()
+            ));
+            std::fs::create_dir(&path).expect("test directory should be created");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn filesystem_event_bursts_coalesce_until_consumed() {
@@ -2846,5 +2995,75 @@ mod tests {
             "rmac-reserved-destination-{} 2",
             std::process::id()
         )));
+    }
+
+    #[test]
+    fn recursive_copy_refuses_a_destination_inside_the_source() {
+        let root = TestDirectory::new("copy-descendant");
+        let source = root.0.join("source");
+        let child = source.join("child");
+        let destination = child.join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&child).unwrap();
+        std::fs::write(source.join("keep"), b"source bytes").unwrap();
+
+        let error = copy_item(&source, &destination).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(source.join("keep")).unwrap(), b"source bytes");
+    }
+
+    #[test]
+    fn recursive_copy_detects_a_descendant_reached_through_a_symlink() {
+        let root = TestDirectory::new("copy-symlink-descendant");
+        let source = root.0.join("source");
+        let child = source.join("child");
+        let routed_parent = root.0.join("routed-parent");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&child).unwrap();
+        std::os::unix::fs::symlink(&child, &routed_parent).unwrap();
+        let destination = routed_parent.join("source");
+
+        let error = copy_item(&source, &destination).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(!child.join("source").exists());
+    }
+
+    #[test]
+    fn recursive_copy_preserves_a_symlink_without_traversing_its_target() {
+        let root = TestDirectory::new("copy-symlink");
+        let target = root.0.join("target");
+        let source = root.0.join("source-link");
+        let destination = root.0.join("destination-link");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("private"), b"target bytes").unwrap();
+        std::os::unix::fs::symlink("target", &source).unwrap();
+
+        copy_item(&source, &destination).unwrap();
+
+        assert!(std::fs::symlink_metadata(&destination)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            std::fs::read_link(&destination).unwrap(),
+            PathBuf::from("target")
+        );
+    }
+
+    #[test]
+    fn recursive_copy_never_replaces_an_existing_file() {
+        let root = TestDirectory::new("copy-conflict");
+        let source = root.0.join("source");
+        let destination = root.0.join("destination");
+        std::fs::write(&source, b"source bytes").unwrap();
+        std::fs::write(&destination, b"destination bytes").unwrap();
+
+        let error = copy_item(&source, &destination).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&destination).unwrap(), b"destination bytes");
     }
 }

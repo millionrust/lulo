@@ -61,6 +61,11 @@ plain text over a rich-text file.
   editable surface projection, and semantic action wiring. It invokes
   controller intents without owning document bytes, recovery, portal,
   conflict, print, watcher, or generation policy.
+- The 38-line binary entrypoint owns only module composition, semantic action
+  registration, and controller startup. The controller owns independent
+  document-window lifetimes, subscriptions, generations, user intents, and the
+  existing document/recovery/print/conflict orchestration, with the renderer
+  nested beneath it.
 - Linux printing must export the initiating Wayland window and retain the exact
   window/document generations through XDG PreparePrint, background rendering,
   and Print. The shared transaction advertises only PDF, refuses stale portal

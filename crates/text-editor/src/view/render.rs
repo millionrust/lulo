@@ -8,12 +8,13 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, Button, SearchField, TextField};
 
 use crate::{
-    can_begin_print, document, ActiveAlert, CloseBar, CloseWindow, DecreaseFont, EditorView,
-    ExternalChange, FindNext, FindPrev, IncreaseFont, NewFile, OpenFile, Pending, PrintFile,
-    SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
-    SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ToggleFind,
-    ToggleMono, ToggleReplace, CTX,
+    document, CloseBar, CloseWindow, DecreaseFont, FindNext, FindPrev, IncreaseFont, NewFile,
+    OpenFile, PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le,
+    SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf,
+    ToggleFind, ToggleMono, ToggleReplace,
 };
+
+use super::{can_begin_print, ActiveAlert, EditorView, ExternalChange, Pending, CTX};
 
 impl EditorView {
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {

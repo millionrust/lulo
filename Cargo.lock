@@ -5136,6 +5136,7 @@ name = "rmac-launcher"
 version = "0.1.0"
 dependencies = [
  "rmac-apps",
+ "rmac-compositor",
  "rmac-shell-settings",
 ]
 

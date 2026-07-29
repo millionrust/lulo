@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+pub mod surface;
+
 const DEFAULT_LIMIT: usize = 40;
 const DEFAULT_CATEGORY_LIMIT: usize = 12;
 

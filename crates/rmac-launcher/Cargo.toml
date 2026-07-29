@@ -8,4 +8,5 @@ publish = false
 
 [dependencies]
 rmac-apps.workspace = true
+rmac-compositor.workspace = true
 rmac-shell-settings.workspace = true

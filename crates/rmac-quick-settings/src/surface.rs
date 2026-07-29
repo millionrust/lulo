@@ -193,6 +193,57 @@ pub fn plan(
     })
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub struct FocusRestoreRequest {
+    pub seat: SeatId,
+    pub window: rmac_compositor::WindowId,
+}
+
+impl fmt::Debug for FocusRestoreRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("FocusRestoreRequest")
+            .field("seat", &"<redacted>")
+            .field("window", &"<redacted>")
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FocusRestore {
+    NotRequested,
+    AlreadyFocused,
+    TargetGone,
+    Request(FocusRestoreRequest),
+}
+
+/// Revalidate the invocation's captured window immediately before focus
+/// restoration. The platform adapter must honor the exact seat or report that
+/// seat-scoped restoration is unsupported; it must not silently focus globally.
+pub fn focus_restore(
+    description: &Description,
+    compositor: &rmac_compositor::Snapshot,
+) -> FocusRestore {
+    let Some(window) = description.invocation.restore_window else {
+        return FocusRestore::NotRequested;
+    };
+    let Some(current) = compositor
+        .windows
+        .iter()
+        .find(|candidate| candidate.id == window)
+    else {
+        return FocusRestore::TargetGone;
+    };
+    if current.focused && compositor.focus.window == Some(window) {
+        FocusRestore::AlreadyFocused
+    } else {
+        FocusRestore::Request(FocusRestoreRequest {
+            seat: description.invocation.seat.clone(),
+            window,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CommandId(u64);
 
@@ -674,6 +725,38 @@ mod tests {
         assert_eq!(
             planned.keyboard_interactivity,
             KeyboardInteractivity::OnDemand
+        );
+    }
+
+    #[test]
+    fn focus_restore_revalidates_target_and_preserves_exact_seat() {
+        let mut planned = description("DP-2", "private-seat-31").unwrap();
+        let mut current = compositor("DP-2");
+        assert_eq!(
+            focus_restore(&planned, &current),
+            FocusRestore::AlreadyFocused
+        );
+
+        current.focus.window = None;
+        current.windows[0].focused = false;
+        let request = focus_restore(&planned, &current);
+        assert_eq!(
+            request,
+            FocusRestore::Request(FocusRestoreRequest {
+                seat: SeatId::new("private-seat-31").unwrap(),
+                window: rmac_compositor::WindowId(7),
+            })
+        );
+        let diagnostics = format!("{request:?}");
+        assert!(!diagnostics.contains("private-seat-31"));
+        assert!(!diagnostics.contains('7'));
+
+        current.windows.clear();
+        assert_eq!(focus_restore(&planned, &current), FocusRestore::TargetGone);
+        planned.invocation.restore_window = None;
+        assert_eq!(
+            focus_restore(&planned, &current),
+            FocusRestore::NotRequested
         );
     }
 

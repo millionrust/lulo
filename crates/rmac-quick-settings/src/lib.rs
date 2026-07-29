@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+pub mod surface;
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Inputs {
     pub wifi: rmac_network::WifiSnapshot,

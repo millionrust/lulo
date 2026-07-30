@@ -7,9 +7,13 @@ metadata, icons, and identifiers remain original rmac work.
 ## Module boundaries
 
 - `main.rs` owns only module composition and application boot.
-- `view.rs` owns the GPUI entity, window/controller orchestration, and
-  composition of visible Files surfaces. Further render/update separation
-  remains required inside this explicit boundary.
+- `view.rs` owns the GPUI entity, window/controller orchestration, directory
+  updates, transfer admission, and operation/recovery lifecycle.
+- `view/presentation.rs` owns toolbar/sidebar/list/tab/path/status projection,
+  context menus and recovery/confirmation/Quick Look dialogs, their local
+  pointer and keyboard interaction, and the final GPUI `Render` boundary.
+  Search and preview jobs remain generation-bound to the controller even when
+  their user interaction begins in this presentation boundary.
 - `file_ops.rs` owns typed off-thread file operations, no-replace rename,
   capacity checks, and exclusive recursive copy. Recursive copy validates
   destination ancestry, recreates links without following them, refuses

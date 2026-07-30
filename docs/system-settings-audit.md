@@ -21,6 +21,10 @@ equivalents rather than simulated.
   rule shared by every live service snapshot, the exact condition that requires
   an independent recovery read, and capability-aware audio choice admission.
   Pane-specific callbacks retain only their typed snapshot and follow-up work.
+- `appearance.rs` owns the typed preference changes and option catalog, host
+  appearance plus rmac preference loading, conflict refusal, scoped mutation,
+  authoritative save/readback, and custom accent conversion. The controller
+  retains only subscription lifecycle, mutation generation, and GPUI rendering.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

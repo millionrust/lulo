@@ -9,6 +9,7 @@ mod ime;
 mod keyboard;
 mod mouse;
 mod output_filter;
+mod paste;
 mod profiles;
 mod storage;
 
@@ -45,6 +46,10 @@ use mouse::{
     motion_report as mouse_motion_report, MouseReport,
 };
 use output_filter::OutputFilter;
+use paste::{
+    has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste, PendingPaste,
+    MAX_BYTES as MAX_PASTE_BYTES,
+};
 use portable_pty::{
     native_pty_system, Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
 };
@@ -82,7 +87,6 @@ const TAB_BAR_HEIGHT: f32 = 32.0;
 const BODY_PAD: f32 = 8.0;
 /// Pixels from the window left to the first column: 8pt content padding.
 const LEFT_PAD: f32 = BODY_PAD;
-const MAX_PASTE_BYTES: usize = 1024 * 1024;
 const MAX_SEARCH_QUERY_BYTES: usize = 4096;
 const MAX_COMBINING_MARKS_PER_CELL: usize = 16;
 /// One reader and one child waiter are reserved before a shell can launch.
@@ -102,8 +106,6 @@ const MAX_UTF8_SCALAR_BYTES: usize = 4;
 /// `alacritty_terminal` 0.25 evicts the oldest saved title at this depth.
 #[cfg(test)]
 const MAX_TITLE_STACK_DEPTH: usize = 4096;
-const BRACKETED_PASTE_START: &[u8] = b"\x1b[200~";
-const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
 const FOCUS_IN_REPORT: &[u8] = b"\x1b[I";
 const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
@@ -291,51 +293,6 @@ fn grid_dimensions(width: f32, height: f32, cell_width: f32, line_height: f32) -
 
 fn terminal_content_top(tab_count: usize) -> f32 {
     TITLE_BAR_HEIGHT + if tab_count > 1 { TAB_BAR_HEIGHT } else { 0.0 } + BODY_PAD
-}
-
-fn logical_line_count(text: &str) -> usize {
-    if text.is_empty() {
-        return 0;
-    }
-    let bytes = text.as_bytes();
-    let mut lines = 1;
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
-                lines += 1;
-                index += 2;
-            }
-            b'\r' | b'\n' => {
-                lines += 1;
-                index += 1;
-            }
-            _ => index += 1,
-        }
-    }
-    lines
-}
-
-fn has_unsafe_unbracketed_control(text: &str) -> bool {
-    text.chars()
-        .any(|character| character.is_control() && !matches!(character, '\t' | '\r' | '\n'))
-}
-
-fn prepare_paste(text: &str, bracketed: bool) -> Vec<u8> {
-    if bracketed {
-        let mut bytes = Vec::with_capacity(text.len().saturating_add(12));
-        bytes.extend_from_slice(BRACKETED_PASTE_START);
-        bytes.extend(
-            text.as_bytes()
-                .iter()
-                .copied()
-                .filter(|byte| !matches!(byte, b'\x1b' | b'\x03')),
-        );
-        bytes.extend_from_slice(BRACKETED_PASTE_END);
-        bytes
-    } else {
-        text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
-    }
 }
 
 fn focus_report(mode: TermMode, focused: bool) -> Option<&'static [u8]> {
@@ -1038,25 +995,6 @@ impl Drop for Session {
 enum PendingClose {
     Tab { session_id: u64 },
     Window { foreground_sessions: usize },
-}
-
-struct PendingPaste {
-    session_id: u64,
-    text: String,
-    line_count: usize,
-    byte_count: usize,
-}
-
-impl std::fmt::Debug for PendingPaste {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("PendingPaste")
-            .field("session_id", &self.session_id)
-            .field("text", &"<private>")
-            .field("line_count", &self.line_count)
-            .field("byte_count", &self.byte_count)
-            .finish()
-    }
 }
 
 struct TerminalView {
@@ -2222,12 +2160,7 @@ impl TerminalView {
         match self.tabs[self.active].paste(&text, false) {
             Ok(()) => {}
             Err(PasteError::ReviewRequired) => {
-                self.pending_paste = Some(PendingPaste {
-                    session_id: self.tabs[self.active].id,
-                    line_count: logical_line_count(&text),
-                    byte_count: text.len(),
-                    text,
-                });
+                self.pending_paste = Some(PendingPaste::new(self.tabs[self.active].id, text));
                 self.capture_active_search_query(cx);
                 self.tabs[self.active].ui.search_open = false;
                 self.picker_open = false;
@@ -3497,7 +3430,6 @@ mod tests {
 
     #[test]
     fn terminal_resources_have_explicit_bounds() {
-        assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
         assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
         assert_eq!(FOCUS_IN_REPORT.len(), 3);
         assert_eq!(FOCUS_OUT_REPORT.len(), 3);
@@ -3752,17 +3684,7 @@ mod tests {
     }
 
     #[test]
-    fn paste_line_count_normalizes_platform_boundaries() {
-        assert_eq!(logical_line_count(""), 0);
-        assert_eq!(logical_line_count("one"), 1);
-        assert_eq!(logical_line_count("one\ntwo"), 2);
-        assert_eq!(logical_line_count("one\r\ntwo"), 2);
-        assert_eq!(logical_line_count("one\rtwo"), 2);
-        assert_eq!(logical_line_count("one\r\ntwo\nthree\rfour"), 4);
-    }
-
-    #[test]
-    fn bracketed_paste_cannot_embed_its_terminator() {
+    fn bracketed_paste_mode_follows_parsed_xterm_state() {
         let size = TermSize { cols: 20, lines: 5 };
         let mut term = Term::new(terminal_config(SCROLLBACK_LINES), &size, EventProxy);
         let mut parser: Processor = Processor::new();
@@ -3770,46 +3692,6 @@ mod tests {
         assert!(term.mode().contains(TermMode::BRACKETED_PASTE));
         parser.advance(&mut term, b"\x1b[?2004l");
         assert!(!term.mode().contains(TermMode::BRACKETED_PASTE));
-
-        let payload = prepare_paste("one\x1b[201~two\x03\nthree", true);
-        let mut expected = BRACKETED_PASTE_START.to_vec();
-        expected.extend_from_slice(b"one[201~two\nthree");
-        expected.extend_from_slice(BRACKETED_PASTE_END);
-
-        assert_eq!(payload, expected);
-        assert_eq!(
-            payload
-                .windows(BRACKETED_PASTE_END.len())
-                .filter(|window| *window == BRACKETED_PASTE_END)
-                .count(),
-            1
-        );
-    }
-
-    #[test]
-    fn unbracketed_paste_uses_return_and_rejects_controls() {
-        assert_eq!(
-            prepare_paste("one\r\ntwo\nthree\rfour", false),
-            b"one\rtwo\rthree\rfour"
-        );
-        assert!(has_unsafe_unbracketed_control("one\x1btwo"));
-        assert!(has_unsafe_unbracketed_control("one\x03two"));
-        assert!(!has_unsafe_unbracketed_control("one\ttwo\nthree"));
-    }
-
-    #[test]
-    fn pending_paste_debug_redacts_clipboard_text() {
-        let pending = PendingPaste {
-            session_id: 7,
-            text: "private clipboard body".into(),
-            line_count: 2,
-            byte_count: 22,
-        };
-        let debug = format!("{pending:?}");
-
-        assert!(!debug.contains("private clipboard body"));
-        assert!(debug.contains("<private>"));
-        assert!(debug.contains("line_count: 2"));
     }
 
     fn test_keystroke(

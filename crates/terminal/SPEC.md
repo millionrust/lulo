@@ -171,6 +171,10 @@ measured Unicode/resident/idle/active performance.
   conversion, replacement, and selection validation. The view owns GPUI
   composition lifecycle, stable-session binding, modal/input eligibility, and
   final one-shot delivery.
+- `paste` owns the 1 MiB ceiling, platform line counting, bracketed/unbracketed
+  byte construction, unsafe-control refusal, and the content-redacted pending
+  review model. The session owns current mode lookup and exact PTY delivery;
+  the view owns clipboard access and confirmation lifecycle.
 - `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
   refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
   reusable 8 KiB buffers and delivery into the emulator.
@@ -322,7 +326,9 @@ interaction-evidence gate.
 Unit and contract tests cover input encoding, resize arithmetic and bounds,
 selection extraction, child state transitions, foreground-job classification,
 guarded close decisions, bracketed/unbracketed paste construction and review,
-embedded-marker/control rejection, persistence failures, and redraw coalescing.
+embedded-marker/control rejection, redacted pending-review state, persistence
+failures, and redraw coalescing. Pure paste contracts live beside that policy;
+parsed bracketed-mode transitions remain an integration test.
 Profile contract tests keep every stable name and legacy numeric index
 loadable, reject empty/unknown/out-of-range preferences, and keep the default
 fallback explicit.

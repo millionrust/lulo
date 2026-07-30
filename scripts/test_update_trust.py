@@ -73,7 +73,7 @@ class UpdateTrustTests(unittest.TestCase):
             policy, sources, preferences = self.fixtures(Path(temporary))
             sources.write_bytes(
                 verify.EXPECTED_SOURCES.replace(
-                    b"/usr/share/keyrings/rmac-archive-keyring.pgp",
+                    b"/usr/share/keyrings/rmac-archive-keyring.gpg",
                     b"/etc/apt/trusted.gpg",
                 )
             )

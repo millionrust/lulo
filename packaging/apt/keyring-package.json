@@ -1,0 +1,14 @@
+{
+  "binary_package": "rmac-archive-keyring",
+  "debian_revision": 1,
+  "format": 1,
+  "installed_keyring": "/usr/share/keyrings/rmac-archive-keyring.gpg",
+  "license": "MIT",
+  "maximum_input_bytes": 4194304,
+  "maximum_primary_keys": 2,
+  "source_package": "rmac-archive-keyring",
+  "supported_build_architectures": [
+    "amd64",
+    "arm64"
+  ]
+}

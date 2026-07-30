@@ -4,7 +4,7 @@
     "allow_insecure": false,
     "check_valid_until": true,
     "keyring_package": "rmac-archive-keyring",
-    "keyring_path": "/usr/share/keyrings/rmac-archive-keyring.pgp",
+    "keyring_path": "/usr/share/keyrings/rmac-archive-keyring.gpg",
     "preferences_path": "/etc/apt/preferences.d/rmac.pref",
     "signed_by_isolated": true,
     "sources_path": "/etc/apt/sources.list.d/rmac.sources",

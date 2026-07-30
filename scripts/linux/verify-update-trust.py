@@ -22,7 +22,7 @@ EXPECTED_SOURCES = (
     "Suites: resolute\n"
     "Components: main\n"
     "Architectures: amd64 arm64\n"
-    "Signed-By: /usr/share/keyrings/rmac-archive-keyring.pgp\n"
+    "Signed-By: /usr/share/keyrings/rmac-archive-keyring.gpg\n"
     "Check-Valid-Until: yes\n"
 ).encode()
 EXPECTED_PREFERENCES = (
@@ -94,7 +94,7 @@ def verify_policy(
             "allow_insecure": False,
             "check_valid_until": True,
             "keyring_package": "rmac-archive-keyring",
-            "keyring_path": "/usr/share/keyrings/rmac-archive-keyring.pgp",
+            "keyring_path": "/usr/share/keyrings/rmac-archive-keyring.gpg",
             "preferences_path": "/etc/apt/preferences.d/rmac.pref",
             "signed_by_isolated": True,
             "sources_path": "/etc/apt/sources.list.d/rmac.sources",

@@ -298,7 +298,7 @@ class AptPublisherTests(unittest.TestCase):
                 for line in listing.splitlines()
                 if line.startswith("fpr:")
             )
-            keyring = root / "keyring.pgp"
+            keyring = root / "keyring.gpg"
             keyring.write_bytes(
                 subprocess.run(
                     ["gpg", "--batch", "--export", signer],
@@ -369,7 +369,7 @@ class AptPublisherTests(unittest.TestCase):
             stage.mkdir()
             repository.mkdir()
             contract, _, records, publication, release = fixture(stage)
-            keyring = root / "keyring.pgp"
+            keyring = root / "keyring.gpg"
             keyring.write_bytes(b"not used when no current release exists")
             publisher.promote(
                 stage,
@@ -401,7 +401,7 @@ class AptPublisherTests(unittest.TestCase):
             stage.mkdir()
             repository.mkdir()
             contract, _, records, publication, _ = fixture(stage)
-            keyring = root / "keyring.pgp"
+            keyring = root / "keyring.gpg"
             keyring.write_bytes(b"unused")
             pool = next(record for record in records if record.role == "pool-binary")
             collision = repository / pool.path

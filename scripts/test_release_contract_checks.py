@@ -21,7 +21,7 @@ SPEC.loader.exec_module(runner)
 class ReleaseContractRunnerTests(unittest.TestCase):
     def test_committed_suite_has_every_exact_lightweight_stage(self):
         suite = runner.load_suite()
-        self.assertEqual(len(suite["stages"]), 16)
+        self.assertEqual(len(suite["stages"]), 17)
         self.assertEqual(suite["minimum_free_gib"], 15)
         self.assertEqual(
             suite["stages"][-1]["id"], "one-dot-zero-candidate"

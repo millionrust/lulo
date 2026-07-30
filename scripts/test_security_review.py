@@ -22,7 +22,7 @@ class SecurityReviewTests(unittest.TestCase):
     def test_committed_review_covers_every_named_goal_domain(self):
         contract = verify.load_contract()
         self.assertEqual(len(contract["domains"]), 10)
-        self.assertEqual(len(verify.expected_results(contract)), 79)
+        self.assertEqual(len(verify.expected_results(contract)), 80)
         self.assertEqual(
             {domain["id"] for domain in contract["domains"]},
             {

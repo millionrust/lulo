@@ -148,6 +148,7 @@
         "backend-failure-recovers-authoritatively",
         "cancellation-and-restart-readback",
         "immutable-pool-and-by-hash",
+        "keyring-public-only-and-package-scoped",
         "packagekit-invoked-without-shell",
         "polkit-interaction-is-user-initiated",
         "signature-failure-fails-closed",
@@ -156,11 +157,16 @@
       ],
       "id": "updates",
       "sources": [
+        "docs/keyring-packaging.md",
         "docs/software-update.md",
         "docs/update-trust.md",
+        "packaging/apt/keyring-package.json",
         "packaging/apt/publisher.json",
         "packaging/apt/update-trust.json",
+        "scripts/linux/build-keyring-packages.py",
+        "scripts/linux/keyring_package_contract.py",
         "scripts/linux/publish-apt-snapshot.py",
+        "scripts/linux/verify-keyring-packages.py",
         "scripts/linux/verify-update-trust.py"
       ]
     },

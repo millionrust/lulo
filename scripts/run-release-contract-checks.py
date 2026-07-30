@@ -32,6 +32,7 @@ STAGES = (
             "scripts.test_native_packages",
             "scripts.test_session_package",
             "scripts.test_update_trust",
+            "scripts.test_keyring_packages",
             "scripts.test_apt_publisher",
             "scripts.test_hardware_matrix",
             "scripts.test_journey_suite",
@@ -54,6 +55,14 @@ STAGES = (
         ("$PYTHON", "experiments/gpui-upstream-lab/scripts/test_a4_report.py"),
     ),
     ("update-trust", ("$PYTHON", "scripts/linux/verify-update-trust.py")),
+    (
+        "keyring-packages",
+        (
+            "$PYTHON",
+            "scripts/linux/verify-keyring-packages.py",
+            "--check-contract",
+        ),
+    ),
     (
         "apt-publisher",
         (

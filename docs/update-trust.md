@@ -20,7 +20,7 @@ HTTPS repository URI and install it as
 `/etc/apt/sources.list.d/rmac.sources`. It enables both `deb` and `deb-src`,
 pins Ubuntu 26.04's `resolute` suite and `main` component, checks amd64 and
 arm64, keeps `Check-Valid-Until` enabled, and accepts signatures only through
-`/usr/share/keyrings/rmac-archive-keyring.pgp`.
+`/usr/share/keyrings/rmac-archive-keyring.gpg`.
 
 The binary OpenPGP keyring is owned by a narrow
 `rmac-archive-keyring` package. It is never copied to the global trusted
@@ -28,6 +28,11 @@ keyrings and no setup instruction uses `apt-key`, `trusted=yes`, an insecure
 repository exception, or disabled expiry. `rmac.pref` names only
 `rmac-apps`, `rmac-session`, and the keyring package, preventing the repository
 from replacing unrelated Ubuntu packages.
+
+The reproducible binary/source package boundary and rotation build procedure
+are specified in [Archive keyring packaging](keyring-packaging.md). It installs
+the unarmored public keyring with APT's supported `.gpg` suffix and rejects
+secret material before standard Debian package assembly.
 
 APT authenticates the signed Release metadata and the strong hashes it carries;
 this establishes archive origin, not that arbitrary package code is safe.
@@ -91,7 +96,7 @@ keyring that corresponds to the intended client keyring:
 python3 scripts/linux/publish-apt-snapshot.py \
   --staging-dir /absolute/path/to/prepared-repository \
   --repository-dir /absolute/path/to/published-repository \
-  --keyring /absolute/path/to/rmac-archive-keyring.pgp
+  --keyring /absolute/path/to/rmac-archive-keyring.gpg
 ```
 
 The publisher verifies exactly one valid OpenPGP signature with `gpgv` in an

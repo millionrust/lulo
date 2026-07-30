@@ -14,6 +14,7 @@
         "scripts.test_native_packages",
         "scripts.test_session_package",
         "scripts.test_update_trust",
+        "scripts.test_keyring_packages",
         "scripts.test_apt_publisher",
         "scripts.test_hardware_matrix",
         "scripts.test_journey_suite",
@@ -45,6 +46,14 @@
         "scripts/linux/verify-update-trust.py"
       ],
       "id": "update-trust"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/linux/verify-keyring-packages.py",
+        "--check-contract"
+      ],
+      "id": "keyring-packages"
     },
     {
       "command": [

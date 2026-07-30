@@ -138,7 +138,7 @@ impl MonitorView {
 
     fn render_core_bars(&self) -> impl IntoElement {
         let blue = gpui::rgb(0x007aff);
-        let cores = self.agg.per_core.clone();
+        let cores = self.sampler.aggregates.per_core.clone();
         div()
             .v_flex()
             .gap_2()
@@ -233,7 +233,8 @@ impl MonitorView {
             );
 
         let rows: Vec<gpui::AnyElement> = self
-            .net_ifaces
+            .sampler
+            .interfaces
             .iter()
             .enumerate()
             .map(|(index, interface)| {
@@ -310,10 +311,18 @@ impl MonitorView {
             Tab::Cpu => {
                 let red = gpui::rgb(0xff3b30).into();
                 let mut cards = vec![
-                    self.stat_card("CPU Load", format!("{:.1}%", self.agg.cpu_total), blue)
-                        .into_any_element(),
-                    self.stat_card("Cores", self.agg.per_core.len().to_string(), mac::text())
-                        .into_any_element(),
+                    self.stat_card(
+                        "CPU Load",
+                        format!("{:.1}%", self.sampler.aggregates.cpu_total),
+                        blue,
+                    )
+                    .into_any_element(),
+                    self.stat_card(
+                        "Cores",
+                        self.sampler.aggregates.per_core.len().to_string(),
+                        mac::text(),
+                    )
+                    .into_any_element(),
                     self.stat_card(
                         "Processes",
                         self.table.read(cx).delegate().all_rows.len().to_string(),
@@ -321,7 +330,7 @@ impl MonitorView {
                     )
                     .into_any_element(),
                 ];
-                if let Some((user, system, idle)) = self.cpu_split {
+                if let Some((user, system, idle)) = self.sampler.cpu_split {
                     cards.push(
                         self.stat_card("System", format!("{system:.1}%"), red)
                             .into_any_element(),
@@ -335,7 +344,7 @@ impl MonitorView {
                             .into_any_element(),
                     );
                 }
-                (cards, self.history.cpu.as_slice(), blue)
+                (cards, self.sampler.history.cpu.as_slice(), blue)
             }
             Tab::Memory => {
                 let cards = vec![
@@ -343,61 +352,81 @@ impl MonitorView {
                         "Memory Used",
                         format!(
                             "{} / {}",
-                            format_mem(self.agg.mem_used),
-                            format_mem(self.agg.mem_total)
+                            format_mem(self.sampler.aggregates.mem_used),
+                            format_mem(self.sampler.aggregates.mem_total)
                         ),
                         green,
                     )
                     .into_any_element(),
-                    self.stat_card("Available", format_mem(self.agg.mem_available), mac::text())
-                        .into_any_element(),
+                    self.stat_card(
+                        "Available",
+                        format_mem(self.sampler.aggregates.mem_available),
+                        mac::text(),
+                    )
+                    .into_any_element(),
                     self.stat_card(
                         "Swap",
                         format!(
                             "{} / {}",
-                            format_mem(self.agg.swap_used),
-                            format_mem(self.agg.swap_total)
+                            format_mem(self.sampler.aggregates.swap_used),
+                            format_mem(self.sampler.aggregates.swap_total)
                         ),
                         mac::text(),
                     )
                     .into_any_element(),
                 ];
-                (cards, self.history.mem.as_slice(), green)
+                (cards, self.sampler.history.mem.as_slice(), green)
             }
             Tab::Energy => {
                 let cards = vec![
                     self.stat_card(
                         "Energy Impact",
-                        format!("{:.1}", self.agg.energy_total),
+                        format!("{:.1}", self.sampler.aggregates.energy_total),
                         orange,
                     )
                     .into_any_element(),
                     self.stat_card(
                         "CPU Load",
-                        format!("{:.1}%", self.agg.cpu_total),
+                        format!("{:.1}%", self.sampler.aggregates.cpu_total),
                         mac::text(),
                     )
                     .into_any_element(),
                 ];
-                (cards, self.history.energy.as_slice(), orange)
+                (cards, self.sampler.history.energy.as_slice(), orange)
             }
             Tab::Disk => {
                 let cards = vec![
-                    self.stat_card("Reads", format_rate(self.agg.disk_read_rate), purple)
-                        .into_any_element(),
-                    self.stat_card("Writes", format_rate(self.agg.disk_write_rate), purple)
-                        .into_any_element(),
+                    self.stat_card(
+                        "Reads",
+                        format_rate(self.sampler.aggregates.disk_read_rate),
+                        purple,
+                    )
+                    .into_any_element(),
+                    self.stat_card(
+                        "Writes",
+                        format_rate(self.sampler.aggregates.disk_write_rate),
+                        purple,
+                    )
+                    .into_any_element(),
                 ];
-                (cards, self.history.disk.as_slice(), purple)
+                (cards, self.sampler.history.disk.as_slice(), purple)
             }
             Tab::Network => {
                 let cards = vec![
-                    self.stat_card("Receiving", format_rate(self.agg.net_recv_rate), teal)
-                        .into_any_element(),
-                    self.stat_card("Sending", format_rate(self.agg.net_sent_rate), teal)
-                        .into_any_element(),
+                    self.stat_card(
+                        "Receiving",
+                        format_rate(self.sampler.aggregates.net_recv_rate),
+                        teal,
+                    )
+                    .into_any_element(),
+                    self.stat_card(
+                        "Sending",
+                        format_rate(self.sampler.aggregates.net_sent_rate),
+                        teal,
+                    )
+                    .into_any_element(),
                 ];
-                (cards, self.history.net.as_slice(), teal)
+                (cards, self.sampler.history.net.as_slice(), teal)
             }
         };
 
@@ -411,17 +440,19 @@ impl MonitorView {
             .child(div().h_flex().gap_3().children(cards))
             .child(self.sparkline(&samples, accent))
             .when(
-                matches!(self.tab, Tab::Cpu) && !self.agg.per_core.is_empty(),
+                matches!(self.tab, Tab::Cpu) && !self.sampler.aggregates.per_core.is_empty(),
                 |element| element.child(self.render_core_bars()),
             )
             .when(
-                matches!(self.tab, Tab::Memory) && self.agg.mem_total > 0,
+                matches!(self.tab, Tab::Memory) && self.sampler.aggregates.mem_total > 0,
                 |element| element.child(self.render_mem_pressure()),
             )
     }
 
     fn render_mem_pressure(&self) -> impl IntoElement {
-        let fraction = (self.agg.mem_used as f32 / self.agg.mem_total as f32).clamp(0.0, 1.0);
+        let fraction = (self.sampler.aggregates.mem_used as f32
+            / self.sampler.aggregates.mem_total as f32)
+            .clamp(0.0, 1.0);
         let (color, label): (gpui::Hsla, &str) = if fraction < 0.60 {
             (gpui::rgb(0x28b463).into(), "Normal")
         } else if fraction < 0.80 {

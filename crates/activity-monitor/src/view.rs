@@ -6,15 +6,16 @@ use std::time::Duration;
 
 use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use rmac_ui::{InputState, TableEvent, TableState};
-use sysinfo::{Networks, Pid, ProcessRefreshKind, ProcessesToUpdate, Signal};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, Signal};
 
 use crate::columns::{
     default_visible as default_visible_cols, load as load_visible_cols, save as save_visible_cols,
     ColKey,
 };
-use crate::metrics::{Aggregates, History, NetIface, Tab, REFRESH_SECS};
+use crate::metrics::Tab;
 use crate::process_table::{resync_selection, ProcessTableDelegate};
-use crate::{cpu_ticks, process_action, process_signal};
+use crate::sampling::Sampler;
+use crate::{process_action, process_signal};
 
 fn process_signal_outcome(outcome: process_signal::SignalOutcome) -> process_action::Outcome {
     match outcome {
@@ -30,10 +31,8 @@ pub(crate) struct MonitorView {
     table: Entity<TableState<ProcessTableDelegate>>,
     search: Entity<InputState>,
     pub(crate) focus: gpui::FocusHandle,
-    networks: Networks,
     tab: Tab,
-    agg: Aggregates,
-    history: History,
+    sampler: Sampler,
     pending_kill: Option<process_action::Request>,
     process_action_feedback: Option<process_action::Feedback>,
     /// Whether the column chooser dropdown is open.
@@ -41,14 +40,6 @@ pub(crate) struct MonitorView {
     persistence_error: Option<SharedString>,
     /// PID whose detail inspector is open (double-click a row).
     inspect_pid: Option<u32>,
-    /// Per-interface cumulative byte counters, snapshotted each refresh for the
-    /// Network tab's interface table. (name, total received, total sent,
-    /// received this interval, sent this interval).
-    net_ifaces: Vec<NetIface>,
-    /// Cumulative CPU ticks from the previous refresh, for the User/System/Idle
-    /// delta. `cpu_split` is the latest (user%, system%, idle%) breakdown.
-    prev_cpu_ticks: Option<[u64; 4]>,
-    cpu_split: Option<(f32, f32, f32)>,
 }
 
 impl MonitorView {
@@ -96,18 +87,13 @@ impl MonitorView {
             table,
             search,
             focus: cx.focus_handle(),
-            networks: Networks::new_with_refreshed_list(),
             tab: Tab::Cpu,
-            agg: Aggregates::default(),
-            history: History::default(),
+            sampler: Sampler::new(),
             pending_kill: None,
             process_action_feedback: None,
             cols_menu_open: false,
             persistence_error,
             inspect_pid: None,
-            net_ifaces: Vec::new(),
-            prev_cpu_ticks: None,
-            cpu_split: None,
         };
         view.refresh(cx);
 
@@ -140,108 +126,7 @@ impl MonitorView {
 
     /// Refresh the table snapshot and recompute the summary aggregates.
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        // Real host-wide CPU User/System/Idle split from the mach tick delta.
-        if let Some(now) = cpu_ticks::read() {
-            if let Some(prev) = self.prev_cpu_ticks {
-                self.cpu_split = cpu_ticks::split(prev, now);
-            }
-            self.prev_cpu_ticks = Some(now);
-        }
-
-        self.networks.refresh(true);
-        let (net_recv, net_sent) = self
-            .networks
-            .list()
-            .values()
-            .fold((0u64, 0u64), |(r, t), d| {
-                (r + d.received(), t + d.transmitted())
-            });
-
-        // Per-interface snapshot for the Network tab table. `received()` /
-        // `transmitted()` are the bytes since the previous refresh (the
-        // interval delta); `total_*` are the cumulative counters.
-        self.net_ifaces = self
-            .networks
-            .list()
-            .iter()
-            .map(|(name, d)| NetIface {
-                name: name.clone(),
-                total_recv: d.total_received(),
-                total_sent: d.total_transmitted(),
-                recv_rate: d.received() as f64 / REFRESH_SECS,
-                sent_rate: d.transmitted() as f64 / REFRESH_SECS,
-            })
-            .collect();
-        // Busiest interfaces first, then named order for stability.
-        self.net_ifaces.sort_by(|a, b| {
-            (b.total_recv + b.total_sent)
-                .cmp(&(a.total_recv + a.total_sent))
-                .then_with(|| a.name.cmp(&b.name))
-        });
-
-        let mut agg = Aggregates::default();
-        self.table.update(cx, |state, cx| {
-            let delegate = state.delegate_mut();
-            delegate.refresh();
-            let count = delegate.cpu_count as f32;
-
-            agg.per_core = delegate
-                .system
-                .cpus()
-                .iter()
-                .map(|c| c.cpu_usage())
-                .collect();
-            // Sum of per-process CPU is ~total busy across all cores; normalise to 0-100%.
-            agg.cpu_total =
-                (delegate.all_rows.iter().map(|r| r.cpu).sum::<f32>() / count).min(100.0);
-            agg.energy_total = delegate.all_rows.iter().map(|r| r.energy).sum::<f32>();
-            agg.mem_used = delegate.system.used_memory();
-            agg.mem_total = delegate.system.total_memory();
-            agg.mem_available = delegate.system.available_memory();
-            agg.swap_used = delegate.system.used_swap();
-            agg.swap_total = delegate.system.total_swap();
-
-            // Split is approximate; we only have the combined per-row figure here,
-            // so re-derive read/write from the live processes.
-            let (read, write) =
-                delegate
-                    .system
-                    .processes()
-                    .values()
-                    .fold((0u64, 0u64), |(r, w), p| {
-                        let du = p.disk_usage();
-                        (r + du.read_bytes, w + du.written_bytes)
-                    });
-            agg.disk_read_rate = read as f64 / REFRESH_SECS;
-            agg.disk_write_rate = write as f64 / REFRESH_SECS;
-
-            // Snapshot just rebuilt/re-sorted — keep the highlight on the same PID.
-            resync_selection(state, cx);
-            state.refresh(cx);
-        });
-
-        agg.net_recv_rate = net_recv as f64 / REFRESH_SECS;
-        agg.net_sent_rate = net_sent as f64 / REFRESH_SECS;
-
-        // Append to history rings.
-        History::push(&mut self.history.cpu, agg.cpu_total);
-        let mem_pct = if agg.mem_total > 0 {
-            (agg.mem_used as f32 / agg.mem_total as f32) * 100.0
-        } else {
-            0.0
-        };
-        History::push(&mut self.history.mem, mem_pct);
-        History::push(&mut self.history.energy, agg.energy_total.min(100.0));
-        History::push(
-            &mut self.history.disk,
-            ((agg.disk_read_rate + agg.disk_write_rate) / 1_048_576.0) as f32,
-        );
-        History::push(
-            &mut self.history.net,
-            ((agg.net_recv_rate + agg.net_sent_rate) / 1_048_576.0) as f32,
-        );
-
-        self.agg = agg;
+        self.sampler.refresh(&self.table, cx);
     }
 
     fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {

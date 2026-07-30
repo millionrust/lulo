@@ -6,6 +6,7 @@ mod metrics;
 mod process_action;
 mod process_signal;
 mod process_table;
+mod sampling;
 mod storage;
 mod view;
 

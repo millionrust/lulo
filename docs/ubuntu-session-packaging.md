@@ -142,3 +142,9 @@ version/step/pass report and deletes its fixed synthetic test user on success.
 H4–H6 remain incomplete until this automation and the GDM login/logout,
 crash-loop recovery, and stock-GNOME recovery journeys produce reviewed
 evidence on clean Ubuntu 26.04 VMs and the reference PC.
+
+The exact five-login operator procedure and its privacy-safe evidence boundary
+are in [GDM and recovery journey evidence](session-journey-evidence.md). The
+session wrapper explicitly stops the shared supervisor, idle locker, and lock
+coordinator after niri exits, in addition to both rmac targets, so none of those
+services leak into the following GNOME recovery login.

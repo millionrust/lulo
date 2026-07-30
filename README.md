@@ -161,6 +161,7 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`docs/privacy.md`](docs/privacy.md) — local data, permissions, credentials, and diagnostics.
 - [`docs/troubleshooting.md`](docs/troubleshooting.md) — recovery, safe mode, logs, and issue reports.
 - [`docs/session-recovery.md`](docs/session-recovery.md) — redacted diagnostics, known-good settings restore, and TTY recovery.
+- [`docs/session-journey-evidence.md`](docs/session-journey-evidence.md) — real GDM, crash-loop, safe-mode, TTY, and GNOME evidence.
 - [`docs/update-and-remove.md`](docs/update-and-remove.md) — updates, rollback, uninstall, and data retention.
 - [`docs/release-notes.md`](docs/release-notes.md) — current unreleased product status.
 - [`docs/alpha-contributor-build.md`](docs/alpha-contributor-build.md) — contributor Alpha publish and issue-intake boundary.

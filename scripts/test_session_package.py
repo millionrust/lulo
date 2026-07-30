@@ -222,6 +222,7 @@ class SessionPackageTests(unittest.TestCase):
             write_program(root / "usr/bin/niri-session", "/bin/sleep 0.2\n")
             write_program(
                 root / "usr/bin/systemctl",
+                'printf "%s\\n" "$*" >>"$RMAC_TEST_SYSTEMCTL"\n'
                 'case "$*" in\n'
                 '  *"is-active niri.service"*) exit 0 ;;\n'
                 '  *"show-environment"*)\n'
@@ -248,12 +249,14 @@ class SessionPackageTests(unittest.TestCase):
             wrapper = rendered_session_wrapper(root)
 
             capture = root / "normal"
+            systemctl_capture = root / "systemctl.log"
             environment = os.environ.copy()
             environment.update(
                 {
                     "HOME": str(root / "home"),
                     "XDG_STATE_HOME": str(root / "state"),
                     "RMAC_TEST_CAPTURE": str(capture),
+                    "RMAC_TEST_SYSTEMCTL": str(systemctl_capture),
                 }
             )
             result = subprocess.run(
@@ -269,6 +272,15 @@ class SessionPackageTests(unittest.TestCase):
                 capture.read_text(encoding="utf-8"),
                 "rmac:niri|rmac|--system-package\n",
             )
+            cleanup = systemctl_capture.read_text(encoding="utf-8")
+            for unit in (
+                "rmac-session.target",
+                "rmac-safe-mode.target",
+                "rmac-idle-lock.service",
+                "rmac-lock-coordinator.service",
+                "rmac-session-supervisor.service",
+            ):
+                self.assertIn(unit, cleanup)
 
             marker = root / "state/rmac/session/safe-mode.json"
             marker.parent.mkdir(parents=True)

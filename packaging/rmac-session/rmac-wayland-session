@@ -8,7 +8,9 @@ stop_rmac()
 {
     if [ "${rmac_started}" = true ]; then
         /usr/bin/systemctl --user stop \
-            rmac-session.target rmac-safe-mode.target >/dev/null 2>&1 || :
+            rmac-session.target rmac-safe-mode.target \
+            rmac-idle-lock.service rmac-lock-coordinator.service \
+            rmac-session-supervisor.service >/dev/null 2>&1 || :
         rmac_started=false
     fi
 }

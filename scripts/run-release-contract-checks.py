@@ -35,6 +35,7 @@ STAGES = (
             "scripts.test_keyring_packages",
             "scripts.test_apt_publisher",
             "scripts.test_package_lifecycle",
+            "scripts.test_session_journey",
             "scripts.test_hardware_matrix",
             "scripts.test_journey_suite",
             "scripts.test_measure_baseline",
@@ -77,6 +78,14 @@ STAGES = (
         (
             "$PYTHON",
             "scripts/linux/run-package-lifecycle.py",
+            "--check-contract",
+        ),
+    ),
+    (
+        "session-journey",
+        (
+            "$PYTHON",
+            "scripts/linux/run-session-journey.py",
             "--check-contract",
         ),
     ),

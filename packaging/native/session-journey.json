@@ -1,0 +1,22 @@
+{
+  "crash_unit": "rmac-dock.service",
+  "disposable_marker": {
+    "contents": "rmac-session-journey-v1\n",
+    "path": "/run/rmac-session-journey-v1"
+  },
+  "evidence_directory": "/home/rmac-journey/rmac-session-evidence",
+  "format": 1,
+  "minimum_free_gib": 15,
+  "phases": [
+    "normal-crash-loop",
+    "safe-login",
+    "tty-restore",
+    "recovered-rmac",
+    "gnome-recovery"
+  ],
+  "platform": {
+    "id": "ubuntu",
+    "version_id": "26.04"
+  },
+  "test_user": "rmac-journey"
+}

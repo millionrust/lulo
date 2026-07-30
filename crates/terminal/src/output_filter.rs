@@ -24,37 +24,8 @@ pub(crate) struct OutputFilter {
 }
 
 impl OutputFilter {
-    fn osc_ignored_control(byte: u8) -> bool {
-        matches!(byte, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f)
-    }
-
-    fn osc_command(bytes: &[u8]) -> Option<u16> {
-        let payload = bytes.strip_prefix(b"\x1b]")?;
-        let mut command = 0u16;
-        let mut found_digit = false;
-        for &byte in payload {
-            if Self::osc_ignored_control(byte) {
-                continue;
-            }
-            if byte == b';' {
-                return found_digit.then_some(command);
-            }
-            if !byte.is_ascii_digit() {
-                return None;
-            }
-            found_digit = true;
-            command = command
-                .checked_mul(10)?
-                .checked_add(u16::from(byte - b'0'))?;
-        }
-        None
-    }
-
     fn emit_osc(bytes: &[u8], overflowed: bool, output: &mut Vec<u8>) {
-        // OSC 8 hyperlinks remain disabled until Terminal has a reviewed
-        // activation/display policy. This also prevents unrendered hyperlink
-        // metadata from occupying per-cell dynamic storage.
-        if !overflowed && Self::osc_command(bytes) != Some(8) {
+        if !overflowed {
             output.extend_from_slice(bytes);
         }
     }
@@ -78,10 +49,9 @@ impl OutputFilter {
     }
 
     /// Copy a PTY chunk into `output`, buffering OSC title/hyperlink sequences
-    /// until their terminator. Allowed valid sequences are preserved
-    /// byte-for-byte; hyperlinks, overlong, malformed, and unterminated
-    /// sequences never reach VTE's otherwise growable standard-library OSC
-    /// buffer.
+    /// until their terminator. Bounded valid sequences are preserved
+    /// byte-for-byte; overlong, malformed, and unterminated sequences never
+    /// reach VTE's otherwise growable standard-library OSC buffer.
     pub(crate) fn filter_into(&mut self, input: &[u8], output: &mut Vec<u8>) {
         output.clear();
         for &byte in input {
@@ -217,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn drops_overlong_malformed_and_hyperlink_osc() {
+    fn drops_overlong_and_malformed_but_preserves_bounded_hyperlink_osc() {
         let mut filter = OutputFilter::default();
         let mut scratch = Vec::new();
         let mut output = Vec::new();
@@ -241,12 +211,15 @@ mod tests {
         assert_eq!(filter.buffered_bytes(), 0);
 
         filter.filter_into(b"\x1b]8;;https://example.invalid\x1b\\safe", &mut scratch);
-        assert_eq!(scratch, b"safe");
+        assert_eq!(scratch, b"\x1b]8;;https://example.invalid\x1b\\safe");
         filter.filter_into(
             b"\x1b]\x008;;https://example.invalid\x07still-safe",
             &mut scratch,
         );
-        assert_eq!(scratch, b"still-safe");
+        assert_eq!(
+            scratch,
+            b"\x1b]\x008;;https://example.invalid\x07still-safe"
+        );
 
         filter.filter_into(b"\x1b]0;malformed\x1bXresumed", &mut scratch);
         assert_eq!(scratch, b"Xresumed");

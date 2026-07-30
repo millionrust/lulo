@@ -1,6 +1,8 @@
 //! Viewport geometry, local selection, and terminal mouse-protocol routing.
 
 use super::*;
+use alacritty_terminal::index::{Column, Line};
+use alacritty_terminal::term::cell::Flags;
 
 impl TerminalView {
     pub(super) fn reset_pointer_routing(&mut self) {
@@ -10,6 +12,7 @@ impl TerminalView {
         self.mouse_wheel_y_accum = 0.0;
         self.reported_mouse_press = None;
         self.last_mouse_report_cell = None;
+        self.hovered_link = None;
     }
 
     /// Current scrollback offset (0 = pinned to the live prompt).
@@ -40,6 +43,81 @@ impl TerminalView {
         let row = (((y - self.terminal_content_top()) / self.line_h).floor() as i32)
             .clamp(0, self.rows as i32 - 1) as usize;
         (row, column)
+    }
+
+    fn hyperlink_at(
+        &self,
+        position: Point<Pixels>,
+    ) -> Option<Result<LinkTarget, crate::hyperlink::LinkRejection>> {
+        let term = self.tabs[self.active].term.lock().ok()?;
+        let offset = term.grid().display_offset() as i32;
+        let (line, mut column) = self.pos_to_cell(position, offset);
+        let row = &term.grid()[Line(line)];
+        if row[Column(column)].flags.contains(Flags::WIDE_CHAR_SPACER) {
+            column = column.saturating_sub(1);
+        }
+        let uri = row[Column(column)].hyperlink()?.uri().to_owned();
+        drop(term);
+        Some(LinkTarget::parse(&uri))
+    }
+
+    pub(super) fn update_hovered_link(&mut self, position: Point<Pixels>) -> bool {
+        let next = self.hyperlink_at(position).map(|target| match target {
+            Ok(target) => format!(
+                "{}-click to open {}",
+                platform_link_modifier_label(),
+                target.preview()
+            )
+            .into(),
+            Err(_) => SharedString::from("This terminal link uses an unsupported address"),
+        });
+        if next == self.hovered_link {
+            return false;
+        }
+        self.hovered_link = next;
+        true
+    }
+
+    /// Consume a platform-modified left click when it targets OSC 8 metadata.
+    pub(super) fn activate_hyperlink(
+        &mut self,
+        event: &MouseDownEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if event.button != MouseButton::Left || !event.modifiers.platform {
+            return false;
+        }
+        let Some(target) = self.hyperlink_at(event.position) else {
+            return false;
+        };
+        let target = match target {
+            Ok(target) => target,
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                self.selecting = false;
+                self.tabs[self.active].ui.selection = None;
+                cx.notify();
+                return true;
+            }
+        };
+        let uri = target.uri().to_owned();
+        self.selecting = false;
+        self.tabs[self.active].ui.selection = None;
+        self.menu_at = None;
+        self.picker_open = false;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = rmac_portal::open_uri(&uri).await;
+            if let Err(error) = result {
+                let message = SharedString::from(error.to_string());
+                let _ = this.update(cx, |this, cx| {
+                    this.operation_error = Some(message);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+        cx.notify();
+        true
     }
 
     /// Scroll the viewport by `lines` (positive = into history).
@@ -260,4 +338,14 @@ impl TerminalView {
         }
         true
     }
+}
+
+#[cfg(target_os = "macos")]
+fn platform_link_modifier_label() -> &'static str {
+    "Command"
+}
+
+#[cfg(not(target_os = "macos"))]
+fn platform_link_modifier_label() -> &'static str {
+    "Super"
 }

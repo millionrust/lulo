@@ -98,10 +98,15 @@ PTY output now crosses a streaming OSC boundary before VTE: an allowed title/
 palette/control payload is capped at 1 KiB and buffered only until BEL or
 `ESC \`, then delivered byte-for-byte. Split sequences remain exact. Overlong,
 malformed, and unterminated OSC is discarded as a unit, including the
-`ESC <C0> ]` form that otherwise retains parser Escape state. OSC 8 hyperlink
-metadata is also discarded until Terminal has a reviewed visual/activation
-policy, preventing invisible per-cell link allocation. The reusable filtered
-chunk is capped by the 8 KiB PTY read plus one accepted OSC.
+`ESC <C0> ]` form that otherwise retains parser Escape state. Bounded OSC 8
+hyperlinks now reach Alacritty's cell metadata and render underlined. Hover
+shows only a privacy-safe scheme/host summary (or a generic email label);
+Command-click on macOS and Super-click on Linux re-read the exact cell and open
+only `http`, `https`, or `mailto` through the desktop boundary. Activation
+rejects URI values above 768 bytes, controls, directional spoofing, missing
+hosts, embedded web credentials, local files, and custom/executable schemes
+with a visible content-redacted error. The reusable filtered chunk is capped by
+the 8 KiB PTY read plus one accepted OSC.
 After every non-ASCII parser completion, Terminal inspects the exact cell that
 Alacritty can have modified—including the base of a wide-character spacer—and
 retains at most 16 zero-width combining marks. Rebuilding an over-cap cell
@@ -158,10 +163,9 @@ same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
 The complete application claim remains blocked on numeric-keypad identity,
-hyperlink policy, reviewed shell integration beyond application-provided
-titles, accessible terminal text semantics, Linux interaction/visual evidence
-(including native IME proof), and measured Unicode/resident/idle/active
-performance.
+reviewed shell integration beyond application-provided titles, accessible
+terminal text semantics, Linux interaction/visual evidence (including native
+IME proof), and measured Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -185,6 +189,10 @@ performance.
   parsed title/reset events to that exact session's title authority.
 - `title` owns private-safe normalization, the 256-byte display bound, stable
   per-session sharing, and change detection.
+- `hyperlink` owns the 768-byte activation bound, non-spoofing URI validation,
+  web/email scheme allowlist, credential refusal, and privacy-safe destination
+  preview. The pointer adapter re-reads exact Alacritty cell metadata before
+  activation; `rmac-portal` owns the shell-free desktop open request.
 - `mouse` owns xterm button/modifier encoding, legacy/UTF-8/SGR coordinate
   limits, drag/all-motion selection, and bounded fractional wheel conversion.
   The view retains only pointer capture, body-cell projection, and the exact
@@ -213,9 +221,9 @@ performance.
   delivery, termination, and drop cleanup. The controller receives stable
   session identity, authoritative grid/UI state, accepted size, and typed
   operations without owning OS handles or worker lifetimes.
-- `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
-  refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
-  reusable 8 KiB buffers and delivery into the emulator.
+- `output_filter` owns the split-safe 1 KiB OSC boundary, including bounded OSC
+  8 admission, before untrusted PTY bytes reach VTE. The reader worker owns only
+  the reusable 8 KiB buffers and delivery into the emulator.
 - GPUI owns window geometry, operating-system activation, internal focus,
   keyboard/IME delivery, clipboard exchange, pointer selection, and rendering.
   Only OS activation and explicit active-tab ownership reach xterm focus mode;
@@ -268,8 +276,8 @@ shell-integration protocol before they may be shown.
   pending repaint; a quiet terminal has no timer-driven CPU or frame activity.
 - Primary/alternate base grid storage has a conservative 512 MiB per-window
   ceiling across every supported tab count. A cell retains at most 16 combining
-  marks. OSC ingress is capped at 1 KiB, and unreviewed hyperlink metadata never
-  reaches the grid. Two 512 KiB-stack workers per tab, VTE's sub-2 MiB
+  marks. OSC ingress is capped at 1 KiB, while hyperlink activation independently
+  caps a validated URI at 768 bytes. Two 512 KiB-stack workers per tab, VTE's sub-2 MiB
   synchronized-update buffer, fixed parser arrays, and Alacritty's 4,096-entry
   title stack have explicit tested contracts. Mouse coordinates are limited by
   their selected wire encoding, and one input event can create at most 32 wheel
@@ -385,7 +393,11 @@ supported tab count, verify monotonic history reduction, preserve useful crowded
 history, and prove one additional line would cross the ceiling at the maximum.
 Streaming-output tests cover ordinary split Unicode/CSI, split BEL/ST-terminated
 OSC at the exact cap, complete overlong/malformed discard, C0 Escape-state
-bypass prevention, recovery to normal output, and OSC 8 refusal.
+bypass prevention, recovery to normal output, and byte-exact bounded OSC 8
+admission. A parser integration test proves link metadata ends at the closing
+sequence. URI-policy tests cover private previews, scheme and credential
+refusal, control/directional spoofing, missing hosts, ports, IPv6, and the exact
+activation bound; portal errors prove the requested URI is never retained.
 Combining-allocation tests cover multiple independently styled cells, exact
 retention, wide-character targeting, a UTF-8 sequence split between reads, and
 ASCII CSI REP amplification of a prior combining scalar.

@@ -14,10 +14,12 @@ async-channel.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 rmac-ui.workspace = true
+rmac-portal.workspace = true
 alacritty_terminal = "0.25"
 portable-pty = "0.9"
 rmac-storage.workspace = true
 unicode-width = "=0.2.2"
+url.workspace = true
 vte = "0.15"
 
 [target.'cfg(unix)'.dependencies]

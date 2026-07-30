@@ -11,6 +11,16 @@ pub struct Error {
     pub detail: String,
 }
 
+/// Privacy-safe failure for an arbitrary URI open request.
+///
+/// The requested URI is intentionally not retained: terminal links can contain
+/// credentials, private paths, query strings, or fragments that must not leak
+/// into a visible error or log.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UriError {
+    detail: &'static str,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operation {
     Open,
@@ -40,6 +50,12 @@ impl fmt::Display for Error {
             self.path.display(),
             self.detail
         )
+    }
+}
+
+impl fmt::Display for UriError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Could not open link: {}", self.detail)
     }
 }
 
@@ -426,6 +442,7 @@ fn choose_failure(error: ashpd::Error) -> Error {
 }
 
 impl std::error::Error for Error {}
+impl std::error::Error for UriError {}
 
 /// Show a local item in the platform file manager, selecting it when supported.
 pub async fn show_item(path: &Path) -> Result<(), Error> {
@@ -488,6 +505,43 @@ pub async fn open_item(path: &Path) -> Result<(), Error> {
             .spawn()
             .map(|_| ())
             .map_err(|error| failure(Operation::Open, path, error))
+    }
+}
+
+/// Open a caller-validated non-file URI in its desktop handler.
+///
+/// Callers own scheme and content policy. This boundary never invokes a shell
+/// and never includes the URI in its error value.
+pub async fn open_uri(uri: &str) -> Result<(), UriError> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::open_uri::OpenFileRequest;
+
+        let parsed = url::Url::parse(uri).map_err(uri_failure)?;
+        match OpenFileRequest::default().send_uri(&parsed).await {
+            Ok(request) => request.response().map_err(uri_failure),
+            Err(_) => Command::new("xdg-open")
+                .arg(uri)
+                .spawn()
+                .map(|_| ())
+                .map_err(uri_failure),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(uri)
+            .spawn()
+            .map(|_| ())
+            .map_err(uri_failure)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(uri)
+            .spawn()
+            .map(|_| ())
+            .map_err(uri_failure)
     }
 }
 
@@ -571,6 +625,12 @@ fn failure(operation: Operation, path: &Path, error: impl fmt::Display) -> Error
     }
 }
 
+fn uri_failure(_error: impl fmt::Display) -> UriError {
+    UriError {
+        detail: "the desktop handler did not accept the request",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,5 +664,18 @@ mod tests {
         assert!(failure(Operation::Show, path, "offline")
             .to_string()
             .starts_with("Could not show"));
+    }
+
+    #[test]
+    fn uri_errors_do_not_retain_or_display_the_requested_uri() {
+        let private_uri = "https://example.test/private?token=secret";
+        let error = uri_failure(private_uri);
+
+        assert!(!format!("{error:?}").contains(private_uri));
+        assert!(!error.to_string().contains(private_uri));
+        assert_eq!(
+            error.to_string(),
+            "Could not open link: the desktop handler did not accept the request"
+        );
     }
 }

@@ -323,7 +323,8 @@ impl TerminalView {
                     bg: background,
                     bold: flags.intersects(Flags::BOLD | Flags::DIM_BOLD),
                     italic: flags.contains(Flags::ITALIC),
-                    underline: flags.intersects(Flags::ALL_UNDERLINES),
+                    underline: flags.intersects(Flags::ALL_UNDERLINES)
+                        || cell.hyperlink().is_some(),
                     strike: flags.contains(Flags::STRIKEOUT),
                 };
                 let character = if cell.c == '\0' { ' ' } else { cell.c };
@@ -389,6 +390,10 @@ impl Render for TerminalView {
         let session_status = self.tabs[self.active]
             .status_message()
             .map(SharedString::from);
+        let hyperlink_status = session_status
+            .is_none()
+            .then(|| self.hovered_link.clone())
+            .flatten();
         let close_confirmation = self
             .render_close_confirmation(cx)
             .map(|alert| alert.into_any_element());
@@ -544,6 +549,10 @@ impl Render for TerminalView {
                         if this.modal_open() {
                             return;
                         }
+                        if this.activate_hyperlink(ev, cx) {
+                            cx.stop_propagation();
+                            return;
+                        }
                         let was_live = this.tabs[this.active].accepts_input();
                         let error_before = this.operation_error.clone();
                         let overlay_was_open = this.menu_at.is_some() || this.picker_open;
@@ -580,6 +589,7 @@ impl Render for TerminalView {
                         cx.notify();
                     }))
                     .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
+                        let hyperlink_changed = this.update_hovered_link(ev.position);
                         if this.selecting {
                             let offset = this.display_offset();
                             let cell = this.pos_to_cell(ev.position, offset);
@@ -591,10 +601,10 @@ impl Render for TerminalView {
                         }
                         let was_live = this.tabs[this.active].accepts_input();
                         let error_before = this.operation_error.clone();
-                        if this.report_mouse_motion(ev)
+                        let reporting_changed = this.report_mouse_motion(ev)
                             && (was_live != this.tabs[this.active].accepts_input()
-                                || error_before != this.operation_error)
-                        {
+                                || error_before != this.operation_error);
+                        if hyperlink_changed || reporting_changed {
                             cx.notify();
                         }
                     }))
@@ -777,6 +787,25 @@ impl Render for TerminalView {
                                     this.new_tab(window, cx);
                                 })),
                         ),
+                )
+            })
+            .when_some(hyperlink_status, |terminal, message| {
+                terminal.child(
+                    div()
+                        .id("hyperlink-status")
+                        .absolute()
+                        .left(px(8.0))
+                        .bottom(px(if has_terminal_error { 54.0 } else { 8.0 }))
+                        .max_w(px(460.0))
+                        .px_3()
+                        .py_2()
+                        .rounded(px(7.0))
+                        .bg(rmac_ui::mac::raised())
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(rmac_ui::mac::text_secondary())
+                        .shadow_lg()
+                        .truncate()
+                        .child(message),
                 )
             })
             .when_some(terminal_error, |terminal, message| {

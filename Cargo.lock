@@ -5761,9 +5761,11 @@ dependencies = [
  "gpui-component",
  "libc",
  "portable-pty",
+ "rmac-portal",
  "rmac-storage",
  "rmac-ui",
  "unicode-width 0.2.2",
+ "url",
  "vte",
 ]
 

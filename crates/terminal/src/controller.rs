@@ -14,6 +14,7 @@ use crate::emulator::{
 };
 #[cfg(test)]
 use crate::emulator::{TermSize, SCROLLBACK_LINES};
+use crate::hyperlink::LinkTarget;
 use crate::ime::{ImeBuffer, MAX_TEXT_BYTES as MAX_IME_TEXT_BYTES};
 #[cfg(test)]
 use crate::keyboard::encode_key;
@@ -146,6 +147,8 @@ pub(super) struct TerminalView {
     mouse_wheel_y_accum: f32,
     reported_mouse_press: Option<(u64, MouseButton)>,
     last_mouse_report_cell: Option<(u64, usize, usize)>,
+    /// Privacy-safe destination summary for the link under the pointer.
+    hovered_link: Option<SharedString>,
     /// Index into `PROFILES` for the active color scheme.
     profile: usize,
     /// Whether the profile picker dropdown is open.
@@ -278,6 +281,7 @@ impl TerminalView {
             mouse_wheel_y_accum: 0.0,
             reported_mouse_press: None,
             last_mouse_report_cell: None,
+            hovered_link: None,
             profile,
             picker_open: false,
             persistence_error,

@@ -186,6 +186,7 @@ mod tests {
 
     use super::*;
     use crate::controller::MAX_TABS;
+    use crate::output_filter::OutputFilter;
     use crate::session::EventProxy;
     use alacritty_terminal::event::{Event, EventListener};
     use alacritty_terminal::index::{Column, Line};
@@ -451,5 +452,29 @@ mod tests {
         assert!(term.grid()[Line(0)][Column(1)]
             .flags
             .contains(Flags::WIDE_CHAR_SPACER));
+    }
+
+    #[test]
+    fn bounded_osc_8_reaches_cells_and_closing_sequence_stops_the_link() {
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
+        let mut parser: Processor = Processor::new();
+        let mut filter = OutputFilter::default();
+        let mut accepted = Vec::new();
+
+        filter.filter_into(
+            b"\x1b]8;id=docs;https://example.test/private?token=secret\x1b\\link\
+              \x1b]8;;\x1b\\ plain",
+            &mut accepted,
+        );
+        advance_filtered_output(&mut parser, &mut term, &accepted);
+
+        let linked = term.grid()[Line(0)][Column(0)]
+            .hyperlink()
+            .expect("bounded OSC 8 should annotate linked cells");
+        assert_eq!(linked.id(), "docs");
+        assert_eq!(linked.uri(), "https://example.test/private?token=secret");
+        assert!(term.grid()[Line(0)][Column(3)].hyperlink().is_some());
+        assert!(term.grid()[Line(0)][Column(4)].hyperlink().is_none());
     }
 }

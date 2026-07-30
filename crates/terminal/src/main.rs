@@ -2,6 +2,7 @@
 
 mod controller;
 mod emulator;
+mod hyperlink;
 mod ime;
 mod keyboard;
 mod mouse;

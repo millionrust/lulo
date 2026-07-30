@@ -1,0 +1,144 @@
+{
+  "assistive_technology": {
+    "name": "Orca",
+    "session": "niri",
+    "transport": "AT-SPI"
+  },
+  "base_surface_profiles": {
+    "application": [
+      "actions",
+      "announcements",
+      "contrast",
+      "focus-order",
+      "focus-restoration",
+      "keyboard",
+      "orca-reading-order",
+      "reduced-motion",
+      "roles-names",
+      "scale-200",
+      "states-values",
+      "visible-focus"
+    ],
+    "settings": [
+      "actions",
+      "announcements",
+      "contrast",
+      "focus-order",
+      "focus-restoration",
+      "keyboard",
+      "orca-reading-order",
+      "reduced-motion",
+      "roles-names",
+      "scale-200",
+      "states-values",
+      "visible-focus"
+    ],
+    "shell-interactive": [
+      "actions",
+      "announcements",
+      "contrast",
+      "focus-order",
+      "focus-restoration",
+      "keyboard",
+      "orca-reading-order",
+      "reduced-motion",
+      "roles-names",
+      "scale-200",
+      "states-values",
+      "visible-focus"
+    ],
+    "shell-passive": [
+      "contrast",
+      "orca-reading-order",
+      "reduced-motion",
+      "roles-names",
+      "scale-200",
+      "states-values"
+    ]
+  },
+  "format": 1,
+  "journey_checks": [
+    "actions",
+    "announcements",
+    "contrast",
+    "focus-order",
+    "focus-restoration",
+    "keyboard",
+    "orca-reading-order",
+    "reduced-motion",
+    "roles-names",
+    "scale-200",
+    "states-values",
+    "visible-focus"
+  ],
+  "required_dimensions": [
+    "actions",
+    "announcements",
+    "contrast",
+    "focus-order",
+    "focus-restoration",
+    "ime",
+    "keyboard",
+    "orca-reading-order",
+    "reduced-motion",
+    "roles-names",
+    "scale-200",
+    "states-values",
+    "visible-focus"
+  ],
+  "source_manifests": {
+    "journeys": "scripts/journey-suite.json",
+    "surfaces": "scripts/visual-suite.json"
+  },
+  "surface_assignments": {
+    "application": [
+      "files-browser",
+      "files-conflict",
+      "notes-editor",
+      "notes-library",
+      "system-monitor",
+      "terminal",
+      "text-editor"
+    ],
+    "settings": [
+      "settings-appearance",
+      "settings-battery",
+      "settings-bluetooth",
+      "settings-displays",
+      "settings-input",
+      "settings-network-vpn",
+      "settings-notifications-focus",
+      "settings-privacy-security",
+      "settings-software-update",
+      "settings-sound",
+      "settings-wifi"
+    ],
+    "shell-interactive": [
+      "dock",
+      "launcher",
+      "lock-screen",
+      "notification-banner",
+      "notification-center",
+      "quick-settings",
+      "spotlight"
+    ],
+    "shell-passive": [
+      "desktop",
+      "top-bar"
+    ]
+  },
+  "surface_supplements": {
+    "ime": [
+      "files-browser",
+      "launcher",
+      "lock-screen",
+      "notes-editor",
+      "notes-library",
+      "settings-network-vpn",
+      "settings-wifi",
+      "spotlight",
+      "terminal",
+      "text-editor"
+    ]
+  }
+}

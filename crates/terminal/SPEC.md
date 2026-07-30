@@ -159,6 +159,9 @@ measured Unicode/resident/idle/active performance.
   or inconsistent identity is treated as potentially active, never as safe.
 - `alacritty_terminal` and `vte` own escape parsing, screen/scrollback state,
   cell flags, cursor position, and terminal modes.
+- `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
+  refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
+  reusable 8 KiB buffers and delivery into the emulator.
 - GPUI owns window geometry, operating-system activation, internal focus,
   keyboard/IME delivery, clipboard exchange, pointer selection, and rendering.
   Only OS activation and explicit active-tab ownership reach xterm focus mode;

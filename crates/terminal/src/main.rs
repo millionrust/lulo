@@ -5,6 +5,7 @@
 //! background thread reads PTY output and feeds the parser; model changes wake
 //! the view, which renders the grid and writes keystrokes back to the PTY.
 
+mod output_filter;
 mod profiles;
 mod storage;
 
@@ -31,6 +32,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, UTF16Selection, Window,
 };
 use gpui_component::StyledExt as _;
+use output_filter::OutputFilter;
 use portable_pty::{
     native_pty_system, Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
 };
@@ -74,7 +76,6 @@ const MAX_IME_TEXT_BYTES: usize = 16 * 1024;
 const MAX_LEGACY_MOUSE_COORD: usize = 223;
 const MAX_UTF8_MOUSE_COORD: usize = 2015;
 const MAX_WHEEL_REPORTS_PER_AXIS: usize = 16;
-const MAX_OSC_PAYLOAD_BYTES: usize = 1024;
 const MAX_COMBINING_MARKS_PER_CELL: usize = 16;
 /// One reader and one child waiter are reserved before a shell can launch.
 #[cfg(test)]
@@ -200,194 +201,6 @@ fn max_session_worker_stack_bytes_per_window() -> usize {
     MAX_TABS
         .saturating_mul(SESSION_WORKERS_PER_TAB)
         .saturating_mul(SESSION_WORKER_STACK_BYTES)
-}
-
-#[derive(Debug, Default)]
-enum OutputFilterState {
-    #[default]
-    Ground,
-    Escape,
-    Osc {
-        bytes: Vec<u8>,
-        payload_bytes: usize,
-        overflowed: bool,
-    },
-    OscEscape {
-        bytes: Vec<u8>,
-        overflowed: bool,
-    },
-}
-
-#[derive(Debug, Default)]
-struct OutputFilter {
-    state: OutputFilterState,
-}
-
-impl OutputFilter {
-    fn osc_ignored_control(byte: u8) -> bool {
-        matches!(byte, 0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1c..=0x1f)
-    }
-
-    fn osc_command(bytes: &[u8]) -> Option<u16> {
-        let payload = bytes.strip_prefix(b"\x1b]")?;
-        let mut command = 0u16;
-        let mut found_digit = false;
-        for &byte in payload {
-            if Self::osc_ignored_control(byte) {
-                continue;
-            }
-            if byte == b';' {
-                return found_digit.then_some(command);
-            }
-            if !byte.is_ascii_digit() {
-                return None;
-            }
-            found_digit = true;
-            command = command
-                .checked_mul(10)?
-                .checked_add(u16::from(byte - b'0'))?;
-        }
-        None
-    }
-
-    fn emit_osc(bytes: &[u8], overflowed: bool, output: &mut Vec<u8>) {
-        // OSC 8 hyperlinks remain disabled until Terminal has a reviewed
-        // activation/display policy. This also prevents unrendered hyperlink
-        // metadata from occupying per-cell dynamic storage.
-        if !overflowed && Self::osc_command(bytes) != Some(8) {
-            output.extend_from_slice(bytes);
-        }
-    }
-
-    fn push_osc_payload(
-        bytes: &mut Vec<u8>,
-        payload_bytes: &mut usize,
-        overflowed: &mut bool,
-        byte: u8,
-    ) {
-        if *overflowed {
-            return;
-        }
-        if *payload_bytes >= MAX_OSC_PAYLOAD_BYTES {
-            bytes.clear();
-            *overflowed = true;
-            return;
-        }
-        bytes.push(byte);
-        *payload_bytes += 1;
-    }
-
-    /// Copy a PTY chunk into `output`, buffering OSC title/hyperlink sequences
-    /// until their terminator. Allowed valid sequences are preserved
-    /// byte-for-byte; hyperlinks, overlong, malformed, and unterminated
-    /// sequences never reach VTE's otherwise growable standard-library OSC
-    /// buffer.
-    fn filter_into(&mut self, input: &[u8], output: &mut Vec<u8>) {
-        output.clear();
-        for &byte in input {
-            let state = std::mem::take(&mut self.state);
-            self.state = match state {
-                OutputFilterState::Ground if byte == 0x1b => OutputFilterState::Escape,
-                OutputFilterState::Ground => {
-                    output.push(byte);
-                    OutputFilterState::Ground
-                }
-                OutputFilterState::Escape if byte == b']' => OutputFilterState::Osc {
-                    bytes: vec![0x1b, b']'],
-                    payload_bytes: 0,
-                    overflowed: false,
-                },
-                OutputFilterState::Escape if matches!(byte, 0x00..=0x17 | 0x19 | 0x1c..=0x1f) => {
-                    // These controls execute without leaving VTE's Escape
-                    // state. Emit the state-independent control now while
-                    // retaining the Escape introducer for OSC detection.
-                    output.push(byte);
-                    OutputFilterState::Escape
-                }
-                OutputFilterState::Escape if matches!(byte, 0x18 | 0x1a) => {
-                    output.push(byte);
-                    OutputFilterState::Ground
-                }
-                OutputFilterState::Escape if byte == 0x1b => {
-                    output.push(0x1b);
-                    OutputFilterState::Escape
-                }
-                OutputFilterState::Escape => {
-                    output.extend_from_slice(&[0x1b, byte]);
-                    OutputFilterState::Ground
-                }
-                OutputFilterState::Osc {
-                    mut bytes,
-                    payload_bytes: _,
-                    overflowed,
-                } if byte == 0x07 => {
-                    if !overflowed {
-                        bytes.push(byte);
-                    }
-                    Self::emit_osc(&bytes, overflowed, output);
-                    OutputFilterState::Ground
-                }
-                OutputFilterState::Osc {
-                    bytes,
-                    payload_bytes: _,
-                    overflowed,
-                } if matches!(byte, 0x18 | 0x1a) => {
-                    Self::emit_osc(&bytes, overflowed, output);
-                    output.push(byte);
-                    OutputFilterState::Ground
-                }
-                OutputFilterState::Osc {
-                    bytes,
-                    payload_bytes: _,
-                    overflowed,
-                } if byte == 0x1b => OutputFilterState::OscEscape { bytes, overflowed },
-                OutputFilterState::Osc {
-                    mut bytes,
-                    mut payload_bytes,
-                    mut overflowed,
-                } => {
-                    Self::push_osc_payload(&mut bytes, &mut payload_bytes, &mut overflowed, byte);
-                    OutputFilterState::Osc {
-                        bytes,
-                        payload_bytes,
-                        overflowed,
-                    }
-                }
-                OutputFilterState::OscEscape {
-                    mut bytes,
-                    overflowed,
-                } if byte == b'\\' => {
-                    if !overflowed {
-                        bytes.extend_from_slice(&[0x1b, b'\\']);
-                    }
-                    Self::emit_osc(&bytes, overflowed, output);
-                    OutputFilterState::Ground
-                }
-                OutputFilterState::OscEscape { .. } if byte == 0x1b => {
-                    // The previous OSC is malformed and discarded; this new
-                    // Escape can still begin a fresh, independently bounded one.
-                    OutputFilterState::Escape
-                }
-                OutputFilterState::OscEscape { .. } => {
-                    // An embedded non-ST Escape makes the OSC malformed. Drop
-                    // the buffered sequence as a unit, then resume ordinary
-                    // ground-state output with the current byte.
-                    output.push(byte);
-                    OutputFilterState::Ground
-                }
-            };
-        }
-    }
-
-    #[cfg(test)]
-    fn buffered_bytes(&self) -> usize {
-        match &self.state {
-            OutputFilterState::Osc { bytes, .. } | OutputFilterState::OscEscape { bytes, .. } => {
-                bytes.len()
-            }
-            OutputFilterState::Ground | OutputFilterState::Escape => 0,
-        }
-    }
 }
 
 fn cap_cursor_combining_marks<T: EventListener>(term: &mut Term<T>) {
@@ -4394,96 +4207,6 @@ mod tests {
             parser.advance(&mut term, b"primary\r\n");
         }
         assert_eq!(term.grid().history_size(), 2);
-    }
-
-    #[test]
-    fn output_filter_preserves_normal_unicode_and_split_valid_osc() {
-        let chunks: &[&[u8]] = &[
-            b"plain \xce",
-            b"\xbb \x1b",
-            b"]0;Private-safe title",
-            b"\x1b",
-            b"\\ tail \x1b[31mred",
-        ];
-        let mut filter = OutputFilter::default();
-        let mut scratch = Vec::new();
-        let mut output = Vec::new();
-        for chunk in chunks {
-            filter.filter_into(chunk, &mut scratch);
-            output.extend_from_slice(&scratch);
-        }
-
-        assert_eq!(
-            output,
-            b"plain \xce\xbb \x1b]0;Private-safe title\x1b\\ tail \x1b[31mred"
-        );
-        assert_eq!(filter.buffered_bytes(), 0);
-    }
-
-    #[test]
-    fn output_filter_drops_overlong_malformed_and_hyperlink_osc() {
-        let mut filter = OutputFilter::default();
-        let mut scratch = Vec::new();
-        let mut output = Vec::new();
-
-        let mut exact_prefix = b"before\x1b]0;".to_vec();
-        exact_prefix.resize(
-            exact_prefix.len() + MAX_OSC_PAYLOAD_BYTES.saturating_sub(2),
-            b'a',
-        );
-        filter.filter_into(&exact_prefix, &mut scratch);
-        output.extend_from_slice(&scratch);
-        assert_eq!(output, b"before");
-        assert_eq!(
-            filter.buffered_bytes(),
-            MAX_OSC_PAYLOAD_BYTES + b"\x1b]".len()
-        );
-
-        filter.filter_into(b"x\x07after", &mut scratch);
-        output.extend_from_slice(&scratch);
-        assert_eq!(output, b"beforeafter");
-        assert_eq!(filter.buffered_bytes(), 0);
-
-        filter.filter_into(b"\x1b]8;;https://example.invalid\x1b\\safe", &mut scratch);
-        assert_eq!(scratch, b"safe");
-        filter.filter_into(
-            b"\x1b]\x008;;https://example.invalid\x07still-safe",
-            &mut scratch,
-        );
-        assert_eq!(scratch, b"still-safe");
-
-        filter.filter_into(b"\x1b]0;malformed\x1bXresumed", &mut scratch);
-        assert_eq!(scratch, b"Xresumed");
-        assert_eq!(filter.buffered_bytes(), 0);
-
-        // C0 controls do not leave VTE's Escape state, so they must not allow
-        // a split `ESC <control> ]` sequence to bypass the OSC limit.
-        let mut bypass_filter = OutputFilter::default();
-        bypass_filter.filter_into(b"\x1b\x07", &mut scratch);
-        assert_eq!(scratch, b"\x07");
-        let mut bypass = b"]0;".to_vec();
-        bypass.resize(bypass.len() + MAX_OSC_PAYLOAD_BYTES + 1, b'b');
-        bypass.extend_from_slice(b"\x07safe");
-        bypass_filter.filter_into(&bypass, &mut scratch);
-        assert_eq!(scratch, b"safe");
-        assert_eq!(bypass_filter.buffered_bytes(), 0);
-    }
-
-    #[test]
-    fn output_filter_accepts_the_exact_payload_limit_and_bel() {
-        let mut sequence = b"\x1b]2;".to_vec();
-        sequence.resize(
-            sequence.len() + MAX_OSC_PAYLOAD_BYTES.saturating_sub(2),
-            b't',
-        );
-        sequence.push(0x07);
-
-        let mut filter = OutputFilter::default();
-        let mut output = Vec::new();
-        filter.filter_into(&sequence, &mut output);
-
-        assert_eq!(output, sequence);
-        assert_eq!(filter.buffered_bytes(), 0);
     }
 
     fn append_combining_marks(bytes: &mut Vec<u8>, count: usize) {

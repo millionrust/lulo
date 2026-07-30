@@ -2,7 +2,7 @@
 
 `scripts/run-release-contract-checks.py` is the fast, build-free integrity gate
 for the A/H/I release machinery. It runs the focused Python fixtures plus the
-A4 report, update trust, hardware, foundation evidence, journey, visual,
+A4 report, update trust, atomic APT publication, hardware, foundation evidence, journey, visual,
 accessibility, performance, chaos/soak, security, documentation, Alpha, Beta, and 1.0 structural
 validators.
 
@@ -20,7 +20,7 @@ The runner:
 - stops on the first failure and returns its bounded final output; and
 - keeps bytecode and generated evidence out of the repository.
 
-Use `--list` to inspect the exact 15 stages. The committed manifest and runner
+Use `--list` to inspect the exact 16 stages. The committed manifest and runner
 both pin that inventory so a contract cannot disappear through a manifest-only
 edit.
 

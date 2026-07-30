@@ -1,0 +1,20 @@
+{
+  "component": "main",
+  "format": 1,
+  "maximum_files": 4096,
+  "maximum_keyring_bytes": 4194304,
+  "maximum_metadata_bytes": 16777216,
+  "minimum_free_gib": 15,
+  "minimum_retained_snapshots": 3,
+  "publication_manifest": "dists/resolute/rmac-publication.json",
+  "required_indices": [
+    "dists/resolute/main/binary-amd64/Packages",
+    "dists/resolute/main/binary-amd64/Packages.gz",
+    "dists/resolute/main/binary-arm64/Packages",
+    "dists/resolute/main/binary-arm64/Packages.gz",
+    "dists/resolute/main/source/Sources",
+    "dists/resolute/main/source/Sources.gz"
+  ],
+  "state_directory": ".rmac-publisher",
+  "suite": "resolute"
+}

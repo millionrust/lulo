@@ -14,6 +14,7 @@
         "scripts.test_native_packages",
         "scripts.test_session_package",
         "scripts.test_update_trust",
+        "scripts.test_apt_publisher",
         "scripts.test_hardware_matrix",
         "scripts.test_journey_suite",
         "scripts.test_measure_baseline",
@@ -44,6 +45,14 @@
         "scripts/linux/verify-update-trust.py"
       ],
       "id": "update-trust"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/linux/publish-apt-snapshot.py",
+        "--check-contract"
+      ],
+      "id": "apt-publisher"
     },
     {
       "command": [

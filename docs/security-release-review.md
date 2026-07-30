@@ -1,7 +1,7 @@
 # Security and privacy release review
 
 I6 is a threat-driven release gate, not a claim derived from a clean dependency
-scan. `scripts/security-review.json` binds 77 checks across desktop-entry
+scan. `scripts/security-review.json` binds 79 checks across desktop-entry
 execution, D-Bus/polkit, portals, file operations, the lock boundary,
 notifications, search/indexing, packages, updates, and logs/diagnostics to the
 reviewed sources, H8 tier, ten product journeys, and exact candidate revision.

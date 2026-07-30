@@ -32,6 +32,7 @@ STAGES = (
             "scripts.test_native_packages",
             "scripts.test_session_package",
             "scripts.test_update_trust",
+            "scripts.test_apt_publisher",
             "scripts.test_hardware_matrix",
             "scripts.test_journey_suite",
             "scripts.test_measure_baseline",
@@ -53,6 +54,14 @@ STAGES = (
         ("$PYTHON", "experiments/gpui-upstream-lab/scripts/test_a4_report.py"),
     ),
     ("update-trust", ("$PYTHON", "scripts/linux/verify-update-trust.py")),
+    (
+        "apt-publisher",
+        (
+            "$PYTHON",
+            "scripts/linux/publish-apt-snapshot.py",
+            "--check-contract",
+        ),
+    ),
     ("hardware-matrix", ("$PYTHON", "scripts/linux/verify-hardware-matrix.py")),
     ("foundation-evidence", ("$PYTHON", "scripts/verify-foundation-evidence.py")),
     ("journey-manifest", ("$PYTHON", "scripts/run-journey-suite.py", "--list")),

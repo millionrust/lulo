@@ -153,8 +153,10 @@ DOMAINS = (
         "updates",
         (
             "apt-key-scope-isolated",
+            "atomic-inrelease-last-and-monotonic",
             "backend-failure-recovers-authoritatively",
             "cancellation-and-restart-readback",
+            "immutable-pool-and-by-hash",
             "packagekit-invoked-without-shell",
             "polkit-interaction-is-user-initiated",
             "signature-failure-fails-closed",
@@ -164,7 +166,9 @@ DOMAINS = (
         (
             "docs/software-update.md",
             "docs/update-trust.md",
+            "packaging/apt/publisher.json",
             "packaging/apt/update-trust.json",
+            "scripts/linux/publish-apt-snapshot.py",
             "scripts/linux/verify-update-trust.py",
         ),
     ),

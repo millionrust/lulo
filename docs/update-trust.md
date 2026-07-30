@@ -55,6 +55,62 @@ then canonical indices, and make `InRelease` visible last. At least three
 complete snapshots remain available for investigation and recovery. A
 publisher never overwrites an existing pool object with different bytes.
 
+### Atomic promotion boundary
+
+`scripts/linux/publish-apt-snapshot.py` is the filesystem publisher for a
+prepared archive. It does not build packages, generate source offers, create
+keys, or sign with an ambient/default key. The isolated signing job prepares an
+absolute staging directory containing exactly:
+
+- `dists/resolute/InRelease`;
+- `dists/resolute/rmac-publication.json`;
+- uncompressed and deterministic-gzip `Packages` for amd64 and arm64;
+- uncompressed and deterministic-gzip `Sources`;
+- SHA-256 and SHA-512 by-hash copies beside every canonical index; and
+- the exact immutable `pool/` binary, `.dsc`, source-tar, `.buildinfo`, and
+  `.changes` objects named by the publication manifest.
+
+The manifest binds one increasing UTC snapshot ID, product revision, Date,
+Valid-Until, one or two rotation fingerprints, every file's size/SHA-256/
+SHA-512, and explicit successful package, reproducibility, source-offer, and
+license gates. The clearsigned Release body must hash the manifest and the six
+canonical indices, use the exact rmac/resolute/main identity, advertise
+amd64/arm64 plus Acquire-By-Hash, and contain no weak hash section.
+Both architecture indices must name exactly `rmac-apps`,
+`rmac-archive-keyring`, and `rmac-session`, bind their pool objects with both
+strong hashes, and use one allowed consistent phase; keyring delivery is always
+100%. The source index must name exactly `rmac` and
+`rmac-archive-keyring`, with matching strong-hash `.dsc` and source-tar
+inventories. Matching `.buildinfo` and `.changes` objects remain directly bound
+by the signed publication manifest.
+
+Promote only from the isolated release host, using the package-managed public
+keyring that corresponds to the intended client keyring:
+
+```sh
+python3 scripts/linux/publish-apt-snapshot.py \
+  --staging-dir /absolute/path/to/prepared-repository \
+  --repository-dir /absolute/path/to/published-repository \
+  --keyring /absolute/path/to/rmac-archive-keyring.pgp
+```
+
+The publisher verifies exactly one valid OpenPGP signature with `gpgv` in an
+empty home, accepts an exact authorized primary or signing-subkey fingerprint,
+checks the live clock/validity window, and compares both Date and snapshot
+against the currently published signed metadata. It rejects links, extras,
+missing source/build artifacts, altered by-hash objects, false gate state,
+weak/extra Release fields, unauthorized or multiple signatures, and an
+immutable pool collision.
+
+It first retains a complete metadata snapshot, then installs immutable pool and
+by-hash objects, atomically replaces canonical indices and the signed
+publication manifest, and atomically replaces `InRelease` last. A crash before
+that final replacement leaves the previous signed by-hash view usable; a crash
+after it leaves the complete new view visible. Readback and directory `fsync`
+bound each visible replacement. The publisher retains at least three metadata
+snapshots and refuses a promotion whose projected writes would cross the
+15 GiB free-space floor.
+
 ## Signing and rotation
 
 The archive has an offline OpenPGP primary key and a bounded-lifetime online
@@ -120,6 +176,9 @@ fingerprints and proves:
 - `gpgv` accepts exactly one authorized signature using only the installed
   rmac keyring, and rejects unknown, revoked, expired, duplicate, and malformed
   signatures;
+- the atomic publisher rejects altered manifests/indices/by-hash objects,
+  immutable pool collisions, non-monotonic Date/snapshot state, expired/future
+  metadata, and incomplete binary/source publication inventories;
 - APT rejects expired/future/replayed metadata, altered indices/packages,
   missing by-hash objects, Release identity changes, and insecure fallback;
 - old-to-overlap-to-new key rotation works on installed and offline hosts;

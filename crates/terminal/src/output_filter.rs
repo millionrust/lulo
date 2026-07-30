@@ -22,6 +22,7 @@ enum State {
 pub(crate) struct OutputFilter {
     state: State,
     current_directory_uri: Option<String>,
+    shell_marker: Option<String>,
 }
 
 impl OutputFilter {
@@ -30,12 +31,19 @@ impl OutputFilter {
             if let Some(uri) = current_directory_uri(bytes) {
                 self.current_directory_uri = Some(uri.to_owned());
             }
+            if let Some(marker) = shell_marker(bytes) {
+                self.shell_marker = Some(marker.to_owned());
+            }
             output.extend_from_slice(bytes);
         }
     }
 
     pub(crate) fn take_current_directory_uri(&mut self) -> Option<String> {
         self.current_directory_uri.take()
+    }
+
+    pub(crate) fn take_shell_marker(&mut self) -> Option<String> {
+        self.shell_marker.take()
     }
 
     fn push_osc_payload(
@@ -174,6 +182,14 @@ fn current_directory_uri(bytes: &[u8]) -> Option<&str> {
     std::str::from_utf8(payload).ok()
 }
 
+fn shell_marker(bytes: &[u8]) -> Option<&str> {
+    let payload = bytes
+        .strip_prefix(b"\x1b]133;")?
+        .strip_suffix(b"\x07")
+        .or_else(|| bytes.strip_prefix(b"\x1b]133;")?.strip_suffix(b"\x1b\\"))?;
+    std::str::from_utf8(payload).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{OutputFilter, MAX_OSC_PAYLOAD_BYTES};
@@ -301,5 +317,27 @@ mod tests {
         filter.filter_into(b"\x1b]7;file:///private\x1bXplain", &mut output);
         assert_eq!(output, b"Xplain");
         assert_eq!(filter.take_current_directory_uri(), None);
+    }
+
+    #[test]
+    fn reports_only_complete_bounded_osc_133_markers() {
+        let mut filter = OutputFilter::default();
+        let mut output = Vec::new();
+
+        filter.filter_into(b"\x1b]133;", &mut output);
+        assert!(output.is_empty());
+        assert_eq!(filter.take_shell_marker(), None);
+
+        filter.filter_into(b"C\x1b\\running", &mut output);
+        assert_eq!(output, b"\x1b]133;C\x1b\\running");
+        assert_eq!(filter.take_shell_marker().as_deref(), Some("C"));
+
+        filter.filter_into(b"\x1b]133;D;7\x07\x1b]133;A\x07prompt", &mut output);
+        assert_eq!(filter.take_shell_marker().as_deref(), Some("A"));
+        assert_eq!(filter.take_shell_marker(), None);
+
+        filter.filter_into(b"\x1b]133;D;private\x1bXplain", &mut output);
+        assert_eq!(output, b"Xplain");
+        assert_eq!(filter.take_shell_marker(), None);
     }
 }

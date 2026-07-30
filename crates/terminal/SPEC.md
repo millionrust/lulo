@@ -155,6 +155,13 @@ passing it directly (without a shell) to `portable-pty`; otherwise ordinary
 startup-directory fallback applies. Invalid schemes, credentials,
 query/fragment data, controls, directional spoofing, malformed UTF-8, partial
 OSC, and overlong values leave the last trusted state unchanged.
+Complete FinalTerm OSC 133 `A`/`B`/`C`/`D[;status]` reports also feed an exact
+session-local, 32-byte command-phase authority. `C` gives a tab a `Running`
+suffix; a nonzero `D` retains `Failed status` until the next prompt/input phase.
+Zero or statusless completion has no failure badge. Invalid, control-bearing,
+oversized, or out-of-range reports change nothing. This presentation context is
+never trusted for close, signal, child-lifecycle, or command-text decisions and
+adds no timer or output scraping.
 Terminal mouse input now follows the parsed xterm 1000/1002/1003 tracking mode
 and 1005/1006 coordinate encoding. Press, balanced release, cell-deduplicated
 drag/all-motion, vertical and horizontal wheel events use one-based viewport
@@ -176,10 +183,11 @@ same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
 The complete application claim remains blocked on numeric-keypad identity,
-reviewed prompt/command/job shell semantics beyond titles and OSC 7 working
-directories, accessible terminal text semantics, Linux interaction/visual
-evidence (including native IME proof), and measured
-Unicode/resident/idle/active performance.
+reviewed prompt-mark navigation, command-history/output ranges, and job
+semantics beyond titles, OSC 7 directories, and OSC 133 phase/status reports;
+accessible terminal text semantics; Linux interaction/visual evidence
+(including native IME proof); and measured Unicode/resident/idle/active
+performance.
 
 ## Platform authorities
 
@@ -207,6 +215,9 @@ Unicode/resident/idle/active performance.
   local-versus-remote classification, bounded presentation labels, exact
   session sharing, and live-directory revalidation. The session alone may pass
   a validated local path directly to the next PTY spawn.
+- `shell_integration` owns the bounded OSC 133 marker grammar, exact-session
+  command phase, and `Running`/`Failed status` presentation label. Kernel PTY
+  and child authorities remain the sole source of process-control truth.
 - `hyperlink` owns the 768-byte activation bound, non-spoofing URI validation,
   web/email scheme allowlist, credential refusal, and privacy-safe destination
   preview. The pointer adapter re-reads exact Alacritty cell metadata before
@@ -240,9 +251,10 @@ Unicode/resident/idle/active performance.
   session identity, authoritative grid/UI state, accepted size, and typed
   operations without owning OS handles or worker lifetimes.
 - `output_filter` owns the split-safe 1 KiB OSC boundary, including bounded OSC
-  8 admission and complete OSC 7 extraction, before untrusted PTY bytes reach
-  VTE. The reader worker owns only the reusable 8 KiB buffers, delivery into the
-  emulator, and routing of the extracted URI to its exact session authority.
+  8 admission plus complete OSC 7 and OSC 133 extraction, before untrusted PTY
+  bytes reach VTE. The reader worker owns only the reusable 8 KiB buffers,
+  delivery into the emulator, and routing of extracted reports to exact-session
+  authorities.
 - GPUI owns window geometry, operating-system activation, internal focus,
   keyboard/IME delivery, clipboard exchange, pointer selection, and rendering.
   Only OS activation and explicit active-tab ownership reach xterm focus mode;
@@ -255,9 +267,10 @@ Unicode/resident/idle/active performance.
   interaction; it cannot invent another persistence format or palette fallback.
 
 Terminal does not scrape shell output to infer commands, directories, or job
-names. It accepts only complete bounded title and OSC 7 directory reports.
-Prompt/command marks, command-aware history, and semantic job names require a
-separately reviewed shell-integration protocol before they may be shown.
+names. It accepts only complete bounded title, OSC 7 directory, and OSC 133
+phase/status reports. Prompt-mark navigation, command-aware history/output
+ranges, and semantic job names require separately reviewed state before they
+may be shown.
 
 ## Child lifecycle and close safety
 
@@ -298,7 +311,8 @@ separately reviewed shell-integration protocol before they may be shown.
   ceiling across every supported tab count. A cell retains at most 16 combining
   marks. OSC ingress is capped at 1 KiB, while hyperlink activation independently
   caps a validated URI at 768 bytes. One exact-session OSC 7 directory report is
-  likewise capped at 768 bytes. Two 512 KiB-stack workers per tab, VTE's sub-2 MiB
+  likewise capped at 768 bytes, and its OSC 133 phase marker at 32 bytes. Two
+  512 KiB-stack workers per tab, VTE's sub-2 MiB
   synchronized-update buffer, fixed parser arrays, and Alacritty's 4,096-entry
   title stack have explicit tested contracts. Mouse coordinates are limited by
   their selected wire encoding, and one input event can create at most 32 wheel
@@ -382,7 +396,8 @@ behavior remains an interaction-evidence gate.
 - The active bounded session title is centered in the toolbar; each titled tab
   uses the same value with ellipsis and a truthful state suffix. Without a
   title, the exact session's bounded reported folder/remote-host label precedes
-  the generic fallback.
+  the generic fallback. A valid OSC 133 phase may add `Running` or
+  `Failed status`, but cannot replace lifecycle/transport failure.
 - Terminal profiles are user content and may retain explicit ANSI palettes;
   application chrome follows shared light/dark/accent/contrast/motion tokens.
 - At 200% scale, rows and tabs remain usable and PTY geometry matches the
@@ -424,6 +439,9 @@ activation bound; portal errors prove the requested URI is never retained.
 OSC 7 tests cover split completion, exact URI extraction, malformed/overlong
 discard, local session isolation, remote display-only state, repeated reports,
 and scheme/credential/query/control/directional refusal.
+OSC 133 tests cover split extraction, last-report coalescing, exact-session
+isolation, running/failure/success projection, invalid status and command-text
+refusal, and lifecycle/transport label precedence.
 Combining-allocation tests cover multiple independently styled cells, exact
 retention, wide-character targeting, a UTF-8 sequence split between reads, and
 ASCII CSI REP amplification of a prior combining scalar.

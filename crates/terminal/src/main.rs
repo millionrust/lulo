@@ -10,6 +10,7 @@ mod output_filter;
 mod paste;
 mod profiles;
 mod session;
+mod shell_integration;
 mod storage;
 mod title;
 mod ui_state;

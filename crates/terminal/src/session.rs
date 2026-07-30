@@ -18,6 +18,7 @@ use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
+use crate::shell_integration::SessionShellState;
 use crate::title::SessionTitle;
 use crate::ui_state::SessionUiState;
 use crate::working_directory::SessionDirectory;
@@ -310,6 +311,7 @@ type ReaderTask = (
     Box<dyn Read + Send>,
     Arc<Mutex<Term<EventProxy>>>,
     SessionDirectory,
+    SessionShellState,
     RedrawSender,
 );
 type WaiterTask = (
@@ -318,7 +320,7 @@ type WaiterTask = (
     RedrawSender,
 );
 
-fn run_reader_worker((mut reader, term, directory, redraw): ReaderTask) {
+fn run_reader_worker((mut reader, term, directory, shell, redraw): ReaderTask) {
     let mut parser: Processor = Processor::new();
     let mut output_filter = OutputFilter::default();
     let mut buffer = [0u8; 8192];
@@ -330,6 +332,9 @@ fn run_reader_worker((mut reader, term, directory, redraw): ReaderTask) {
                 output_filter.filter_into(&buffer[..read], &mut filtered);
                 if let Some(uri) = output_filter.take_current_directory_uri() {
                     directory.set_uri(&uri);
+                }
+                if let Some(marker) = output_filter.take_shell_marker() {
+                    shell.set_marker(&marker);
                 }
                 if filtered.is_empty() {
                     continue;
@@ -447,6 +452,7 @@ pub(super) struct Session {
     write_failed: Arc<AtomicBool>,
     title: SessionTitle,
     directory: SessionDirectory,
+    shell_state: SessionShellState,
     master: Option<Box<dyn MasterPty + Send>>,
     shell_pid: Option<u32>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
@@ -487,6 +493,7 @@ impl Session {
             .as_deref()
             .map(SessionDirectory::from_local)
             .unwrap_or_default();
+        let shell_state = SessionShellState::default();
         let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut command = CommandBuilder::new(shell);
@@ -513,7 +520,13 @@ impl Session {
         )));
         let lifecycle = Arc::new(Mutex::new(SessionLifecycle::Running));
         workers.activate(
-            (reader, Arc::clone(&term), directory.clone(), redraw.clone()),
+            (
+                reader,
+                Arc::clone(&term),
+                directory.clone(),
+                shell_state.clone(),
+                redraw.clone(),
+            ),
             (child, Arc::clone(&lifecycle), redraw),
             killer.as_mut(),
         )?;
@@ -527,6 +540,7 @@ impl Session {
             write_failed,
             title,
             directory,
+            shell_state,
             master: Some(pair.master),
             shell_pid,
             killer: Some(killer),
@@ -563,6 +577,7 @@ impl Session {
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
             directory: SessionDirectory::default(),
+            shell_state: SessionShellState::default(),
             master: None,
             shell_pid: None,
             killer: None,
@@ -581,11 +596,14 @@ impl Session {
         self.lifecycle().is_running() && !self.write_failed.load(Ordering::Acquire)
     }
 
-    pub(super) fn tab_state_label(&self) -> Option<&'static str> {
+    pub(super) fn tab_state_label(&self) -> Option<String> {
         if self.lifecycle().is_running() && self.write_failed.load(Ordering::Acquire) {
-            Some("Unavailable")
+            Some("Unavailable".into())
         } else {
-            self.lifecycle().tab_state_label()
+            self.lifecycle()
+                .tab_state_label()
+                .map(str::to_owned)
+                .or_else(|| self.shell_state.tab_label())
         }
     }
 
@@ -947,6 +965,7 @@ mod tests {
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
             directory: SessionDirectory::default(),
+            shell_state: SessionShellState::default(),
             master: None,
             shell_pid: None,
             killer: None,
@@ -956,7 +975,7 @@ mod tests {
         assert!(session.accepts_input());
         assert_eq!(session.write(b"private"), Err(SessionWriteError::Write));
         assert!(!session.accepts_input());
-        assert_eq!(session.tab_state_label(), Some("Unavailable"));
+        assert_eq!(session.tab_state_label().as_deref(), Some("Unavailable"));
         assert_eq!(
             session.status_message().as_deref(),
             Some("Terminal can no longer send input to this session. Existing output is readable.")

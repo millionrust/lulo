@@ -165,7 +165,7 @@ impl TerminalView {
     pub(super) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (redraw, redraw_rx) = async_channel::bounded(1);
         let scrollback_lines = scrollback_limit_for_tab_count(1);
-        let session = Session::spawn(COLS, ROWS, scrollback_lines, redraw.clone())
+        let session = Session::spawn(COLS, ROWS, scrollback_lines, None, redraw.clone())
             .unwrap_or_else(|error| Session::failed(COLS, ROWS, scrollback_lines, error));
 
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
@@ -483,9 +483,16 @@ impl TerminalView {
         }
         self.capture_active_search_query(cx);
         let (c, r) = (self.cols.max(MIN_COLS), self.rows.max(MIN_ROWS));
+        let starting_directory = self.tabs[self.active].working_directory();
         self.tabs.push(
-            Session::spawn(c, r, scrollback_lines, self.redraw.clone())
-                .unwrap_or_else(|error| Session::failed(c, r, scrollback_lines, error)),
+            Session::spawn(
+                c,
+                r,
+                scrollback_lines,
+                starting_directory,
+                self.redraw.clone(),
+            )
+            .unwrap_or_else(|error| Session::failed(c, r, scrollback_lines, error)),
         );
         self.active = self.tabs.len() - 1;
         self.reset_pointer_routing();

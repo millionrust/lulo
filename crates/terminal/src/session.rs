@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc::{sync_channel, SyncSender},
@@ -19,6 +20,7 @@ use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare a
 
 use crate::title::SessionTitle;
 use crate::ui_state::SessionUiState;
+use crate::working_directory::SessionDirectory;
 
 pub(super) type RedrawSender = async_channel::Sender<()>;
 
@@ -307,6 +309,7 @@ fn foreground_job_requires_confirmation(
 type ReaderTask = (
     Box<dyn Read + Send>,
     Arc<Mutex<Term<EventProxy>>>,
+    SessionDirectory,
     RedrawSender,
 );
 type WaiterTask = (
@@ -315,7 +318,7 @@ type WaiterTask = (
     RedrawSender,
 );
 
-fn run_reader_worker((mut reader, term, redraw): ReaderTask) {
+fn run_reader_worker((mut reader, term, directory, redraw): ReaderTask) {
     let mut parser: Processor = Processor::new();
     let mut output_filter = OutputFilter::default();
     let mut buffer = [0u8; 8192];
@@ -325,6 +328,9 @@ fn run_reader_worker((mut reader, term, redraw): ReaderTask) {
             Ok(0) | Err(_) => break,
             Ok(read) => {
                 output_filter.filter_into(&buffer[..read], &mut filtered);
+                if let Some(uri) = output_filter.take_current_directory_uri() {
+                    directory.set_uri(&uri);
+                }
                 if filtered.is_empty() {
                     continue;
                 }
@@ -440,6 +446,7 @@ pub(super) struct Session {
     writer: SharedWriter,
     write_failed: Arc<AtomicBool>,
     title: SessionTitle,
+    directory: SessionDirectory,
     master: Option<Box<dyn MasterPty + Send>>,
     shell_pid: Option<u32>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
@@ -451,6 +458,7 @@ impl Session {
         cols: usize,
         rows: usize,
         scrollback_lines: usize,
+        starting_directory: Option<PathBuf>,
         redraw: RedrawSender,
     ) -> Result<Self, SessionStartError> {
         let size = TermSize { cols, lines: rows };
@@ -474,11 +482,16 @@ impl Session {
         let writer: SharedWriter = Arc::new(Mutex::new(writer));
         let write_failed = Arc::new(AtomicBool::new(false));
         let title = SessionTitle::default();
+        let starting_directory = starting_directory.or_else(|| std::env::current_dir().ok());
+        let directory = starting_directory
+            .as_deref()
+            .map(SessionDirectory::from_local)
+            .unwrap_or_default();
         let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut command = CommandBuilder::new(shell);
         command.env("TERM", "xterm-256color");
-        if let Ok(directory) = std::env::current_dir() {
+        if let Some(directory) = starting_directory {
             command.cwd(directory);
         }
         let child = pair
@@ -500,7 +513,7 @@ impl Session {
         )));
         let lifecycle = Arc::new(Mutex::new(SessionLifecycle::Running));
         workers.activate(
-            (reader, Arc::clone(&term), redraw.clone()),
+            (reader, Arc::clone(&term), directory.clone(), redraw.clone()),
             (child, Arc::clone(&lifecycle), redraw),
             killer.as_mut(),
         )?;
@@ -513,6 +526,7 @@ impl Session {
             writer,
             write_failed,
             title,
+            directory,
             master: Some(pair.master),
             shell_pid,
             killer: Some(killer),
@@ -548,6 +562,7 @@ impl Session {
             )),
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
+            directory: SessionDirectory::default(),
             master: None,
             shell_pid: None,
             killer: None,
@@ -575,7 +590,11 @@ impl Session {
     }
 
     pub(super) fn tab_title(&self) -> Option<String> {
-        self.title.current()
+        self.title.current().or_else(|| self.directory.label())
+    }
+
+    pub(super) fn working_directory(&self) -> Option<PathBuf> {
+        self.directory.live_local_path()
     }
 
     pub(super) fn status_message(&self) -> Option<String> {
@@ -927,6 +946,7 @@ mod tests {
             writer: Arc::new(Mutex::new(Box::new(FailingWriter))),
             write_failed: Arc::new(AtomicBool::new(false)),
             title: SessionTitle::default(),
+            directory: SessionDirectory::default(),
             master: None,
             shell_pid: None,
             killer: None,

@@ -4,7 +4,8 @@ This file is the product and authority contract for `rmac-terminal`. Terminal
 is a trusted native application because an interactive shell necessarily has
 the user's ordinary account access. It must behave like a careful desktop
 terminal without pretending to provide shell state, accessibility, or process
-control that the platform cannot prove.
+control that the platform cannot prove. Shell state is shown only when a
+bounded protocol report supplies it; ordinary output is never scraped.
 
 ## Core journeys
 
@@ -16,7 +17,9 @@ control that the platform cannot prove.
 3. Scroll through bounded history; select forward or backward across hard and
    soft-wrapped lines; copy, paste, clear, and search without altering output.
 4. Create, select, reorder later, and close independent tabs. Each tab owns one
-   PTY, parser, child lifecycle, scrollback, title, selection, and close state.
+   PTY, parser, child lifecycle, scrollback, title, reported working directory,
+   selection, and close state. A new tab inherits a still-live local reported
+   directory, never a remote or stale path.
 5. Observe successful, failed, and signalled shell exit truthfully. Never leave
    an exited tab looking like a live prompt.
 6. Close an idle shell directly. When the PTY proves another foreground process
@@ -142,6 +145,16 @@ control and Unicode directional-control characters, stops on a valid UTF-8
 boundary at 256 bytes, and wakes GPUI only when the normalized value changes.
 The active title appears in the centered toolbar and every titled tab; both use
 visual ellipsis, while exited/unavailable state remains an explicit suffix.
+Each session also owns a memory-only OSC 7 directory authority. A valid,
+complete, 768-byte-or-smaller `file:` URI supplies a bounded folder fallback
+when no application title exists. Local and `localhost` reports retain the
+decoded path only in that exact session; remote reports show only
+`Remote — host` and can never become a local process directory. New Tab
+rechecks that the reported local path still exists as a directory before
+passing it directly (without a shell) to `portable-pty`; otherwise ordinary
+startup-directory fallback applies. Invalid schemes, credentials,
+query/fragment data, controls, directional spoofing, malformed UTF-8, partial
+OSC, and overlong values leave the last trusted state unchanged.
 Terminal mouse input now follows the parsed xterm 1000/1002/1003 tracking mode
 and 1005/1006 coordinate encoding. Press, balanced release, cell-deduplicated
 drag/all-motion, vertical and horizontal wheel events use one-based viewport
@@ -163,9 +176,10 @@ same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
 The complete application claim remains blocked on numeric-keypad identity,
-reviewed shell integration beyond application-provided titles, accessible
-terminal text semantics, Linux interaction/visual evidence (including native
-IME proof), and measured Unicode/resident/idle/active performance.
+reviewed prompt/command/job shell semantics beyond titles and OSC 7 working
+directories, accessible terminal text semantics, Linux interaction/visual
+evidence (including native IME proof), and measured
+Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -189,6 +203,10 @@ IME proof), and measured Unicode/resident/idle/active performance.
   parsed title/reset events to that exact session's title authority.
 - `title` owns private-safe normalization, the 256-byte display bound, stable
   per-session sharing, and change detection.
+- `working_directory` owns strict OSC 7 URI validation, the 768-byte bound,
+  local-versus-remote classification, bounded presentation labels, exact
+  session sharing, and live-directory revalidation. The session alone may pass
+  a validated local path directly to the next PTY spawn.
 - `hyperlink` owns the 768-byte activation bound, non-spoofing URI validation,
   web/email scheme allowlist, credential refusal, and privacy-safe destination
   preview. The pointer adapter re-reads exact Alacritty cell metadata before
@@ -222,8 +240,9 @@ IME proof), and measured Unicode/resident/idle/active performance.
   session identity, authoritative grid/UI state, accepted size, and typed
   operations without owning OS handles or worker lifetimes.
 - `output_filter` owns the split-safe 1 KiB OSC boundary, including bounded OSC
-  8 admission, before untrusted PTY bytes reach VTE. The reader worker owns only
-  the reusable 8 KiB buffers and delivery into the emulator.
+  8 admission and complete OSC 7 extraction, before untrusted PTY bytes reach
+  VTE. The reader worker owns only the reusable 8 KiB buffers, delivery into the
+  emulator, and routing of the extracted URI to its exact session authority.
 - GPUI owns window geometry, operating-system activation, internal focus,
   keyboard/IME delivery, clipboard exchange, pointer selection, and rendering.
   Only OS activation and explicit active-tab ownership reach xterm focus mode;
@@ -235,9 +254,10 @@ IME proof), and measured Unicode/resident/idle/active performance.
   activation. The view retains only the selected profile index and picker
   interaction; it cannot invent another persistence format or palette fallback.
 
-Terminal does not scrape shell output to infer commands, working directories,
-or job names. Rich tab titles and command-aware close text require a reviewed
-shell-integration protocol before they may be shown.
+Terminal does not scrape shell output to infer commands, directories, or job
+names. It accepts only complete bounded title and OSC 7 directory reports.
+Prompt/command marks, command-aware history, and semantic job names require a
+separately reviewed shell-integration protocol before they may be shown.
 
 ## Child lifecycle and close safety
 
@@ -277,7 +297,8 @@ shell-integration protocol before they may be shown.
 - Primary/alternate base grid storage has a conservative 512 MiB per-window
   ceiling across every supported tab count. A cell retains at most 16 combining
   marks. OSC ingress is capped at 1 KiB, while hyperlink activation independently
-  caps a validated URI at 768 bytes. Two 512 KiB-stack workers per tab, VTE's sub-2 MiB
+  caps a validated URI at 768 bytes. One exact-session OSC 7 directory report is
+  likewise capped at 768 bytes. Two 512 KiB-stack workers per tab, VTE's sub-2 MiB
   synchronized-update buffer, fixed parser arrays, and Alacritty's 4,096-entry
   title stack have explicit tested contracts. Mouse coordinates are limited by
   their selected wire encoding, and one input event can create at most 32 wheel
@@ -359,7 +380,9 @@ behavior remains an interaction-evidence gate.
   menu, search, selection, cursor, exited session, unavailable session, and
   close confirmation use the shared rmac visual language.
 - The active bounded session title is centered in the toolbar; each titled tab
-  uses the same value with ellipsis and a truthful state suffix.
+  uses the same value with ellipsis and a truthful state suffix. Without a
+  title, the exact session's bounded reported folder/remote-host label precedes
+  the generic fallback.
 - Terminal profiles are user content and may retain explicit ANSI palettes;
   application chrome follows shared light/dark/accent/contrast/motion tokens.
 - At 200% scale, rows and tabs remain usable and PTY geometry matches the
@@ -398,6 +421,9 @@ admission. A parser integration test proves link metadata ends at the closing
 sequence. URI-policy tests cover private previews, scheme and credential
 refusal, control/directional spoofing, missing hosts, ports, IPv6, and the exact
 activation bound; portal errors prove the requested URI is never retained.
+OSC 7 tests cover split completion, exact URI extraction, malformed/overlong
+discard, local session isolation, remote display-only state, repeated reports,
+and scheme/credential/query/control/directional refusal.
 Combining-allocation tests cover multiple independently styled cells, exact
 retention, wide-character targeting, a UTF-8 sequence split between reads, and
 ASCII CSI REP amplification of a prior combining scalar.

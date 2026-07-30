@@ -13,6 +13,7 @@ mod session;
 mod storage;
 mod title;
 mod ui_state;
+mod working_directory;
 
 fn main() {
     rmac_ui::boot_app(

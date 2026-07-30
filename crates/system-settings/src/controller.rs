@@ -10,6 +10,7 @@
 mod bluetooth;
 mod chrome;
 mod date_time;
+mod detail;
 mod locale;
 mod lock_screen;
 mod login_items;
@@ -4353,97 +4354,6 @@ impl Settings {
             });
         })
         .detach();
-    }
-
-    // ---- detail dispatch ---------------------------------------------
-
-    fn render_detail(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        debug_assert!(category_has_dedicated_renderer(
-            self.current().name.as_ref()
-        ));
-        let content: Div = if let Some(sub) = self.nav.last().cloned() {
-            self.render_subpage(&sub, cx)
-        } else {
-            match self.current().name.as_ref() {
-                "Wi-Fi" => self.render_wifi(cx),
-                "Bluetooth" => self.render_bluetooth(cx),
-                "General" => self.render_general(cx),
-                "Appearance" => self.render_appearance(cx),
-                "Notifications" => self.render_notifications(cx),
-                "Focus" => self.render_focus(cx),
-                "Lock Screen" => self.render_lock_screen(cx),
-                "Sound" => self.render_sound(cx),
-                "Keyboard" => self.render_keyboard(cx),
-                "Mouse" => self.render_mouse(cx),
-                "Trackpad" => self.render_trackpad(cx),
-                "Battery" => self.render_battery(cx),
-                "Displays" => self.render_displays(cx),
-                "Date & Time" => self.render_date_time(cx),
-                "Language & Region" => self.render_language_region(cx),
-                "Login Items" => self.render_login_items(cx),
-                "Sharing" => self.render_sharing(cx),
-                "Accessibility" => self.render_accessibility(cx),
-                "Privacy & Security" => self.render_privacy_security(cx),
-                "Network" => self.render_network(cx),
-                "VPN" => self.render_vpn(cx),
-                "Desktop & Dock" => self.render_desktop_dock(cx),
-                "Spotlight" => self.render_spotlight(cx),
-                "Wallpaper" => self.render_wallpaper(cx),
-                _ => self.render_unregistered_category(),
-            }
-        };
-
-        div()
-            .id("detail-scroll")
-            .flex_1()
-            .h_full()
-            .bg(pane_bg())
-            .overflow_y_scroll()
-            .child(
-                div()
-                    .max_w(px(560.0))
-                    .mx_auto()
-                    .px_5()
-                    .pb_8()
-                    .when(self.system_data_loading, |el| {
-                        el.child(
-                            Progress::indeterminate()
-                                .label("Loading system information…")
-                                .mb_3(),
-                        )
-                    })
-                    .child(content),
-            )
-    }
-
-    fn render_hero(&self) -> Div {
-        let cat = self.current();
-        div()
-            .v_flex()
-            .items_center()
-            .gap_2()
-            .pt_6()
-            .pb_5()
-            .child(tile(cat.icon, cat.color, 64.0))
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(22.0))
-                    .font_weight(rmac_ui::mac::BOLD)
-                    .text_color(label())
-                    .child(cat.name.clone()),
-            )
-            .child(
-                div()
-                    .max_w(px(440.0))
-                    .text_center()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(secondary())
-                    .child(cat.desc.clone()),
-            )
-    }
-
-    fn pane(&self, cards: Vec<Div>) -> Div {
-        div().v_flex().child(self.render_hero()).children(cards)
     }
 
     // ---- explicit shell-owned panes ----------------------------------

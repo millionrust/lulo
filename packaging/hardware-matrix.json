@@ -1,0 +1,138 @@
+{
+  "format": 1,
+  "release_tiers": {
+    "alpha": [
+      "amd64-intel-laptop",
+      "amd64-amd-desktop"
+    ],
+    "beta": [
+      "amd64-intel-laptop",
+      "amd64-amd-desktop",
+      "amd64-nvidia-desktop"
+    ],
+    "one-dot-zero": [
+      "amd64-intel-laptop",
+      "amd64-amd-laptop",
+      "amd64-amd-desktop",
+      "amd64-nvidia-desktop",
+      "arm64-reference"
+    ]
+  },
+  "stations": [
+    {
+      "architecture": "amd64",
+      "devices": [
+        "bluetooth-audio",
+        "bluetooth-input",
+        "internal-audio",
+        "touchpad",
+        "usb-audio",
+        "usb-input"
+      ],
+      "gpu_driver": "mesa",
+      "gpu_vendor": "intel",
+      "id": "amd64-intel-laptop",
+      "monitors": "single",
+      "power": [
+        "lid",
+        "suspend-resume"
+      ],
+      "scales": [
+        100,
+        200
+      ]
+    },
+    {
+      "architecture": "amd64",
+      "devices": [
+        "bluetooth-audio",
+        "bluetooth-input",
+        "internal-audio",
+        "touchpad",
+        "usb-input"
+      ],
+      "gpu_driver": "mesa",
+      "gpu_vendor": "amd",
+      "id": "amd64-amd-laptop",
+      "monitors": "multi",
+      "power": [
+        "lid",
+        "suspend-resume"
+      ],
+      "scales": [
+        125,
+        150
+      ]
+    },
+    {
+      "architecture": "amd64",
+      "devices": [
+        "bluetooth-audio",
+        "bluetooth-input",
+        "internal-audio",
+        "usb-audio",
+        "usb-input"
+      ],
+      "gpu_driver": "mesa",
+      "gpu_vendor": "amd",
+      "id": "amd64-amd-desktop",
+      "monitors": "multi",
+      "power": [
+        "suspend-resume"
+      ],
+      "scales": [
+        100,
+        125,
+        150,
+        200
+      ]
+    },
+    {
+      "architecture": "amd64",
+      "devices": [
+        "bluetooth-audio",
+        "bluetooth-input",
+        "internal-audio",
+        "usb-audio",
+        "usb-input"
+      ],
+      "gpu_driver": "nvidia",
+      "gpu_vendor": "nvidia",
+      "id": "amd64-nvidia-desktop",
+      "monitors": "multi",
+      "power": [
+        "suspend-resume"
+      ],
+      "scales": [
+        100,
+        125,
+        150,
+        200
+      ]
+    },
+    {
+      "architecture": "arm64",
+      "devices": [
+        "bluetooth-audio",
+        "bluetooth-input",
+        "internal-audio",
+        "usb-input"
+      ],
+      "gpu_driver": "hardware-vulkan",
+      "gpu_vendor": "supported-arm64",
+      "id": "arm64-reference",
+      "monitors": "single",
+      "power": [
+        "suspend-resume"
+      ],
+      "scales": [
+        100,
+        200
+      ]
+    }
+  ],
+  "ubuntu": {
+    "session": "rmac-niri",
+    "version": "26.04"
+  }
+}

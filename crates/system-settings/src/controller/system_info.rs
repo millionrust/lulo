@@ -216,4 +216,40 @@ impl Settings {
         self.diagnostics_copied = true;
         cx.notify();
     }
+
+    pub(super) fn render_general(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let cards = vec![
+            card(vec![
+                nav_row(
+                    view.clone(),
+                    "icons/info.svg",
+                    hsl(0x8e8e93),
+                    GENERAL_DESTINATIONS[0].into(),
+                    self.sysinfo.hardware_model.clone().map(Into::into),
+                    SubPage::About,
+                ),
+                nav_row(
+                    view.clone(),
+                    "icons/refresh-cw.svg",
+                    hsl(0x8e8e93),
+                    GENERAL_DESTINATIONS[1].into(),
+                    Some(self.sysinfo.operating_system.clone().into()),
+                    SubPage::SoftwareUpdate,
+                ),
+                nav_row(
+                    view.clone(),
+                    "icons/database.svg",
+                    hsl(0x8e8e93),
+                    GENERAL_DESTINATIONS[2].into(),
+                    None,
+                    SubPage::Storage,
+                ),
+            ]),
+            note_card(
+                "Device continuity and media-receiver controls are hidden until rmac has reviewed Linux service authorities for them.",
+            ),
+        ];
+        self.pane(cards)
+    }
 }

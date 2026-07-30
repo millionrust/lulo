@@ -299,4 +299,47 @@ impl Settings {
         })
         .detach();
     }
+
+    pub(super) fn render_clock_confirmation(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let target = self.clock_confirmation.as_ref()?;
+        let current = self
+            .time
+            .as_ref()
+            .map(|snapshot| {
+                snapshot.formatted_local_time_at(
+                    current_system_time_usec().unwrap_or(snapshot.time_usec),
+                )
+            })
+            .unwrap_or_else(|| "Unavailable".into());
+        let target_display = target.display().to_string();
+        Some(
+            rmac_ui::alert(
+                "Set the System Clock?",
+                format!(
+                    "Current time: {current}\n\nNew time: {target_display}\n\nChanging the clock can affect certificates, file dates, and scheduled work. systemd-timedated also updates the hardware clock, and Linux may ask you to authorize this change."
+                ),
+                vec![
+                    rmac_ui::dialog_button(
+                        "clock-change-cancel",
+                        "Cancel",
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .disabled(self.clock_setting)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.cancel_clock_confirmation(cx)
+                    }))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "clock-change-confirm",
+                        "Set Clock",
+                        rmac_ui::DialogButtonKind::Primary,
+                    )
+                    .disabled(self.clock_setting)
+                    .on_click(cx.listener(|this, _, _, cx| this.confirm_clock_change(cx)))
+                    .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
+    }
 }

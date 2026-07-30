@@ -6,8 +6,15 @@ metadata, icons, and identifiers remain original rmac work.
 
 ## Module boundaries
 
-- `main.rs` owns the GPUI entity, orchestration, and composition of visible
-  Files surfaces.
+- `main.rs` owns only module composition and application boot.
+- `view.rs` owns the GPUI entity, window/controller orchestration, and
+  composition of visible Files surfaces. Further render/update separation
+  remains required inside this explicit boundary.
+- `file_ops.rs` owns typed off-thread file operations, no-replace rename,
+  capacity checks, and exclusive recursive copy. Recursive copy validates
+  destination ancestry, recreates links without following them, refuses
+  special files, supports bounded cancellation/progress, and durably syncs the
+  completed tree before a move may remove its source.
 - `conflict.rs` owns snapshot-bound transfer preflight, Keep Both/Replace/Skip
   decisions, collision-free destination naming, and path-redacted conflict
   wording. Its focused tests keep replacement bound to the exact reviewed
@@ -17,7 +24,7 @@ metadata, icons, and identifiers remain original rmac work.
   protect safe defaults and prevent completeness or deletion overclaims.
 - `watchers.rs` owns bounded filesystem-event accumulation, native watcher
   construction, mount-watcher health transitions, and retry policy. The GPUI
-  root consumes these typed results without duplicating their invariants.
+  view consumes these typed results without duplicating their invariants.
 
 ## File-operation invariants
 

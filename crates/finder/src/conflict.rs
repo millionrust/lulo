@@ -3,7 +3,7 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-use crate::{file_ops, operation_journal, sanitize_dialog_name};
+use crate::{file_ops, operation_journal, view::sanitize_dialog_name};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ConflictTransferKind {

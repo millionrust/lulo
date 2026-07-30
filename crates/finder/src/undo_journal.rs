@@ -1929,7 +1929,7 @@ mod tests {
         }
 
         fn copy(&self, source: &Path, destination: &Path) -> io::Result<()> {
-            crate::copy_item(source, destination)
+            crate::file_ops::copy_item(source, destination)
         }
 
         fn copy_cancellable(
@@ -1939,7 +1939,7 @@ mod tests {
             cancel: &AtomicBool,
             progress: &mut dyn FnMut(CopyActivity),
         ) -> io::Result<()> {
-            crate::copy_item_cancellable(source, destination, cancel, progress)?;
+            crate::file_ops::copy_item_cancellable(source, destination, cancel, progress)?;
             if self.cancel_after_copy {
                 cancel.store(true, Ordering::Release);
             }
@@ -1969,7 +1969,7 @@ mod tests {
 
     fn complete_copy(journal: &Journal, source: &Path, destination: &Path) {
         let mut ticket = journal.prepare_copy(source, destination).unwrap();
-        crate::copy_item(source, &ticket.staging_destination()).unwrap();
+        crate::file_ops::copy_item(source, &ticket.staging_destination()).unwrap();
         ticket.mark_destination_complete().unwrap();
         ticket.publish_copy().unwrap();
         ticket.commit().unwrap();
@@ -1977,7 +1977,7 @@ mod tests {
 
     fn complete_cross_volume_move(journal: &Journal, source: &Path, destination: &Path) {
         let mut ticket = journal.prepare_move(source, destination).unwrap();
-        crate::copy_item(source, &ticket.staging_destination()).unwrap();
+        crate::file_ops::copy_item(source, &ticket.staging_destination()).unwrap();
         ticket.mark_destination_complete().unwrap();
         if fs::symlink_metadata(source).unwrap().is_dir() {
             fs::remove_dir_all(source).unwrap();
@@ -2251,7 +2251,7 @@ mod tests {
         fs::write(&destination, b"old").unwrap();
         let journal = Journal::open(root.0.join("journal")).unwrap();
         let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
-        crate::copy_item(&source, &ticket.staging_destination()).unwrap();
+        crate::file_ops::copy_item(&source, &ticket.staging_destination()).unwrap();
         ticket.mark_destination_complete().unwrap();
         ticket.replace_copy().unwrap();
         ticket.commit().unwrap();
@@ -2285,7 +2285,7 @@ mod tests {
         let journal_root = root.0.join("journal");
         let journal = Journal::open(journal_root.clone()).unwrap();
         let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
-        crate::copy_item(&source, &ticket.staging_destination()).unwrap();
+        crate::file_ops::copy_item(&source, &ticket.staging_destination()).unwrap();
         ticket.mark_destination_complete().unwrap();
         ticket.replace_copy().unwrap();
         ticket.commit().unwrap();
@@ -2317,7 +2317,7 @@ mod tests {
         fs::write(&destination, b"old").unwrap();
         let journal = Journal::open(root.0.join("journal")).unwrap();
         let mut ticket = journal.prepare_replace(&source, &destination).unwrap();
-        crate::copy_item(&source, &ticket.staging_destination()).unwrap();
+        crate::file_ops::copy_item(&source, &ticket.staging_destination()).unwrap();
         ticket.mark_destination_complete().unwrap();
         ticket.replace_copy().unwrap();
         ticket.commit().unwrap();
@@ -2459,7 +2459,7 @@ mod tests {
         fs::write(&destination, b"old").unwrap();
         let journal = Journal::open(root.0.join("journal")).unwrap();
         let mut ticket = journal.prepare_move_replace(&source, &destination).unwrap();
-        crate::copy_item(&source, &ticket.staging_destination()).unwrap();
+        crate::file_ops::copy_item(&source, &ticket.staging_destination()).unwrap();
         ticket.mark_destination_complete().unwrap();
         fs::remove_file(&source).unwrap();
         ticket.mark_source_removed().unwrap();

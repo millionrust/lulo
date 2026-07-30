@@ -235,6 +235,135 @@ pub(crate) fn ensure_copy_capacity(
     Ok(())
 }
 
+/// Copy without following symlinks or replacing any destination entry.
+///
+/// Every destination node is created exclusively. A concurrent writer can
+/// therefore make the operation fail, but can never have its data overwritten.
+pub(crate) fn copy_item(source: &Path, destination: &Path) -> io::Result<()> {
+    copy_item_cancellable(source, destination, &AtomicBool::new(false), &mut |_| {})
+}
+
+pub(crate) fn copy_item_cancellable(
+    source: &Path,
+    destination: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(CopyActivity),
+) -> io::Result<()> {
+    if cancel.load(Ordering::Acquire) {
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "copy cancelled"));
+    }
+    validate_copy_destination(source, destination)?;
+    copy_recursive_cancellable(source, destination, cancel, progress)?;
+    progress(CopyActivity::Finishing);
+    sync_copied_tree(destination)?;
+    if let Some(parent) = destination.parent() {
+        std::fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// Reject a directory copy into itself or any real descendant before creating
+/// the first destination node. Canonicalizing the existing destination parent
+/// also catches a path routed back into the source through a symlink.
+fn validate_copy_destination(source: &Path, destination: &Path) -> io::Result<()> {
+    let metadata = std::fs::symlink_metadata(source)?;
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+    let source = std::fs::canonicalize(source)?;
+    let parent = destination.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "copy destination has no parent",
+        )
+    })?;
+    let destination_name = destination.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "copy destination has no file name",
+        )
+    })?;
+    let destination = std::fs::canonicalize(parent)?.join(destination_name);
+    if destination == source || destination.starts_with(&source) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a folder cannot be copied into itself",
+        ));
+    }
+    Ok(())
+}
+
+fn copy_recursive_cancellable(
+    source: &Path,
+    destination: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(CopyActivity),
+) -> io::Result<()> {
+    use std::io::{Read as _, Write as _};
+
+    if cancel.load(Ordering::Acquire) {
+        return Err(io::Error::new(io::ErrorKind::Interrupted, "copy cancelled"));
+    }
+    let metadata = std::fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() {
+        std::os::unix::fs::symlink(std::fs::read_link(source)?, destination)?;
+    } else if metadata.is_dir() {
+        std::fs::create_dir(destination)?;
+        for entry in std::fs::read_dir(source)? {
+            let entry = entry?;
+            copy_recursive_cancellable(
+                &entry.path(),
+                &destination.join(entry.file_name()),
+                cancel,
+                progress,
+            )?;
+        }
+        std::fs::set_permissions(destination, metadata.permissions())?;
+    } else if metadata.is_file() {
+        let mut source = std::fs::File::open(source)?;
+        let mut destination_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(destination)?;
+        let mut buffer = vec![0u8; 256 * 1024];
+        loop {
+            if cancel.load(Ordering::Acquire) {
+                return Err(io::Error::new(io::ErrorKind::Interrupted, "copy cancelled"));
+            }
+            let read = source.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            destination_file.write_all(&buffer[..read])?;
+            progress(CopyActivity::Bytes(read as u64));
+        }
+        destination_file.sync_all()?;
+        std::fs::set_permissions(destination, metadata.permissions())?;
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "special files cannot be copied",
+        ));
+    }
+    Ok(())
+}
+
+/// Durably flush the completed copy before a cross-volume move can remove its
+/// source. Symlinks are never opened or followed; their directory entry is
+/// covered by the parent-directory sync.
+fn sync_copied_tree(path: &Path) -> io::Result<()> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            sync_copied_tree(&entry?.path())?;
+        }
+        std::fs::File::open(path)?.sync_all()?;
+    } else if !metadata.file_type().is_symlink() {
+        std::fs::File::open(path)?.sync_all()?;
+    }
+    Ok(())
+}
+
 pub(crate) struct RealFileSystem;
 
 impl FileSystem for RealFileSystem {
@@ -247,7 +376,7 @@ impl FileSystem for RealFileSystem {
     }
 
     fn copy(&self, source: &Path, destination: &Path) -> io::Result<()> {
-        crate::copy_item(source, destination)
+        copy_item(source, destination)
     }
 
     fn copy_cancellable(
@@ -257,7 +386,7 @@ impl FileSystem for RealFileSystem {
         cancel: &AtomicBool,
         progress: &mut dyn FnMut(CopyActivity),
     ) -> io::Result<()> {
-        crate::copy_item_cancellable(source, destination, cancel, progress)
+        copy_item_cancellable(source, destination, cancel, progress)
     }
 
     fn remove(&self, path: &Path) -> io::Result<()> {

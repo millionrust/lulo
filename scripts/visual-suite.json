@@ -1,0 +1,244 @@
+{
+  "capture": {
+    "clock_utc": "2026-01-15T10:09:00Z",
+    "font_antialiasing": "grayscale",
+    "fonts": [
+      "Inter",
+      "JetBrains Mono"
+    ],
+    "locale": "en_US.UTF-8",
+    "seed": 20260730,
+    "timezone": "UTC"
+  },
+  "format": 1,
+  "scales": [
+    100,
+    125,
+    150,
+    200
+  ],
+  "screens": [
+    {
+      "group": "shell",
+      "id": "desktop",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "dock",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "app",
+      "id": "files-browser",
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "group": "app",
+      "id": "files-conflict",
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "launcher",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "lock-screen",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "app",
+      "id": "notes-editor",
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "group": "app",
+      "id": "notes-library",
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "notification-banner",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "notification-center",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "quick-settings",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-appearance",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-battery",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-bluetooth",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-displays",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-input",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-network-vpn",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-notifications-focus",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-privacy-security",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-software-update",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-sound",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "settings",
+      "id": "settings-wifi",
+      "viewport": [
+        1100,
+        760
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "spotlight",
+      "viewport": [
+        1440,
+        900
+      ]
+    },
+    {
+      "group": "app",
+      "id": "system-monitor",
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "group": "app",
+      "id": "terminal",
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "group": "app",
+      "id": "text-editor",
+      "viewport": [
+        1280,
+        800
+      ]
+    },
+    {
+      "group": "shell",
+      "id": "top-bar",
+      "viewport": [
+        1440,
+        900
+      ]
+    }
+  ],
+  "themes": [
+    "dark",
+    "dark-contrast",
+    "light",
+    "light-contrast"
+  ]
+}

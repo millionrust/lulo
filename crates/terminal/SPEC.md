@@ -175,6 +175,11 @@ measured Unicode/resident/idle/active performance.
   byte construction, unsafe-control refusal, and the content-redacted pending
   review model. The session owns current mode lookup and exact PTY delivery;
   the view owns clipboard access and confirmation lifecycle.
+- `renderer` owns the top-level GPUI projection, semantic action and pointer
+  wiring, input bridge, overlays, status/error composition, and terminal
+  profile/ANSI color mapping. The controller retains session/input policy and
+  the still-local row/tab/dialog projections until their next behavior-neutral
+  boundary.
 - `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
   refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
   reusable 8 KiB buffers and delivery into the emulator.

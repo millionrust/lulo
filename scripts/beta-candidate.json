@@ -1,0 +1,52 @@
+{
+  "audience": "invited-daily-driver-cohort",
+  "cohort": {
+    "minimum_duration_days": 14,
+    "minimum_participant_days": 280,
+    "minimum_participants": 20,
+    "station_minimums": {
+      "amd64-amd-desktop": 8,
+      "amd64-intel-laptop": 8,
+      "amd64-nvidia-desktop": 4
+    }
+  },
+  "defect_classes": [
+    "critical-accessibility",
+    "data-loss",
+    "privilege-escalation",
+    "session-lockout"
+  ],
+  "format": 1,
+  "journey_quality": {
+    "minimum_attempts_each": 20,
+    "minimum_pass_percent": 90
+  },
+  "required_checks": [
+    "accessibility-release-audit",
+    "alpha-candidate-complete",
+    "beta-artifacts-signed",
+    "beta-hardware-matrix",
+    "chaos-soak-beta-stations",
+    "clean-install-upgrade-rollback",
+    "cohort-consent-and-exit",
+    "cohort-duration-complete",
+    "cohort-feedback-privacy-reviewed",
+    "journey-quality-floor",
+    "limitations-and-release-notes-current",
+    "performance-release-audit",
+    "recovery-and-safe-mode-tested",
+    "security-review-zero-findings",
+    "update-channel-staged-rollback"
+  ],
+  "source_manifests": {
+    "accessibility": "scripts/accessibility-audit.json",
+    "alpha": "scripts/alpha-candidate.json",
+    "chaos": "scripts/chaos-soak.json",
+    "hardware": "packaging/hardware-matrix.json",
+    "journeys": "scripts/journey-suite.json",
+    "performance": "scripts/performance-budgets.json",
+    "security": "scripts/security-review.json"
+  },
+  "tier": "beta",
+  "version_pattern": "0\\.[0-9]+\\.[0-9]+-beta\\.[1-9][0-9]*"
+}

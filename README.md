@@ -163,6 +163,7 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`docs/update-and-remove.md`](docs/update-and-remove.md) — updates, rollback, uninstall, and data retention.
 - [`docs/release-notes.md`](docs/release-notes.md) — current unreleased product status.
 - [`docs/alpha-contributor-build.md`](docs/alpha-contributor-build.md) — contributor Alpha publish and issue-intake boundary.
+- [`docs/beta-cohort.md`](docs/beta-cohort.md) — invited daily-driver Beta safety and cohort boundary.
 - [`SECURITY.md`](SECURITY.md) — private vulnerability reporting policy.
 - [`PLAN_V2.md`](PLAN_V2.md) — current execution roadmap and acceptance gates.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — current and target architecture.

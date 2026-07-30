@@ -29,9 +29,10 @@ use crate::profiles::{self, active, load as load_profile, save as save_profile, 
 #[cfg(test)]
 use crate::session::EventProxy;
 use crate::session::{PasteError, RedrawSender, Session, SessionControlError, SessionWriteError};
+#[cfg(test)]
+use crate::ui_state::MAX_SEARCH_QUERY_BYTES;
+use crate::ui_state::{bounded_search_query, Selection};
 use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::cell::Flags;
 #[cfg(test)]
 use alacritty_terminal::term::Term;
 use alacritty_terminal::term::TermMode;
@@ -63,7 +64,6 @@ const TAB_BAR_HEIGHT: f32 = 32.0;
 const BODY_PAD: f32 = 8.0;
 /// Pixels from the window left to the first column: 8pt content padding.
 const LEFT_PAD: f32 = BODY_PAD;
-const MAX_SEARCH_QUERY_BYTES: usize = 4096;
 const FOCUS_IN_REPORT: &[u8] = b"\x1b[I";
 const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
 
@@ -104,53 +104,6 @@ fn focus_report(mode: TermMode, focused: bool) -> Option<&'static [u8]> {
 struct ImeComposition {
     session_id: u64,
     buffer: ImeBuffer,
-}
-
-/// A selected cell range, in alacritty grid-line coordinates (`Line` values,
-/// which are negative for scrollback). Coordinates are `(line, column)`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Selection {
-    anchor: (i32, usize),
-    head: (i32, usize),
-}
-
-impl Selection {
-    /// Return `(start, end)` ordered top-to-bottom, left-to-right.
-    fn ordered(&self) -> ((i32, usize), (i32, usize)) {
-        if (self.anchor.0, self.anchor.1) <= (self.head.0, self.head.1) {
-            (self.anchor, self.head)
-        } else {
-            (self.head, self.anchor)
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.anchor == self.head
-    }
-
-    /// Is the cell at `(line, col)` inside the selection?
-    fn contains(&self, line: i32, col: usize) -> bool {
-        let (s, e) = self.ordered();
-        (line, col) >= s && (line, col) <= e
-    }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct SessionUiState {
-    selection: Option<Selection>,
-    search_open: bool,
-    search_query: String,
-}
-
-fn bounded_search_query(value: &str) -> String {
-    if value.len() <= MAX_SEARCH_QUERY_BYTES {
-        return value.to_string();
-    }
-    let mut end = MAX_SEARCH_QUERY_BYTES;
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    value[..end].to_string()
 }
 
 /// Visual style of a run of cells — runs break when any attribute changes.
@@ -1154,54 +1107,9 @@ impl TerminalView {
     /// soft-wrapped rows (the last cell carries alacritty's `WRAPLINE` flag) are
     /// joined without a newline so a wrapped long line copies as a single line.
     fn selection_text(&self) -> Option<String> {
-        let sel = self.tabs[self.active].ui.selection?;
-        let (s, e) = sel.ordered();
+        let selection = self.tabs[self.active].ui.selection?;
         let term = self.tabs[self.active].term.lock().ok()?;
-        let grid = term.grid();
-        let history = grid.total_lines().saturating_sub(grid.screen_lines()) as i32;
-        let last_col = self.cols - 1;
-
-        let mut out = String::new();
-        let mut first = true;
-        // True when the previous emitted row soft-wrapped into this one.
-        let mut prev_wrapped = false;
-        for line in s.0..=e.0 {
-            if line < -history || line >= self.rows as i32 {
-                continue;
-            }
-            let (c0, c1) = if s.0 == e.0 {
-                (s.1, e.1)
-            } else if line == s.0 {
-                (s.1, last_col)
-            } else if line == e.0 {
-                (0, e.1)
-            } else {
-                (0, last_col)
-            };
-            let row = &grid[Line(line)];
-            let mut text = String::new();
-            for col in c0..=c1.min(last_col) {
-                let ch = row[Column(col)].c;
-                text.push(if ch == '\0' { ' ' } else { ch });
-            }
-            // The row soft-wraps when its final cell is flagged WRAPLINE and the
-            // selection reaches that cell, so the next row continues this line.
-            let wrapped = c1 >= last_col && row[Column(last_col)].flags.contains(Flags::WRAPLINE);
-
-            if !first && !prev_wrapped {
-                out.push('\n');
-            }
-            // Don't trim a soft-wrapped row: its trailing cells are real content
-            // that continues onto the next row.
-            if wrapped {
-                out.push_str(&text);
-            } else {
-                out.push_str(text.trim_end());
-            }
-            prev_wrapped = wrapped;
-            first = false;
-        }
-        Some(out)
+        Some(selection.text(&term, self.rows, self.cols))
     }
 }
 
@@ -1463,31 +1371,6 @@ impl EntityInputHandler for TerminalView {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn selection_and_search_state_are_isolated_and_search_is_bounded() {
-        let selection = Selection {
-            anchor: (-2, 1),
-            head: (3, 8),
-        };
-        let mut tabs = [SessionUiState::default(), SessionUiState::default()];
-        tabs[0].selection = Some(selection);
-        tabs[0].search_open = true;
-        tabs[0].search_query = "first tab".into();
-
-        assert_eq!(tabs[0].selection, Some(selection));
-        assert_eq!(tabs[0].search_query, "first tab");
-        assert_eq!(tabs[1], SessionUiState::default());
-
-        let oversized = format!("{}😀", "a".repeat(MAX_SEARCH_QUERY_BYTES - 1));
-        let bounded = bounded_search_query(&oversized);
-        assert_eq!(bounded.len(), MAX_SEARCH_QUERY_BYTES - 1);
-        assert!(bounded.is_char_boundary(bounded.len()));
-        assert_eq!(
-            bounded_search_query(&"b".repeat(MAX_SEARCH_QUERY_BYTES)),
-            "b".repeat(MAX_SEARCH_QUERY_BYTES)
-        );
-    }
 
     #[test]
     fn terminal_resources_have_explicit_bounds() {

@@ -1,4 +1,6 @@
 use super::*;
+use alacritty_terminal::index::{Column, Line};
+use alacritty_terminal::term::cell::Flags;
 
 impl TerminalView {
     pub(super) fn render_ime_preedit(&self) -> Option<Div> {

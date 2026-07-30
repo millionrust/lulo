@@ -10,6 +10,7 @@ mod paste;
 mod profiles;
 mod session;
 mod storage;
+mod ui_state;
 
 fn main() {
     rmac_ui::boot_app(

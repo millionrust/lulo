@@ -17,7 +17,7 @@ use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
-use crate::controller::SessionUiState;
+use crate::ui_state::SessionUiState;
 
 pub(super) type RedrawSender = async_channel::Sender<()>;
 

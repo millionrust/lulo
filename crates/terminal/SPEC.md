@@ -159,6 +159,10 @@ measured Unicode/resident/idle/active performance.
   or inconsistent identity is treated as potentially active, never as safe.
 - `alacritty_terminal` and `vte` own escape parsing, screen/scrollback state,
   cell flags, cursor position, and terminal modes.
+- `keyboard` owns the complete currently advertised traditional xterm/DEC
+  encoder and the decision between encoded control input and GPUI's direct-text
+  path. It deliberately cannot advertise Kitty events or keypad identity until
+  the platform event boundary supplies the required metadata.
 - `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
   refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
   reusable 8 KiB buffers and delivery into the emulator.
@@ -316,7 +320,9 @@ loadable, reject empty/unknown/out-of-range preferences, and keep the default
 fallback explicit.
 Keyboard mode transitions, navigation/function modifier sequences, control/
 Unicode/Meta input, platform-shortcut suppression, and enhanced-mode
-non-advertisement are checked directly. Aggregate grid-budget tests cover every
+non-advertisement are checked directly; encoder-only contracts live beside the
+keyboard authority while parsed mode transitions remain integration tests.
+Aggregate grid-budget tests cover every
 supported tab count, verify monotonic history reduction, preserve useful crowded
 history, and prove one additional line would cross the ceiling at the maximum.
 Streaming-output tests cover ordinary split Unicode/CSI, split BEL/ST-terminated

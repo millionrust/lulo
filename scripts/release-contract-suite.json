@@ -1,0 +1,127 @@
+{
+  "format": 1,
+  "minimum_free_gib": 15,
+  "stages": [
+    {
+      "command": [
+        "$PYTHON",
+        "-m",
+        "unittest",
+        "scripts.test_reference_preflight",
+        "scripts.test_application_icons",
+        "scripts.test_application_package",
+        "scripts.test_flatpak_package",
+        "scripts.test_native_packages",
+        "scripts.test_session_package",
+        "scripts.test_update_trust",
+        "scripts.test_hardware_matrix",
+        "scripts.test_journey_suite",
+        "scripts.test_measure_baseline",
+        "scripts.test_visual_suite",
+        "scripts.test_accessibility_audit",
+        "scripts.test_performance_audit",
+        "scripts.test_chaos_soak",
+        "scripts.test_security_review",
+        "scripts.test_documentation",
+        "scripts.test_release_contract_checks",
+        "scripts.test_alpha_candidate",
+        "scripts.test_beta_candidate",
+        "scripts.test_one_dot_zero_candidate"
+      ],
+      "id": "focused-fixtures"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "experiments/gpui-upstream-lab/scripts/test_a4_report.py"
+      ],
+      "id": "a4-report-fixtures"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/linux/verify-update-trust.py"
+      ],
+      "id": "update-trust"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/linux/verify-hardware-matrix.py"
+      ],
+      "id": "hardware-matrix"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/run-journey-suite.py",
+        "--list"
+      ],
+      "id": "journey-manifest"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-visual-suite.py"
+      ],
+      "id": "visual-suite"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-accessibility-audit.py"
+      ],
+      "id": "accessibility-audit"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-performance-audit.py"
+      ],
+      "id": "performance-audit"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-chaos-soak.py"
+      ],
+      "id": "chaos-soak"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-security-review.py"
+      ],
+      "id": "security-review"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-documentation.py"
+      ],
+      "id": "documentation"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-alpha-candidate.py"
+      ],
+      "id": "alpha-candidate"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-beta-candidate.py"
+      ],
+      "id": "beta-candidate"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/verify-one-dot-zero-candidate.py"
+      ],
+      "id": "one-dot-zero-candidate"
+    }
+  ],
+  "timeout_seconds_per_stage": 60
+}

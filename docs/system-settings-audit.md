@@ -6,6 +6,18 @@ service, reports authorization/failure, and refreshes from authoritative state.
 Apple-only branding and cloud services are replaced with honest rmac/Linux
 equivalents rather than simulated.
 
+## Application module boundaries
+
+- `main.rs` currently owns the GPUI controller, pane orchestration, service
+  subscriptions, and rendering while those responsibilities are split behind
+  focused authorities.
+- `shell_settings.rs` owns Dock, Wallpaper, and Spotlight mutations over the
+  complete versioned shell-settings document; bounded watching, atomic
+  persistence and authoritative readback; wallpaper inheritance, validation,
+  and fixed-size preview rendering; and canonical Spotlight exclusion
+  validation. The GPUI controller consumes typed snapshots and mutations
+  without duplicating their storage rules.
+
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|
 | Wi-Fi | Real state, radio mutation, access-point scan, typed security, exact saved/open/Enhanced Open activation, masked WPA Personal/SAE password sheet, certificate-verified PEAP/MSCHAPv2 enterprise sheet with optional anonymous identity, one-shot profile-UUID-bound Secret Agent, exact failed-join cleanup plus recovery readback, cancellation, complete Known Networks inventory, confirmed exact-profile forgetting with active disconnect, coalesced live signals, owner-loss/restart recovery, bounded completion, and authoritative readback | NetworkManager D-Bus | Linux signal/restart/permission/cancellation/wrong-secret cleanup/partial-delete and certificate-verified enterprise evidence; reviewed private-CA/certificate/smart-card/other-EAP designs if added |

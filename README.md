@@ -1,18 +1,20 @@
 # rmac
 
-rmac is a native Rust desktop suite that explores macOS-like ergonomics for a
-Linux/Wayland desktop. The repository contains the original seven GPUI
-applications plus the session-owned launcher surface. Linux product work follows the gated roadmap
-in [`PLAN_V2.md`](PLAN_V2.md).
+rmac is a native Rust desktop suite bringing macOS-like ergonomics to a
+Linux/Wayland desktop: a coherent top bar, Dock, launcher, notifications,
+Quick Settings, System Settings, and seven focused first-party applications.
+Linux services remain authoritative for hardware, authorization, packages,
+login, and files.
 
 ## Status
 
-- The macOS prototypes build and run.
-- CI is configured to check both Ubuntu and macOS builds.
-- Ubuntu 26.04 runtime behavior is not yet validated; that is Phase 1.
-- The launcher now has a real centered GPUI surface and supervised session
-  binary; the Dock, top bar, and complete Linux session still require their
-  presentation and reference-PC gates.
+- The application, shell-domain, Settings-service, packaging, and release-gate
+  implementations are extensive, but rmac is not yet a supported release.
+- Ubuntu 26.04 with niri is the reference target; stock Ubuntu/GNOME remains
+  the mandatory recovery session.
+- Native hardware, final shell presentation, accessibility, visual,
+  performance, soak, security, signing, install, update, and rollback evidence
+  remains open. See [Known limitations](docs/known-limitations.md).
 
 ## Applications
 
@@ -151,6 +153,15 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 
 ## Documentation
 
+- [`docs/user-guide.md`](docs/user-guide.md) — everyday desktop and application guide.
+- [`docs/install.md`](docs/install.md) — honest contributor/test installation boundary.
+- [`docs/hardware-support.md`](docs/hardware-support.md) — intended hardware matrix and current claims.
+- [`docs/settings-guide.md`](docs/settings-guide.md) — user-facing System Settings guide.
+- [`docs/shortcuts.md`](docs/shortcuts.md) — global and application keyboard conventions.
+- [`docs/privacy.md`](docs/privacy.md) — local data, permissions, credentials, and diagnostics.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) — recovery, safe mode, logs, and issue reports.
+- [`docs/update-and-remove.md`](docs/update-and-remove.md) — updates, rollback, uninstall, and data retention.
+- [`docs/release-notes.md`](docs/release-notes.md) — current unreleased product status.
 - [`PLAN_V2.md`](PLAN_V2.md) — current execution roadmap and acceptance gates.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — current and target architecture.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — change and verification rules.

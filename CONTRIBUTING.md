@@ -9,21 +9,29 @@ service boundary rather than inside a GPUI render implementation.
 The worktree may contain another contributor's changes. Do not discard or
 rewrite unrelated modifications.
 
-## Required local checks
+## Validation while working
 
-Run these commands before handing off a change:
+Use the narrowest package, crate, script, or fixture that exercises the change.
+Reuse the normal `target` directory and do not compile multiple feature graphs
+in parallel. Before a build likely to exceed 1 GiB, check free space and do not
+start below 25 GiB; stop before the data volume reaches 15 GiB free.
+
+Examples:
 
 ```sh
-cargo fmt --all -- --check
-cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-cargo test --locked --workspace --all-features
-cargo deny --locked --log-level error check
+cargo test --locked -p rmac-theme
+python3 -m unittest scripts.test_documentation
 ```
 
-CI enforces these checks across the Ubuntu, macOS, and dedicated dependency
-policy jobs. A change is not complete while any required job is red.
+Do not use Docker validation, duplicate the repository, create a second Cargo
+target directory, or run workspace-wide `--all-features`/`--all-targets`
+commands unless that exact release/CI validation was requested.
 
-Install the policy tool with
+The clean release candidate and CI run the full formatting, lint, test,
+dependency, packaging, journey, and platform gates. A release is not complete
+while any required job or evidence gate is red.
+
+Install the dependency-policy tool with
 `cargo install --locked cargo-deny --version 0.19.8`. Advisory exceptions and
 license additions require a written scope and removal/review condition in
 `docs/dependency-policy.md`.

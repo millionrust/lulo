@@ -1,0 +1,70 @@
+{
+  "documents": [
+    {
+      "path": "README.md",
+      "title": "# rmac"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "title": "# Contributing"
+    },
+    {
+      "path": "docs/install.md",
+      "title": "# Install rmac"
+    },
+    {
+      "path": "docs/hardware-support.md",
+      "title": "# Hardware support"
+    },
+    {
+      "path": "docs/user-guide.md",
+      "title": "# rmac user guide"
+    },
+    {
+      "path": "docs/settings-guide.md",
+      "title": "# System Settings guide"
+    },
+    {
+      "path": "docs/shortcuts.md",
+      "title": "# Keyboard shortcuts"
+    },
+    {
+      "path": "docs/privacy.md",
+      "title": "# Privacy"
+    },
+    {
+      "path": "docs/known-limitations.md",
+      "title": "# Known limitations"
+    },
+    {
+      "path": "docs/troubleshooting.md",
+      "title": "# Troubleshooting and recovery"
+    },
+    {
+      "path": "docs/update-and-remove.md",
+      "title": "# Updates, rollback, and removal"
+    },
+    {
+      "path": "docs/release-notes.md",
+      "title": "# Release notes"
+    }
+  ],
+  "format": 1,
+  "topics": {
+    "contribution": "CONTRIBUTING.md",
+    "daily-use": "docs/user-guide.md",
+    "hardware-support": "docs/hardware-support.md",
+    "install": "docs/install.md",
+    "limitations": "docs/known-limitations.md",
+    "logs": "docs/troubleshooting.md",
+    "privacy": "docs/privacy.md",
+    "recovery": "docs/troubleshooting.md",
+    "release-notes": "docs/release-notes.md",
+    "rollback": "docs/update-and-remove.md",
+    "safe-mode": "docs/troubleshooting.md",
+    "settings": "docs/settings-guide.md",
+    "shortcuts": "docs/shortcuts.md",
+    "uninstall": "docs/update-and-remove.md",
+    "update": "docs/update-and-remove.md"
+  }
+}

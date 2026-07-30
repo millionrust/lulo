@@ -1,12 +1,12 @@
 use std::io::{Read, Write};
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc::{sync_channel, SyncSender},
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
 
-use alacritty_terminal::event::EventListener;
+use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::term::{Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
 use portable_pty::{
@@ -26,10 +26,44 @@ const SESSION_WORKER_STACK_BYTES: usize = 512 * 1024;
 const SESSION_WORKERS_PER_TAB: usize = 2;
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Clone)]
-pub(super) struct EventProxy;
+type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
 
-impl EventListener for EventProxy {}
+#[derive(Clone, Default)]
+pub(super) struct EventProxy {
+    writer: Option<SharedWriter>,
+    write_failed: Option<Arc<AtomicBool>>,
+}
+
+impl EventProxy {
+    fn connected(writer: SharedWriter, write_failed: Arc<AtomicBool>) -> Self {
+        Self {
+            writer: Some(writer),
+            write_failed: Some(write_failed),
+        }
+    }
+}
+
+impl EventListener for EventProxy {
+    fn send_event(&self, event: Event) {
+        let Event::PtyWrite(text) = event else {
+            return;
+        };
+        let Some(writer) = self.writer.as_ref() else {
+            return;
+        };
+        let result = writer.lock().map_err(|_| ()).and_then(|mut writer| {
+            writer
+                .write_all(text.as_bytes())
+                .and_then(|_| writer.flush())
+                .map_err(|_| ())
+        });
+        if result.is_err() {
+            if let Some(write_failed) = self.write_failed.as_ref() {
+                write_failed.store(true, Ordering::Release);
+            }
+        }
+    }
+}
 
 fn request_redraw(redraw: &RedrawSender) {
     let _ = redraw.try_send(());
@@ -167,12 +201,11 @@ impl std::error::Error for SessionResizeError {}
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct SessionTransportState {
     rejected_size: Option<TermSize>,
-    write_failed: bool,
 }
 
 impl SessionTransportState {
-    fn status_message(self) -> Option<&'static str> {
-        if self.write_failed {
+    fn status_message(self, write_failed: bool) -> Option<&'static str> {
+        if write_failed {
             Some("Terminal can no longer send input to this session. Existing output is readable.")
         } else if self.rejected_size.is_some() {
             Some(
@@ -378,7 +411,8 @@ pub(super) struct Session {
     pub(super) ui: SessionUiState,
     pub(super) accepted_size: TermSize,
     transport: SessionTransportState,
-    writer: Box<dyn Write + Send>,
+    writer: SharedWriter,
+    write_failed: Arc<AtomicBool>,
     master: Option<Box<dyn MasterPty + Send>>,
     shell_pid: Option<u32>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
@@ -410,6 +444,8 @@ impl Session {
             .master
             .take_writer()
             .map_err(|_| SessionStartError::OpenWriter)?;
+        let writer: SharedWriter = Arc::new(Mutex::new(writer));
+        let write_failed = Arc::new(AtomicBool::new(false));
         let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut command = CommandBuilder::new(shell);
@@ -427,7 +463,7 @@ impl Session {
         let term = Arc::new(Mutex::new(Term::new(
             terminal_config(scrollback_lines),
             &size,
-            EventProxy,
+            EventProxy::connected(Arc::clone(&writer), Arc::clone(&write_failed)),
         )));
         let lifecycle = Arc::new(Mutex::new(SessionLifecycle::Running));
         workers.activate(
@@ -442,6 +478,7 @@ impl Session {
             accepted_size: size,
             transport: SessionTransportState::default(),
             writer,
+            write_failed,
             master: Some(pair.master),
             shell_pid,
             killer: Some(killer),
@@ -459,7 +496,7 @@ impl Session {
         let term = Arc::new(Mutex::new(Term::new(
             terminal_config(scrollback_lines),
             &size,
-            EventProxy,
+            EventProxy::default(),
         )));
         if let Ok(mut term) = term.lock() {
             let mut parser: Processor = Processor::new();
@@ -472,7 +509,10 @@ impl Session {
             ui: SessionUiState::default(),
             accepted_size: size,
             transport: SessionTransportState::default(),
-            writer: Box::new(std::io::sink()),
+            writer: Arc::new(Mutex::new(
+                Box::new(std::io::sink()) as Box<dyn Write + Send>
+            )),
+            write_failed: Arc::new(AtomicBool::new(false)),
             master: None,
             shell_pid: None,
             killer: None,
@@ -488,11 +528,11 @@ impl Session {
     }
 
     pub(super) fn accepts_input(&self) -> bool {
-        self.lifecycle().is_running() && !self.transport.write_failed
+        self.lifecycle().is_running() && !self.write_failed.load(Ordering::Acquire)
     }
 
     pub(super) fn tab_state_label(&self) -> Option<&'static str> {
-        if self.lifecycle().is_running() && self.transport.write_failed {
+        if self.lifecycle().is_running() && self.write_failed.load(Ordering::Acquire) {
             Some("Unavailable")
         } else {
             self.lifecycle().tab_state_label()
@@ -500,9 +540,11 @@ impl Session {
     }
 
     pub(super) fn status_message(&self) -> Option<String> {
-        self.lifecycle()
-            .status_message()
-            .or_else(|| self.transport.status_message().map(str::to_string))
+        self.lifecycle().status_message().or_else(|| {
+            self.transport
+                .status_message(self.write_failed.load(Ordering::Acquire))
+                .map(str::to_string)
+        })
     }
 
     pub(super) fn resize(&mut self, requested: TermSize) -> Result<(), SessionResizeError> {
@@ -586,16 +628,21 @@ impl Session {
         if !self.lifecycle().is_running() {
             return Err(SessionWriteError::Exited);
         }
-        if self.transport.write_failed {
+        if self.write_failed.load(Ordering::Acquire) {
             return Err(SessionWriteError::Write);
         }
         let result = self
             .writer
-            .write_all(bytes)
-            .and_then(|_| self.writer.flush())
-            .map_err(|_| SessionWriteError::Write);
+            .lock()
+            .map_err(|_| SessionWriteError::Write)
+            .and_then(|mut writer| {
+                writer
+                    .write_all(bytes)
+                    .and_then(|_| writer.flush())
+                    .map_err(|_| SessionWriteError::Write)
+            });
         if result.is_err() {
-            self.transport.write_failed = true;
+            self.write_failed.store(true, Ordering::Release);
         }
         result
     }
@@ -654,6 +701,44 @@ mod tests {
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
+    }
+
+    struct RecordingWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for RecordingWriter {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn parser_protocol_replies_share_the_session_writer() {
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let writer: SharedWriter =
+            Arc::new(Mutex::new(Box::new(RecordingWriter(Arc::clone(&output)))));
+        let write_failed = Arc::new(AtomicBool::new(false));
+        let size = TermSize { cols: 20, lines: 5 };
+        let mut term = Term::new(
+            terminal_config(10),
+            &size,
+            EventProxy::connected(writer, Arc::clone(&write_failed)),
+        );
+        let mut parser: Processor = Processor::new();
+
+        parser.advance(&mut term, b"\x1b[?u");
+        assert_eq!(&*output.lock().unwrap(), b"\x1b[?0u");
+        parser.advance(&mut term, b"\x1b[>5u\x1b[?u");
+        assert_eq!(
+            &*output.lock().unwrap(),
+            b"\x1b[?0u\x1b[?5u",
+            "mode query replies must reach the exact PTY writer"
+        );
+        assert!(!write_failed.load(Ordering::Acquire));
     }
 
     #[test]
@@ -784,12 +869,13 @@ mod tests {
             term: Arc::new(Mutex::new(Term::new(
                 terminal_config(10),
                 &size,
-                EventProxy,
+                EventProxy::default(),
             ))),
             ui: SessionUiState::default(),
             accepted_size: size,
             transport: SessionTransportState::default(),
-            writer: Box::new(FailingWriter),
+            writer: Arc::new(Mutex::new(Box::new(FailingWriter))),
+            write_failed: Arc::new(AtomicBool::new(false)),
             master: None,
             shell_pid: None,
             killer: None,

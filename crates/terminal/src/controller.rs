@@ -15,7 +15,12 @@ use crate::emulator::{
 #[cfg(test)]
 use crate::emulator::{TermSize, SCROLLBACK_LINES};
 use crate::ime::{ImeBuffer, MAX_TEXT_BYTES as MAX_IME_TEXT_BYTES};
-use crate::keyboard::{cursor_key_sequence, encode_key, uses_platform_text_input};
+#[cfg(test)]
+use crate::keyboard::encode_key;
+use crate::keyboard::{
+    cursor_key_sequence, encode_key_event, encode_text_input, uses_platform_text_input,
+    KeyEventKind,
+};
 use crate::mouse::{
     accumulate_wheel_reports, encode_report as encode_mouse_report,
     motion_report as mouse_motion_report, MouseReport,
@@ -35,9 +40,9 @@ use alacritty_terminal::term::TermMode;
 use gpui::{
     canvas, div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div,
     ElementInputHandler, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, Modifiers, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, ParentElement, Pixels,
-    Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Modifiers,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, ParentElement,
+    Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::StyledExt as _;
@@ -380,13 +385,16 @@ impl TerminalView {
             );
             return;
         }
-        if let Err(error) = self.active_terminal_mode() {
-            self.operation_error = Some(error.to_string().into());
-            cx.notify();
-            return;
-        }
-
-        match self.tabs[self.active].write(text.as_bytes()) {
+        let mode = match self.active_terminal_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        let bytes = encode_text_input(text, mode);
+        match self.tabs[self.active].write(&bytes) {
             Ok(()) => {
                 if let Ok(mut term) = self.tabs[self.active].term.lock() {
                     term.scroll_display(Scroll::Bottom);
@@ -737,16 +745,25 @@ impl TerminalView {
         self.rows = self.tabs[self.active].accepted_size.lines;
     }
 
-    fn on_key(&mut self, ev: &KeyDownEvent) -> Result<(), SessionWriteError> {
-        let bytes = {
+    fn on_key_down(&mut self, event: &KeyDownEvent) -> Result<bool, SessionWriteError> {
+        let mode = {
             let term = self.tabs[self.active]
                 .term
                 .lock()
                 .map_err(|_| SessionWriteError::State)?;
-            encode_key(&ev.keystroke, *term.mode())
+            *term.mode()
         };
+        if uses_platform_text_input(&event.keystroke, mode) {
+            return Ok(false);
+        }
+        let kind = if event.is_held {
+            KeyEventKind::Repeat
+        } else {
+            KeyEventKind::Press
+        };
+        let bytes = encode_key_event(&event.keystroke, mode, kind);
         if bytes.is_empty() {
-            return Ok(());
+            return Ok(true);
         }
         self.tabs[self.active].write(&bytes)?;
         // Only accepted input jumps to the live prompt and clears the visual
@@ -755,7 +772,22 @@ impl TerminalView {
             term.scroll_display(Scroll::Bottom);
         }
         self.tabs[self.active].ui.selection = None;
-        Ok(())
+        Ok(true)
+    }
+
+    fn on_key_up(&mut self, event: &KeyUpEvent) -> Result<bool, SessionWriteError> {
+        let bytes = {
+            let term = self.tabs[self.active]
+                .term
+                .lock()
+                .map_err(|_| SessionWriteError::State)?;
+            encode_key_event(&event.keystroke, *term.mode(), KeyEventKind::Release)
+        };
+        if bytes.is_empty() {
+            return Ok(false);
+        }
+        self.tabs[self.active].write(&bytes)?;
+        Ok(true)
     }
 
     /// Copy the current selection to the system clipboard.
@@ -866,7 +898,7 @@ mod tests {
     #[test]
     fn focus_reports_follow_the_parsed_xterm_mode() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
         let mut parser: Processor = Processor::new();
 
         assert_eq!(focus_report(*term.mode(), true), None);
@@ -885,7 +917,7 @@ mod tests {
     #[test]
     fn mouse_modes_follow_parsed_xterm_state() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
         let mut parser: Processor = Processor::new();
         parser.advance(&mut term, b"\x1b[?1002;1006h");
         let mode = *term.mode();
@@ -901,7 +933,11 @@ mod tests {
     #[test]
     fn bracketed_paste_mode_follows_parsed_xterm_state() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(SCROLLBACK_LINES), &size, EventProxy);
+        let mut term = Term::new(
+            terminal_config(SCROLLBACK_LINES),
+            &size,
+            EventProxy::default(),
+        );
         let mut parser: Processor = Processor::new();
         parser.advance(&mut term, b"\x1b[?2004h");
         assert!(term.mode().contains(TermMode::BRACKETED_PASTE));
@@ -924,7 +960,11 @@ mod tests {
     #[test]
     fn cursor_keys_follow_the_parsed_application_mode() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(SCROLLBACK_LINES), &size, EventProxy);
+        let mut term = Term::new(
+            terminal_config(SCROLLBACK_LINES),
+            &size,
+            EventProxy::default(),
+        );
         let mut parser: Processor = Processor::new();
         let up = test_keystroke("up", None, gpui::Modifiers::default());
         let home = test_keystroke("home", None, gpui::Modifiers::default());
@@ -943,13 +983,29 @@ mod tests {
     }
 
     #[test]
-    fn enhanced_keyboard_protocol_is_not_partially_advertised() {
-        assert!(!terminal_config(SCROLLBACK_LINES).kitty_keyboard);
+    fn enhanced_keyboard_protocol_modes_follow_the_parsed_stack() {
+        assert!(terminal_config(SCROLLBACK_LINES).kitty_keyboard);
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(SCROLLBACK_LINES), &size, EventProxy);
+        let mut term = Term::new(
+            terminal_config(SCROLLBACK_LINES),
+            &size,
+            EventProxy::default(),
+        );
         let mut parser: Processor = Processor::new();
 
         parser.advance(&mut term, b"\x1b[>1u");
+        assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+        parser.advance(&mut term, b"\x1b[>31u");
+        assert!(term.mode().contains(TermMode::KITTY_KEYBOARD_PROTOCOL));
+        parser.advance(&mut term, b"\x1b[<u");
+        assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
+        assert!(!term.mode().contains(
+            TermMode::REPORT_EVENT_TYPES
+                | TermMode::REPORT_ALTERNATE_KEYS
+                | TermMode::REPORT_ALL_KEYS_AS_ESC
+                | TermMode::REPORT_ASSOCIATED_TEXT
+        ));
+        parser.advance(&mut term, b"\x1b[<u");
         assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
     }
 }

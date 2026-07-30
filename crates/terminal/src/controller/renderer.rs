@@ -448,16 +448,29 @@ impl Render for TerminalView {
                             cx.stop_propagation();
                             return;
                         }
-                        // Plain and shift-modified text must propagate to GPUI's
-                        // platform input handler. That is the one path shared by
-                        // direct keyboard text and committed IME text, avoiding
-                        // duplicate writes on Linux.
-                        if uses_platform_text_input(&ev.keystroke) {
+                        match this.on_key_down(ev) {
+                            Ok(false) => return,
+                            Ok(true) => {}
+                            Err(error) => {
+                                if error == SessionWriteError::State {
+                                    this.operation_error = Some(error.to_string().into());
+                                }
+                            }
+                        }
+                        cx.stop_propagation();
+                        cx.notify();
+                    }))
+                    .on_key_up(cx.listener(|this, ev: &KeyUpEvent, _, cx| {
+                        if this.modal_open() {
                             return;
                         }
-                        if let Err(error) = this.on_key(ev) {
-                            if error == SessionWriteError::State {
-                                this.operation_error = Some(error.to_string().into());
+                        match this.on_key_up(ev) {
+                            Ok(false) => return,
+                            Ok(true) => {}
+                            Err(error) => {
+                                if error == SessionWriteError::State {
+                                    this.operation_error = Some(error.to_string().into());
+                                }
                             }
                         }
                         cx.stop_propagation();

@@ -71,15 +71,24 @@ one-based modifier parameter. Alt prefixes ordinary/control text with Escape,
 Ctrl-letter and conventional Ctrl-punctuation mappings are exact, Shift-Tab
 sends backtab, platform shortcuts never leak to the PTY, and terminal-state
 lock failure sends nothing. Successful input returns to live output and clears
-only the current visual selection. Enhanced Kitty keyboard mode remains
-disabled at the emulator authority, so the incomplete key-down-only path is
-not partially advertised or activated.
+only the current visual selection. Applications can now negotiate Kitty's
+bounded progressive mode stack and query the current flags. Disambiguated,
+all-key, associated-text, and truthfully available alternate-key forms use the
+parsed mode; GPUI's held and key-up events provide explicit repeat/release
+types. Enter, Tab, and Backspace releases remain suppressed unless all-key mode
+requests them. F13–F20 use Kitty's private key codes in enhanced mode, while
+ordinary mode retains terminfo-compatible sequences. GPUI does not expose
+physical key location, so numeric-keypad identity remains deliberately
+unadvertised instead of being guessed.
 GPUI's platform text-input handler now owns both ordinary Unicode keystrokes
 and IME composition. Marked text is held in a private 16 KiB UTF-8 buffer,
 underlined at the live cursor, and exposed to the platform in UTF-16 scalar-safe
 ranges with Unicode cell-aware candidate bounds. Preedit changes never reach
 the PTY. Commit or platform unmark writes the final text exactly once to the
 stable live session that began composition; cancellation writes nothing.
+When all-key plus associated-text reporting is active, a multi-scalar native
+IME commit uses Kitty's zero-key form with the exact non-control Unicode
+codepoints; without that explicit request the committed UTF-8 remains direct.
 Switching tabs leaves a composition bound to its original session, and a later
 stale update or commit is visibly refused rather than injected into another
 shell. Exited sessions, open confirmations, oversized input, invalid UTF-16
@@ -144,11 +153,10 @@ focus, and ordinary renders emit nothing. The three-byte static reports use the
 same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
-The complete application claim remains blocked on enhanced Kitty keyboard
-press/repeat/release reporting, numeric-keypad identity, hyperlink policy,
-shell integration, per-tab title authority, accessible terminal text
-semantics, Linux interaction/visual evidence (including native IME proof), and
-measured Unicode/resident/idle/active performance.
+The complete application claim remains blocked on numeric-keypad identity,
+hyperlink policy, shell integration, per-tab title authority, accessible
+terminal text semantics, Linux interaction/visual evidence (including native
+IME proof), and measured Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -163,10 +171,12 @@ measured Unicode/resident/idle/active performance.
   or inconsistent identity is treated as potentially active, never as safe.
 - `alacritty_terminal` and `vte` own escape parsing, screen/scrollback state,
   cell flags, cursor position, and terminal modes.
-- `keyboard` owns the complete currently advertised traditional xterm/DEC
-  encoder and the decision between encoded control input and GPUI's direct-text
-  path. It deliberately cannot advertise Kitty events or keypad identity until
-  the platform event boundary supplies the required metadata.
+- `keyboard` owns the traditional xterm/DEC and negotiated Kitty encoders, event
+  forms, associated/alternate text projection, and the decision between encoded
+  input and GPUI's direct-text/IME path. It deliberately does not invent keypad
+  identity while GPUI omits physical key location.
+- `session` serializes ordinary input and parser-generated protocol replies
+  through one PTY writer and one permanent visible failure state.
 - `mouse` owns xterm button/modifier encoding, legacy/UTF-8/SGR coordinate
   limits, drag/all-motion selection, and bounded fractional wheel conversion.
   The view retains only pointer capture, body-cell projection, and the exact
@@ -299,9 +309,10 @@ traditional xterm navigation and F1–F20 sequences follow application-cursor
 mode and encode Shift/Alt/Control modifiers. Ordinary and shift-modified text
 uses GPUI's platform handler so direct Unicode and final IME commits have one
 exact delivery path; marked text is visibly underlined at the live cursor and
-is not sent early. Enhanced Kitty keyboard reporting and numeric-keypad
-identity remain implementation gates; native Linux IME behavior remains an
-interaction-evidence gate.
+is not sent early. Negotiated Kitty modes add disambiguated/all-key sequences,
+associated and available shifted text, mode queries, and press/repeat/release
+events. Numeric-keypad identity remains a GPUI metadata gate; native Linux IME
+behavior remains an interaction-evidence gate.
 
 ## Pointer map
 
@@ -353,9 +364,12 @@ Profile contract tests keep every stable name and legacy numeric index
 loadable, reject empty/unknown/out-of-range preferences, and keep the default
 fallback explicit.
 Keyboard mode transitions, navigation/function modifier sequences, control/
-Unicode/Meta input, platform-shortcut suppression, and enhanced-mode
-non-advertisement are checked directly; encoder-only contracts live beside the
-keyboard authority while parsed mode transitions remain integration tests.
+Unicode/Meta input, platform-shortcut suppression, negotiated Kitty mode-stack
+transitions, disambiguation, associated/alternate Unicode, function-key forms,
+and press/repeat/release events are checked directly. A connected parser-query
+test proves replies use the exact shared PTY writer; encoder-only contracts live
+beside the keyboard authority while parsed mode transitions remain integration
+tests.
 Aggregate grid-budget tests cover every
 supported tab count, verify monotonic history reduction, preserve useful crowded
 history, and prove one additional line would cross the ceiling at the maximum.
@@ -392,6 +406,8 @@ transfers active-tab ownership, refuses exited sessions, and uses the tested
 permanent writer-failure state without scheduling ordinary success redraws.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
+and
+[Kitty keyboard](https://sw.kovidgoyal.net/kitty/keyboard-protocol/)
 and
 [bracketed-paste](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Bracketed-Paste-Mode)
 and

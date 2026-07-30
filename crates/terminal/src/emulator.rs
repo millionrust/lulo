@@ -44,6 +44,7 @@ impl Dimensions for TermSize {
 pub(super) fn terminal_config(scrollback_lines: usize) -> Config {
     Config {
         scrolling_history: scrollback_lines.min(SCROLLBACK_LINES),
+        kitty_keyboard: true,
         ..Config::default()
     }
 }
@@ -374,7 +375,7 @@ mod tests {
     #[test]
     fn history_rebalance_preserves_zero_history_on_the_alternate_screen() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
         let mut parser: Processor = Processor::new();
 
         parser.advance(&mut term, b"\x1b[?1049h");
@@ -400,7 +401,7 @@ mod tests {
     #[test]
     fn combining_marks_are_bounded_per_exact_cell_without_losing_style() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
         let mut parser: Processor = Processor::new();
         let mut bytes = b"\x1b[31;4ma".to_vec();
         append_combining_marks(&mut bytes, MAX_COMBINING_MARKS_PER_CELL + 20);
@@ -433,7 +434,7 @@ mod tests {
     #[test]
     fn combining_cap_handles_wide_cells_and_split_utf8() {
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(10), &size, EventProxy);
+        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
         let mut parser: Processor = Processor::new();
         let mut bytes = "界".as_bytes().to_vec();
         append_combining_marks(&mut bytes, MAX_COMBINING_MARKS_PER_CELL + 20);

@@ -17,7 +17,7 @@ use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
-use super::SessionUiState;
+use crate::controller::SessionUiState;
 
 pub(super) type RedrawSender = async_channel::Sender<()>;
 
@@ -638,8 +638,8 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controller::MAX_TABS;
     use crate::emulator::SCROLLBACK_LINES;
-    use crate::MAX_TABS;
 
     struct FailingWriter;
 

@@ -152,6 +152,10 @@ measured Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
+- `controller` owns GPUI window lifecycle, stable per-tab orchestration,
+  selection/search state, close and paste review, platform input decisions,
+  and the exact intents supplied to the renderer and session authorities. The
+  binary root owns only module composition and application boot.
 - `portable-pty` owns PTY creation, the configured shell child, master resize,
   readable output, writable input, child wait, and termination.
 - On Unix, the PTY's kernel-backed foreground process-group identity is compared

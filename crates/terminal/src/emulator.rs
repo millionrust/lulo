@@ -184,8 +184,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::*;
+    use crate::controller::MAX_TABS;
     use crate::session::EventProxy;
-    use crate::MAX_TABS;
     use alacritty_terminal::event::{Event, EventListener};
     use alacritty_terminal::index::{Column, Line};
     use alacritty_terminal::term::cell::Flags;

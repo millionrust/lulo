@@ -14,7 +14,8 @@ The packaged session uses a safe-mode marker after a bounded crash loop. Safe
 mode starts niri without rmac portal selection and optional shell surfaces,
 while retaining the supervised security boundary. Use it to repair
 configuration or export data. See
-[Ubuntu session packaging](ubuntu-session-packaging.md#safe-mode-and-recovery).
+[Ubuntu session packaging](ubuntu-session-packaging.md#safe-mode-and-recovery)
+and [Session recovery](session-recovery.md).
 
 ## Inspect service health
 
@@ -42,8 +43,9 @@ journalctl --user --unit rmac-session-supervisor.service \
 Journals may contain private operating-system or application data. Do not post
 raw logs. Remove usernames, hostnames, paths, addresses, document/notification
 content, environment values, process/session IDs, D-Bus peers, credentials,
-tokens, and device identity. Prefer the privacy-safe status/report action in
-System Settings when available.
+tokens, and device identity. Prefer `rmac-session-supervisor diagnostics`,
+which excludes journal bodies, paths, PIDs, configuration values, and other
+private content.
 
 ## Common failures
 

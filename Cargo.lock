@@ -5543,6 +5543,7 @@ dependencies = [
 name = "rmac-session"
 version = "0.1.0"
 dependencies = [
+ "rmac-shell-settings",
  "rmac-storage",
  "serde",
  "serde_json",

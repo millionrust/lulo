@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 const CURRENT_VERSION: u32 = 4;
 const MAX_PINNED_APPS: usize = 128;
 const MAX_SPOTLIGHT_EXCLUSIONS: usize = 128;
+const MAX_RECOVERY_COPY_BYTES: usize = 1024 * 1024;
 const LEGACY_FILES_APP_ID: &str = "org.rmac.Finder";
 const FILES_APP_ID: &str = "org.rmac.Files";
 
@@ -312,6 +313,15 @@ pub struct ShellSettingsStore<B = FileSystem> {
     backend: B,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecoveryState {
+    Current,
+    LastGoodAvailable,
+    DefaultsOnly,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum StoreEvent {
     Changed,
@@ -436,6 +446,80 @@ impl<B: Backend> ShellSettingsStore<B> {
         self.snapshot(settings.clone(), false, None, None)
     }
 
+    pub fn recovery_state(&self) -> RecoveryState {
+        let primary = self.config_state(&self.path);
+        if primary == ConfigState::Valid {
+            return RecoveryState::Current;
+        }
+        let last_good = self.config_state(&self.last_good_path());
+        if last_good == ConfigState::Valid {
+            RecoveryState::LastGoodAvailable
+        } else if primary == ConfigState::Missing && last_good == ConfigState::Missing {
+            RecoveryState::DefaultsOnly
+        } else {
+            RecoveryState::Unavailable
+        }
+    }
+
+    pub fn restore_last_good(&self) -> Result<Snapshot, Error> {
+        if self.config_state(&self.path) == ConfigState::Valid {
+            return Err(Failure::message_with_kind(
+                Operation::RestoreLastGood,
+                &self.path,
+                io::ErrorKind::AlreadyExists,
+                "the primary shell settings are already valid",
+            ));
+        }
+
+        let backup_path = self.last_good_path();
+        let loaded = self.read_settings(&backup_path)?.ok_or_else(|| {
+            Failure::message_with_kind(
+                Operation::RestoreLastGood,
+                &backup_path,
+                io::ErrorKind::NotFound,
+                "no last-known-good shell settings are available",
+            )
+        })?;
+        validate(&loaded.settings, &backup_path)?;
+        let contents = serialize_settings(&loaded.settings, &self.path)?;
+        let parent = parent_path(&self.path)?;
+        self.backend
+            .create_dir_all(parent)
+            .map_err(|error| Failure::from_io(Operation::CreateDirectory, parent, error))?;
+
+        match self
+            .backend
+            .read_bounded_no_follow(&self.path, MAX_RECOVERY_COPY_BYTES)
+        {
+            Ok(rejected) => {
+                let rejected_path = self.rejected_path();
+                self.backend
+                    .write_atomic_private(&rejected_path, &rejected)
+                    .map_err(|error| {
+                        Failure::from_io(Operation::RestoreLastGood, &rejected_path, error)
+                    })?;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(Failure::from_io(
+                    Operation::RestoreLastGood,
+                    &self.path,
+                    error,
+                ));
+            }
+        }
+
+        self.backend
+            .write_atomic(&self.path, &contents)
+            .map_err(|error| Failure::from_io(Operation::RestoreLastGood, &self.path, error))?;
+        self.snapshot(
+            loaded.settings,
+            false,
+            loaded.migrated_from,
+            Some("Restored shell settings from the last-known-good copy.".into()),
+        )
+    }
+
     fn finish_load(
         &self,
         loaded: Loaded,
@@ -544,13 +628,7 @@ impl<B: Backend> ShellSettingsStore<B> {
         self.backend
             .create_dir_all(parent)
             .map_err(|error| Failure::from_io(Operation::CreateDirectory, parent, error))?;
-        let contents = serde_json::to_vec_pretty(&StoredSettings {
-            version: CURRENT_VERSION,
-            settings: settings.clone(),
-        })
-        .map_err(|error| {
-            Failure::message(Operation::SerializeSettings, &self.path, error.to_string())
-        })?;
+        let contents = serialize_settings(settings, &self.path)?;
         let backup_path = self.last_good_path();
         let previous_backup = match self.backend.read(&backup_path) {
             Ok(contents) => Some(contents),
@@ -600,6 +678,39 @@ impl<B: Backend> ShellSettingsStore<B> {
             .unwrap_or("shell.json");
         self.path.with_file_name(format!("{name}.last-good"))
     }
+
+    fn rejected_path(&self) -> PathBuf {
+        let name = self
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("shell.json");
+        self.path
+            .with_file_name(format!("{name}.rejected-before-restore"))
+    }
+
+    fn config_state(&self, path: &Path) -> ConfigState {
+        match self.read_settings(path) {
+            Ok(Some(loaded)) if validate(&loaded.settings, path).is_ok() => ConfigState::Valid,
+            Ok(None) => ConfigState::Missing,
+            Ok(Some(_)) | Err(_) => ConfigState::Invalid,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ConfigState {
+    Missing,
+    Valid,
+    Invalid,
+}
+
+fn serialize_settings(settings: &ShellSettings, path: &Path) -> Result<Vec<u8>, Error> {
+    serde_json::to_vec_pretty(&StoredSettings {
+        version: CURRENT_VERSION,
+        settings: settings.clone(),
+    })
+    .map_err(|error| Failure::message(Operation::SerializeSettings, path, error.to_string()))
 }
 
 fn migrate_v1(legacy: LegacySettings) -> ShellSettings {
@@ -997,6 +1108,37 @@ mod tests {
         assert_eq!(snapshot.settings, expected);
         assert!(snapshot.recovered_from_last_good);
         assert!(snapshot.detail.unwrap().contains("primary file failed"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_recovery_preserves_rejected_bytes_and_restores_last_good() {
+        let (root, store) = test_store("explicit-recovery");
+        let expected = settings();
+        store.save(&expected).unwrap();
+        let rejected = b"not json";
+        std::fs::write(store.path(), rejected).unwrap();
+
+        assert_eq!(store.recovery_state(), RecoveryState::LastGoodAvailable);
+        let snapshot = store.restore_last_good().unwrap();
+        assert_eq!(snapshot.settings, expected);
+        assert_eq!(store.recovery_state(), RecoveryState::Current);
+        assert_eq!(
+            std::fs::read(root.join("shell.json.rejected-before-restore")).unwrap(),
+            rejected
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn explicit_recovery_refuses_to_replace_valid_settings() {
+        let (root, store) = test_store("valid-recovery");
+        store.save(&settings()).unwrap();
+
+        let error = store.restore_last_good().unwrap_err();
+        assert_eq!(error.operation, Operation::RestoreLastGood);
+        assert_eq!(error.error_kind, io::ErrorKind::AlreadyExists);
+        assert!(!root.join("shell.json.rejected-before-restore").exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 

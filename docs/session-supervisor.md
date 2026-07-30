@@ -79,6 +79,9 @@ user runs:
 That command removes the marker, resets only the allowlisted component failure
 states, stops the safe target, and restarts the normal target.
 
+For privacy-safe diagnostics, last-known-good shell settings restoration, and
+same-user TTY steps, follow [Session recovery](session-recovery.md).
+
 ## Health and logs
 
 The supervisor queries stable systemd properties for every component and
@@ -95,9 +98,12 @@ with:
 journalctl --user -u rmac-dock.service -b --no-pager
 ```
 
-Automatic reference evidence collects only unit state properties and typed
-health, not journal message bodies, because application logs may contain
-private paths or content. Review journal excerpts before sharing them.
+`rmac-session-supervisor diagnostics` emits the bounded shareable report:
+allowlisted unit identity and typed health/restart facts, safe-mode state, and a
+content-free settings recovery status. It excludes PIDs, paths, configuration,
+environment, and journal bodies because application logs may contain private
+content. `status` remains the local operator view and is not the shareable
+report. Review any journal excerpts separately before sharing them.
 
 ## Secure locker exception
 

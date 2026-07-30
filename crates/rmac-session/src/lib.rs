@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rmac_shell_settings::RecoveryState;
 use rmac_storage::{atomic_write, Failure};
 use serde::{Deserialize, Serialize};
 
@@ -64,6 +65,57 @@ pub struct SessionHealth {
     pub observed_at_unix_ms: u64,
     pub safe_mode: Option<SafeModeState>,
     pub components: Vec<ComponentHealth>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DiagnosticComponent {
+    pub unit: String,
+    pub available: bool,
+    pub healthy: bool,
+    pub restart_budget_exhausted: bool,
+    pub restarts: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DiagnosticReport {
+    pub format: u32,
+    pub observed_at_unix_ms: u64,
+    pub safe_mode: bool,
+    pub safe_mode_trigger_unit: Option<String>,
+    pub shell_settings_recovery: RecoveryState,
+    pub components: Vec<DiagnosticComponent>,
+}
+
+impl DiagnosticReport {
+    pub fn from_health(health: SessionHealth, shell_settings_recovery: RecoveryState) -> Self {
+        let safe_mode_trigger_unit = health
+            .safe_mode
+            .as_ref()
+            .map(|state| state.trigger_unit.clone());
+        Self {
+            format: 1,
+            observed_at_unix_ms: health.observed_at_unix_ms,
+            safe_mode: health.safe_mode.is_some(),
+            safe_mode_trigger_unit,
+            shell_settings_recovery,
+            components: health
+                .components
+                .into_iter()
+                .map(|component| {
+                    let available = component.available();
+                    let healthy = component.healthy();
+                    let restart_budget_exhausted = component.exhausted_restart_budget();
+                    DiagnosticComponent {
+                        unit: component.unit,
+                        available,
+                        healthy,
+                        restart_budget_exhausted,
+                        restarts: component.restarts,
+                    }
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -395,6 +447,29 @@ mod tests {
         let health = parse_component_health(&inactive, "rmac-dock.service").unwrap();
         assert!(!health.healthy());
         assert_eq!(health.main_pid, None);
+    }
+
+    #[test]
+    fn diagnostics_omit_process_ids_paths_logs_and_settings_content() {
+        let health = SessionHealth {
+            observed_at_unix_ms: 42,
+            safe_mode: Some(SafeModeState {
+                version: SAFE_MODE_VERSION,
+                entered_at_unix_ms: 41,
+                trigger_unit: "rmac-dock.service".into(),
+                observed_restarts: 3,
+                reason: "/home/alice/private.txt token=secret".into(),
+            }),
+            components: vec![parse_component_health(HEALTHY, "rmac-dock.service").unwrap()],
+        };
+        let report = DiagnosticReport::from_health(health, RecoveryState::LastGoodAvailable);
+        let json = serde_json::to_string(&report).unwrap();
+
+        assert!(json.contains("\"shell_settings_recovery\":\"last-good-available\""));
+        assert!(json.contains("\"safe_mode_trigger_unit\":\"rmac-dock.service\""));
+        for private in ["main_pid", "/home/alice", "private.txt", "token", "secret"] {
+            assert!(!json.contains(private));
+        }
     }
 
     #[test]

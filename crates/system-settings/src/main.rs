@@ -8,6 +8,7 @@
 //! ⌘[). Read-only panes use real platform state rather than fabricated values.
 
 mod appearance;
+mod displays;
 mod service_updates;
 mod shell_settings;
 
@@ -20,6 +21,10 @@ use appearance::{
     accent_preference, apply_theme_change_authoritatively, load_theme_state, ThemeChange,
     ThemeLoad, ThemeOption, ThemeStoreWatchEvent, ACCENTS, THEME_CONTRAST_OPTIONS,
     THEME_MOTION_OPTIONS, THEME_TEXT_SCALE_OPTIONS,
+};
+use displays::{
+    compositor_event_affects_displays, relative_display_position, DisplayChange,
+    DisplayConfirmation, DisplayPlacement, DISPLAY_CONFIRMATION_SECONDS,
 };
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
@@ -621,104 +626,6 @@ fn notification_policy_with(
         }
     }
     policy
-}
-
-#[derive(Clone)]
-enum DisplayChange {
-    Mode {
-        output: rmac_display::Output,
-        mode: rmac_display::Mode,
-    },
-    Scale {
-        output: rmac_display::Output,
-        scale: f64,
-    },
-    Transform {
-        output: rmac_display::Output,
-        transform: rmac_display::Transform,
-    },
-    Position {
-        output: rmac_display::Output,
-        x: i32,
-        y: i32,
-    },
-}
-
-impl DisplayChange {
-    fn apply(&self) -> std::result::Result<rmac_display::AppliedChange, rmac_display::Error> {
-        match self {
-            Self::Mode { output, mode } => rmac_display::set_mode(output, *mode),
-            Self::Scale { output, scale } => rmac_display::set_scale(output, *scale),
-            Self::Transform { output, transform } => rmac_display::set_transform(output, transform),
-            Self::Position { output, x, y } => rmac_display::set_position(output, *x, *y),
-        }
-    }
-}
-
-#[derive(Clone)]
-struct DisplayConfirmation {
-    baseline: rmac_display::Snapshot,
-    applied: rmac_display::Snapshot,
-    generation: u64,
-    seconds_remaining: u8,
-}
-
-const DISPLAY_CONFIRMATION_SECONDS: u8 = 15;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum DisplayPlacement {
-    Left,
-    Right,
-    Above,
-    Below,
-}
-
-impl DisplayPlacement {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Left => "Left of Main",
-            Self::Right => "Right of Main",
-            Self::Above => "Above Main",
-            Self::Below => "Below Main",
-        }
-    }
-}
-
-fn relative_display_position(
-    moving: &rmac_display::LogicalOutput,
-    anchor: &rmac_display::LogicalOutput,
-    placement: DisplayPlacement,
-) -> Option<(i32, i32)> {
-    match placement {
-        DisplayPlacement::Left => Some((
-            anchor.x.checked_sub(i32::try_from(moving.width).ok()?)?,
-            anchor.y,
-        )),
-        DisplayPlacement::Right => Some((
-            anchor.x.checked_add(i32::try_from(anchor.width).ok()?)?,
-            anchor.y,
-        )),
-        DisplayPlacement::Above => Some((
-            anchor.x,
-            anchor.y.checked_sub(i32::try_from(moving.height).ok()?)?,
-        )),
-        DisplayPlacement::Below => Some((
-            anchor.x,
-            anchor.y.checked_add(i32::try_from(anchor.height).ok()?)?,
-        )),
-    }
-}
-
-fn compositor_event_affects_displays(event: &rmac_compositor::Event) -> bool {
-    matches!(
-        event,
-        rmac_compositor::Event::Snapshot { .. }
-            | rmac_compositor::Event::OutputsReplaced { .. }
-            | rmac_compositor::Event::WorkspacesReplaced { .. }
-    ) || matches!(
-        event,
-        rmac_compositor::Event::Unknown { source_kind, .. } if source_kind == "ConfigLoaded"
-    )
 }
 
 fn compositor_event_affects_input(event: &rmac_compositor::Event) -> bool {
@@ -19442,79 +19349,20 @@ mod tests {
         audio_change_needs_followup, audio_choice_is_actionable, audio_stream_snapshot_is_current,
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, charge_threshold_description,
-        composite_wallpaper_pixel, compositor_event_affects_displays,
-        compositor_event_affects_input, compositor_input_config_failed, focus_current_action,
-        gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
-        locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
-        network_stream_snapshot_is_current, notification_policy_with, power_change_needs_followup,
-        power_stream_snapshot_is_current, privacy_stream_snapshot_is_current,
-        relative_display_position, render_wallpaper_preview, sample_battery_history,
+        composite_wallpaper_pixel, compositor_event_affects_input, compositor_input_config_failed,
+        focus_current_action, gtk_text_stream_snapshot_is_current,
+        input_stream_snapshot_is_current, locale_stream_snapshot_is_current,
+        login_items_stream_snapshot_is_current, network_stream_snapshot_is_current,
+        notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
+        privacy_stream_snapshot_is_current, render_wallpaper_preview, sample_battery_history,
         shortcut_configuration_available, storage_stream_snapshot_is_current,
         system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
         time_stream_snapshot_is_current, update_stream_snapshot_is_current,
         vpn_stream_snapshot_is_current, wallpaper_selection, wifi_join_action,
-        wifi_stream_snapshot_is_current, DisplayPlacement, DockChange, FocusCurrentAction,
-        NotificationPolicyChange, ScreenReaderCapability, ShellSettingsMutation,
-        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget, WifiJoinAction,
-        GENERAL_DESTINATIONS,
+        wifi_stream_snapshot_is_current, DockChange, FocusCurrentAction, NotificationPolicyChange,
+        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
+        WallpaperChange, WallpaperTarget, WifiJoinAction, GENERAL_DESTINATIONS,
     };
-
-    #[test]
-    fn display_arrangement_places_edges_without_overlap() {
-        let moving = rmac_display::LogicalOutput {
-            x: 0,
-            y: 0,
-            width: 1440,
-            height: 900,
-            scale: 2.0,
-            transform: rmac_display::Transform::Normal,
-        };
-        let anchor = rmac_display::LogicalOutput {
-            x: 100,
-            y: 200,
-            width: 1920,
-            height: 1080,
-            scale: 1.0,
-            transform: rmac_display::Transform::Normal,
-        };
-
-        assert_eq!(
-            relative_display_position(&moving, &anchor, DisplayPlacement::Left),
-            Some((-1340, 200))
-        );
-        assert_eq!(
-            relative_display_position(&moving, &anchor, DisplayPlacement::Right),
-            Some((2020, 200))
-        );
-        assert_eq!(
-            relative_display_position(&moving, &anchor, DisplayPlacement::Above),
-            Some((100, -700))
-        );
-        assert_eq!(
-            relative_display_position(&moving, &anchor, DisplayPlacement::Below),
-            Some((100, 1280))
-        );
-    }
-
-    #[test]
-    fn display_refresh_hints_ignore_unrelated_compositor_churn() {
-        assert!(compositor_event_affects_displays(
-            &rmac_compositor::Event::OutputsReplaced {
-                outputs: Vec::new(),
-            }
-        ));
-        assert!(compositor_event_affects_displays(
-            &rmac_compositor::Event::Unknown {
-                source_kind: "ConfigLoaded".into(),
-                payload: Default::default(),
-            }
-        ));
-        assert!(!compositor_event_affects_displays(
-            &rmac_compositor::Event::WindowsReplaced {
-                windows: Vec::new(),
-            }
-        ));
-    }
 
     #[test]
     fn input_refreshes_only_after_a_loaded_niri_configuration() {

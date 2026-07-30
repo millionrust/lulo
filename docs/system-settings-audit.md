@@ -25,6 +25,10 @@ equivalents rather than simulated.
   appearance plus rmac preference loading, conflict refusal, scoped mutation,
   authoritative save/readback, and custom accent conversion. The controller
   retains only subscription lifecycle, mutation generation, and GPUI rendering.
+- `displays.rs` owns typed temporary layout changes, the bounded confirmation
+  state, checked relative-placement math, and compositor refresh admission.
+  The controller retains transaction timing, persistence/rollback orchestration,
+  and the visual arrangement editor.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

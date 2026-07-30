@@ -1,0 +1,142 @@
+name: Alpha bug report
+description: Report a reproducible problem from the contributor Alpha on supported test hardware.
+title: "[Alpha bug]: "
+labels: ["alpha", "bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing rmac. Use synthetic data. Do not include usernames, hostnames, serials, machine IDs, addresses, private paths, document or notification content, credentials, tokens, environment dumps, D-Bus peers, or unredacted logs.
+        Do not publish a suspected security vulnerability, privilege escalation, lock bypass, or credential exposure here. Use the repository Security tab to report it privately.
+
+  - type: input
+    id: revision
+    attributes:
+      label: Version and exact revision
+      description: Give the Alpha version and 40-character Git revision from the tested artifact.
+      placeholder: 0.1.0-alpha.1 / 0123456789abcdef0123456789abcdef01234567
+    validations:
+      required: true
+
+  - type: dropdown
+    id: station
+    attributes:
+      label: Public hardware station class
+      description: Do not provide a device model or serial number.
+      options:
+        - amd64 Intel laptop
+        - amd64 AMD desktop
+        - Other or not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: gpu
+    attributes:
+      label: GPU and driver family
+      description: Give only vendor, open/proprietary driver family, and public driver version.
+      placeholder: AMD / Mesa / version; no PCI address, UUID, model serial, or complete lspci output
+    validations:
+      required: true
+
+  - type: textarea
+    id: compositor
+    attributes:
+      label: Session and compositor
+      description: Give Ubuntu version, niri version, and whether this was the full rmac session or safe mode.
+      placeholder: Ubuntu 26.04; niri 26.x; full rmac session
+    validations:
+      required: true
+
+  - type: textarea
+    id: scale
+    attributes:
+      label: Display scale and refresh context
+      description: Give output count, logical scale, and refresh rate without connector, EDID, or device identity.
+      placeholder: One output; 150%; 120 Hz
+    validations:
+      required: true
+
+  - type: textarea
+    id: portals
+    attributes:
+      label: Portal context
+      description: State which portal operation was involved, active backend if known, consent result, and whether restart recovered it. Do not paste environment variables or bus identities.
+      placeholder: GlobalShortcuts portal; configured binding accepted; backend restarted; action recovered
+    validations:
+      required: true
+
+  - type: input
+    id: journey
+    attributes:
+      label: Affected surface and product journey
+      description: Name one app, Settings pane, or shell surface and the closest documented journey.
+      placeholder: Files / file-management
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic files, accounts, networks, notifications, and device names.
+      placeholder: |
+        1. Start from...
+        2. Perform...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Recovery result
+      description: State whether retry, component restart, safe mode, or stock Ubuntu/GNOME recovered the session and whether synthetic data remained intact.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Safety impact
+      options:
+        - No data loss, privilege issue, session lockout, or critical accessibility failure
+        - Possible synthetic data loss
+        - Possible session lockout
+        - Possible critical accessibility failure
+        - Possible security or privacy issue — report privately instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Minimal redacted log excerpt
+      description: Optional; include only the smallest relevant bounded excerpt after local redaction. Never paste a complete journal or environment dump.
+      render: shell
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmation
+      options:
+        - label: I reproduced this on the exact revision above.
+          required: true
+        - label: I used synthetic data and removed private or identifying information.
+          required: true
+        - label: I searched existing issues and read the current known limitations.
+          required: true

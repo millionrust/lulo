@@ -1,0 +1,48 @@
+{
+  "artifacts": [
+    "source-archive",
+    "rmac-apps-amd64-deb",
+    "rmac-session-amd64-deb",
+    "sha256sums",
+    "sbom-spdx-json",
+    "build-provenance"
+  ],
+  "audience": "contributors",
+  "format": 1,
+  "issue_form": ".github/ISSUE_TEMPLATE/01-alpha-bug.yml",
+  "known_limitations": [
+    "accessibility-and-layer-shell-evidence-incomplete",
+    "hardware-support-limited-to-alpha-stations",
+    "general-user-support-unavailable",
+    "public-apt-channel-unavailable"
+  ],
+  "required_checks": [
+    "accessibility-status-explicit",
+    "alpha-hardware-matrix",
+    "clean-install",
+    "clean-source-revision",
+    "dependency-policy",
+    "gdm-rmac-login-logout",
+    "issue-intake-privacy-reviewed",
+    "known-limitations-reviewed",
+    "linux-amd64-reproducible-build",
+    "native-package-artifact",
+    "package-signature-checksum-sbom",
+    "release-notes-reviewed",
+    "stock-gnome-recovery",
+    "ten-product-journeys",
+    "upgrade-rollback-uninstall",
+    "zero-open-data-loss",
+    "zero-open-privilege-escalation",
+    "zero-open-session-lockout"
+  ],
+  "sources": {
+    "hardware": "packaging/hardware-matrix.json",
+    "journeys": "scripts/journey-suite.json",
+    "limitations": "docs/known-limitations.md",
+    "release_notes": "docs/release-notes.md",
+    "security_policy": "SECURITY.md"
+  },
+  "tier": "alpha",
+  "version_pattern": "0\\.[0-9]+\\.[0-9]+-alpha\\.[1-9][0-9]*"
+}

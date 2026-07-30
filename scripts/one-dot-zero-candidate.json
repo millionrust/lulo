@@ -1,0 +1,59 @@
+{
+  "artifacts": [
+    "source-archive",
+    "rmac-apps-amd64-deb",
+    "rmac-session-amd64-deb",
+    "rmac-apps-arm64-deb",
+    "rmac-session-arm64-deb",
+    "text-editor-flatpak-bundle",
+    "apt-repository-metadata",
+    "sha256sums",
+    "sbom-spdx-json",
+    "build-provenance"
+  ],
+  "build_count": 2,
+  "format": 1,
+  "journey_quality": {
+    "minimum_attempts_each_build": 20,
+    "minimum_pass_percent_each_journey": 95,
+    "zero_crash_journeys": [
+      "desktop-session",
+      "text-document",
+      "notes-library",
+      "terminal-session",
+      "file-management"
+    ]
+  },
+  "required_checks": [
+    "accessibility-release-audit",
+    "apt-update-trust-and-rollback",
+    "beta-candidate-complete",
+    "chaos-and-seven-day-soak",
+    "complete-recovery-matrix",
+    "current-documentation-and-limitations",
+    "install-upgrade-rollback-uninstall",
+    "journey-95-percent-each-build",
+    "performance-budgets-met",
+    "security-review-zero-findings",
+    "signed-artifacts-and-sbom",
+    "stock-gnome-and-safe-mode-recovery",
+    "top-five-journeys-zero-crash",
+    "two-consecutive-candidate-builds",
+    "visual-suite-reviewed",
+    "zero-release-blockers"
+  ],
+  "source_manifests": {
+    "accessibility": "scripts/accessibility-audit.json",
+    "beta": "scripts/beta-candidate.json",
+    "chaos": "scripts/chaos-soak.json",
+    "documentation": "scripts/documentation-set.json",
+    "hardware": "packaging/hardware-matrix.json",
+    "journeys": "scripts/journey-suite.json",
+    "performance": "scripts/performance-budgets.json",
+    "security": "scripts/security-review.json",
+    "update_trust": "packaging/apt/update-trust.json",
+    "visual": "scripts/visual-suite.json"
+  },
+  "tier": "one-dot-zero",
+  "version_pattern": "1\\.0\\.0-rc\\.[1-9][0-9]*"
+}

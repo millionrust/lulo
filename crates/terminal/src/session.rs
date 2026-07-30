@@ -13,10 +13,11 @@ use portable_pty::{
     native_pty_system, Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
 };
 
+use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
-use super::{advance_filtered_output, terminal_config, SessionUiState, TermSize};
+use super::SessionUiState;
 
 pub(super) type RedrawSender = async_channel::Sender<()>;
 
@@ -637,7 +638,8 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MAX_TABS, SCROLLBACK_LINES};
+    use crate::emulator::SCROLLBACK_LINES;
+    use crate::MAX_TABS;
 
     struct FailingWriter;
 

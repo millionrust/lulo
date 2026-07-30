@@ -180,6 +180,11 @@ measured Unicode/resident/idle/active performance.
   status/errors, semantic action/pointer wiring, input bridge, and terminal
   profile/ANSI color mapping. The controller retains session/input policy and
   supplies only authoritative state and intents.
+- `emulator` owns bounded terminal geometry, Alacritty configuration,
+  per-window scrollback budgeting, filtered VTE advancement, and the exact
+  per-cell combining-mark cap. Its contracts pin geometry/resource ceilings,
+  parser allocation assumptions, alternate-screen history, title-stack
+  eviction, and split Unicode behavior beside the authority they protect.
 - `session` owns PTY/shell creation, bounded reader/waiter reservation, output
   parsing delivery, child lifecycle/reaping, foreground-process-group review,
   accepted resize geometry, permanent writer failure, paste-mode lookup and

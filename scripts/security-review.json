@@ -1,0 +1,191 @@
+{
+  "domains": [
+    {
+      "checks": [
+        "exact-field-code-expansion",
+        "executable-boundary-preserved",
+        "hidden-tryexec-precedence",
+        "launch-diagnostics-redacted",
+        "no-shell-interpolation",
+        "terminal-wrapper-argument-boundary",
+        "working-directory-validated"
+      ],
+      "id": "desktop-entry-execution",
+      "sources": [
+        "docs/application-launch.md",
+        "crates/rmac-apps/src/lib.rs"
+      ]
+    },
+    {
+      "checks": [
+        "broadcasts-contain-no-secrets",
+        "bounded-call-time-and-output",
+        "denial-and-cancel-distinct",
+        "interactive-authorization-only-from-user-action",
+        "mutation-requires-authoritative-readback",
+        "no-credential-collection",
+        "system-bus-callers-treated-untrusted",
+        "unique-owner-revalidated"
+      ],
+      "id": "dbus-polkit",
+      "sources": [
+        "docs/system-settings-audit.md",
+        "docs/network.md",
+        "docs/software-update.md"
+      ]
+    },
+    {
+      "checks": [
+        "backend-routing-verified",
+        "document-access-remains-scoped",
+        "permissionstore-does-not-overclaim",
+        "portal-mediates-user-consent",
+        "request-cancel-and-close-bounded",
+        "response-handle-correlated",
+        "selected-uri-revalidated"
+      ],
+      "id": "portals",
+      "sources": [
+        "docs/flatpak-packaging.md",
+        "docs/privacy-security.md",
+        "crates/rmac-portal/src/lib.rs"
+      ]
+    },
+    {
+      "checks": [
+        "atomic-save-and-authoritative-readback",
+        "cancellation-preserves-recoverable-destination",
+        "conflict-refuses-stale-overwrite",
+        "mount-disappearance-recovers",
+        "private-path-diagnostics-redacted",
+        "symlink-and-root-boundaries-enforced",
+        "trash-and-destructive-actions-confirmed",
+        "untrusted-content-never-executed"
+      ],
+      "id": "file-operations",
+      "sources": [
+        "crates/finder/SPEC.md",
+        "crates/text-editor/SPEC.md",
+        "crates/notes/SPEC.md"
+      ]
+    },
+    {
+      "checks": [
+        "compositor-exclusive-lock-proven",
+        "mfa-conversation-bounded",
+        "no-password-or-keycode-logging",
+        "pam-is-sole-unlock-authority",
+        "provider-crash-fails-closed",
+        "secret-lifetime-and-zeroization-reviewed",
+        "suspend-waits-for-lock-readiness",
+        "tty-recovery-proven",
+        "wrong-password-and-cancel-remain-locked"
+      ],
+      "id": "lock-boundary",
+      "sources": [
+        "docs/decisions/0004-secure-lock-boundary.md",
+        "docs/decisions/0005-rmac-lock-provider-state-machine.md",
+        "docs/rmac-pam-wrapper-audit.md",
+        "docs/secure-lock.md"
+      ]
+    },
+    {
+      "checks": [
+        "action-target-bound-to-notification",
+        "diagnostics-redacted",
+        "focus-suppression-authoritative",
+        "history-and-payload-bounded",
+        "lock-screen-content-redacted",
+        "markup-treated-as-untrusted",
+        "sender-attribution-not-invented"
+      ],
+      "id": "notifications",
+      "sources": [
+        "docs/notifications.md",
+        "crates/rmac-notifications/src/lib.rs"
+      ]
+    },
+    {
+      "checks": [
+        "allowed-roots-only",
+        "cancellation-rejects-stale-results",
+        "excluded-roots-never-indexed",
+        "private-path-diagnostics-redacted",
+        "query-and-content-bounded",
+        "result-count-bounded",
+        "stored-index-does-not-expand-authority"
+      ],
+      "id": "search-indexing",
+      "sources": [
+        "docs/launcher.md",
+        "crates/rmac-launcher-providers/src/lib.rs",
+        "crates/rmac-notes-runtime/src/search.rs"
+      ]
+    },
+    {
+      "checks": [
+        "architecture-and-file-inventory-exact",
+        "artifact-contains-no-build-host-data",
+        "dependency-and-advisory-policy-passes",
+        "license-inventory-complete",
+        "native-and-sandbox-boundaries-explicit",
+        "rollback-and-uninstall-tested",
+        "signature-and-origin-claims-bounded",
+        "unpackaged-executables-rejected"
+      ],
+      "id": "packages",
+      "sources": [
+        "docs/dependency-policy.md",
+        "docs/native-packaging.md",
+        "docs/flatpak-packaging.md",
+        "scripts/linux/verify-native-packages.py"
+      ]
+    },
+    {
+      "checks": [
+        "apt-key-scope-isolated",
+        "backend-failure-recovers-authoritatively",
+        "cancellation-and-restart-readback",
+        "packagekit-invoked-without-shell",
+        "polkit-interaction-is-user-initiated",
+        "signature-failure-fails-closed",
+        "trusted-only-install-enforced",
+        "update-error-states-privacy-safe"
+      ],
+      "id": "updates",
+      "sources": [
+        "docs/software-update.md",
+        "docs/update-trust.md",
+        "packaging/apt/update-trust.json",
+        "scripts/linux/verify-update-trust.py"
+      ]
+    },
+    {
+      "checks": [
+        "bus-peers-and-session-identities-redacted",
+        "control-characters-normalized",
+        "debug-implementations-redact-private-fields",
+        "evidence-uses-synthetic-data",
+        "failure-text-and-output-bounded",
+        "log-growth-and-retention-bounded",
+        "no-private-paths-or-content",
+        "no-secrets-credentials-or-tokens"
+      ],
+      "id": "logs-diagnostics",
+      "sources": [
+        "docs/about.md",
+        "docs/privacy-security.md",
+        "docs/chaos-soak.md"
+      ]
+    }
+  ],
+  "environment": {
+    "desktop": "rmac-niri",
+    "ubuntu": "26.04"
+  },
+  "format": 1,
+  "source_manifests": {
+    "hardware": "packaging/hardware-matrix.json",
+    "journeys": "scripts/journey-suite.json"
+  }
+}

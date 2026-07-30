@@ -180,6 +180,12 @@ measured Unicode/resident/idle/active performance.
   status/errors, semantic action/pointer wiring, input bridge, and terminal
   profile/ANSI color mapping. The controller retains session/input policy and
   supplies only authoritative state and intents.
+- `session` owns PTY/shell creation, bounded reader/waiter reservation, output
+  parsing delivery, child lifecycle/reaping, foreground-process-group review,
+  accepted resize geometry, permanent writer failure, paste-mode lookup and
+  delivery, termination, and drop cleanup. The controller receives stable
+  session identity, authoritative grid/UI state, accepted size, and typed
+  operations without owning OS handles or worker lifetimes.
 - `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
   refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
   reusable 8 KiB buffers and delivery into the emulator.
@@ -354,7 +360,8 @@ Resource-contract tests cover the exact worker count/stack budget, VTE
 synchronized-update cutoff, and Alacritty title-stack eviction depth.
 Transport-state tests prove rejected resize transactions retain the last
 accepted geometry and a writer failure permanently disables live input while
-keeping existing output available.
+keeping existing output available. Worker, lifecycle, resize, foreground-job,
+writer-failure, and redraw-coalescing contracts live beside the session runtime.
 Per-tab state tests prove independent selection/find state and UTF-8-safe query
 bounding.
 IME contract tests prove the direct-text routing split, exact UTF-16 offsets,

@@ -7,6 +7,7 @@
 //! Row chevrons push detail subpages with a back stack (toolbar back button +
 //! ⌘[). Read-only panes use real platform state rather than fabricated values.
 
+mod service_updates;
 mod shell_settings;
 
 use std::borrow::Cow;
@@ -25,6 +26,26 @@ use gpui_component::StyledExt as _;
 use rmac_ui::{
     Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
     SliderState, TextField, Toast, ToastKind, Toggle,
+};
+use service_updates::{
+    audio_choice_is_actionable, change_needs_followup as audio_change_needs_followup,
+    change_needs_followup as power_change_needs_followup,
+    snapshot_is_current as audio_stream_snapshot_is_current,
+    snapshot_is_current as bluetooth_stream_snapshot_is_current,
+    snapshot_is_current as gtk_text_stream_snapshot_is_current,
+    snapshot_is_current as input_stream_snapshot_is_current,
+    snapshot_is_current as locale_stream_snapshot_is_current,
+    snapshot_is_current as login_items_stream_snapshot_is_current,
+    snapshot_is_current as network_stream_snapshot_is_current,
+    snapshot_is_current as power_stream_snapshot_is_current,
+    snapshot_is_current as privacy_stream_snapshot_is_current,
+    snapshot_is_current as storage_stream_snapshot_is_current,
+    snapshot_is_current as system_info_stream_snapshot_is_current,
+    snapshot_is_current as theme_stream_snapshot_is_current,
+    snapshot_is_current as time_stream_snapshot_is_current,
+    snapshot_is_current as update_stream_snapshot_is_current,
+    snapshot_is_current as vpn_stream_snapshot_is_current,
+    snapshot_is_current as wifi_stream_snapshot_is_current,
 };
 #[cfg(test)]
 use shell_settings::composite_wallpaper_pixel;
@@ -148,76 +169,6 @@ enum SubPage {
     NotificationApp { app_id: String },
     FocusMode { mode_id: String },
     FocusSchedule { schedule_id: String },
-}
-
-fn wifi_stream_snapshot_is_current(
-    captured_generation: u64,
-    current_generation: u64,
-    busy: bool,
-    loading: bool,
-) -> bool {
-    !busy && !loading && captured_generation == current_generation
-}
-
-fn bluetooth_stream_snapshot_is_current(
-    captured_generation: u64,
-    current_generation: u64,
-    busy: bool,
-    loading: bool,
-) -> bool {
-    !busy && !loading && captured_generation == current_generation
-}
-
-fn network_stream_snapshot_is_current(
-    captured_generation: u64,
-    current_generation: u64,
-    busy: bool,
-    loading: bool,
-) -> bool {
-    !busy && !loading && captured_generation == current_generation
-}
-
-fn vpn_stream_snapshot_is_current(
-    captured_generation: u64,
-    current_generation: u64,
-    busy: bool,
-    loading: bool,
-) -> bool {
-    !busy && !loading && captured_generation == current_generation
-}
-
-fn audio_stream_snapshot_is_current(
-    captured_generation: u64,
-    current_generation: u64,
-    busy: bool,
-    loading: bool,
-) -> bool {
-    !busy && !loading && captured_generation == current_generation
-}
-
-fn audio_change_needs_followup(busy: bool, loading: bool, stream_unavailable: bool) -> bool {
-    busy || (loading && stream_unavailable)
-}
-
-fn audio_choice_is_actionable(
-    is_active: bool,
-    availability: rmac_audio::Availability,
-    busy: bool,
-) -> bool {
-    !is_active && availability.can_select() && !busy
-}
-
-fn power_stream_snapshot_is_current(
-    captured_generation: u64,
-    current_generation: u64,
-    busy: bool,
-    loading: bool,
-) -> bool {
-    !busy && !loading && captured_generation == current_generation
-}
-
-fn power_change_needs_followup(busy: bool, loading: bool, stream_unavailable: bool) -> bool {
-    busy || (loading && stream_unavailable)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -792,96 +743,6 @@ fn compositor_input_config_failed(event: &rmac_compositor::Event) -> Option<bool
         } if source_kind == "ConfigLoaded" => payload["failed"].as_bool(),
         _ => None,
     }
-}
-
-fn input_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn system_info_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn update_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn storage_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn time_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn locale_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn login_items_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn gtk_text_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn theme_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
-}
-
-fn privacy_stream_snapshot_is_current(
-    snapshot_generation: u64,
-    current_generation: u64,
-    loading: bool,
-    busy: bool,
-) -> bool {
-    snapshot_generation == current_generation && !loading && !busy
 }
 
 fn current_system_time_usec() -> Option<u64> {

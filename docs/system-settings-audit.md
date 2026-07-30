@@ -17,6 +17,10 @@ equivalents rather than simulated.
   and fixed-size preview rendering; and canonical Spotlight exclusion
   validation. The GPUI controller consumes typed snapshots and mutations
   without duplicating their storage rules.
+- `service_updates.rs` owns the common generation/loading/mutation admission
+  rule shared by every live service snapshot, the exact condition that requires
+  an independent recovery read, and capability-aware audio choice admission.
+  Pane-specific callbacks retain only their typed snapshot and follow-up work.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

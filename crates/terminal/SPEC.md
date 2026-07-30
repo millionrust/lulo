@@ -167,6 +167,10 @@ measured Unicode/resident/idle/active performance.
   limits, drag/all-motion selection, and bounded fractional wheel conversion.
   The view retains only pointer capture, body-cell projection, and the exact
   active-session write decision.
+- `ime` owns the private 16 KiB preedit buffer, scalar-safe UTF-16/UTF-8 range
+  conversion, replacement, and selection validation. The view owns GPUI
+  composition lifecycle, stable-session binding, modal/input eligibility, and
+  final one-shot delivery.
 - `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
   refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
   reusable 8 KiB buffers and delivery into the emulator.
@@ -344,7 +348,8 @@ Per-tab state tests prove independent selection/find state and UTF-8-safe query
 bounding.
 IME contract tests prove the direct-text routing split, exact UTF-16 offsets,
 surrogate-boundary refusal, marked-text replacement/selection behavior, and
-the inclusive 16 KiB UTF-8 ceiling. Runtime routing binds preedit and commit to
+the inclusive 16 KiB UTF-8 ceiling beside the IME authority. Runtime routing
+binds preedit and commit to
 one stable live session, keeps marked text out of PTY writes, sends a final
 commit once, and fails closed on stale, modal, exited, invalid, oversized, or
 control-bearing input.

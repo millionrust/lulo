@@ -42,6 +42,10 @@ equivalents rather than simulated.
 - `sound.rs` owns typed volume, mute, default-device, profile, route, and
   balance dispatch plus capability-aware choice admission. The controller
   retains slider coalescing, mutation generation, live recovery, and rendering.
+- `power.rs` owns power-profile application, charge-threshold recovery,
+  duration/threshold/degradation descriptions, and bounded history sampling.
+  The controller retains capability admission, mutation generations, live
+  refresh, and the GPUI history chart.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

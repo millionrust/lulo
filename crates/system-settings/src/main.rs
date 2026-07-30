@@ -12,6 +12,7 @@ mod displays;
 mod focus;
 mod input;
 mod notifications;
+mod power;
 mod service_updates;
 mod shell_settings;
 mod sound;
@@ -48,6 +49,11 @@ use input::{
     MOUSE_PRECISION_PRESETS, MOUSE_PROFILES, MOUSE_SPEEDS, TOUCHPAD_PROFILES, TOUCHPAD_SPEEDS,
 };
 use notifications::{policy_with as notification_policy_with, NotificationPolicyChange};
+use power::{
+    apply_charge_threshold, apply_profile as apply_power_profile, charge_threshold_description,
+    degradation_label as power_degradation_label, format_duration as format_power_duration,
+    sample_history as sample_battery_history,
+};
 use rmac_ui::{
     Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
     SliderState, TextField, Toast, ToastKind, Toggle,
@@ -6073,10 +6079,7 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    rmac_power::set_profile(profile)?;
-                    rmac_power::snapshot()
-                })
+                .spawn(async move { apply_power_profile(profile) })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_power_update(result, cx);
@@ -6102,20 +6105,15 @@ impl Settings {
         self.power_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let (result, recovery) = cx
+            let update = cx
                 .background_executor()
-                .spawn(async move {
-                    match rmac_power::set_charge_threshold(&threshold, enabled) {
-                        Ok(snapshot) => (Ok(snapshot), None),
-                        Err(error) => (Err(error), rmac_power::snapshot().ok()),
-                    }
-                })
+                .spawn(async move { apply_charge_threshold(&threshold, enabled) })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                if let Some(snapshot) = recovery {
+                if let Some(snapshot) = update.recovery {
                     this.power = snapshot;
                 }
-                this.finish_power_update(result, cx);
+                this.finish_power_update(update.result, cx);
                 cx.notify();
             });
         })
@@ -18698,48 +18696,6 @@ fn account_name() -> String {
         .unwrap_or_else(|| "User".into())
 }
 
-fn format_power_duration(seconds: u64) -> String {
-    let hours = seconds / 3600;
-    let minutes = (seconds % 3600) / 60;
-    if hours > 0 {
-        format!("{hours} hr {minutes} min")
-    } else {
-        format!("{minutes} min")
-    }
-}
-
-fn charge_threshold_description(threshold: &rmac_power::ChargeThreshold) -> String {
-    match (threshold.start_percent, threshold.end_percent) {
-        (Some(start), Some(end)) => {
-            format!("Starts charging below {start}% and stops at {end}%")
-        }
-        (None, Some(end)) => format!("Stops charging at {end}%"),
-        (Some(start), None) => format!("Starts charging below {start}%"),
-        (None, None) if threshold.firmware_managed => {
-            "Uses optimized limits selected by this computer's firmware".to_owned()
-        }
-        (None, None) => "Uses the charge limits reported by UPower".to_owned(),
-    }
-}
-
-fn sample_battery_history(
-    points: &[rmac_power::BatteryHistoryPoint],
-    limit: usize,
-) -> Vec<rmac_power::BatteryHistoryPoint> {
-    if points.len() <= limit {
-        return points.to_vec();
-    }
-    if limit == 0 {
-        return Vec::new();
-    }
-    if limit == 1 {
-        return points.last().copied().into_iter().collect();
-    }
-    (0..limit)
-        .map(|index| points[index * (points.len() - 1) / (limit - 1)])
-        .collect()
-}
-
 fn battery_history_card(points: &[rmac_power::BatteryHistoryPoint]) -> Div {
     let samples = sample_battery_history(points, 48);
     let minimum = points
@@ -18806,14 +18762,6 @@ fn battery_history_card(points: &[rmac_power::BatteryHistoryPoint]) -> Div {
                 .child("24 hours ago")
                 .child("Now"),
         )
-}
-
-fn power_degradation_label(reason: &str) -> String {
-    match reason {
-        "lap-detected" => "Limited while the computer is on a lap".to_string(),
-        "high-operating-temperature" => "Limited because of high temperature".to_string(),
-        _ => "Limited by the system".to_string(),
-    }
 }
 
 /// Format bytes as decimal GB (matching macOS storage display).
@@ -19087,19 +19035,18 @@ mod tests {
     use super::{
         audio_change_needs_followup, audio_stream_snapshot_is_current,
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
-        category_name_for_pane_id, category_position, charge_threshold_description,
-        composite_wallpaper_pixel, gtk_text_stream_snapshot_is_current,
-        input_stream_snapshot_is_current, locale_stream_snapshot_is_current,
-        login_items_stream_snapshot_is_current, network_stream_snapshot_is_current,
-        power_change_needs_followup, power_stream_snapshot_is_current,
-        privacy_stream_snapshot_is_current, render_wallpaper_preview, sample_battery_history,
-        shortcut_configuration_available, storage_stream_snapshot_is_current,
-        system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
-        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_join_action,
-        wifi_stream_snapshot_is_current, DockChange, ScreenReaderCapability, ShellSettingsMutation,
-        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget, WifiJoinAction,
-        GENERAL_DESTINATIONS,
+        category_name_for_pane_id, category_position, composite_wallpaper_pixel,
+        gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
+        locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
+        network_stream_snapshot_is_current, power_change_needs_followup,
+        power_stream_snapshot_is_current, privacy_stream_snapshot_is_current,
+        render_wallpaper_preview, shortcut_configuration_available,
+        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
+        theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
+        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
+        wifi_join_action, wifi_stream_snapshot_is_current, DockChange, ScreenReaderCapability,
+        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+        WallpaperTarget, WifiJoinAction, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -19300,42 +19247,6 @@ mod tests {
         assert!(power_change_needs_followup(false, true, true));
         assert!(power_change_needs_followup(true, false, false));
         assert!(!power_change_needs_followup(false, false, true));
-    }
-
-    #[test]
-    fn battery_history_sampling_preserves_the_time_range() {
-        let points = (0..100)
-            .map(|timestamp| rmac_power::BatteryHistoryPoint {
-                timestamp,
-                percentage: timestamp as u8,
-                state: rmac_power::BatteryState::Discharging,
-            })
-            .collect::<Vec<_>>();
-        let samples = sample_battery_history(&points, 12);
-        assert_eq!(samples.len(), 12);
-        assert_eq!(samples.first().map(|point| point.timestamp), Some(0));
-        assert_eq!(samples.last().map(|point| point.timestamp), Some(99));
-        assert!(samples
-            .windows(2)
-            .all(|points| points[0].timestamp < points[1].timestamp));
-    }
-
-    #[test]
-    fn optimized_charging_explains_authoritative_limits() {
-        let mut threshold = rmac_power::ChargeThreshold::default();
-        threshold.start_percent = Some(40);
-        threshold.end_percent = Some(80);
-        assert_eq!(
-            charge_threshold_description(&threshold),
-            "Starts charging below 40% and stops at 80%"
-        );
-        threshold.start_percent = None;
-        threshold.end_percent = None;
-        threshold.firmware_managed = true;
-        assert_eq!(
-            charge_threshold_description(&threshold),
-            "Uses optimized limits selected by this computer's firmware"
-        );
     }
 
     #[test]

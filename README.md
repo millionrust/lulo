@@ -166,6 +166,7 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`docs/beta-cohort.md`](docs/beta-cohort.md) — invited daily-driver Beta safety and cohort boundary.
 - [`docs/one-dot-zero-candidate.md`](docs/one-dot-zero-candidate.md) — two-build full-matrix 1.0 promotion boundary.
 - [`docs/release-contracts.md`](docs/release-contracts.md) — fast build-free integrity gate for release definitions.
+- [`docs/linux-foundation-report.md`](docs/linux-foundation-report.md) — privacy-safe A1–A4 handoff into the framework decision.
 - [`SECURITY.md`](SECURITY.md) — private vulnerability reporting policy.
 - [`PLAN_V2.md`](PLAN_V2.md) — current execution roadmap and acceptance gates.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — current and target architecture.

@@ -1,0 +1,40 @@
+{
+  "bundle_files": [
+    "a4-upstream-report.txt",
+    "foundation-summary.json",
+    "gnome-platform-lab.txt",
+    "niri-platform-lab.txt"
+  ],
+  "durations_seconds": {
+    "niri-stable-soak": 14400,
+    "upstream-soak": 14400
+  },
+  "format": 1,
+  "phase_checks": {
+    "a1": [
+      "gnome-wayland-session",
+      "hardware-vulkan",
+      "multi-monitor-and-scale",
+      "platform-lab-launch",
+      "preflight-pass",
+      "privacy-review",
+      "reviewed-environment-evidence",
+      "suspend-resume"
+    ],
+    "a3": [
+      "four-hour-soak",
+      "gnome-session-retained",
+      "niri-enabled-output",
+      "niri-portal-routing",
+      "niri-preflight-pass",
+      "privacy-review",
+      "rmac-session-services",
+      "stable-platform-lab-pass"
+    ]
+  },
+  "supported_architectures": [
+    "aarch64",
+    "x86_64"
+  ],
+  "upstream_revision": "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0"
+}

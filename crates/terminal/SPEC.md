@@ -131,8 +131,12 @@ creating, or removing tabs saves and restores the active editor without leaking
 another tab's query or discarding its selection. Queries remain memory-only and
 are capped at 4 KiB on a valid UTF-8 boundary before matching; oversized editor
 input is normalized on the next event-driven render. Generic numbered tab
-labels remain intentional until reviewed shell integration can provide a
-private-safe title authority.
+labels remain the fallback. Each session now owns a memory-only title authority
+fed only by its bounded parsed title events. It collapses whitespace, removes
+control and Unicode directional-control characters, stops on a valid UTF-8
+boundary at 256 bytes, and wakes GPUI only when the normalized value changes.
+The active title appears in the centered toolbar and every titled tab; both use
+visual ellipsis, while exited/unavailable state remains an explicit suffix.
 Terminal mouse input now follows the parsed xterm 1000/1002/1003 tracking mode
 and 1005/1006 coordinate encoding. Press, balanced release, cell-deduplicated
 drag/all-motion, vertical and horizontal wheel events use one-based viewport
@@ -154,9 +158,10 @@ same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
 The complete application claim remains blocked on numeric-keypad identity,
-hyperlink policy, shell integration, per-tab title authority, accessible
-terminal text semantics, Linux interaction/visual evidence (including native
-IME proof), and measured Unicode/resident/idle/active performance.
+hyperlink policy, reviewed shell integration beyond application-provided
+titles, accessible terminal text semantics, Linux interaction/visual evidence
+(including native IME proof), and measured Unicode/resident/idle/active
+performance.
 
 ## Platform authorities
 
@@ -176,7 +181,10 @@ IME proof), and measured Unicode/resident/idle/active performance.
   input and GPUI's direct-text/IME path. It deliberately does not invent keypad
   identity while GPUI omits physical key location.
 - `session` serializes ordinary input and parser-generated protocol replies
-  through one PTY writer and one permanent visible failure state.
+  through one PTY writer and one permanent visible failure state, and routes
+  parsed title/reset events to that exact session's title authority.
+- `title` owns private-safe normalization, the 256-byte display bound, stable
+  per-session sharing, and change detection.
 - `mouse` owns xterm button/modifier encoding, legacy/UTF-8/SGR coordinate
   limits, drag/all-motion selection, and bounded fractional wheel conversion.
   The view retains only pointer capture, body-cell projection, and the exact
@@ -342,6 +350,8 @@ behavior remains an interaction-evidence gate.
 - Toolbar, tabs, active/inactive/hover/focus states, profile picker, context
   menu, search, selection, cursor, exited session, unavailable session, and
   close confirmation use the shared rmac visual language.
+- The active bounded session title is centered in the toolbar; each titled tab
+  uses the same value with ellipsis and a truthful state suffix.
 - Terminal profiles are user content and may retain explicit ANSI palettes;
   application chrome follows shared light/dark/accent/contrast/motion tokens.
 - At 200% scale, rows and tabs remain usable and PTY geometry matches the
@@ -387,6 +397,9 @@ keeping existing output available. Worker, lifecycle, resize, foreground-job,
 writer-failure, and redraw-coalescing contracts live beside the session runtime.
 Per-tab state tests prove independent selection/find state and UTF-8-safe query
 bounding.
+Title contracts prove whitespace/control/directional normalization, exact UTF-8
+bounding, clone/session isolation, change-only redraw, parsed title delivery,
+and reset-to-generic fallback.
 IME contract tests prove the direct-text routing split, exact UTF-16 offsets,
 surrogate-boundary refusal, marked-text replacement/selection behavior, and
 the inclusive 16 KiB UTF-8 ceiling beside the IME authority. Runtime routing

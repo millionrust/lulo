@@ -17,6 +17,7 @@ use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
+use crate::title::SessionTitle;
 use crate::ui_state::SessionUiState;
 
 pub(super) type RedrawSender = async_channel::Sender<()>;
@@ -32,35 +33,60 @@ type SharedWriter = Arc<Mutex<Box<dyn Write + Send>>>;
 pub(super) struct EventProxy {
     writer: Option<SharedWriter>,
     write_failed: Option<Arc<AtomicBool>>,
+    title: SessionTitle,
+    redraw: Option<RedrawSender>,
 }
 
 impl EventProxy {
-    fn connected(writer: SharedWriter, write_failed: Arc<AtomicBool>) -> Self {
+    fn connected(
+        writer: SharedWriter,
+        write_failed: Arc<AtomicBool>,
+        title: SessionTitle,
+        redraw: RedrawSender,
+    ) -> Self {
         Self {
             writer: Some(writer),
             write_failed: Some(write_failed),
+            title,
+            redraw: Some(redraw),
         }
     }
 }
 
 impl EventListener for EventProxy {
     fn send_event(&self, event: Event) {
-        let Event::PtyWrite(text) = event else {
-            return;
-        };
-        let Some(writer) = self.writer.as_ref() else {
-            return;
-        };
-        let result = writer.lock().map_err(|_| ()).and_then(|mut writer| {
-            writer
-                .write_all(text.as_bytes())
-                .and_then(|_| writer.flush())
-                .map_err(|_| ())
-        });
-        if result.is_err() {
-            if let Some(write_failed) = self.write_failed.as_ref() {
-                write_failed.store(true, Ordering::Release);
+        match event {
+            Event::PtyWrite(text) => {
+                let Some(writer) = self.writer.as_ref() else {
+                    return;
+                };
+                let result = writer.lock().map_err(|_| ()).and_then(|mut writer| {
+                    writer
+                        .write_all(text.as_bytes())
+                        .and_then(|_| writer.flush())
+                        .map_err(|_| ())
+                });
+                if result.is_err() {
+                    if let Some(write_failed) = self.write_failed.as_ref() {
+                        write_failed.store(true, Ordering::Release);
+                    }
+                }
             }
+            Event::Title(title) => {
+                if self.title.set(Some(&title)) {
+                    if let Some(redraw) = self.redraw.as_ref() {
+                        request_redraw(redraw);
+                    }
+                }
+            }
+            Event::ResetTitle => {
+                if self.title.set(None) {
+                    if let Some(redraw) = self.redraw.as_ref() {
+                        request_redraw(redraw);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -413,6 +439,7 @@ pub(super) struct Session {
     transport: SessionTransportState,
     writer: SharedWriter,
     write_failed: Arc<AtomicBool>,
+    title: SessionTitle,
     master: Option<Box<dyn MasterPty + Send>>,
     shell_pid: Option<u32>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
@@ -446,6 +473,7 @@ impl Session {
             .map_err(|_| SessionStartError::OpenWriter)?;
         let writer: SharedWriter = Arc::new(Mutex::new(writer));
         let write_failed = Arc::new(AtomicBool::new(false));
+        let title = SessionTitle::default();
         let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut command = CommandBuilder::new(shell);
@@ -463,7 +491,12 @@ impl Session {
         let term = Arc::new(Mutex::new(Term::new(
             terminal_config(scrollback_lines),
             &size,
-            EventProxy::connected(Arc::clone(&writer), Arc::clone(&write_failed)),
+            EventProxy::connected(
+                Arc::clone(&writer),
+                Arc::clone(&write_failed),
+                title.clone(),
+                redraw.clone(),
+            ),
         )));
         let lifecycle = Arc::new(Mutex::new(SessionLifecycle::Running));
         workers.activate(
@@ -479,6 +512,7 @@ impl Session {
             transport: SessionTransportState::default(),
             writer,
             write_failed,
+            title,
             master: Some(pair.master),
             shell_pid,
             killer: Some(killer),
@@ -513,6 +547,7 @@ impl Session {
                 Box::new(std::io::sink()) as Box<dyn Write + Send>
             )),
             write_failed: Arc::new(AtomicBool::new(false)),
+            title: SessionTitle::default(),
             master: None,
             shell_pid: None,
             killer: None,
@@ -537,6 +572,10 @@ impl Session {
         } else {
             self.lifecycle().tab_state_label()
         }
+    }
+
+    pub(super) fn tab_title(&self) -> Option<String> {
+        self.title.current()
     }
 
     pub(super) fn status_message(&self) -> Option<String> {
@@ -722,12 +761,11 @@ mod tests {
         let writer: SharedWriter =
             Arc::new(Mutex::new(Box::new(RecordingWriter(Arc::clone(&output)))));
         let write_failed = Arc::new(AtomicBool::new(false));
+        let title = SessionTitle::default();
+        let (redraw, redraw_rx) = async_channel::bounded(1);
+        let proxy = EventProxy::connected(writer, Arc::clone(&write_failed), title.clone(), redraw);
         let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(
-            terminal_config(10),
-            &size,
-            EventProxy::connected(writer, Arc::clone(&write_failed)),
-        );
+        let mut term = Term::new(terminal_config(10), &size, proxy.clone());
         let mut parser: Processor = Processor::new();
 
         parser.advance(&mut term, b"\x1b[?u");
@@ -739,6 +777,18 @@ mod tests {
             "mode query replies must reach the exact PTY writer"
         );
         assert!(!write_failed.load(Ordering::Acquire));
+
+        parser.advance(&mut term, b"\x1b]0;  vim   workspace  \x07");
+        assert_eq!(title.current().as_deref(), Some("vim workspace"));
+        assert_eq!(redraw_rx.try_recv(), Ok(()));
+        proxy.send_event(Event::Title("vim workspace".into()));
+        assert!(
+            redraw_rx.try_recv().is_err(),
+            "an unchanged title stays idle"
+        );
+        proxy.send_event(Event::ResetTitle);
+        assert_eq!(title.current(), None);
+        assert_eq!(redraw_rx.try_recv(), Ok(()));
     }
 
     #[test]
@@ -876,6 +926,7 @@ mod tests {
             transport: SessionTransportState::default(),
             writer: Arc::new(Mutex::new(Box::new(FailingWriter))),
             write_failed: Arc::new(AtomicBool::new(false)),
+            title: SessionTitle::default(),
             master: None,
             shell_pid: None,
             killer: None,

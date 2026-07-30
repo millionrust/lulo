@@ -10,6 +10,7 @@ mod paste;
 mod profiles;
 mod session;
 mod storage;
+mod title;
 mod ui_state;
 
 fn main() {

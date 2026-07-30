@@ -43,10 +43,12 @@ impl TerminalView {
             .border_color(rmac_ui::mac::separator());
         for index in 0..tab_count {
             let is_active = index == active_tab;
-            let label = self.tabs[index].tab_state_label().map_or_else(
-                || format!("Terminal {}", index + 1),
-                |state| format!("Terminal {} — {state}", index + 1),
-            );
+            let title = self.tabs[index]
+                .tab_title()
+                .unwrap_or_else(|| format!("Terminal {}", index + 1));
+            let label = self.tabs[index]
+                .tab_state_label()
+                .map_or(title.clone(), |state| format!("{title} — {state}"));
             bar = bar.child(
                 div()
                     .flex()
@@ -59,6 +61,8 @@ impl TerminalView {
                     .child(
                         div()
                             .id(("tabname", index))
+                            .max_w(px(180.0))
+                            .truncate()
                             .text_size(rmac_ui::text_px(12.0))
                             .text_color(if is_active {
                                 hsla(active().fg)
@@ -372,6 +376,9 @@ impl Render for TerminalView {
             String::new()
         };
         let rows = self.render_rows(&query);
+        let active_title = self.tabs[self.active]
+            .tab_title()
+            .unwrap_or_else(|| "Terminal".into());
         let multi = self.tabs.len() > 1;
         let operation_error_visible = self.operation_error.is_some();
         let terminal_error = self
@@ -420,7 +427,7 @@ impl Render for TerminalView {
                     .items_center()
                     .text_size(rmac_ui::text_px(13.0))
                     .child(div().flex_1())
-                    .child("Terminal")
+                    .child(div().max_w(px(360.0)).truncate().child(active_title))
                     .child(
                         div()
                             .flex_1()

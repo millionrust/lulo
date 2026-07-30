@@ -112,7 +112,33 @@ application data, preferences, and the safe-mode marker intact. A later
 explicit purge/export flow may offer reviewed user-data removal, but package
 uninstall must never infer consent to delete it.
 
-H4–H6 remain incomplete until a native Debian package, maintainer-script
-policy, clean-VM install/upgrade/rollback/uninstall automation, interrupted
-transaction evidence, GDM login/logout evidence, crash-loop recovery, and the
-stock-GNOME recovery journey all pass on the Ubuntu 26.04 reference PC.
+The binary packages deliberately contain no `preinst`, `postinst`, `prerm`,
+`postrm`, trigger, or conffile hooks. Their exact control inventory is only
+`DEBIAN/control`, so install, upgrade, rollback, remove, purge, and interrupted
+configuration remain ordinary dpkg/APT transactions with no hidden mutation of
+the live session or home directories.
+
+The destructive lifecycle runner is restricted to an Ubuntu 26.04 VM with the
+exact `/run/rmac-disposable-vm` marker. It requires an older baseline package
+set and a newer candidate package set:
+
+```sh
+printf 'rmac-package-lifecycle-v1\n' | \
+  sudo tee /run/rmac-disposable-vm >/dev/null
+sudo python3 scripts/linux/run-package-lifecycle.py \
+  --baseline /absolute/path/to/baseline \
+  --candidate /absolute/path/to/candidate \
+  --evidence /absolute/empty/lifecycle-evidence
+```
+
+The runner verifies both package sets, installs the baseline, upgrades to the
+candidate, intentionally stops a rollback after `dpkg --unpack`, configures the
+matching rollback set, removes and purges it, reinstalls the candidate, and
+purges again. Every transition rechecks the 15 GiB floor, five synthetic
+user-data classes, exact installed versions/binary hashes, package-owned path
+removal, and the independent GNOME Wayland session. It emits only a bounded
+version/step/pass report and deletes its fixed synthetic test user on success.
+
+H4–H6 remain incomplete until this automation and the GDM login/logout,
+crash-loop recovery, and stock-GNOME recovery journeys produce reviewed
+evidence on clean Ubuntu 26.04 VMs and the reference PC.

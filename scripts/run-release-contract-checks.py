@@ -34,6 +34,7 @@ STAGES = (
             "scripts.test_update_trust",
             "scripts.test_keyring_packages",
             "scripts.test_apt_publisher",
+            "scripts.test_package_lifecycle",
             "scripts.test_hardware_matrix",
             "scripts.test_journey_suite",
             "scripts.test_measure_baseline",
@@ -68,6 +69,14 @@ STAGES = (
         (
             "$PYTHON",
             "scripts/linux/publish-apt-snapshot.py",
+            "--check-contract",
+        ),
+    ),
+    (
+        "package-lifecycle",
+        (
+            "$PYTHON",
+            "scripts/linux/run-package-lifecycle.py",
             "--check-contract",
         ),
     ),

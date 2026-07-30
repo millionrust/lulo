@@ -1,0 +1,33 @@
+{
+  "disposable_marker": {
+    "contents": "rmac-package-lifecycle-v1\n",
+    "path": "/run/rmac-disposable-vm"
+  },
+  "format": 1,
+  "minimum_free_gib": 15,
+  "packages": [
+    "rmac-apps",
+    "rmac-session"
+  ],
+  "platform": {
+    "id": "ubuntu",
+    "version_id": "26.04"
+  },
+  "protected_user_data": [
+    "documents",
+    "xdg-cache",
+    "xdg-config",
+    "xdg-data",
+    "xdg-state"
+  ],
+  "steps": [
+    "install-baseline",
+    "upgrade-candidate",
+    "interrupt-rollback-after-unpack",
+    "recover-rollback",
+    "remove",
+    "purge",
+    "reinstall-candidate",
+    "final-purge"
+  ]
+}

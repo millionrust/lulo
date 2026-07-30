@@ -16,6 +16,7 @@
         "scripts.test_update_trust",
         "scripts.test_keyring_packages",
         "scripts.test_apt_publisher",
+        "scripts.test_package_lifecycle",
         "scripts.test_hardware_matrix",
         "scripts.test_journey_suite",
         "scripts.test_measure_baseline",
@@ -62,6 +63,14 @@
         "--check-contract"
       ],
       "id": "apt-publisher"
+    },
+    {
+      "command": [
+        "$PYTHON",
+        "scripts/linux/run-package-lifecycle.py",
+        "--check-contract"
+      ],
+      "id": "package-lifecycle"
     },
     {
       "command": [

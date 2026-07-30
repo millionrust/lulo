@@ -45,6 +45,12 @@ consent to delete it from package uninstall. Confirm that the rmac GDM entry is
 gone, Ubuntu/GNOME still starts, rmac units and portal descriptors are removed,
 and unrelated niri/portal configuration is unchanged.
 
+The disposable-VM lifecycle procedure in
+[Ubuntu session packaging](ubuntu-session-packaging.md#upgrade-rollback-and-uninstall-ownership)
+automates baseline install, candidate upgrade, interrupted rollback recovery,
+remove, purge, and reinstall while proving synthetic XDG/document data and the
+GNOME recovery session survive every step.
+
 Development installs under the user's XDG directories are not system packages.
 Follow [Session supervisor](session-supervisor.md) and inspect the exact
 installed paths before removing them; do not use a recursive home-directory

@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "portal_first": true,
+    "forbidden_permissions": [
+      "host or home filesystem access",
+      "unfiltered session or system bus access",
+      "network access without a product requirement",
+      "all-device access"
+    ]
+  },
+  "applications": [
+    {
+      "id": "org.rmac.TextEditor",
+      "binary": "rmac-text-editor",
+      "distribution": "flatpak-and-native",
+      "manifest": "org.rmac.TextEditor.json",
+      "sandbox_eligible": true,
+      "authority": "User-selected documents and printing cross XDG portals; recovery and application state remain inside the application XDG directories.",
+      "permissions": [
+        "--socket=wayland",
+        "--device=dri"
+      ]
+    },
+    {
+      "id": "org.rmac.Notes",
+      "binary": "rmac-notes",
+      "distribution": "native-pending-flatpak",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Portal-backed import/export is suitable, but the running application has not yet adopted its reserved Wayland application identity or completed Linux acceptance evidence.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.Files",
+      "binary": "rmac-files",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "The file manager intentionally owns broad user-visible filesystem, mount, trash, metadata, and host application-opening authority.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.Terminal",
+      "binary": "rmac-terminal",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "A terminal intentionally launches the user's host shell and controls PTYs, child processes, signals, and the current host filesystem.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.SystemMonitor",
+      "binary": "rmac-system-monitor",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "System Monitor requires truthful host process, CPU, memory, network, storage, and signal authority that a sandbox deliberately hides.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.AppDrawer",
+      "binary": "rmac-app-drawer",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "The application catalog must read host desktop-entry precedence and activate arbitrary reviewed host applications.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.SystemSettings",
+      "binary": "rmac-system-settings",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "System Settings intentionally coordinates system D-Bus, polkit, hardware, session configuration, package, privacy, and service authorities.",
+      "permissions": []
+    }
+  ]
+}

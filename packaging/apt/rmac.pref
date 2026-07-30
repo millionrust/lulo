@@ -1,0 +1,3 @@
+Package: rmac-apps rmac-archive-keyring rmac-session
+Pin: release o=rmac,n=resolute,c=main
+Pin-Priority: 500

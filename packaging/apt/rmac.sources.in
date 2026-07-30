@@ -1,0 +1,7 @@
+Types: deb deb-src
+URIs: @RMAC_REPOSITORY_URI@
+Suites: resolute
+Components: main
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/rmac-archive-keyring.pgp
+Check-Valid-Until: yes

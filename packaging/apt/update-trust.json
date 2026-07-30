@@ -1,0 +1,109 @@
+{
+  "client": {
+    "allow_downgrade_to_insecure": false,
+    "allow_insecure": false,
+    "check_valid_until": true,
+    "keyring_package": "rmac-archive-keyring",
+    "keyring_path": "/usr/share/keyrings/rmac-archive-keyring.pgp",
+    "preferences_path": "/etc/apt/preferences.d/rmac.pref",
+    "signed_by_isolated": true,
+    "sources_path": "/etc/apt/sources.list.d/rmac.sources",
+    "types": [
+      "deb",
+      "deb-src"
+    ]
+  },
+  "format": 1,
+  "release": {
+    "acquire_by_hash": true,
+    "allow_detached_release": false,
+    "architectures": [
+      "amd64",
+      "arm64"
+    ],
+    "codename": "resolute",
+    "component": "main",
+    "label": "rmac",
+    "maximum_future_skew_seconds": 300,
+    "maximum_validity_seconds": 172800,
+    "minimum_validity_seconds": 21600,
+    "origin": "rmac",
+    "require_inrelease": true,
+    "require_monotonic_date": true,
+    "require_monotonic_snapshot": true,
+    "signed_by_transition": true,
+    "snapshot_field": "X-Rmac-Snapshot",
+    "strong_hashes": [
+      "SHA256",
+      "SHA512"
+    ],
+    "suite": "stable",
+    "weak_hashes_forbidden": [
+      "MD5Sum",
+      "SHA1"
+    ]
+  },
+  "repository": {
+    "binary_packages": [
+      "rmac-apps",
+      "rmac-archive-keyring",
+      "rmac-session"
+    ],
+    "source_packages": [
+      "rmac",
+      "rmac-archive-keyring"
+    ],
+    "uri_placeholder": "@RMAC_REPOSITORY_URI@"
+  },
+  "rollback": {
+    "automatic_downgrade": false,
+    "emergency_revert": "publish-higher-version",
+    "minimum_retained_snapshots": 3,
+    "previous_release_state_required": true,
+    "version_comparison": "dpkg"
+  },
+  "rollout": {
+    "eligibility": "apt-machine-id-local",
+    "halt_percentage": 0,
+    "minimum_observation_hours": 24,
+    "normal_percentages": [
+      10,
+      25,
+      50,
+      100
+    ],
+    "package_field": "Phased-Update-Percentage",
+    "security_percentage": 100,
+    "telemetry": false
+  },
+  "signing": {
+    "fingerprint_hex_lengths": [
+      40,
+      64
+    ],
+    "keyring_format": "binary-openpgp",
+    "minimum_overlap_days": 30,
+    "offline_primary": true,
+    "online_signing_subkey": true,
+    "revoked_key_rejected": true,
+    "rotation_package_first": true,
+    "single_valid_signature": true
+  },
+  "source": {
+    "artifacts": [
+      ".dsc",
+      "source-tar",
+      ".buildinfo",
+      ".changes"
+    ],
+    "cargo_lock_bound": true,
+    "copyright_inventory_required": true,
+    "deb_src_required": true,
+    "license": "MIT",
+    "license_text_required": true,
+    "source_hashes": [
+      "SHA256",
+      "SHA512"
+    ]
+  }
+}

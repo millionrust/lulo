@@ -8,7 +8,10 @@ metadata, icons, and identifiers remain original rmac work.
 
 - `main.rs` owns only module composition and application boot.
 - `view.rs` owns the GPUI entity, window/controller orchestration, directory
-  updates, transfer admission, and operation/recovery lifecycle.
+  updates, navigation, selection, and clipboard state.
+- `view/operations.rs` owns transfer admission/progress/cancellation, conflict
+  resolution, Undo, Trash/restore/permanent-delete tasks, recovery review
+  lifecycle, and the typed completion bridge back into directory state.
 - `view/presentation.rs` owns toolbar/sidebar/list/tab/path/status projection,
   context menus and recovery/confirmation/Quick Look dialogs, their local
   pointer and keyboard interaction, and the final GPUI `Render` boundary.

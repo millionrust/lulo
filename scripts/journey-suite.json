@@ -1,0 +1,210 @@
+{
+  "format": 1,
+  "journeys": [
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "recovery",
+        "service-fixture"
+      ],
+      "id": 1,
+      "name": "desktop-session",
+      "packages": [
+        "rmac-app-drawer",
+        "rmac-compositor",
+        "rmac-compositor-niri",
+        "rmac-dock",
+        "rmac-dock-runtime",
+        "rmac-focus",
+        "rmac-launcher",
+        "rmac-launcher-runtime",
+        "rmac-lock-provider",
+        "rmac-notifications",
+        "rmac-notifications-runtime",
+        "rmac-quick-settings",
+        "rmac-session",
+        "rmac-shell-runtime",
+        "rmac-shortcuts",
+        "rmac-top-bar",
+        "rmac-wallpaper"
+      ],
+      "python_tests": [
+        "scripts.test_application_package",
+        "scripts.test_session_package"
+      ]
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "persistence",
+        "recovery",
+        "service-fixture"
+      ],
+      "id": 2,
+      "name": "text-document",
+      "packages": [
+        "rmac-editor",
+        "rmac-portal",
+        "rmac-print",
+        "rmac-print-linux",
+        "rmac-storage",
+        "rmac-text-editor"
+      ],
+      "python_tests": []
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "persistence",
+        "recovery",
+        "service-fixture"
+      ],
+      "id": 3,
+      "name": "notes-library",
+      "packages": [
+        "rmac-notes",
+        "rmac-notes-runtime",
+        "rmac-notes-storage",
+        "rmac-notes-store"
+      ],
+      "python_tests": []
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "recovery"
+      ],
+      "id": 4,
+      "name": "terminal-session",
+      "packages": [
+        "rmac-terminal"
+      ],
+      "python_tests": []
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "persistence",
+        "recovery",
+        "service-fixture"
+      ],
+      "id": 5,
+      "name": "file-management",
+      "packages": [
+        "rmac-finder",
+        "rmac-mounts",
+        "rmac-places",
+        "rmac-places-system",
+        "rmac-thumbnails"
+      ],
+      "python_tests": []
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "recovery",
+        "service-fixture"
+      ],
+      "id": 6,
+      "name": "process-management",
+      "packages": [
+        "rmac-activity-monitor"
+      ],
+      "python_tests": []
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "recovery",
+        "service-fixture"
+      ],
+      "id": 7,
+      "name": "application-discovery",
+      "packages": [
+        "rmac-app-drawer",
+        "rmac-app-launch",
+        "rmac-apps",
+        "rmac-icon"
+      ],
+      "python_tests": [
+        "scripts.test_application_icons"
+      ]
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "persistence",
+        "recovery",
+        "service-fixture"
+      ],
+      "id": 8,
+      "name": "hardware-settings",
+      "packages": [
+        "rmac-audio",
+        "rmac-bluetooth",
+        "rmac-display",
+        "rmac-input",
+        "rmac-network",
+        "rmac-power",
+        "rmac-shell-status",
+        "rmac-shell-status-linux",
+        "rmac-system-settings",
+        "rmac-updates",
+        "rmac-updates-linux"
+      ],
+      "python_tests": []
+    },
+    {
+      "coverage": [
+        "failure",
+        "happy-path",
+        "keyboard",
+        "recovery"
+      ],
+      "id": 9,
+      "name": "keyboard-only",
+      "packages": [
+        "rmac-component-gallery",
+        "rmac-ui"
+      ],
+      "python_tests": []
+    },
+    {
+      "coverage": [
+        "accessibility",
+        "failure",
+        "happy-path",
+        "keyboard",
+        "recovery",
+        "scale"
+      ],
+      "id": 10,
+      "name": "accessible-core",
+      "packages": [
+        "rmac-appearance",
+        "rmac-component-gallery",
+        "rmac-theme",
+        "rmac-ui"
+      ],
+      "python_tests": []
+    }
+  ],
+  "minimum_free_gib": 25,
+  "result_format": 1
+}

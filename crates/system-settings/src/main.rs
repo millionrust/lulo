@@ -10,6 +10,7 @@
 mod appearance;
 mod displays;
 mod focus;
+mod input;
 mod notifications;
 mod service_updates;
 mod shell_settings;
@@ -40,6 +41,11 @@ use gpui::{
     StyledImage as _, Svg, Window,
 };
 use gpui_component::StyledExt as _;
+use input::{
+    compositor_event_affects_input, compositor_input_config_failed, speed_index, InputChange,
+    InputOption, KEYBOARD_DELAYS, KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS,
+    MOUSE_PRECISION_PRESETS, MOUSE_PROFILES, MOUSE_SPEEDS, TOUCHPAD_PROFILES, TOUCHPAD_SPEEDS,
+};
 use notifications::{policy_with as notification_policy_with, NotificationPolicyChange};
 use rmac_ui::{
     Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
@@ -578,48 +584,6 @@ enum AudioChange {
         rmac_audio::Route,
     ),
     Balance(rmac_audio::Device, i8),
-}
-
-#[derive(Clone, Copy)]
-enum InputChange {
-    KeyboardRepeatDelay(u32),
-    KeyboardRepeatRate(u32),
-    KeyboardRepeatPreset {
-        delay_ms: u32,
-        rate: u32,
-    },
-    KeyboardNumlock(bool),
-    MouseNaturalScroll(bool),
-    MouseLeftHanded(bool),
-    MouseMiddleEmulation(bool),
-    MouseAccelSpeed(f64),
-    MouseAccelProfile(rmac_input::AccelProfile),
-    MousePrecisionPreset {
-        speed: f64,
-        profile: rmac_input::AccelProfile,
-    },
-    TouchpadNaturalScroll(bool),
-    TouchpadLeftHanded(bool),
-    TouchpadMiddleEmulation(bool),
-    TouchpadAccelSpeed(f64),
-    TouchpadAccelProfile(rmac_input::AccelProfile),
-    TouchpadTap(bool),
-    TouchpadDwt(bool),
-    TouchpadDragLock(bool),
-}
-
-fn compositor_event_affects_input(event: &rmac_compositor::Event) -> bool {
-    compositor_input_config_failed(event) == Some(false)
-}
-
-fn compositor_input_config_failed(event: &rmac_compositor::Event) -> Option<bool> {
-    match event {
-        rmac_compositor::Event::Unknown {
-            source_kind,
-            payload,
-        } if source_kind == "ConfigLoaded" => payload["failed"].as_bool(),
-        _ => None,
-    }
 }
 
 fn current_system_time_usec() -> Option<u64> {
@@ -7386,38 +7350,7 @@ impl Settings {
             return;
         }
         let mut settings = self.input.settings.clone();
-        match change {
-            InputChange::KeyboardRepeatDelay(value) => settings.keyboard.repeat_delay_ms = value,
-            InputChange::KeyboardRepeatRate(value) => settings.keyboard.repeat_rate = value,
-            InputChange::KeyboardRepeatPreset { delay_ms, rate } => {
-                settings.keyboard.repeat_delay_ms = delay_ms;
-                settings.keyboard.repeat_rate = rate;
-            }
-            InputChange::KeyboardNumlock(value) => settings.keyboard.numlock = value,
-            InputChange::MouseNaturalScroll(value) => settings.mouse.natural_scroll = value,
-            InputChange::MouseLeftHanded(value) => settings.mouse.left_handed = value,
-            InputChange::MouseMiddleEmulation(value) => settings.mouse.middle_emulation = value,
-            InputChange::MouseAccelSpeed(value) => settings.mouse.accel_speed = value,
-            InputChange::MouseAccelProfile(value) => settings.mouse.accel_profile = value,
-            InputChange::MousePrecisionPreset { speed, profile } => {
-                settings.mouse.accel_speed = speed;
-                settings.mouse.accel_profile = profile;
-            }
-            InputChange::TouchpadNaturalScroll(value) => {
-                settings.touchpad.pointer.natural_scroll = value
-            }
-            InputChange::TouchpadLeftHanded(value) => settings.touchpad.pointer.left_handed = value,
-            InputChange::TouchpadMiddleEmulation(value) => {
-                settings.touchpad.pointer.middle_emulation = value
-            }
-            InputChange::TouchpadAccelSpeed(value) => settings.touchpad.pointer.accel_speed = value,
-            InputChange::TouchpadAccelProfile(value) => {
-                settings.touchpad.pointer.accel_profile = value
-            }
-            InputChange::TouchpadTap(value) => settings.touchpad.tap_to_click = value,
-            InputChange::TouchpadDwt(value) => settings.touchpad.disable_while_typing = value,
-            InputChange::TouchpadDragLock(value) => settings.touchpad.drag_lock = value,
-        }
+        change.apply(&mut settings);
         self.input_generation = self.input_generation.wrapping_add(1);
         self.input_busy = true;
         cx.notify();
@@ -18310,115 +18243,10 @@ fn balance_slider_row(state: &Entity<SliderState>) -> Div {
         .child(div().w(px(44.0)).flex_none())
 }
 
-type InputOption = (&'static str, InputChange);
 type GtkTextScaleOption = (&'static str, f64);
 
 const GTK_TEXT_SCALE_OPTIONS: [GtkTextScaleOption; 3] =
     [("Standard", 1.0), ("Large", 1.2), ("Extra Large", 1.3)];
-
-const KEYBOARD_DELAYS: [InputOption; 5] = [
-    ("Short", InputChange::KeyboardRepeatDelay(200)),
-    ("300", InputChange::KeyboardRepeatDelay(300)),
-    ("500", InputChange::KeyboardRepeatDelay(500)),
-    ("750", InputChange::KeyboardRepeatDelay(750)),
-    ("Long", InputChange::KeyboardRepeatDelay(1_000)),
-];
-const KEYBOARD_RATES: [InputOption; 5] = [
-    ("Slow", InputChange::KeyboardRepeatRate(10)),
-    ("20", InputChange::KeyboardRepeatRate(20)),
-    ("30", InputChange::KeyboardRepeatRate(30)),
-    ("40", InputChange::KeyboardRepeatRate(40)),
-    ("Fast", InputChange::KeyboardRepeatRate(60)),
-];
-const KEYBOARD_RESPONSE_PRESETS: [InputOption; 3] = [
-    (
-        "Standard",
-        InputChange::KeyboardRepeatPreset {
-            delay_ms: 600,
-            rate: 25,
-        },
-    ),
-    (
-        "Deliberate",
-        InputChange::KeyboardRepeatPreset {
-            delay_ms: 1_000,
-            rate: 15,
-        },
-    ),
-    (
-        "Minimal",
-        InputChange::KeyboardRepeatPreset {
-            delay_ms: 1_500,
-            rate: 10,
-        },
-    ),
-];
-const MOUSE_SPEEDS: [InputOption; 5] = [
-    ("Slow", InputChange::MouseAccelSpeed(-1.0)),
-    ("−0.5", InputChange::MouseAccelSpeed(-0.5)),
-    ("Default", InputChange::MouseAccelSpeed(0.0)),
-    ("0.5", InputChange::MouseAccelSpeed(0.5)),
-    ("Fast", InputChange::MouseAccelSpeed(1.0)),
-];
-const TOUCHPAD_SPEEDS: [InputOption; 5] = [
-    ("Slow", InputChange::TouchpadAccelSpeed(-1.0)),
-    ("−0.5", InputChange::TouchpadAccelSpeed(-0.5)),
-    ("Default", InputChange::TouchpadAccelSpeed(0.0)),
-    ("0.5", InputChange::TouchpadAccelSpeed(0.5)),
-    ("Fast", InputChange::TouchpadAccelSpeed(1.0)),
-];
-const MOUSE_PROFILES: [InputOption; 2] = [
-    (
-        "Adaptive",
-        InputChange::MouseAccelProfile(rmac_input::AccelProfile::Adaptive),
-    ),
-    (
-        "Flat",
-        InputChange::MouseAccelProfile(rmac_input::AccelProfile::Flat),
-    ),
-];
-const MOUSE_PRECISION_PRESETS: [InputOption; 3] = [
-    (
-        "Standard",
-        InputChange::MousePrecisionPreset {
-            speed: 0.0,
-            profile: rmac_input::AccelProfile::Adaptive,
-        },
-    ),
-    (
-        "Steady",
-        InputChange::MousePrecisionPreset {
-            speed: -0.5,
-            profile: rmac_input::AccelProfile::Adaptive,
-        },
-    ),
-    (
-        "Precise",
-        InputChange::MousePrecisionPreset {
-            speed: -0.5,
-            profile: rmac_input::AccelProfile::Flat,
-        },
-    ),
-];
-const TOUCHPAD_PROFILES: [InputOption; 2] = [
-    (
-        "Adaptive",
-        InputChange::TouchpadAccelProfile(rmac_input::AccelProfile::Adaptive),
-    ),
-    (
-        "Flat",
-        InputChange::TouchpadAccelProfile(rmac_input::AccelProfile::Flat),
-    ),
-];
-
-fn speed_index(speed: f64) -> usize {
-    [-1.0, -0.5, 0.0, 0.5, 1.0]
-        .iter()
-        .enumerate()
-        .min_by(|(_, a), (_, b)| (speed - **a).abs().total_cmp(&(speed - **b).abs()))
-        .map(|(index, _)| index)
-        .unwrap_or(2)
-}
 
 fn dock_segment_row(
     view: Entity<Settings>,
@@ -19289,45 +19117,19 @@ mod tests {
         audio_change_needs_followup, audio_choice_is_actionable, audio_stream_snapshot_is_current,
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, charge_threshold_description,
-        composite_wallpaper_pixel, compositor_event_affects_input, compositor_input_config_failed,
-        gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
-        locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
-        network_stream_snapshot_is_current, power_change_needs_followup,
-        power_stream_snapshot_is_current, privacy_stream_snapshot_is_current,
-        render_wallpaper_preview, sample_battery_history, shortcut_configuration_available,
-        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
-        theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
-        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_join_action, wifi_stream_snapshot_is_current, DockChange, ScreenReaderCapability,
-        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-        WallpaperTarget, WifiJoinAction, GENERAL_DESTINATIONS,
+        composite_wallpaper_pixel, gtk_text_stream_snapshot_is_current,
+        input_stream_snapshot_is_current, locale_stream_snapshot_is_current,
+        login_items_stream_snapshot_is_current, network_stream_snapshot_is_current,
+        power_change_needs_followup, power_stream_snapshot_is_current,
+        privacy_stream_snapshot_is_current, render_wallpaper_preview, sample_battery_history,
+        shortcut_configuration_available, storage_stream_snapshot_is_current,
+        system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
+        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
+        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_join_action,
+        wifi_stream_snapshot_is_current, DockChange, ScreenReaderCapability, ShellSettingsMutation,
+        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget, WifiJoinAction,
+        GENERAL_DESTINATIONS,
     };
-
-    #[test]
-    fn input_refreshes_only_after_a_loaded_niri_configuration() {
-        let mut loaded = rmac_compositor::Event::Unknown {
-            source_kind: "ConfigLoaded".into(),
-            payload: Default::default(),
-        };
-        let rmac_compositor::Event::Unknown { payload, .. } = &mut loaded else {
-            unreachable!()
-        };
-        payload["failed"] = false.into();
-        assert!(compositor_event_affects_input(&loaded));
-        assert_eq!(compositor_input_config_failed(&loaded), Some(false));
-
-        let rmac_compositor::Event::Unknown { payload, .. } = &mut loaded else {
-            unreachable!()
-        };
-        payload["failed"] = true.into();
-        assert!(!compositor_event_affects_input(&loaded));
-        assert_eq!(compositor_input_config_failed(&loaded), Some(true));
-        assert!(!compositor_event_affects_input(
-            &rmac_compositor::Event::OutputsReplaced {
-                outputs: Vec::new(),
-            }
-        ));
-    }
 
     #[test]
     fn input_stream_snapshots_cannot_cross_mutation_generations() {

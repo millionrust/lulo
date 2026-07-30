@@ -35,6 +35,10 @@ equivalents rather than simulated.
 - `focus.rs` owns the combined configuration/runtime load, current-activation
   routing, and canonical schedule-day catalog. The controller retains service
   lifecycle, optimistic configuration replacement, rollback, and editors.
+- `input.rs` owns typed keyboard, mouse, and trackpad changes; scoped mutation
+  of the complete input document; preset catalogs and speed normalization; and
+  niri configuration-event admission. The controller retains mutation
+  generation, authoritative save/readback, and GPUI rendering.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

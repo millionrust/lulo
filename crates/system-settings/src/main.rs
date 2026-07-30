@@ -16,10 +16,10 @@ mod power;
 mod service_updates;
 mod shell_settings;
 mod sound;
+mod system_environment;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use appearance::{
@@ -88,6 +88,9 @@ use shell_settings::{
     WallpaperTarget,
 };
 use sound::{choice_is_actionable as audio_choice_is_actionable, SoundChange as AudioChange};
+use system_environment::{
+    gather_screen_reader_capability, gather_system_snapshot, ScreenReaderCapability, SystemSnapshot,
+};
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -584,41 +587,6 @@ struct Settings {
 fn current_system_time_usec() -> Option<u64> {
     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
     u64::try_from(elapsed.as_micros()).ok()
-}
-
-/// Read-only system data that is slow enough to keep off the first-frame path.
-struct SystemSnapshot {
-    account: String,
-    sysinfo: std::result::Result<rmac_system_info::Snapshot, rmac_system_info::Error>,
-    storage: std::result::Result<Vec<rmac_mounts::Volume>, rmac_mounts::Error>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct ScreenReaderCapability {
-    niri_session: bool,
-    x11_display: bool,
-    xwayland_satellite_installed: bool,
-    orca_installed: bool,
-}
-
-impl ScreenReaderCapability {
-    fn prerequisites_present(&self, enabled_output: bool) -> bool {
-        self.niri_session && self.x11_display && self.orca_installed && enabled_output
-    }
-
-    fn limitation(&self, enabled_output: bool) -> Option<&'static str> {
-        if !self.niri_session {
-            Some("Start the desktop through a full niri-session")
-        } else if !enabled_output {
-            Some("Connect and enable a display before testing Orca")
-        } else if !self.x11_display {
-            Some("An exported Xwayland DISPLAY is required by Orca with niri")
-        } else if !self.orca_installed {
-            Some("Install Orca to enable screen-reader support")
-        } else {
-            None
-        }
-    }
 }
 
 type DockOption = (&'static str, DockChange);
@@ -18627,75 +18595,6 @@ fn card(rows: Vec<AnyElement>) -> Div {
     c
 }
 
-// ---- platform reads kept off the UI thread -------------------------------
-
-fn cmd(program: &str, args: &[&str]) -> Option<String> {
-    Command::new(program)
-        .args(args)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn gather_system_snapshot() -> SystemSnapshot {
-    SystemSnapshot {
-        account: account_name(),
-        sysinfo: rmac_system_info::snapshot(),
-        storage: rmac_mounts::volumes(),
-    }
-}
-
-fn gather_screen_reader_capability() -> ScreenReaderCapability {
-    let niri_desktop = ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP"]
-        .into_iter()
-        .filter_map(|key| std::env::var(key).ok())
-        .any(|value| {
-            value
-                .split([':', ';'])
-                .any(|desktop| desktop.eq_ignore_ascii_case("niri"))
-        });
-    let wayland_session =
-        std::env::var("XDG_SESSION_TYPE").is_ok_and(|value| value.eq_ignore_ascii_case("wayland"));
-    let niri_socket = std::env::var_os("NIRI_SOCKET").is_some_and(|value| !value.is_empty());
-    ScreenReaderCapability {
-        niri_session: niri_desktop && wayland_session && niri_socket,
-        x11_display: std::env::var_os("DISPLAY").is_some_and(|value| !value.is_empty()),
-        xwayland_satellite_installed: executable_in_path("xwayland-satellite"),
-        orca_installed: executable_in_path("orca"),
-    }
-}
-
-fn executable_in_path(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|path| {
-        std::env::split_paths(&path)
-            .take(128)
-            .map(|directory| directory.join(program))
-            .any(|candidate| is_executable_file(&candidate))
-    })
-}
-
-#[cfg(unix)]
-fn is_executable_file(path: &std::path::Path) -> bool {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    path.metadata()
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-fn is_executable_file(path: &std::path::Path) -> bool {
-    path.is_file()
-}
-
-fn account_name() -> String {
-    cmd("id", &["-F"])
-        .or_else(|| std::env::var("USER").ok())
-        .unwrap_or_else(|| "User".into())
-}
-
 fn battery_history_card(points: &[rmac_power::BatteryHistoryPoint]) -> Div {
     let samples = sample_battery_history(points, 48);
     let minimum = points
@@ -19044,9 +18943,9 @@ mod tests {
         storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
         theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
         update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_join_action, wifi_stream_snapshot_is_current, DockChange, ScreenReaderCapability,
-        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-        WallpaperTarget, WifiJoinAction, GENERAL_DESTINATIONS,
+        wifi_join_action, wifi_stream_snapshot_is_current, DockChange, ShellSettingsMutation,
+        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget, WifiJoinAction,
+        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -19278,33 +19177,6 @@ mod tests {
         }
         assert!(category_name_for_pane_id("assistant").is_none());
         assert!(category_name_for_pane_id("screen-time").is_none());
-    }
-
-    #[test]
-    fn screen_reader_readiness_requires_every_niri_orca_authority() {
-        let mut capability = ScreenReaderCapability::default();
-        assert_eq!(
-            capability.limitation(false),
-            Some("Start the desktop through a full niri-session")
-        );
-        capability.niri_session = true;
-        assert_eq!(
-            capability.limitation(false),
-            Some("Connect and enable a display before testing Orca")
-        );
-        assert_eq!(
-            capability.limitation(true),
-            Some("An exported Xwayland DISPLAY is required by Orca with niri")
-        );
-        capability.x11_display = true;
-        assert_eq!(
-            capability.limitation(true),
-            Some("Install Orca to enable screen-reader support")
-        );
-        capability.orca_installed = true;
-        assert!(capability.prerequisites_present(true));
-        assert!(!capability.prerequisites_present(false));
-        assert_eq!(capability.limitation(true), None);
     }
 
     #[test]

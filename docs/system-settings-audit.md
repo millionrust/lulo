@@ -46,6 +46,10 @@ equivalents rather than simulated.
   duration/threshold/degradation descriptions, and bounded history sampling.
   The controller retains capability admission, mutation generations, live
   refresh, and the GPUI history chart.
+- `system_environment.rs` owns off-thread initial account/system/storage
+  collection, bounded executable discovery, and niri/Xwayland/Orca readiness
+  policy. The controller retains refresh generations, error presentation, and
+  the About and Accessibility panes.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

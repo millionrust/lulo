@@ -9,6 +9,8 @@
 
 mod appearance;
 mod displays;
+mod focus;
+mod notifications;
 mod service_updates;
 mod shell_settings;
 
@@ -26,6 +28,10 @@ use displays::{
     compositor_event_affects_displays, relative_display_position, DisplayChange,
     DisplayConfirmation, DisplayPlacement, DISPLAY_CONFIRMATION_SECONDS,
 };
+use focus::{
+    current_action as focus_current_action, load as load_focus, FocusCurrentAction, FocusLoad,
+    DAYS as FOCUS_DAYS,
+};
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
     AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
@@ -34,6 +40,7 @@ use gpui::{
     StyledImage as _, Svg, Window,
 };
 use gpui_component::StyledExt as _;
+use notifications::{policy_with as notification_policy_with, NotificationPolicyChange};
 use rmac_ui::{
     Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
     SliderState, TextField, Toast, ToastKind, Toggle,
@@ -601,33 +608,6 @@ enum InputChange {
     TouchpadDragLock(bool),
 }
 
-#[derive(Clone, Copy)]
-enum NotificationPolicyChange {
-    Enabled(bool),
-    Banners(bool),
-    Sounds(bool),
-    Badges(bool),
-    History(bool),
-    UrgentThroughFocus(bool),
-}
-
-fn notification_policy_with(
-    mut policy: rmac_notifications_store::AppPolicy,
-    change: NotificationPolicyChange,
-) -> rmac_notifications_store::AppPolicy {
-    match change {
-        NotificationPolicyChange::Enabled(value) => policy.enabled = value,
-        NotificationPolicyChange::Banners(value) => policy.banners = value,
-        NotificationPolicyChange::Sounds(value) => policy.sounds = value,
-        NotificationPolicyChange::Badges(value) => policy.badges = value,
-        NotificationPolicyChange::History(value) => policy.history = value,
-        NotificationPolicyChange::UrgentThroughFocus(value) => {
-            policy.urgent_through_focus = value;
-        }
-    }
-    policy
-}
-
 fn compositor_event_affects_input(event: &rmac_compositor::Event) -> bool {
     compositor_input_config_failed(event) == Some(false)
 }
@@ -682,36 +662,6 @@ impl ScreenReaderCapability {
     }
 }
 
-struct FocusLoad {
-    configuration: rmac_focus::Config,
-    state: rmac_focus_linux::client::Snapshot,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum FocusCurrentAction {
-    None,
-    TurnOffManual,
-    EditSchedule(rmac_focus::ScheduleId),
-}
-
-fn focus_current_action(source: Option<&rmac_focus::ActivationSource>) -> FocusCurrentAction {
-    match source {
-        Some(rmac_focus::ActivationSource::Manual) => FocusCurrentAction::TurnOffManual,
-        Some(rmac_focus::ActivationSource::Schedule(schedule_id)) => {
-            FocusCurrentAction::EditSchedule(schedule_id.clone())
-        }
-        None => FocusCurrentAction::None,
-    }
-}
-
-fn load_focus() -> std::result::Result<FocusLoad, rmac_focus_linux::client::Error> {
-    let snapshot = rmac_focus_linux::client::settings()?;
-    Ok(FocusLoad {
-        configuration: snapshot.configuration,
-        state: snapshot.state,
-    })
-}
-
 type DockOption = (&'static str, DockChange);
 
 const DOCK_PLACEMENT_OPTIONS: [DockOption; 3] = [
@@ -750,16 +700,6 @@ const WALLPAPER_FIT_OPTIONS: [(&str, rmac_shell_settings::WallpaperFit); 5] = [
     ("Stretch", rmac_shell_settings::WallpaperFit::Stretch),
     ("Center", rmac_shell_settings::WallpaperFit::Center),
     ("Tile", rmac_shell_settings::WallpaperFit::Tile),
-];
-
-const FOCUS_DAYS: [(rmac_focus::Weekday, &str); 7] = [
-    (rmac_focus::Weekday::Monday, "M"),
-    (rmac_focus::Weekday::Tuesday, "T"),
-    (rmac_focus::Weekday::Wednesday, "W"),
-    (rmac_focus::Weekday::Thursday, "T"),
-    (rmac_focus::Weekday::Friday, "F"),
-    (rmac_focus::Weekday::Saturday, "S"),
-    (rmac_focus::Weekday::Sunday, "S"),
 ];
 
 impl Settings {
@@ -19350,18 +19290,17 @@ mod tests {
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, charge_threshold_description,
         composite_wallpaper_pixel, compositor_event_affects_input, compositor_input_config_failed,
-        focus_current_action, gtk_text_stream_snapshot_is_current,
-        input_stream_snapshot_is_current, locale_stream_snapshot_is_current,
-        login_items_stream_snapshot_is_current, network_stream_snapshot_is_current,
-        notification_policy_with, power_change_needs_followup, power_stream_snapshot_is_current,
-        privacy_stream_snapshot_is_current, render_wallpaper_preview, sample_battery_history,
-        shortcut_configuration_available, storage_stream_snapshot_is_current,
-        system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
-        time_stream_snapshot_is_current, update_stream_snapshot_is_current,
-        vpn_stream_snapshot_is_current, wallpaper_selection, wifi_join_action,
-        wifi_stream_snapshot_is_current, DockChange, FocusCurrentAction, NotificationPolicyChange,
-        ScreenReaderCapability, ShellSettingsMutation, SpotlightAuthority, SpotlightChange,
-        WallpaperChange, WallpaperTarget, WifiJoinAction, GENERAL_DESTINATIONS,
+        gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
+        locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
+        network_stream_snapshot_is_current, power_change_needs_followup,
+        power_stream_snapshot_is_current, privacy_stream_snapshot_is_current,
+        render_wallpaper_preview, sample_battery_history, shortcut_configuration_available,
+        storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
+        theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
+        update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
+        wifi_join_action, wifi_stream_snapshot_is_current, DockChange, ScreenReaderCapability,
+        ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+        WallpaperTarget, WifiJoinAction, GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -19711,73 +19650,6 @@ mod tests {
         assert!(capability.prerequisites_present(true));
         assert!(!capability.prerequisites_present(false));
         assert_eq!(capability.limitation(true), None);
-    }
-
-    #[test]
-    fn notification_policy_changes_touch_only_the_selected_field() {
-        let original = rmac_notifications_store::AppPolicy::default();
-        for (change, expected) in [
-            (
-                NotificationPolicyChange::Enabled(false),
-                rmac_notifications_store::AppPolicy {
-                    enabled: false,
-                    ..original
-                },
-            ),
-            (
-                NotificationPolicyChange::Banners(false),
-                rmac_notifications_store::AppPolicy {
-                    banners: false,
-                    ..original
-                },
-            ),
-            (
-                NotificationPolicyChange::Sounds(false),
-                rmac_notifications_store::AppPolicy {
-                    sounds: false,
-                    ..original
-                },
-            ),
-            (
-                NotificationPolicyChange::Badges(false),
-                rmac_notifications_store::AppPolicy {
-                    badges: false,
-                    ..original
-                },
-            ),
-            (
-                NotificationPolicyChange::History(false),
-                rmac_notifications_store::AppPolicy {
-                    history: false,
-                    ..original
-                },
-            ),
-            (
-                NotificationPolicyChange::UrgentThroughFocus(false),
-                rmac_notifications_store::AppPolicy {
-                    urgent_through_focus: false,
-                    ..original
-                },
-            ),
-        ] {
-            assert_eq!(notification_policy_with(original, change), expected);
-        }
-    }
-
-    #[test]
-    fn scheduled_focus_routes_to_its_editor_instead_of_a_failing_disable() {
-        assert_eq!(focus_current_action(None), FocusCurrentAction::None);
-        assert_eq!(
-            focus_current_action(Some(&rmac_focus::ActivationSource::Manual)),
-            FocusCurrentAction::TurnOffManual
-        );
-        let schedule_id = rmac_focus::ScheduleId::parse("weekday").unwrap();
-        assert_eq!(
-            focus_current_action(Some(&rmac_focus::ActivationSource::Schedule(
-                schedule_id.clone()
-            ))),
-            FocusCurrentAction::EditSchedule(schedule_id)
-        );
     }
 
     #[test]

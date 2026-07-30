@@ -29,6 +29,12 @@ equivalents rather than simulated.
   state, checked relative-placement math, and compositor refresh admission.
   The controller retains transaction timing, persistence/rollback orchestration,
   and the visual arrangement editor.
+- `notifications.rs` owns typed, field-scoped application policy changes and
+  their preservation contract. The controller retains service mutation,
+  authoritative reload, application identity, and pane rendering.
+- `focus.rs` owns the combined configuration/runtime load, current-activation
+  routing, and canonical schedule-day catalog. The controller retains service
+  lifecycle, optimistic configuration replacement, rollback, and editors.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

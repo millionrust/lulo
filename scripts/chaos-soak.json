@@ -1,0 +1,109 @@
+{
+  "environment": {
+    "desktop": "rmac-niri",
+    "ubuntu": "26.04"
+  },
+  "format": 1,
+  "scenario_assertions": [
+    "authoritative-recovery",
+    "degraded-state-visible",
+    "last-known-good-or-safe-empty",
+    "no-crash-loop",
+    "no-data-loss",
+    "operation-bounded",
+    "privacy-safe-diagnostics"
+  ],
+  "scenarios": [
+    {
+      "authority": "system-and-session-dbus",
+      "id": "desktop-service-restarts"
+    },
+    {
+      "authority": "niri-session",
+      "id": "niri-restart"
+    },
+    {
+      "authority": "systemd-user-components",
+      "id": "shell-component-crash"
+    },
+    {
+      "authority": "rmac-session-supervisor",
+      "id": "shell-supervisor-crash"
+    },
+    {
+      "authority": "dedicated-test-volume",
+      "id": "isolated-low-disk"
+    },
+    {
+      "authority": "niri-config-validator",
+      "id": "malformed-niri-config"
+    },
+    {
+      "authority": "versioned-rmac-settings",
+      "id": "malformed-rmac-config"
+    },
+    {
+      "authority": "mount-namespace",
+      "id": "mount-disappearance"
+    },
+    {
+      "authority": "niri-output-state",
+      "id": "display-hotplug"
+    },
+    {
+      "authority": "bluez-pipewire-libinput",
+      "id": "peripheral-hotplug"
+    },
+    {
+      "authority": "systemd-logind",
+      "id": "suspend-resume"
+    },
+    {
+      "authority": "packagekit",
+      "id": "update-backend-restart"
+    },
+    {
+      "authority": "packagekit-networkmanager",
+      "id": "update-network-loss"
+    },
+    {
+      "authority": "packagekit-apt-recovery",
+      "id": "update-install-interruption"
+    }
+  ],
+  "soak_assertions": [
+    "all-components-responsive",
+    "all-journeys-recoverable",
+    "bounded-log-growth",
+    "idle-budget-maintained",
+    "memory-growth-budget-maintained",
+    "no-crash-loop",
+    "no-data-loss",
+    "no-stuck-operation",
+    "post-run-restart-clean"
+  ],
+  "soaks": [
+    {
+      "checkpoint_seconds": 300,
+      "id": "eight-hour",
+      "minimum_checkpoints": 96,
+      "minimum_duration_seconds": 28800
+    },
+    {
+      "checkpoint_seconds": 900,
+      "id": "seven-day",
+      "minimum_checkpoints": 672,
+      "minimum_duration_seconds": 604800
+    }
+  ],
+  "source_manifests": {
+    "hardware": "packaging/hardware-matrix.json",
+    "journeys": "scripts/journey-suite.json"
+  },
+  "storage_safety": {
+    "host_minimum_free_gib": 15,
+    "low_disk_requires_disposable_volume": true,
+    "real_user_data_forbidden": true,
+    "update_interruption_requires_disposable_station": true
+  }
+}

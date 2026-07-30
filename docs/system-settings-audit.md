@@ -8,9 +8,12 @@ equivalents rather than simulated.
 
 ## Application module boundaries
 
-- `main.rs` currently owns the GPUI controller, pane orchestration, service
-  subscriptions, and rendering while those responsibilities are split behind
-  focused authorities.
+- `main.rs` is a 15-line binary composition boundary that declares the focused
+  authorities and starts the application.
+- `controller.rs` owns the remaining GPUI controller, pane orchestration,
+  service subscriptions, and rendering. Its explicit 19,428-line size keeps the
+  required controller/update/render splits visible rather than hiding them in
+  the entrypoint.
 - `shell_settings.rs` owns Dock, Wallpaper, and Spotlight mutations over the
   complete versioned shell-settings document; bounded watching, atomic
   persistence and authoritative readback; wallpaper inheritance, validation,

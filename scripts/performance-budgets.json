@@ -1,0 +1,82 @@
+{
+  "applications": [
+    {
+      "id": "rmac-activity-monitor",
+      "idle_cpu_percent": 2.5,
+      "idle_wakeups_per_minute": 60,
+      "startup_p95_ms": 500
+    },
+    {
+      "id": "rmac-app-drawer",
+      "idle_cpu_percent": 0.3,
+      "idle_wakeups_per_minute": 12,
+      "startup_p95_ms": 500
+    },
+    {
+      "id": "rmac-finder",
+      "idle_cpu_percent": 0.3,
+      "idle_wakeups_per_minute": 12,
+      "startup_p95_ms": 900
+    },
+    {
+      "id": "rmac-notes",
+      "idle_cpu_percent": 0.3,
+      "idle_wakeups_per_minute": 12,
+      "startup_p95_ms": 500
+    },
+    {
+      "id": "rmac-system-settings",
+      "idle_cpu_percent": 0.3,
+      "idle_wakeups_per_minute": 12,
+      "startup_p95_ms": 500
+    },
+    {
+      "id": "rmac-terminal",
+      "idle_cpu_percent": 0.3,
+      "idle_wakeups_per_minute": 12,
+      "startup_p95_ms": 900
+    },
+    {
+      "id": "rmac-text-editor",
+      "idle_cpu_percent": 0.3,
+      "idle_wakeups_per_minute": 12,
+      "startup_p95_ms": 500
+    }
+  ],
+  "environment": {
+    "desktop": "rmac-niri",
+    "profile": "release",
+    "ubuntu": "26.04"
+  },
+  "format": 1,
+  "journey_source": "scripts/journey-suite.json",
+  "memory": {
+    "application_rss_growth_mib_8h": 16,
+    "application_rss_mib": 128,
+    "combined_shell_rss_growth_mib_8h": 24,
+    "combined_shell_rss_mib": 256
+  },
+  "protocol": {
+    "idle_seconds": 60,
+    "interaction_seconds": 60,
+    "soak_hours": 8,
+    "startup_repetitions": 20,
+    "warmups": 3
+  },
+  "rendering": [
+    {
+      "frame_p95_ms": 16,
+      "missed_frames_percent": 1,
+      "refresh_hz": 60
+    },
+    {
+      "frame_p95_ms": 8,
+      "missed_frames_percent": 1,
+      "refresh_hz": 120
+    }
+  ],
+  "shell": {
+    "idle_cpu_percent": 0.5,
+    "idle_wakeups_per_minute": 30
+  }
+}

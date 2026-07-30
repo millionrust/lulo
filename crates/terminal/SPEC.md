@@ -163,6 +163,10 @@ measured Unicode/resident/idle/active performance.
   encoder and the decision between encoded control input and GPUI's direct-text
   path. It deliberately cannot advertise Kitty events or keypad identity until
   the platform event boundary supplies the required metadata.
+- `mouse` owns xterm button/modifier encoding, legacy/UTF-8/SGR coordinate
+  limits, drag/all-motion selection, and bounded fractional wheel conversion.
+  The view retains only pointer capture, body-cell projection, and the exact
+  active-session write decision.
 - `output_filter` owns the split-safe 1 KiB OSC boundary and the explicit OSC 8
   refusal before untrusted PTY bytes reach VTE. The reader worker owns only the
   reusable 8 KiB buffers and delivery into the emulator.

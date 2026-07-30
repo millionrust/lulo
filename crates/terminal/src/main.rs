@@ -6,6 +6,7 @@
 //! the view, which renders the grid and writes keystrokes back to the PTY.
 
 mod keyboard;
+mod mouse;
 mod output_filter;
 mod profiles;
 mod storage;
@@ -34,6 +35,10 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use keyboard::{cursor_key_sequence, encode_key, uses_platform_text_input};
+use mouse::{
+    accumulate_wheel_reports, encode_report as encode_mouse_report,
+    motion_report as mouse_motion_report, MouseReport,
+};
 use output_filter::OutputFilter;
 use portable_pty::{
     native_pty_system, Child, ChildKiller, CommandBuilder, ExitStatus, MasterPty, PtySize,
@@ -75,9 +80,6 @@ const LEFT_PAD: f32 = BODY_PAD;
 const MAX_PASTE_BYTES: usize = 1024 * 1024;
 const MAX_SEARCH_QUERY_BYTES: usize = 4096;
 const MAX_IME_TEXT_BYTES: usize = 16 * 1024;
-const MAX_LEGACY_MOUSE_COORD: usize = 223;
-const MAX_UTF8_MOUSE_COORD: usize = 2015;
-const MAX_WHEEL_REPORTS_PER_AXIS: usize = 16;
 const MAX_COMBINING_MARKS_PER_CELL: usize = 16;
 /// One reader and one child waiter are reserved before a shell can launch.
 #[cfg(test)]
@@ -425,130 +427,6 @@ fn replace_ime_buffer(
         text,
         selection_utf16: selection_start..selection_end,
     })
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MouseReport {
-    Press(MouseButton),
-    Release(MouseButton),
-    Motion(Option<MouseButton>),
-    Wheel(u16),
-}
-
-fn mouse_button_code(button: MouseButton) -> u16 {
-    match button {
-        MouseButton::Left => 0,
-        MouseButton::Middle => 1,
-        MouseButton::Right => 2,
-        MouseButton::Navigate(NavigationDirection::Back) => 128,
-        MouseButton::Navigate(NavigationDirection::Forward) => 129,
-    }
-}
-
-fn mouse_modifier_bits(modifiers: &Modifiers) -> u16 {
-    4 * u16::from(modifiers.shift)
-        + 8 * u16::from(modifiers.alt)
-        + 16 * u16::from(modifiers.control)
-}
-
-fn mouse_motion_report(mode: TermMode, pressed: Option<MouseButton>) -> Option<MouseReport> {
-    if mode.contains(TermMode::MOUSE_MOTION) {
-        Some(MouseReport::Motion(pressed))
-    } else if mode.contains(TermMode::MOUSE_DRAG) {
-        pressed.map(|button| MouseReport::Motion(Some(button)))
-    } else {
-        None
-    }
-}
-
-fn append_utf8_mouse_value(bytes: &mut Vec<u8>, value: u16) -> Option<()> {
-    let character = char::from_u32(u32::from(value))?;
-    let mut encoded = [0; 4];
-    bytes.extend_from_slice(character.encode_utf8(&mut encoded).as_bytes());
-    Some(())
-}
-
-/// Encode an xterm mouse report for a zero-based viewport cell.
-fn encode_mouse_report(
-    mode: TermMode,
-    report: MouseReport,
-    column: usize,
-    row: usize,
-    modifiers: &Modifiers,
-) -> Option<Vec<u8>> {
-    if !mode.intersects(TermMode::MOUSE_MODE) {
-        return None;
-    }
-    let x = column.checked_add(1)?;
-    let y = row.checked_add(1)?;
-    let modifier = mouse_modifier_bits(modifiers);
-    let (button, release) = match report {
-        MouseReport::Press(button) => (mouse_button_code(button) + modifier, false),
-        MouseReport::Release(button) => (mouse_button_code(button) + modifier, true),
-        MouseReport::Motion(button) => (button.map_or(3, mouse_button_code) + 32 + modifier, false),
-        MouseReport::Wheel(button) => (button + modifier, false),
-    };
-
-    if mode.contains(TermMode::SGR_MOUSE) {
-        return Some(
-            format!("\x1b[<{button};{x};{y}{}", if release { 'm' } else { 'M' }).into_bytes(),
-        );
-    }
-
-    let max_coordinate = if mode.contains(TermMode::UTF8_MOUSE) {
-        MAX_UTF8_MOUSE_COORD
-    } else {
-        MAX_LEGACY_MOUSE_COORD
-    };
-    if x > max_coordinate || y > max_coordinate {
-        return None;
-    }
-
-    // Legacy release reports discard button identity and use low bits 3.
-    let button = if release { 3 + modifier } else { button };
-    let mut bytes = b"\x1b[M".to_vec();
-    if mode.contains(TermMode::UTF8_MOUSE) {
-        append_utf8_mouse_value(&mut bytes, button + 32)?;
-        append_utf8_mouse_value(&mut bytes, u16::try_from(x).ok()? + 32)?;
-        append_utf8_mouse_value(&mut bytes, u16::try_from(y).ok()? + 32)?;
-    } else {
-        bytes.extend_from_slice(&[
-            u8::try_from(button + 32).ok()?,
-            u8::try_from(x + 32).ok()?,
-            u8::try_from(y + 32).ok()?,
-        ]);
-    }
-    Some(bytes)
-}
-
-fn accumulate_wheel_reports(
-    accumulator: &mut f32,
-    delta: f32,
-    positive_button: u16,
-    negative_button: u16,
-) -> Vec<MouseReport> {
-    if !delta.is_finite() {
-        return Vec::new();
-    }
-    let total = *accumulator + delta;
-    let unbounded_steps = total.trunc() as i32;
-    let step_limit = MAX_WHEEL_REPORTS_PER_AXIS as i32;
-    let steps = unbounded_steps.clamp(-step_limit, step_limit);
-    // Keep genuine sub-line precision, but discard deliberately bounded excess
-    // instead of leaking a near-complete extra report into the next event.
-    *accumulator = if steps == unbounded_steps {
-        total - steps as f32
-    } else {
-        0.0
-    };
-    let button = if steps >= 0 {
-        positive_button
-    } else {
-        negative_button
-    };
-    (0..steps.unsigned_abs().min(MAX_WHEEL_REPORTS_PER_AXIS as u32))
-        .map(|_| MouseReport::Wheel(button))
-        .collect()
 }
 
 /// A selected cell range, in alacritty grid-line coordinates (`Line` values,
@@ -3700,9 +3578,6 @@ mod tests {
         assert_eq!(MAX_PASTE_BYTES, 1024 * 1024);
         assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
         assert_eq!(MAX_IME_TEXT_BYTES, 16 * 1024);
-        assert_eq!(MAX_LEGACY_MOUSE_COORD, 223);
-        assert_eq!(MAX_UTF8_MOUSE_COORD, 2015);
-        assert_eq!(MAX_WHEEL_REPORTS_PER_AXIS, 16);
         assert_eq!(FOCUS_IN_REPORT.len(), 3);
         assert_eq!(FOCUS_OUT_REPORT.len(), 3);
         assert_eq!(MAX_TABS, 16);
@@ -3772,7 +3647,7 @@ mod tests {
     }
 
     #[test]
-    fn mouse_modes_and_sgr_reports_follow_xterm_cells() {
+    fn mouse_modes_follow_parsed_xterm_state() {
         let size = TermSize { cols: 20, lines: 5 };
         let mut term = Term::new(terminal_config(10), &size, EventProxy);
         let mut parser: Processor = Processor::new();
@@ -3781,169 +3656,10 @@ mod tests {
         assert!(mode.contains(TermMode::MOUSE_DRAG | TermMode::SGR_MOUSE));
         assert!(!mode.contains(TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_MOTION));
 
-        assert_eq!(
-            encode_mouse_report(
-                mode,
-                MouseReport::Press(MouseButton::Left),
-                0,
-                0,
-                &Modifiers::default()
-            )
-            .as_deref(),
-            Some(b"\x1b[<0;1;1M".as_slice())
-        );
-        assert_eq!(
-            encode_mouse_report(
-                mode,
-                MouseReport::Release(MouseButton::Right),
-                499,
-                299,
-                &Modifiers {
-                    control: true,
-                    ..Modifiers::default()
-                }
-            )
-            .as_deref(),
-            Some(b"\x1b[<18;500;300m".as_slice())
-        );
-        assert_eq!(
-            encode_mouse_report(
-                mode,
-                MouseReport::Motion(Some(MouseButton::Middle)),
-                4,
-                6,
-                &Modifiers {
-                    alt: true,
-                    ..Modifiers::default()
-                }
-            )
-            .as_deref(),
-            Some(b"\x1b[<41;5;7M".as_slice())
-        );
-        assert_eq!(
-            encode_mouse_report(
-                mode,
-                MouseReport::Press(MouseButton::Navigate(NavigationDirection::Back)),
-                2,
-                3,
-                &Modifiers::default()
-            )
-            .as_deref(),
-            Some(b"\x1b[<128;3;4M".as_slice())
-        );
-
         parser.advance(&mut term, b"\x1b[?1002;1006l");
         assert!(!term
             .mode()
             .intersects(TermMode::MOUSE_MODE | TermMode::SGR_MOUSE));
-    }
-
-    #[test]
-    fn legacy_and_utf8_mouse_encodings_refuse_unrepresentable_cells() {
-        let legacy = TermMode::MOUSE_REPORT_CLICK;
-        assert_eq!(
-            encode_mouse_report(
-                legacy,
-                MouseReport::Press(MouseButton::Left),
-                0,
-                0,
-                &Modifiers::default()
-            ),
-            Some(vec![0x1b, b'[', b'M', 32, 33, 33])
-        );
-        assert_eq!(
-            encode_mouse_report(
-                legacy,
-                MouseReport::Release(MouseButton::Left),
-                0,
-                0,
-                &Modifiers {
-                    control: true,
-                    ..Modifiers::default()
-                }
-            ),
-            Some(vec![0x1b, b'[', b'M', 51, 33, 33])
-        );
-        assert!(encode_mouse_report(
-            legacy,
-            MouseReport::Press(MouseButton::Left),
-            MAX_LEGACY_MOUSE_COORD,
-            0,
-            &Modifiers::default()
-        )
-        .is_none());
-        assert!(encode_mouse_report(
-            legacy,
-            MouseReport::Press(MouseButton::Left),
-            MAX_LEGACY_MOUSE_COORD - 1,
-            MAX_LEGACY_MOUSE_COORD - 1,
-            &Modifiers::default()
-        )
-        .is_some());
-
-        let utf8 = legacy | TermMode::UTF8_MOUSE;
-        let encoded = encode_mouse_report(
-            utf8,
-            MouseReport::Press(MouseButton::Left),
-            499,
-            299,
-            &Modifiers::default(),
-        )
-        .expect("500x300 must fit UTF-8 mouse coordinates");
-        let mut expected = b"\x1b[M ".to_vec();
-        append_utf8_mouse_value(&mut expected, 532).expect("valid x coordinate");
-        append_utf8_mouse_value(&mut expected, 332).expect("valid y coordinate");
-        assert_eq!(encoded, expected);
-        assert!(encode_mouse_report(
-            utf8,
-            MouseReport::Press(MouseButton::Left),
-            MAX_UTF8_MOUSE_COORD - 1,
-            MAX_UTF8_MOUSE_COORD - 1,
-            &Modifiers::default()
-        )
-        .is_some());
-        assert!(encode_mouse_report(
-            utf8,
-            MouseReport::Press(MouseButton::Left),
-            MAX_UTF8_MOUSE_COORD,
-            0,
-            &Modifiers::default()
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn mouse_motion_and_wheel_reports_are_mode_correct_and_bounded() {
-        assert_eq!(
-            mouse_motion_report(TermMode::MOUSE_REPORT_CLICK, Some(MouseButton::Left)),
-            None
-        );
-        assert_eq!(mouse_motion_report(TermMode::MOUSE_DRAG, None), None);
-        assert_eq!(
-            mouse_motion_report(TermMode::MOUSE_DRAG, Some(MouseButton::Right)),
-            Some(MouseReport::Motion(Some(MouseButton::Right)))
-        );
-        assert_eq!(
-            mouse_motion_report(TermMode::MOUSE_MOTION, None),
-            Some(MouseReport::Motion(None))
-        );
-
-        let mut accumulator = 0.0;
-        assert!(accumulate_wheel_reports(&mut accumulator, 0.4, 64, 65).is_empty());
-        assert_eq!(
-            accumulate_wheel_reports(&mut accumulator, 0.7, 64, 65),
-            vec![MouseReport::Wheel(64)]
-        );
-        assert_eq!(
-            accumulate_wheel_reports(&mut accumulator, -2.2, 64, 65),
-            vec![MouseReport::Wheel(65), MouseReport::Wheel(65)]
-        );
-        assert_eq!(
-            accumulate_wheel_reports(&mut accumulator, 1000.0, 64, 65).len(),
-            MAX_WHEEL_REPORTS_PER_AXIS
-        );
-        assert_eq!(accumulator, 0.0);
-        assert!(accumulate_wheel_reports(&mut accumulator, f32::NAN, 64, 65).is_empty());
     }
 
     #[test]

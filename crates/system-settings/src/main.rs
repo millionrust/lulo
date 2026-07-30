@@ -3,6 +3,7 @@ mod controller;
 mod displays;
 mod focus;
 mod input;
+mod navigation;
 mod notifications;
 mod power;
 mod service_updates;

@@ -29,6 +29,10 @@ use crate::input::{
     InputOption, KEYBOARD_DELAYS, KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS,
     MOUSE_PRECISION_PRESETS, MOUSE_PROFILES, MOUSE_SPEEDS, TOUCHPAD_PROFILES, TOUCHPAD_SPEEDS,
 };
+use crate::navigation::{
+    categories, category_has_dedicated_renderer, category_name_for_pane_id, category_position,
+    Category, SubPage, GENERAL_DESTINATIONS,
+};
 use crate::notifications::{policy_with as notification_policy_with, NotificationPolicyChange};
 use crate::power::{
     apply_charge_threshold, apply_profile as apply_power_profile, charge_threshold_description,
@@ -174,28 +178,7 @@ fn tile(path: &'static str, bg: Hsla, size: f32) -> impl IntoElement {
         .child(glyph(path, size * 0.62, white()))
 }
 
-#[derive(Clone)]
-struct Category {
-    name: SharedString,
-    icon: &'static str,
-    color: Hsla,
-    desc: SharedString,
-}
-
-const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
-
 // ---- interactive state enums --------------------------------------------
-
-/// A navigation subpage pushed onto the back stack from a row chevron.
-#[derive(Clone)]
-enum SubPage {
-    About,
-    SoftwareUpdate,
-    Storage,
-    NotificationApp { app_id: String },
-    FocusMode { mode_id: String },
-    FocusSchedule { schedule_id: String },
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WifiJoinAction {
@@ -18659,250 +18642,6 @@ fn fmt_gb(bytes: u64) -> String {
     format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
 }
 
-fn categories() -> Vec<Vec<Category>> {
-    let blue = hsl(0x0a84ff);
-    let gray = hsl(0x8e8e93);
-    let green = hsl(0x34c759);
-    let red = hsl(0xff3b30);
-    let pink = hsl(0xff2d55);
-    let indigo = hsl(0x5e5ce6);
-    let teal = hsl(0x30b0c7);
-
-    let cat = |name: &str, icon: &'static str, color: Hsla, desc: &str| Category {
-        name: name.to_string().into(),
-        icon,
-        color,
-        desc: desc.to_string().into(),
-    };
-
-    vec![
-        vec![
-            cat(
-                "Wi-Fi",
-                "icons/wifi.svg",
-                blue,
-                "Connect to Wi-Fi networks and manage known networks.",
-            ),
-            cat(
-                "Bluetooth",
-                "icons/bluetooth.svg",
-                blue,
-                "Pair and manage Bluetooth devices.",
-            ),
-            cat(
-                "Network",
-                "icons/globe.svg",
-                blue,
-                "Configure network services and connections.",
-            ),
-            cat(
-                "VPN",
-                "icons/key.svg",
-                blue,
-                "Set up and manage VPN configurations.",
-            ),
-            cat(
-                "Battery",
-                "icons/battery-charging.svg",
-                green,
-                "Monitor battery usage and energy settings.",
-            ),
-        ],
-        vec![
-            cat(
-                "General",
-                "icons/settings.svg",
-                gray,
-                "View system information, update status, and storage.",
-            ),
-            cat(
-                "Date & Time",
-                "icons/clock.svg",
-                blue,
-                "Adjust the time zone and network time synchronization.",
-            ),
-            cat(
-                "Language & Region",
-                "icons/languages.svg",
-                blue,
-                "Choose the system language and inspect regional formats.",
-            ),
-            cat(
-                "Login Items",
-                "icons/app-window.svg",
-                blue,
-                "Choose applications and services that start when you sign in.",
-            ),
-            cat(
-                "Sharing",
-                "icons/globe.svg",
-                blue,
-                "Control reviewed remote access and file-sharing services.",
-            ),
-            cat(
-                "Accessibility",
-                "icons/accessibility.svg",
-                blue,
-                "Customize the computer for the way you work.",
-            ),
-            cat(
-                "Appearance",
-                "icons/palette.svg",
-                hsl(0x1d1d1f),
-                "Change how windows, buttons, and menus look.",
-            ),
-            cat(
-                "Desktop & Dock",
-                "icons/app-window.svg",
-                gray,
-                "Choose authoritative rmac Dock behavior and display placement.",
-            ),
-            cat(
-                "Displays",
-                "icons/monitor.svg",
-                blue,
-                "Arrange displays and adjust resolution.",
-            ),
-            cat(
-                "Spotlight",
-                "icons/search.svg",
-                gray,
-                "Choose search results, file privacy, and excluded folders.",
-            ),
-            cat(
-                "Wallpaper",
-                "icons/image.svg",
-                teal,
-                "Choose original or local images for every niri display.",
-            ),
-        ],
-        vec![
-            cat(
-                "Notifications",
-                "icons/bell.svg",
-                red,
-                "Choose how you receive notifications.",
-            ),
-            cat(
-                "Sound",
-                "icons/volume-2.svg",
-                pink,
-                "Adjust sound effects and output.",
-            ),
-            cat(
-                "Keyboard",
-                "icons/keyboard.svg",
-                gray,
-                "Adjust key repeat behavior and keyboard startup options.",
-            ),
-            cat(
-                "Mouse",
-                "icons/mouse.svg",
-                gray,
-                "Adjust tracking, scrolling, acceleration, and buttons.",
-            ),
-            cat(
-                "Trackpad",
-                "icons/touchpad.svg",
-                gray,
-                "Adjust tracking, tapping, scrolling, and gestures.",
-            ),
-            cat(
-                "Focus",
-                "icons/moon.svg",
-                indigo,
-                "Stay focused by silencing notifications.",
-            ),
-        ],
-        vec![
-            cat(
-                "Lock Screen",
-                "icons/lock.svg",
-                gray,
-                "Adjust your lock screen and login.",
-            ),
-            cat(
-                "Privacy & Security",
-                "icons/shield.svg",
-                blue,
-                "Control what the system and applications can access.",
-            ),
-        ],
-    ]
-}
-
-fn category_name_for_pane_id(pane_id: &str) -> Option<&'static str> {
-    Some(match pane_id {
-        "wifi" => "Wi-Fi",
-        "bluetooth" => "Bluetooth",
-        "network" => "Network",
-        "vpn" => "VPN",
-        "battery" => "Battery",
-        "general" => "General",
-        "date-time" => "Date & Time",
-        "language-region" => "Language & Region",
-        "login-items" => "Login Items",
-        "sharing" => "Sharing",
-        "accessibility" => "Accessibility",
-        "appearance" => "Appearance",
-        "desktop-dock" => "Desktop & Dock",
-        "displays" => "Displays",
-        "spotlight" => "Spotlight",
-        "wallpaper" => "Wallpaper",
-        "notifications" => "Notifications",
-        "sound" => "Sound",
-        "keyboard" => "Keyboard",
-        "mouse" => "Mouse",
-        "trackpad" => "Trackpad",
-        "focus" => "Focus",
-        "lock-screen" => "Lock Screen",
-        "privacy-security" => "Privacy & Security",
-        _ => return None,
-    })
-}
-
-fn category_position(sections: &[Vec<Category>], name: &str) -> Option<(usize, usize)> {
-    sections
-        .iter()
-        .enumerate()
-        .find_map(|(section, categories)| {
-            categories
-                .iter()
-                .position(|category| category.name == name)
-                .map(|row| (section, row))
-        })
-}
-
-fn category_has_dedicated_renderer(name: &str) -> bool {
-    matches!(
-        name,
-        "Wi-Fi"
-            | "Bluetooth"
-            | "Network"
-            | "VPN"
-            | "Battery"
-            | "General"
-            | "Date & Time"
-            | "Language & Region"
-            | "Login Items"
-            | "Sharing"
-            | "Accessibility"
-            | "Appearance"
-            | "Desktop & Dock"
-            | "Displays"
-            | "Spotlight"
-            | "Wallpaper"
-            | "Notifications"
-            | "Sound"
-            | "Keyboard"
-            | "Mouse"
-            | "Trackpad"
-            | "Focus"
-            | "Lock Screen"
-            | "Privacy & Security"
-    )
-}
-
 pub(crate) fn run() {
     rmac_ui::boot_unified_app_with_assets(
         rmac_ui::app_id::SYSTEM_SETTINGS,
@@ -18924,8 +18663,7 @@ pub(crate) fn run() {
 mod tests {
     use super::{
         audio_change_needs_followup, audio_stream_snapshot_is_current,
-        bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
-        category_name_for_pane_id, category_position, composite_wallpaper_pixel,
+        bluetooth_stream_snapshot_is_current, composite_wallpaper_pixel,
         gtk_text_stream_snapshot_is_current, input_stream_snapshot_is_current,
         locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
         network_stream_snapshot_is_current, power_change_needs_followup,
@@ -18936,7 +18674,6 @@ mod tests {
         update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
         wifi_join_action, wifi_stream_snapshot_is_current, DockChange, ShellSettingsMutation,
         SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget, WifiJoinAction,
-        GENERAL_DESTINATIONS,
     };
 
     #[test]
@@ -19017,14 +18754,6 @@ mod tests {
         assert!(!privacy_stream_snapshot_is_current(3, 4, false, false));
         assert!(!privacy_stream_snapshot_is_current(4, 4, true, false));
         assert!(!privacy_stream_snapshot_is_current(4, 4, false, true));
-    }
-
-    #[test]
-    fn general_navigation_contains_only_truthful_destinations() {
-        assert_eq!(
-            GENERAL_DESTINATIONS,
-            ["About", "Software Update", "Storage"]
-        );
     }
 
     #[test]
@@ -19137,37 +18866,6 @@ mod tests {
         assert!(power_change_needs_followup(false, true, true));
         assert!(power_change_needs_followup(true, false, false));
         assert!(!power_change_needs_followup(false, false, true));
-    }
-
-    #[test]
-    fn optional_unowned_panes_and_generic_clickable_rows_are_absent() {
-        let categories = categories().into_iter().flatten().collect::<Vec<_>>();
-        let names = categories
-            .iter()
-            .map(|category| category.name.to_string())
-            .collect::<Vec<_>>();
-        assert!(!names.iter().any(|name| name == "Assistant & Intelligence"));
-        assert!(!names.iter().any(|name| name == "Screen Time"));
-
-        assert!(!names.iter().any(|name| name == "Handoff"));
-        assert!(names.iter().any(|name| name == "Language & Region"));
-        assert!(names.iter().any(|name| name == "Login Items"));
-        assert!(names.iter().any(|name| name == "Sharing"));
-        assert!(names
-            .iter()
-            .all(|name| category_has_dedicated_renderer(name)));
-    }
-
-    #[test]
-    fn every_launcher_setting_destination_routes_to_a_visible_category() {
-        let sections = categories();
-        for entry in rmac_launcher_providers::system_settings_entries() {
-            let category = category_name_for_pane_id(&entry.pane_id)
-                .unwrap_or_else(|| panic!("missing category route for {}", entry.pane_id));
-            assert!(category_position(&sections, category).is_some());
-        }
-        assert!(category_name_for_pane_id("assistant").is_none());
-        assert!(category_name_for_pane_id("screen-time").is_none());
     }
 
     #[test]

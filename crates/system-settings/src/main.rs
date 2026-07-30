@@ -14,6 +14,7 @@ mod input;
 mod notifications;
 mod service_updates;
 mod shell_settings;
+mod sound;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -52,7 +53,7 @@ use rmac_ui::{
     SliderState, TextField, Toast, ToastKind, Toggle,
 };
 use service_updates::{
-    audio_choice_is_actionable, change_needs_followup as audio_change_needs_followup,
+    change_needs_followup as audio_change_needs_followup,
     change_needs_followup as power_change_needs_followup,
     snapshot_is_current as audio_stream_snapshot_is_current,
     snapshot_is_current as bluetooth_stream_snapshot_is_current,
@@ -80,6 +81,7 @@ use shell_settings::{
     ShellSettingsStreamUpdate, SpotlightAuthority, SpotlightChange, WallpaperChange,
     WallpaperTarget,
 };
+use sound::{choice_is_actionable as audio_choice_is_actionable, SoundChange as AudioChange};
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -571,19 +573,6 @@ struct Settings {
     input_generation: u64,
     input_refresh_pending: bool,
     input_stream_refreshing: bool,
-}
-
-enum AudioChange {
-    Volume(rmac_audio::DeviceKind, u8),
-    Muted(rmac_audio::DeviceKind, bool),
-    DefaultDevice(rmac_audio::DeviceKind, rmac_audio::Device),
-    Profile(rmac_audio::HardwareDevice, rmac_audio::Profile),
-    Route(
-        rmac_audio::DeviceKind,
-        rmac_audio::Device,
-        rmac_audio::Route,
-    ),
-    Balance(rmac_audio::Device, i8),
 }
 
 fn current_system_time_usec() -> Option<u64> {
@@ -6001,25 +5990,7 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async move {
-                    match change {
-                        AudioChange::Volume(kind, volume) => rmac_audio::set_volume(kind, volume)?,
-                        AudioChange::Muted(kind, muted) => rmac_audio::set_muted(kind, muted)?,
-                        AudioChange::DefaultDevice(kind, device) => {
-                            return rmac_audio::set_default_device(kind, &device);
-                        }
-                        AudioChange::Profile(device, profile) => {
-                            return rmac_audio::set_profile(&device, &profile);
-                        }
-                        AudioChange::Route(kind, device, route) => {
-                            return rmac_audio::set_route(kind, &device, &route);
-                        }
-                        AudioChange::Balance(device, value) => {
-                            return rmac_audio::set_balance(&device, value);
-                        }
-                    }
-                    rmac_audio::snapshot()
-                })
+                .spawn(async move { change.apply() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
@@ -19114,7 +19085,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        audio_change_needs_followup, audio_choice_is_actionable, audio_stream_snapshot_is_current,
+        audio_change_needs_followup, audio_stream_snapshot_is_current,
         bluetooth_stream_snapshot_is_current, categories, category_has_dedicated_renderer,
         category_name_for_pane_id, category_position, charge_threshold_description,
         composite_wallpaper_pixel, gtk_text_stream_snapshot_is_current,
@@ -19321,35 +19292,6 @@ mod tests {
         assert!(audio_change_needs_followup(false, true, true));
         assert!(audio_change_needs_followup(true, false, false));
         assert!(!audio_change_needs_followup(false, false, true));
-    }
-
-    #[test]
-    fn audio_choices_require_selectable_inactive_idle_authority() {
-        assert!(audio_choice_is_actionable(
-            false,
-            rmac_audio::Availability::Available,
-            false,
-        ));
-        assert!(audio_choice_is_actionable(
-            false,
-            rmac_audio::Availability::Unknown,
-            false,
-        ));
-        assert!(!audio_choice_is_actionable(
-            false,
-            rmac_audio::Availability::Unavailable,
-            false,
-        ));
-        assert!(!audio_choice_is_actionable(
-            true,
-            rmac_audio::Availability::Available,
-            false,
-        ));
-        assert!(!audio_choice_is_actionable(
-            false,
-            rmac_audio::Availability::Available,
-            true,
-        ));
     }
 
     #[test]

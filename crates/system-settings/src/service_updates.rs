@@ -15,14 +15,6 @@ pub(super) fn change_needs_followup(busy: bool, loading: bool, stream_unavailabl
     busy || (loading && stream_unavailable)
 }
 
-pub(super) fn audio_choice_is_actionable(
-    is_active: bool,
-    availability: rmac_audio::Availability,
-    busy: bool,
-) -> bool {
-    !is_active && availability.can_select() && !busy
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -39,6 +39,9 @@ equivalents rather than simulated.
   of the complete input document; preset catalogs and speed normalization; and
   niri configuration-event admission. The controller retains mutation
   generation, authoritative save/readback, and GPUI rendering.
+- `sound.rs` owns typed volume, mute, default-device, profile, route, and
+  balance dispatch plus capability-aware choice admission. The controller
+  retains slider coalescing, mutation generation, live recovery, and rendering.
 
 | Pane | Current state | Linux authority | Required completion |
 |---|---|---|---|

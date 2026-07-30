@@ -16,6 +16,11 @@ use crate::appearance::{
     ThemeLoad, ThemeOption, ThemeStoreWatchEvent, ACCENTS, THEME_CONTRAST_OPTIONS,
     THEME_MOTION_OPTIONS, THEME_TEXT_SCALE_OPTIONS,
 };
+use crate::connectivity::{
+    wifi_join_action, BluetoothForgetPrompt, BluetoothPairingDisplay, BluetoothPairingState,
+    NetworkEditorState, VpnEditorState, WifiEnterprisePrompt, WifiForgetPrompt, WifiJoinAction,
+    WifiPasswordPrompt,
+};
 use crate::displays::{
     compositor_event_affects_displays, relative_display_position, DisplayChange,
     DisplayConfirmation, DisplayPlacement, DISPLAY_CONFIRMATION_SECONDS,
@@ -179,97 +184,6 @@ fn tile(path: &'static str, bg: Hsla, size: f32) -> impl IntoElement {
 }
 
 // ---- interactive state enums --------------------------------------------
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum WifiJoinAction {
-    Direct,
-    PersonalPassword,
-    EnterpriseSetup,
-    Unavailable,
-}
-
-fn wifi_join_action(network: &rmac_network::WifiNetwork) -> WifiJoinAction {
-    if !network.can_connect() {
-        WifiJoinAction::Unavailable
-    } else if network.needs_enterprise_setup() {
-        WifiJoinAction::EnterpriseSetup
-    } else if network.needs_password() {
-        WifiJoinAction::PersonalPassword
-    } else {
-        WifiJoinAction::Direct
-    }
-}
-
-struct WifiPasswordPrompt {
-    network: rmac_network::WifiNetworkId,
-    ssid: SharedString,
-    editor: Entity<InputState>,
-    validation_error: Option<SharedString>,
-}
-
-struct WifiEnterprisePrompt {
-    network: rmac_network::WifiNetworkId,
-    ssid: SharedString,
-    identity: Entity<InputState>,
-    anonymous_identity: Entity<InputState>,
-    certificate_domain: Entity<InputState>,
-    password: Entity<InputState>,
-    validation_error: Option<SharedString>,
-}
-
-struct WifiForgetPrompt {
-    network: rmac_network::WifiNetworkId,
-    ssid: SharedString,
-}
-
-enum BluetoothPairingDisplay {
-    PinCode(String),
-    Passkey { passkey: u32, entered: u16 },
-}
-
-struct BluetoothPairingState {
-    device_id: String,
-    name: SharedString,
-    session: rmac_bluetooth::PairingSession,
-    prompt: Option<rmac_bluetooth::PairingPrompt>,
-    display: Option<BluetoothPairingDisplay>,
-    editor: Entity<InputState>,
-    validation_error: Option<SharedString>,
-    stopping: bool,
-}
-
-struct BluetoothForgetPrompt {
-    device_id: String,
-    name: SharedString,
-}
-
-struct NetworkEditorState {
-    interface: SharedString,
-    configuration: rmac_network::NetworkConfiguration,
-    ipv4_method: rmac_network::IpMethod,
-    ipv4_addresses: Entity<InputState>,
-    ipv4_gateway: Entity<InputState>,
-    ipv4_dns: Entity<InputState>,
-    ipv4_ignore_auto_dns: bool,
-    ipv6_method: rmac_network::IpMethod,
-    ipv6_addresses: Entity<InputState>,
-    ipv6_gateway: Entity<InputState>,
-    ipv6_dns: Entity<InputState>,
-    ipv6_ignore_auto_dns: bool,
-    proxy_method: rmac_network::ProxyMethod,
-    proxy_url: Entity<InputState>,
-    proxy_browser_only: bool,
-    validation_error: Option<SharedString>,
-}
-
-struct VpnEditorState {
-    configuration: rmac_network::VpnProfileConfiguration,
-    name: Entity<InputState>,
-    username: Entity<InputState>,
-    timeout: Entity<InputState>,
-    persistent: bool,
-    validation_error: Option<SharedString>,
-}
 
 struct Settings {
     system_data_loading: bool,
@@ -18672,8 +18586,8 @@ mod tests {
         storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
         theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
         update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-        wifi_join_action, wifi_stream_snapshot_is_current, DockChange, ShellSettingsMutation,
-        SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget, WifiJoinAction,
+        wifi_stream_snapshot_is_current, DockChange, ShellSettingsMutation, SpotlightAuthority,
+        SpotlightChange, WallpaperChange, WallpaperTarget,
     };
 
     #[test]
@@ -18762,54 +18676,6 @@ mod tests {
         assert!(!wifi_stream_snapshot_is_current(6, 7, false, false));
         assert!(!wifi_stream_snapshot_is_current(7, 7, true, false));
         assert!(!wifi_stream_snapshot_is_current(7, 7, false, true));
-    }
-
-    #[test]
-    fn wifi_rows_route_each_security_authority_without_bypassing_enterprise_setup() {
-        let network = |security, known, connected| rmac_network::WifiNetwork {
-            id: rmac_network::WifiNetworkId::from_bytes(b"Network".to_vec(), security).unwrap(),
-            ssid: "Network".into(),
-            strength: 80,
-            security,
-            known,
-            connected,
-        };
-        assert_eq!(
-            wifi_join_action(&network(rmac_network::WifiSecurity::Open, false, false)),
-            WifiJoinAction::Direct
-        );
-        assert_eq!(
-            wifi_join_action(&network(
-                rmac_network::WifiSecurity::Personal(rmac_network::WifiPersonalMode::Sae),
-                false,
-                false,
-            )),
-            WifiJoinAction::PersonalPassword
-        );
-        assert_eq!(
-            wifi_join_action(&network(
-                rmac_network::WifiSecurity::Enterprise,
-                false,
-                false,
-            )),
-            WifiJoinAction::EnterpriseSetup
-        );
-        assert_eq!(
-            wifi_join_action(&network(
-                rmac_network::WifiSecurity::Enterprise,
-                true,
-                false,
-            )),
-            WifiJoinAction::Direct
-        );
-        assert_eq!(
-            wifi_join_action(&network(rmac_network::WifiSecurity::Legacy, false, false,)),
-            WifiJoinAction::Unavailable
-        );
-        assert_eq!(
-            wifi_join_action(&network(rmac_network::WifiSecurity::Open, false, true)),
-            WifiJoinAction::Unavailable
-        );
     }
 
     #[test]

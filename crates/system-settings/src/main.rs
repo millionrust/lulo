@@ -1,4 +1,5 @@
 mod appearance;
+mod connectivity;
 mod controller;
 mod displays;
 mod focus;

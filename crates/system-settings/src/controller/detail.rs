@@ -97,4 +97,55 @@ impl Settings {
             "This category is not registered with a System Settings renderer. It does not read or change system settings.",
         )])
     }
+    pub(super) fn render_subpage(&self, sub: &SubPage, cx: &Context<Self>) -> Div {
+        let (title, body): (SharedString, Div) = match sub {
+            SubPage::About => ("About".into(), self.about_body(cx)),
+            SubPage::SoftwareUpdate => ("Software Update".into(), self.software_update_body(cx)),
+            SubPage::Storage => ("Storage".into(), self.storage_body(cx)),
+            SubPage::NotificationApp { app_id } => (
+                self.application_identity(app_id)
+                    .map(|identity| identity.name.clone())
+                    .unwrap_or_else(|| app_id.clone())
+                    .into(),
+                self.notification_app_body(app_id, cx),
+            ),
+            SubPage::FocusMode { mode_id } => {
+                let title = rmac_focus::ModeId::parse(mode_id)
+                    .ok()
+                    .and_then(|mode_id| {
+                        self.focus_policy_config
+                            .as_ref()
+                            .and_then(|configuration| configuration.mode(&mode_id))
+                            .map(|mode| mode.name().to_owned())
+                    })
+                    .unwrap_or_else(|| "Focus".into());
+                (title.into(), self.focus_mode_body(mode_id, cx))
+            }
+            SubPage::FocusSchedule { schedule_id } => {
+                ("Schedule".into(), self.focus_schedule_body(schedule_id, cx))
+            }
+        };
+
+        let header = div()
+            .v_flex()
+            .items_center()
+            .gap_1()
+            .pt_6()
+            .pb_4()
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(20.0))
+                    .font_weight(rmac_ui::mac::BOLD)
+                    .text_color(label())
+                    .child(title),
+            )
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(secondary())
+                    .child("‹ Back, or press ⌘["),
+            );
+
+        div().v_flex().child(header).child(body)
+    }
 }

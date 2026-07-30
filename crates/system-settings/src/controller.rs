@@ -5095,12 +5095,6 @@ impl Settings {
         self.pane(cards)
     }
 
-    fn render_unregistered_category(&self) -> Div {
-        self.pane(vec![note_card(
-            "This category is not registered with a System Settings renderer. It does not read or change system settings.",
-        )])
-    }
-
     // ---- Wi-Fi --------------------------------------------------------
 
     fn render_wifi(&self, cx: &Context<Self>) -> Div {
@@ -5526,37 +5520,6 @@ impl Settings {
         )
     }
 
-    fn render_wifi_forget_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let prompt = self.wifi_forget_confirmation.as_ref()?;
-        let message = format!(
-            "This computer will remove every accessible saved profile for “{}”. If the network is active, it will disconnect. You will need its password to join again.",
-            prompt.ssid
-        );
-        Some(
-            rmac_ui::alert(
-                "Forget This Network?",
-                message,
-                vec![
-                    rmac_ui::dialog_button(
-                        "wifi-forget-cancel",
-                        "Cancel",
-                        rmac_ui::DialogButtonKind::Normal,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| this.cancel_wifi_forget(cx)))
-                    .into_any_element(),
-                    rmac_ui::dialog_button(
-                        "wifi-forget-confirm",
-                        "Forget",
-                        rmac_ui::DialogButtonKind::Destructive,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| this.confirm_wifi_forget(cx)))
-                    .into_any_element(),
-                ],
-            )
-            .into_any_element(),
-        )
-    }
-
     // ---- Bluetooth ----------------------------------------------------
 
     fn render_bluetooth(&self, cx: &Context<Self>) -> Div {
@@ -5882,40 +5845,6 @@ impl Settings {
                     }
                 }))
                 .into_any_element(),
-        )
-    }
-
-    fn render_bluetooth_forget_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
-        let prompt = self.bluetooth_forget_confirmation.as_ref()?;
-        Some(
-            rmac_ui::alert(
-                "Forget This Device?",
-                format!(
-                    "This computer will remove pairing information for “{}” and disconnect it. You will need to pair it again to reconnect.",
-                    prompt.name
-                ),
-                vec![
-                    rmac_ui::dialog_button(
-                        "bluetooth-forget-cancel",
-                        "Cancel",
-                        rmac_ui::DialogButtonKind::Normal,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.cancel_bluetooth_forget(cx)
-                    }))
-                    .into_any_element(),
-                    rmac_ui::dialog_button(
-                        "bluetooth-forget-confirm",
-                        "Forget",
-                        rmac_ui::DialogButtonKind::Destructive,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.confirm_bluetooth_forget(cx)
-                    }))
-                    .into_any_element(),
-                ],
-            )
-            .into_any_element(),
         )
     }
 

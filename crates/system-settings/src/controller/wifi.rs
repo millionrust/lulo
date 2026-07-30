@@ -535,4 +535,35 @@ impl Settings {
         })
         .detach();
     }
+
+    pub(super) fn render_wifi_forget_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let prompt = self.wifi_forget_confirmation.as_ref()?;
+        let message = format!(
+            "This computer will remove every accessible saved profile for “{}”. If the network is active, it will disconnect. You will need its password to join again.",
+            prompt.ssid
+        );
+        Some(
+            rmac_ui::alert(
+                "Forget This Network?",
+                message,
+                vec![
+                    rmac_ui::dialog_button(
+                        "wifi-forget-cancel",
+                        "Cancel",
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.cancel_wifi_forget(cx)))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "wifi-forget-confirm",
+                        "Forget",
+                        rmac_ui::DialogButtonKind::Destructive,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.confirm_wifi_forget(cx)))
+                    .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
+    }
 }

@@ -91,4 +91,10 @@ impl Settings {
     pub(super) fn pane(&self, cards: Vec<Div>) -> Div {
         div().v_flex().child(self.render_hero()).children(cards)
     }
+
+    pub(super) fn render_unregistered_category(&self) -> Div {
+        self.pane(vec![note_card(
+            "This category is not registered with a System Settings renderer. It does not read or change system settings.",
+        )])
+    }
 }

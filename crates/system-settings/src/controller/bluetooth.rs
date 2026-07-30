@@ -483,4 +483,38 @@ impl Settings {
         })
         .detach();
     }
+
+    pub(super) fn render_bluetooth_forget_dialog(&self, cx: &Context<Self>) -> Option<AnyElement> {
+        let prompt = self.bluetooth_forget_confirmation.as_ref()?;
+        Some(
+            rmac_ui::alert(
+                "Forget This Device?",
+                format!(
+                    "This computer will remove pairing information for “{}” and disconnect it. You will need to pair it again to reconnect.",
+                    prompt.name
+                ),
+                vec![
+                    rmac_ui::dialog_button(
+                        "bluetooth-forget-cancel",
+                        "Cancel",
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.cancel_bluetooth_forget(cx)
+                    }))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "bluetooth-forget-confirm",
+                        "Forget",
+                        rmac_ui::DialogButtonKind::Destructive,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.confirm_bluetooth_forget(cx)
+                    }))
+                    .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
+    }
 }

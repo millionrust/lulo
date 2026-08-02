@@ -359,25 +359,12 @@ impl Settings {
         let refresh_view = view.clone();
         cards.push(
             div().flex().justify_end().mb_2().child(
-                div()
-                    .id("focus-refresh")
-                    .px_2()
-                    .py_1()
-                    .rounded(px(6.0))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(accent())
-                    .when(!self.focus_policy_loading, |button| {
-                        button
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            .on_click(move |_, _, cx| {
-                                refresh_view.update(cx, |settings, cx| settings.refresh_focus(cx));
-                            })
-                    })
-                    .child(if self.focus_policy_loading {
-                        "Loading…"
-                    } else {
-                        "Refresh"
+                Button::new("focus-refresh", "Refresh")
+                    .ghost()
+                    .busy(self.focus_policy_loading || self.focus_policy_busy)
+                    .disabled(self.focus_policy_loading || self.focus_policy_busy)
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_focus(cx));
                     }),
             ),
         );
@@ -420,34 +407,21 @@ impl Settings {
                 FocusCurrentAction::TurnOffManual => {
                     let turn_off_view = view.clone();
                     current = current.child(
-                        div()
-                            .id("focus-turn-off")
-                            .px_2()
-                            .py_1()
-                            .rounded(px(6.0))
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(accent())
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                        Button::new("focus-turn-off", "Turn Off")
+                            .ghost()
+                            .disabled(self.focus_policy_loading || self.focus_policy_busy)
                             .on_click(move |_, _, cx| {
                                 turn_off_view.update(cx, |settings, cx| settings.disable_focus(cx));
-                            })
-                            .child("Turn Off"),
+                            }),
                     );
                 }
                 FocusCurrentAction::EditSchedule(schedule_id) => {
                     let edit_view = view.clone();
                     let schedule_id = schedule_id.as_str().to_owned();
                     current = current.child(
-                        div()
-                            .id("focus-edit-active-schedule")
-                            .px_2()
-                            .py_1()
-                            .rounded(px(6.0))
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(accent())
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                        Button::new("focus-edit-active-schedule", "Edit Schedule")
+                            .ghost()
+                            .disabled(self.focus_policy_loading || self.focus_policy_busy)
                             .on_click(move |_, _, cx| {
                                 edit_view.update(cx, |settings, cx| {
                                     settings.push(
@@ -457,8 +431,7 @@ impl Settings {
                                         cx,
                                     );
                                 });
-                            })
-                            .child("Edit Schedule"),
+                            }),
                     );
                 }
                 FocusCurrentAction::None => {}

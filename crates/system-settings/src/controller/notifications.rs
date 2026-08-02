@@ -119,26 +119,12 @@ impl Settings {
         let refresh_view = view.clone();
         cards.push(
             div().flex().justify_end().mb_2().child(
-                div()
-                    .id("notifications-refresh")
-                    .px_2()
-                    .py_1()
-                    .rounded(px(6.0))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(accent())
-                    .when(!self.notifications_loading, |button| {
-                        button
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            .on_click(move |_, _, cx| {
-                                refresh_view
-                                    .update(cx, |settings, cx| settings.refresh_notifications(cx));
-                            })
-                    })
-                    .child(if self.notifications_loading {
-                        "Loading…"
-                    } else {
-                        "Refresh"
+                Button::new("notifications-refresh", "Refresh")
+                    .ghost()
+                    .busy(self.notifications_loading)
+                    .disabled(self.notifications_loading || self.notification_busy.is_some())
+                    .on_click(move |_, _, cx| {
+                        refresh_view.update(cx, |settings, cx| settings.refresh_notifications(cx));
                     }),
             ),
         );

@@ -134,8 +134,24 @@ mismatches, dependency drift, and changes to either underlying immutable
 manifest.
 
 For the H2 acceptance run, package the same binary inputs twice with the same
-toolchain, dependency database, and epoch, then compare all four output files
-byte for byte. Repeat on amd64 and arm64, install both packages on clean
-Ubuntu 26.04 machines, and record reviewed dependency, launch, portal, and
-uninstall-preservation evidence. Package installation, upgrade, rollback,
-purge/export, repository signing, and the full GDM journey remain H4–H7 gates.
+toolchain, dependency database, and epoch through the guarded reproducibility
+driver:
+
+```bash
+epoch="$(git log -1 --format=%ct)"
+python_arch="$(dpkg --print-architecture)"
+mkdir -p "${PWD}/target"
+bash scripts/linux/check-native-reproducibility.sh \
+  --binary-dir "${binary_dir}" \
+  --output "${PWD}/target/native-${python_arch}-reproducibility" \
+  --architecture "${python_arch}" \
+  --source-date-epoch "${epoch}"
+```
+
+The driver requires a clean tracked tree, runs and independently verifies both
+package sets, compares all four files byte for byte, and emits a bounded summary
+binding the commit, architecture, epoch, filenames, and hashes. Repeat on amd64
+and arm64, install both packages on clean Ubuntu 26.04 machines, and record
+reviewed dependency, launch, portal, and uninstall-preservation evidence.
+Package installation, upgrade, rollback, purge/export, repository signing, and
+the full GDM journey remain H4–H7 gates.

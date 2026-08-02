@@ -235,11 +235,11 @@ impl Render for FinderView {
                             .border_color(rmac_ui::mac::accent_border())
                             .text_size(rmac_ui::text_px(12.0))
                             .text_color(label())
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .child(format!("{operation} — {processed} of {total} items")),
-                            )
+                            .child(div().flex_1().child(accessibility::trash_progress_text(
+                                operation.as_ref(),
+                                processed,
+                                total,
+                            )))
                             .child(
                                 div()
                                     .id("cancel-trash")
@@ -250,33 +250,14 @@ impl Render for FinderView {
                                     .border_1()
                                     .border_color(rmac_ui::mac::accent_border())
                                     .cursor_pointer()
-                                    .child(if cancelling {
-                                        "Cancelling…"
-                                    } else {
-                                        "Cancel"
-                                    })
+                                    .child(accessibility::cancel_progress_label(cancelling))
                                     .on_click(cx.listener(|this, _, _, cx| this.cancel_trash(cx))),
                             ),
                     )
                 },
             )
             .when_some(undo_progress, |el, undo| {
-                let status = match undo.phase {
-                    file_ops::TransferPhase::Scanning => {
-                        format!("{} — Checking items", undo.label)
-                    }
-                    file_ops::TransferPhase::Copying if undo.bytes_processed != 0 => format!(
-                        "{} — Restoring {}",
-                        undo.label,
-                        human_size(undo.bytes_processed)
-                    ),
-                    file_ops::TransferPhase::Copying => {
-                        format!("{} — Restoring item", undo.label)
-                    }
-                    file_ops::TransferPhase::Finishing => {
-                        format!("{} — Finishing safely", undo.label)
-                    }
-                };
+                let status = accessibility::undo_progress_text(&undo);
                 el.child(
                     div()
                         .id("undo-progress")
@@ -302,43 +283,14 @@ impl Render for FinderView {
                                 .border_1()
                                 .border_color(rmac_ui::mac::accent_border())
                                 .cursor_pointer()
-                                .child(if undo.cancelling {
-                                    "Cancelling…"
-                                } else {
-                                    "Cancel"
-                                })
+                                .child(accessibility::cancel_progress_label(undo.cancelling))
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel_undo(cx))),
                         ),
                 )
             })
             .when_some(transfer, |el, transfer| {
-                let action = if transfer.cancelling {
-                    "Cancelling…"
-                } else {
-                    "Cancel"
-                };
-                let status = match transfer.phase {
-                    file_ops::TransferPhase::Scanning => format!(
-                        "{} — Scanning {} of {} items",
-                        transfer.label, transfer.processed, transfer.total
-                    ),
-                    file_ops::TransferPhase::Copying if transfer.bytes_total > 0 => format!(
-                        "{} — {} of {} · {} of {}",
-                        transfer.label,
-                        transfer.processed,
-                        transfer.total,
-                        human_size(transfer.bytes_processed),
-                        human_size(transfer.bytes_total.max(transfer.bytes_processed))
-                    ),
-                    file_ops::TransferPhase::Copying => format!(
-                        "{} — Copying {} of {} items",
-                        transfer.label, transfer.processed, transfer.total
-                    ),
-                    file_ops::TransferPhase::Finishing => format!(
-                        "{} — Finishing {} of {} items",
-                        transfer.label, transfer.processed, transfer.total
-                    ),
-                };
+                let action = accessibility::cancel_progress_label(transfer.cancelling);
+                let status = accessibility::transfer_progress_text(&transfer);
                 el.child(
                     div()
                         .h(px(34.0))

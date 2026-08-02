@@ -12,11 +12,16 @@ previews, and documented keyboard journeys. Native Linux scaling and Orca
 evidence remains gated by the reference-PC framework work.
 
 ## App status
-- **Finder** ✅ — multi-select, file ops, shortcuts, context menus, tabs, columns,
+- **Finder** 🟡 — multi-select, file ops, shortcuts, context menus, tabs, columns,
   Quick Look, DnD, **tag-search sidebar** (live `mdfind`), **real Recents**
   (Spotlight last-used query), Get Info, recursive Spotlight search, native
   NSPasteboard file copy/paste, and a **status bar** (item count + free space).
-  (Toolbar Share/Tag/⋯ are decorative; the ⋯ opens the item context menu.)
+  Its bounded semantic model now covers the complete Get Info/conflict/
+  recovery/delete/Open With/Quick Look modal stack plus polite/assertive
+  operation and measured progress regions, with safe initial focus and explicit
+  destructive/toggle state. Framework AT-SPI export and complete Ubuntu/niri/
+  Orca/fault/performance evidence keep G4 partial. (Toolbar Share/Tag/⋯ are
+  decorative; the ⋯ opens the item context menu.)
 - **Terminal** 🟡 — real PTY, true-color, bounded dynamic resize and up to
   10,000-line scrollback per tab under a tested 512 MiB aggregate base-grid
   ceiling, mouse selection, bounded copy/paste, find, font zoom, clear, tabs,

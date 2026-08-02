@@ -428,3 +428,36 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
 - Finder-owned labels and chrome follow rmac's bounded 100%, 115%, and 130% text preference.
 - Standard row and toolbar metrics stay faithful to the values above; their existing vertical room fits 130% glyphs.
 - Tab-close and new-tab hit boxes are enlarged to avoid clipping their scaled symbols.
+
+## Dialog and live-region semantics
+
+- A public framework-neutral boundary projects every current Files overlay in
+  visual stacking order: Get Info, conflict review, file-operation recovery,
+  Trash recovery, permanent deletion, Open With, and Quick Look. The last
+  projected overlay is the active modal.
+- Dialog actions retain stable identities, enabled/busy/checked state, and
+  normal, default, destructive, or toggle meaning. Cancel, Later, Skip, Close,
+  or the selected Open With option is the initial semantic focus; destructive
+  Replace/Delete is never the initial target.
+- Open With retains exact stable desktop IDs, localized display names, selected
+  and current-default state, its default-app toggle, loading/error feedback,
+  and disabled Open state. Hidden launch specifications and the source path do
+  not cross the boundary; only the sanitized leaf name already visible in the
+  sheet is retained.
+- Quick Look exposes the visible leaf title, position, close/previous/next
+  capabilities, loading/error state, preview description, and the same bounded
+  text document shown on screen. Empty text previews are valid; document text
+  remains capped at the existing 64 KiB preview limit.
+- Root feedback preserves rendered order. Successful notices and transfer,
+  Undo, and Trash progress are polite; failures are assertive. Progress exposes
+  measured item/byte values and a cancellation action which becomes disabled
+  while cancellation is pending. The renderer and semantic adapter share the
+  exact progress/status formatters.
+- Projection fails closed above eight dialogs, 16 actions per dialog/region,
+  4,096 Open With options, 64 KiB of document text, or 2 MiB of aggregate
+  semantic text. Duplicate dialog/action/option identities, invalid focus,
+  impossible selection, control-bearing labels, and invalid progress are
+  rejected.
+- Pinned GPUI 0.2.2 still cannot publish this model as an accessibility tree.
+  Framework export, Orca verification, focus restoration, and 200% Linux
+  interaction evidence remain release gates.

@@ -5,6 +5,7 @@
 //! shortcuts + right-click context menus, live search, clickable sort headers,
 //! hidden-file toggle, and live directory watching.
 
+mod accessibility;
 mod chrome_presentation;
 mod conflict_controller;
 mod content_presentation;

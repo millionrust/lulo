@@ -1,15 +1,16 @@
 use gpui::{
-    div, img, prelude::FluentBuilder as _, px, svg, Context, Div, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, Render, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Window,
+    Context, Div, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement,
+    Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window, div, img,
+    prelude::FluentBuilder as _, px, svg,
 };
 use gpui_component::StyledExt as _;
-use rmac_ui::{mac, EmptyState, SearchField};
+use rmac_app_drawer::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
+use rmac_ui::{EmptyState, SearchField, mac};
 
 use crate::catalog::{App, Category};
 use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp, OpenApp, RevealInFinder};
 
-use super::{AppDrawer, LaunchDesktopAction, ViewMode, ICON, ROW_ICON, TILE_W};
+use super::{AppDrawer, ICON, LaunchDesktopAction, ROW_ICON, TILE_W, ViewMode};
 
 impl AppDrawer {
     fn icon_element(&self, app: &App, size: f32) -> gpui::AnyElement {
@@ -250,7 +251,7 @@ impl Render for AppDrawer {
         let visible = self.visible_indices(cx);
         let selected = self.selected.min(visible.len().saturating_sub(1));
         let notice = if self.launching {
-            Some((SharedString::from("Opening application…"), false))
+            Some((SharedString::from(OPENING_ANNOUNCEMENT), false))
         } else {
             self.action_error
                 .clone()
@@ -261,12 +262,11 @@ impl Render for AppDrawer {
 
         let body: gpui::AnyElement = if visible.is_empty() {
             let empty = if self.apps.is_empty() {
-                EmptyState::new("No applications found").message(
-                    "Install an application or add a visible desktop entry to an XDG application directory",
-                )
+                let state = DrawerEmptyState::EmptyCatalog;
+                EmptyState::new(state.title()).message(state.message())
             } else {
-                EmptyState::new("No matching applications")
-                    .message("Try another name, keyword, category, or application action")
+                let state = DrawerEmptyState::NoMatches;
+                EmptyState::new(state.title()).message(state.message())
             };
             div()
                 .min_h(px(320.0))

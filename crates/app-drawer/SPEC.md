@@ -20,6 +20,20 @@ software store, package manager, or imitation of Apple Launchpad.
   presentation, category controls, empty/error/busy states, context-menu
   placement, toolbar, and semantic action dispatch. Catalog refresh, selection
   policy, launch/reveal work, and supervised lifetime remain outside it.
+- A public framework-neutral accessibility boundary consumes the catalog's
+  exact stable desktop identity, localized name/generic name, category, and
+  ordered declared actions together with the controller's authoritative search
+  and visible index projections. It defines a named grid/list, category result
+  counts and selection, item position/selection/actions, Open-first context-menu
+  focus, distinct empty states, and polite busy/assertive failure announcements.
+  The private query, source path, icon, search metadata, and launch command
+  never enter the snapshot.
+- That semantic snapshot fails closed above 4,096 applications, 32 declared
+  actions per application, or 2 MiB of retained text. It also rejects invalid
+  or duplicate stable identities/actions, inconsistent search/filter indices,
+  impossible selection/menu state, control-bearing labels, and oversized text.
+  Shared labels keep the rendered and semantic Open, Show in Folder, busy, and
+  empty-state text identical.
 - Linux parsing follows the freedesktop Desktop Entry Specification 1.5.
   Desktop actions come only from identifiers named by `Actions=` and matching
   `[Desktop Action <id>]` groups. Labels use the active message locale.
@@ -116,6 +130,8 @@ software store, package manager, or imitation of Apple Launchpad.
   Ubuntu 26.04 with niri.
 - Prove strict-focus activation for native Wayland, XWayland, terminal,
   working-directory, and declared-action launches from real hardware.
-- Prove roles, names, selected state, menu actions, announcements, and 200%
-  scaling with Orca after the GPUI accessibility gate passes.
+- Export the now-defined grid/list, category, item, menu, empty-state, and live-
+  region semantics through the framework selected by A5/A6, then prove roles,
+  names, selected state, menu actions, announcements, and 200% scaling with
+  Orca.
 - Native drag-out remains framework-gated; Show in Folder is the honest bridge.

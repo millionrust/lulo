@@ -1,4 +1,6 @@
-//! Process-mode contract for the App Drawer binary.
+//! Framework-neutral App Drawer contracts.
+
+pub mod accessibility;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunMode {

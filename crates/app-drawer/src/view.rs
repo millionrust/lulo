@@ -7,6 +7,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use gpui::{AppContext as _, Context, Entity, FocusHandle, Pixels, Point, SharedString, Window};
+use rmac_app_drawer::accessibility::{
+    AppDrawerAccessibilitySnapshot, ApplicationCategory, DrawerFeedback, DrawerProjectionState,
+    DrawerView, OPEN_ACTION_NAME, SHOW_IN_FOLDER_ACTION_NAME, project_app_drawer,
+};
 use rmac_ui::InputState;
 
 use crate::catalog::{self, App, Category};
@@ -21,6 +25,15 @@ const ROW_ICON: f32 = 32.0;
 enum ViewMode {
     Grid,
     List,
+}
+
+impl From<ViewMode> for DrawerView {
+    fn from(view: ViewMode) -> Self {
+        match view {
+            ViewMode::Grid => Self::Grid,
+            ViewMode::List => Self::List,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, gpui::Action)]
@@ -231,28 +244,72 @@ impl AppDrawer {
 
     /// Indices into `self.apps` that pass the current category + search filter.
     fn visible_indices(&self, cx: &gpui::App) -> Vec<usize> {
-        let q = self.query.read(cx).value().trim().to_lowercase();
+        self.search_matching_indices(cx)
+            .into_iter()
+            .filter(|index| self.filter.is_none_or(|c| self.apps[*index].category == c))
+            .collect()
+    }
+
+    /// Catalog-order matches for the private query. The query never crosses
+    /// the accessibility boundary; only these controller-owned indices do.
+    fn search_matching_indices(&self, cx: &gpui::App) -> Vec<usize> {
+        let query = self.query.read(cx).value().trim().to_lowercase();
         self.apps
             .iter()
             .enumerate()
-            .filter(|(_, a)| self.filter.is_none_or(|c| a.category == c))
-            .filter(|(_, a)| q.is_empty() || a.search_text.contains(&q))
-            .map(|(i, _)| i)
+            .filter(|(_, app)| query.is_empty() || app.search_text.contains(&query))
+            .map(|(index, _)| index)
             .collect()
     }
 
     /// The set of categories actually present after the *search* filter — used
     /// to build the category bar so we never show an empty bucket.
     fn present_categories(&self, cx: &gpui::App) -> Vec<Category> {
-        let q = self.query.read(cx).value().trim().to_lowercase();
+        let search_matches = self.search_matching_indices(cx);
         Category::ORDER
             .into_iter()
             .filter(|c| {
-                self.apps
+                search_matches
                     .iter()
-                    .any(|a| a.category == *c && (q.is_empty() || a.search_text.contains(&q)))
+                    .any(|index| self.apps[*index].category == *c)
             })
             .collect()
+    }
+
+    /// Exact adapter-ready snapshot. Pinned GPUI cannot publish this tree yet,
+    /// so the method remains dormant until the A5/A6 framework gate is chosen.
+    #[allow(dead_code)]
+    fn accessibility_snapshot(
+        &self,
+        cx: &gpui::App,
+    ) -> Result<
+        AppDrawerAccessibilitySnapshot,
+        rmac_app_drawer::accessibility::AccessibilityProjectionError,
+    > {
+        let search_matches = self.search_matching_indices(cx);
+        let visible = self.visible_indices(cx);
+        let selected_index =
+            (!visible.is_empty()).then_some(self.selected.min(visible.len().saturating_sub(1)));
+        let feedback = if self.launching {
+            DrawerFeedback::Busy
+        } else if let Some(error) = self.action_error.as_ref().or(self.catalog_error.as_ref()) {
+            DrawerFeedback::Error(error.as_ref())
+        } else {
+            DrawerFeedback::Ready
+        };
+        project_app_drawer(
+            &self.apps,
+            &search_matches,
+            &visible,
+            DrawerProjectionState {
+                view: self.view.into(),
+                filter: self.filter.map(ApplicationCategory::from),
+                selected_index,
+                search_active: !self.query.read(cx).value().trim().is_empty(),
+                context_menu_open: self.menu_at.is_some(),
+                feedback,
+            },
+        )
     }
 
     fn move_by(&mut self, dx: isize, dy: isize, cx: &mut Context<Self>) {
@@ -345,7 +402,7 @@ impl AppDrawer {
     /// actions keep their declared order and exact localized labels.
     fn app_menu(&self, pos: Point<Pixels>, cx: &gpui::App) -> rmac_ui::ContextMenu {
         let mut menu = rmac_ui::ContextMenu::new(pos).command_item(
-            "Open",
+            OPEN_ACTION_NAME,
             rmac_ui::shortcuts::ENTER,
             Box::new(OpenApp),
         );
@@ -360,7 +417,7 @@ impl AppDrawer {
             }
         }
         menu.separator()
-            .item("Show in Folder", Box::new(RevealInFinder))
+            .item(SHOW_IN_FOLDER_ACTION_NAME, Box::new(RevealInFinder))
     }
 
     fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {

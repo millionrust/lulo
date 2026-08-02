@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use gpui::SharedString;
+use rmac_app_drawer::accessibility::{ApplicationCategory, ApplicationSemantics};
 
 /// App-Library-style buckets projected from platform catalog metadata.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -21,16 +22,7 @@ pub(crate) enum Category {
 
 impl Category {
     pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Productivity => "Productivity",
-            Self::Internet => "Internet",
-            Self::Media => "Media",
-            Self::Developer => "Developer",
-            Self::Utilities => "Utilities",
-            Self::Games => "Games",
-            Self::System => "System",
-            Self::Other => "Other",
-        }
+        ApplicationCategory::from(self).label()
     }
 
     pub(crate) const ORDER: [Self; 8] = [
@@ -43,6 +35,21 @@ impl Category {
         Self::System,
         Self::Other,
     ];
+}
+
+impl From<Category> for ApplicationCategory {
+    fn from(category: Category) -> Self {
+        match category {
+            Category::Productivity => Self::Productivity,
+            Category::Internet => Self::Internet,
+            Category::Media => Self::Media,
+            Category::Developer => Self::Developer,
+            Category::Utilities => Self::Utilities,
+            Category::Games => Self::Games,
+            Category::System => Self::System,
+            Category::Other => Self::Other,
+        }
+    }
 }
 
 /// Renderer-ready application projection retaining the exact parsed launch
@@ -61,6 +68,36 @@ pub(crate) struct App {
     pub(crate) search_text: String,
     pub(crate) launch: rmac_apps::LaunchSpec,
     pub(crate) actions: Vec<rmac_apps::DesktopAction>,
+}
+
+impl ApplicationSemantics for App {
+    fn stable_id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    fn generic_name(&self) -> Option<&str> {
+        self.generic_name.as_deref()
+    }
+
+    fn category(&self) -> ApplicationCategory {
+        self.category.into()
+    }
+
+    fn declared_action_count(&self) -> usize {
+        self.actions.len()
+    }
+
+    fn declared_action_id(&self, index: usize) -> Option<&str> {
+        self.actions.get(index).map(|action| action.id.as_str())
+    }
+
+    fn declared_action_name(&self, index: usize) -> Option<&str> {
+        self.actions.get(index).map(|action| action.name.as_str())
+    }
 }
 
 pub(crate) fn scan() -> (Vec<App>, Option<SharedString>) {

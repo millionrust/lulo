@@ -105,9 +105,12 @@ evidence remains gated by the reference-PC framework work.
 - **App Drawer** 🟡 — localized XDG discovery, `TryExec`, inherited icons,
   search, shell-free launch, keyboard navigation, grid/list and category views,
   live refresh, metadata/action search, explicit empty states, and context
-  actions (Open / declared desktop actions / Show in Folder). Strict-focus and
-  Orca interaction evidence on Linux, plus measured cold-cache behavior,
-  remain.
+  actions (Open / declared desktop actions / Show in Folder). Its bounded
+  semantic model now owns exact grid/list identity, category counts/selection,
+  stable application selection/position/actions, Open-first menu order,
+  distinct empty states, and polite/assertive feedback without retaining query
+  text, paths, icons, or commands. Framework AT-SPI export, strict-focus and
+  Orca interaction evidence on Linux, plus measured cold-cache behavior remain.
 
 ## Shared component library (`rmac-ui`)
 Every app now shares one macOS-fidelity component layer instead of per-app

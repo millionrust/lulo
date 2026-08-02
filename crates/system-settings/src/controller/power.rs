@@ -2,6 +2,37 @@
 
 use super::*;
 
+fn power_profile_row(profile: rmac_power::PowerProfile, selected: bool, disabled: bool) -> ListRow {
+    let foreground = if selected { on_accent() } else { label() };
+    let secondary_foreground = if selected { on_accent() } else { secondary() };
+    ListRow::new(
+        ElementId::from(SharedString::from(format!(
+            "power-profile-{}",
+            profile.id()
+        ))),
+        div()
+            .w_full()
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(tile("icons/power.svg", secondary_foreground, 22.0))
+            .child(
+                div()
+                    .flex_1()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(foreground)
+                    .child(profile.label()),
+            )
+            .when(selected, |row| {
+                row.child(glyph("icons/check.svg", 14.0, on_accent()))
+            }),
+    )
+    .selected(selected)
+    .disabled(disabled)
+    .h(px(44.0))
+    .px_3()
+}
+
 impl Settings {
     pub(super) fn finish_power_update(
         &mut self,
@@ -137,20 +168,10 @@ impl Settings {
                     .child("Battery & Energy"),
             )
             .child(
-                div()
-                    .id("power-refresh")
-                    .px_2()
-                    .py_1()
-                    .rounded(px(6.0))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(accent())
-                    .cursor_pointer()
-                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                    .child(if self.power_busy {
-                        "Refreshing…"
-                    } else {
-                        "Refresh"
-                    })
+                Button::new("power-refresh", "Refresh")
+                    .ghost()
+                    .busy(self.power_busy)
+                    .disabled(self.power_loading || self.power_busy)
                     .on_click(move |_, _, cx| {
                         refresh_view.update(cx, |settings, cx| settings.refresh_power(cx));
                     }),
@@ -333,24 +354,13 @@ impl Settings {
                     let profile = *profile;
                     let selected = self.power.profiles.active == Some(profile);
                     let profile_view = view.clone();
-                    row_base()
-                        .id(ElementId::from(SharedString::from(format!(
-                            "power-profile-{}",
-                            profile.id()
-                        ))))
-                        .child(tile("icons/power.svg", accent(), 22.0))
-                        .child(text_block(profile.label().into(), None))
-                        .when(selected, |row| {
-                            row.child(glyph("icons/check.svg", 14.0, accent()))
-                        })
-                        .when(!selected, |row| {
-                            row.cursor_pointer()
-                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                .on_click(move |_, _, cx| {
-                                    profile_view.update(cx, |settings, cx| {
-                                        settings.set_power_profile(profile, cx)
-                                    });
-                                })
+                    power_profile_row(profile, selected, self.power_busy)
+                        .on_activate(move |_, _, cx| {
+                            if !selected {
+                                profile_view.update(cx, |settings, cx| {
+                                    settings.set_power_profile(profile, cx)
+                                });
+                            }
                         })
                         .into_any_element()
                 })

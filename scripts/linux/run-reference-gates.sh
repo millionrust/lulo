@@ -51,10 +51,12 @@ preflight_args=(
   --repo-root "$repo_root"
   --expected-desktop "$expected_desktop"
   --minimum-free-gib 25
+  --require-command appstreamcli
   --require-command bash
   --require-command busctl
   --require-command cargo
   --require-command cargo-deny
+  --require-command desktop-file-validate
   --require-command git
   --require-command python3
   --require-command rustc
@@ -166,8 +168,11 @@ run_gate() {
 
 cd "$repo_root"
 run_gate format "$minimum_kib" cargo fmt --all -- --check
+run_gate desktop-metadata "$minimum_kib" \
+  bash scripts/linux/check-desktop-metadata.sh
 run_gate harness-tests "$minimum_kib" \
   /usr/bin/python3 -m unittest \
+  scripts/test_application_package.py \
   scripts/test_measure_baseline.py \
   scripts/test_application_icons.py \
   scripts/test_reference_preflight.py \

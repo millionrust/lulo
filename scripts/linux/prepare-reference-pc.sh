@@ -10,10 +10,12 @@ execute=false
 
 packages=(
   at-spi2-core
+  appstream
   build-essential
   clang
   curl
   dbus
+  desktop-file-utils
   dpkg-dev
   fonts-inter
   git

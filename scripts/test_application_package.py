@@ -212,6 +212,25 @@ class ApplicationPackageTests(unittest.TestCase):
                 ):
                     verify_package.verify_installed_host(root)
 
+    def test_staged_gate_runs_host_standard_validators_without_app_binaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = self.stage(parent)
+            tools = parent / "tools"
+            log = parent / "validator.log"
+            body = 'printf "%s|%s\\n" "$0" "$*" >>"$RMAC_VALIDATOR_LOG"\n'
+            write_program(tools / "desktop-file-validate", body)
+            write_program(tools / "appstreamcli", body)
+            with mock.patch.dict(
+                os.environ,
+                {"PATH": str(tools), "RMAC_VALIDATOR_LOG": str(log)},
+            ):
+                verify_package.verify_standard_metadata(root)
+            calls = log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(calls), 1 + len(verify_package.APPLICATIONS))
+            self.assertIn("desktop-file-validate", calls[0])
+            self.assertTrue(all("validate --no-net" in call for call in calls[1:]))
+
     def test_all_staged_files_are_regular_read_only_package_data(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.stage(Path(temporary))

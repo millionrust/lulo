@@ -82,6 +82,10 @@ translations, license coverage, safe XML, and the deliberate absence of
 `DBusActivatable` and `StartupNotify`. Its installed-host mode additionally
 requires all seven `/usr/bin` executables and executes
 `desktop-file-validate` and `appstreamcli validate --no-net`.
+The Linux reference runner also stages the immutable metadata into a private
+temporary tree and runs those host validators before any rmac package is
+installed. Validator absence or rejection fails the summarized reference gate;
+this proves freedesktop metadata acceptance without claiming runtime identity.
 
 English is the source language. The complete Hindi catalog is merged directly
 into desktop names, generic names, comments, keywords, action labels, and

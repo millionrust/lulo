@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import subprocess
 import xml.etree.ElementTree as ET
@@ -465,20 +466,12 @@ def _run_validator(command: list[str], label: str) -> None:
     except (OSError, subprocess.TimeoutExpired) as error:
         raise VerificationError(f"{label} could not run") from error
     if result.returncode != 0:
-        raise VerificationError(f"{label} rejected installed metadata")
+        raise VerificationError(f"{label} rejected rmac metadata")
 
 
-def verify_installed_host(root: Path) -> None:
-    verify_tree(root, exact_tree=False)
-    for specification in APPLICATIONS.values():
-        executable = root / "usr/bin" / str(specification["binary"])
-        if not executable.is_file() or not os.access(executable, os.X_OK):
-            raise VerificationError(f"required application is missing: {executable.name}")
-    desktop_validator = root / "usr/bin/desktop-file-validate"
-    appstream_validator = root / "usr/bin/appstreamcli"
-    for validator in (desktop_validator, appstream_validator):
-        if not validator.is_file() or not os.access(validator, os.X_OK):
-            raise VerificationError(f"required metadata validator is missing: {validator.name}")
+def _run_standard_validators(
+    root: Path, desktop_validator: Path, appstream_validator: Path
+) -> None:
     desktop_paths = [
         str(root / f"usr/share/applications/{identity}.desktop")
         for identity in APPLICATIONS
@@ -499,18 +492,60 @@ def verify_installed_host(root: Path) -> None:
         )
 
 
+def _path_validator(name: str) -> Path:
+    candidate = shutil.which(name)
+    if candidate is None:
+        raise VerificationError(f"required metadata validator is missing: {name}")
+    path = Path(candidate)
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise VerificationError(f"required metadata validator is missing: {name}")
+    return path
+
+
+def verify_standard_metadata(root: Path) -> None:
+    """Verify one exact staged tree with the host freedesktop validators."""
+    verify_tree(root)
+    _run_standard_validators(
+        root,
+        _path_validator("desktop-file-validate"),
+        _path_validator("appstreamcli"),
+    )
+
+
+def verify_installed_host(root: Path) -> None:
+    verify_tree(root, exact_tree=False)
+    for specification in APPLICATIONS.values():
+        executable = root / "usr/bin" / str(specification["binary"])
+        if not executable.is_file() or not os.access(executable, os.X_OK):
+            raise VerificationError(f"required application is missing: {executable.name}")
+    desktop_validator = root / "usr/bin/desktop-file-validate"
+    appstream_validator = root / "usr/bin/appstreamcli"
+    for validator in (desktop_validator, appstream_validator):
+        if not validator.is_file() or not os.access(validator, os.X_OK):
+            raise VerificationError(f"required metadata validator is missing: {validator.name}")
+    _run_standard_validators(root, desktop_validator, appstream_validator)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--installed-host",
         action="store_true",
         help="also require app binaries and run freedesktop metadata validators",
+    )
+    mode.add_argument(
+        "--standard-validators",
+        action="store_true",
+        help="run host freedesktop validators against an exact staged tree",
     )
     arguments = parser.parse_args()
     try:
         if arguments.installed_host:
             verify_installed_host(arguments.root)
+        elif arguments.standard_validators:
+            verify_standard_metadata(arguments.root)
         else:
             verify_tree(arguments.root)
     except VerificationError as error:

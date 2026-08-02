@@ -12,6 +12,7 @@ mod dialog_presentation;
 mod filesystem_helpers;
 mod item_operations;
 mod lifecycle_controller;
+mod list_presentation;
 mod mount_controller;
 mod navigation;
 mod open_with_controller;

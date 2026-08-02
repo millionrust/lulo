@@ -4,14 +4,14 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    div, prelude::FluentBuilder as _, px, Div, InteractiveElement as _, IntoElement, ParentElement,
-    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
+    div, font, prelude::FluentBuilder as _, px, Div, InteractiveElement as _, IntoElement,
+    ParentElement, SharedString, Stateful, StatefulInteractiveElement as _, StrikethroughStyle,
+    Styled, StyledText, TextRun, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size};
 use rmac_ui::mac;
 
 use super::search_highlight::SearchTextFragment;
-use super::styled_search_fragment;
 
 pub(super) fn folder_row(
     id: impl Into<gpui::ElementId>,
@@ -124,4 +124,46 @@ pub(super) fn date_label(unix_ms: u64) -> SharedString {
     } else {
         format!("{}/{}/{:02}", date.month(), date.day(), date.year() % 100).into()
     }
+}
+
+pub(super) fn styled_search_fragment(
+    fragment: SearchTextFragment,
+    secondary: bool,
+    bold: bool,
+) -> StyledText {
+    let mut text_font = font(rmac_ui::UI_FONT);
+    if bold {
+        text_font = text_font.bold();
+    }
+    let base_color = if secondary {
+        mac::text_secondary()
+    } else {
+        mac::text()
+    };
+    let text_len = fragment.text().len();
+    let mut runs = Vec::with_capacity(3);
+    let mut push_run = |len: usize, highlighted: bool| {
+        if len == 0 {
+            return;
+        }
+        runs.push(TextRun {
+            len,
+            font: text_font.clone(),
+            color: if highlighted { mac::text() } else { base_color },
+            background_color: highlighted.then(mac::accent_subtle),
+            underline: None,
+            strikethrough: None,
+        });
+    };
+    if let Some(highlight) = fragment
+        .highlight()
+        .filter(|range| range.start < range.end && range.end <= text_len)
+    {
+        push_run(highlight.start, false);
+        push_run(highlight.end - highlight.start, true);
+        push_run(text_len - highlight.end, false);
+    } else {
+        push_run(text_len, false);
+    }
+    StyledText::new(fragment.text().to_string()).with_runs(runs)
 }

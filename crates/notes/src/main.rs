@@ -5,6 +5,7 @@
 //! the single writer remain authoritative off the UI thread.
 
 mod input_support;
+mod markdown_presentation;
 mod presentation;
 mod search_highlight;
 mod worker_bridge;
@@ -15,10 +16,10 @@ use std::sync::Arc;
 use std::thread;
 
 use gpui::{
-    actions, div, font, img, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context,
-    Div, Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit,
+    actions, div, img, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Div,
+    Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit,
     ParentElement, Render, RenderImage, SharedString, Stateful, StatefulInteractiveElement as _,
-    StrikethroughStyle, Styled, StyledImage as _, StyledText, TextRun, Window,
+    Styled, StyledImage as _, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;
@@ -37,8 +38,7 @@ use rmac_notes_runtime::{
 };
 use rmac_notes_storage::{
     resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, MarkdownImportReview,
-    MarkdownPreviewBlock, MarkdownPreviewBlockKind, MarkdownPreviewDocument, PendingReason,
-    PreviewSize,
+    PendingReason, PreviewSize,
 };
 use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, NewNote,
@@ -49,7 +49,11 @@ use rmac_ui::{mac, Button, InputEvent, TextField};
 use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
-use presentation::{attachment_match_row, date_label, folder_row, format_storage_bytes, tag_pill};
+use markdown_presentation::render_markdown_document;
+use presentation::{
+    attachment_match_row, date_label, folder_row, format_storage_bytes, styled_search_fragment,
+    tag_pill,
+};
 use search_highlight::{
     matched_search_fragment, plain_search_fragment, SearchTextFragment,
     MAX_SEARCH_DETAIL_FRAGMENT_CHARS, MAX_SEARCH_LABEL_FRAGMENT_CHARS,
@@ -3762,173 +3766,7 @@ impl NotesView {
                         ),
                 )
                 .into_any_element(),
-            MarkdownPreviewState::Ready { document, .. } => self.render_markdown_document(document),
-        }
-    }
-
-    fn render_markdown_document(&self, document: &MarkdownPreviewDocument) -> AnyElement {
-        if document.blocks().is_empty() {
-            return centered_state(
-                "Empty Note",
-                "This note has no Markdown content to preview.",
-            );
-        }
-        div()
-            .id("markdown-preview")
-            .flex_1()
-            .min_h(px(0.0))
-            .overflow_y_scroll()
-            .px(px(44.0))
-            .pt_2()
-            .pb_6()
-            .v_flex()
-            .gap_3()
-            .when(document.truncated(), |element| {
-                element.child(
-                    div()
-                        .p_3()
-                        .rounded(px(8.0))
-                        .bg(mac::warning_background())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(mac::warning_text())
-                        .child(
-                            "Preview stopped at its safety limit. The saved note remains complete in Edit mode.",
-                        ),
-                )
-            })
-            .children(
-                document
-                    .blocks()
-                    .iter()
-                    .map(|block| self.render_markdown_block(block)),
-            )
-            .into_any_element()
-    }
-
-    fn render_markdown_block(&self, block: &MarkdownPreviewBlock) -> AnyElement {
-        if matches!(block.kind(), MarkdownPreviewBlockKind::ThematicBreak) {
-            return div()
-                .h(px(1.0))
-                .w_full()
-                .my_2()
-                .bg(mac::separator())
-                .into_any_element();
-        }
-        let mut text_runs = Vec::with_capacity(block.runs().len());
-        for run in block.runs() {
-            let style = run.style();
-            let mut text_font = font(if style.code {
-                rmac_ui::MONO_FONT
-            } else {
-                rmac_ui::UI_FONT
-            });
-            if style.bold {
-                text_font = text_font.bold();
-            }
-            if style.italic {
-                text_font = text_font.italic();
-            }
-            let range = run.range();
-            text_runs.push(TextRun {
-                len: range.len(),
-                font: text_font,
-                color: if style.inert_placeholder {
-                    mac::text_secondary()
-                } else if style.link_label {
-                    mac::notes_accent()
-                } else {
-                    mac::text()
-                },
-                background_color: style.code.then(mac::control_fill),
-                underline: None,
-                strikethrough: style.strikethrough.then(|| StrikethroughStyle {
-                    thickness: px(1.0),
-                    color: None,
-                }),
-            });
-        }
-        let styled = StyledText::new(block.text().to_string()).with_runs(text_runs);
-        let content = div()
-            .text_size(rmac_ui::text_px(16.0))
-            .line_height(rmac_ui::text_px(24.0))
-            .child(styled);
-        match block.kind() {
-            MarkdownPreviewBlockKind::Paragraph => content.into_any_element(),
-            MarkdownPreviewBlockKind::Heading(depth) => content
-                .text_size(rmac_ui::text_px(match depth {
-                    1 => 28.0,
-                    2 => 23.0,
-                    3 => 20.0,
-                    _ => 17.0,
-                }))
-                .line_height(rmac_ui::text_px(match depth {
-                    1 => 34.0,
-                    2 => 29.0,
-                    3 => 26.0,
-                    _ => 23.0,
-                }))
-                .font_weight(mac::BOLD)
-                .into_any_element(),
-            MarkdownPreviewBlockKind::BlockQuote => div()
-                .pl_3()
-                .border_l_2()
-                .border_color(mac::separator())
-                .text_color(mac::text_secondary())
-                .child(content)
-                .into_any_element(),
-            MarkdownPreviewBlockKind::ListItem {
-                depth,
-                ordered_index,
-                checked,
-            } => {
-                let marker = checked.map_or_else(
-                    || ordered_index.map_or_else(|| "•".to_string(), |index| format!("{index}.")),
-                    |checked| if checked { "☑".into() } else { "☐".into() },
-                );
-                div()
-                    .pl(px(f32::from(depth) * 18.0))
-                    .flex()
-                    .items_start()
-                    .gap_2()
-                    .child(
-                        div()
-                            .w(px(24.0))
-                            .text_color(mac::text_secondary())
-                            .child(marker),
-                    )
-                    .child(div().flex_1().child(content))
-                    .into_any_element()
-            }
-            MarkdownPreviewBlockKind::CodeBlock => div()
-                .p_3()
-                .rounded(px(8.0))
-                .bg(mac::control_fill())
-                .child(content)
-                .into_any_element(),
-            MarkdownPreviewBlockKind::TableRow { header } => div()
-                .px_3()
-                .py_2()
-                .border_b_1()
-                .border_color(mac::separator())
-                .when(header, |element| {
-                    element.bg(mac::control_fill()).font_weight(mac::BOLD)
-                })
-                .child(content)
-                .into_any_element(),
-            MarkdownPreviewBlockKind::Footnote => div()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(mac::text_secondary())
-                .child(content)
-                .into_any_element(),
-            MarkdownPreviewBlockKind::InertNotice => div()
-                .p_3()
-                .rounded(px(8.0))
-                .bg(mac::control_fill())
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(mac::text_secondary())
-                .child(content)
-                .into_any_element(),
-            MarkdownPreviewBlockKind::ThematicBreak => unreachable!("handled above"),
+            MarkdownPreviewState::Ready { document, .. } => render_markdown_document(document),
         }
     }
 
@@ -5342,44 +5180,6 @@ fn pending_message(reason: PendingReason) -> String {
             "The durable Notes library changed while this local change was pending".into()
         }
     }
-}
-
-fn styled_search_fragment(fragment: SearchTextFragment, secondary: bool, bold: bool) -> StyledText {
-    let mut text_font = font(rmac_ui::UI_FONT);
-    if bold {
-        text_font = text_font.bold();
-    }
-    let base_color = if secondary {
-        mac::text_secondary()
-    } else {
-        mac::text()
-    };
-    let text_len = fragment.text().len();
-    let mut runs = Vec::with_capacity(3);
-    let mut push_run = |len: usize, highlighted: bool| {
-        if len == 0 {
-            return;
-        }
-        runs.push(TextRun {
-            len,
-            font: text_font.clone(),
-            color: if highlighted { mac::text() } else { base_color },
-            background_color: highlighted.then(mac::accent_subtle),
-            underline: None,
-            strikethrough: None,
-        });
-    };
-    if let Some(highlight) = fragment
-        .highlight()
-        .filter(|range| range.start < range.end && range.end <= text_len)
-    {
-        push_run(highlight.start, false);
-        push_run(highlight.end - highlight.start, true);
-        push_run(text_len - highlight.end, false);
-    } else {
-        push_run(text_len, false);
-    }
-    StyledText::new(fragment.text().to_string()).with_runs(runs)
 }
 
 fn main() {

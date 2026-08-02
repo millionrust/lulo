@@ -452,6 +452,24 @@ impl BannerSession {
         self.pending.len()
     }
 
+    /// Exact current semantic tree for the future Linux accessibility host.
+    /// `announcements` must be the announcement slice emitted with the update
+    /// that caused this frame; replacements are never guessed from content.
+    pub fn accessibility_snapshot(
+        &self,
+        announcements: &[Announcement],
+    ) -> Result<
+        crate::accessibility::BannerAccessibilitySnapshot,
+        crate::accessibility::AccessibilityProjectionError,
+    > {
+        crate::accessibility::project_banner_accessibility(
+            &self.frame(),
+            self.focused(),
+            self.pending_control(),
+            announcements,
+        )
+    }
+
     pub fn apply_event(&mut self, event: RuntimeEvent, now: Time) -> Result<Update, Error> {
         match event {
             RuntimeEvent::Posted {

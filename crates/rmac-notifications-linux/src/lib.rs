@@ -1,5 +1,6 @@
 //! Linux D-Bus wire decoding for the rmac notification authority.
 
+pub mod accessibility;
 pub mod banner;
 pub mod center;
 pub mod center_surface;

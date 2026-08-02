@@ -293,6 +293,30 @@ diagnostics expose only feedback counts and typed reasons. The real surface
 must map these entries to the shared dismissible error Toast and an accessible
 status node without reconstructing backend details.
 
+`rmac_notifications_linux::accessibility` is the public semantic boundary for
+that real surface. It consumes only the exact accepted `Frame`, presenter focus
+and pending control, and the announcement list emitted by the same update. It
+produces one named notification region per exact output, newest-first card and
+control order, notification and button roles, application/title/body text,
+urgent assertive versus ordinary polite live regions, phase and pause state,
+set position, exact default/button/dismiss actions, focus, and one busy control.
+An arriving banner never creates an initial-focus request. Replacement is
+announced only when the presenter's explicit `show-as-new` outcome names it;
+the accessibility adapter never guesses from changed content.
+
+Feedback becomes a polite status node with the existing private-safe operation
+title/message and one exact dismiss action. The complete keyboard target order
+contains every card, visible action, notification dismiss control, and feedback
+dismiss control in visual order. Targets retain their typed notification,
+button-position, or feedback identity for dispatch while custom diagnostics
+redact all target, output, application, title, body, and action-label data.
+Projection fails closed above 500 cards, 32 surfaces, eight cards per surface,
+ten controls per card, 16 feedback entries, 20 KiB per semantic text value, or
+16 MiB aggregate text, and on reordered stacks, malformed joins, duplicate
+identities, invalid focus/busy state, controls inferred from the wrong role, or
+stale/duplicate announcements. `BannerSession::accessibility_snapshot` binds
+the host directly to this authority.
+
 `rmac_notifications_linux::surfaces` is the framework-neutral contract for the
 real per-output banner host. It follows the
 [wlr layer-shell protocol](https://wayland.app/protocols/wlr-layer-shell-unstable-v1)
@@ -439,8 +463,9 @@ private history file.
    both protocol interfaces against the real portal frontend on the Linux
    reference PC, including malformed, unsealed, oversize, policy-suppressed,
    replacement, flood/backpressure, and daemon-restart cases.
-2. E2 layer-surface renderer: render the runtime snapshot with real hover,
-   keyboard, action, activation-token, and multi-output evidence on Linux.
+2. E2 layer-surface renderer: export the accepted semantic snapshot, render the
+   runtime snapshot with real hover, keyboard, action, activation-token, and
+   multi-output evidence on Linux.
 3. E3 Notification Center evidence and completion: prove trailing placement,
    outside/Escape dismissal, live and restart-stale action behavior, keyboard
    focus order, scaling, and Orca semantics on Linux. System Settings exposes

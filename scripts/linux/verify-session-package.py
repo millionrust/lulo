@@ -224,24 +224,9 @@ def _desktop_entry(path: Path) -> dict[str, str]:
     return dict(parser["Desktop Entry"])
 
 
-def verify_installed_host(root: Path) -> None:
-    verify_tree(root, exact_tree=False)
-    for relative in (
-        Path("usr/bin/niri-session"),
-        Path("usr/bin/systemctl"),
-        Path("usr/bin/install"),
-        Path("usr/bin/awk"),
-        Path("usr/bin/sleep"),
-        Path("usr/sbin/gdm3"),
-    ):
-        path = root / relative
-        if not path.exists() or not os.access(path, os.X_OK):
-            raise VerificationError(f"required runtime executable is missing: {relative.name}")
-    for executable in REQUIRED_RMAC_EXECUTABLES:
-        path = root / "usr/libexec/rmac" / executable
-        if not path.exists() or not os.access(path, os.X_OK):
-            raise VerificationError(f"required rmac executable is missing: {executable}")
-
+def verify_recovery_session(root: Path) -> None:
+    if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+        raise VerificationError("installed root must be an absolute ordinary directory")
     sessions = root / "usr/share/wayland-sessions"
     recovery_found = False
     try:
@@ -267,24 +252,57 @@ def verify_installed_host(root: Path) -> None:
         raise VerificationError("a stock GNOME Wayland recovery session was not proven")
 
 
+def verify_installed_host(root: Path) -> None:
+    verify_tree(root, exact_tree=False)
+    for relative in (
+        Path("usr/bin/niri-session"),
+        Path("usr/bin/systemctl"),
+        Path("usr/bin/install"),
+        Path("usr/bin/awk"),
+        Path("usr/bin/sleep"),
+        Path("usr/sbin/gdm3"),
+    ):
+        path = root / relative
+        if not path.exists() or not os.access(path, os.X_OK):
+            raise VerificationError(f"required runtime executable is missing: {relative.name}")
+    for executable in REQUIRED_RMAC_EXECUTABLES:
+        path = root / "usr/libexec/rmac" / executable
+        if not path.exists() or not os.access(path, os.X_OK):
+            raise VerificationError(f"required rmac executable is missing: {executable}")
+    verify_recovery_session(root)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
-    parser.add_argument(
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--installed-host",
         action="store_true",
         help="also require runtime executables and a separate GNOME session",
     )
+    modes.add_argument(
+        "--recovery-only",
+        action="store_true",
+        help="require only a separate stock GNOME Wayland recovery session",
+    )
     arguments = parser.parse_args()
     try:
-        if arguments.installed_host:
+        if arguments.recovery_only:
+            verify_recovery_session(arguments.root)
+        elif arguments.installed_host:
             verify_installed_host(arguments.root)
         else:
             verify_tree(arguments.root)
     except VerificationError as error:
         print(f"verify-session-package: {error}", file=sys.stderr)
         return 3
-    print("rmac session package layout verified")
+    if arguments.recovery_only:
+        print("stock GNOME Wayland recovery session verified")
+    elif arguments.installed_host:
+        print("installed rmac and GNOME recovery session boundary verified")
+    else:
+        print("rmac session package layout verified")
     return 0
 
 

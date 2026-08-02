@@ -83,6 +83,35 @@ Run that flow natively on amd64 and arm64; see
 [Native packaging](native-packaging.md) for verification, installation, and
 evidence requirements.
 
+On the dedicated reference PC, install one of the two byte-identical results
+through the guarded APT handoff. Run the read-only check first from the
+untouched GNOME Wayland session:
+
+```sh
+candidate_dir="${PWD}/target/native-$(dpkg --print-architecture)-reproducibility/run-a"
+bash scripts/linux/install-native-candidate.sh \
+  --check --directory "${candidate_dir}"
+```
+
+The check verifies Ubuntu 26.04, the native architecture, 25 GiB headroom, the
+exact package inventory, and a separate stock GNOME Wayland recovery entry.
+If it passes, authorize exactly one installation attempt and repeat it in
+execute mode:
+
+```sh
+printf 'rmac-reference-pc-install-v1\n' | \
+  sudo tee /run/rmac-reference-pc >/dev/null
+bash scripts/linux/install-native-candidate.sh \
+  --execute --directory "${candidate_dir}"
+```
+
+The installer consumes the one-attempt marker, asks APT to install exactly
+`rmac-apps` and `rmac-session` with package removals forbidden, verifies both
+installed versions and the complete rmac/GNOME session boundary, then reloads
+only the current user's systemd unit inventory. It never selects the new
+session, restarts GDM, edits niri configuration, or reads user data. Sign out
+normally and choose **rmac** in GDM; keep **Ubuntu** available for recovery.
+
 ## Flatpak candidate
 
 Text Editor is the sole current sandbox candidate. Prepare its runtime and

@@ -155,3 +155,24 @@ and arm64, install both packages on clean Ubuntu 26.04 machines, and record
 reviewed dependency, launch, portal, and uninstall-preservation evidence.
 Package installation, upgrade, rollback, purge/export, repository signing, and
 the full GDM journey remain H4–H7 gates.
+
+For the dedicated reference-PC installation, use one verified result directory
+without copying archives out of the set:
+
+```bash
+candidate_dir="${PWD}/target/native-$(dpkg --print-architecture)-reproducibility/run-a"
+bash scripts/linux/install-native-candidate.sh \
+  --check --directory "${candidate_dir}"
+printf 'rmac-reference-pc-install-v1\n' | \
+  sudo tee /run/rmac-reference-pc >/dev/null
+bash scripts/linux/install-native-candidate.sh \
+  --execute --directory "${candidate_dir}"
+```
+
+This is an explicitly authorized local-candidate install, not repository trust
+or release signing. It runs only from the untouched GNOME Wayland session on
+Ubuntu 26.04, verifies the exact native package set before mutation, forbids
+APT removals, consumes its `/run` marker before invoking APT, checks the 15 GiB
+post-install floor, verifies the exact installed versions and package-owned
+session content, and proves that a separate stock GNOME Wayland entry remains.
+It does not perform upgrade, rollback, remove, purge, or user-data cleanup.

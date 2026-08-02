@@ -200,6 +200,23 @@ class SessionPackageTests(unittest.TestCase):
             add_runtime_fixture(root, include_gnome=True)
             verify_package.verify_installed_host(root)
 
+    def test_recovery_only_gate_needs_no_rmac_package(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sessions = root / "usr/share/wayland-sessions"
+            sessions.mkdir(parents=True)
+            (sessions / "rmac.desktop").write_text(
+                "[Desktop Entry]\nDesktopNames=rmac;niri\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                verify_package.VerificationError, "GNOME Wayland recovery"
+            ):
+                verify_package.verify_recovery_session(root)
+
+            add_runtime_fixture(root, include_gnome=True)
+            verify_package.verify_recovery_session(root)
+
     def test_manifest_cannot_claim_recovery_desktop_or_user_data(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.stage(Path(temporary))

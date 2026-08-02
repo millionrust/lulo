@@ -5181,6 +5181,7 @@ dependencies = [
  "blocking",
  "futures-lite 2.6.1",
  "futures-util",
+ "rmac-app-launch",
  "rmac-apps",
  "rmac-launcher",
  "rmac-launcher-providers",

@@ -20,3 +20,4 @@ rmac-shortcuts.workspace = true
 
 [dev-dependencies]
 futures-lite.workspace = true
+rmac-app-launch.workspace = true

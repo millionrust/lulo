@@ -11,6 +11,7 @@ mod navigation;
 mod open_with_controller;
 mod operations;
 mod presentation;
+mod selection_controller;
 mod updates;
 
 use std::borrow::Cow;
@@ -1022,42 +1023,6 @@ impl FinderView {
         view
     }
 
-    // ---- selection ----
-    fn select_single(&mut self, ix: usize) {
-        self.selected.clear();
-        self.selected.insert(ix);
-        self.anchor = Some(ix);
-    }
-
-    fn handle_click(&mut self, ix: usize, cmd: bool, shift: bool) {
-        if cmd {
-            if !self.selected.remove(&ix) {
-                self.selected.insert(ix);
-            }
-            self.anchor = Some(ix);
-        } else if shift {
-            if let Some(a) = self.anchor {
-                let (lo, hi) = if a <= ix { (a, ix) } else { (ix, a) };
-                self.selected.clear();
-                for i in lo..=hi {
-                    self.selected.insert(i);
-                }
-            } else {
-                self.select_single(ix);
-            }
-        } else {
-            self.select_single(ix);
-        }
-    }
-
-    fn selected_paths(&self) -> Vec<PathBuf> {
-        self.selected
-            .iter()
-            .filter_map(|&i| self.entries.get(i))
-            .map(|e| e.path.clone())
-            .collect()
-    }
-
     fn record_operation_failures(
         &mut self,
         failures: Vec<file_ops::Failure>,
@@ -1094,139 +1059,6 @@ impl FinderView {
             cancel.store(true, Ordering::Release);
         }
         self.search_generation = self.search_generation.wrapping_add(1);
-    }
-
-    fn write_clip_text(&self, cx: &mut Context<Self>) {
-        // Native pasteboard: real file:// URLs so the system Finder (and any
-        // app) can paste the copied items.
-        pasteboard::write_file_urls(&self.clipboard);
-        // Plain-text fallback: newline-joined paths, for the text bridge.
-        let text = self
-            .clipboard
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !text.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
-        }
-    }
-
-    fn copy(&mut self, cx: &mut Context<Self>) {
-        if self.trash_view {
-            self.operation_error = Some("Restore items before copying them".into());
-            cx.notify();
-            return;
-        }
-        self.clipboard = self.selected_paths();
-        self.clip_cut = false;
-        self.write_clip_text(cx);
-    }
-
-    fn cut(&mut self, cx: &mut Context<Self>) {
-        if self.trash_view {
-            self.operation_error = Some("Use Restore to move an item out of Trash".into());
-            cx.notify();
-            return;
-        }
-        self.clipboard = self.selected_paths();
-        self.clip_cut = true;
-        self.write_clip_text(cx);
-    }
-
-    fn paste(&mut self, cx: &mut Context<Self>) {
-        if self.block_mutation_during_transfer(cx) {
-            return;
-        }
-        // Nothing copied inside rmac Finder — pull from the system pasteboard so
-        // items copied in the real Finder (or elsewhere) can be pasted here.
-        if self.clipboard.is_empty() {
-            // Prefer the native file:// URLs; fall back to the text bridge.
-            let mut paths = pasteboard::read_file_urls();
-            paths.retain(|p| p.exists());
-            if paths.is_empty() {
-                if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
-                    paths = text
-                        .lines()
-                        .map(PathBuf::from)
-                        .filter(|p| p.exists())
-                        .collect();
-                }
-            }
-            if !paths.is_empty() {
-                self.clipboard = paths;
-                self.clip_cut = false;
-            }
-        }
-        let kind = if self.clip_cut {
-            file_ops::TransferKind::Move
-        } else {
-            file_ops::TransferKind::Copy
-        };
-        let mut tasks = Vec::new();
-        for src in self.clipboard.clone() {
-            if self.clip_cut && src.parent() == Some(self.cwd.as_path()) {
-                continue;
-            }
-            let name = src.file_name().map(|n| n.to_owned()).unwrap_or_default();
-            tasks.push(file_ops::TransferTask {
-                kind: kind.clone(),
-                source: src,
-                destination: self.cwd.join(name),
-            });
-        }
-        if tasks.is_empty() {
-            if self.clip_cut {
-                self.clipboard.clear();
-                self.clip_cut = false;
-                pasteboard::clear_file_urls();
-                self.operation_notice =
-                    Some("The items are already in this folder; nothing was moved".into());
-                cx.notify();
-            }
-            return;
-        }
-        self.start_transfer_with_conflicts(
-            if self.clip_cut { "Moving" } else { "Copying" },
-            tasks,
-            self.clip_cut,
-            cx,
-        );
-    }
-
-    fn select_all(&mut self, cx: &mut Context<Self>) {
-        // Only the entries currently visible (after the search filter).
-        let q = if self.search_summary.is_some() {
-            String::new()
-        } else {
-            self.query.read(cx).value().to_lowercase()
-        };
-        self.selected = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| q.is_empty() || e.name.to_lowercase().contains(&q))
-            .map(|(i, _)| i)
-            .collect();
-        cx.notify();
-    }
-
-    fn toggle_hidden(&mut self, cx: &mut Context<Self>) {
-        self.show_hidden = !self.show_hidden;
-        self.reload(cx);
-    }
-
-    fn set_sort(&mut self, key: SortKey, cx: &mut Context<Self>) {
-        if self.sort_key == key {
-            self.sort_asc = !self.sort_asc;
-        } else {
-            self.sort_key = key;
-            self.sort_asc = true;
-        }
-        sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
-        self.search_relevance_order = false;
-        self.selected.clear();
-        cx.notify();
     }
 
     // ---- rename ----

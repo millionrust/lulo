@@ -2,6 +2,49 @@
 
 use super::*;
 
+fn lock_policy_choice_row(
+    id: SharedString,
+    icon: &'static str,
+    title: &'static str,
+    detail: &'static str,
+    selected: bool,
+    disabled: bool,
+) -> ListRow {
+    let foreground = if selected { on_accent() } else { label() };
+    let secondary_foreground = if selected { on_accent() } else { secondary() };
+    let content = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap_3()
+        .child(tile(icon, secondary_foreground, 22.0))
+        .child(
+            div()
+                .v_flex()
+                .flex_1()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(foreground)
+                        .child(title),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(11.0))
+                        .text_color(secondary_foreground)
+                        .child(detail),
+                ),
+        )
+        .when(selected, |row| {
+            row.child(glyph("icons/check.svg", 14.0, on_accent()))
+        });
+    ListRow::new(ElementId::from(id), content)
+        .selected(selected)
+        .disabled(disabled)
+        .h(px(60.0))
+        .px_3()
+}
+
 impl Settings {
     pub(super) fn finish_lock_policy_update(
         &mut self,
@@ -151,29 +194,12 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let mut cards = vec![div().flex().justify_end().mb_2().child(
-            div()
-                .id("lock-policy-refresh")
-                .px_2()
-                .py_1()
-                .rounded(px(6.0))
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(accent())
-                .when(
-                    !self.lock_policy_loading && !self.lock_policy_busy,
-                    |button| {
-                        button
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            .on_click(move |_, _, cx| {
-                                refresh_view
-                                    .update(cx, |settings, cx| settings.refresh_lock_policy(cx));
-                            })
-                    },
-                )
-                .child(if self.lock_policy_loading {
-                    "Loading…"
-                } else {
-                    "Refresh"
+            Button::new("lock-policy-refresh", "Refresh")
+                .ghost()
+                .disabled(self.lock_policy_loading || self.lock_policy_busy)
+                .busy(self.lock_policy_loading || self.lock_policy_busy)
+                .on_click(move |_, _, cx| {
+                    refresh_view.update(cx, |settings, cx| settings.refresh_lock_policy(cx));
                 }),
         )];
         if self.lock_policy_loading || self.lock_policy_busy {
@@ -226,27 +252,21 @@ impl Settings {
                 .map(|(timeout, title, detail)| {
                     let selected = policy.lock_after_seconds == timeout;
                     let option_view = view.clone();
-                    row_base()
-                        .id(ElementId::from(SharedString::from(format!(
-                            "lock-timeout-{}",
-                            timeout.unwrap_or(0)
-                        ))))
-                        .child(tile("icons/lock.svg", secondary(), 22.0))
-                        .child(text_block(title.into(), Some(detail.into())))
-                        .when(selected, |row| {
-                            row.child(glyph("icons/check.svg", 14.0, accent()))
-                        })
-                        .when(!selected && !self.lock_policy_busy, |row| {
-                            row.cursor_pointer()
-                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                .on_click(move |_, _, cx| {
-                                    option_view.update(cx, |settings, cx| {
-                                        settings.set_lock_after(timeout, cx)
-                                    });
-                                })
-                        })
-                        .when(self.lock_policy_busy, |row| row.opacity(0.55))
-                        .into_any_element()
+                    lock_policy_choice_row(
+                        SharedString::from(format!("lock-timeout-{}", timeout.unwrap_or(0))),
+                        "icons/lock.svg",
+                        title,
+                        detail,
+                        selected,
+                        self.lock_policy_busy,
+                    )
+                    .on_activate(move |_, _, cx| {
+                        if !selected {
+                            option_view
+                                .update(cx, |settings, cx| settings.set_lock_after(timeout, cx));
+                        }
+                    })
+                    .into_any_element()
                 })
                 .collect::<Vec<_>>();
             if !TIMEOUTS
@@ -301,27 +321,21 @@ impl Settings {
                 .map(|(timeout, title, detail)| {
                     let selected = policy.suspend_after_seconds == timeout;
                     let option_view = view.clone();
-                    row_base()
-                        .id(ElementId::from(SharedString::from(format!(
-                            "suspend-timeout-{}",
-                            timeout.unwrap_or(0)
-                        ))))
-                        .child(tile("icons/power.svg", secondary(), 22.0))
-                        .child(text_block(title.into(), Some(detail.into())))
-                        .when(selected, |row| {
-                            row.child(glyph("icons/check.svg", 14.0, accent()))
-                        })
-                        .when(!selected && !self.lock_policy_busy, |row| {
-                            row.cursor_pointer()
-                                .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                .on_click(move |_, _, cx| {
-                                    option_view.update(cx, |settings, cx| {
-                                        settings.set_suspend_after(timeout, cx)
-                                    });
-                                })
-                        })
-                        .when(self.lock_policy_busy, |row| row.opacity(0.55))
-                        .into_any_element()
+                    lock_policy_choice_row(
+                        SharedString::from(format!("suspend-timeout-{}", timeout.unwrap_or(0))),
+                        "icons/power.svg",
+                        title,
+                        detail,
+                        selected,
+                        self.lock_policy_busy,
+                    )
+                    .on_activate(move |_, _, cx| {
+                        if !selected {
+                            option_view
+                                .update(cx, |settings, cx| settings.set_suspend_after(timeout, cx));
+                        }
+                    })
+                    .into_any_element()
                 })
                 .collect::<Vec<_>>();
             if let Some(seconds) = policy.suspend_after_seconds {

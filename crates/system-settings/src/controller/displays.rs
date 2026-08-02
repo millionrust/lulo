@@ -2,6 +2,45 @@
 
 use super::*;
 
+fn display_choice_row(
+    id: SharedString,
+    title: SharedString,
+    subtitle: Option<SharedString>,
+    selected: bool,
+    disabled: bool,
+) -> ListRow {
+    let has_subtitle = subtitle.is_some();
+    let foreground = if selected { on_accent() } else { label() };
+    let secondary_foreground = if selected { on_accent() } else { secondary() };
+    let mut text = div().v_flex().flex_1().child(
+        div()
+            .text_size(rmac_ui::text_px(13.0))
+            .text_color(foreground)
+            .child(title),
+    );
+    if let Some(subtitle) = subtitle {
+        text = text.child(
+            div()
+                .text_size(rmac_ui::text_px(11.0))
+                .text_color(secondary_foreground)
+                .child(subtitle),
+        );
+    }
+    let content = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .child(text)
+        .when(selected, |row| {
+            row.child(glyph("icons/check.svg", 14.0, on_accent()))
+        });
+    ListRow::new(ElementId::from(id), content)
+        .selected(selected)
+        .disabled(disabled)
+        .h(px(if has_subtitle { 60.0 } else { 44.0 }))
+        .px_3()
+}
+
 impl Settings {
     pub(super) fn finish_display_update(
         &mut self,
@@ -312,16 +351,13 @@ impl Settings {
                     .when_some(confirmation_seconds, |actions, seconds| {
                         actions
                             .child(
-                                div()
-                                    .id("display-keep")
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(px(6.0))
-                                    .text_size(rmac_ui::text_px(12.0))
-                                    .text_color(accent())
-                                    .cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .child(format!("Keep Changes ({seconds}s)"))
+                                Button::new("display-keep", format!("Keep Changes ({seconds}s)"))
+                                    .primary()
+                                    .disabled(
+                                        self.display_loading
+                                            || self.display_busy
+                                            || !self.display.can_persist,
+                                    )
                                     .on_click(move |_, _, cx| {
                                         keep_view.update(cx, |settings, cx| {
                                             settings.keep_display_change(cx)
@@ -329,16 +365,13 @@ impl Settings {
                                     }),
                             )
                             .child(
-                                div()
-                                    .id("display-revert")
-                                    .px_2()
-                                    .py_1()
-                                    .rounded(px(6.0))
-                                    .text_size(rmac_ui::text_px(12.0))
-                                    .text_color(hsl(0xff3b30))
-                                    .cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .child("Revert")
+                                Button::new("display-revert", "Revert")
+                                    .destructive()
+                                    .disabled(
+                                        self.display_loading
+                                            || self.display_busy
+                                            || !self.display.can_configure,
+                                    )
                                     .on_click(move |_, _, cx| {
                                         revert_view.update(cx, |settings, cx| {
                                             settings.revert_display_change(cx)
@@ -347,20 +380,14 @@ impl Settings {
                             )
                     })
                     .child(
-                        div()
-                            .id("display-refresh")
-                            .px_2()
-                            .py_1()
-                            .rounded(px(6.0))
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(accent())
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            .child(if self.display_busy {
-                                "Applying…"
-                            } else {
-                                "Refresh"
-                            })
+                        Button::new("display-refresh", "Refresh")
+                            .ghost()
+                            .busy(self.display_busy)
+                            .disabled(
+                                self.display_loading
+                                    || self.display_busy
+                                    || self.display_confirmation.is_some(),
+                            )
                             .on_click(move |_, _, cx| {
                                 refresh_view
                                     .update(cx, |settings, cx| settings.refresh_displays(cx));
@@ -494,26 +521,27 @@ impl Settings {
                 let output_id = output.id.clone();
                 let primary_view = view.clone();
                 rows.push(
-                    row_base()
-                        .id(SharedString::from(format!("display-primary-{output_id}")))
-                        .child(text_block(
-                            "Use as Main Display".into(),
-                            Some("Anchors rmac shell surfaces and niri startup focus".into()),
-                        ))
-                        .child(glyph("icons/chevron-right.svg", 14.0, secondary()))
-                        .when(
-                            !self.display_busy && self.display_confirmation.is_none(),
-                            |row| {
-                                row.cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .on_click(move |_, _, cx| {
-                                        primary_view.update(cx, |settings, cx| {
-                                            settings.set_primary_display(output_id.clone(), cx)
-                                        });
-                                    })
-                            },
-                        )
-                        .into_any_element(),
+                    ListRow::new(
+                        SharedString::from(format!("display-primary-{output_id}")),
+                        div()
+                            .w_full()
+                            .flex()
+                            .items_center()
+                            .child(text_block(
+                                "Use as Main Display".into(),
+                                Some("Anchors rmac shell surfaces and niri startup focus".into()),
+                            ))
+                            .child(glyph("icons/chevron-right.svg", 14.0, secondary())),
+                    )
+                    .disabled(self.display_busy || self.display_confirmation.is_some())
+                    .h(px(60.0))
+                    .px_3()
+                    .on_activate(move |_, _, cx| {
+                        primary_view.update(cx, |settings, cx| {
+                            settings.set_primary_display(output_id.clone(), cx)
+                        });
+                    })
+                    .into_any_element(),
                 );
             }
             cards.push(card(rows));
@@ -544,30 +572,29 @@ impl Settings {
                             let expected_output = output.clone();
                             let placement_view = view.clone();
                             Some(
-                                row_base()
-                                    .id(SharedString::from(format!(
+                                display_choice_row(
+                                    SharedString::from(format!(
                                         "display-position-{output_id}-{}",
                                         placement.label()
-                                    )))
-                                    .child(text_block(placement.label().into(), None))
-                                    .when(selected, |row| {
-                                        row.child(glyph("icons/check.svg", 14.0, accent()))
-                                    })
-                                    .when(!selected, |row| {
-                                        row.cursor_pointer()
-                                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                            .on_click(move |_, _, cx| {
-                                                let change = DisplayChange::Position {
-                                                    output: expected_output.clone(),
-                                                    x,
-                                                    y,
-                                                };
-                                                placement_view.update(cx, |settings, cx| {
-                                                    settings.apply_display_change(change, cx)
-                                                });
-                                            })
-                                    })
-                                    .into_any_element(),
+                                    )),
+                                    placement.label().into(),
+                                    None,
+                                    selected,
+                                    self.display_busy || self.display_confirmation.is_some(),
+                                )
+                                .on_activate(move |_, _, cx| {
+                                    if !selected {
+                                        let change = DisplayChange::Position {
+                                            output: expected_output.clone(),
+                                            x,
+                                            y,
+                                        };
+                                        placement_view.update(cx, |settings, cx| {
+                                            settings.apply_display_change(change, cx)
+                                        });
+                                    }
+                                })
+                                .into_any_element(),
                             )
                         })
                         .collect();
@@ -585,31 +612,25 @@ impl Settings {
                         let output_id = output.id.clone();
                         let expected_output = output.clone();
                         let scale_view = view.clone();
-                        row_base()
-                            .id(SharedString::from(format!(
-                                "display-scale-{output_id}-{scale}"
-                            )))
-                            .child(text_block(
-                                format!("{}%", (scale * 100.0) as u32).into(),
-                                None,
-                            ))
-                            .when(selected, |row| {
-                                row.child(glyph("icons/check.svg", 14.0, accent()))
-                            })
-                            .when(!selected, |row| {
-                                row.cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .on_click(move |_, _, cx| {
-                                        let change = DisplayChange::Scale {
-                                            output: expected_output.clone(),
-                                            scale,
-                                        };
-                                        scale_view.update(cx, |settings, cx| {
-                                            settings.apply_display_change(change, cx)
-                                        });
-                                    })
-                            })
-                            .into_any_element()
+                        display_choice_row(
+                            SharedString::from(format!("display-scale-{output_id}-{scale}")),
+                            format!("{}%", (scale * 100.0) as u32).into(),
+                            None,
+                            selected,
+                            self.display_busy || self.display_confirmation.is_some(),
+                        )
+                        .on_activate(move |_, _, cx| {
+                            if !selected {
+                                let change = DisplayChange::Scale {
+                                    output: expected_output.clone(),
+                                    scale,
+                                };
+                                scale_view.update(cx, |settings, cx| {
+                                    settings.apply_display_change(change, cx)
+                                });
+                            }
+                        })
+                        .into_any_element()
                     })
                     .collect();
                 cards.push(card(scale_rows));
@@ -631,28 +652,25 @@ impl Settings {
                         let output_id = output.id.clone();
                         let expected_output = output.clone();
                         let rotation_view = view.clone();
-                        row_base()
-                            .id(SharedString::from(format!(
-                                "display-rotation-{output_id}-{label}"
-                            )))
-                            .child(text_block(label.into(), None))
-                            .when(selected, |row| {
-                                row.child(glyph("icons/check.svg", 14.0, accent()))
-                            })
-                            .when(!selected, |row| {
-                                row.cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .on_click(move |_, _, cx| {
-                                        let change = DisplayChange::Transform {
-                                            output: expected_output.clone(),
-                                            transform: transform.clone(),
-                                        };
-                                        rotation_view.update(cx, |settings, cx| {
-                                            settings.apply_display_change(change, cx)
-                                        });
-                                    })
-                            })
-                            .into_any_element()
+                        display_choice_row(
+                            SharedString::from(format!("display-rotation-{output_id}-{label}")),
+                            label.into(),
+                            None,
+                            selected,
+                            self.display_busy || self.display_confirmation.is_some(),
+                        )
+                        .on_activate(move |_, _, cx| {
+                            if !selected {
+                                let change = DisplayChange::Transform {
+                                    output: expected_output.clone(),
+                                    transform: transform.clone(),
+                                };
+                                rotation_view.update(cx, |settings, cx| {
+                                    settings.apply_display_change(change, cx)
+                                });
+                            }
+                        })
+                        .into_any_element()
                     })
                     .collect();
                 cards.push(card(rotation_rows));
@@ -671,28 +689,25 @@ impl Settings {
                         let expected_output = output.clone();
                         let mode_view = view.clone();
                         let subtitle = mode.preferred.then(|| "Preferred".into());
-                        row_base()
-                            .id(SharedString::from(format!(
-                                "display-mode-{output_id}-{index}"
-                            )))
-                            .child(text_block(mode.label().into(), subtitle))
-                            .when(selected, |row| {
-                                row.child(glyph("icons/check.svg", 14.0, accent()))
-                            })
-                            .when(!selected, |row| {
-                                row.cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .on_click(move |_, _, cx| {
-                                        let change = DisplayChange::Mode {
-                                            output: expected_output.clone(),
-                                            mode,
-                                        };
-                                        mode_view.update(cx, |settings, cx| {
-                                            settings.apply_display_change(change, cx)
-                                        });
-                                    })
-                            })
-                            .into_any_element()
+                        display_choice_row(
+                            SharedString::from(format!("display-mode-{output_id}-{index}")),
+                            mode.label().into(),
+                            subtitle,
+                            selected,
+                            self.display_busy || self.display_confirmation.is_some(),
+                        )
+                        .on_activate(move |_, _, cx| {
+                            if !selected {
+                                let change = DisplayChange::Mode {
+                                    output: expected_output.clone(),
+                                    mode,
+                                };
+                                mode_view.update(cx, |settings, cx| {
+                                    settings.apply_display_change(change, cx)
+                                });
+                            }
+                        })
+                        .into_any_element()
                     })
                     .collect();
                 cards.push(card(mode_rows));

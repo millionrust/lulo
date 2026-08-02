@@ -17,6 +17,7 @@ mod recovery_presentation;
 mod runtime_controller;
 mod search_controller;
 mod search_highlight;
+mod startup_controller;
 mod toolbar;
 mod transfer_controller;
 mod worker_bridge;
@@ -324,140 +325,7 @@ impl NotesView {
             closing: false,
         };
 
-        let notes_paths = match resolve_notes_paths() {
-            Ok(paths) => Some(paths),
-            Err(error) => {
-                view.message = Some(error.to_string().into());
-                None
-            }
-        };
-
-        if let Some(paths) = notes_paths.as_ref() {
-            match NotesWorker::start(paths.clone())
-                .map_err(|error| error.to_string())
-                .and_then(|worker| {
-                    let (client, events) = worker.into_parts();
-                    worker_bridge::bridge_worker_events(events, EVENT_CAPACITY)
-                        .map(|receiver| (client, receiver))
-                        .map_err(|error| format!("Notes could not start its event bridge: {error}"))
-                }) {
-                Ok((client, receiver)) => {
-                    view.worker = Some(client);
-                    cx.spawn_in(window, async move |this, cx| {
-                        while let Ok(event) = receiver.recv().await {
-                            if this
-                                .update_in(cx, |this, window, cx| {
-                                    this.apply_worker_event(event, window, cx)
-                                })
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    })
-                    .detach();
-                }
-                Err(message) => view.message = Some(message.into()),
-            }
-
-            if let Ok((client, receiver)) =
-                NotesPreviewWorker::start(paths.data_root().to_path_buf())
-                    .map_err(|error| error.to_string())
-                    .and_then(|worker| {
-                        let (client, events) = worker.into_parts();
-                        worker_bridge::bridge_preview_events(
-                            events,
-                            PREVIEW_EVENT_CAPACITY,
-                            worker_bridge::render_preview_image,
-                        )
-                        .map(|receiver| (client, receiver))
-                        .map_err(|error| {
-                            format!("Notes could not start its preview bridge: {error}")
-                        })
-                    })
-            {
-                view.preview_worker = Some(client);
-                cx.spawn_in(window, async move |this, cx| {
-                    while let Ok(event) = receiver.recv().await {
-                        if this
-                            .update_in(cx, |this, _window, cx| this.apply_preview_event(event, cx))
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                })
-                .detach();
-            }
-        }
-
-        match NotesMarkdownPreviewWorker::start()
-            .map_err(|error| error.to_string())
-            .and_then(|worker| {
-                let (client, events) = worker.into_parts();
-                worker_bridge::bridge_markdown_preview_events(
-                    events,
-                    MARKDOWN_PREVIEW_EVENT_CAPACITY,
-                )
-                .map(|receiver| (client, receiver))
-                .map_err(|error| {
-                    format!("Notes could not start its Markdown preview bridge: {error}")
-                })
-            }) {
-            Ok((client, receiver)) => {
-                view.markdown_preview_worker = Some(client);
-                cx.spawn_in(window, async move |this, cx| {
-                    while let Ok(event) = receiver.recv().await {
-                        if this
-                            .update_in(cx, |this, _window, cx| {
-                                this.apply_markdown_preview_event(event, cx)
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                })
-                .detach();
-            }
-            Err(message) => {
-                if view.message.is_none() {
-                    view.message = Some(message.into());
-                }
-            }
-        }
-
-        match NotesSearchWorker::start()
-            .map_err(|error| error.to_string())
-            .and_then(|worker| {
-                let (client, events) = worker.into_parts();
-                worker_bridge::bridge_search_events(events, SEARCH_EVENT_CAPACITY)
-                    .map(|receiver| (client, receiver))
-                    .map_err(|error| format!("Notes could not start its search bridge: {error}"))
-            }) {
-            Ok((client, receiver)) => {
-                view.search_worker = Some(client);
-                cx.spawn_in(window, async move |this, cx| {
-                    while let Ok(event) = receiver.recv().await {
-                        if this
-                            .update_in(cx, |this, window, cx| {
-                                this.apply_search_event(event, window, cx)
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                })
-                .detach();
-            }
-            Err(message) => {
-                if view.message.is_none() {
-                    view.message = Some(message.into());
-                }
-            }
-        }
-
+        view.start_workers(window, cx);
         view
     }
 

@@ -1,5 +1,7 @@
 //! Framework-neutral, per-output presentation model for the rmac top bar.
 
+pub mod accessibility;
+
 mod labels;
 mod model;
 mod projection;

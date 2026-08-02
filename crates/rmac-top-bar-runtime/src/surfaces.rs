@@ -447,7 +447,7 @@ fn valid_surface(surface: &rmac_top_bar::Surface) -> bool {
 
 fn valid_content(content: &rmac_top_bar::Content) -> bool {
     if content.system_mark.icon != rmac_top_bar::BuiltinIcon::System
-        || content.system_mark.accessible != "rmac desktop"
+        || content.system_mark.accessible != rmac_top_bar::SYSTEM_MARK_ACCESSIBLE_NAME
         || !valid_text(&content.active_app)
         || content
             .workspace

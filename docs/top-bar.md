@@ -38,6 +38,28 @@ empty states are not conflated. Network names and window titles are not used.
 VPN and Focus names are bounded and their presentation structures redact text
 from default debug output.
 
+## Accessibility contract
+
+`rmac-top-bar::accessibility` consumes only the accepted `Content` projection
+and returns one framework-neutral semantic tree reusable on every output. The
+root is the named “rmac top bar” toolbar. Its reading order is the original
+system mark, focused application, optional workspace, full date/time, then the
+stable Focus, VPN, network, Bluetooth, sound, battery, and notification status
+order. The time and status nodes retain the exact typed Quick Settings or
+Notification Center target already owned by the presentation model.
+
+The top bar remains a passive layer surface: neither the toolbar nor any child
+enters ordinary application Tab order or requests keyboard interactivity. A
+semantic exporter may expose the typed actions to assistive technology without
+making the bar steal focus. This does not create a hidden keyboard-menu mode.
+
+The semantic projection accepts at most seven unique indicators in canonical
+order, 512 bytes per text value, and 8 KiB in aggregate. It rejects mismatched
+icons or panel targets, urgent non-notification state, duplicate/reordered
+indicators, controls, empty required text, and oversized content. Default
+diagnostics redact focused application, workspace, clock, Focus/VPN, and other
+visible status text.
+
 ## Redraw and clock behavior
 
 `State::apply` compares only renderer-visible projection. An identical runtime
@@ -64,9 +86,10 @@ unchanged resamples do not request a frame.
 
 ## Remaining acceptance work
 
-The product still needs the real upstream-GPUI layer-shell executable, original
-icon assets, Quick Settings and Notification Center invocation/focus routing,
-and semantic toolbar/status nodes. D1/D2 stay open until the Ubuntu/niri
-reference PC proves placement, exclusive zone, mixed/fractional scale, focus,
-fullscreen, hotplug, Orca, clock changes, service restarts, idle behavior, and
-60/120 Hz performance.
+The product still needs the real upstream-GPUI layer-shell executable and must
+export the now-defined toolbar/time/status tree plus typed Quick Settings and
+Notification Center actions through the A5/A6 framework boundary. D1/D2 stay
+open until the Ubuntu/niri reference PC proves placement, exclusive zone,
+mixed/fractional scale, focus, fullscreen, hotplug, Orca reading/action
+behavior, clock changes, service restarts, idle behavior, and 60/120 Hz
+performance.

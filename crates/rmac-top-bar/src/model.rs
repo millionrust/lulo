@@ -2,6 +2,7 @@ use std::fmt;
 use std::time::Duration;
 
 pub const BAR_HEIGHT: f64 = 32.0;
+pub const SYSTEM_MARK_ACCESSIBLE_NAME: &str = "rmac desktop";
 pub(crate) const MAX_ACTIVE_APP_CHARACTERS: usize = 48;
 pub(crate) const MAX_WORKSPACE_CHARACTERS: usize = 32;
 pub(crate) const MAX_MODE_CHARACTERS: usize = 48;
@@ -115,7 +116,7 @@ impl Default for SystemMark {
     fn default() -> Self {
         Self {
             icon: BuiltinIcon::System,
-            accessible: "rmac desktop",
+            accessible: SYSTEM_MARK_ACCESSIBLE_NAME,
         }
     }
 }

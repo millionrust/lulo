@@ -40,7 +40,7 @@ impl FinderView {
             .collect()
     }
 
-    fn write_clip_text(&self, cx: &mut Context<Self>) {
+    pub(super) fn write_clip_text(&self, cx: &mut Context<Self>) {
         pasteboard::write_file_urls(&self.clipboard);
         let text = self
             .clipboard

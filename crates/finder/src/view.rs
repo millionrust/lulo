@@ -6,6 +6,7 @@
 //! hidden-file toggle, and live directory watching.
 
 mod chrome_presentation;
+mod conflict_controller;
 mod content_presentation;
 mod dialog_presentation;
 mod filesystem_helpers;

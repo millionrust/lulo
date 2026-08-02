@@ -1,12 +1,16 @@
-
 use super::*;
+use crate::journal::{digest, Journal, JOURNAL_MAGIC, JOURNAL_VERSION};
+use crate::model::Baseline;
 use image::ImageEncoder as _;
 use rmac_notes_store::{
-    AttachmentId, AttachmentKind, AttachmentRecord, LibraryTransaction, NewNote, NoteId,
-    NoteRecord, SortOrder,
+    encode, AttachmentId, AttachmentImportPlan, AttachmentKind, AttachmentRecord, LibrarySnapshot,
+    LibraryTransaction, NewNote, NoteId, NoteRecord, SortOrder,
 };
+use rmac_storage::Backend;
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 struct FakeState {

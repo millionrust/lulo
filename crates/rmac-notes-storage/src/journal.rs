@@ -1,7 +1,8 @@
 use rmac_notes_store::{decode, CodecError, MAX_LIBRARY_BYTES};
 use sha2::{Digest as _, Sha256};
 
-use crate::{Baseline, ErrorKind, Operation, StoreError};
+use crate::model::Baseline;
+use crate::{ErrorKind, Operation, StoreError};
 
 pub(crate) const JOURNAL_MAGIC: &[u8; 8] = b"RMNJRN\0\0";
 pub(crate) const JOURNAL_VERSION: u16 = 1;

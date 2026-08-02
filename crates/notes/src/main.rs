@@ -19,6 +19,7 @@ mod runtime_controller;
 mod search_controller;
 mod search_highlight;
 mod startup_controller;
+mod status_presentation;
 mod toolbar;
 mod transfer_controller;
 mod view_model;
@@ -147,12 +148,6 @@ struct NotesView {
     closing: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StatusActions {
-    Pending,
-    OrphanCleanup,
-}
-
 impl NotesView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let inputs = Self::initialize_inputs(window, cx);
@@ -241,68 +236,7 @@ impl NotesView {
         self.continue_close(window, cx);
     }
     fn render_status_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let orphan_waiting =
-            !self.attachment_action_pending() && self.first_orphaned_attachment().is_some();
-        let (message, actions) = match self.session.phase() {
-            SessionPhase::Pending { reason, .. } => (
-                pending_message(*reason),
-                Some(StatusActions::Pending),
-            ),
-            SessionPhase::Maintenance { .. } => (
-                "Notes recovered the library but maintenance still needs attention. Editing is paused."
-                    .to_string(),
-                None,
-            ),
-            _ => match &self.message {
-                Some(message) => (
-                    message.to_string(),
-                    orphan_waiting.then_some(StatusActions::OrphanCleanup),
-                ),
-                None if orphan_waiting => (
-                    "A removed photo is still stored until its managed copy is cleaned up."
-                        .to_string(),
-                    Some(StatusActions::OrphanCleanup),
-                ),
-                None => return None,
-            },
-        };
-        let mut banner = div()
-            .h(px(38.0))
-            .flex_none()
-            .flex()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .bg(mac::error_background())
-            .border_b_1()
-            .border_color(mac::error_border())
-            .text_size(rmac_ui::text_px(12.0))
-            .text_color(mac::danger())
-            .child(div().flex_1().child(message));
-        match actions {
-            Some(StatusActions::Pending) => {
-                banner = banner
-                    .child(
-                        Button::new("retry-pending", "Retry")
-                            .xsmall()
-                            .on_click(cx.listener(|this, _, _, cx| this.retry_pending(cx))),
-                    )
-                    .child(
-                        Button::new("discard-pending", "Discard")
-                            .xsmall()
-                            .on_click(cx.listener(|this, _, _, cx| this.discard_pending(cx))),
-                    );
-            }
-            Some(StatusActions::OrphanCleanup) => {
-                banner = banner.child(
-                    Button::new("review-orphan-cleanup", "Clean Up…")
-                        .xsmall()
-                        .on_click(cx.listener(|this, _, _, cx| this.begin_orphan_cleanup(cx))),
-                );
-            }
-            None => {}
-        }
-        Some(banner.into_any_element())
+        self.render_status_banner_with(None, cx)
     }
 }
 

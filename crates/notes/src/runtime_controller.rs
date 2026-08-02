@@ -79,6 +79,96 @@ impl NotesView {
                 None
             })
     }
+
+    pub(super) fn continue_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.attachment_chooser_open {
+            self.message = Some("Finish or cancel the image chooser before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.note_import_chooser_open {
+            self.message = Some("Finish or cancel the note importer before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.markdown_import_action_request_id.is_some() {
+            self.message = Some("Wait for the current Markdown import action to finish".into());
+            cx.notify();
+            return;
+        }
+        if self.note_import_request_id.is_some() {
+            self.message = Some(if self.markdown_import_review.is_some() {
+                "Import or cancel the reviewed Markdown file before closing Notes.".into()
+            } else {
+                "Wait for the selected note file to finish its private review.".into()
+            });
+            cx.notify();
+            return;
+        }
+        if self.export_chooser_open {
+            self.message = Some("Finish or cancel the export chooser before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.export_request_id.is_some() {
+            self.message = Some("Wait for the Notes export to finish".into());
+            cx.notify();
+            return;
+        }
+        if self.bundle_chooser_open {
+            self.message = Some("Finish or cancel the bundle chooser before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if self.bundle_action_request_id.is_some() {
+            self.message = Some("Wait for the current bundle operation to finish".into());
+            cx.notify();
+            return;
+        }
+        if self.bundle_review_request_id.is_some() {
+            self.message = Some(if self.bundle_review.is_some() {
+                "Import or cancel the reviewed bundle before closing Notes so its private review can be released."
+                    .into()
+            } else {
+                "Wait for the selected Notes bundle to finish its private review before closing."
+                    .into()
+            });
+            cx.notify();
+            return;
+        }
+        if self.attachment_action_pending() {
+            self.message = Some("Wait for the current attachment operation to finish".into());
+            cx.notify();
+            return;
+        }
+        if matches!(self.session.phase(), SessionPhase::Pending { .. }) {
+            self.message = Some("Retry or discard the pending change before closing Notes".into());
+            cx.notify();
+            return;
+        }
+        if !self.request_markdown_preview_shutdown(cx) {
+            return;
+        }
+        if !self.request_preview_shutdown(cx) {
+            return;
+        }
+        if !self.request_search_shutdown(cx) {
+            return;
+        }
+        let shutdown = self
+            .worker
+            .as_ref()
+            .ok_or(WorkerSendError::Closed)
+            .and_then(|worker| worker.try_send(WorkerCommand::Shutdown));
+        if let Err(error) = shutdown {
+            self.message =
+                Some(format!("Notes could not safely close yet: {error}. Try again.").into());
+            cx.notify();
+            return;
+        }
+        self.closing = true;
+        window.remove_window();
+    }
 }
 
 impl Drop for NotesView {

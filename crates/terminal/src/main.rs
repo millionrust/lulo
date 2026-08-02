@@ -4,6 +4,7 @@ mod controller;
 mod emulator;
 mod hyperlink;
 mod ime;
+mod job;
 mod keyboard;
 mod mouse;
 mod output_filter;

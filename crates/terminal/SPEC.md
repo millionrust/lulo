@@ -145,6 +145,15 @@ control and Unicode directional-control characters, stops on a valid UTF-8
 boundary at 256 bytes, and wakes GPUI only when the normalized value changes.
 The active title appears in the centered toolbar and every titled tab; both use
 visual ellipsis, while exited/unavailable state remains an explicit suffix.
+While a live foreground process group differs from the retained shell PID, a
+duplicated PTY descriptor lets the existing output reader refresh that exact
+kernel identity without a timer. Linux resolves only `/proc/<group>/comm` and
+macOS only `proc_name`; strict UTF-8 names are trimmed, control/directional
+characters are refused, and visible output stops at 64 bytes. A valid group-
+leader name temporarily precedes an application title, then disappears when the
+shell regains the terminal. Missing descriptors, groups, leaders, names, or
+platform support preserve the existing title/directory/number fallback. This
+state is presentation only and never changes close or signal authority.
 Each session also owns a memory-only OSC 7 directory authority. A valid,
 complete, 768-byte-or-smaller `file:` URI supplies a bounded folder fallback
 when no application title exists. Local and `localhost` reports retain the
@@ -196,9 +205,7 @@ focus, and ordinary renders emit nothing. The three-byte static reports use the
 same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
-The complete application claim remains blocked on numeric-keypad identity and
-job semantics beyond titles, OSC 7 directories, and OSC 133 phase/status and
-coordinate reports;
+The complete application claim remains blocked on numeric-keypad identity;
 accessible terminal text semantics; Linux interaction/visual evidence
 (including native IME proof); and measured Unicode/resident/idle/active
 performance.
@@ -212,8 +219,13 @@ performance.
 - `portable-pty` owns PTY creation, the configured shell child, master resize,
   readable output, writable input, child wait, and termination.
 - On Unix, the PTY's kernel-backed foreground process-group identity is compared
-  with the retained shell PID only to decide whether close needs review. Missing
-  or inconsistent identity is treated as potentially active, never as safe.
+  with the retained shell PID to decide whether close needs review. Missing or
+  inconsistent identity is treated as potentially active, never as safe.
+- `job` owns one close-on-exec duplicate PTY descriptor, output-event-driven
+  foreground-group refresh, Linux `/proc/<group>/comm` and macOS `proc_name`
+  lookup, strict 64-byte presentation normalization, and exact-session sharing.
+  It names only a different live group leader and has no polling thread, command
+  parser, process-control authority, or invented fallback.
 - `alacritty_terminal` and `vte` own escape parsing, screen/scrollback state,
   cell flags, cursor position, and terminal modes.
 - `keyboard` owns the traditional xterm/DEC and negotiated Kitty encoders, event
@@ -287,12 +299,12 @@ performance.
   interaction; it cannot invent another persistence format or palette fallback.
 
 Terminal does not scrape shell output to infer commands, directories, or job
-names. It accepts only complete bounded title, OSC 7 directory, and OSC 133
-phase/status reports. Prompt navigation trusts only OSC 133 `A` positions and
+names. It accepts complete bounded title, OSC 7 directory, and OSC 133 phase/
+status reports, plus a kernel foreground-group leader name on Linux/macOS.
+Prompt navigation trusts only OSC 133 `A` positions and
 stores no shell text. Command/output selection likewise trusts only complete
 ordered A/B/C/D coordinates and reads text only through the existing explicit
-grid selection. Persistent command text and semantic job names are not inferred
-or shown.
+grid selection. Persistent command text is not inferred or shown.
 
 ## Child lifecycle and close safety
 
@@ -434,7 +446,8 @@ behavior remains an interaction-evidence gate.
 
 Unit and contract tests cover input encoding, resize arithmetic and bounds,
 selection extraction, child state transitions, foreground-job classification,
-guarded close decisions, bracketed/unbracketed paste construction and review,
+bounded/spoof-safe job-name projection, exact-session isolation, guarded close
+decisions, bracketed/unbracketed paste construction and review,
 embedded-marker/control rejection, redacted pending-review state, persistence
 failures, and redraw coalescing. Pure paste contracts live beside that policy;
 parsed bracketed-mode transitions remain an integration test.

@@ -16,6 +16,7 @@ use portable_pty::{
 };
 
 use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
+use crate::job::{ForegroundJobSource, SessionJobState};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
@@ -316,6 +317,9 @@ type ReaderTask = (
     SessionDirectory,
     SessionShellState,
     Arc<AtomicUsize>,
+    SessionJobState,
+    ForegroundJobSource,
+    Option<u32>,
     RedrawSender,
 );
 type WaiterTask = (
@@ -351,7 +355,19 @@ fn retained_marker_position(
     })
 }
 
-fn run_reader_worker((mut reader, term, directory, shell, scrollback_limit, redraw): ReaderTask) {
+fn run_reader_worker(
+    (
+        mut reader,
+        term,
+        directory,
+        shell,
+        scrollback_limit,
+        job_state,
+        job_source,
+        shell_pid,
+        redraw,
+    ): ReaderTask,
+) {
     let mut parser: Processor = Processor::new();
     let mut output_filter = OutputFilter::default();
     let mut buffer = [0u8; 8192];
@@ -365,6 +381,7 @@ fn run_reader_worker((mut reader, term, directory, shell, scrollback_limit, redr
                     directory.set_uri(&uri);
                 }
                 let markers = output_filter.take_shell_markers();
+                job_state.refresh(&job_source, shell_pid);
                 if filtered.is_empty() {
                     continue;
                 }
@@ -498,6 +515,7 @@ pub(super) struct Session {
     directory: SessionDirectory,
     shell_state: SessionShellState,
     scrollback_limit: Arc<AtomicUsize>,
+    job_state: SessionJobState,
     master: Option<Box<dyn MasterPty + Send>>,
     shell_pid: Option<u32>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
@@ -540,6 +558,8 @@ impl Session {
             .unwrap_or_default();
         let shell_state = SessionShellState::default();
         let scrollback_limit = Arc::new(AtomicUsize::new(scrollback_lines));
+        let job_state = SessionJobState::default();
+        let job_source = ForegroundJobSource::from_master(&*pair.master);
         let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut command = CommandBuilder::new(shell);
@@ -572,6 +592,9 @@ impl Session {
                 directory.clone(),
                 shell_state.clone(),
                 Arc::clone(&scrollback_limit),
+                job_state.clone(),
+                job_source,
+                shell_pid,
                 redraw.clone(),
             ),
             (child, Arc::clone(&lifecycle), redraw),
@@ -589,6 +612,7 @@ impl Session {
             directory,
             shell_state,
             scrollback_limit,
+            job_state,
             master: Some(pair.master),
             shell_pid,
             killer: Some(killer),
@@ -627,6 +651,7 @@ impl Session {
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
             scrollback_limit: Arc::new(AtomicUsize::new(scrollback_lines)),
+            job_state: SessionJobState::default(),
             master: None,
             shell_pid: None,
             killer: None,
@@ -657,7 +682,13 @@ impl Session {
     }
 
     pub(super) fn tab_title(&self) -> Option<String> {
-        self.title.current().or_else(|| self.directory.label())
+        let job = if self.lifecycle().is_running() {
+            self.job_state.label()
+        } else {
+            None
+        };
+        job.or_else(|| self.title.current())
+            .or_else(|| self.directory.label())
     }
 
     pub(super) fn working_directory(&self) -> Option<PathBuf> {
@@ -1085,6 +1116,7 @@ mod tests {
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
             scrollback_limit: Arc::new(AtomicUsize::new(10)),
+            job_state: SessionJobState::default(),
             master: None,
             shell_pid: None,
             killer: None,

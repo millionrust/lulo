@@ -49,9 +49,12 @@ evidence remains gated by the reference-PC framework work.
   scrollback eviction fail closed instead of targeting stale rows. Ordered
   A/B/C/D reports also retain at most 256 coordinate-only command/output spans:
   Select Command and Select Command Output (⇧⌘A) target the live or scrolled
-  command without storing shell text. Enhanced Kitty/keypad input, semantic job
-  names, accessibility, native Linux IME and interaction/visual evidence, and
-  measured Unicode/resident/idle/active performance keep G3 partial.
+  command without storing shell text. The existing PTY foreground-process-group
+  authority now also supplies an event-driven, 64-byte spoof-safe Linux/macOS
+  group-leader name ahead of stale application titles while a real job owns the
+  terminal. Enhanced Kitty/keypad input, accessibility, native Linux IME and
+  interaction/visual evidence, and measured Unicode/resident/idle/active
+  performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

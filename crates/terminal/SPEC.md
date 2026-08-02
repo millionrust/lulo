@@ -28,6 +28,9 @@ bounded protocol report supplies it; ordinary output is never scraped.
 7. Choose a color profile and persist its stable name through private,
    atomic storage without making terminal output part of preferences or logs.
 
+Visible operation and preference failures expose a dedicated shared focusable
+Dismiss button; the error banner itself is not a pointer-only activation target.
+
 Multiplexing/server mode, remote-session management, and proprietary shell
 services are not required for 1.0.
 

@@ -855,17 +855,19 @@ impl Render for TerminalView {
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(rmac_ui::mac::on_danger())
                         .shadow_lg()
-                        .cursor_pointer()
                         .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if operation_error_visible {
-                                this.operation_error = None;
-                            } else {
-                                this.persistence_error = None;
-                            }
-                            cx.notify();
-                        })),
+                        .child(
+                            Button::new("dismiss-terminal-error", "Dismiss")
+                                .ghost()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if operation_error_visible {
+                                        this.operation_error = None;
+                                    } else {
+                                        this.persistence_error = None;
+                                    }
+                                    cx.notify();
+                                })),
+                        ),
                 )
             })
             // Modal reviews remain the final children so no terminal surface

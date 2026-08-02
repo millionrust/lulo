@@ -186,7 +186,7 @@ fn functional_sequence_base(
     kitty_sequence: bool,
     include_one: bool,
 ) -> Option<(String, SequenceTerminator)> {
-    let one = include_one.then_some("1").unwrap_or_default();
+    let one = if include_one { "1" } else { "" };
     let sequence = match key {
         "up" => (one.into(), SequenceTerminator::Character('A')),
         "down" => (one.into(), SequenceTerminator::Character('B')),

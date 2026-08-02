@@ -487,7 +487,7 @@ fn layout_gaps(
     gaps
 }
 
-fn overflow_group(hidden_applications: Vec<Entry>) -> OverflowGroup {
+pub(crate) fn overflow_group(hidden_applications: Vec<Entry>) -> OverflowGroup {
     let active = hidden_applications
         .iter()
         .any(|entry| entry.activity == ActivityIndicator::Active);

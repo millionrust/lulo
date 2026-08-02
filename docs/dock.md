@@ -125,8 +125,40 @@ visible where the user asked for the menu but labels, accessibility strings,
 launch specifications, and window titles are redacted from Debug output.
 Malformed overflow, pin, or special-item projections and menus above 512 rows
 fail explicitly instead of panicking or silently dropping actions. The
-renderer must expose sections, menu roles, checked/urgent/destructive state,
-the close accessibility action, and focus restoration exactly as described.
+renderer consumes those rows without re-resolving their actions.
+
+## Accessibility contract
+
+`rmac-dock::accessibility` consumes the exact authoritative `Model`, its
+renderer `ShelfContent`, one output's retained `ShelfLayoutPlan`, and the
+currently open menu session. It first proves that model and content are equal,
+then proves that the visible IDs are the complete fitted prefix, exact More
+group when needed, and canonical Files/Downloads/Trash tail. A renderer cannot
+silently omit a crowded application or expose a stale hidden tail.
+
+The resulting named Dock toolbar carries application/place group positions,
+visible and accessible labels, active/running/urgent state, exact badges,
+enabled state, and stable reading order. Primary Open is enabled only when the
+current model produces a real launch/focus/place action; an explicit repeated-
+click no-op is not advertised. Missing pinned applications remain reachable
+through their valid Show Menu action. More exposes one menu action rather than
+two cosmetic routes to the same popover.
+
+An open menu replaces the shelf's active focus order. Its semantic rows retain
+section, selected, checked, urgent, destructive, primary, and alternate Close
+Window state; its initial selection comes from the exact menu session, Escape
+has a Close Menu action, and dismissal restores the precise visible invoker.
+Disabled rows remain in reading order but not keyboard order.
+
+The boundary accepts at most 512 applications, the exact zero-or-three place
+inventory, 512 menu rows, 512-byte identities, 4 KiB individual text, and 2 MiB
+aggregate semantic text. Duplicate identities, model/content drift, malformed
+icons/state, stale or closed menus, invalid layout/overflow, controls, and
+oversized input fail closed. Custom diagnostics redact application identities,
+labels, window titles, local paths, menu row identities, and action targets.
+The current non-keyboard-interactive layer plan still needs an explicit
+framework keyboard/focus handoff; defining order does not claim that GPUI 0.2.2
+can export or focus the tree.
 
 ## Busy state and failure feedback
 
@@ -338,7 +370,7 @@ resample retains the last-known Main ID, reports separate display-source health,
 and never guesses from connector order.
 
 The current slice is not D4 completion. The layer-shell view, connection of the
-icon worker/watcher to retained renderer nodes, pointer/keyboard semantics,
-real surface-command execution,
-persistence UI, niri/reference-PC evidence, and performance gates remain
-pending.
+icon worker/watcher to retained renderer nodes, export of the now-defined
+shelf/menu semantics, interaction-feedback semantic adapter, real
+surface-command execution, persistence UI, and niri keyboard/Orca/performance
+evidence remain pending.

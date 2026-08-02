@@ -379,6 +379,10 @@ impl Session {
         &self.accessible_title
     }
 
+    pub fn invoker(&self) -> &EntryId {
+        &self.invoker
+    }
+
     pub fn rows(&self) -> &[Row] {
         &self.rows
     }

@@ -279,7 +279,11 @@ fn pending_message(reason: PendingReason) -> String {
 }
 
 fn main() {
-    rmac_ui::boot("Notes", 1080.0, 720.0, |window, cx| {
-        NotesView::new(window, cx)
-    });
+    rmac_ui::boot_app(
+        rmac_ui::app_id::NOTES,
+        "Notes",
+        1080.0,
+        720.0,
+        NotesView::new,
+    );
 }

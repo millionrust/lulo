@@ -21,7 +21,6 @@ mod transfer_controller;
 mod worker_bridge;
 
 use std::collections::BTreeSet;
-use std::io;
 use std::sync::Arc;
 use std::thread;
 
@@ -37,18 +36,17 @@ use rmac_notes_runtime::{
     ActionRequest, ActionResult, BundleImportAcceptRequest, BundleImportReviewRequest,
     DraftRecoveryKind, EditGeneration, ExportRequest, LibraryAction, MarkdownPreviewState,
     MarkdownPreviewWorkerEvent, MarkdownPreviewWorkerSendError, NotesMarkdownPreviewSession,
-    NotesMarkdownPreviewWorker, NotesMarkdownPreviewWorkerClient, NotesMarkdownPreviewWorkerEvents,
-    NotesPreviewSession, NotesPreviewWorker, NotesPreviewWorkerClient, NotesPreviewWorkerEvents,
-    NotesSearchSession, NotesSearchWorker, NotesSearchWorkerClient, NotesSearchWorkerEvents,
-    NotesSession, NotesWorker, NotesWorkerClient, NotesWorkerEvents, PreviewState,
+    NotesMarkdownPreviewWorker, NotesMarkdownPreviewWorkerClient, NotesPreviewSession,
+    NotesPreviewWorker, NotesPreviewWorkerClient, NotesSearchSession, NotesSearchWorker,
+    NotesSearchWorkerClient, NotesSession, NotesWorker, NotesWorkerClient, PreviewState,
     PreviewWorkerEvent, PreviewWorkerSendError, ScheduledEdit, SearchField, SearchHit, SearchState,
     SearchWorkerEvent, SearchWorkerSendError, SessionPhase, WorkerCommand, WorkerEvent,
     WorkerFailure, WorkerSendError, EVENT_CAPACITY, MARKDOWN_PREVIEW_EVENT_CAPACITY,
     MAX_SEARCH_RESULTS, PREVIEW_EVENT_CAPACITY, SEARCH_EVENT_CAPACITY,
 };
 use rmac_notes_storage::{
-    resolve_notes_paths, DecodedImagePreview, ExportFormat, ExportOutcome, MarkdownImportReview,
-    PendingReason, PreviewSize,
+    resolve_notes_paths, ExportFormat, ExportOutcome, MarkdownImportReview, PendingReason,
+    PreviewSize,
 };
 use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, NewNote,
@@ -61,8 +59,8 @@ use input_support::{
 };
 use markdown_presentation::render_markdown_document;
 use presentation::{
-    attachment_match_row, date_label, folder_row, format_storage_bytes, styled_search_fragment,
-    tag_pill,
+    attachment_match_row, centered_state, date_label, folder_row, format_storage_bytes,
+    styled_search_fragment, tag_pill,
 };
 use search_highlight::{
     matched_search_fragment, plain_search_fragment, SearchTextFragment,
@@ -338,7 +336,7 @@ impl NotesView {
                 .map_err(|error| error.to_string())
                 .and_then(|worker| {
                     let (client, events) = worker.into_parts();
-                    bridge_worker_events(events)
+                    worker_bridge::bridge_worker_events(events, EVENT_CAPACITY)
                         .map(|receiver| (client, receiver))
                         .map_err(|error| format!("Notes could not start its event bridge: {error}"))
                 }) {
@@ -366,11 +364,15 @@ impl NotesView {
                     .map_err(|error| error.to_string())
                     .and_then(|worker| {
                         let (client, events) = worker.into_parts();
-                        bridge_preview_events(events)
-                            .map(|receiver| (client, receiver))
-                            .map_err(|error| {
-                                format!("Notes could not start its preview bridge: {error}")
-                            })
+                        worker_bridge::bridge_preview_events(
+                            events,
+                            PREVIEW_EVENT_CAPACITY,
+                            worker_bridge::render_preview_image,
+                        )
+                        .map(|receiver| (client, receiver))
+                        .map_err(|error| {
+                            format!("Notes could not start its preview bridge: {error}")
+                        })
                     })
             {
                 view.preview_worker = Some(client);
@@ -392,11 +394,14 @@ impl NotesView {
             .map_err(|error| error.to_string())
             .and_then(|worker| {
                 let (client, events) = worker.into_parts();
-                bridge_markdown_preview_events(events)
-                    .map(|receiver| (client, receiver))
-                    .map_err(|error| {
-                        format!("Notes could not start its Markdown preview bridge: {error}")
-                    })
+                worker_bridge::bridge_markdown_preview_events(
+                    events,
+                    MARKDOWN_PREVIEW_EVENT_CAPACITY,
+                )
+                .map(|receiver| (client, receiver))
+                .map_err(|error| {
+                    format!("Notes could not start its Markdown preview bridge: {error}")
+                })
             }) {
             Ok((client, receiver)) => {
                 view.markdown_preview_worker = Some(client);
@@ -425,7 +430,7 @@ impl NotesView {
             .map_err(|error| error.to_string())
             .and_then(|worker| {
                 let (client, events) = worker.into_parts();
-                bridge_search_events(events)
+                worker_bridge::bridge_search_events(events, SEARCH_EVENT_CAPACITY)
                     .map(|receiver| (client, receiver))
                     .map_err(|error| format!("Notes could not start its search bridge: {error}"))
             }) {
@@ -1193,97 +1198,6 @@ impl Render for NotesView {
                 element.child(dialog)
             })
     }
-}
-
-fn bridge_worker_events(
-    events: NotesWorkerEvents,
-) -> io::Result<async_channel::Receiver<WorkerEvent>> {
-    worker_bridge::bridge_worker_events(events, EVENT_CAPACITY)
-}
-
-fn bridge_search_events(
-    events: NotesSearchWorkerEvents,
-) -> io::Result<async_channel::Receiver<SearchWorkerEvent>> {
-    worker_bridge::bridge_search_events(events, SEARCH_EVENT_CAPACITY)
-}
-
-fn bridge_preview_events(
-    events: NotesPreviewWorkerEvents,
-) -> io::Result<async_channel::Receiver<PreviewBridgeEvent>> {
-    worker_bridge::bridge_preview_events(events, PREVIEW_EVENT_CAPACITY, render_preview_image)
-}
-
-fn bridge_markdown_preview_events(
-    events: NotesMarkdownPreviewWorkerEvents,
-) -> io::Result<async_channel::Receiver<MarkdownPreviewWorkerEvent>> {
-    worker_bridge::bridge_markdown_preview_events(events, MARKDOWN_PREVIEW_EVENT_CAPACITY)
-}
-
-fn render_preview_image(preview: &DecodedImagePreview) -> Option<Arc<RenderImage>> {
-    worker_bridge::render_preview_image(preview)
-}
-
-fn centered_attachment_state(
-    message: &'static str,
-    retry_label: Option<&'static str>,
-    cx: &mut Context<NotesView>,
-) -> AnyElement {
-    div()
-        .size_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(8.0))
-        .bg(mac::control_fill())
-        .child(
-            div()
-                .v_flex()
-                .items_center()
-                .gap_2()
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(mac::text_secondary())
-                .child(message)
-                .when_some(retry_label, |element, label| {
-                    element.child(
-                        Button::new("retry-attachment-preview", label)
-                            .xsmall()
-                            .on_click(
-                                cx.listener(|this, _, _, cx| this.retry_attachment_preview(cx)),
-                            ),
-                    )
-                }),
-        )
-        .into_any_element()
-}
-
-fn centered_state(title: impl Into<SharedString>, detail: impl Into<SharedString>) -> AnyElement {
-    div()
-        .size_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(mac::window())
-        .child(
-            div()
-                .w(px(440.0))
-                .v_flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(18.0))
-                        .font_weight(mac::SEMIBOLD)
-                        .child(title.into()),
-                )
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(mac::text_secondary())
-                        .text_center()
-                        .child(detail.into()),
-                ),
-        )
-        .into_any_element()
 }
 
 fn worker_failure_message(failure: WorkerFailure) -> String {

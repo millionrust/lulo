@@ -318,3 +318,36 @@ impl NotesView {
         }
     }
 }
+
+fn centered_attachment_state(
+    message: &'static str,
+    retry_label: Option<&'static str>,
+    cx: &mut Context<NotesView>,
+) -> AnyElement {
+    div()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(8.0))
+        .bg(mac::control_fill())
+        .child(
+            div()
+                .v_flex()
+                .items_center()
+                .gap_2()
+                .text_size(rmac_ui::text_px(12.0))
+                .text_color(mac::text_secondary())
+                .child(message)
+                .when_some(retry_label, |element, label| {
+                    element.child(
+                        Button::new("retry-attachment-preview", label)
+                            .xsmall()
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.retry_attachment_preview(cx)),
+                            ),
+                    )
+                }),
+        )
+        .into_any_element()
+}

@@ -4,14 +4,47 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
-    div, font, prelude::FluentBuilder as _, px, Div, InteractiveElement as _, IntoElement,
-    ParentElement, SharedString, Stateful, StatefulInteractiveElement as _, StrikethroughStyle,
-    Styled, StyledText, TextRun, Window,
+    div, font, prelude::FluentBuilder as _, px, AnyElement, Div, InteractiveElement as _,
+    IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement as _,
+    StrikethroughStyle, Styled, StyledText, TextRun, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size};
 use rmac_ui::mac;
 
 use super::search_highlight::SearchTextFragment;
+
+pub(super) fn centered_state(
+    title: impl Into<SharedString>,
+    detail: impl Into<SharedString>,
+) -> AnyElement {
+    div()
+        .size_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(mac::window())
+        .child(
+            div()
+                .w(px(440.0))
+                .v_flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(18.0))
+                        .font_weight(mac::SEMIBOLD)
+                        .child(title.into()),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(mac::text_secondary())
+                        .text_center()
+                        .child(detail.into()),
+                ),
+        )
+        .into_any_element()
+}
 
 pub(super) fn folder_row(
     id: impl Into<gpui::ElementId>,

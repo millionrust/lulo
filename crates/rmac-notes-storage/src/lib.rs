@@ -8,25 +8,25 @@
 //! deterministically rolls back an uncommitted prepared journal or finishes
 //! maintenance for a primary that already matches it.
 
-use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use rmac_notes_store::{
-    decode, encode, AttachmentImportPlan, BundleImportPlan, CodecError, LibrarySnapshot,
-    OrphanCollectionPlan, PurgePlan, MAX_LIBRARY_BYTES,
+    decode, encode, AttachmentImportPlan, BundleImportPlan, LibrarySnapshot, OrphanCollectionPlan,
+    PurgePlan, MAX_LIBRARY_BYTES,
 };
 use rmac_storage::{Backend, FileSystem};
-use sha2::{Digest as _, Sha256};
 
 mod attachment;
 mod bundle_import;
 mod drafts;
 mod export;
+mod journal;
 mod legacy_scan;
 mod markdown_preview;
 mod migration;
+mod model;
 mod note_import;
 mod orphan;
 mod purge;
@@ -36,6 +36,10 @@ mod writer;
 
 use attachment::{ImportAuthority, ImportError, ImportIntent, MAX_IMPORT_INTENT_BYTES};
 use bundle_import::{BundleImportIntent, BundleIntentAuthority, MAX_BUNDLE_IMPORT_INTENT_BYTES};
+#[cfg(test)]
+use journal::{digest, JOURNAL_MAGIC, JOURNAL_VERSION};
+use journal::{Journal, MAX_JOURNAL_BYTES};
+use model::Baseline;
 use orphan::{OrphanAuthority, OrphanError, OrphanIntent, MAX_ORPHAN_INTENT_BYTES};
 use purge::{PurgeAuthority, PurgeError, PurgeIntent, MAX_PURGE_INTENT_BYTES};
 
@@ -74,6 +78,7 @@ pub use migration::{
     MigrationCommitOutcome, MigrationError, MigrationPlan, MigrationWarning, PlannedAttachment,
     PlannedNoteSource, RecoveryFile,
 };
+pub use model::{ErrorKind, LoadedLibrary, Operation, RecoveryNotice, SaveOutcome, StoreError};
 pub use note_import::{
     prepare_text_note, ImportedTextEncoding, MarkdownImportReview, PreparedTextNote,
     TextImportError, MAX_IMPORTED_TEXT_SOURCE_BYTES,
@@ -84,195 +89,6 @@ pub use startup::{
     NotesStartup, StartupError,
 };
 pub use writer::{WriterLease, WriterLeaseError, WriterLeaseErrorKind, WriterLeaseOperation};
-
-const JOURNAL_MAGIC: &[u8; 8] = b"RMNJRN\0\0";
-const JOURNAL_VERSION: u16 = 1;
-const MAX_JOURNAL_BYTES: usize = MAX_LIBRARY_BYTES + 128;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RecoveryNotice {
-    RolledBackInterruptedSave,
-    FinishedInterruptedSave,
-    RecoveredLastKnownGood,
-    CorruptJournalPreserved,
-    MaintenancePending,
-    RolledBackInterruptedPurge,
-    FinishedInterruptedPurge,
-    CorruptPurgePreserved,
-    PurgeCleanupPending,
-    RolledBackInterruptedAttachmentImport,
-    FinishedInterruptedAttachmentImport,
-    CorruptAttachmentImportPreserved,
-    AttachmentImportPending,
-    RolledBackInterruptedOrphanCollection,
-    FinishedInterruptedOrphanCollection,
-    CorruptOrphanCollectionPreserved,
-    OrphanCollectionPending,
-    RolledBackInterruptedBundleImport,
-    FinishedInterruptedBundleImport,
-    CorruptBundleImportPreserved,
-    BundleImportPending,
-}
-
-#[derive(Clone, Debug)]
-enum Baseline {
-    Missing,
-    Exact(Vec<u8>),
-}
-
-#[derive(Clone, Debug)]
-pub struct LoadedLibrary {
-    snapshot: LibrarySnapshot,
-    baseline: Baseline,
-    notices: Vec<RecoveryNotice>,
-}
-
-impl LoadedLibrary {
-    pub fn snapshot(&self) -> &LibrarySnapshot {
-        &self.snapshot
-    }
-
-    pub fn notices(&self) -> &[RecoveryNotice] {
-        &self.notices
-    }
-
-    pub fn into_snapshot(self) -> LibrarySnapshot {
-        self.snapshot
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SaveOutcome {
-    pub library: LoadedLibrary,
-    pub maintenance_pending: bool,
-    pub purge_cleanup_pending: bool,
-    pub attachment_import_pending: bool,
-    pub orphan_collection_pending: bool,
-    pub bundle_import_pending: bool,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Operation {
-    CreateDirectory,
-    ReadPrimary,
-    ReadLastKnownGood,
-    ReadJournal,
-    ParsePrimary,
-    ParseLastKnownGood,
-    ParseJournal,
-    ValidateCandidate,
-    PreflightPrimary,
-    WriteJournal,
-    VerifyJournal,
-    WritePrimary,
-    VerifyPrimary,
-    WriteLastKnownGood,
-    VerifyLastKnownGood,
-    RemoveJournal,
-    RecoverPrimary,
-    ReadPurgeIntent,
-    WritePurgeIntent,
-    VerifyPurgeIntent,
-    RemovePurgeIntent,
-    VerifyPurgeAttachment,
-    RemovePurgeAttachment,
-    ReadAttachmentSource,
-    DecodeAttachmentSource,
-    ReadAttachmentImportIntent,
-    WriteAttachmentImportIntent,
-    VerifyAttachmentImportIntent,
-    RemoveAttachmentImportIntent,
-    StageManagedAttachment,
-    VerifyManagedAttachment,
-    RemoveManagedAttachment,
-    ReadOrphanCollectionIntent,
-    WriteOrphanCollectionIntent,
-    VerifyOrphanCollectionIntent,
-    RemoveOrphanCollectionIntent,
-    VerifyOrphanAttachment,
-    RemoveOrphanAttachment,
-    ReadBundleImportIntent,
-    WriteBundleImportIntent,
-    VerifyBundleImportIntent,
-    RemoveBundleImportIntent,
-    StageBundleAttachment,
-    VerifyBundleAttachment,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ErrorKind {
-    Io(io::ErrorKind),
-    Codec(CodecError),
-    Conflict,
-    InvalidRevision,
-    ReadbackMismatch,
-    AmbiguousJournal,
-    InvalidPurge,
-    InvalidAttachmentImport,
-    InvalidOrphanCollection,
-    InvalidBundleImport,
-    UnsupportedAttachment,
-    AttachmentTooLarge,
-    AttachmentMismatch,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct StoreError {
-    pub operation: Operation,
-    pub kind: ErrorKind,
-}
-
-impl StoreError {
-    fn io(operation: Operation, error: io::Error) -> Self {
-        Self {
-            operation,
-            kind: ErrorKind::Io(error.kind()),
-        }
-    }
-
-    fn codec(operation: Operation, error: CodecError) -> Self {
-        Self {
-            operation,
-            kind: ErrorKind::Codec(error),
-        }
-    }
-
-    fn new(operation: Operation, kind: ErrorKind) -> Self {
-        Self { operation, kind }
-    }
-}
-
-impl fmt::Display for StoreError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self.kind {
-            ErrorKind::Io(_) => "Notes could not complete a private storage operation",
-            ErrorKind::Codec(_) => "Notes found invalid library data",
-            ErrorKind::Conflict => "The Notes library changed before it could be saved",
-            ErrorKind::InvalidRevision => "The Notes transaction revision is invalid",
-            ErrorKind::ReadbackMismatch => "Notes could not verify the saved library data",
-            ErrorKind::AmbiguousJournal => {
-                "Notes found an interrupted transaction that needs recovery"
-            }
-            ErrorKind::InvalidPurge => "Notes found invalid permanent-deletion state",
-            ErrorKind::InvalidAttachmentImport => {
-                "Notes found invalid image-attachment import state"
-            }
-            ErrorKind::InvalidOrphanCollection => {
-                "Notes found invalid orphan-attachment collection state"
-            }
-            ErrorKind::InvalidBundleImport => "Notes found invalid bundle-import recovery state",
-            ErrorKind::UnsupportedAttachment => {
-                "Notes supports PNG, JPEG, and WebP image attachments"
-            }
-            ErrorKind::AttachmentTooLarge => "The selected image exceeds a Notes safety limit",
-            ErrorKind::AttachmentMismatch => {
-                "Notes found managed attachment bytes that changed unexpectedly"
-            }
-        })
-    }
-}
-
-impl std::error::Error for StoreError {}
 
 pub struct NotesLibraryStore<B = FileSystem> {
     root: PathBuf,
@@ -1520,168 +1336,6 @@ fn import_error_from_store(error: StoreError) -> ImportError {
         ErrorKind::ReadbackMismatch => ImportError::ReadbackMismatch,
         ErrorKind::AttachmentMismatch => ImportError::AttachmentMismatch,
         _ => ImportError::Malformed,
-    }
-}
-
-#[derive(Clone, Debug)]
-struct Journal {
-    expected: ExpectedPrimary,
-    candidate: Vec<u8>,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum ExpectedPrimary {
-    Missing,
-    Exact { length: u64, sha256: [u8; 32] },
-}
-
-impl Journal {
-    fn new(baseline: &Baseline, candidate: Vec<u8>) -> Self {
-        let expected = match baseline {
-            Baseline::Missing => ExpectedPrimary::Missing,
-            Baseline::Exact(bytes) => ExpectedPrimary::Exact {
-                length: bytes.len() as u64,
-                sha256: digest(bytes),
-            },
-        };
-        Self {
-            expected,
-            candidate,
-        }
-    }
-
-    fn encode(&self) -> Result<Vec<u8>, StoreError> {
-        if self.candidate.len() > MAX_LIBRARY_BYTES {
-            return Err(StoreError::new(
-                Operation::ValidateCandidate,
-                ErrorKind::Codec(CodecError::TooLarge),
-            ));
-        }
-        let mut bytes = Vec::with_capacity(self.candidate.len() + 64);
-        bytes.extend_from_slice(JOURNAL_MAGIC);
-        bytes.extend_from_slice(&JOURNAL_VERSION.to_le_bytes());
-        match self.expected {
-            ExpectedPrimary::Missing => {
-                bytes.push(0);
-                bytes.extend_from_slice(&0_u64.to_le_bytes());
-                bytes.extend_from_slice(&[0; 32]);
-            }
-            ExpectedPrimary::Exact { length, sha256 } => {
-                bytes.push(1);
-                bytes.extend_from_slice(&length.to_le_bytes());
-                bytes.extend_from_slice(&sha256);
-            }
-        }
-        bytes.extend_from_slice(&(self.candidate.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(&self.candidate);
-        Ok(bytes)
-    }
-
-    fn decode(bytes: &[u8]) -> Result<Self, StoreError> {
-        if bytes.len() > MAX_JOURNAL_BYTES {
-            return Err(StoreError::new(
-                Operation::ParseJournal,
-                ErrorKind::Codec(CodecError::TooLarge),
-            ));
-        }
-        let mut reader = Reader::new(bytes);
-        if reader.take(8)? != JOURNAL_MAGIC || reader.u16()? != JOURNAL_VERSION {
-            return Err(StoreError::new(
-                Operation::ParseJournal,
-                ErrorKind::Codec(CodecError::Malformed),
-            ));
-        }
-        let present = reader.byte()?;
-        let length = reader.u64()?;
-        let sha256: [u8; 32] = reader
-            .take(32)?
-            .try_into()
-            .map_err(|_| malformed_journal())?;
-        let expected = match present {
-            0 if length == 0 && sha256 == [0; 32] => ExpectedPrimary::Missing,
-            1 => ExpectedPrimary::Exact { length, sha256 },
-            _ => return Err(malformed_journal()),
-        };
-        let candidate_length = usize::try_from(reader.u64()?).map_err(|_| malformed_journal())?;
-        if candidate_length > MAX_LIBRARY_BYTES {
-            return Err(malformed_journal());
-        }
-        let candidate = reader.take(candidate_length)?.to_vec();
-        if !reader.is_empty() {
-            return Err(malformed_journal());
-        }
-        decode(&candidate).map_err(|error| StoreError::codec(Operation::ParseJournal, error))?;
-        Ok(Self {
-            expected,
-            candidate,
-        })
-    }
-
-    fn matches_expected(&self, current: Option<&[u8]>) -> bool {
-        match (self.expected, current) {
-            (ExpectedPrimary::Missing, None) => true,
-            (ExpectedPrimary::Exact { length, sha256 }, Some(bytes)) => {
-                bytes.len() as u64 == length && digest(bytes) == sha256
-            }
-            _ => false,
-        }
-    }
-}
-
-fn digest(bytes: &[u8]) -> [u8; 32] {
-    Sha256::digest(bytes).into()
-}
-
-fn malformed_journal() -> StoreError {
-    StoreError::new(
-        Operation::ParseJournal,
-        ErrorKind::Codec(CodecError::Malformed),
-    )
-}
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    cursor: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, cursor: 0 }
-    }
-
-    fn take(&mut self, count: usize) -> Result<&'a [u8], StoreError> {
-        let end = self
-            .cursor
-            .checked_add(count)
-            .ok_or_else(malformed_journal)?;
-        let value = self
-            .bytes
-            .get(self.cursor..end)
-            .ok_or_else(malformed_journal)?;
-        self.cursor = end;
-        Ok(value)
-    }
-
-    fn byte(&mut self) -> Result<u8, StoreError> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u16(&mut self) -> Result<u16, StoreError> {
-        self.take(2)?
-            .try_into()
-            .map(u16::from_le_bytes)
-            .map_err(|_| malformed_journal())
-    }
-
-    fn u64(&mut self) -> Result<u64, StoreError> {
-        self.take(8)?
-            .try_into()
-            .map(u64::from_le_bytes)
-            .map_err(|_| malformed_journal())
-    }
-
-    fn is_empty(&self) -> bool {
-        self.cursor == self.bytes.len()
     }
 }
 

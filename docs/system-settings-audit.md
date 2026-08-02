@@ -95,6 +95,13 @@ equivalents rather than simulated.
 
 Every pane keeps slow I/O off the first-frame/UI thread, consumes typed service
 snapshots, and must not persist a local toggle as a substitute for system state.
+Every actionable System Settings controller path now renders through the shared
+focusable Button, ListRow, Toggle, Slider, TextField, SearchField, or dialog
+controls. This includes top-bar Back, generic and application subpage rows,
+Focus schedule edit/day/time actions, GTK text-scale presets, niri input presets
+and switches, and all pane refresh actions. A source scan has no remaining
+private `cursor_pointer` control in the controller; Linux Tab/activation/focus
+visibility and Orca behavior still require reference-PC evidence.
 
 Wi-Fi rows retain exact private SSID bytes plus security class instead of using
 their lossy display labels as command identifiers. Selecting a known network

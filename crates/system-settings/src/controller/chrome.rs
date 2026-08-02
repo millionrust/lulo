@@ -5,20 +5,9 @@ use super::*;
 impl Settings {
     pub(super) fn render_topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let can_back = !self.nav.is_empty();
-        let back = div()
-            .id(rmac_system_settings::accessibility::BACK_ID)
-            .flex()
-            .items_center()
-            .justify_center()
-            .w(px(26.0))
-            .h(px(26.0))
-            .rounded(px(6.0))
-            .when(can_back, |el: Stateful<Div>| {
-                el.hover(|h| h.bg(rmac_ui::mac::hover()))
-                    .cursor_pointer()
-                    .on_click(cx.listener(|t, _, _, cx| t.go_back(cx)))
-            })
-            .child(glyph(
+        let back = ListRow::new(
+            rmac_system_settings::accessibility::BACK_ID,
+            glyph(
                 "icons/chevron-left.svg",
                 17.0,
                 if can_back {
@@ -26,7 +15,13 @@ impl Settings {
                 } else {
                     rmac_ui::mac::text_tertiary()
                 },
-            ));
+            ),
+        )
+        .disabled(!can_back)
+        .w(px(26.0))
+        .h(px(26.0))
+        .justify_center()
+        .on_activate(cx.listener(|t, _, _, cx| t.go_back(cx)));
 
         div()
             .id("topbar")

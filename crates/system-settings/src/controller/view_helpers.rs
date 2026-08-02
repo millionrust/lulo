@@ -347,10 +347,11 @@ pub(super) fn application_nav_row(
     target: SubPage,
 ) -> AnyElement {
     let target_view = view.clone();
-    row_base()
-        .id(SharedString::from(format!("notification-app-{app_id}")))
-        .cursor_pointer()
-        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
+    let content = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap_3()
         .child(application_icon(
             icon,
             "icons/bell.svg",
@@ -367,12 +368,18 @@ pub(super) fn application_nav_row(
             "icons/chevron-right.svg",
             14.0,
             rmac_ui::mac::text_tertiary(),
-        ))
-        .on_click(move |_, _, cx| {
-            let target = target.clone();
-            target_view.update(cx, |settings, cx| settings.push(target, cx));
-        })
-        .into_any_element()
+        ));
+    ListRow::new(
+        SharedString::from(format!("notification-app-{app_id}")),
+        content,
+    )
+    .h(px(52.0))
+    .px_3()
+    .on_activate(move |_, _, cx| {
+        let target = target.clone();
+        target_view.update(cx, |settings, cx| settings.push(target, cx));
+    })
+    .into_any_element()
 }
 
 pub(super) fn focus_schedule_row(
@@ -402,27 +409,18 @@ pub(super) fn focus_schedule_row(
             Some(focus_schedule_summary(schedule).into()),
         ))
         .child(
-            div()
-                .id(SharedString::from(format!(
-                    "focus-edit-schedule-{schedule_id}"
-                )))
-                .px_2()
-                .py_1()
-                .rounded(px(6.0))
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(accent())
-                .when(!disabled, |button| {
-                    button
-                        .cursor_pointer()
-                        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                        .on_click(move |_, _, cx| {
-                            let schedule_id = schedule_id.clone();
-                            edit_view.update(cx, |settings, cx| {
-                                settings.push(SubPage::FocusSchedule { schedule_id }, cx);
-                            });
-                        })
+            Button::new(
+                SharedString::from(format!("focus-edit-schedule-{schedule_id}")),
+                "Edit",
+            )
+            .ghost()
+            .disabled(disabled)
+            .on_click(move |_, _, cx| {
+                let schedule_id = schedule_id.clone();
+                edit_view.update(cx, |settings, cx| {
+                    settings.push(SubPage::FocusSchedule { schedule_id }, cx);
                 })
-                .child("Edit"),
+            }),
         )
         .child(toggle)
         .into_any_element()
@@ -463,36 +461,22 @@ pub(super) fn focus_day_button(
     day_label: &'static str,
     selected: bool,
     disabled: bool,
-) -> Stateful<Div> {
+) -> Button {
     let control_view = view.clone();
     let schedule_id = schedule_id.to_owned();
-    div()
-        .id(SharedString::from(format!(
-            "focus-day-{schedule_id}-{day:?}"
-        )))
-        .flex_1()
-        .h(px(32.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(16.0))
-        .text_size(rmac_ui::text_px(12.0))
-        .font_weight(rmac_ui::mac::SEMIBOLD)
-        .bg(if selected { accent() } else { card_bg() })
-        .text_color(if selected { on_accent() } else { label() })
-        .border_1()
-        .border_color(if selected { accent() } else { sep() })
-        .when(!disabled, |button| {
-            button
-                .cursor_pointer()
-                .hover(|hover| hover.opacity(0.82))
-                .on_click(move |_, _, cx| {
-                    control_view.update(cx, |settings, cx| {
-                        settings.set_focus_schedule_day(schedule_id.clone(), day, !selected, cx);
-                    });
-                })
+    Button::new(
+        SharedString::from(format!("focus-day-{schedule_id}-{day:?}")),
+        day_label,
+    )
+    .flex_1()
+    .h(px(32.0))
+    .selected(selected)
+    .disabled(disabled)
+    .on_click(move |_, _, cx| {
+        control_view.update(cx, |settings, cx| {
+            settings.set_focus_schedule_day(schedule_id.clone(), day, !selected, cx);
         })
-        .child(day_label)
+    })
 }
 
 pub(super) fn focus_time_row(
@@ -509,51 +493,32 @@ pub(super) fn focus_time_row(
     let next_view = view.clone();
     let previous_schedule = schedule_id.to_owned();
     let next_schedule = schedule_id.to_owned();
-    let decrement = div()
-        .id(SharedString::from(format!(
-            "focus-time-minus-{schedule_id}-{start}"
-        )))
-        .w(px(28.0))
-        .h(px(28.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(6.0))
-        .bg(rmac_ui::mac::hover())
-        .text_size(rmac_ui::text_px(18.0))
-        .when(!disabled, |button| {
-            button.cursor_pointer().on_click(move |_, _, cx| {
-                previous_view.update(cx, |settings, cx| {
-                    settings.set_focus_schedule_time(
-                        previous_schedule.clone(),
-                        start,
-                        previous,
-                        cx,
-                    );
-                });
-            })
-        })
-        .child("−");
-    let increment = div()
-        .id(SharedString::from(format!(
-            "focus-time-plus-{schedule_id}-{start}"
-        )))
-        .w(px(28.0))
-        .h(px(28.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(6.0))
-        .bg(rmac_ui::mac::hover())
-        .text_size(rmac_ui::text_px(18.0))
-        .when(!disabled, |button| {
-            button.cursor_pointer().on_click(move |_, _, cx| {
-                next_view.update(cx, |settings, cx| {
-                    settings.set_focus_schedule_time(next_schedule.clone(), start, next, cx);
-                });
-            })
-        })
-        .child("+");
+    let decrement = Button::new(
+        SharedString::from(format!("focus-time-minus-{schedule_id}-{start}")),
+        "−",
+    )
+    .w(px(28.0))
+    .h(px(28.0))
+    .disabled(disabled)
+    .tooltip("15 minutes earlier")
+    .on_click(move |_, _, cx| {
+        previous_view.update(cx, |settings, cx| {
+            settings.set_focus_schedule_time(previous_schedule.clone(), start, previous, cx);
+        });
+    });
+    let increment = Button::new(
+        SharedString::from(format!("focus-time-plus-{schedule_id}-{start}")),
+        "+",
+    )
+    .w(px(28.0))
+    .h(px(28.0))
+    .disabled(disabled)
+    .tooltip("15 minutes later")
+    .on_click(move |_, _, cx| {
+        next_view.update(cx, |settings, cx| {
+            settings.set_focus_schedule_time(next_schedule.clone(), start, next, cx);
+        });
+    });
     row_base()
         .child(text_block(title.into(), None))
         .child(
@@ -1126,34 +1091,17 @@ pub(super) fn gtk_text_scale_row(
     for (index, (option_label, factor)) in GTK_TEXT_SCALE_OPTIONS.iter().copied().enumerate() {
         let option_view = view.clone();
         control = control.child(
-            div()
-                .id(ElementId::from(SharedString::from(format!(
-                    "gtk-text-scale-{index}"
-                ))))
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h(px(26.0))
-                .rounded(px(6.0))
-                .text_size(rmac_ui::text_px(11.0))
-                .when(selected == Some(index), |element| {
-                    element.bg(accent()).text_color(on_accent())
-                })
-                .when(selected != Some(index), |element| {
-                    element.bg(rmac_ui::mac::control_fill()).text_color(label())
-                })
-                .when(enabled, |element| {
-                    element
-                        .cursor_pointer()
-                        .hover(|hover| hover.bg(rmac_ui::mac::control_fill_hover()))
-                        .on_click(move |_, _, cx| {
-                            option_view
-                                .update(cx, |settings, cx| settings.set_gtk_text_scale(factor, cx));
-                        })
-                })
-                .when(!enabled, |element| element.opacity(0.55))
-                .child(option_label),
+            Button::new(
+                ElementId::from(SharedString::from(format!("gtk-text-scale-{index}"))),
+                option_label,
+            )
+            .flex_1()
+            .h(px(26.0))
+            .selected(selected == Some(index))
+            .disabled(!enabled)
+            .on_click(move |_, _, cx| {
+                option_view.update(cx, |settings, cx| settings.set_gtk_text_scale(factor, cx));
+            }),
         );
     }
     row_base()
@@ -1180,32 +1128,17 @@ pub(super) fn input_segment_row(
     for (index, (option_label, change)) in options.iter().copied().enumerate() {
         let option_view = view.clone();
         control = control.child(
-            div()
-                .id(ElementId::from(SharedString::from(format!("{id}-{index}"))))
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h(px(26.0))
-                .rounded(px(6.0))
-                .text_size(rmac_ui::text_px(11.0))
-                .when(selected == Some(index), |element| {
-                    element.bg(accent()).text_color(on_accent())
-                })
-                .when(selected != Some(index), |element| {
-                    element.bg(rmac_ui::mac::control_fill()).text_color(label())
-                })
-                .when(enabled, |element| {
-                    element
-                        .cursor_pointer()
-                        .hover(|hover| hover.bg(rmac_ui::mac::control_fill_hover()))
-                        .on_click(move |_, _, cx| {
-                            option_view
-                                .update(cx, |settings, cx| settings.apply_input_change(change, cx));
-                        })
-                })
-                .when(!enabled, |element| element.opacity(0.55))
-                .child(option_label),
+            Button::new(
+                ElementId::from(SharedString::from(format!("{id}-{index}"))),
+                option_label,
+            )
+            .flex_1()
+            .h(px(26.0))
+            .selected(selected == Some(index))
+            .disabled(!enabled)
+            .on_click(move |_, _, cx| {
+                option_view.update(cx, |settings, cx| settings.apply_input_change(change, cx));
+            }),
         );
     }
     row_base()
@@ -1231,22 +1164,18 @@ pub(super) fn input_switch_row(
     enabled: bool,
     change: fn(bool) -> InputChange,
 ) -> AnyElement {
-    let mut switch = Toggle::new(id).checked(checked);
-    if enabled {
-        switch = switch.on_click(move |value, _, cx| {
+    let switch = Toggle::new(id)
+        .checked(checked)
+        .disabled(!enabled)
+        .on_click(move |value, _, cx| {
             view.update(cx, |settings, cx| {
                 settings.apply_input_change(change(*value), cx)
             });
         });
-    }
     row_base()
         .child(tile(icon, secondary(), 22.0))
         .child(text_block(title.into(), subtitle.map(Into::into)))
-        .child(
-            div()
-                .when(!enabled, |element| element.opacity(0.55))
-                .child(switch),
-        )
+        .child(switch)
         .into_any_element()
 }
 
@@ -1260,30 +1189,34 @@ pub(super) fn nav_row(
     target: SubPage,
 ) -> AnyElement {
     let id = ElementId::from(SharedString::from(format!("nav-{title}")));
-    let mut r = row_base()
-        .id(id)
-        .cursor_pointer()
-        .hover(|h| h.bg(rmac_ui::mac::hover()))
+    let mut content = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap_3()
         .child(tile(icon, color, 22.0))
         .child(text_block(title, None));
     if let Some(v) = value {
-        r = r.child(
+        content = content.child(
             div()
                 .text_size(rmac_ui::text_px(13.0))
                 .text_color(secondary())
                 .child(v),
         );
     }
-    r.child(glyph(
+    content = content.child(glyph(
         "icons/chevron-right.svg",
         14.0,
         rmac_ui::mac::text_tertiary(),
-    ))
-    .on_click(move |_, _, cx| {
-        let target = target.clone();
-        view.update(cx, |s, cx| s.push(target, cx));
-    })
-    .into_any_element()
+    ));
+    ListRow::new(id, content)
+        .h(px(52.0))
+        .px_3()
+        .on_activate(move |_, _, cx| {
+            let target = target.clone();
+            view.update(cx, |s, cx| s.push(target, cx));
+        })
+        .into_any_element()
 }
 
 /// Build a rounded white card from rows, inserting inset separators.

@@ -120,7 +120,7 @@ use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
     AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, ObjectFit,
-    ParentElement, Render, Result, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
+    ParentElement, Render, Result, SharedString, StatefulInteractiveElement as _, Styled,
     StyledImage as _, Svg, Window,
 };
 use gpui_component::StyledExt as _;

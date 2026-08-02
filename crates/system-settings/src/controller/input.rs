@@ -122,20 +122,10 @@ impl Settings {
                     .child("niri · libinput"),
             )
             .child(
-                div()
-                    .id("input-refresh")
-                    .px_2()
-                    .py_1()
-                    .rounded(px(6.0))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(accent())
-                    .cursor_pointer()
-                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                    .child(if self.input_busy {
-                        "Applying…"
-                    } else {
-                        "Refresh"
-                    })
+                Button::new("input-refresh", "Refresh")
+                    .ghost()
+                    .busy(self.input_busy)
+                    .disabled(self.input_loading || self.input_busy)
                     .on_click(move |_, _, cx| {
                         view.update(cx, |settings, cx| settings.refresh_input(cx));
                     }),

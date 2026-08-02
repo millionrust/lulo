@@ -11,6 +11,7 @@ mod navigation;
 mod open_with_controller;
 mod operations;
 mod presentation;
+mod rename_controller;
 mod selection_controller;
 mod updates;
 
@@ -1023,7 +1024,7 @@ impl FinderView {
         view
     }
 
-    fn record_operation_failures(
+    pub(super) fn record_operation_failures(
         &mut self,
         failures: Vec<file_ops::Failure>,
         cx: &mut Context<Self>,
@@ -1059,63 +1060,6 @@ impl FinderView {
             cancel.store(true, Ordering::Release);
         }
         self.search_generation = self.search_generation.wrapping_add(1);
-    }
-
-    // ---- rename ----
-    fn rename_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.block_mutation_during_transfer(cx) {
-            return;
-        }
-        let Some(&ix) = self.selected.iter().next() else {
-            return;
-        };
-        let Some(entry) = self.entries.get(ix) else {
-            return;
-        };
-        let name = entry.name.to_string();
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
-        cx.subscribe(&input, |this, _input, ev: &InputEvent, cx| match ev {
-            InputEvent::PressEnter { .. } => this.rename_commit(cx),
-            InputEvent::Blur => this.renaming = None,
-            _ => {}
-        })
-        .detach();
-        let handle = input.read(cx).focus_handle(cx);
-        window.focus(&handle);
-        self.renaming = Some((ix, input));
-        cx.notify();
-    }
-
-    fn rename_commit(&mut self, cx: &mut Context<Self>) {
-        let Some((ix, input)) = self.renaming.take() else {
-            return;
-        };
-        let new_name = input.read(cx).value().to_string();
-        if let Some(entry) = self.entries.get(ix) {
-            let new_name = new_name.trim();
-            if !new_name.is_empty() && new_name != entry.name.as_ref() {
-                let dst = self.cwd.join(new_name);
-                // Don't clobber an existing file/folder at the target name.
-                if !dst.exists() {
-                    let failures = file_ops::rename(&file_ops::RealFileSystem, &entry.path, &dst)
-                        .err()
-                        .into_iter()
-                        .collect();
-                    self.record_operation_failures(failures, cx);
-                } else {
-                    self.record_operation_failures(
-                        vec![file_ops::Failure::message(
-                            file_ops::Operation::Rename,
-                            &entry.path,
-                            Some(&dst),
-                            "an item with that name already exists",
-                        )],
-                        cx,
-                    );
-                }
-            }
-        }
-        self.reload(cx);
     }
 }
 

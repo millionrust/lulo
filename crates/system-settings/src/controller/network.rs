@@ -396,11 +396,6 @@ impl Settings {
             .clone()
             .unwrap_or_else(|| "No primary connection".into());
         let refresh_view = view.clone();
-        let refresh_label = if self.network_busy {
-            "Refreshing…"
-        } else {
-            "Refresh"
-        };
         let mut cards = vec![card(vec![
             value_row(
                 "icons/globe.svg",
@@ -435,16 +430,10 @@ impl Settings {
                         .child("Interfaces"),
                 )
                 .child(
-                    div()
-                        .id("network-refresh")
-                        .px_2()
-                        .py_1()
-                        .rounded(px(6.0))
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(accent())
-                        .cursor_pointer()
-                        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                        .child(refresh_label)
+                    Button::new("network-refresh", "Refresh")
+                        .ghost()
+                        .busy(self.network_busy)
+                        .disabled(self.network_loading || self.network_busy)
                         .on_click(move |_, _, cx| {
                             refresh_view.update(cx, |settings, cx| settings.refresh_network(cx));
                         }),

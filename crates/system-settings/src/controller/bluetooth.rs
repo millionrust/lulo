@@ -529,6 +529,7 @@ impl Settings {
         let power_view = view.clone();
         let power = Toggle::new("bluetooth-power")
             .checked(self.bluetooth_on)
+            .disabled(self.bluetooth_loading || self.bluetooth_busy || !self.bluetooth_available)
             .on_click(move |powered, _, cx| {
                 power_view.update(cx, |settings, cx| {
                     settings.set_bluetooth_powered(*powered, cx)
@@ -555,6 +556,7 @@ impl Settings {
             let discoverable_view = view.clone();
             let discoverable = Toggle::new("bluetooth-discoverable")
                 .checked(self.bt_discoverable)
+                .disabled(self.bluetooth_busy || self.bluetooth_discovering)
                 .on_click(move |enabled, _, cx| {
                     discoverable_view.update(cx, |settings, cx| {
                         settings.set_bluetooth_discoverable(*enabled, cx)
@@ -591,16 +593,10 @@ impl Settings {
                             .child("Devices"),
                     )
                     .child(
-                        div()
-                            .id("bluetooth-refresh")
-                            .px_2()
-                            .py_1()
-                            .rounded(px(6.0))
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(accent())
-                            .cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            .child(refresh_label)
+                        Button::new("bluetooth-refresh", refresh_label)
+                            .ghost()
+                            .busy(self.bluetooth_busy || self.bluetooth_discovering)
+                            .disabled(self.bluetooth_busy || self.bluetooth_discovering)
                             .on_click(move |_, _, cx| {
                                 refresh_view
                                     .update(cx, |settings, cx| settings.refresh_bluetooth(cx));

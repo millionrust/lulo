@@ -48,6 +48,8 @@ impl Settings {
             || self.vpn_editor_loading.is_some()
             || self.vpn_editor_busy
             || self.vpn_editor.is_some()
+            || self.vpn_secret_preparing
+            || self.vpn_secret_busy
             || self.vpn_delete_preparing.is_some()
             || self.vpn_delete_busy
             || self.vpn_delete_preview.is_some()
@@ -696,6 +698,28 @@ impl Settings {
         } else {
             "Refresh"
         };
+        let refresh_disabled = self.vpn_loading
+            || self.vpn_refreshing
+            || self.vpn_busy.is_some()
+            || self.vpn_import_busy
+            || self.vpn_import_preview.is_some()
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_editor.is_some()
+            || self.vpn_secret_preparing
+            || self.vpn_secret_busy
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy
+            || self.vpn_delete_preview.is_some();
+        let refresh_busy = self.vpn_refreshing
+            || self.vpn_busy.is_some()
+            || self.vpn_import_busy
+            || self.vpn_editor_loading.is_some()
+            || self.vpn_editor_busy
+            || self.vpn_secret_preparing
+            || self.vpn_secret_busy
+            || self.vpn_delete_preparing.is_some()
+            || self.vpn_delete_busy;
         let mut cards = vec![card(vec![value_row(
             "icons/key.svg",
             if connected > 0 {
@@ -722,16 +746,10 @@ impl Settings {
                         .child("VPN Configurations"),
                 )
                 .child(
-                    div()
-                        .id("vpn-refresh")
-                        .px_2()
-                        .py_1()
-                        .rounded(px(6.0))
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(accent())
-                        .cursor_pointer()
-                        .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                        .child(refresh_label)
+                    Button::new("vpn-refresh", refresh_label)
+                        .ghost()
+                        .busy(refresh_busy)
+                        .disabled(refresh_disabled)
                         .on_click(move |_, _, cx| {
                             refresh_view.update(cx, |settings, cx| settings.refresh_vpn(cx));
                         }),

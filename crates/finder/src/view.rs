@@ -24,8 +24,10 @@ mod rename_controller;
 mod search_info_controller;
 mod selection_controller;
 mod startup;
+mod thumbnail_controller;
 mod transient_state;
 mod trash_controller;
+mod trash_updates;
 mod undo_controller;
 mod updates;
 

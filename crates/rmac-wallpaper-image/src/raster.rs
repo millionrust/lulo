@@ -1,0 +1,114 @@
+use std::sync::Arc;
+
+use crate::{Cache, Decoded, ErrorKind};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RasterIssueKind {
+    Resolve(rmac_wallpaper_system::ErrorKind),
+    Decode(ErrorKind),
+    Layout(rmac_wallpaper::LayoutError),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RasterIssue {
+    pub output: rmac_compositor::OutputId,
+    pub kind: RasterIssueKind,
+}
+
+#[derive(Clone, Debug)]
+pub struct RasterSurface {
+    pub output: rmac_compositor::OutputId,
+    pub logical_size: rmac_compositor::LogicalSize,
+    pub scale: f64,
+    pub fit: rmac_shell_settings::WallpaperFit,
+    pub layout: rmac_wallpaper::Layout,
+    pub image: Arc<Decoded>,
+}
+
+#[derive(Debug, Default)]
+pub struct Rasterized {
+    pub surfaces: Vec<RasterSurface>,
+    pub issues: Vec<RasterIssue>,
+}
+
+/// Resolve, decode, and lay out every output independently. Any custom-file or
+/// codec failure substitutes the original built-in only on that output.
+pub fn rasterize(plan: &rmac_wallpaper::Plan, cache: &Cache) -> Rasterized {
+    let mut rasterized = Rasterized::default();
+    for surface in &plan.surfaces {
+        let target = physical_target(surface.logical_size, surface.scale);
+        let resolved = match rmac_wallpaper_system::resolve(&surface.source) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                rasterized.issues.push(RasterIssue {
+                    output: surface.output.clone(),
+                    kind: RasterIssueKind::Resolve(error.kind),
+                });
+                rmac_wallpaper_system::ResolvedSource::BuiltIn(
+                    rmac_wallpaper::DEFAULT_BUILT_IN.metadata(),
+                )
+            }
+        };
+        let image = match cache.get_or_decode(resolved, target) {
+            Ok(image) => image,
+            Err(error) => {
+                rasterized.issues.push(RasterIssue {
+                    output: surface.output.clone(),
+                    kind: RasterIssueKind::Decode(error.kind),
+                });
+                match cache.get_or_decode(
+                    rmac_wallpaper_system::ResolvedSource::BuiltIn(
+                        rmac_wallpaper::DEFAULT_BUILT_IN.metadata(),
+                    ),
+                    target,
+                ) {
+                    Ok(image) => image,
+                    Err(_) => continue,
+                }
+            }
+        };
+        let layout = match rmac_wallpaper::layout(
+            surface.fit,
+            image.physical_size(),
+            surface.logical_size,
+            surface.scale,
+        ) {
+            Ok(layout) => layout,
+            Err(error) => {
+                rasterized.issues.push(RasterIssue {
+                    output: surface.output.clone(),
+                    kind: RasterIssueKind::Layout(error),
+                });
+                continue;
+            }
+        };
+        rasterized.surfaces.push(RasterSurface {
+            output: surface.output.clone(),
+            logical_size: surface.logical_size,
+            scale: surface.scale,
+            fit: surface.fit,
+            layout,
+            image,
+        });
+    }
+    rasterized
+}
+
+fn physical_target(
+    logical: rmac_compositor::LogicalSize,
+    scale: f64,
+) -> rmac_compositor::PhysicalSize {
+    fn dimension(value: f64) -> u32 {
+        if !value.is_finite() || value <= 0.0 {
+            0
+        } else if value >= f64::from(u32::MAX) {
+            u32::MAX
+        } else {
+            value.round().max(1.0) as u32
+        }
+    }
+    rmac_compositor::PhysicalSize {
+        width: dimension(logical.width * scale),
+        height: dimension(logical.height * scale),
+    }
+}

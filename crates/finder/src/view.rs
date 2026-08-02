@@ -17,6 +17,7 @@ mod operations;
 mod presentation;
 mod presentation_support;
 mod quick_look_controller;
+mod recovery_controller;
 mod rename_controller;
 mod search_info_controller;
 mod selection_controller;

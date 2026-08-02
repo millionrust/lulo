@@ -2,6 +2,57 @@
 
 use super::*;
 
+fn audio_choice_row(
+    id: SharedString,
+    icon: &'static str,
+    title: SharedString,
+    detail: Option<SharedString>,
+    status: Option<&'static str>,
+    selected: bool,
+    disabled: bool,
+) -> ListRow {
+    let has_detail = detail.is_some();
+    let foreground = if selected { on_accent() } else { label() };
+    let secondary_foreground = if selected { on_accent() } else { secondary() };
+    let mut text = div().v_flex().flex_1().child(
+        div()
+            .text_size(rmac_ui::text_px(13.0))
+            .text_color(foreground)
+            .child(title),
+    );
+    if let Some(detail) = detail {
+        text = text.child(
+            div()
+                .text_size(rmac_ui::text_px(11.0))
+                .text_color(secondary_foreground)
+                .child(detail),
+        );
+    }
+    let content = div()
+        .w_full()
+        .flex()
+        .items_center()
+        .gap_3()
+        .child(tile(icon, secondary_foreground, 22.0))
+        .child(text)
+        .when_some(status, |row, status| {
+            row.child(
+                div()
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(secondary_foreground)
+                    .child(status),
+            )
+        })
+        .when(selected, |row| {
+            row.child(glyph("icons/check.svg", 13.0, on_accent()))
+        });
+    ListRow::new(ElementId::from(id), content)
+        .selected(selected)
+        .disabled(disabled)
+        .h(px(if has_detail { 60.0 } else { 44.0 }))
+        .px_3()
+}
+
 impl Settings {
     pub(super) fn finish_audio_update(
         &mut self,
@@ -246,20 +297,10 @@ impl Settings {
                     .child("System Audio"),
             )
             .child(
-                div()
-                    .id("audio-refresh")
-                    .px_2()
-                    .py_1()
-                    .rounded(px(6.0))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(accent())
-                    .cursor_pointer()
-                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                    .child(if self.audio_busy {
-                        "Refreshing…"
-                    } else {
-                        "Refresh"
-                    })
+                Button::new("audio-refresh", "Refresh")
+                    .ghost()
+                    .busy(self.audio_busy)
+                    .disabled(self.audio_loading || self.audio_busy)
                     .on_click(move |_, _, cx| {
                         refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
                     }),
@@ -400,32 +441,24 @@ impl Settings {
                 let id = d.id.clone();
                 let device = d.clone();
                 let device_view = view.clone();
-                row_base()
-                    .id(ElementId::from(SharedString::from(format!(
-                        "audio-device-{title}-{id}"
-                    ))))
-                    .child(tile("icons/volume-2.svg", accent(), 22.0))
-                    .child(text_block(d.name.clone().into(), None))
-                    .when(d.is_default, |el| {
-                        el.child(
-                            div()
-                                .text_size(rmac_ui::text_px(12.0))
-                                .text_color(secondary())
-                                .child("Default"),
-                        )
-                        .child(glyph("icons/check.svg", 13.0, accent()))
-                    })
-                    .when(self.audio.can_set_default && !d.is_default, |el| {
-                        el.cursor_pointer()
-                            .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            .on_click(move |_, _, cx| {
-                                let device = device.clone();
-                                device_view.update(cx, |settings, cx| {
-                                    settings.set_default_audio_device(kind, device, cx)
-                                });
-                            })
-                    })
-                    .into_any_element()
+                audio_choice_row(
+                    SharedString::from(format!("audio-device-{title}-{id}")),
+                    "icons/volume-2.svg",
+                    d.name.clone().into(),
+                    None,
+                    d.is_default.then_some("Default"),
+                    d.is_default,
+                    self.audio_busy || !self.audio.can_set_default,
+                )
+                .on_activate(move |_, _, cx| {
+                    if !device.is_default {
+                        let device = device.clone();
+                        device_view.update(cx, |settings, cx| {
+                            settings.set_default_audio_device(kind, device, cx)
+                        });
+                    }
+                })
+                .into_any_element()
             })
             .collect();
         div()
@@ -454,45 +487,33 @@ impl Settings {
                     } else {
                         format!("{} · Unavailable", device.name).into()
                     };
-                    row_base()
-                        .id(ElementId::from(SharedString::from(format!(
+                    let actionable = audio_choice_is_actionable(
+                        route.is_active,
+                        route.availability,
+                        self.audio_busy,
+                    );
+                    audio_choice_row(
+                        SharedString::from(format!(
                             "audio-route-{title}-{}-{}",
                             device.id, route.index
-                        ))))
-                        .child(tile("icons/volume-2.svg", accent(), 22.0))
-                        .child(text_block(route.name.clone().into(), Some(detail)))
-                        .when(route.is_active, |el| {
-                            el.child(
-                                div()
-                                    .text_size(rmac_ui::text_px(12.0))
-                                    .text_color(secondary())
-                                    .child("Active"),
-                            )
-                            .child(glyph(
-                                "icons/check.svg",
-                                13.0,
-                                accent(),
-                            ))
-                        })
-                        .when(
-                            audio_choice_is_actionable(
-                                route.is_active,
-                                route.availability,
-                                self.audio_busy,
-                            ),
-                            |el| {
-                                el.cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .on_click(move |_, _, cx| {
-                                        let device = row_device.clone();
-                                        let route = row_route.clone();
-                                        route_view.update(cx, |settings, cx| {
-                                            settings.set_audio_route(kind, device, route, cx)
-                                        });
-                                    })
-                            },
-                        )
-                        .into_any_element()
+                        )),
+                        "icons/volume-2.svg",
+                        route.name.clone().into(),
+                        Some(detail),
+                        route.is_active.then_some("Active"),
+                        route.is_active,
+                        self.audio_busy || (!route.is_active && !route.availability.can_select()),
+                    )
+                    .on_activate(move |_, _, cx| {
+                        if actionable {
+                            let device = row_device.clone();
+                            let route = row_route.clone();
+                            route_view.update(cx, |settings, cx| {
+                                settings.set_audio_route(kind, device, route, cx)
+                            });
+                        }
+                    })
+                    .into_any_element()
                 })
             })
             .collect();
@@ -522,45 +543,34 @@ impl Settings {
                     } else {
                         format!("{} · Unavailable", device.name).into()
                     };
-                    row_base()
-                        .id(ElementId::from(SharedString::from(format!(
+                    let actionable = audio_choice_is_actionable(
+                        profile.is_active,
+                        profile.availability,
+                        self.audio_busy,
+                    );
+                    audio_choice_row(
+                        SharedString::from(format!(
                             "audio-profile-{}-{}",
                             device.id, profile.index
-                        ))))
-                        .child(tile("icons/settings.svg", accent(), 22.0))
-                        .child(text_block(profile.name.clone().into(), Some(detail)))
-                        .when(profile.is_active, |el| {
-                            el.child(
-                                div()
-                                    .text_size(rmac_ui::text_px(12.0))
-                                    .text_color(secondary())
-                                    .child("Active"),
-                            )
-                            .child(glyph(
-                                "icons/check.svg",
-                                13.0,
-                                accent(),
-                            ))
-                        })
-                        .when(
-                            audio_choice_is_actionable(
-                                profile.is_active,
-                                profile.availability,
-                                self.audio_busy,
-                            ),
-                            |el| {
-                                el.cursor_pointer()
-                                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                                    .on_click(move |_, _, cx| {
-                                        let device = row_device.clone();
-                                        let profile = row_profile.clone();
-                                        profile_view.update(cx, |settings, cx| {
-                                            settings.set_audio_profile(device, profile, cx)
-                                        });
-                                    })
-                            },
-                        )
-                        .into_any_element()
+                        )),
+                        "icons/settings.svg",
+                        profile.name.clone().into(),
+                        Some(detail),
+                        profile.is_active.then_some("Active"),
+                        profile.is_active,
+                        self.audio_busy
+                            || (!profile.is_active && !profile.availability.can_select()),
+                    )
+                    .on_activate(move |_, _, cx| {
+                        if actionable {
+                            let device = row_device.clone();
+                            let profile = row_profile.clone();
+                            profile_view.update(cx, |settings, cx| {
+                                settings.set_audio_profile(device, profile, cx)
+                            });
+                        }
+                    })
+                    .into_any_element()
                 })
             })
             .collect();

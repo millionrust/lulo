@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use crate::validation::{validate_name, validate_tag};
 use crate::{
-    validate_name, validate_tag, AttachmentId, AttachmentKind, AttachmentRecord, FolderId,
-    FolderRecord, LibrarySnapshot, NoteId, NoteRecord, SortOrder, ValidationError, MAX_ATTACHMENTS,
-    MAX_ATTACHMENTS_PER_NOTE, MAX_ATTACHMENT_BYTES, MAX_BODY_BYTES, MAX_TAGS_PER_NOTE,
-    MAX_TITLE_BYTES,
+    AttachmentId, AttachmentKind, AttachmentRecord, FolderId, FolderRecord, LibrarySnapshot,
+    NoteId, NoteRecord, SortOrder, ValidationError, MAX_ATTACHMENTS, MAX_ATTACHMENTS_PER_NOTE,
+    MAX_ATTACHMENT_BYTES, MAX_BODY_BYTES, MAX_TAGS_PER_NOTE, MAX_TITLE_BYTES,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

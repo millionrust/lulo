@@ -6,6 +6,7 @@
 //! hidden-file toggle, and live directory watching.
 
 mod filesystem_helpers;
+mod lifecycle_controller;
 mod mount_controller;
 mod navigation;
 mod open_with_controller;
@@ -445,64 +446,6 @@ struct FinderView {
     watched_parent: Option<PathBuf>,
     search_generation: u64,
     search_cancel: Option<Arc<AtomicBool>>,
-}
-
-impl Drop for FinderView {
-    fn drop(&mut self) {
-        if let Some(transfer) = &self.transfer {
-            transfer.cancel.store(true, Ordering::Release);
-        }
-        if let Some(undo) = &self.undo_operation {
-            undo.cancel.store(true, Ordering::Release);
-        }
-        #[cfg(any(target_os = "linux", test))]
-        if let Some(trash) = &self.trash_operation {
-            trash.cancel.store(true, Ordering::Release);
-        }
-        if let Some(cancel) = &self.search_cancel {
-            cancel.store(true, Ordering::Release);
-        }
-    }
-}
-
-impl FinderView {
-    pub(super) fn record_operation_failures(
-        &mut self,
-        failures: Vec<file_ops::Failure>,
-        cx: &mut Context<Self>,
-    ) {
-        self.operation_error = failures.first().map(|first| {
-            if failures.len() == 1 {
-                first.to_string().into()
-            } else {
-                format!("{} (and {} more failures)", first, failures.len() - 1).into()
-            }
-        });
-        cx.notify();
-    }
-
-    fn finish_file_operations(&mut self, failures: Vec<file_ops::Failure>, cx: &mut Context<Self>) {
-        self.record_operation_failures(failures, cx);
-        self.reload(cx);
-    }
-
-    fn begin_search(&mut self) -> (u64, Arc<AtomicBool>) {
-        self.cancel_search();
-        self.search_generation = self.search_generation.wrapping_add(1);
-        self.operation_error = None;
-        self.search_summary = None;
-        self.search_relevance_order = false;
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.search_cancel = Some(cancel.clone());
-        (self.search_generation, cancel)
-    }
-
-    fn cancel_search(&mut self) {
-        if let Some(cancel) = self.search_cancel.take() {
-            cancel.store(true, Ordering::Release);
-        }
-        self.search_generation = self.search_generation.wrapping_add(1);
-    }
 }
 
 // ---- helpers ----

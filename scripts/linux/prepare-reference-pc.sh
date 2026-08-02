@@ -17,6 +17,8 @@ packages=(
   dbus
   desktop-file-utils
   dpkg-dev
+  flatpak
+  flatpak-builder
   fonts-inter
   git
   jq

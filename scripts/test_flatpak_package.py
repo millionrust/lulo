@@ -63,6 +63,14 @@ class FlatpakPackageTests(unittest.TestCase):
         with self.assertRaisesRegex(verify.VerificationError, "source mismatch"):
             verify.verify_cargo_sources(sources, self.locked)
 
+    def test_offline_candidate_phase_cannot_weaken_download_refusal(self):
+        driver = (
+            ROOT / "scripts/linux/build-flatpak-candidate.sh"
+        ).read_text(encoding="utf-8")
+        weakened = driver.replace("--disable-download", "--disable-updates", 1)
+        with self.assertRaisesRegex(verify.VerificationError, "offline build"):
+            verify.verify_offline_driver_text(weakened)
+
 
 if __name__ == "__main__":
     unittest.main()

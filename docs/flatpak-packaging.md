@@ -18,6 +18,7 @@ References:
 
 - <https://docs.flatpak.org/en/latest/manifests.html>
 - <https://docs.flatpak.org/en/latest/sandbox-permissions.html>
+- <https://docs.flatpak.org/en/latest/flatpak-builder-command-reference.html>
 - <https://docs.flathub.org/docs/for-app-authors/requirements>
 
 ## Packaged application
@@ -40,14 +41,29 @@ individually checksummed, offline sources. The application source is the local
 repository so developers can build an exact worktree; release automation must
 replace that source with a signed tag/archive before publication.
 
-On Linux:
+On each native Linux architecture, prepare the SDK/runtime and source cache
+explicitly while online, then build in the separate no-download phase:
 
 ```sh
-python3 scripts/linux/verify-flatpak-package.py
-flatpak-builder --force-clean --user --install --install-deps-from=flathub \
-  build-dir packaging/flatpak/org.rmac.TextEditor.json
+bash scripts/linux/build-flatpak-candidate.sh --prepare-online
+bash scripts/linux/build-flatpak-candidate.sh --build-offline
+flatpak install --user \
+  "target/flatpak-candidate/$(uname -m)/result/org.rmac.TextEditor.$(uname -m).flatpak"
 flatpak run org.rmac.TextEditor
 ```
+
+Both phases require the same clean tracked and untracked source tree. The
+online phase is the only phase allowed to use
+`--install-deps-from=flathub`; it installs the matching user runtimes and asks
+Flatpak Builder to cache every manifest source, then records the exact commit,
+architecture, tool, manifest, and generated-source hashes. The offline phase
+refuses an oversized or mismatched preparation record, uses
+`--disable-download` and `--sandbox`, exports without installing, and atomically
+publishes a bounded bundle hash summary under ignored `target/`. Disconnecting
+the network during that second command provides stronger external evidence that
+no ambient downloader bypassed the builder contract. Installation and launch
+stay explicit because they begin the H3 portal, permission, and interaction
+review.
 
 ## Native and deferred applications
 

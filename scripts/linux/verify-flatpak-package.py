@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import stat
 import sys
 import tomllib
 
@@ -42,6 +43,7 @@ FORBIDDEN_PERMISSION_PREFIXES = (
     "--system-own-name=",
 )
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+MAX_DRIVER_BYTES = 64 * 1024
 
 
 def read_json(path: Path):
@@ -240,6 +242,82 @@ def verify_cargo_sources(sources: list, locked: dict[tuple[str, str], str]) -> N
             raise VerificationError(f"generated checksum mismatch for {vendor_name}")
 
 
+def verify_offline_driver_text(text: str) -> None:
+    online = re.search(
+        r"(?ms)^prepare_online\(\) \{\n(.*?)^\}\n\nbuild_offline\(\) \{",
+        text,
+    )
+    offline = re.search(
+        r"(?ms)^build_offline\(\) \{\n(.*?)^\}\n\ncase \"\$mode\" in$",
+        text,
+    )
+    if online is None or offline is None:
+        raise VerificationError("Flatpak candidate phases are not explicit")
+    online_body = online.group(1)
+    offline_body = offline.group(1)
+    if not all(
+        token in online_body
+        for token in (
+            "--download-only",
+            "--install-deps-from=flathub",
+            "--user",
+            "sources_cached\\ttrue",
+        )
+    ):
+        raise VerificationError("Flatpak online preparation contract changed")
+    if not all(
+        token in offline_body
+        for token in (
+            "--disable-download",
+            "--sandbox",
+            "--repo=\"$staged_repo\"",
+            "flatpak build-bundle",
+            "online preparation does not match this candidate",
+            "source_downloads\\tdisabled",
+        )
+    ):
+        raise VerificationError("Flatpak offline build contract changed")
+    if any(
+        token in offline_body
+        for token in (
+            "--download-only",
+            "--install-deps-from",
+            "curl ",
+            "wget ",
+            "http://",
+            "https://",
+        )
+    ):
+        raise VerificationError("Flatpak offline phase can access a downloader")
+    if (
+        "flatpak run" in text
+        or "flatpak install" in offline_body
+        or re.search(r"(?m)(?:^|\s)--install(?:\s|=|$)", offline_body)
+    ):
+        raise VerificationError("Flatpak candidate builder must not launch or install")
+
+
+def verify_offline_driver(path: Path) -> None:
+    try:
+        metadata = path.lstat()
+        raw = path.read_bytes()
+    except OSError as error:
+        raise VerificationError("Flatpak candidate builder is unavailable") from error
+    if (
+        path.is_symlink()
+        or not stat.S_ISREG(metadata.st_mode)
+        or not metadata.st_mode & 0o111
+        or not 0 < metadata.st_size <= MAX_DRIVER_BYTES
+        or len(raw) != metadata.st_size
+    ):
+        raise VerificationError("Flatpak candidate builder is invalid")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise VerificationError("Flatpak candidate builder is not UTF-8") from error
+    verify_offline_driver_text(text)
+
+
 def verify_repository(root: Path) -> None:
     package = root / "packaging/flatpak"
     decisions = read_json(package / "decisions.json")
@@ -248,6 +326,7 @@ def verify_repository(root: Path) -> None:
     verify_decisions(decisions)
     verify_manifest(manifest)
     verify_cargo_sources(sources, registry_packages(root / "Cargo.lock"))
+    verify_offline_driver(root / "scripts/linux/build-flatpak-candidate.sh")
     for path in [
         root / "packaging/rmac-apps/applications/org.rmac.TextEditor.desktop",
         root / "packaging/rmac-apps/metainfo/org.rmac.TextEditor.metainfo.xml",

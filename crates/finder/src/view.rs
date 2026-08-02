@@ -5,6 +5,7 @@
 //! shortcuts + right-click context menus, live search, clickable sort headers,
 //! hidden-file toggle, and live directory watching.
 
+mod content_presentation;
 mod dialog_presentation;
 mod filesystem_helpers;
 mod lifecycle_controller;

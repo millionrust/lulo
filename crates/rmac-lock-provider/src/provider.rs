@@ -58,6 +58,14 @@ impl Provider {
         self.outputs.len()
     }
 
+    /// Exact output ownership and first-frame state in stable private-identity
+    /// order. Presentation adapters must keep the identifier out of logs.
+    pub fn outputs(&self) -> impl ExactSizeIterator<Item = (OutputId, bool)> + '_ {
+        self.outputs
+            .iter()
+            .map(|(output, committed)| (*output, *committed))
+    }
+
     /// Client-side commit completeness is not proof of presentation or the
     /// security readiness boundary. The compositor may securely blank an
     /// output while the client catches up; its `locked` event is authoritative.

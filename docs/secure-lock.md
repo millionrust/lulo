@@ -309,6 +309,33 @@ the existing 32-event queue; only that prompt can interpret it. PAM success,
 failure, cancellation, and multi-message transitions replace the status from
 authority rather than a UI timer.
 
+`rmac_lock_provider_linux::accessibility` is the public semantic boundary over
+that same coordinator state. It exposes one logical Lock Screen authentication
+dialog shared by the mirrored secure output surfaces, so Orca does not receive
+one duplicate interactive tree per monitor. Each surface retains its exact
+private output target and first-frame state; diagnostics disclose only counts
+and redact the target. Aggregated frame completeness remains presentation state
+and never substitutes for the compositor's authoritative `locked` event. The
+dialog contains the exact already-admitted login account, current secure phase,
+normalized PAM prompt, keyboard-focus state, Caps Lock warning, and
+authentication failure. Account and prompt strings are available only through
+scoped callbacks, are redacted from `Debug`, and are zeroized when the semantic
+snapshot is dropped.
+
+Echo-off is a protected password field. Its value and character count never
+enter the semantic tree; only a non-sensitive empty/nonempty bit is exposed.
+Echo-on likewise avoids copying the typed response into accessibility state.
+Info, error, and radio prompts receive status, alert, and radio-group roles,
+including exact selected state. Module-specific binary MFA is truthfully an
+unavailable alert with only Cancel rather than a decorative working control.
+Submit, Cancel, previous/next, and toggle actions map back to the existing
+bounded `DecodedKey` authority; none can construct unlock authorization.
+Projection fails closed above 32 outputs, 1 KiB aggregate semantic text, or on
+invalid account identity, duplicate/reordered outputs, control-bearing text,
+or a prompt kind/visual/phase mismatch. `Coordinator::accessibility_snapshot`
+binds the future Linux AT-SPI adapter directly to this projection. Actual
+AT-SPI/Orca export and lock-time speech privacy remain Linux evidence gates.
+
 An opt-in `development-provider` feature now supplies the uninstalled
 `rmac-lock-provider` process used by the future recovery/evidence harness. It
 resolves `XDG_SESSION_ID` through logind, reads the exact session's UID and PAM
@@ -332,9 +359,9 @@ therefore enters the same bounded restart path.
 
 The Linux adapter still requires Linux validation of its separate unit,
 localized prompt shaping, font fallback, and recovery harness, plus emergency
-recovery. Module-specific binary MFA UI, IME/accessibility support, and real
-niri/PAM evidence including the compiled fault tests also remain. The
-development feature is not built by the session installer and must not be
+recovery. Module-specific binary MFA UI, IME support, accessibility-tree export,
+and real niri/PAM/Orca evidence including the compiled fault tests also remain.
+The development feature is not built by the session installer and must not be
 launched ad hoc. Until the full matrix passes, the installed unit continues to
 run swaylock.
 

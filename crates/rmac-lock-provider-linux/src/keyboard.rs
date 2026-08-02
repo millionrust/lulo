@@ -7,9 +7,7 @@ use std::fmt;
 
 use zeroize::Zeroize as _;
 
-#[cfg(any(target_os = "linux", test))]
-use crate::pam_broker::Prompt;
-use crate::pam_broker::{PendingPrompt, PromptResponseError};
+use crate::pam_broker::{PendingPrompt, Prompt, PromptResponseError};
 use crate::pam_conversation::{Reply, RequestKind, TextResponse};
 use crate::{SecretInput, MAX_SECRET_BYTES};
 
@@ -128,7 +126,6 @@ impl PromptEditor {
         self.kind
     }
 
-    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn prompt(&self) -> Option<&Prompt> {
         self.pending.as_ref().map(|pending| pending.prompt())
     }

@@ -4,6 +4,7 @@ use std::fmt;
 
 use zeroize::Zeroize as _;
 
+#[cfg(any(target_os = "linux", test))]
 use crate::pam_broker::PromptId;
 use crate::pam_conversation::RequestKind;
 
@@ -58,18 +59,35 @@ pub(crate) enum AccountLabelError {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PromptText<'a> {
+    #[cfg(any(target_os = "linux", test))]
     id: PromptId,
     kind: RequestKind,
     bytes: Option<&'a [u8]>,
 }
 
 impl<'a> PromptText<'a> {
-    pub(crate) fn new(id: PromptId, kind: RequestKind, bytes: Option<&'a [u8]>) -> Self {
-        Self { id, kind, bytes }
+    pub(crate) fn new(
+        id: crate::pam_broker::PromptId,
+        kind: RequestKind,
+        bytes: Option<&'a [u8]>,
+    ) -> Self {
+        #[cfg(not(any(target_os = "linux", test)))]
+        let _ = id;
+        Self {
+            #[cfg(any(target_os = "linux", test))]
+            id,
+            kind,
+            bytes,
+        }
     }
 
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn key(self) -> PromptKey {
         PromptKey::Pam(self.id)
+    }
+
+    pub(crate) fn kind(self) -> RequestKind {
+        self.kind
     }
 }
 
@@ -79,6 +97,7 @@ impl fmt::Debug for PromptText<'_> {
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PromptKey {
     Pam(PromptId),
@@ -87,6 +106,7 @@ pub(crate) enum PromptKey {
 }
 
 pub(crate) struct PromptLabel {
+    #[cfg(any(target_os = "linux", test))]
     key: PromptKey,
     value: String,
 }
@@ -101,11 +121,13 @@ impl PromptLabel {
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| fallback.to_owned());
         Self {
+            #[cfg(any(target_os = "linux", test))]
             key: PromptKey::Pam(prompt.id),
             value,
         }
     }
 
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn authentication_failure() -> Self {
         Self {
             key: PromptKey::AuthenticationFailure,
@@ -113,6 +135,7 @@ impl PromptLabel {
         }
     }
 
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn authenticating() -> Self {
         Self {
             key: PromptKey::Authenticating,
@@ -120,6 +143,7 @@ impl PromptLabel {
         }
     }
 
+    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn key(&self) -> PromptKey {
         self.key
     }

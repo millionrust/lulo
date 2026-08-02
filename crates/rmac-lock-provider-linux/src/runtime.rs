@@ -17,7 +17,8 @@ use crate::paint::{LockVisualState, PromptVisual};
 use crate::pam_broker::PendingPrompt;
 use crate::pam_conversation::RequestKind;
 #[cfg(any(target_os = "linux", test))]
-use crate::prompt_label::{AccountLabel, PromptText};
+use crate::prompt_label::AccountLabel;
+use crate::prompt_label::PromptText;
 
 const MAX_QUEUED_INPUTS: usize = 32;
 #[cfg(any(target_os = "linux", test))]
@@ -102,7 +103,6 @@ impl Coordinator {
             .with_keyboard_focus(self.keyboard_focused)
     }
 
-    #[cfg(any(target_os = "linux", test))]
     pub(crate) fn with_presentation<R>(
         &self,
         use_presentation: impl FnOnce(LockVisualState, Option<PromptText<'_>>) -> R,
@@ -115,6 +115,27 @@ impl Coordinator {
             use_presentation(
                 visual,
                 Some(PromptText::new(prompt.id(), prompt.kind(), text)),
+            )
+        })
+    }
+
+    /// Exact semantic projection of the state already used for secure paint
+    /// and input. Credential bytes never cross this boundary.
+    pub fn accessibility_snapshot(
+        &self,
+        account: &str,
+    ) -> Result<
+        crate::accessibility::LockAccessibilitySnapshot,
+        crate::accessibility::AccessibilityProjectionError,
+    > {
+        let outputs = self.provider.outputs().collect::<Vec<_>>();
+        self.with_presentation(|visual, prompt| {
+            crate::accessibility::project_lock_accessibility(
+                account,
+                self.provider.phase(),
+                &outputs,
+                visual,
+                prompt,
             )
         })
     }

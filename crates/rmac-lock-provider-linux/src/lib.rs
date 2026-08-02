@@ -3,6 +3,7 @@
 //! Secret input uses one fixed-capacity allocation, redacted diagnostics, and
 //! zeroization on backspace, clear, transfer, and drop.
 
+pub mod accessibility;
 #[cfg(any(target_os = "linux", test))]
 mod caps_lock;
 pub mod key_repeat;
@@ -14,7 +15,6 @@ pub mod pam_conversation;
 mod pointer;
 #[cfg(any(test, all(target_os = "linux", feature = "development-provider")))]
 mod process;
-#[cfg(any(target_os = "linux", test))]
 mod prompt_label;
 #[cfg(any(target_os = "linux", test))]
 mod registry_probe;

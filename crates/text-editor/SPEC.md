@@ -47,6 +47,13 @@ plain text over a rich-text file.
   directory sync, permission preservation, and temporary-file cleanup.
 - The document domain owns bounded decoding/encoding, line-ending policy, the
   exact raw revision opened or last written, conflict preflight, and readback.
+- `rmac-editor` owns a public adapter-ready accessibility projection over the
+  same GPUI input state used for editing and IME. It converts the authoritative
+  UTF-16 selection and marked range plus exact UTF-8 cursor head into bounded
+  Unicode-scalar text, caret, selection, and composition semantics without
+  retaining a parallel editor state. The projection matches Text Editor's
+  64 MiB document ceiling. Pinned GPUI 0.2.2 cannot publish an accessibility
+  tree, so AT-SPI export remains a Phase A framework responsibility.
 - The XDG state directory owns private crash-recovery records. Recovery data is
   not a substitute for the user document and is never treated as saved content.
 - The shared recent-document authority owns rmac history in separate versioned,
@@ -164,6 +171,10 @@ External-change choices are precise:
 - The editor, filename, edited state, format, line/column, counts, matches,
   loading/saving, recovery warning, conflict warning, and dialog purpose need
   roles, names, state, and announcements in the supported accessibility stack.
+- The editable text now has a framework-neutral bounded snapshot with exact
+  Unicode-scalar caret, half-open selection, and IME composition ranges. It is
+  not an accessibility claim until the selected framework exports that snapshot
+  and the complete window semantics through AT-SPI and Orca verifies them.
 - At 100%, 125%, 150%, and 200%, text remains readable, controls do not clip,
   focus is visible, contrast tokens remain semantic, and reduced motion removes
   nonessential transitions.
@@ -193,3 +204,7 @@ cancellation, stale-generation, portal-restart, and unsupported/old-portal
 matrix. The transport follows the official
 [`org.freedesktop.portal.Print`](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Print.html)
 contract.
+Shared editor contracts already prove Unicode-scalar conversion for UTF-16
+selection and marked-text ranges, exact forward/backward caret heads, disabled
+input behavior, combining scalars, and refusal of split-surrogate or split-UTF-8
+offsets. Native tree export and Orca reading/editing evidence remain pending.

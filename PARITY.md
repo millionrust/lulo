@@ -91,9 +91,13 @@ evidence remains gated by the reference-PC framework work.
   chooser** (five extra real columns, persisted), **per-core CPU bars**, a
   double-click **process inspector**, and a real **per-interface Network table**
   (interface name, cumulative + per-interval rates, busiest-first).
-- **Text Editor** ✅ — find/replace, dirty-state + safe prompts, autosave, a
+- **Text Editor** 🟡 — find/replace, dirty-state + safe prompts, recovery, a
   **formatted RTF viewer** (NSAttributedString → styled runs), and a **status
-  bar** (live cursor Ln/Col + word/char counts).
+  bar** (live cursor Ln/Col + word/char counts). Its shared editor core now
+  projects exact bounded text, Unicode-scalar caret/selection, and IME marked
+  ranges from GPUI's authoritative input state. Runtime AT-SPI/Orca export,
+  native Linux portal/print/IME behavior, visual references, and performance
+  evidence keep G1 partial.
 - **App Drawer** 🟡 — localized XDG discovery, `TryExec`, inherited icons,
   search, shell-free launch, keyboard navigation, grid/list and category views,
   live refresh, metadata/action search, explicit empty states, and context

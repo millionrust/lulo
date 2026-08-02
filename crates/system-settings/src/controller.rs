@@ -126,7 +126,7 @@ use gpui::{
 use gpui_component::StyledExt as _;
 use rmac_ui::{
     Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
-    SliderState, TextField, Toast, ToastKind, Toggle,
+    SliderState, Tabs, TextField, Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]

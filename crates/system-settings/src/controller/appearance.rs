@@ -110,6 +110,65 @@ impl Settings {
             self.queue_theme_stream_refresh(cx);
         }
     }
+
+    #[allow(dead_code)]
+    pub(super) fn appearance_accessibility_snapshot(
+        &self,
+    ) -> std::result::Result<
+        rmac_system_settings::appearance_accessibility::AppearanceAccessibilitySnapshot,
+        rmac_system_settings::appearance_accessibility::AccessibilityProjectionError,
+    > {
+        use rmac_system_settings::appearance_accessibility::{project_appearance, AppearanceInput};
+
+        let error = self
+            .theme_error
+            .as_ref()
+            .or(self.theme_store_stream_error.as_ref())
+            .or(self.theme_portal_stream_error.as_ref())
+            .map(|error| error.as_ref());
+        project_appearance(AppearanceInput {
+            theme: self.theme.as_ref(),
+            host: &self.host_appearance,
+            loading: self.theme_loading,
+            busy: self.theme_busy,
+            refreshing: self.theme_stream_refreshing,
+            error,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn apply_appearance_accessibility_action(
+        &mut self,
+        action: rmac_system_settings::appearance_accessibility::AppearanceAction,
+        cx: &mut Context<Self>,
+    ) {
+        use rmac_system_settings::appearance_accessibility::{AccentChoice, AppearanceAction};
+
+        match action {
+            AppearanceAction::Refresh => self.refresh_theme(cx),
+            AppearanceAction::SetScheme(preference) => {
+                self.apply_theme_change(ThemeChange::Scheme(preference), cx);
+            }
+            AppearanceAction::SetAccent(choice) => {
+                let preference = match choice {
+                    AccentChoice::Automatic => rmac_theme::AccentPreference::Automatic,
+                    _ => accent_preference(
+                        choice
+                            .hex()
+                            .expect("non-automatic accent choices have a color"),
+                    ),
+                };
+                self.apply_theme_change(ThemeChange::Accent(preference), cx);
+            }
+            AppearanceAction::SetContrast(preference) => {
+                self.apply_theme_change(ThemeChange::Contrast(preference), cx);
+            }
+            AppearanceAction::SetMotion(preference) => {
+                self.apply_theme_change(ThemeChange::Motion(preference), cx);
+            }
+        }
+    }
+
     pub(super) fn render_appearance(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
@@ -127,20 +186,10 @@ impl Settings {
                     .child("rmac Appearance"),
             )
             .child(
-                div()
-                    .id("theme-refresh")
-                    .px_2()
-                    .py_1()
-                    .rounded(px(6.0))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(accent())
-                    .cursor_pointer()
-                    .hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                    .child(if self.theme_busy || self.theme_stream_refreshing {
-                        "Applying…"
-                    } else {
-                        "Refresh"
-                    })
+                Button::new("theme-refresh", "Refresh")
+                    .ghost()
+                    .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
+                    .busy(self.theme_busy || self.theme_stream_refreshing)
                     .on_click(move |_, _, cx| {
                         refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
                     }),
@@ -164,19 +213,10 @@ impl Settings {
                           swatch: Hsla| {
                 let selected = preferences.color_scheme == preference;
                 let option_view = view.clone();
-                div()
-                    .id(ElementId::from(id))
+                let content = div()
                     .v_flex()
                     .items_center()
                     .gap_1p5()
-                    .when(enabled, |element| {
-                        element.cursor_pointer().on_click(move |_, _, cx| {
-                            option_view.update(cx, |settings, cx| {
-                                settings.apply_theme_change(ThemeChange::Scheme(preference), cx)
-                            });
-                        })
-                    })
-                    .when(!enabled, |element| element.opacity(0.55))
                     .child(
                         div()
                             .w(px(64.0))
@@ -191,7 +231,18 @@ impl Settings {
                             .text_size(rmac_ui::text_px(12.0))
                             .text_color(if selected { accent() } else { label() })
                             .child(name),
-                    )
+                    );
+                ListRow::new(ElementId::from(id), content)
+                    .selected(selected)
+                    .disabled(!enabled)
+                    .on_activate(move |_, _, cx| {
+                        option_view.update(cx, |settings, cx| {
+                            settings.apply_theme_change(ThemeChange::Scheme(preference), cx)
+                        });
+                    })
+                    .w(px(84.0))
+                    .h(px(68.0))
+                    .justify_center()
             };
             div()
                 .flex()
@@ -229,84 +280,91 @@ impl Settings {
             preferences.accent_color == rmac_theme::AccentPreference::Automatic;
         let auto_view = view.clone();
         swatches.push(
-            div()
-                .id("theme-accent-auto")
-                .h(px(24.0))
-                .px_2()
-                .rounded(px(6.0))
-                .flex()
-                .items_center()
-                .text_size(rmac_ui::text_px(11.0))
-                .text_color(if automatic_selected {
-                    on_accent()
-                } else {
-                    label()
-                })
-                .bg(if automatic_selected {
-                    accent()
-                } else {
-                    rmac_ui::mac::control_fill()
-                })
-                .when(enabled, |element| {
-                    element.cursor_pointer().on_click(move |_, _, cx| {
-                        auto_view.update(cx, |settings, cx| {
-                            settings.apply_theme_change(
-                                ThemeChange::Accent(rmac_theme::AccentPreference::Automatic),
-                                cx,
-                            )
-                        });
+            ListRow::new(
+                "theme-accent-auto",
+                div()
+                    .h(px(24.0))
+                    .px_2()
+                    .rounded(px(6.0))
+                    .flex()
+                    .items_center()
+                    .text_size(rmac_ui::text_px(11.0))
+                    .text_color(if automatic_selected {
+                        on_accent()
+                    } else {
+                        label()
                     })
-                })
-                .when(!enabled, |element| element.opacity(0.55))
-                .child("Automatic")
-                .into_any_element(),
+                    .bg(if automatic_selected {
+                        accent()
+                    } else {
+                        rmac_ui::mac::control_fill()
+                    })
+                    .child("Automatic"),
+            )
+            .selected(automatic_selected)
+            .disabled(!enabled)
+            .on_activate(move |_, _, cx| {
+                auto_view.update(cx, |settings, cx| {
+                    settings.apply_theme_change(
+                        ThemeChange::Accent(rmac_theme::AccentPreference::Automatic),
+                        cx,
+                    )
+                });
+            })
+            .w(px(84.0))
+            .h(px(30.0))
+            .justify_center()
+            .into_any_element(),
         );
         for (index, (name, hex)) in ACCENTS.iter().copied().enumerate() {
             let preference = accent_preference(hex);
             let selected = preferences.accent_color == preference;
             let swatch_foreground = swatch_foreground(hex);
             let swatch_view = view.clone();
+            let content = div()
+                .w(px(48.0))
+                .v_flex()
+                .items_center()
+                .gap_1()
+                .child(
+                    div()
+                        .w(px(24.0))
+                        .h(px(24.0))
+                        .rounded_full()
+                        .bg(hsl(hex))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .when(selected, |element| {
+                            element
+                                .border_2()
+                                .border_color(swatch_foreground)
+                                .shadow_sm()
+                                .child(glyph("icons/check.svg", 12.0, swatch_foreground))
+                        }),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(10.0))
+                        .text_color(secondary())
+                        .child(name),
+                );
             swatches.push(
-                div()
-                    .id(ElementId::from(SharedString::from(format!(
-                        "theme-accent-{index}"
-                    ))))
-                    .w(px(48.0))
-                    .v_flex()
-                    .items_center()
-                    .gap_1()
-                    .when(enabled, |element| {
-                        element.cursor_pointer().on_click(move |_, _, cx| {
-                            swatch_view.update(cx, |settings, cx| {
-                                settings.apply_theme_change(ThemeChange::Accent(preference), cx)
-                            });
-                        })
-                    })
-                    .when(!enabled, |element| element.opacity(0.55))
-                    .child(
-                        div()
-                            .w(px(24.0))
-                            .h(px(24.0))
-                            .rounded_full()
-                            .bg(hsl(hex))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .when(selected, |element| {
-                                element
-                                    .border_2()
-                                    .border_color(swatch_foreground)
-                                    .shadow_sm()
-                                    .child(glyph("icons/check.svg", 12.0, swatch_foreground))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(10.0))
-                            .text_color(secondary())
-                            .child(name),
-                    )
-                    .into_any_element(),
+                ListRow::new(
+                    ElementId::from(SharedString::from(format!("theme-accent-{index}"))),
+                    content,
+                )
+                .selected(selected)
+                .disabled(!enabled)
+                .on_activate(move |_, _, cx| {
+                    swatch_view.update(cx, |settings, cx| {
+                        settings.apply_theme_change(ThemeChange::Accent(preference), cx)
+                    });
+                })
+                .w(px(52.0))
+                .h(px(48.0))
+                .justify_center()
+                .into_any_element(),
             );
         }
         cards.push(

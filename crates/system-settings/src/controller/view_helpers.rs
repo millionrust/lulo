@@ -1095,38 +1095,16 @@ pub(super) fn theme_segment_row(
     selected: usize,
     enabled: bool,
 ) -> AnyElement {
-    let mut control = div().flex().gap_1().w(px(290.0));
-    for (index, (option_label, change)) in options.iter().copied().enumerate() {
-        let option_view = view.clone();
-        control = control.child(
-            div()
-                .id(ElementId::from(SharedString::from(format!("{id}-{index}"))))
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h(px(26.0))
-                .rounded(px(6.0))
-                .text_size(rmac_ui::text_px(11.0))
-                .when(index == selected, |element| {
-                    element.bg(accent()).text_color(on_accent())
-                })
-                .when(index != selected, |element| {
-                    element.bg(rmac_ui::mac::control_fill()).text_color(label())
-                })
-                .when(enabled, |element| {
-                    element
-                        .cursor_pointer()
-                        .hover(|hover| hover.bg(rmac_ui::mac::control_fill_hover()))
-                        .on_click(move |_, _, cx| {
-                            option_view
-                                .update(cx, |settings, cx| settings.apply_theme_change(change, cx));
-                        })
-                })
-                .when(!enabled, |element| element.opacity(0.55))
-                .child(option_label),
-        );
-    }
+    let labels = options.iter().map(|(label, _)| *label).collect::<Vec<_>>();
+    let control = Tabs::new(id, labels)
+        .selected(selected)
+        .disabled(!enabled)
+        .on_change(move |index, _, cx| {
+            if let Some((_, change)) = options.get(*index).copied() {
+                view.update(cx, |settings, cx| settings.apply_theme_change(change, cx));
+            }
+        })
+        .w(px(290.0));
     row_base()
         .child(
             div()

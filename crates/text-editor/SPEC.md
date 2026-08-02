@@ -168,6 +168,8 @@ External-change choices are precise:
   Escape closes the find bar or cancels the topmost dialog without data loss.
 - Tab order follows toolbar, find/replace controls, document, status controls,
   and modal buttons. Destructive actions are never initial focus or default.
+- Recovery errors and status notices expose dedicated shared focusable Dismiss
+  buttons; the banner itself is not a pointer-only activation target.
 - The editor, filename, edited state, format, line/column, counts, matches,
   loading/saving, recovery warning, conflict warning, and dialog purpose need
   roles, names, state, and announcements in the supported accessibility stack.

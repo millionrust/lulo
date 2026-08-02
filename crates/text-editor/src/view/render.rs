@@ -638,13 +638,15 @@ impl Render for EditorView {
                         .border_color(mac::error_border())
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::danger())
-                        .cursor_pointer()
                         .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.recovery_error = None;
-                            cx.notify();
-                        })),
+                        .child(
+                            Button::new("dismiss-recovery-error", "Dismiss")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.recovery_error = None;
+                                    cx.notify();
+                                })),
+                        ),
                 )
             })
             .when_some(status_notice, |editor, message| {
@@ -662,13 +664,15 @@ impl Render for EditorView {
                         .border_color(mac::separator())
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::text_secondary())
-                        .cursor_pointer()
                         .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.status_notice = None;
-                            cx.notify();
-                        })),
+                        .child(
+                            Button::new("dismiss-status-notice", "Dismiss")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.status_notice = None;
+                                    cx.notify();
+                                })),
+                        ),
                 )
             })
             .when_some(external_change, |editor, change| {

@@ -13,6 +13,7 @@ mod open_with_controller;
 mod operations;
 mod presentation;
 mod presentation_support;
+mod quick_look_controller;
 mod rename_controller;
 mod selection_controller;
 mod startup;

@@ -1,0 +1,80 @@
+use super::*;
+
+pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
+    // Keyboard shortcuts → actions (handled on the focused list).
+    cx.bind_keys([
+        KeyBinding::new(
+            rmac_ui::shortcuts::SELECT_ALL.keystroke,
+            SelectAll,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::COPY.keystroke,
+            CopyItems,
+            Some("Finder"),
+        ),
+        KeyBinding::new(rmac_ui::shortcuts::CUT.keystroke, CutItems, Some("Finder")),
+        KeyBinding::new(
+            rmac_ui::shortcuts::PASTE.keystroke,
+            PasteItems,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::UNDO.keystroke,
+            UndoOperation,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::DUPLICATE.keystroke,
+            Duplicate,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::DELETE.keystroke,
+            MoveToTrash,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::DELETE_PERMANENT.keystroke,
+            DeletePermanently,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::NEW_FOLDER.keystroke,
+            NewFolder,
+            Some("Finder"),
+        ),
+        KeyBinding::new(rmac_ui::shortcuts::GO_UP.keystroke, GoUp, Some("Finder")),
+        KeyBinding::new(
+            rmac_ui::shortcuts::OPEN_SELECTION.keystroke,
+            OpenItems,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::ENTER.keystroke,
+            RenameItem,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::TOGGLE_HIDDEN.keystroke,
+            ToggleHidden,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::SPACE.keystroke,
+            QuickLook,
+            Some("Finder"),
+        ),
+        KeyBinding::new(rmac_ui::shortcuts::INFO.keystroke, GetInfo, Some("Finder")),
+        KeyBinding::new(
+            rmac_ui::shortcuts::NEW_TAB.keystroke,
+            NewTab,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::CLOSE.keystroke,
+            CloseTab,
+            Some("Finder"),
+        ),
+    ]);
+}

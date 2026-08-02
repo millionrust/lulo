@@ -1,16 +1,16 @@
 use gpui::{
-    Context, Div, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window, div, img,
-    prelude::FluentBuilder as _, px, svg,
+    div, img, prelude::FluentBuilder as _, px, svg, Context, Div, InteractiveElement as _,
+    IntoElement, MouseButton, MouseDownEvent, ParentElement, Render, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_app_drawer::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
-use rmac_ui::{EmptyState, SearchField, mac};
+use rmac_ui::{mac, Button, EmptyState, SearchField};
 
 use crate::catalog::{App, Category};
 use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp, OpenApp, RevealInFinder};
 
-use super::{AppDrawer, ICON, LaunchDesktopAction, ROW_ICON, TILE_W, ViewMode};
+use super::{AppDrawer, LaunchDesktopAction, ViewMode, ICON, ROW_ICON, TILE_W};
 
 impl AppDrawer {
     fn icon_element(&self, app: &App, size: f32) -> gpui::AnyElement {
@@ -377,16 +377,18 @@ impl Render for AppDrawer {
                         } else {
                             mac::text_secondary()
                         })
-                        .when(is_error, |element| element.cursor_pointer())
                         .child(div().flex_1().child(message))
-                        .when(is_error, |element| element.child("Dismiss"))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            if !this.launching {
-                                this.catalog_error = None;
-                                this.action_error = None;
-                                cx.notify();
-                            }
-                        })),
+                        .when(is_error, |element| {
+                            element.child(
+                                Button::new("dismiss-app-drawer-error", "Dismiss")
+                                    .ghost()
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.catalog_error = None;
+                                        this.action_error = None;
+                                        cx.notify();
+                                    })),
+                            )
+                        }),
                 )
             })
             .child(

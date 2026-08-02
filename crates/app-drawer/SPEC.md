@@ -87,6 +87,8 @@ software store, package manager, or imitation of Apple Launchpad.
 - Only one application spawn is in flight. The drawer displays “Opening
   application…” while the spawn is pending and keeps a failed launch visible
   until dismissal or retry.
+- Catalog, launch, and reveal failures expose a dedicated shared focusable
+  Dismiss button; the notice banner itself is not a pointer-only target.
 - In the supported niri session, Open and declared actions use direct niri IPC
   spawn so the child receives an XDG activation token. A compositor rejection
   is never bypassed by direct spawning.

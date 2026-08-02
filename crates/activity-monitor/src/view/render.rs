@@ -62,13 +62,15 @@ impl Render for MonitorView {
                         .border_color(mac::error_border())
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(mac::danger())
-                        .cursor_pointer()
                         .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.persistence_error = None;
-                            cx.notify();
-                        })),
+                        .child(
+                            Button::new("dismiss-persistence-error", "Dismiss")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.persistence_error = None;
+                                    cx.notify();
+                                })),
+                        ),
                 )
             })
             .when_some(process_feedback, |monitor, feedback| {
@@ -92,7 +94,6 @@ impl Render for MonitorView {
                         .border_color(border)
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(text)
-                        .cursor_pointer()
                         .child(
                             div()
                                 .v_flex()
@@ -101,11 +102,14 @@ impl Render for MonitorView {
                                 .child(div().font_weight(mac::SEMIBOLD).child(feedback.title))
                                 .child(feedback.detail),
                         )
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.process_action_feedback = None;
-                            cx.notify();
-                        })),
+                        .child(
+                            Button::new("dismiss-process-feedback", "Dismiss")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.process_action_feedback = None;
+                                    cx.notify();
+                                })),
+                        ),
                 )
             })
             .child(self.render_summary(cx))

@@ -83,6 +83,9 @@ the application does not fabricate unavailable per-process data.
   their corresponding sampled data.
 - Selection, sorting, filtering, column chooser, inspector, confirmation,
   empty/unavailable data, and persistence-error states are visually distinct.
+- Persistence errors and process-action feedback use dedicated shared,
+  focusable Dismiss buttons; the entire banner is no longer a pointer-only
+  activation target.
 - All System Monitor labels, metrics, tables, inspector text, and banners
   follow rmac's bounded 100%, 115%, and 130% application text preference.
 - Process-table, confirmation-dialog, and action-feedback semantics now have a

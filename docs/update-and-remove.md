@@ -70,6 +70,51 @@ a cross-profile import format. Network/VPN credentials remain with
 NetworkManager, portal permissions remain with PermissionStore, and PAM/polkit
 state is never copied into an rmac export.
 
+## Configuration migration evidence
+
+Package installation success does not prove that a new application can safely
+read state written by an older one. For every candidate that changes a durable
+format, run this matrix with real signed baseline and candidate packages in a
+disposable account:
+
+| Authority | Supported legacy input | Required candidate result |
+| --- | --- | --- |
+| Desktop/session settings | Shell settings versions 1, 2, and 3 | Read every preserved user choice, migrate the retired Files identity without reordering or duplicate pins, write canonical version 4 only after successful load, and reread the same complete state after service restart |
+| Notes library | Binary library schema version 1 | Open as the same stable folders/notes/attachments with the version-2 edited-sort default, commit the next ordinary edit transactionally, and reopen the exact accepted version-2 library |
+| Notes prototype library | The last supported pre-store folder/note layout | Offer the bounded non-destructive review, preserve every source in private recovery storage, import only after explicit acceptance, verify the migration receipt, and never offer the committed source again |
+| Terminal profile | Legacy numeric built-in profile index | Select the same profile, rewrite its stable profile name on the next accepted save, and preserve that choice after restart |
+| System Monitor columns | Retired `rmac-activity-monitor` preference path | Preserve the exact valid column order, write only the current `rmac-system-monitor` path on the next accepted choice, and ignore neither the required Name column nor malformed input |
+
+Create each legacy input by running the exact baseline package that owned it;
+hand-authored fixtures and unit tests do not satisfy the native migration row.
+Capture the baseline version and a privacy-safe semantic inventory before the
+upgrade, stop every owning process, install the complete matching candidate
+package set, then exercise the real application/service entrypoint. Restart the
+owner before recording candidate readback so an in-memory value cannot pass.
+
+For each row also preserve one malformed input and one unsupported future
+version. The candidate must retain the original bytes, avoid partial canonical
+output, and expose its documented recovery/read-only/export path. After the
+candidate writes its current format, attempt the reviewed rollback package: an
+older reader must refuse or follow its documented recovery boundary rather than
+silently reinterpret newer state. Reinstall the candidate and prove the last
+accepted state remains recoverable.
+
+Theme, Focus, notification history, recent documents, and other stores that
+currently expose only their first accepted version receive current-version,
+corruption, future-version, last-known-good, and preservation coverage; they do
+not claim a legacy migration until a second format exists. niri, NetworkManager,
+PermissionStore, PAM, polkit, and other Linux-owned formats remain outside rmac
+migration authority.
+
+The reviewed migration report contains only candidate/baseline package versions,
+architecture, authority ID, source/current version numbers, semantic counts or
+enumerated non-private choices, migration/restart/rollback/reinstall outcomes,
+and pass/fail. It contains no settings bytes, document content, titles, tags,
+paths, account/session/device identities, credentials, hashes of private data,
+or raw logs. Pair it with locally reviewed native interaction evidence; a
+canonical report or passing unit fixture alone cannot satisfy H5.
+
 ## Rollback
 
 Rollback is a package-manager operation to a reviewed signed version; it is not

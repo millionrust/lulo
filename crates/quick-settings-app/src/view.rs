@@ -21,6 +21,25 @@ pub(crate) struct QuickSettingsView {
 }
 
 impl QuickSettingsView {
+    /// Exact framework-neutral semantics for the future A5/A6 accessibility
+    /// adapter. Pinned GPUI cannot publish this snapshot yet.
+    #[allow(dead_code)]
+    pub(crate) fn accessibility_snapshot(
+        &self,
+    ) -> Result<
+        rmac_quick_settings::accessibility::QuickSettingsAccessibilitySnapshot,
+        rmac_quick_settings::accessibility::AccessibilityProjectionError,
+    > {
+        rmac_quick_settings::accessibility::project_quick_settings(
+            &self.state.view(),
+            rmac_quick_settings::accessibility::SurfaceStatus {
+                received_snapshot: self.received_snapshot,
+                stream_error: self.stream_error.as_ref().map(|error| error.as_ref()),
+                operation_error: self.operation_error.as_ref().map(|error| error.as_ref()),
+            },
+        )
+    }
+
     pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let volume = Self::volume_slider(cx, 0.0);
         let focus = cx.focus_handle();

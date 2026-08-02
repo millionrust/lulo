@@ -1,11 +1,15 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, svg, AnyElement, Context, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    AnyElement, Context, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _,
+    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px, svg,
 };
 use gpui_component::StyledExt as _;
+use rmac_quick_settings::accessibility::{
+    CHANGING_LABEL, DISMISS_LABEL, QUICK_SETTINGS_DESCRIPTION, QUICK_SETTINGS_TITLE,
+    READING_SYSTEM_STATE_LABEL, SYSTEM_SETTINGS_LABEL,
+};
 use rmac_quick_settings::{Command, Control, FocusValue, PowerValue, SoundValue, Tile};
-use rmac_ui::{mac, Button, ButtonRole, Progress, Slider, Toggle};
+use rmac_ui::{Button, ButtonRole, Progress, Slider, Toggle, mac};
 
 use crate::view::QuickSettingsView;
 
@@ -59,7 +63,7 @@ impl QuickSettingsView {
                 .child(
                     Button::new(
                         SharedString::from(format!("dismiss-{control:?}-error")),
-                        "Dismiss",
+                        DISMISS_LABEL,
                     )
                     .ghost()
                     .xsmall()
@@ -120,7 +124,7 @@ impl QuickSettingsView {
                                     .text_size(rmac_ui::text_px(10.5))
                                     .text_color(mac::text_secondary())
                                     .child(if tile.busy {
-                                        "Changing…".to_owned()
+                                        CHANGING_LABEL.to_owned()
                                     } else {
                                         tile.summary.clone()
                                     }),
@@ -178,7 +182,7 @@ impl QuickSettingsView {
                                     .text_size(rmac_ui::text_px(10.5))
                                     .text_color(mac::text_secondary())
                                     .child(if sound.busy {
-                                        "Changing…".to_owned()
+                                        CHANGING_LABEL.to_owned()
                                     } else {
                                         sound.summary.clone()
                                     }),
@@ -288,7 +292,7 @@ impl QuickSettingsView {
                                     .text_size(rmac_ui::text_px(10.5))
                                     .text_color(mac::text_secondary())
                                     .child(if power.busy {
-                                        "Changing…".to_owned()
+                                        CHANGING_LABEL.to_owned()
                                     } else {
                                         power.summary.clone()
                                     }),
@@ -376,13 +380,13 @@ impl Render for QuickSettingsView {
                                 div()
                                     .text_size(rmac_ui::text_px(17.0))
                                     .font_weight(mac::SEMIBOLD)
-                                    .child("Quick Settings"),
+                                    .child(QUICK_SETTINGS_TITLE),
                             )
                             .child(
                                 div()
                                     .text_size(rmac_ui::text_px(10.5))
                                     .text_color(mac::text_secondary())
-                                    .child("Live controls for this computer"),
+                                    .child(QUICK_SETTINGS_DESCRIPTION),
                             ),
                     )
                     .child(
@@ -426,7 +430,7 @@ impl Render for QuickSettingsView {
                         .gap_2()
                         .child(div().flex_1().min_w_0().child(error))
                         .child(
-                            Button::new("dismiss-quick-settings-error", "Dismiss")
+                            Button::new("dismiss-quick-settings-error", DISMISS_LABEL)
                                 .ghost()
                                 .xsmall()
                                 .on_click(move |_, _, cx| {
@@ -453,7 +457,7 @@ impl Render for QuickSettingsView {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .child(Progress::indeterminate().label("Reading system state…")),
+                                .child(Progress::indeterminate().label(READING_SYSTEM_STATE_LABEL)),
                         )
                     })
                     .child(self.binary_tile(
@@ -487,7 +491,7 @@ impl Render for QuickSettingsView {
                     .border_t_1()
                     .border_color(mac::separator())
                     .child(
-                        Button::new("open-system-settings", "System Settings…")
+                        Button::new("open-system-settings", SYSTEM_SETTINGS_LABEL)
                             .ghost()
                             .xsmall()
                             .on_click(move |_, _, cx| {

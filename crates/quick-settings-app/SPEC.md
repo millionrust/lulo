@@ -36,9 +36,28 @@ demo toggles. System Settings remains the destination for deeper configuration.
 - The supervised process owns the `quick-settings` shortcut socket and at most
   one popover. It reports service readiness only after that socket is bound. No
   private network name, device name, or backend error is logged.
+- A public, renderer-neutral accessibility boundary reads only the authoritative
+  `rmac_quick_settings::View` plus surface receipt, stream, and operation status.
+  It projects the exact Wi-Fi, Bluetooth, Sound, Power, and Focus groups:
+  switches for Wi-Fi, Bluetooth, mute, and Focus; a 0–100 volume slider; and one
+  selected radio action for each advertised power profile. Stable action IDs,
+  enabled/busy state, visible summaries, errors, and selected values come from
+  that same snapshot rather than a second UI state store.
+- The enabled keyboard order is controls, global and per-control error
+  dismissals, then System Settings; its first action receives initial focus.
+  Loading and busy changes are polite live announcements, while stream,
+  operation, and control failures are assertive and remain dismissible. Shared
+  constants keep the rendered title, status, dismissal, and route labels equal
+  to their semantic names.
+- The accessibility projection accepts at most three power profiles, 4 KiB per
+  text value, and 64 KiB in aggregate. Duplicate profiles, volume above 100,
+  invalid actions or values, and control-bearing text fail closed. A summary
+  already visible on the surface, such as an SSID or mode, remains available to
+  assistive technology, while custom diagnostics redact summaries and errors.
 - GPUI 0.2.2 does not expose a stable niri output identity or layer-shell
-  placement. The current candidate uses the primary display and makes no final
-  multi-output or focus-restoration claim.
+  placement, nor can it publish the now-defined semantic tree. The current
+  candidate uses the primary display and makes no final multi-output,
+  focus-restoration, or assistive-technology export claim.
 
 ## Visual and interaction contract
 
@@ -59,7 +78,8 @@ demo toggles. System Settings remains the destination for deeper configuration.
   invoker's niri output/seat once the framework exposes a proven boundary.
 - Prove trailing placement, outside dismissal, focus restoration, hotplug,
   service restart, suspend/resume, and 100/125/150/200% scaling on Ubuntu/niri.
-- Prove names, roles, values, disabled/busy/error announcements, slider
-  operation, and keyboard order with Orca after the GPUI accessibility gate.
+- Export the now-defined names, roles, values, disabled/busy/error
+  announcements, slider operation, and keyboard order through the A5/A6
+  framework boundary, then prove them with Orca.
 - Measure open latency, idle CPU/wakeups, mutation latency, and combined shell
   frame behavior on the reference PC.

@@ -86,11 +86,15 @@ evidence remains gated by the reference-PC framework work.
   migration, recovery/conflicts, safe attachment lifecycle, import/export,
   cancellable indexing, app trash/restore, and Linux accessibility/runtime
   evidence. The authoritative destination is `crates/notes/SPEC.md`.
-- **Activity Monitor** ✅ — live table, process selection + Quit/Force Quit,
+- **Activity Monitor** 🟡 — live table, process selection + Quit/Force Quit,
   search, five tabbed panes with sparklines, sortable columns, a **column
   chooser** (five extra real columns, persisted), **per-core CPU bars**, a
   double-click **process inspector**, and a real **per-interface Network table**
-  (interface name, cumulative + per-interval rates, busiest-first).
+  (interface name, cumulative + per-interval rates, busiest-first). A bounded
+  semantic model now owns exact table headers/cells, sorting, stable selection,
+  row actions, safe confirmation focus/danger, and live-feedback priority.
+  Runtime AT-SPI/Orca export plus Linux pidfd/churn and active-sampler
+  performance evidence keep G5 partial.
 - **Text Editor** 🟡 — find/replace, dirty-state + safe prompts, recovery, a
   **formatted RTF viewer** (NSAttributedString → styled runs), and a **status
   bar** (live cursor Ln/Col + word/char counts). Its shared editor core now

@@ -33,6 +33,16 @@ the application does not fabricate unavailable per-process data.
   bounded visible snapshots, filtering, sorting, column projection, PID-stable
   selection, row rendering, and row-scoped Quit/Force Quit actions. The root
   view coordinates that domain without owning its table-widget implementation.
+- The public framework-neutral accessibility boundary projects those exact
+  formatted cells into a named table with visible header order, sort direction,
+  stable selected PID, row labels, and Inspect/Quit/Force Quit actions. It caps
+  the projection at the existing 300 rows, all 11 canonical columns, and
+  512 KiB of semantic text; missing/duplicate headers, duplicate PIDs, empty
+  labels, and oversized text fail closed. The same boundary defines Cancel as
+  initial confirmation focus, Force Quit as destructive, and successful/failed
+  feedback as polite/assertive live announcements. Pinned GPUI 0.2.2 cannot
+  publish this through an accessibility tree, so runtime export remains a
+  Phase A framework responsibility.
 - The view-render boundary owns the GPUI projection for summaries, histories,
   network rows, toolbar, process table, column chooser, inspector, confirmation,
   feedback, and shortcuts. It invokes controller operations without owning
@@ -75,7 +85,16 @@ the application does not fabricate unavailable per-process data.
   empty/unavailable data, and persistence-error states are visually distinct.
 - All System Monitor labels, metrics, tables, inspector text, and banners
   follow rmac's bounded 100%, 115%, and 130% application text preference.
-- Linux clipping, pidfd runtime, permission, and signal evidence; full keyboard
-  traversal; accessible table semantics, roles/names/states/actions, live
-  announcements; measured active refresh budget; and Orca evidence remain
-  required by roadmap items G5 and I3.
+- Process-table, confirmation-dialog, and action-feedback semantics now have a
+  bounded adapter-ready model. Linux clipping, pidfd runtime, permission, and
+  signal evidence; full keyboard traversal; framework roles/names/states/actions
+  and live-region export; measured active refresh budget; and Orca evidence
+  remain required by roadmap items G5 and I3.
+
+## Acceptance evidence
+
+Three focused semantic contracts cover visible column order and formatting,
+sort direction, stable selection, row actions, dialog initial focus and danger,
+success/failure live priority, Unicode labels, duplicate columns/PIDs, the
+300-row ceiling, and empty live text. Native AT-SPI/Orca behavior remains
+pending rather than being inferred from this framework-neutral model.

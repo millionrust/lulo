@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use gpui::px;
+use rmac_activity_monitor::accessibility::ProcessColumn;
 use rmac_ui::Column;
 
 use crate::storage;
@@ -59,19 +60,7 @@ impl ColKey {
     }
 
     pub(crate) fn title(self) -> &'static str {
-        match self {
-            Self::Pid => "PID",
-            Self::Name => "Process Name",
-            Self::Cpu => "% CPU",
-            Self::Mem => "Memory",
-            Self::Energy => "Energy",
-            Self::Disk => "Disk I/O",
-            Self::Ppid => "Parent PID",
-            Self::User => "User",
-            Self::Vmem => "Virtual Mem",
-            Self::RunTime => "Run Time",
-            Self::Status => "Status",
-        }
+        ProcessColumn::from(self).title()
     }
 
     fn width(self) -> f32 {
@@ -124,6 +113,42 @@ impl ColKey {
             column.text_right()
         } else {
             column
+        }
+    }
+}
+
+impl From<ColKey> for ProcessColumn {
+    fn from(value: ColKey) -> Self {
+        match value {
+            ColKey::Pid => Self::Pid,
+            ColKey::Name => Self::Name,
+            ColKey::Cpu => Self::Cpu,
+            ColKey::Mem => Self::Memory,
+            ColKey::Energy => Self::Energy,
+            ColKey::Disk => Self::Disk,
+            ColKey::Ppid => Self::ParentPid,
+            ColKey::User => Self::User,
+            ColKey::Vmem => Self::VirtualMemory,
+            ColKey::RunTime => Self::RunTime,
+            ColKey::Status => Self::Status,
+        }
+    }
+}
+
+impl From<ProcessColumn> for ColKey {
+    fn from(value: ProcessColumn) -> Self {
+        match value {
+            ProcessColumn::Pid => Self::Pid,
+            ProcessColumn::Name => Self::Name,
+            ProcessColumn::Cpu => Self::Cpu,
+            ProcessColumn::Memory => Self::Mem,
+            ProcessColumn::Energy => Self::Energy,
+            ProcessColumn::Disk => Self::Disk,
+            ProcessColumn::ParentPid => Self::Ppid,
+            ProcessColumn::User => Self::User,
+            ProcessColumn::VirtualMemory => Self::Vmem,
+            ProcessColumn::RunTime => Self::RunTime,
+            ProcessColumn::Status => Self::Status,
         }
     }
 }

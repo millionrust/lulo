@@ -5,6 +5,7 @@ use gpui::{
     SharedString, Stateful, Window,
 };
 use gpui_component::menu::PopupMenu;
+use rmac_activity_monitor::accessibility::{ProcessColumn, ProcessRowSemantics};
 use rmac_ui::{Column, ColumnSort, TableDelegate, TableState};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind, Users};
 
@@ -41,6 +42,38 @@ pub(crate) struct ProcRow {
     pub(crate) start_time: u64,
     /// Process status (Running / Sleeping / …), for sorting + display.
     pub(crate) status: SharedString,
+}
+
+impl ProcRow {
+    fn cell_text(&self, key: ColKey) -> String {
+        match key {
+            ColKey::Pid => self.pid.to_string(),
+            ColKey::Name => self.name.to_string(),
+            ColKey::Cpu => format!("{:.1}", self.cpu),
+            ColKey::Mem => format_mem(self.mem),
+            ColKey::Energy => format!("{:.1}", self.energy),
+            ColKey::Disk => format_mem(self.disk),
+            ColKey::Ppid => self.ppid.map(|pid| pid.to_string()).unwrap_or_default(),
+            ColKey::User => self.user.to_string(),
+            ColKey::Vmem => format_mem(self.vmem),
+            ColKey::RunTime => format_duration(self.run_time),
+            ColKey::Status => self.status.to_string(),
+        }
+    }
+}
+
+impl ProcessRowSemantics for ProcRow {
+    fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    fn cell_text(&self, column: ProcessColumn) -> String {
+        self.cell_text(column.into())
+    }
 }
 
 /// Owns the live `System` handle plus the process-table projection.
@@ -365,23 +398,7 @@ impl TableDelegate for ProcessTableDelegate {
             .get(column_index)
             .copied()
             .unwrap_or(ColKey::Name);
-        let text: SharedString = match key {
-            ColKey::Pid => row.pid.to_string().into(),
-            ColKey::Name => row.name.clone(),
-            ColKey::Cpu => format!("{:.1}", row.cpu).into(),
-            ColKey::Mem => format_mem(row.mem).into(),
-            ColKey::Energy => format!("{:.1}", row.energy).into(),
-            ColKey::Disk => format_mem(row.disk).into(),
-            ColKey::Ppid => row
-                .ppid
-                .map(|pid| pid.to_string())
-                .unwrap_or_default()
-                .into(),
-            ColKey::User => row.user.clone(),
-            ColKey::Vmem => format_mem(row.vmem).into(),
-            ColKey::RunTime => format_duration(row.run_time).into(),
-            ColKey::Status => row.status.clone(),
-        };
+        let text: SharedString = row.cell_text(key).into();
         div().child(text)
     }
 }

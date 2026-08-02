@@ -22,6 +22,7 @@ mod presentation_support;
 mod quick_look_controller;
 mod recovery_controller;
 mod rename_controller;
+mod search_helpers;
 mod search_info_controller;
 mod selection_controller;
 mod startup;
@@ -77,6 +78,7 @@ use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice
 use crate::{directory_state, file_ops, operation_journal, pasteboard, quick_look, undo_journal};
 use filesystem_helpers::*;
 use presentation_support::*;
+use search_helpers::*;
 use transient_state::*;
 
 actions!(

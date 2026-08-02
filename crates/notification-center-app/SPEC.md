@@ -42,6 +42,29 @@ store, daemon, banner stack, or lock-screen renderer.
 - The service projects only validated visible labels and original button
   positions for an exact live record. Action IDs, targets, and stale persisted
   actions never cross the Center snapshot boundary.
+- A public renderer-neutral accessibility boundary consumes only that validated
+  service snapshot, the panel's exact catalog/fallback application-name
+  resolver, rendered clock/date text, and explicit stream/operation/busy/read
+  status. It exposes grouped application and record semantics, truthful counts,
+  unread/urgent state, empty/loading/degraded states, and only the default or
+  button actions still present on the exact live record. Empty notification
+  titles receive the generic semantic name “Notification” without inventing
+  visible content.
+- Enabled keyboard order exactly follows the visual tree: Clear All, each
+  group's Turn Off and Clear controls, its record actions, Refresh, then
+  Notification Settings. The first enabled action is initial focus. A mutation
+  disables all history actions and marks its exact action busy while that action
+  remains live; a newer authoritative snapshot can retire it before local
+  completion. Refresh and Settings remain available. Loading, empty,
+  marking-read, and mutation progress are polite announcements, while service
+  and operation failures are assertive.
+- The accessibility projection accepts at most 500 records, 1,012 application
+  policies, nine actions per record, 4 KiB application/action names, 16 KiB
+  individual content/status text, and 16 MiB aggregate semantic text.
+  Duplicate application, notification, or action identities and malformed or
+  oversized text fail closed. Custom diagnostics redact application names,
+  titles, bodies, action labels, and error text. Shared constants keep every
+  fixed rendered and semantic label equal.
 - Lock-screen previews remain a separate, stricter action-free projection. This
   ordinary unlocked-session surface must never be reused as a cosmetic locker.
 
@@ -70,7 +93,8 @@ store, daemon, banner stack, or lock-screen renderer.
   live action focus/activation, 100/125/150/200% scaling, keyboard order, and
   idle behavior on niri. GPUI 0.2.2 supplies no initiating Wayland seat/serial,
   so the Linux gate must prove focus without a fabricated activation token.
-- Prove names, roles, unread/urgent state, button actions, announcements, and
-  200% layout with Orca after the GPUI accessibility gate passes.
+- Export the now-defined names, grouped roles, unread/urgent state, button
+  actions, focus order, and announcements through the A5/A6 framework boundary,
+  then prove them and the 200% layout with Orca.
 - Integrate the action-free lock-preview projection only with the reviewed
   secure lock provider; never reveal more than application and user policy allow.

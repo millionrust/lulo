@@ -5,6 +5,11 @@ use gpui::{
     ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::StyledExt as _;
+use rmac_notification_center_app::accessibility::{
+    notification_count_label, CLEAR_ALL_LABEL, CLEAR_LABEL, EMPTY_MESSAGE, EMPTY_TITLE,
+    LOADING_LABEL, PANEL_TITLE, REFRESH_LABEL, SETTINGS_LABEL, TURN_OFF_LABEL, UNAVAILABLE_MESSAGE,
+    UNAVAILABLE_TITLE, URGENT_LABEL,
+};
 use rmac_notifications::Priority;
 use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
 use rmac_ui::{mac, Button, ButtonRole, EmptyState, Progress};
@@ -135,7 +140,7 @@ impl NotificationCenterView {
                                         .text_color(mac::danger())
                                         .text_size(rmac_ui::text_px(9.0))
                                         .font_weight(mac::SEMIBOLD)
-                                        .child("Urgent"),
+                                        .child(URGENT_LABEL),
                                 )
                             }),
                     )
@@ -218,18 +223,14 @@ impl NotificationCenterView {
                                 div()
                                     .text_size(rmac_ui::text_px(10.0))
                                     .text_color(mac::text_tertiary())
-                                    .child(format!(
-                                        "{} notification{}",
-                                        group.records.len(),
-                                        if group.records.len() == 1 { "" } else { "s" }
-                                    )),
+                                    .child(notification_count_label(group.records.len())),
                             ),
                     )
                     .when(self.policy_enabled(group.app_id), |header| {
                         header.child(
                             Button::new(
                                 SharedString::from(format!("disable-group-{index}")),
-                                "Turn Off",
+                                TURN_OFF_LABEL,
                             )
                             .ghost()
                             .xsmall()
@@ -243,15 +244,18 @@ impl NotificationCenterView {
                         )
                     })
                     .child(
-                        Button::new(SharedString::from(format!("clear-group-{index}")), "Clear")
-                            .ghost()
-                            .xsmall()
-                            .disabled(busy)
-                            .busy(clear_busy)
-                            .on_click(move |_, _, cx| {
-                                clear_view
-                                    .update(cx, |this, cx| this.clear(Some(clear_id.clone()), cx));
-                            }),
+                        Button::new(
+                            SharedString::from(format!("clear-group-{index}")),
+                            CLEAR_LABEL,
+                        )
+                        .ghost()
+                        .xsmall()
+                        .disabled(busy)
+                        .busy(clear_busy)
+                        .on_click(move |_, _, cx| {
+                            clear_view
+                                .update(cx, |this, cx| this.clear(Some(clear_id.clone()), cx));
+                        }),
                     ),
             )
             .children(records)
@@ -328,11 +332,11 @@ impl Render for NotificationCenterView {
                         div()
                             .text_size(rmac_ui::text_px(17.0))
                             .font_weight(mac::SEMIBOLD)
-                            .child("Notification Center"),
+                            .child(PANEL_TITLE),
                     )
                     .when(has_records, |header| {
                         header.child(
-                            Button::new("clear-all-notifications", "Clear All")
+                            Button::new("clear-all-notifications", CLEAR_ALL_LABEL)
                                 .role(ButtonRole::Ghost)
                                 .disabled(busy)
                                 .busy(matches!(self.busy, Some(Busy::ClearAll)))
@@ -385,25 +389,29 @@ impl Render for NotificationCenterView {
                     .pb_3()
                     .when(self.snapshot.is_none() && !unavailable, |content| {
                         content.child(
-                            div().h_full().flex().items_center().justify_center().child(
-                                Progress::indeterminate().label("Loading Notification Center…"),
-                            ),
+                            div()
+                                .h_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(Progress::indeterminate().label(LOADING_LABEL)),
                         )
                     })
                     .when(unavailable, |content| {
                         content.child(
                             div().h_full().flex().items_center().justify_center().child(
-                                EmptyState::new("Notification Center Unavailable")
-                                    .message("Use Refresh after the notification service starts"),
+                                EmptyState::new(UNAVAILABLE_TITLE).message(UNAVAILABLE_MESSAGE),
                             ),
                         )
                     })
                     .when(self.snapshot.is_some() && !has_records, |content| {
                         content.child(
-                            div().h_full().flex().items_center().justify_center().child(
-                                EmptyState::new("No New Notifications")
-                                    .message("Notifications you keep will appear here"),
-                            ),
+                            div()
+                                .h_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(EmptyState::new(EMPTY_TITLE).message(EMPTY_MESSAGE)),
                         )
                     })
                     .when(has_records, |content| {
@@ -421,7 +429,7 @@ impl Render for NotificationCenterView {
                     .border_t_1()
                     .border_color(mac::separator())
                     .child(
-                        Button::new("refresh-notifications", "Refresh")
+                        Button::new("refresh-notifications", REFRESH_LABEL)
                             .ghost()
                             .xsmall()
                             .on_click(move |_, _, cx| {
@@ -429,7 +437,7 @@ impl Render for NotificationCenterView {
                             }),
                     )
                     .child(
-                        Button::new("open-notification-settings", "Notification Settings…")
+                        Button::new("open-notification-settings", SETTINGS_LABEL)
                             .ghost()
                             .xsmall()
                             .on_click(move |_, _, cx| {

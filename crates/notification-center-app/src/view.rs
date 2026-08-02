@@ -22,6 +22,43 @@ pub(crate) struct NotificationCenterView {
 }
 
 impl NotificationCenterView {
+    /// Exact framework-neutral semantics for the future A5/A6 accessibility
+    /// adapter. Pinned GPUI cannot publish this snapshot yet.
+    #[allow(dead_code)]
+    pub(crate) fn accessibility_snapshot(
+        &self,
+        time: &str,
+        date: &str,
+    ) -> Result<
+        rmac_notification_center_app::accessibility::NotificationCenterAccessibilitySnapshot,
+        rmac_notification_center_app::accessibility::AccessibilityProjectionError,
+    > {
+        use rmac_notification_center_app::accessibility::{
+            project_notification_center, HeaderText, PanelBusy, PanelStatus,
+        };
+
+        let busy = self.busy.as_ref().map(|busy| match busy {
+            Busy::ClearAll => PanelBusy::ClearAll,
+            Busy::ClearApp(app_id) => PanelBusy::ClearApplication(app_id),
+            Busy::DisableApp(app_id) => PanelBusy::DisableApplication(app_id),
+            Busy::Invoke(notification, selection) => PanelBusy::Invoke {
+                notification: *notification,
+                selection: *selection,
+            },
+        });
+        project_notification_center(
+            self.snapshot.as_ref(),
+            HeaderText { time, date },
+            PanelStatus {
+                stream_error: self.stream_error.as_ref().map(|error| error.as_ref()),
+                operation_error: self.operation_error.as_ref().map(|error| error.as_ref()),
+                busy,
+                marking_read: self.marking_read,
+            },
+            |app_id| self.identity(app_id).name.as_ref().to_owned(),
+        )
+    }
+
     pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
         cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {

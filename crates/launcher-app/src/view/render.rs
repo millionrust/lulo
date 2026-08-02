@@ -5,6 +5,10 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_launcher::{ActivationMode, Category};
+use rmac_launcher_runtime::accessibility::{
+    visible_phase_label, APPLICATIONS_SECTION_NAME, KEYBOARD_HELP, QUERY_ID, RESULTS_ID,
+    SEARCH_SCOPE_DESCRIPTION, SUGGESTIONS_SECTION_NAME,
+};
 use rmac_launcher_runtime::{KeyCommand, Phase, Row};
 use rmac_ui::{mac, SearchField};
 
@@ -172,18 +176,20 @@ impl LauncherView {
                 .v_flex()
                 .gap_3()
                 .when(!applications.is_empty(), |content| {
-                    content.child(section_label("Applications")).child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_1()
-                            .justify_center()
-                            .children(applications),
-                    )
+                    content
+                        .child(section_label(APPLICATIONS_SECTION_NAME))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .gap_1()
+                                .justify_center()
+                                .children(applications),
+                        )
                 })
                 .when(!remaining.is_empty(), |content| {
                     content
-                        .child(section_label("Suggestions"))
+                        .child(section_label(SUGGESTIONS_SECTION_NAME))
                         .child(div().v_flex().gap_0p5().children(remaining))
                 })
                 .into_any_element();
@@ -205,24 +211,8 @@ impl LauncherView {
 impl Render for LauncherView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let snapshot = self.coordinator.snapshot();
-        let phase_message: SharedString = match snapshot.phase {
-            Phase::Closed => "Closed".into(),
-            Phase::Loading => "Searching…".into(),
-            Phase::Results {
-                still_searching: true,
-                degraded: false,
-            } => "Searching…".into(),
-            Phase::Results { degraded: true, .. } => "Some results are unavailable".into(),
-            Phase::Results { .. } => format!("{} results", snapshot.rows.len()).into(),
-            Phase::Empty => "No results".into(),
-            Phase::Unavailable => "Search providers are unavailable".into(),
-            Phase::Activating => "Opening…".into(),
-            Phase::ActivationFailed => snapshot
-                .announcement
-                .clone()
-                .unwrap_or_else(|| "Could not open the selection".into())
-                .into(),
-        };
+        let phase_message: SharedString = visible_phase_label(&snapshot).into();
+        let activating = snapshot.phase == Phase::Activating;
         let rows = snapshot.rows.clone();
         let query = snapshot.query.clone();
         let has_rows = !rows.is_empty();
@@ -271,9 +261,11 @@ impl Render for LauncherView {
                             .child("⌕"),
                     )
                     .child(
-                        div()
-                            .flex_1()
-                            .child(SearchField::new(&self.query).appearance(false)),
+                        div().id(QUERY_ID).flex_1().child(
+                            SearchField::new(&self.query)
+                                .appearance(false)
+                                .disabled(activating),
+                        ),
                     ),
             )
             .when_some(self.settings_error.clone(), |surface, error| {
@@ -292,7 +284,7 @@ impl Render for LauncherView {
             })
             .child(
                 div()
-                    .id("launcher-results-scroll")
+                    .id(RESULTS_ID)
                     .flex_1()
                     .overflow_y_scroll()
                     .px_4()
@@ -319,7 +311,7 @@ impl Render for LauncherView {
                                     div()
                                         .text_size(rmac_ui::text_px(11.0))
                                         .text_color(mac::text_tertiary())
-                                        .child("Applications, Settings, files, and calculations"),
+                                        .child(SEARCH_SCOPE_DESCRIPTION),
                                 ),
                         )
                     }),
@@ -337,7 +329,7 @@ impl Render for LauncherView {
                     .text_size(rmac_ui::text_px(10.0))
                     .text_color(mac::text_tertiary())
                     .child(phase_message)
-                    .child("↑↓ Select   Return Open   Ctrl/⌘-Return More   Esc Close"),
+                    .child(KEYBOARD_HELP),
             )
     }
 }

@@ -11,6 +11,7 @@ use rmac_launcher::{
 };
 use rmac_launcher_providers::{Batch, Provider};
 
+pub mod accessibility;
 mod coordinator;
 mod model;
 mod registry;

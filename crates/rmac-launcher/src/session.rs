@@ -238,14 +238,30 @@ impl Session {
             .into_values()
             .filter_map(|result| score(&query, &result).map(|score| RankedResult { result, score }))
             .collect();
-        ranked.sort_by_key(|ranked| {
-            (
-                Reverse(ranked.score),
-                ranked.result.category,
-                normalize(&ranked.result.title),
-                ranked.result.id.clone(),
-            )
-        });
+        if query.is_empty() {
+            // The empty-query renderer presents the application grid before
+            // Suggestions. Keep the controller's arrow/selection order equal
+            // to that visual reading order while preserving ranking within
+            // each region.
+            ranked.sort_by_key(|ranked| {
+                (
+                    ranked.result.category != Category::Applications,
+                    Reverse(ranked.score),
+                    ranked.result.category,
+                    normalize(&ranked.result.title),
+                    ranked.result.id.clone(),
+                )
+            });
+        } else {
+            ranked.sort_by_key(|ranked| {
+                (
+                    Reverse(ranked.score),
+                    ranked.result.category,
+                    normalize(&ranked.result.title),
+                    ranked.result.id.clone(),
+                )
+            });
+        }
         let mut category_counts = BTreeMap::new();
         ranked.retain(|ranked| {
             let count = category_counts

@@ -69,6 +69,23 @@ pub(crate) struct OverlayEnvironment {
 }
 
 impl LauncherView {
+    /// Exact framework-neutral semantics for the future A5/A6 accessibility
+    /// adapter. Pinned GPUI cannot publish this snapshot yet.
+    #[allow(dead_code)]
+    pub(crate) fn accessibility_snapshot(
+        &self,
+    ) -> Result<
+        rmac_launcher_runtime::accessibility::LauncherAccessibilitySnapshot,
+        rmac_launcher_runtime::accessibility::AccessibilityProjectionError,
+    > {
+        rmac_launcher_runtime::accessibility::project_launcher(
+            &self.coordinator.snapshot(),
+            rmac_launcher_runtime::accessibility::SurfaceStatus {
+                settings_error: self.settings_error.as_ref().map(|error| error.as_ref()),
+            },
+        )
+    }
+
     pub(crate) fn new(
         environment: OverlayEnvironment,
         window: &mut Window,
@@ -82,7 +99,10 @@ impl LauncherView {
             settings_error,
             clipboard,
         } = environment;
-        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Spotlight Search"));
+        let query = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(rmac_launcher_runtime::accessibility::QUERY_NAME)
+        });
         cx.subscribe(&query, |this, query, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let value = query.read(cx).value().to_string();

@@ -264,6 +264,51 @@ fn selection_wraps_and_survives_later_provider_batches() {
 }
 
 #[test]
+fn empty_query_selection_order_matches_application_grid_then_suggestions() {
+    let mut session = Session::default();
+    let request = session.begin(
+        "",
+        vec![
+            provider("apps", Category::Applications, Privacy::default()),
+            provider("settings", Category::Settings, Privacy::default()),
+        ],
+    );
+    let mut high_recency_setting = result("settings", "sound", Category::Settings, "Sound");
+    high_recency_setting.recency_rank = 100;
+    session.apply(
+        request.generation,
+        rmac_shell_settings::ProviderId("settings".into()),
+        Ok(vec![high_recency_setting]),
+    );
+    session.apply(
+        request.generation,
+        rmac_shell_settings::ProviderId("apps".into()),
+        Ok(vec![result(
+            "apps",
+            "terminal",
+            Category::Applications,
+            "Terminal",
+        )]),
+    );
+
+    assert_eq!(session.results()[0].result.category, Category::Applications);
+    assert_eq!(
+        session.selected().map(|id| id.local.as_str()),
+        Some("sound")
+    );
+    session.move_selection(MoveSelection::Next);
+    assert_eq!(
+        session.selected().map(|id| id.local.as_str()),
+        Some("terminal")
+    );
+    session.move_selection(MoveSelection::Next);
+    assert_eq!(
+        session.selected().map(|id| id.local.as_str()),
+        Some("sound")
+    );
+}
+
+#[test]
 fn pointer_selection_accepts_only_a_visible_result() {
     let mut session = Session::default();
     let request = session.begin(

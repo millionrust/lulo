@@ -285,13 +285,26 @@ fn keyboard_journey_announces_category_and_uses_exact_alternate_action() {
         coordinator.snapshot().announcement.as_deref(),
         Some("Beta.txt, Files, 2 of 2 results")
     );
+    assert_eq!(coordinator.snapshot().rows[1].primary_label, "Open");
+    assert_eq!(
+        coordinator.snapshot().rows[1].alternate_label,
+        Some("Show in Folder")
+    );
     let KeyEffect::Activate(activation) = coordinator.handle_key(KeyCommand::AlternateReturn)
     else {
         panic!("alternate return activates");
     };
     assert!(matches!(activation.action, Action::RevealFile { .. }));
     assert_eq!(coordinator.snapshot().phase, Phase::Activating);
+    assert_eq!(
+        coordinator.snapshot().activating,
+        Some(ActivationMode::Alternate)
+    );
     assert_eq!(coordinator.handle_key(KeyCommand::Return), KeyEffect::None);
+    assert_eq!(
+        coordinator.handle_key(KeyCommand::ArrowDown),
+        KeyEffect::None
+    );
     assert!(coordinator.set_query("ignored while opening").is_none());
     assert!(
         coordinator.finish_activation(Ok(rmac_launcher_system::Receipt {

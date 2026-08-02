@@ -13,6 +13,7 @@ impl Coordinator {
             policies,
             next_activation: 0,
             activation: None,
+            activation_mode: None,
             activation_error: None,
             last_shortcut_timestamp_ms: None,
             application_catalog: CatalogHealth::Unmanaged,
@@ -24,6 +25,7 @@ impl Coordinator {
     /// provider work, so an empty-query filesystem search cannot delay typing.
     pub fn open(&mut self) -> OpenEffect {
         self.activation = None;
+        self.activation_mode = None;
         self.activation_error = None;
         OpenEffect {
             request: self.launcher.open(&self.descriptors, &self.policies),
@@ -50,7 +52,7 @@ impl Coordinator {
             return None;
         }
         self.policies = policies;
-        if self.launcher.is_open() {
+        if self.launcher.is_open() && self.activation.is_none() {
             let query = self.launcher.session().query().to_owned();
             self.launcher
                 .set_query(query, &self.descriptors, &self.policies)
@@ -71,7 +73,7 @@ impl Coordinator {
         }
         self.descriptors = descriptors;
         self.policies = policies;
-        if self.launcher.is_open() {
+        if self.launcher.is_open() && self.activation.is_none() {
             let query = self.launcher.session().query().to_owned();
             self.launcher
                 .set_query(query, &self.descriptors, &self.policies)
@@ -81,7 +83,9 @@ impl Coordinator {
     }
 
     pub fn select(&mut self, id: &ResultId) -> bool {
-        self.launcher.is_open() && self.launcher.session_mut().select(id)
+        self.activation.is_none()
+            && self.launcher.is_open()
+            && self.launcher.session_mut().select(id)
     }
 
     pub fn activate_selected(&mut self, mode: ActivationMode) -> KeyEffect {
@@ -141,6 +145,7 @@ impl Coordinator {
         self.last_shortcut_timestamp_ms = Some(*timestamp_ms);
         if self.launcher.is_open() {
             self.activation = None;
+            self.activation_mode = None;
             self.activation_error = None;
             self.launcher.escape();
             ShortcutEffect::Dismissed
@@ -151,6 +156,9 @@ impl Coordinator {
 
     pub fn handle_key(&mut self, command: KeyCommand) -> KeyEffect {
         if !self.launcher.is_open() {
+            return KeyEffect::None;
+        }
+        if self.activation.is_some() && command != KeyCommand::Escape {
             return KeyEffect::None;
         }
         match command {
@@ -180,6 +188,7 @@ impl Coordinator {
             KeyCommand::AlternateReturn => self.activation(ActivationMode::Alternate),
             KeyCommand::Escape => {
                 self.activation = None;
+                self.activation_mode = None;
                 self.activation_error = None;
                 self.launcher.escape();
                 KeyEffect::Dismissed
@@ -199,6 +208,7 @@ impl Coordinator {
             return false;
         }
         self.activation = None;
+        self.activation_mode = None;
         match result {
             Ok(_) => {
                 self.activation_error = None;
@@ -219,6 +229,7 @@ impl Coordinator {
                 pending_providers: 0,
                 failed_providers: 0,
                 application_catalog: self.application_catalog.clone(),
+                activating: None,
                 announcement: None,
             };
         }
@@ -237,7 +248,9 @@ impl Coordinator {
                 subtitle: ranked.result.subtitle.clone(),
                 icon: ranked.result.icon.clone(),
                 selected: selected == Some(&ranked.result.id),
+                primary_label: action_label(&ranked.result.primary),
                 has_alternate: ranked.result.alternate.is_some(),
+                alternate_label: ranked.result.alternate.as_ref().map(action_label),
             })
             .collect();
         let catalog_starting = self.application_catalog == CatalogHealth::Starting;
@@ -267,6 +280,7 @@ impl Coordinator {
             pending_providers: pending,
             failed_providers: failed,
             application_catalog: self.application_catalog.clone(),
+            activating: self.activation_mode,
             announcement,
         }
     }
@@ -281,8 +295,20 @@ impl Coordinator {
         self.next_activation = self.next_activation.wrapping_add(1).max(1);
         let id = rmac_launcher_system::ActivationId(self.next_activation);
         self.activation = Some(id);
+        self.activation_mode = Some(mode);
         self.activation_error = None;
         KeyEffect::Activate(Activation { id, action })
+    }
+}
+
+fn action_label(action: &rmac_launcher::Action) -> &'static str {
+    match action {
+        rmac_launcher::Action::LaunchApplication { .. }
+        | rmac_launcher::Action::OpenSetting { .. }
+        | rmac_launcher::Action::OpenFile { .. } => "Open",
+        rmac_launcher::Action::RevealApplication { .. }
+        | rmac_launcher::Action::RevealFile { .. } => "Show in Folder",
+        rmac_launcher::Action::CopyText { .. } => "Copy",
     }
 }
 

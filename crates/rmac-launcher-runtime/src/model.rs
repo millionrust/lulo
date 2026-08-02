@@ -57,7 +57,7 @@ pub enum Phase {
     ActivationFailed,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Row {
     pub id: ResultId,
     pub category: rmac_launcher::Category,
@@ -66,10 +66,29 @@ pub struct Row {
     pub subtitle: Option<String>,
     pub icon: Option<std::path::PathBuf>,
     pub selected: bool,
+    pub primary_label: &'static str,
     pub has_alternate: bool,
+    pub alternate_label: Option<&'static str>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+impl fmt::Debug for Row {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Row")
+            .field("id", &"<redacted>")
+            .field("category", &self.category)
+            .field("title", &"<redacted>")
+            .field("subtitle", &self.subtitle.as_ref().map(|_| "<redacted>"))
+            .field("icon", &self.icon.as_ref().map(|_| "<redacted>"))
+            .field("selected", &self.selected)
+            .field("primary_label", &self.primary_label)
+            .field("has_alternate", &self.has_alternate)
+            .field("alternate_label", &self.alternate_label)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct Snapshot {
     pub open: bool,
     pub query: String,
@@ -78,9 +97,31 @@ pub struct Snapshot {
     pub pending_providers: usize,
     pub failed_providers: usize,
     pub application_catalog: CatalogHealth,
+    /// Exact action mode currently executing for the selected row.
+    pub activating: Option<ActivationMode>,
     /// A concise live-region message. It intentionally contains no provider
     /// error detail, file path, or action payload.
     pub announcement: Option<String>,
+}
+
+impl fmt::Debug for Snapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Snapshot")
+            .field("open", &self.open)
+            .field("query", &"<redacted>")
+            .field("phase", &self.phase)
+            .field("row_count", &self.rows.len())
+            .field("pending_providers", &self.pending_providers)
+            .field("failed_providers", &self.failed_providers)
+            .field("application_catalog", &self.application_catalog)
+            .field("activating", &self.activating)
+            .field(
+                "announcement",
+                &self.announcement.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 pub struct Coordinator {
@@ -90,6 +131,7 @@ pub struct Coordinator {
         BTreeMap<rmac_shell_settings::ProviderId, rmac_shell_settings::ProviderPolicy>,
     pub(super) next_activation: u64,
     pub(super) activation: Option<rmac_launcher_system::ActivationId>,
+    pub(super) activation_mode: Option<ActivationMode>,
     pub(super) activation_error: Option<String>,
     pub(super) last_shortcut_timestamp_ms: Option<u64>,
     pub(super) application_catalog: CatalogHealth,

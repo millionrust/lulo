@@ -155,52 +155,7 @@ enum StatusActions {
 
 impl NotesView {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        cx.bind_keys([
-            KeyBinding::new("cmd-n", ComposeNote, Some("Notes")),
-            KeyBinding::new("shift-cmd-n", CreateFolder, Some("Notes")),
-            KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
-            KeyBinding::new("cmd-f", FocusSearch, Some("Notes")),
-            KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
-        ]);
-
-        let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        let folder_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Folder Name"));
-        let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
-        let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Tags"));
-        let body = rmac_editor::multiline("Note", window, cx);
-        cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.schedule_current_edit(cx);
-            }
-        })
-        .detach();
-        cx.subscribe(&body, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.schedule_current_edit(cx);
-            }
-        })
-        .detach();
-        cx.subscribe(&tags, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.schedule_current_edit(cx);
-            }
-        })
-        .detach();
-        cx.subscribe(&search_query, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change) {
-                this.dispatch_search(cx);
-            }
-        })
-        .detach();
-        cx.subscribe(&folder_name_input, |this, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::PressEnter { .. }) {
-                this.commit_folder_rename(cx);
-            }
-        })
-        .detach();
-
-        let focus = cx.focus_handle();
-        window.focus(&focus);
+        let inputs = Self::initialize_inputs(window, cx);
         let mut view = Self {
             worker: None,
             search_worker: None,
@@ -213,12 +168,12 @@ impl NotesView {
             markdown_preview_visible: false,
             preview_image: None,
             selected_attachment: None,
-            search_query,
-            folder_name_input,
-            title,
-            tags,
-            body,
-            focus,
+            search_query: inputs.search_query,
+            folder_name_input: inputs.folder_name_input,
+            title: inputs.title,
+            tags: inputs.tags,
+            body: inputs.body,
+            focus: inputs.focus,
             applying_snapshot: false,
             next_request_id: 1,
             next_edit_generation: 1,

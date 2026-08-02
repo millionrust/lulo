@@ -1,6 +1,72 @@
 use super::*;
 
+pub(super) struct NotesInputs {
+    pub(super) search_query: Entity<InputState>,
+    pub(super) folder_name_input: Entity<InputState>,
+    pub(super) title: Entity<InputState>,
+    pub(super) tags: Entity<InputState>,
+    pub(super) body: Entity<InputState>,
+    pub(super) focus: FocusHandle,
+}
+
 impl NotesView {
+    pub(super) fn initialize_inputs(window: &mut Window, cx: &mut Context<Self>) -> NotesInputs {
+        cx.bind_keys([
+            KeyBinding::new("cmd-n", ComposeNote, Some("Notes")),
+            KeyBinding::new("shift-cmd-n", CreateFolder, Some("Notes")),
+            KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
+            KeyBinding::new("cmd-f", FocusSearch, Some("Notes")),
+            KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
+        ]);
+
+        let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let folder_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Folder Name"));
+        let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
+        let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Tags"));
+        let body = rmac_editor::multiline("Note", window, cx);
+        cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.schedule_current_edit(cx);
+            }
+        })
+        .detach();
+        cx.subscribe(&body, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.schedule_current_edit(cx);
+            }
+        })
+        .detach();
+        cx.subscribe(&tags, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.schedule_current_edit(cx);
+            }
+        })
+        .detach();
+        cx.subscribe(&search_query, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.dispatch_search(cx);
+            }
+        })
+        .detach();
+        cx.subscribe(&folder_name_input, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                this.commit_folder_rename(cx);
+            }
+        })
+        .detach();
+
+        let focus = cx.focus_handle();
+        window.focus(&focus);
+        NotesInputs {
+            search_query,
+            folder_name_input,
+            title,
+            tags,
+            body,
+            focus,
+        }
+    }
+
     pub(super) fn start_workers(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let notes_paths = match resolve_notes_paths() {
             Ok(paths) => Some(paths),

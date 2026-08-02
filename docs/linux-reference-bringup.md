@@ -25,34 +25,21 @@ contains important personal data.
 
 ## 2. Development dependencies
 
-Enable Ubuntu's `universe` repository, update the machine, and install the
-product build/runtime and evidence tools:
+From the cloned repository, first validate that the machine is the supported
+Ubuntu release, is not running the preparation as root, and has the required
+25 GiB of headroom. Then run the guarded preparation command:
 
 ```sh
-sudo add-apt-repository universe
-sudo apt update
-sudo apt full-upgrade
-sudo apt install --yes \
-  at-spi2-core build-essential clang curl dbus fonts-inter git jq libfontconfig1-dev \
-  libfreetype-dev libglib2.0-bin libpam0g-dev libssl-dev libvulkan-dev libwayland-dev \
-  libsndfile1 pipewire-bin wireplumber \
-  libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev \
-  libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev mesa-vulkan-drivers \
-  orca pciutils pkg-config python3-pyatspi sway swayidle swaylock vulkan-tools wayland-utils \
-  xdg-desktop-portal xdg-desktop-portal-gnome
+bash scripts/linux/prepare-reference-pc.sh --check
+bash scripts/linux/prepare-reference-pc.sh --execute
 ```
 
-Install Rust through rustup, then let the repository's
-`rust-toolchain.toml` select Rust 1.94.1. Pin the dependency-policy tool to the
-version used by CI:
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-cargo install --locked cargo-deny --version 0.19.8
-```
-
-Clone rmac normally. Do not run the applications or benchmark as root.
+`--execute` enables `universe`, updates Ubuntu, installs the exact product and
+evidence dependencies, installs the repository's pinned Rust toolchain through
+rustup, and installs cargo-deny 0.19.8. It checks the 15 GiB floor after every
+system-changing phase, does not build rmac, does not install niri, and does not
+remove or replace GNOME. Reboot if Ubuntu requests it. Do not run the
+applications or benchmark as root.
 
 ## 3. Capture the untouched GNOME baseline
 

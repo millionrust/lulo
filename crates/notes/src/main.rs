@@ -5,6 +5,7 @@
 //! the single writer remain authoritative off the UI thread.
 
 mod search_highlight;
+mod worker_bridge;
 
 use std::collections::BTreeSet;
 use std::io;
@@ -50,6 +51,7 @@ use search_highlight::{
     MAX_SEARCH_DETAIL_FRAGMENT_CHARS, MAX_SEARCH_LABEL_FRAGMENT_CHARS,
     MAX_SEARCH_TITLE_FRAGMENT_CHARS,
 };
+use worker_bridge::PreviewBridgeEvent;
 
 const FOLDERS_W: f32 = 210.0;
 const LIST_W: f32 = 310.0;
@@ -203,11 +205,6 @@ struct BundleImportCompletion {
     attachment_count: usize,
     attachment_bytes: u64,
     maintenance_pending: bool,
-}
-
-struct PreviewBridgeEvent {
-    event: PreviewWorkerEvent,
-    rendered: Option<Arc<RenderImage>>,
 }
 
 impl NotesView {
@@ -5223,91 +5220,29 @@ impl Render for NotesView {
 fn bridge_worker_events(
     events: NotesWorkerEvents,
 ) -> io::Result<async_channel::Receiver<WorkerEvent>> {
-    let (sender, receiver) = async_channel::bounded(EVENT_CAPACITY);
-    thread::Builder::new()
-        .name("rmac-notes-ui-events".into())
-        .spawn(move || {
-            while let Ok(event) = events.recv() {
-                if sender.send_blocking(event).is_err() {
-                    break;
-                }
-            }
-        })?;
-    Ok(receiver)
+    worker_bridge::bridge_worker_events(events, EVENT_CAPACITY)
 }
 
 fn bridge_search_events(
     events: NotesSearchWorkerEvents,
 ) -> io::Result<async_channel::Receiver<SearchWorkerEvent>> {
-    let (sender, receiver) = async_channel::bounded(SEARCH_EVENT_CAPACITY);
-    thread::Builder::new()
-        .name("rmac-notes-ui-search-events".into())
-        .spawn(move || {
-            while let Ok(event) = events.recv() {
-                if sender.send_blocking(event).is_err() {
-                    break;
-                }
-            }
-        })?;
-    Ok(receiver)
+    worker_bridge::bridge_search_events(events, SEARCH_EVENT_CAPACITY)
 }
 
 fn bridge_preview_events(
     events: NotesPreviewWorkerEvents,
 ) -> io::Result<async_channel::Receiver<PreviewBridgeEvent>> {
-    let (sender, receiver) = async_channel::bounded(PREVIEW_EVENT_CAPACITY);
-    thread::Builder::new()
-        .name("rmac-notes-ui-preview-events".into())
-        .spawn(move || {
-            while let Ok(event) = events.recv() {
-                let rendered = match &event {
-                    PreviewWorkerEvent::Ready { image, .. } => render_preview_image(image),
-                    _ => None,
-                };
-                if sender
-                    .send_blocking(PreviewBridgeEvent { event, rendered })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        })?;
-    Ok(receiver)
+    worker_bridge::bridge_preview_events(events, PREVIEW_EVENT_CAPACITY, render_preview_image)
 }
 
 fn bridge_markdown_preview_events(
     events: NotesMarkdownPreviewWorkerEvents,
 ) -> io::Result<async_channel::Receiver<MarkdownPreviewWorkerEvent>> {
-    let (sender, receiver) = async_channel::bounded(MARKDOWN_PREVIEW_EVENT_CAPACITY);
-    thread::Builder::new()
-        .name("rmac-notes-ui-markdown-preview-events".into())
-        .spawn(move || {
-            while let Ok(event) = events.recv() {
-                if sender.send_blocking(event).is_err() {
-                    break;
-                }
-            }
-        })?;
-    Ok(receiver)
+    worker_bridge::bridge_markdown_preview_events(events, MARKDOWN_PREVIEW_EVENT_CAPACITY)
 }
 
 fn render_preview_image(preview: &DecodedImagePreview) -> Option<Arc<RenderImage>> {
-    let expected = u64::from(preview.width())
-        .checked_mul(u64::from(preview.height()))?
-        .checked_mul(4)?;
-    if expected != preview.rgba().len() as u64 {
-        return None;
-    }
-    let mut bgra = Vec::with_capacity(preview.rgba().len());
-    let mut pixels = preview.rgba().chunks_exact(4);
-    for pixel in &mut pixels {
-        bgra.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]);
-    }
-    if !pixels.remainder().is_empty() {
-        return None;
-    }
-    let buffer = image::RgbaImage::from_raw(preview.width(), preview.height(), bgra)?;
-    Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+    worker_bridge::render_preview_image(preview)
 }
 
 fn folder_row(

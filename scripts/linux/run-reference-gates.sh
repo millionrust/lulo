@@ -170,18 +170,14 @@ cd "$repo_root"
 run_gate format "$minimum_kib" cargo fmt --all -- --check
 run_gate desktop-metadata "$minimum_kib" \
   bash scripts/linux/check-desktop-metadata.sh
-run_gate harness-tests "$minimum_kib" \
-  /usr/bin/python3 -m unittest \
-  scripts/test_application_package.py \
-  scripts/test_measure_baseline.py \
-  scripts/test_application_icons.py \
-  scripts/test_reference_preflight.py \
-  scripts/test_session_package.py \
-  experiments/gpui-upstream-lab/scripts/test_a4_report.py
+run_gate release-contracts "$minimum_kib" \
+  /usr/bin/python3 scripts/run-release-contract-checks.py
 run_gate shared-controls "$minimum_kib" bash scripts/check-shared-controls.sh
 run_gate clippy "$build_minimum_kib" \
-  cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-run_gate tests "$build_minimum_kib" cargo test --locked --workspace --all-features
+  cargo clippy --locked --workspace --lib --bins --tests -- -D warnings
+run_gate product-journeys "$build_minimum_kib" \
+  /usr/bin/python3 scripts/run-journey-suite.py \
+  --output "$evidence_dir/journey-results.json" --fail-fast
 run_gate dependency-policy "$minimum_kib" \
   cargo deny --locked --log-level error check --hide-inclusion-graph
 

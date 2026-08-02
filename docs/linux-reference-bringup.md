@@ -65,16 +65,22 @@ missing Wayland/Vulkan tools, llvmpipe/lavapipe and other software renderers,
 tracked worktree edits, an inactive/unowned desktop portal frontend, or less
 than 25 GiB of build headroom. The full command rechecks 25 GiB before
 expensive Cargo/smoke/performance builds and stops later gates if the machine
-reaches the 15 GiB floor. It stores non-serial hardware, session, Wayland,
-Vulkan, accessibility, portal, package, harness-test, Clippy, test, policy, and
-nested-smoke evidence under ignored
+reaches the 15 GiB floor. It runs the build-free release-contract suite first,
+then one default-feature Clippy pass over library, binary, and test targets and
+the exact ten package-scoped product journeys sequentially. It does not repeat
+the old workspace-wide all-feature/all-target test pipelines. It stores
+non-serial hardware, session, Wayland, Vulkan, accessibility, portal, package,
+release-contract, Clippy, journey, policy, and nested-smoke evidence under ignored
 `target/linux-evidence/<UTC timestamp>/`. Review the files before sharing them;
 the collector deliberately omits hostname, machine ID, and hardware serials.
 Each full run also writes `gate-summary.tsv`, binding the exact commit, requested
 session, optional-gate selection, every gate's pass/fail/skip state, command exit
 status, and overall result. Start review with that bounded summary, then inspect
 the corresponding log for every failure; the summary never turns an unrun or
-storage-skipped gate into a pass.
+storage-skipped gate into a pass. `journey-results.json` checkpoints each
+completed journey at the exact revision, while the fail-fast reference run
+stops after the first failing journey so a known defect does not waste the
+remaining machine window.
 
 The default desktop gate is the untouched GNOME baseline. For an explicitly
 separate niri repeat use `--session niri`; `--session any` is diagnostic only

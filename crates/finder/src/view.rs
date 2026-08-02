@@ -23,6 +23,7 @@ mod search_info_controller;
 mod selection_controller;
 mod startup;
 mod transient_state;
+mod trash_controller;
 mod updates;
 
 use std::borrow::Cow;

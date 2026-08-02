@@ -263,13 +263,9 @@ impl FinderView {
                                 .border_b_1()
                                 .border_color(sep())
                                 .child(
-                                    div()
-                                        .id("quick-look-close")
-                                        .w(px(14.0))
-                                        .h(px(14.0))
-                                        .rounded_full()
-                                        .bg(hsl(0xff5f57))
-                                        .cursor_pointer()
+                                    Button::new("quick-look-close", "Close")
+                                        .ghost()
+                                        .xsmall()
                                         .on_click(
                                             cx.listener(|this, _, _, cx| this.close_quick_look(cx)),
                                         ),
@@ -287,54 +283,22 @@ impl FinderView {
                                 .when(count > 1, |element: Div| {
                                     element
                                         .child(
-                                            div()
-                                                .id("quick-look-previous")
-                                                .w(px(28.0))
-                                                .h(px(28.0))
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .rounded(px(5.0))
-                                                .when(can_previous, |button: Stateful<Div>| {
-                                                    button
-                                                        .cursor_pointer()
-                                                        .hover(|hover| {
-                                                            hover.bg(rmac_ui::mac::hover())
-                                                        })
-                                                        .on_click(cx.listener(|this, _, _, cx| {
-                                                            this.move_quick_look(-1, cx)
-                                                        }))
-                                                })
-                                                .child(icon(
-                                                    "icons/chevron-left.svg",
-                                                    12.0,
-                                                    if can_previous { label() } else { tertiary() },
-                                                )),
+                                            Button::new("quick-look-previous", "Previous")
+                                                .ghost()
+                                                .xsmall()
+                                                .disabled(!can_previous)
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.move_quick_look(-1, cx)
+                                                })),
                                         )
                                         .child(
-                                            div()
-                                                .id("quick-look-next")
-                                                .w(px(28.0))
-                                                .h(px(28.0))
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .rounded(px(5.0))
-                                                .when(can_next, |button: Stateful<Div>| {
-                                                    button
-                                                        .cursor_pointer()
-                                                        .hover(|hover| {
-                                                            hover.bg(rmac_ui::mac::hover())
-                                                        })
-                                                        .on_click(cx.listener(|this, _, _, cx| {
-                                                            this.move_quick_look(1, cx)
-                                                        }))
-                                                })
-                                                .child(icon(
-                                                    "icons/chevron-right.svg",
-                                                    12.0,
-                                                    if can_next { label() } else { tertiary() },
-                                                )),
+                                            Button::new("quick-look-next", "Next")
+                                                .ghost()
+                                                .xsmall()
+                                                .disabled(!can_next)
+                                                .on_click(cx.listener(|this, _, _, cx| {
+                                                    this.move_quick_look(1, cx)
+                                                })),
                                         )
                                 }),
                         )

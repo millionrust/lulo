@@ -47,46 +47,25 @@ impl FinderView {
                     if selected {
                         selected_is_default = is_default;
                     }
-                    rows.push(
-                        div()
-                            .id(("open-with-handler", index))
-                            .h(px(34.0))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .rounded(px(6.0))
-                            .cursor_pointer()
-                            .when(selected, |element: Stateful<Div>| element.bg(sel()))
-                            .when(!selected, |element: Stateful<Div>| {
-                                element.hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                            })
-                            .child(icon(
-                                "icons/file-fill.svg",
-                                16.0,
-                                if selected { white() } else { secondary() },
-                            ))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .truncate()
-                                    .text_size(rmac_ui::text_px(13.0))
-                                    .text_color(if selected { white() } else { label() })
-                                    .child(sanitize_dialog_name(&application.name)),
-                            )
-                            .when(is_default, |element: Stateful<Div>| {
-                                element.child(
-                                    div()
-                                        .text_size(rmac_ui::text_px(11.0))
-                                        .text_color(if selected { white() } else { secondary() })
-                                        .child("Default"),
-                                )
-                            })
-                            .on_click(
-                                cx.listener(move |this, _, _, cx| this.choose_open_with(index, cx)),
-                            )
-                            .into_any_element(),
-                    );
+                    let application_name = sanitize_dialog_name(&application.name);
+                    let row_label = if is_default {
+                        format!("{application_name} — Default")
+                    } else {
+                        application_name
+                    };
+                    let row = Button::new(("open-with-handler", index), row_label)
+                        .selected(selected)
+                        .disabled(busy)
+                        .w_full()
+                        .h(px(34.0))
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.choose_open_with(index, cx)),
+                        );
+                    rows.push(if selected {
+                        row.primary().into_any_element()
+                    } else {
+                        row.ghost().into_any_element()
+                    });
                 }
                 body = body.child(
                     div()
@@ -100,51 +79,15 @@ impl FinderView {
 
                 let checked = selected_is_default || picker.make_default;
                 body = body.child(
-                    div()
-                        .id("open-with-default")
-                        .h(px(28.0))
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .rounded(px(5.0))
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(if selected_is_default {
-                            secondary()
-                        } else {
-                            label()
-                        })
-                        .when(!selected_is_default && !busy, |element: Stateful<Div>| {
-                            element.cursor_pointer().on_click(
-                                cx.listener(|this, _, _, cx| this.toggle_open_with_default(cx)),
-                            )
-                        })
-                        .child(
-                            div()
-                                .w(px(16.0))
-                                .h(px(16.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(4.0))
-                                .border_1()
-                                .border_color(if checked {
-                                    rmac_ui::mac::accent()
-                                } else {
-                                    sep()
-                                })
-                                .bg(if checked {
-                                    rmac_ui::mac::accent()
-                                } else {
-                                    rmac_ui::mac::raised()
-                                })
-                                .text_color(rmac_ui::mac::on_accent())
-                                .child(if checked { "✓" } else { "" }),
-                        )
-                        .child(if selected_is_default {
+                    Toggle::new("open-with-default")
+                        .checked(checked)
+                        .label(if selected_is_default {
                             "This application is already the default"
                         } else {
                             "Always open this file type with this application"
-                        }),
+                        })
+                        .disabled(selected_is_default || busy)
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_open_with_default(cx))),
                 );
             }
         } else {

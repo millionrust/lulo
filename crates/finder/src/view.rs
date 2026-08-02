@@ -56,7 +56,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use rmac_ui::{InputEvent, InputState, SearchField, TextField};
+use rmac_ui::{Button, InputEvent, InputState, SearchField, TextField, Toggle};
 
 use crate::conflict::{
     conflict_prompt, prepare_conflict_batch, resolve_conflict_task, unique_path_avoiding,

@@ -444,6 +444,11 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
   and disabled Open state. Hidden launch specifications and the source path do
   not cross the boundary; only the sanitized leaf name already visible in the
   sheet is retained.
+- Open With application choices and its default-app choice use the shared
+  keyboard-focusable Button and Toggle controls. Root success/error actions,
+  transfer/Undo/Trash cancellation, and Quick Look close/previous/next also use
+  shared semantic buttons; unavailable navigation and pending cancellation are
+  visibly disabled instead of retaining an active pointer target.
 - Quick Look exposes the visible leaf title, position, close/previous/next
   capabilities, loading/error state, preview description, and the same bounded
   text document shown on screen. Empty text previews are valid; document text

@@ -148,7 +148,6 @@ impl Render for FinderView {
                         .border_color(rmac_ui::mac::accent_border())
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(label())
-                        .cursor_pointer()
                         .child(
                             div()
                                 .w(px(16.0))
@@ -162,11 +161,14 @@ impl Render for FinderView {
                                 .child("✓"),
                         )
                         .child(div().flex_1().child(message))
-                        .child("Dismiss")
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.operation_notice = None;
-                            cx.notify();
-                        })),
+                        .child(
+                            Button::new("dismiss-operation-notice", "Dismiss")
+                                .ghost()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.operation_notice = None;
+                                    cx.notify();
+                                })),
+                        ),
                 )
             })
             .when_some(operation_error, |el, message| {
@@ -184,7 +186,6 @@ impl Render for FinderView {
                         .border_color(rmac_ui::mac::error_border())
                         .text_size(rmac_ui::text_px(12.0))
                         .text_color(rmac_ui::mac::danger())
-                        .cursor_pointer()
                         .child(
                             div()
                                 .w(px(16.0))
@@ -198,25 +199,33 @@ impl Render for FinderView {
                                 .child("!"),
                         )
                         .child(div().flex_1().child(message))
-                        .child(if any_recovery_pending {
-                            "Review"
-                        } else {
-                            "Dismiss"
-                        })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if recovery_pending {
-                                this.recovery_open = true;
-                            } else {
-                                #[cfg(any(target_os = "linux", test))]
-                                if trash_recovery_pending {
-                                    this.trash_recovery_open = true;
+                        .child(
+                            Button::new(
+                                "resolve-operation-error",
+                                if any_recovery_pending {
+                                    "Review"
+                                } else {
+                                    "Dismiss"
+                                },
+                            )
+                            .ghost()
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    if recovery_pending {
+                                        this.recovery_open = true;
+                                    } else {
+                                        #[cfg(any(target_os = "linux", test))]
+                                        if trash_recovery_pending {
+                                            this.trash_recovery_open = true;
+                                            cx.notify();
+                                            return;
+                                        }
+                                        this.operation_error = None;
+                                    }
                                     cx.notify();
-                                    return;
-                                }
-                                this.operation_error = None;
-                            }
-                            cx.notify();
-                        })),
+                                },
+                            )),
+                        ),
                 )
             })
             .when_some(
@@ -241,17 +250,13 @@ impl Render for FinderView {
                                 total,
                             )))
                             .child(
-                                div()
-                                    .id("cancel-trash")
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded(px(5.0))
-                                    .bg(rmac_ui::mac::raised())
-                                    .border_1()
-                                    .border_color(rmac_ui::mac::accent_border())
-                                    .cursor_pointer()
-                                    .child(accessibility::cancel_progress_label(cancelling))
-                                    .on_click(cx.listener(|this, _, _, cx| this.cancel_trash(cx))),
+                                Button::new(
+                                    "cancel-trash",
+                                    accessibility::cancel_progress_label(cancelling),
+                                )
+                                .xsmall()
+                                .disabled(cancelling)
+                                .on_click(cx.listener(|this, _, _, cx| this.cancel_trash(cx))),
                             ),
                     )
                 },
@@ -274,17 +279,13 @@ impl Render for FinderView {
                         .text_color(label())
                         .child(div().flex_1().child(status))
                         .child(
-                            div()
-                                .id("cancel-undo")
-                                .px_2()
-                                .py_0p5()
-                                .rounded(px(5.0))
-                                .bg(rmac_ui::mac::raised())
-                                .border_1()
-                                .border_color(rmac_ui::mac::accent_border())
-                                .cursor_pointer()
-                                .child(accessibility::cancel_progress_label(undo.cancelling))
-                                .on_click(cx.listener(|this, _, _, cx| this.cancel_undo(cx))),
+                            Button::new(
+                                "cancel-undo",
+                                accessibility::cancel_progress_label(undo.cancelling),
+                            )
+                            .xsmall()
+                            .disabled(undo.cancelling)
+                            .on_click(cx.listener(|this, _, _, cx| this.cancel_undo(cx))),
                         ),
                 )
             })
@@ -306,16 +307,9 @@ impl Render for FinderView {
                         .text_color(label())
                         .child(div().flex_1().child(status))
                         .child(
-                            div()
-                                .id("cancel-transfer")
-                                .px_2()
-                                .py_0p5()
-                                .rounded(px(5.0))
-                                .bg(rmac_ui::mac::raised())
-                                .border_1()
-                                .border_color(rmac_ui::mac::accent_border())
-                                .cursor_pointer()
-                                .child(action)
+                            Button::new("cancel-transfer", action)
+                                .xsmall()
+                                .disabled(transfer.cancelling)
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel_transfer(cx))),
                         ),
                 )

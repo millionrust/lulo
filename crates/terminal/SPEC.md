@@ -168,7 +168,14 @@ Prompt (⌘↑) and Next Prompt (⌘↓) actions plus context-menu paths. Naviga
 places the target at the viewport top where history permits. Resize, clear, and
 history-budget changes discard coordinates; alternate-screen reports and a full
 scrollback eviction boundary record or resolve nothing rather than targeting a
-stale row.
+stale row. Strict ordered `A`→`B`→`C`→`D` sequences additionally retain at most
+256 coordinate-only completed records. Select Command targets the `B`–`C`
+cells; Select Command Output (⇧⌘A) targets `C`–`D`. The live viewport chooses
+the newest complete command, while a scrolled viewport chooses the newest
+record at or above its top line. Missing, repeated, reversed, incomplete,
+alternate-screen, resized, cleared, re-budgeted, or eviction-ambiguous
+coordinates produce no range. Neither range retains command/output text; copy
+still reads only the explicitly selected live grid cells.
 Terminal mouse input now follows the parsed xterm 1000/1002/1003 tracking mode
 and 1005/1006 coordinate encoding. Press, balanced release, cell-deduplicated
 drag/all-motion, vertical and horizontal wheel events use one-based viewport
@@ -189,9 +196,9 @@ focus, and ordinary renders emit nothing. The three-byte static reports use the
 same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
-The complete application claim remains blocked on numeric-keypad identity,
-command-history/output ranges, and job
-semantics beyond titles, OSC 7 directories, and OSC 133 phase/status reports;
+The complete application claim remains blocked on numeric-keypad identity and
+job semantics beyond titles, OSC 7 directories, and OSC 133 phase/status and
+coordinate reports;
 accessible terminal text semantics; Linux interaction/visual evidence
 (including native IME proof); and measured Unicode/resident/idle/active
 performance.
@@ -224,11 +231,13 @@ performance.
   a validated local path directly to the next PTY spawn.
 - `shell_integration` owns the bounded OSC 133 marker grammar, exact-session
   command phase, private 512-coordinate prompt-mark history, navigation policy,
-  and `Running`/`Failed status` presentation label. `output_filter` preserves
-  every marker and parser offset from one bounded 8 KiB worker read; `session`
-  alone captures the corresponding primary-grid coordinate and applies the
-  resolved display offset. Kernel PTY and child authorities remain the sole
-  source of process-control truth.
+  private 256-record ordered command/output range history, range selection
+  policy, and `Running`/`Failed status` presentation label. `output_filter`
+  preserves every marker and parser offset from one bounded 8 KiB worker read;
+  `session` alone captures the corresponding primary-grid coordinate, applies
+  resolved display offsets, and projects a chosen range into the ordinary
+  per-tab selection. Kernel PTY and child authorities remain the sole source of
+  process-control truth.
 - `hyperlink` owns the 768-byte activation bound, non-spoofing URI validation,
   web/email scheme allowlist, credential refusal, and privacy-safe destination
   preview. The pointer adapter re-reads exact Alacritty cell metadata before
@@ -280,8 +289,10 @@ performance.
 Terminal does not scrape shell output to infer commands, directories, or job
 names. It accepts only complete bounded title, OSC 7 directory, and OSC 133
 phase/status reports. Prompt navigation trusts only OSC 133 `A` positions and
-stores no shell text. Command-aware history/output ranges and semantic job names
-require separately reviewed state before they may be shown.
+stores no shell text. Command/output selection likewise trusts only complete
+ordered A/B/C/D coordinates and reads text only through the existing explicit
+grid selection. Persistent command text and semantic job names are not inferred
+or shown.
 
 ## Child lifecycle and close safety
 
@@ -452,8 +463,10 @@ discard, local session isolation, remote display-only state, repeated reports,
 and scheme/credential/query/control/directional refusal.
 OSC 133 tests cover split extraction, ordered multi-report parser offsets,
 exact-session isolation, running/failure/success projection, invalid status and
-command-text refusal, bounded private prompt navigation, eviction refusal, and
-lifecycle/transport label precedence.
+command-text refusal, bounded private prompt navigation, ordered command/output
+ranges, exclusive-to-inclusive cell projection, incomplete/reversed refusal,
+grid-identity clearing, eviction refusal, and lifecycle/transport label
+precedence.
 Combining-allocation tests cover multiple independently styled cells, exact
 retention, wide-character targeting, a UTF-8 sequence split between reads, and
 ASCII CSI REP amplification of a prior combining scalar.

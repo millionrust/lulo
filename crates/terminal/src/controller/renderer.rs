@@ -514,6 +514,12 @@ impl Render for TerminalView {
                     .on_action(cx.listener(|this, _: &NextPrompt, _, cx| {
                         this.navigate_prompt(PromptDirection::Next, cx)
                     }))
+                    .on_action(cx.listener(|this, _: &SelectCommand, _, cx| {
+                        this.select_shell_range(CommandRangeKind::Command, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &SelectCommandOutput, _, cx| {
+                        this.select_shell_range(CommandRangeKind::Output, cx)
+                    }))
                     .on_action(cx.listener(|this, _: &NewTab, window, cx| {
                         this.new_tab(window, cx);
                     }))
@@ -770,6 +776,12 @@ impl Render for TerminalView {
                             "Next Prompt",
                             rmac_ui::shortcuts::NEXT_MARK,
                             Box::new(NextPrompt),
+                        )
+                        .item("Select Command", Box::new(SelectCommand))
+                        .command_item(
+                            "Select Command Output",
+                            rmac_ui::shortcuts::SELECT_COMMAND_OUTPUT,
+                            Box::new(SelectCommandOutput),
                         )
                         .separator()
                         .command_item("Clear", rmac_ui::shortcuts::CLEAR, Box::new(Clear))

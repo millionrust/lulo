@@ -52,6 +52,7 @@ pub const CLEAR: Shortcut = Shortcut::new("cmd-k", "⌘K");
 pub const CYCLE_PROFILE: Shortcut = Shortcut::new("cmd-shift-p", "⇧⌘P");
 pub const PREVIOUS_MARK: Shortcut = Shortcut::new("cmd-up", "⌘↑");
 pub const NEXT_MARK: Shortcut = Shortcut::new("cmd-down", "⌘↓");
+pub const SELECT_COMMAND_OUTPUT: Shortcut = Shortcut::new("cmd-shift-a", "⇧⌘A");
 pub const TOGGLE_MONOSPACE: Shortcut = Shortcut::new("cmd-shift-m", "⇧⌘M");
 
 pub const ENTER: Shortcut = Shortcut::new("enter", "↩");
@@ -104,6 +105,7 @@ mod tests {
         CYCLE_PROFILE,
         PREVIOUS_MARK,
         NEXT_MARK,
+        SELECT_COMMAND_OUTPUT,
         TOGGLE_MONOSPACE,
         ENTER,
         ESCAPE,

@@ -19,9 +19,11 @@ use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
-use crate::shell_integration::{PromptDirection, SessionShellState};
+use crate::shell_integration::{
+    CommandRangeKind, MarkerPosition, PromptDirection, SessionShellState,
+};
 use crate::title::SessionTitle;
-use crate::ui_state::SessionUiState;
+use crate::ui_state::{Selection, SessionUiState};
 use crate::working_directory::SessionDirectory;
 
 pub(super) type RedrawSender = async_channel::Sender<()>;
@@ -322,7 +324,10 @@ type WaiterTask = (
     RedrawSender,
 );
 
-fn retained_prompt_line(term: &Term<EventProxy>, history_limit: usize) -> Option<usize> {
+fn retained_marker_position(
+    term: &Term<EventProxy>,
+    history_limit: usize,
+) -> Option<MarkerPosition> {
     if history_limit == 0 || term.mode().contains(TermMode::ALT_SCREEN) {
         return None;
     }
@@ -332,7 +337,18 @@ fn retained_prompt_line(term: &Term<EventProxy>, history_limit: usize) -> Option
         return None;
     }
     let cursor_line = usize::try_from(grid.cursor.point.line.0).ok()?;
-    (cursor_line < grid.screen_lines()).then(|| history_size.saturating_add(cursor_line))
+    if cursor_line >= grid.screen_lines() {
+        return None;
+    }
+    let (line, column) = if grid.cursor.input_needs_wrap {
+        (cursor_line.saturating_add(1), 0)
+    } else {
+        (cursor_line, grid.cursor.point.column.0)
+    };
+    Some(MarkerPosition {
+        line: history_size.saturating_add(line),
+        column,
+    })
 }
 
 fn run_reader_worker((mut reader, term, directory, shell, scrollback_limit, redraw): ReaderTask) {
@@ -357,12 +373,11 @@ fn run_reader_worker((mut reader, term, directory, shell, scrollback_limit, redr
                     for marker in markers {
                         let end = marker.output_offset.clamp(start, filtered.len());
                         advance_filtered_output(&mut parser, &mut *term, &filtered[start..end]);
-                        let prompt_line = if marker.payload == "A" {
-                            retained_prompt_line(&term, scrollback_limit.load(Ordering::Acquire))
-                        } else {
-                            None
-                        };
-                        shell.set_marker(&marker.payload, prompt_line);
+                        let position = retained_marker_position(
+                            &term,
+                            scrollback_limit.load(Ordering::Acquire),
+                        );
+                        shell.set_marker(&marker.payload, position);
                         start = end;
                     }
                     advance_filtered_output(&mut parser, &mut *term, &filtered[start..]);
@@ -688,17 +703,17 @@ impl Session {
         term.resize(accepted);
         self.accepted_size = accepted;
         self.transport.rejected_size = None;
-        self.shell_state.clear_prompt_marks();
+        self.shell_state.clear_grid_marks();
         Ok(())
     }
 
     pub(super) fn set_scrollback_limit(&self, limit: usize) {
         self.scrollback_limit.store(limit, Ordering::Release);
-        self.shell_state.clear_prompt_marks();
+        self.shell_state.clear_grid_marks();
     }
 
-    pub(super) fn clear_prompt_marks(&self) {
-        self.shell_state.clear_prompt_marks();
+    pub(super) fn clear_shell_marks(&self) {
+        self.shell_state.clear_grid_marks();
     }
 
     pub(super) fn scroll_to_prompt(
@@ -720,6 +735,43 @@ impl Session {
         }
         term.scroll_display(Scroll::Bottom);
         term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        Ok(true)
+    }
+
+    pub(super) fn select_command_range(
+        &mut self,
+        kind: CommandRangeKind,
+    ) -> Result<bool, SessionWriteError> {
+        let mut term = self.term.lock().map_err(|_| SessionWriteError::State)?;
+        let grid = term.grid();
+        let history_size = grid.history_size();
+        let Some(range) = self.shell_state.command_range(
+            kind,
+            history_size,
+            grid.display_offset(),
+            self.scrollback_limit.load(Ordering::Acquire),
+            grid.columns(),
+        ) else {
+            return Ok(false);
+        };
+        let history_line = i32::try_from(history_size).unwrap_or(i32::MAX);
+        let to_grid = |position: MarkerPosition| {
+            (
+                i32::try_from(position.line)
+                    .unwrap_or(i32::MAX)
+                    .saturating_sub(history_line),
+                position.column,
+            )
+        };
+        let selection = Selection {
+            anchor: to_grid(range.start),
+            head: to_grid(range.end),
+        };
+        let offset = history_size.saturating_sub(range.start.line);
+        term.scroll_display(Scroll::Bottom);
+        term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        drop(term);
+        self.ui.selection = Some(selection);
         Ok(true)
     }
 

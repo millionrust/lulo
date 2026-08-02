@@ -46,10 +46,12 @@ evidence remains gated by the reference-PC framework work.
   final commit reaches only its exact stable live tab once. Complete OSC 133
   prompt reports now provide bounded, private previous/next prompt navigation
   with ⌘↑/⌘↓ and context-menu paths; resize, history-budget changes, clear, and
-  scrollback eviction fail closed instead of targeting stale rows. Enhanced
-  Kitty/keypad input, command/output ranges, semantic job names, accessibility,
-  native Linux IME and interaction/visual evidence, and measured Unicode/
-  resident/idle/active performance keep G3 partial.
+  scrollback eviction fail closed instead of targeting stale rows. Ordered
+  A/B/C/D reports also retain at most 256 coordinate-only command/output spans:
+  Select Command and Select Command Output (⇧⌘A) target the live or scrolled
+  command without storing shell text. Enhanced Kitty/keypad input, semantic job
+  names, accessibility, native Linux IME and interaction/visual evidence, and
+  measured Unicode/resident/idle/active performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

@@ -31,7 +31,7 @@ use crate::profiles::{self, active, load as load_profile, save as save_profile, 
 #[cfg(test)]
 use crate::session::EventProxy;
 use crate::session::{PasteError, RedrawSender, Session, SessionControlError, SessionWriteError};
-use crate::shell_integration::PromptDirection;
+use crate::shell_integration::{CommandRangeKind, PromptDirection};
 #[cfg(test)]
 use crate::ui_state::MAX_SEARCH_QUERY_BYTES;
 use crate::ui_state::{bounded_search_query, Selection};
@@ -82,6 +82,8 @@ gpui::actions!(
         Clear,
         PreviousPrompt,
         NextPrompt,
+        SelectCommand,
+        SelectCommandOutput,
         NewTab,
         CloseTab,
         NextTab,
@@ -217,6 +219,11 @@ impl TerminalView {
             KeyBinding::new(
                 rmac_ui::shortcuts::NEXT_MARK.keystroke,
                 NextPrompt,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::SELECT_COMMAND_OUTPUT.keystroke,
+                SelectCommandOutput,
                 Some("Terminal"),
             ),
             KeyBinding::new(
@@ -718,7 +725,7 @@ impl TerminalView {
             t.grid_mut().clear_history();
             t.scroll_display(Scroll::Bottom);
         }
-        self.tabs[self.active].clear_prompt_marks();
+        self.tabs[self.active].clear_shell_marks();
         self.tabs[self.active].ui.selection = None;
         cx.notify();
     }
@@ -730,6 +737,21 @@ impl TerminalView {
         let menu_was_open = self.menu_at.take().is_some();
         match self.tabs[self.active].scroll_to_prompt(direction) {
             Ok(moved) if moved || menu_was_open => cx.notify(),
+            Ok(_) => {}
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
+        }
+    }
+
+    fn select_shell_range(&mut self, kind: CommandRangeKind, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        let menu_was_open = self.menu_at.take().is_some();
+        match self.tabs[self.active].select_command_range(kind) {
+            Ok(selected) if selected || menu_was_open => cx.notify(),
             Ok(_) => {}
             Err(error) => {
                 self.operation_error = Some(error.to_string().into());

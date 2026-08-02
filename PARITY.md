@@ -52,9 +52,13 @@ evidence remains gated by the reference-PC framework work.
   command without storing shell text. The existing PTY foreground-process-group
   authority now also supplies an event-driven, 64-byte spoof-safe Linux/macOS
   group-leader name ahead of stale application titles while a real job owns the
-  terminal. Enhanced Kitty/keypad input, accessibility, native Linux IME and
-  interaction/visual evidence, and measured Unicode/resident/idle/active
-  performance keep G3 partial.
+  terminal. A public bounded semantics boundary now converts the authoritative
+  visible grid into soft-wrap-aware text plus Unicode-scalar caret and selection
+  offsets, including wide cells and combining marks. Stable GPUI still cannot
+  export that snapshot through an accessibility tree, so enhanced Kitty/keypad
+  input, runtime AT-SPI/Orca accessibility, native Linux IME and interaction/
+  visual evidence, and measured Unicode/resident/idle/active performance keep
+  G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

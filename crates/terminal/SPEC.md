@@ -204,11 +204,21 @@ new one while the window is active. Re-selecting the current tab, internal find
 focus, and ordinary renders emit nothing. The three-byte static reports use the
 same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
+A public framework-neutral accessibility boundary now projects the authoritative
+Alacritty viewport into bounded semantic text, caret, and selection state. It
+joins soft wraps, emits newlines only for hard row boundaries, removes wide-cell
+spacers, preserves combining scalars, and defines caret and half-open selection
+offsets in Unicode scalar values rather than UTF-8 bytes. The snapshot includes
+the caret only for an input-enabled live bottom viewport; a scrolled viewport
+remains read-only. Projection refuses grids outside the existing 300-row by
+500-column contract and caps serialized text at 16 MiB. Pinned GPUI 0.2.2 exposes no
+programmatic accessibility-tree API, so this adapter-ready snapshot is not yet
+exported to AT-SPI and is not an Orca-support claim.
 
 The complete application claim remains blocked on numeric-keypad identity;
-accessible terminal text semantics; Linux interaction/visual evidence
-(including native IME proof); and measured Unicode/resident/idle/active
-performance.
+framework accessibility-tree export of the defined terminal semantics; Linux
+interaction/visual evidence (including native IME and Orca proof); and measured
+Unicode/resident/idle/active performance.
 
 ## Platform authorities
 
@@ -228,6 +238,10 @@ performance.
   parser, process-control authority, or invented fallback.
 - `alacritty_terminal` and `vte` own escape parsing, screen/scrollback state,
   cell flags, cursor position, and terminal modes.
+- The public `rmac_terminal::accessibility` boundary owns a bounded projection
+  of the currently visible grid into soft-wrap-aware text plus Unicode-scalar
+  caret and selection offsets. It does not own AT-SPI publication; that adapter
+  must follow the Phase A framework decision and consume this exact snapshot.
 - `keyboard` owns the traditional xterm/DEC and negotiated Kitty encoders, event
   forms, associated/alternate text projection, and the decision between encoded
   input and GPUI's direct-text/IME path. It deliberately does not invent keypad
@@ -439,8 +453,9 @@ behavior remains an interaction-evidence gate.
   row or column.
 - Tabs, buttons, menus, alerts, search, session state, and the terminal content
   expose meaningful roles, names, focus, state, and actions. The terminal grid
-  needs a documented accessible text/caret/selection strategy compatible with
-  Orca; visual cell rendering alone is not an accessibility claim.
+  has a bounded, framework-neutral visible-text/caret/selection strategy, but
+  it still needs export through the selected framework and native Orca proof;
+  visual cell rendering or an unconsumed snapshot is not an accessibility claim.
 
 ## Acceptance evidence
 
@@ -511,6 +526,10 @@ Focus contract tests parse mode 1004 directly and prove exact enable/disable and
 static focus-in/focus-out bytes. Runtime routing deduplicates OS activation,
 transfers active-tab ownership, refuses exited sessions, and uses the tested
 permanent writer-failure state without scheduling ordinary success redraws.
+Accessibility projection contracts cover hard and soft row boundaries, wide
+cells, combining scalars, Unicode-scalar caret offsets, multi-line half-open
+selection ranges, and refusal beyond the public grid bounds. Native AT-SPI/Orca
+evidence remains pending because stable GPUI has no tree-export API.
 The transport follows the official xterm
 [keyboard](https://www.invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Special-Keyboard-Keys)
 and

@@ -1,0 +1,381 @@
+use super::*;
+
+impl NotesView {
+    pub(super) fn select_folder(
+        &mut self,
+        folder: rmac_notes_runtime::FolderSelection,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let previous = self.session.selected_note_id();
+        self.session.select_folder(folder);
+        if self.session.selected_note_id() != previous || self.latest_local_generation.is_none() {
+            self.sync_editor(window, cx);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn select_note(
+        &mut self,
+        note_id: NoteId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let previous = self.session.selected_note_id();
+        if self.session.select_note(note_id) {
+            if previous != Some(note_id) || self.latest_local_generation.is_none() {
+                self.sync_editor(window, cx);
+            }
+            cx.notify();
+        }
+    }
+
+    pub(super) fn create_note(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let folder_id = match self.session.folder_selection() {
+            rmac_notes_runtime::FolderSelection::Folder(folder_id) => Some(folder_id),
+            _ => None,
+        };
+        self.send_action(
+            LibraryAction::CreateNote(NewNote {
+                created_unix_ms: now_unix_ms(),
+                title: "New Note".into(),
+                body: String::new(),
+                tags: Vec::new(),
+                folder_id,
+            }),
+            cx,
+        );
+    }
+
+    pub(super) fn create_folder(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let existing = self
+            .session
+            .folders()
+            .into_iter()
+            .map(|folder| folder.name.to_lowercase())
+            .collect::<Vec<_>>();
+        let name = unique_folder_name(&existing);
+        self.send_action(LibraryAction::CreateFolder { name }, cx);
+    }
+
+    pub(super) fn begin_folder_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let rmac_notes_runtime::FolderSelection::Folder(folder_id) =
+            self.session.folder_selection()
+        else {
+            return;
+        };
+        let Some(name) = self
+            .session
+            .folders()
+            .into_iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.name.clone())
+        else {
+            return;
+        };
+        self.folder_name_input
+            .update(cx, |state, cx| state.set_value(name, window, cx));
+        self.folder_dialog = Some(FolderDialog::Rename(folder_id));
+        self.folder_name_input
+            .update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
+    pub(super) fn commit_folder_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(FolderDialog::Rename(folder_id)) = self.folder_dialog else {
+            return;
+        };
+        let name = self.folder_name_input.read(cx).value().trim().to_string();
+        if name.is_empty() {
+            self.message = Some("A Notes folder name cannot be empty".into());
+            cx.notify();
+            return;
+        }
+        let Some(expected_revision) = self
+            .session
+            .folders()
+            .into_iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.revision)
+        else {
+            self.folder_dialog = None;
+            self.message = Some("That Notes folder is no longer available".into());
+            cx.notify();
+            return;
+        };
+        self.folder_dialog = None;
+        self.send_action(
+            LibraryAction::RenameFolder {
+                folder_id,
+                expected_revision,
+                name,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(super) fn begin_folder_delete(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        if let rmac_notes_runtime::FolderSelection::Folder(folder_id) =
+            self.session.folder_selection()
+        {
+            self.folder_dialog = Some(FolderDialog::Delete(folder_id));
+            cx.notify();
+        }
+    }
+
+    pub(super) fn confirm_folder_delete(&mut self, cx: &mut Context<Self>) {
+        let Some(FolderDialog::Delete(folder_id)) = self.folder_dialog else {
+            return;
+        };
+        let Some(expected_revision) = self
+            .session
+            .folders()
+            .into_iter()
+            .find(|folder| folder.id == folder_id)
+            .map(|folder| folder.revision)
+        else {
+            self.folder_dialog = None;
+            self.message = Some("That Notes folder is no longer available".into());
+            cx.notify();
+            return;
+        };
+        self.folder_dialog = None;
+        self.send_action(
+            LibraryAction::DeleteFolder {
+                folder_id,
+                expected_revision,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(super) fn cancel_folder_dialog(&mut self, cx: &mut Context<Self>) {
+        self.folder_dialog = None;
+        cx.notify();
+    }
+
+    pub(super) fn trash_or_restore(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        let action = if note.deleted {
+            LibraryAction::RestoreNote {
+                note_id: note.id,
+                expected_revision: note.revision,
+            }
+        } else {
+            LibraryAction::TrashNote {
+                note_id: note.id,
+                expected_revision: note.revision,
+            }
+        };
+        self.send_action(action, cx);
+    }
+
+    pub(super) fn begin_permanent_note_delete(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| note.deleted) else {
+            return;
+        };
+        let note_id = note.id;
+        let note_revision = note.revision;
+        let Some(snapshot) = self.session.snapshot() else {
+            return;
+        };
+        let mut attachment_count = 0_usize;
+        let mut attachment_bytes = 0_u64;
+        for attachment in snapshot
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.note_id == note_id)
+        {
+            attachment_count = attachment_count.saturating_add(1);
+            let Some(total) = attachment_bytes.checked_add(attachment.byte_len) else {
+                self.message = Some("The attachment deletion total is too large to review".into());
+                cx.notify();
+                return;
+            };
+            attachment_bytes = total;
+        }
+        self.purge_dialog = Some(PurgeDialog::Note {
+            note_id,
+            note_revision,
+            attachment_count,
+            attachment_bytes,
+        });
+        cx.notify();
+    }
+
+    pub(super) fn begin_empty_trash(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(snapshot) = self.session.snapshot() else {
+            return;
+        };
+        let note_ids = snapshot
+            .notes
+            .iter()
+            .filter(|note| note.deleted)
+            .map(|note| note.id)
+            .collect::<BTreeSet<_>>();
+        if note_ids.is_empty() {
+            return;
+        }
+        let mut attachment_count = 0_usize;
+        let mut attachment_bytes = 0_u64;
+        for attachment in snapshot
+            .attachments
+            .iter()
+            .filter(|attachment| note_ids.contains(&attachment.note_id))
+        {
+            attachment_count = attachment_count.saturating_add(1);
+            let Some(total) = attachment_bytes.checked_add(attachment.byte_len) else {
+                self.message = Some("The Trash deletion total is too large to review".into());
+                cx.notify();
+                return;
+            };
+            attachment_bytes = total;
+        }
+        self.purge_dialog = Some(PurgeDialog::EmptyTrash {
+            library_revision: snapshot.revision,
+            note_count: note_ids.len(),
+            attachment_count,
+            attachment_bytes,
+        });
+        cx.notify();
+    }
+
+    pub(super) fn confirm_purge(&mut self, cx: &mut Context<Self>) {
+        let Some(dialog) = self.purge_dialog.take() else {
+            return;
+        };
+        let action = match dialog {
+            PurgeDialog::Note {
+                note_id,
+                note_revision,
+                ..
+            } => LibraryAction::DeleteNotePermanently {
+                note_id,
+                expected_revision: note_revision,
+            },
+            PurgeDialog::EmptyTrash {
+                library_revision, ..
+            } => LibraryAction::EmptyTrash {
+                expected_library_revision: library_revision,
+            },
+        };
+        self.send_action(action, cx);
+        cx.notify();
+    }
+
+    pub(super) fn cancel_purge(&mut self, cx: &mut Context<Self>) {
+        self.purge_dialog = None;
+        cx.notify();
+    }
+
+    pub(super) fn begin_move_note(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| !note.deleted) else {
+            return;
+        };
+        self.move_dialog = Some(MoveDialog {
+            note_id: note.id,
+            note_revision: note.revision,
+            current_folder: note.folder_id,
+        });
+        cx.notify();
+    }
+
+    pub(super) fn move_note_to(&mut self, folder_id: Option<FolderId>, cx: &mut Context<Self>) {
+        let Some(dialog) = self.move_dialog.take() else {
+            return;
+        };
+        if dialog.current_folder == folder_id {
+            cx.notify();
+            return;
+        }
+        self.send_action(
+            LibraryAction::MoveNote {
+                note_id: dialog.note_id,
+                expected_revision: dialog.note_revision,
+                folder_id,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(super) fn cancel_move_note(&mut self, cx: &mut Context<Self>) {
+        self.move_dialog = None;
+        cx.notify();
+    }
+
+    pub(super) fn toggle_pin(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        self.send_action(
+            LibraryAction::SetPinned {
+                note_id: note.id,
+                expected_revision: note.revision,
+                pinned: !note.pinned,
+            },
+            cx,
+        );
+    }
+
+    pub(super) fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {
+        if self.is_interactive_ready() {
+            self.send_action(LibraryAction::SetSort(sort_order), cx);
+        }
+    }
+
+    pub(super) fn accept_migration(&mut self, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        self.send(WorkerCommand::AcceptMigration { request_id }, cx);
+    }
+
+    pub(super) fn start_empty(&mut self, cx: &mut Context<Self>) {
+        let Some(request_id) = self.take_request_id() else {
+            return;
+        };
+        self.send(WorkerCommand::StartEmpty { request_id }, cx);
+    }
+
+    pub(super) fn retry_pending(&mut self, cx: &mut Context<Self>) {
+        self.send(WorkerCommand::RetryPending, cx);
+    }
+}

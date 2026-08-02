@@ -15,9 +15,20 @@ the provisional [hardware support](hardware-support.md) first. Keep at least
 25 GiB free before a release build and stop if the data volume approaches
 15 GiB free.
 
-Install Rust with `rustup`; the repository's `rust-toolchain.toml` selects the
-required toolchain. Install the Ubuntu build dependencies listed in the
-[README](../README.md#ubuntu-build-dependencies), then clone the repository.
+Clone the repository on the disposable Ubuntu machine, then validate and apply
+the guarded reference-PC preparation. It installs the exact development and
+evidence dependencies, the pinned Rust toolchain, cargo-deny, Debian packaging,
+Flatpak, and freedesktop validator tools without building rmac or removing
+GNOME:
+
+```sh
+bash scripts/linux/prepare-reference-pc.sh --check
+bash scripts/linux/prepare-reference-pc.sh --execute
+```
+
+Reboot if Ubuntu requests it, log into the untouched GNOME Wayland session,
+and run the read-only preflight from
+[Linux reference PC bring-up](linux-reference-bringup.md) before compiling.
 
 ## Build one application
 
@@ -54,7 +65,37 @@ owner.
 The native package assembler is for clean build/VM evidence. It must never be
 pointed at `/` or used as a root installer. The resulting packages are not a
 public release until signing, APT trust, clean install/upgrade/rollback, and
-hardware gates pass. See [Native packaging](native-packaging.md).
+hardware gates pass. The native flow builds exactly the 18 reviewed executables
+once and performs two independently verified byte-identical package assemblies:
+
+```sh
+mkdir -p "${PWD}/target"
+bash scripts/linux/build-native-inputs.sh \
+  --output "${PWD}/target/native-package-inputs"
+bash scripts/linux/check-native-reproducibility.sh \
+  --binary-dir "${PWD}/target/native-package-inputs" \
+  --output "${PWD}/target/native-$(dpkg --print-architecture)-reproducibility" \
+  --architecture "$(dpkg --print-architecture)" \
+  --source-date-epoch "$(git log -1 --format=%ct)"
+```
+
+Run that flow natively on amd64 and arm64; see
+[Native packaging](native-packaging.md) for verification, installation, and
+evidence requirements.
+
+## Flatpak candidate
+
+Text Editor is the sole current sandbox candidate. Prepare its runtime and
+source cache while online, then perform the provenance-bound no-download build:
+
+```sh
+bash scripts/linux/build-flatpak-candidate.sh --prepare-online
+bash scripts/linux/build-flatpak-candidate.sh --build-offline
+```
+
+Installation is deliberately separate because it begins the portal, permission,
+recovery, scaling, input, and accessibility review. See
+[Flatpak packaging](flatpak-packaging.md).
 
 ## First login
 

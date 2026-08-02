@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
+use crate::filesystem::{HASH_HEX_BYTES, LOCK_FILE};
 
 fn root(label: &str) -> PathBuf {
     let unique = SystemTime::now()

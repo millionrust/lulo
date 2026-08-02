@@ -508,6 +508,12 @@ impl Render for TerminalView {
                     )
                     .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
                     .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
+                    .on_action(cx.listener(|this, _: &PreviousPrompt, _, cx| {
+                        this.navigate_prompt(PromptDirection::Previous, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &NextPrompt, _, cx| {
+                        this.navigate_prompt(PromptDirection::Next, cx)
+                    }))
                     .on_action(cx.listener(|this, _: &NewTab, window, cx| {
                         this.new_tab(window, cx);
                     }))
@@ -753,6 +759,17 @@ impl Render for TerminalView {
                             "Select All",
                             rmac_ui::shortcuts::SELECT_ALL,
                             Box::new(SelectAll),
+                        )
+                        .separator()
+                        .command_item(
+                            "Previous Prompt",
+                            rmac_ui::shortcuts::PREVIOUS_MARK,
+                            Box::new(PreviousPrompt),
+                        )
+                        .command_item(
+                            "Next Prompt",
+                            rmac_ui::shortcuts::NEXT_MARK,
+                            Box::new(NextPrompt),
                         )
                         .separator()
                         .command_item("Clear", rmac_ui::shortcuts::CLEAR, Box::new(Clear))

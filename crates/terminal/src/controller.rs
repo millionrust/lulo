@@ -31,6 +31,7 @@ use crate::profiles::{self, active, load as load_profile, save as save_profile, 
 #[cfg(test)]
 use crate::session::EventProxy;
 use crate::session::{PasteError, RedrawSender, Session, SessionControlError, SessionWriteError};
+use crate::shell_integration::PromptDirection;
 #[cfg(test)]
 use crate::ui_state::MAX_SEARCH_QUERY_BYTES;
 use crate::ui_state::{bounded_search_query, Selection};
@@ -79,6 +80,8 @@ gpui::actions!(
         ZoomReset,
         SelectAll,
         Clear,
+        PreviousPrompt,
+        NextPrompt,
         NewTab,
         CloseTab,
         NextTab,
@@ -206,6 +209,16 @@ impl TerminalView {
                 Some("Terminal"),
             ),
             KeyBinding::new(rmac_ui::shortcuts::CLEAR.keystroke, Clear, Some("Terminal")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::PREVIOUS_MARK.keystroke,
+                PreviousPrompt,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::NEXT_MARK.keystroke,
+                NextPrompt,
+                Some("Terminal"),
+            ),
             KeyBinding::new(
                 rmac_ui::shortcuts::NEW_TAB.keystroke,
                 NewTab,
@@ -440,24 +453,29 @@ impl TerminalView {
         }
     }
 
-    fn apply_scrollback_limit(&self, limit: usize) -> Result<(), SessionWriteError> {
+    fn apply_scrollback_limit(&mut self, limit: usize) -> Result<(), SessionWriteError> {
         // Acquire every authority before mutating any, so one poisoned session
         // cannot leave a partially applied cross-tab budget.
-        let mut terms = Vec::with_capacity(self.tabs.len());
-        for session in &self.tabs {
-            terms.push(session.term.lock().map_err(|_| SessionWriteError::State)?);
+        {
+            let mut terms = Vec::with_capacity(self.tabs.len());
+            for session in &self.tabs {
+                terms.push(session.term.lock().map_err(|_| SessionWriteError::State)?);
+            }
+            for term in &mut terms {
+                // `set_options` updates the primary history even while the
+                // alternate screen is active, while preserving the alternate
+                // grid's zero-history contract. Updating `grid_mut()` directly
+                // would target the wrong grid.
+                term.set_options(terminal_config(limit));
+            }
         }
-        for term in &mut terms {
-            // `set_options` updates the primary history even while the
-            // alternate screen is active, while preserving the alternate
-            // grid's zero-history contract. Updating `grid_mut()` directly
-            // would target the wrong grid.
-            term.set_options(terminal_config(limit));
+        for session in &self.tabs {
+            session.set_scrollback_limit(limit);
         }
         Ok(())
     }
 
-    fn rebalance_scrollback(&self) -> Result<(), SessionWriteError> {
+    fn rebalance_scrollback(&mut self) -> Result<(), SessionWriteError> {
         self.apply_scrollback_limit(scrollback_limit_for_tab_count(self.tabs.len()))
     }
 
@@ -700,8 +718,24 @@ impl TerminalView {
             t.grid_mut().clear_history();
             t.scroll_display(Scroll::Bottom);
         }
+        self.tabs[self.active].clear_prompt_marks();
         self.tabs[self.active].ui.selection = None;
         cx.notify();
+    }
+
+    fn navigate_prompt(&mut self, direction: PromptDirection, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        let menu_was_open = self.menu_at.take().is_some();
+        match self.tabs[self.active].scroll_to_prompt(direction) {
+            Ok(moved) if moved || menu_was_open => cx.notify(),
+            Ok(_) => {}
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+            }
+        }
     }
 
     /// Select the entire buffer (scrollback history + visible screen).

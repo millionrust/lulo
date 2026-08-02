@@ -1,13 +1,14 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     mpsc::{sync_channel, SyncSender},
     Arc, Mutex,
 };
 use std::thread::JoinHandle;
 
 use alacritty_terminal::event::{Event, EventListener};
+use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::term::{Term, TermMode};
 use alacritty_terminal::vte::ansi::Processor;
 use portable_pty::{
@@ -18,7 +19,7 @@ use crate::emulator::{advance_filtered_output, terminal_config, TermSize};
 use crate::output_filter::OutputFilter;
 use crate::paste::{has_unsafe_unbracketed_control, logical_line_count, prepare as prepare_paste};
 
-use crate::shell_integration::SessionShellState;
+use crate::shell_integration::{PromptDirection, SessionShellState};
 use crate::title::SessionTitle;
 use crate::ui_state::SessionUiState;
 use crate::working_directory::SessionDirectory;
@@ -312,6 +313,7 @@ type ReaderTask = (
     Arc<Mutex<Term<EventProxy>>>,
     SessionDirectory,
     SessionShellState,
+    Arc<AtomicUsize>,
     RedrawSender,
 );
 type WaiterTask = (
@@ -320,7 +322,20 @@ type WaiterTask = (
     RedrawSender,
 );
 
-fn run_reader_worker((mut reader, term, directory, shell, redraw): ReaderTask) {
+fn retained_prompt_line(term: &Term<EventProxy>, history_limit: usize) -> Option<usize> {
+    if history_limit == 0 || term.mode().contains(TermMode::ALT_SCREEN) {
+        return None;
+    }
+    let grid = term.grid();
+    let history_size = grid.history_size();
+    if history_size >= history_limit {
+        return None;
+    }
+    let cursor_line = usize::try_from(grid.cursor.point.line.0).ok()?;
+    (cursor_line < grid.screen_lines()).then(|| history_size.saturating_add(cursor_line))
+}
+
+fn run_reader_worker((mut reader, term, directory, shell, scrollback_limit, redraw): ReaderTask) {
     let mut parser: Processor = Processor::new();
     let mut output_filter = OutputFilter::default();
     let mut buffer = [0u8; 8192];
@@ -333,14 +348,28 @@ fn run_reader_worker((mut reader, term, directory, shell, redraw): ReaderTask) {
                 if let Some(uri) = output_filter.take_current_directory_uri() {
                     directory.set_uri(&uri);
                 }
-                if let Some(marker) = output_filter.take_shell_marker() {
-                    shell.set_marker(&marker);
-                }
+                let markers = output_filter.take_shell_markers();
                 if filtered.is_empty() {
                     continue;
                 }
                 if let Ok(mut term) = term.lock() {
-                    advance_filtered_output(&mut parser, &mut *term, &filtered);
+                    let mut start = 0;
+                    for marker in markers {
+                        let end = marker.output_offset.clamp(start, filtered.len());
+                        advance_filtered_output(&mut parser, &mut *term, &filtered[start..end]);
+                        let prompt_line = if marker.payload == "A" {
+                            retained_prompt_line(&term, scrollback_limit.load(Ordering::Acquire))
+                        } else {
+                            None
+                        };
+                        shell.set_marker(&marker.payload, prompt_line);
+                        start = end;
+                    }
+                    advance_filtered_output(&mut parser, &mut *term, &filtered[start..]);
+                } else {
+                    for marker in markers {
+                        shell.set_marker(&marker.payload, None);
+                    }
                 }
                 request_redraw(&redraw);
             }
@@ -453,6 +482,7 @@ pub(super) struct Session {
     title: SessionTitle,
     directory: SessionDirectory,
     shell_state: SessionShellState,
+    scrollback_limit: Arc<AtomicUsize>,
     master: Option<Box<dyn MasterPty + Send>>,
     shell_pid: Option<u32>,
     killer: Option<Box<dyn ChildKiller + Send + Sync>>,
@@ -494,6 +524,7 @@ impl Session {
             .map(SessionDirectory::from_local)
             .unwrap_or_default();
         let shell_state = SessionShellState::default();
+        let scrollback_limit = Arc::new(AtomicUsize::new(scrollback_lines));
         let workers = ReservedSessionWorkers::reserve()?;
         let shell = shell_program(std::env::var("SHELL").ok());
         let mut command = CommandBuilder::new(shell);
@@ -525,6 +556,7 @@ impl Session {
                 Arc::clone(&term),
                 directory.clone(),
                 shell_state.clone(),
+                Arc::clone(&scrollback_limit),
                 redraw.clone(),
             ),
             (child, Arc::clone(&lifecycle), redraw),
@@ -541,6 +573,7 @@ impl Session {
             title,
             directory,
             shell_state,
+            scrollback_limit,
             master: Some(pair.master),
             shell_pid,
             killer: Some(killer),
@@ -578,6 +611,7 @@ impl Session {
             title: SessionTitle::default(),
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
+            scrollback_limit: Arc::new(AtomicUsize::new(scrollback_lines)),
             master: None,
             shell_pid: None,
             killer: None,
@@ -654,7 +688,39 @@ impl Session {
         term.resize(accepted);
         self.accepted_size = accepted;
         self.transport.rejected_size = None;
+        self.shell_state.clear_prompt_marks();
         Ok(())
+    }
+
+    pub(super) fn set_scrollback_limit(&self, limit: usize) {
+        self.scrollback_limit.store(limit, Ordering::Release);
+        self.shell_state.clear_prompt_marks();
+    }
+
+    pub(super) fn clear_prompt_marks(&self) {
+        self.shell_state.clear_prompt_marks();
+    }
+
+    pub(super) fn scroll_to_prompt(
+        &self,
+        direction: PromptDirection,
+    ) -> Result<bool, SessionWriteError> {
+        let mut term = self.term.lock().map_err(|_| SessionWriteError::State)?;
+        let grid = term.grid();
+        let Some(offset) = self.shell_state.prompt_offset(
+            direction,
+            grid.history_size(),
+            grid.display_offset(),
+            self.scrollback_limit.load(Ordering::Acquire),
+        ) else {
+            return Ok(false);
+        };
+        if offset == grid.display_offset() {
+            return Ok(false);
+        }
+        term.scroll_display(Scroll::Bottom);
+        term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        Ok(true)
     }
 
     pub(super) fn has_foreground_job(&self) -> bool {
@@ -966,6 +1032,7 @@ mod tests {
             title: SessionTitle::default(),
             directory: SessionDirectory::default(),
             shell_state: SessionShellState::default(),
+            scrollback_limit: Arc::new(AtomicUsize::new(10)),
             master: None,
             shell_pid: None,
             killer: None,

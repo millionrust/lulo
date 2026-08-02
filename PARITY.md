@@ -43,10 +43,13 @@ evidence remains gated by the reference-PC framework work.
   focus as a shell event. Direct Unicode and IME now share GPUI's platform
   input path: bounded private preedit is underlined at the live cursor, UTF-16
   ranges and candidate bounds are checked, cancellation sends nothing, and
-  final commit reaches only its exact stable live tab once. Enhanced Kitty/
-  keypad input, reviewed hyperlinks/shell-derived titles, accessibility, native
-  Linux IME and interaction/visual evidence, and measured Unicode/resident/
-  idle/active performance keep G3 partial.
+  final commit reaches only its exact stable live tab once. Complete OSC 133
+  prompt reports now provide bounded, private previous/next prompt navigation
+  with ⌘↑/⌘↓ and context-menu paths; resize, history-budget changes, clear, and
+  scrollback eviction fail closed instead of targeting stale rows. Enhanced
+  Kitty/keypad input, command/output ranges, semantic job names, accessibility,
+  native Linux IME and interaction/visual evidence, and measured Unicode/
+  resident/idle/active performance keep G3 partial.
 - **System Settings** 🟡 — navigation + search, subpage history, real Linux
   **Network / VPN / Sound / Battery / Displays** services, and validated,
   atomically persisted niri controls for **Keyboard / Mouse / Trackpad**. The

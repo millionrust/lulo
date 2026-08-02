@@ -1,4 +1,14 @@
 const MAX_OSC_PAYLOAD_BYTES: usize = 1024;
+/// An 8 KiB reader chunk can contain at most 1,024 minimal BEL-terminated
+/// `OSC 133;A` reports, so this preserves every marker from one worker read.
+const MAX_SHELL_MARKERS_PER_READ: usize = 1024;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ShellMarker {
+    /// Byte boundary immediately after this non-rendering OSC in filtered output.
+    pub(crate) output_offset: usize,
+    pub(crate) payload: String,
+}
 
 #[derive(Debug, Default)]
 enum State {
@@ -22,7 +32,7 @@ enum State {
 pub(crate) struct OutputFilter {
     state: State,
     current_directory_uri: Option<String>,
-    shell_marker: Option<String>,
+    shell_markers: Vec<ShellMarker>,
 }
 
 impl OutputFilter {
@@ -31,10 +41,15 @@ impl OutputFilter {
             if let Some(uri) = current_directory_uri(bytes) {
                 self.current_directory_uri = Some(uri.to_owned());
             }
-            if let Some(marker) = shell_marker(bytes) {
-                self.shell_marker = Some(marker.to_owned());
-            }
             output.extend_from_slice(bytes);
+            if let Some(marker) = shell_marker(bytes) {
+                if self.shell_markers.len() < MAX_SHELL_MARKERS_PER_READ {
+                    self.shell_markers.push(ShellMarker {
+                        output_offset: output.len(),
+                        payload: marker.to_owned(),
+                    });
+                }
+            }
         }
     }
 
@@ -42,8 +57,8 @@ impl OutputFilter {
         self.current_directory_uri.take()
     }
 
-    pub(crate) fn take_shell_marker(&mut self) -> Option<String> {
-        self.shell_marker.take()
+    pub(crate) fn take_shell_markers(&mut self) -> Vec<ShellMarker> {
+        std::mem::take(&mut self.shell_markers)
     }
 
     fn push_osc_payload(
@@ -326,18 +341,36 @@ mod tests {
 
         filter.filter_into(b"\x1b]133;", &mut output);
         assert!(output.is_empty());
-        assert_eq!(filter.take_shell_marker(), None);
+        assert!(filter.take_shell_markers().is_empty());
 
         filter.filter_into(b"C\x1b\\running", &mut output);
         assert_eq!(output, b"\x1b]133;C\x1b\\running");
-        assert_eq!(filter.take_shell_marker().as_deref(), Some("C"));
+        assert_eq!(
+            filter.take_shell_markers(),
+            [super::ShellMarker {
+                output_offset: 9,
+                payload: "C".into(),
+            }]
+        );
 
         filter.filter_into(b"\x1b]133;D;7\x07\x1b]133;A\x07prompt", &mut output);
-        assert_eq!(filter.take_shell_marker().as_deref(), Some("A"));
-        assert_eq!(filter.take_shell_marker(), None);
+        assert_eq!(
+            filter.take_shell_markers(),
+            [
+                super::ShellMarker {
+                    output_offset: 10,
+                    payload: "D;7".into(),
+                },
+                super::ShellMarker {
+                    output_offset: 18,
+                    payload: "A".into(),
+                },
+            ]
+        );
+        assert!(filter.take_shell_markers().is_empty());
 
         filter.filter_into(b"\x1b]133;D;private\x1bXplain", &mut output);
         assert_eq!(output, b"Xplain");
-        assert_eq!(filter.take_shell_marker(), None);
+        assert!(filter.take_shell_markers().is_empty());
     }
 }

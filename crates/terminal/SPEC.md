@@ -161,7 +161,14 @@ suffix; a nonzero `D` retains `Failed status` until the next prompt/input phase.
 Zero or statusless completion has no failure badge. Invalid, control-bearing,
 oversized, or out-of-range reports change nothing. This presentation context is
 never trusted for close, signal, child-lifecycle, or command-text decisions and
-adds no timer or output scraping.
+adds no timer or output scraping. Every complete `A` report is routed at its
+exact filtered-parser boundary and records only a retained-grid line coordinate,
+never prompt or command text. Up to 512 exact-session marks provide Previous
+Prompt (⌘↑) and Next Prompt (⌘↓) actions plus context-menu paths. Navigation
+places the target at the viewport top where history permits. Resize, clear, and
+history-budget changes discard coordinates; alternate-screen reports and a full
+scrollback eviction boundary record or resolve nothing rather than targeting a
+stale row.
 Terminal mouse input now follows the parsed xterm 1000/1002/1003 tracking mode
 and 1005/1006 coordinate encoding. Press, balanced release, cell-deduplicated
 drag/all-motion, vertical and horizontal wheel events use one-based viewport
@@ -183,7 +190,7 @@ same truthful writer-failure path as keyboard, paste, and mouse input, and their
 successful path does not request a repaint.
 
 The complete application claim remains blocked on numeric-keypad identity,
-reviewed prompt-mark navigation, command-history/output ranges, and job
+command-history/output ranges, and job
 semantics beyond titles, OSC 7 directories, and OSC 133 phase/status reports;
 accessible terminal text semantics; Linux interaction/visual evidence
 (including native IME proof); and measured Unicode/resident/idle/active
@@ -216,8 +223,12 @@ performance.
   session sharing, and live-directory revalidation. The session alone may pass
   a validated local path directly to the next PTY spawn.
 - `shell_integration` owns the bounded OSC 133 marker grammar, exact-session
-  command phase, and `Running`/`Failed status` presentation label. Kernel PTY
-  and child authorities remain the sole source of process-control truth.
+  command phase, private 512-coordinate prompt-mark history, navigation policy,
+  and `Running`/`Failed status` presentation label. `output_filter` preserves
+  every marker and parser offset from one bounded 8 KiB worker read; `session`
+  alone captures the corresponding primary-grid coordinate and applies the
+  resolved display offset. Kernel PTY and child authorities remain the sole
+  source of process-control truth.
 - `hyperlink` owns the 768-byte activation bound, non-spoofing URI validation,
   web/email scheme allowlist, credential refusal, and privacy-safe destination
   preview. The pointer adapter re-reads exact Alacritty cell metadata before
@@ -268,9 +279,9 @@ performance.
 
 Terminal does not scrape shell output to infer commands, directories, or job
 names. It accepts only complete bounded title, OSC 7 directory, and OSC 133
-phase/status reports. Prompt-mark navigation, command-aware history/output
-ranges, and semantic job names require separately reviewed state before they
-may be shown.
+phase/status reports. Prompt navigation trusts only OSC 133 `A` positions and
+stores no shell text. Command-aware history/output ranges and semantic job names
+require separately reviewed state before they may be shown.
 
 ## Child lifecycle and close safety
 
@@ -439,9 +450,10 @@ activation bound; portal errors prove the requested URI is never retained.
 OSC 7 tests cover split completion, exact URI extraction, malformed/overlong
 discard, local session isolation, remote display-only state, repeated reports,
 and scheme/credential/query/control/directional refusal.
-OSC 133 tests cover split extraction, last-report coalescing, exact-session
-isolation, running/failure/success projection, invalid status and command-text
-refusal, and lifecycle/transport label precedence.
+OSC 133 tests cover split extraction, ordered multi-report parser offsets,
+exact-session isolation, running/failure/success projection, invalid status and
+command-text refusal, bounded private prompt navigation, eviction refusal, and
+lifecycle/transport label precedence.
 Combining-allocation tests cover multiple independently styled cells, exact
 retention, wide-character targeting, a UTF-8 sequence split between reads, and
 ASCII CSI REP amplification of a prior combining scalar.

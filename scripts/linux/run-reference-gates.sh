@@ -11,6 +11,7 @@ expected_desktop=gnome
 minimum_kib=$((15 * 1024 * 1024))
 build_minimum_kib=$((25 * 1024 * 1024))
 storage_blocked=false
+summary_file=""
 
 usage() {
   echo "usage: $0 [--session gnome|niri|any] [--preflight-only] [--with-upstream-smoke] [--with-performance]" >&2
@@ -78,14 +79,42 @@ if [[ "$preflight_only" == true ]]; then
 fi
 
 mkdir -p "$evidence_dir"
+summary_file="$evidence_dir/gate-summary.tsv"
+{
+  printf 'schema\t1\n'
+  printf 'git_commit\t%s\n' "$(git -C "$repo_root" rev-parse HEAD)"
+  printf 'expected_desktop\t%s\n' "$expected_desktop"
+  printf 'upstream_smoke_requested\t%s\n' "$run_upstream_smoke"
+  printf 'performance_requested\t%s\n' "$run_performance"
+  printf 'gate\tstatus\texit_status\n'
+} >"$summary_file"
+
+record_gate() {
+  local name=$1
+  local status=$2
+  local exit_status=$3
+  printf '%s\t%s\t%s\n' "$name" "$status" "$exit_status" >>"$summary_file"
+}
+
 if ! python3 "$repo_root/scripts/linux/reference-preflight.py" "${preflight_args[@]}" \
   2>&1 | tee "$evidence_dir/preflight.log"; then
+  record_gate preflight fail "${PIPESTATUS[0]}"
+  printf 'overall\tfail\n' >>"$summary_file"
   echo "reference gates stopped before evidence collection" >&2
+  echo "reviewable summary: $summary_file" >&2
   exit 3
 fi
-bash "$repo_root/scripts/linux/collect-reference-evidence.sh" "$evidence_dir"
+record_gate preflight pass 0
 
 failed=0
+if bash "$repo_root/scripts/linux/collect-reference-evidence.sh" "$evidence_dir"; then
+  record_gate evidence-collection pass 0
+else
+  evidence_status=$?
+  record_gate evidence-collection fail "$evidence_status"
+  failed=1
+fi
+
 available_kib() {
   df -Pk "$repo_root" | awk 'NR == 2 { print $4 }'
 }
@@ -98,6 +127,7 @@ run_gate() {
   if [[ "$storage_blocked" == true ]]; then
     echo "$name skipped because the storage floor was reached" \
       | tee "$evidence_dir/$name.log" >&2
+    record_gate "$name" skipped-storage "-"
     return
   fi
   local available
@@ -105,6 +135,7 @@ run_gate() {
   if (( available < required_kib )); then
     echo "$name stopped: ${available} KiB free; ${required_kib} KiB required" \
       | tee "$evidence_dir/$name.log" >&2
+    record_gate "$name" fail-storage "-"
     failed=1
     storage_blocked=true
     return
@@ -123,6 +154,13 @@ run_gate() {
       | tee -a "$evidence_dir/$name.log" >&2
     failed=1
     storage_blocked=true
+  fi
+  if [[ $status -ne 0 ]]; then
+    record_gate "$name" fail "$status"
+  elif [[ "$storage_blocked" == true ]]; then
+    record_gate "$name" fail-storage 0
+  else
+    record_gate "$name" pass 0
   fi
 }
 
@@ -154,8 +192,11 @@ fi
 
 echo
 if [[ $failed -eq 0 ]]; then
+  printf 'overall\tpass\n' >>"$summary_file"
   echo "all requested Linux reference gates passed; evidence: $evidence_dir"
 else
+  printf 'overall\tfail\n' >>"$summary_file"
   echo "one or more Linux reference gates failed; evidence: $evidence_dir" >&2
 fi
+echo "reviewable summary: $summary_file"
 exit "$failed"

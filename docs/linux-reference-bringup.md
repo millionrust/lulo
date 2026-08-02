@@ -70,6 +70,11 @@ Vulkan, accessibility, portal, package, harness-test, Clippy, test, policy, and
 nested-smoke evidence under ignored
 `target/linux-evidence/<UTC timestamp>/`. Review the files before sharing them;
 the collector deliberately omits hostname, machine ID, and hardware serials.
+Each full run also writes `gate-summary.tsv`, binding the exact commit, requested
+session, optional-gate selection, every gate's pass/fail/skip state, command exit
+status, and overall result. Start review with that bounded summary, then inspect
+the corresponding log for every failure; the summary never turns an unrun or
+storage-skipped gate into a pass.
 
 The default desktop gate is the untouched GNOME baseline. For an explicitly
 separate niri repeat use `--session niri`; `--session any` is diagnostic only

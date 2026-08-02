@@ -423,6 +423,12 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
 ## Toolbar controls
 - Left: back/forward chevrons. Title (left, 13 pt semibold) after nav.
 - Right: view segmented control (grid/list[active]/columns/gallery), share, tag, more, Search field.
+- Back/forward, view selection, and More use shared semantic buttons with
+  visible selected/disabled state and keyboard focus. Tabs and their close/new
+  actions, sidebar destinations and volume eject, sortable column headers,
+  path components, and Get Info close use the same shared button boundary.
+  Icon-only actions expose explicit tooltips; unavailable history navigation
+  is disabled rather than retaining an inert click target.
 
 ## Accessibility text size
 - Finder-owned labels and chrome follow rmac's bounded 100%, 115%, and 130% text preference.

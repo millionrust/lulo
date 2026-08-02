@@ -54,7 +54,7 @@ use gpui::{
     ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
-use gpui_component::StyledExt as _;
+use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use rmac_ui::{Button, InputEvent, InputState, SearchField, TextField, Toggle};
 

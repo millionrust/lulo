@@ -161,12 +161,9 @@ impl FinderView {
             .text_color(secondary());
         for (i, (name, path)) in comps.into_iter().enumerate() {
             bar = bar.child(
-                div()
-                    .id(SharedString::from(format!("crumb-{i}")))
-                    .px_1()
-                    .rounded(px(3.0))
-                    .hover(|h| h.bg(rmac_ui::mac::hover()))
-                    .child(name)
+                Button::new(SharedString::from(format!("crumb-{i}")), name)
+                    .ghost()
+                    .xsmall()
                     .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))),
             );
             if i + 1 < n {

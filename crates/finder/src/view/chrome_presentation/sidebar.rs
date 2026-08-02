@@ -26,7 +26,6 @@ impl FinderView {
         let tag_name = p.name.clone();
         let kind = p.kind;
         let main = div()
-            .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
             .flex()
             .items_center()
@@ -34,19 +33,21 @@ impl FinderView {
             .min_w(px(0.0))
             .child(leading)
             .child(
-                div()
-                    .flex_1()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(label())
-                    .truncate()
-                    .child(p.name.clone()),
-            )
-            .on_click(cx.listener(move |this, _, _, cx| match kind {
-                PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
-                PlaceKind::Recents => this.recents_click(cx),
-                PlaceKind::Trash => this.trash_click(cx),
-                _ => this.navigate(np.clone(), cx),
-            }));
+                Button::new(
+                    SharedString::from(format!("placemain-{key}")),
+                    p.name.clone(),
+                )
+                .ghost()
+                .xsmall()
+                .selected(selected)
+                .flex_1()
+                .on_click(cx.listener(move |this, _, _, cx| match kind {
+                    PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
+                    PlaceKind::Recents => this.recents_click(cx),
+                    PlaceKind::Trash => this.trash_click(cx),
+                    _ => this.navigate(np.clone(), cx),
+                })),
+            );
 
         let mut row = div()
             .id(SharedString::from(format!("place-{key}")))
@@ -66,18 +67,12 @@ impl FinderView {
 
         if p.kind == PlaceKind::Volume {
             let ep = p.path.clone();
+            let tooltip = format!("Eject {}", p.name);
             row = row.child(
-                div()
-                    .id(SharedString::from(format!("eject-{key}")))
-                    .w(px(18.0))
-                    .h(px(18.0))
-                    .flex()
-                    .flex_none()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(4.0))
-                    .hover(|h| h.bg(rmac_ui::mac::hover()))
-                    .child(icon("icons/eject.svg", 11.0, secondary()))
+                Button::new(SharedString::from(format!("eject-{key}")), "Eject")
+                    .ghost()
+                    .xsmall()
+                    .tooltip(tooltip)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.eject_volume(ep.clone(), cx);
                     })),

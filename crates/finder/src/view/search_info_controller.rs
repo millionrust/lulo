@@ -187,12 +187,9 @@ impl FinderView {
             .child(
                 // header bar with close
                 div().h(px(28.0)).flex().items_center().px_2().child(
-                    div()
-                        .id("info-close")
-                        .w(px(14.0))
-                        .h(px(14.0))
-                        .rounded_full()
-                        .bg(hsl(0xff5f57))
+                    Button::new("info-close", "Close")
+                        .ghost()
+                        .xsmall()
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.info = None;
                             cx.notify();

@@ -2,41 +2,23 @@ use super::*;
 
 impl FinderView {
     pub(in crate::view) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let nav = |id: &'static str, glyph: &'static str, enabled: bool| {
-            div()
-                .id(id)
-                .w(px(26.0))
-                .h(px(24.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.0))
-                .when(enabled, |el: Stateful<Div>| {
-                    el.hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
-                })
-                .child(icon(
-                    glyph,
-                    17.0,
-                    if enabled { label() } else { tertiary() },
-                ))
+        let nav = |id: &'static str, icon_name: IconName, tooltip: &'static str, enabled: bool| {
+            Button::new(id, "")
+                .icon(Icon::new(icon_name).text_color(rmac_ui::mac::text()))
+                .ghost()
+                .with_size(Size::Small)
+                .disabled(!enabled)
+                .tooltip(tooltip)
         };
         let cur = self.view;
-        let seg = |id: &'static str, glyph: &'static str, mode: ViewMode| {
+        let seg = |id: &'static str, icon_name: IconName, tooltip: &'static str, mode: ViewMode| {
             let active = cur == mode;
-            div()
-                .id(id)
-                .w(px(34.0))
-                .h(px(22.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.0))
-                .when(active, |el: Stateful<Div>| el.bg(rmac_ui::mac::raised()))
-                .child(icon(
-                    glyph,
-                    15.0,
-                    if active { label() } else { secondary() },
-                ))
+            Button::new(id, "")
+                .icon(Icon::new(icon_name).text_color(rmac_ui::mac::text()))
+                .ghost()
+                .with_size(Size::Small)
+                .selected(active)
+                .tooltip(tooltip)
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if this.trash_view && mode == ViewMode::Column {
                         this.operation_error = Some("Column view is unavailable in Trash".into());
@@ -54,10 +36,25 @@ impl FinderView {
             .p_0p5()
             .rounded(px(7.0))
             .bg(rmac_ui::mac::control_fill())
-            .child(seg("v-icon", "icons/layout-grid.svg", ViewMode::Icon))
-            .child(seg("v-list", "icons/list.svg", ViewMode::List))
-            .child(seg("v-col", "icons/columns-3.svg", ViewMode::Column))
-            .child(seg("v-gal", "icons/image.svg", ViewMode::Gallery));
+            .child(seg(
+                "v-icon",
+                IconName::LayoutDashboard,
+                "Icon View",
+                ViewMode::Icon,
+            ))
+            .child(seg("v-list", IconName::Menu, "List View", ViewMode::List))
+            .child(seg(
+                "v-col",
+                IconName::PanelLeft,
+                "Column View",
+                ViewMode::Column,
+            ))
+            .child(seg(
+                "v-gal",
+                IconName::GalleryVerticalEnd,
+                "Gallery View",
+                ViewMode::Gallery,
+            ));
 
         let tool = |glyph: &'static str| {
             div()
@@ -121,14 +118,20 @@ impl FinderView {
                     .child(
                         nav(
                             "back",
-                            "icons/chevron-left.svg",
+                            IconName::ChevronLeft,
+                            "Back",
                             self.trash_view || !self.back.is_empty(),
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
                     )
                     .child(
-                        nav("fwd", "icons/chevron-right.svg", !self.fwd.is_empty())
-                            .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
+                        nav(
+                            "fwd",
+                            IconName::ChevronRight,
+                            "Forward",
+                            !self.fwd.is_empty(),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
                     ),
             )
             .child(
@@ -145,23 +148,15 @@ impl FinderView {
             .child(tool("icons/tag.svg"))
             // The ⋯ button opens the item context menu (anchored below itself).
             .child(
-                div()
-                    .id("more")
-                    .w(px(30.0))
-                    .h(px(24.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(5.0))
-                    .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
-                    .child(icon("icons/ellipsis.svg", 16.0, secondary()))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                            this.menu_at = Some(ev.position);
-                            cx.notify();
-                        }),
-                    ),
+                Button::new("more", "")
+                    .icon(Icon::new(IconName::Ellipsis).text_color(rmac_ui::mac::text()))
+                    .ghost()
+                    .with_size(Size::Small)
+                    .tooltip("More Actions")
+                    .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| {
+                        this.menu_at = Some(ev.position());
+                        cx.notify();
+                    })),
             )
             .child(search)
     }

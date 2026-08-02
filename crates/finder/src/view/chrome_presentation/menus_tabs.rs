@@ -107,43 +107,28 @@ impl FinderView {
                         el.hover(|h| h.bg(rmac_ui::mac::hover()))
                     })
                     .child(
-                        div()
-                            .id(SharedString::from(format!("tabname-{i}")))
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(label())
-                            .child(name)
+                        Button::new(SharedString::from(format!("tabname-{i}")), name)
+                            .ghost()
+                            .xsmall()
+                            .selected(active)
                             .on_click(cx.listener(move |this, _, _, cx| this.select_tab(i, cx))),
                     )
                     .child(
-                        div()
-                            .id(SharedString::from(format!("tabclose-{i}")))
-                            .w(px(18.0))
-                            .h(px(18.0))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(3.0))
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(secondary())
-                            .hover(|h| h.bg(rmac_ui::mac::control_fill_hover()))
-                            .child("×")
+                        Button::new(SharedString::from(format!("tabclose-{i}")), "")
+                            .icon(Icon::new(IconName::Close).text_color(rmac_ui::mac::text()))
+                            .ghost()
+                            .xsmall()
+                            .tooltip("Close Tab")
                             .on_click(cx.listener(move |this, _, _, cx| this.close_tab(i, cx))),
                     ),
             );
         }
         bar.child(div().flex_1()).child(
-            div()
-                .id("newtab")
-                .w(px(26.0))
-                .h(px(26.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.0))
-                .text_size(rmac_ui::text_px(16.0))
-                .text_color(secondary())
-                .hover(|h| h.bg(rmac_ui::mac::hover()))
-                .child("+")
+            Button::new("newtab", "")
+                .icon(Icon::new(IconName::Plus).text_color(rmac_ui::mac::text()))
+                .ghost()
+                .xsmall()
+                .tooltip("New Tab")
                 .on_click(cx.listener(|this, _, _, cx| this.new_tab(cx))),
         )
     }

@@ -10,37 +10,21 @@ impl FinderView {
             self.query.read(cx).value().to_lowercase()
         };
 
-        let sort_caret = |key: SortKey| -> Option<Svg> {
-            if !self.search_relevance_order && self.sort_key == key {
-                Some(icon(
-                    if self.sort_asc {
-                        "icons/chevron-up.svg"
-                    } else {
-                        "icons/chevron-down.svg"
-                    },
-                    11.0,
-                    tertiary(),
-                ))
-            } else {
-                None
-            }
-        };
         let head = |w: Option<f32>, text: &'static str, key: SortKey, pl: bool| {
-            let caret = sort_caret(key);
-            let mut cell = div()
-                .id(text)
-                .flex()
-                .items_center()
-                .gap_1()
-                .when(pl, |el: Stateful<Div>| el.pl_4())
+            let active = !self.search_relevance_order && self.sort_key == key;
+            let title: SharedString = if active {
+                format!("{text} {}", if self.sort_asc { "↑" } else { "↓" }).into()
+            } else {
+                text.into()
+            };
+            Button::new(text, title)
+                .ghost()
+                .xsmall()
+                .selected(active)
+                .when(pl, |button| button.pl_4())
                 .when_some(w, |el, w| el.w(px(w)))
                 .when(w.is_none(), |el| el.flex_1())
-                .child(text)
-                .on_click(cx.listener(move |this, _, _, cx| this.set_sort(key, cx)));
-            if let Some(c) = caret {
-                cell = cell.child(c);
-            }
-            cell
+                .on_click(cx.listener(move |this, _, _, cx| this.set_sort(key, cx)))
         };
 
         let header = div()

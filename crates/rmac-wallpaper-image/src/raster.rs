@@ -15,12 +15,21 @@ pub struct RasterIssue {
     pub kind: RasterIssueKind,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RasterSource {
+    BuiltIn(rmac_wallpaper::BuiltInId),
+    UserFile,
+}
+
 #[derive(Clone, Debug)]
 pub struct RasterSurface {
     pub output: rmac_compositor::OutputId,
     pub logical_size: rmac_compositor::LogicalSize,
     pub scale: f64,
     pub fit: rmac_shell_settings::WallpaperFit,
+    /// Actual path-free source after any per-output fallback.
+    pub source: RasterSource,
+    pub fallback: bool,
     pub layout: rmac_wallpaper::Layout,
     pub image: Arc<Decoded>,
 }
@@ -37,21 +46,39 @@ pub fn rasterize(plan: &rmac_wallpaper::Plan, cache: &Cache) -> Rasterized {
     let mut rasterized = Rasterized::default();
     for surface in &plan.surfaces {
         let target = physical_target(surface.logical_size, surface.scale);
-        let resolved = match rmac_wallpaper_system::resolve(&surface.source) {
-            Ok(resolved) => resolved,
+        let mut fallback = plan
+            .issues
+            .iter()
+            .any(|issue| issue.output == surface.output);
+        let (mut actual_source, resolved) = match rmac_wallpaper_system::resolve(&surface.source) {
+            Ok(resolved) => {
+                let source = match &resolved {
+                    rmac_wallpaper_system::ResolvedSource::BuiltIn(metadata) => {
+                        RasterSource::BuiltIn(metadata.id)
+                    }
+                    rmac_wallpaper_system::ResolvedSource::File(_) => RasterSource::UserFile,
+                };
+                (source, resolved)
+            }
             Err(error) => {
+                fallback = true;
                 rasterized.issues.push(RasterIssue {
                     output: surface.output.clone(),
                     kind: RasterIssueKind::Resolve(error.kind),
                 });
-                rmac_wallpaper_system::ResolvedSource::BuiltIn(
-                    rmac_wallpaper::DEFAULT_BUILT_IN.metadata(),
+                (
+                    RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN),
+                    rmac_wallpaper_system::ResolvedSource::BuiltIn(
+                        rmac_wallpaper::DEFAULT_BUILT_IN.metadata(),
+                    ),
                 )
             }
         };
         let image = match cache.get_or_decode(resolved, target) {
             Ok(image) => image,
             Err(error) => {
+                fallback = true;
+                actual_source = RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN);
                 rasterized.issues.push(RasterIssue {
                     output: surface.output.clone(),
                     kind: RasterIssueKind::Decode(error.kind),
@@ -87,6 +114,8 @@ pub fn rasterize(plan: &rmac_wallpaper::Plan, cache: &Cache) -> Rasterized {
             logical_size: surface.logical_size,
             scale: surface.scale,
             fit: surface.fit,
+            source: actual_source,
+            fallback,
             layout,
             image,
         });

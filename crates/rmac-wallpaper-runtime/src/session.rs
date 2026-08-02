@@ -188,6 +188,8 @@ mod tests {
             logical_size,
             scale: 1.0,
             fit: rmac_shell_settings::WallpaperFit::Fill,
+            source: rmac_wallpaper_image::RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN),
+            fallback: false,
             layout: rmac_wallpaper::layout(
                 rmac_shell_settings::WallpaperFit::Fill,
                 rmac_compositor::PhysicalSize {

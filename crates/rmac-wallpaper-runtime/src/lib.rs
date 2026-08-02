@@ -1,5 +1,6 @@
 //! Live, last-known-good orchestration for the wallpaper session process.
 
+pub mod accessibility;
 mod coordinator;
 mod model;
 pub mod session;

@@ -230,6 +230,18 @@ impl Registry {
                 return Err(LifecycleError::DuplicatePlanOutput);
             }
         }
+        let mut plan_issues = BTreeSet::new();
+        for issue in &plan.issues {
+            if !requested.contains(&issue.output) || !plan_issues.insert(issue.output.clone()) {
+                return Err(LifecycleError::InvalidPlan);
+            }
+        }
+        let mut raster_issues = BTreeSet::new();
+        for issue in &rasterized.issues {
+            if !requested.contains(&issue.output) || !raster_issues.insert(issue.output.clone()) {
+                return Err(LifecycleError::InvalidRaster);
+            }
+        }
 
         let mut supplied = BTreeMap::new();
         for raster in &rasterized.surfaces {
@@ -242,6 +254,7 @@ impl Registry {
                 .find(|surface| surface.output == raster.output)
                 .expect("a requested raster has a plan surface");
             if !valid_raster(raster)
+                || !valid_raster_source(planned, raster, plan, rasterized)
                 || raster.logical_size != planned.logical_size
                 || raster.scale != planned.scale
                 || raster.fit != planned.fit
@@ -512,6 +525,8 @@ fn same_raster(
         && left.logical_size == right.logical_size
         && left.scale == right.scale
         && left.fit == right.fit
+        && left.source == right.source
+        && left.fallback == right.fallback
         && left.layout == right.layout
         && Arc::ptr_eq(&left.image, &right.image)
 }
@@ -525,7 +540,7 @@ fn valid_plan_surface(surface: &rmac_wallpaper::Surface) -> bool {
         && surface.scale > 0.0
 }
 
-fn valid_raster(surface: &rmac_wallpaper_image::RasterSurface) -> bool {
+pub(super) fn valid_raster(surface: &rmac_wallpaper_image::RasterSurface) -> bool {
     let pixels = u64::from(surface.image.width).checked_mul(u64::from(surface.image.height));
     let expected = pixels.and_then(|pixels| pixels.checked_mul(4));
     let destination = surface.layout.destination;
@@ -535,6 +550,7 @@ fn valid_raster(surface: &rmac_wallpaper_image::RasterSurface) -> bool {
         && surface.logical_size.height > 0.0
         && surface.scale.is_finite()
         && surface.scale > 0.0
+        && !(surface.fallback && surface.source == rmac_wallpaper_image::RasterSource::UserFile)
         && surface.image.width > 0
         && surface.image.height > 0
         && surface.image.width <= rmac_wallpaper_image::MAX_DIMENSION
@@ -556,6 +572,55 @@ fn valid_raster(surface: &rmac_wallpaper_image::RasterSurface) -> bool {
             surface.logical_size,
             surface.scale,
         ) == Ok(surface.layout)
+}
+
+fn valid_raster_source(
+    planned: &rmac_wallpaper::Surface,
+    raster: &rmac_wallpaper_image::RasterSurface,
+    plan: &rmac_wallpaper::Plan,
+    rasterized: &rmac_wallpaper_image::Rasterized,
+) -> bool {
+    let plan_issue = plan
+        .issues
+        .iter()
+        .find(|issue| issue.output == planned.output);
+    let raster_issue = rasterized
+        .issues
+        .iter()
+        .find(|issue| issue.output == planned.output);
+    let fallback = match (plan_issue, raster_issue, &planned.source) {
+        (None, None, _) => false,
+        (Some(_), None, rmac_wallpaper::Source::BuiltIn(id))
+            if *id == rmac_wallpaper::DEFAULT_BUILT_IN =>
+        {
+            true
+        }
+        (None, Some(issue), rmac_wallpaper::Source::File(_))
+            if matches!(
+                issue.kind,
+                rmac_wallpaper_image::RasterIssueKind::Resolve(_)
+                    | rmac_wallpaper_image::RasterIssueKind::Decode(_)
+            ) =>
+        {
+            true
+        }
+        _ => return false,
+    };
+    if raster.fallback != fallback {
+        return false;
+    }
+    if fallback {
+        return raster.source
+            == rmac_wallpaper_image::RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN);
+    }
+    match &planned.source {
+        rmac_wallpaper::Source::BuiltIn(id) => {
+            raster.source == rmac_wallpaper_image::RasterSource::BuiltIn(*id)
+        }
+        rmac_wallpaper::Source::File(_) => {
+            raster.source == rmac_wallpaper_image::RasterSource::UserFile
+        }
+    }
 }
 
 #[cfg(test)]
@@ -595,6 +660,8 @@ mod tests {
             logical_size,
             scale: 1.0,
             fit: rmac_shell_settings::WallpaperFit::Fill,
+            source: rmac_wallpaper_image::RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN),
+            fallback: false,
             layout: rmac_wallpaper::layout(
                 rmac_shell_settings::WallpaperFit::Fill,
                 physical_size,

@@ -92,6 +92,30 @@ that output, leaves its applied surface unchanged, and does not prevent peers
 from converging. Explicit retry or a changed desired frame clears that failure.
 Health-only runtime updates never create surface work.
 
+## Desktop accessibility contract
+
+Every accepted raster now retains one path-free actual source—its built-in ID
+or `UserFile`—plus whether a plan, resolve, or decode failure substituted the
+Aurora fallback. The surface registry verifies that metadata against the exact
+plan and raster issue set before admission, and source/fallback changes count
+as real presentation changes even when an image cache handle is reused.
+
+`rmac-wallpaper-runtime::accessibility` consumes the applied session snapshot,
+not desired wallpaper settings. It produces one named “Desktop” root and one
+named image node for each real applied background surface in stable order.
+Aurora and user images remain distinguishable without exposing a filename;
+Fill/Fit/Stretch/Center/Tile, fallback, retained-stale-frame, and failed-update
+state remain explicit. Every desktop surface is passive, has one-item reading
+order, and has no keyboard focus target.
+
+The projection accepts at most 32 surfaces and 512-byte private output
+identities. It verifies sorted unique requested/desired/unavailable/stale/
+applied/failure sets, exact unavailable derivation, host ownership, pending and
+applied raster validity, and output/raster identity agreement. Output IDs,
+paths, pixels, and source-health details never enter the semantic snapshot or
+its diagnostics. Defining this tree does not claim that the current framework
+can export it to AT-SPI.
+
 ## Motion
 
 Wallpaper changes use a 300 ms smoothstep crossfade capped at two seconds. The
@@ -163,6 +187,7 @@ stale generations on target/settings changes, and regenerates through the same
 bounded decoder when the file is replaced or edited.
 
 The Wayland adapter that executes this lifecycle as background layer surfaces,
-the supervised wallpaper executable and GPUI mandatory-preview window, backend
-installation assets/selection, and Linux portal/hotplug/frame-time evidence
-remain pending. D9 is therefore not complete.
+the supervised wallpaper executable and GPUI mandatory-preview window, export
+of the now-defined passive Desktop/image semantics, backend installation
+assets/selection, and Linux portal/hotplug/Orca/frame-time evidence remain
+pending. D9 is therefore not complete.

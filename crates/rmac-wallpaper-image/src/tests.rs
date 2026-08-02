@@ -129,6 +129,9 @@ fn rasterization_shares_user_decode_across_outputs_and_falls_back_per_failure() 
         &rasterized.surfaces[0].image,
         &rasterized.surfaces[1].image
     ));
+    assert!(rasterized.surfaces[..2]
+        .iter()
+        .all(|surface| { surface.source == RasterSource::UserFile && !surface.fallback }));
     assert_eq!(rasterized.issues.len(), 2);
     assert!(rasterized
         .issues
@@ -140,6 +143,10 @@ fn rasterization_shares_user_decode_across_outputs_and_falls_back_per_failure() 
         .any(|issue| matches!(issue.kind, RasterIssueKind::Resolve(_))));
     assert_eq!(rasterized.surfaces[2].image.physical_size(), target(16, 9));
     assert_eq!(rasterized.surfaces[3].image.physical_size(), target(16, 9));
+    assert!(rasterized.surfaces[2..].iter().all(|surface| {
+        surface.source == RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN)
+            && surface.fallback
+    }));
     std::fs::remove_dir_all(root).unwrap();
 }
 

@@ -455,46 +455,6 @@ impl NotesView {
         view
     }
 
-    fn apply_preview_event(&mut self, bridged: PreviewBridgeEvent, cx: &mut Context<Self>) {
-        if matches!(&bridged.event, PreviewWorkerEvent::Stopped { .. }) {
-            let unexpected = !self.closing && !self.preview_shutdown_requested;
-            self.preview.clear();
-            self.preview_image = None;
-            self.preview_shutdown_requested = true;
-            self.preview_worker = None;
-            if unexpected {
-                self.message = Some("Notes image previews stopped unexpectedly".into());
-            }
-            cx.notify();
-            return;
-        }
-        if bridged.event.project(&mut self.preview) {
-            self.preview_image = bridged.rendered;
-            cx.notify();
-        }
-    }
-
-    fn apply_markdown_preview_event(
-        &mut self,
-        event: MarkdownPreviewWorkerEvent,
-        cx: &mut Context<Self>,
-    ) {
-        if matches!(&event, MarkdownPreviewWorkerEvent::Stopped { .. }) {
-            let unexpected = !self.closing && !self.markdown_preview_shutdown_requested;
-            self.markdown_preview.clear();
-            self.markdown_preview_shutdown_requested = true;
-            self.markdown_preview_worker = None;
-            if unexpected {
-                self.message = Some("Notes Markdown preview stopped unexpectedly".into());
-            }
-            cx.notify();
-            return;
-        }
-        if event.project(&mut self.markdown_preview) {
-            cx.notify();
-        }
-    }
-
     fn apply_worker_event(
         &mut self,
         event: WorkerEvent,
@@ -1011,58 +971,6 @@ impl NotesView {
         }
         self.closing = true;
         window.remove_window();
-    }
-
-    fn request_markdown_preview_shutdown(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.markdown_preview_shutdown_requested {
-            return true;
-        }
-        self.markdown_preview.clear();
-        let result = self
-            .markdown_preview_worker
-            .as_ref()
-            .ok_or(MarkdownPreviewWorkerSendError::Closed)
-            .and_then(NotesMarkdownPreviewWorkerClient::try_shutdown);
-        match result {
-            Ok(()) | Err(MarkdownPreviewWorkerSendError::Closed) => {
-                self.markdown_preview_shutdown_requested = true;
-                true
-            }
-            Err(error) => {
-                self.message = Some(
-                    format!("Notes Markdown preview is still finishing: {error}. Try again.")
-                        .into(),
-                );
-                cx.notify();
-                false
-            }
-        }
-    }
-
-    fn request_preview_shutdown(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.preview_shutdown_requested {
-            return true;
-        }
-        self.preview.clear();
-        self.preview_image = None;
-        let result = self
-            .preview_worker
-            .as_ref()
-            .ok_or(PreviewWorkerSendError::Closed)
-            .and_then(NotesPreviewWorkerClient::try_shutdown);
-        match result {
-            Ok(()) | Err(PreviewWorkerSendError::Closed) => {
-                self.preview_shutdown_requested = true;
-                true
-            }
-            Err(error) => {
-                self.message = Some(
-                    format!("Notes image preview is still finishing: {error}. Try again.").into(),
-                );
-                cx.notify();
-                false
-            }
-        }
     }
 
     fn render_folder_dialog(&self, cx: &mut Context<Self>) -> Option<AnyElement> {

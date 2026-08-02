@@ -14,6 +14,7 @@ packages=(
   clang
   curl
   dbus
+  dpkg-dev
   fonts-inter
   git
   jq

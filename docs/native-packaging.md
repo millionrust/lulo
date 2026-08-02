@@ -40,14 +40,16 @@ an amd64 database to claim arm64 dependencies would not be truthful. The tool
 fails on missing dependency information and does not use
 `--ignore-missing-info`.
 
-Prepare the binaries separately. For example, after one reviewed locked
-release build on Linux:
+Prepare the exact binaries with the guarded native builder. It accepts only a
+new absolute output path, checks 25 GiB before the single locked release build,
+reuses the repository's normal target graph, calculates the staging-copy size
+before writing, preserves the 15 GiB floor, and publishes all 18 inputs
+atomically:
 
 ```bash
-binary_dir="$(mktemp -d)"
-install -m 0755 \
-  target/release/{rmac-app-drawer,rmac-files,rmac-notes,rmac-system-monitor,rmac-system-settings,rmac-terminal,rmac-text-editor,rmac-session-supervisor,rmac-launcher,rmac-quick-settings,rmac-notification-center-panel,rmac-notification-center,rmac-focus-service,rmac-shortcut-broker,rmac-shortcut-dispatch,rmac-locker,rmac-lock-coordinator,rmac-idle-locker} \
-  "${binary_dir}/"
+binary_dir="${PWD}/target/native-package-inputs"
+mkdir -p "$(dirname "${binary_dir}")"
+bash scripts/linux/build-native-inputs.sh --output "${binary_dir}"
 ```
 
 Choose a stable timestamp, such as the source revision timestamp, and build:
@@ -61,9 +63,9 @@ python3 scripts/linux/build-native-packages.py \
   --architecture amd64
 ```
 
-Use `arm64` and a different empty output directory on the native arm64
-builder. The assembler consumes the prebuilt files and never performs a hidden
-Rust build.
+Use `arm64` and a different empty output directory on the native arm64 builder.
+The assembler consumes the prebuilt files and never performs a hidden Rust
+build. The input builder is the only command in this flow that invokes Cargo.
 
 ## Exact dependencies
 

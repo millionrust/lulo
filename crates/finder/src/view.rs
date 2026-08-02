@@ -12,9 +12,11 @@ mod navigation;
 mod open_with_controller;
 mod operations;
 mod presentation;
+mod presentation_support;
 mod rename_controller;
 mod selection_controller;
 mod startup;
+mod transient_state;
 mod updates;
 
 use std::borrow::Cow;
@@ -59,6 +61,8 @@ use crate::watchers::{
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
 use crate::{directory_state, file_ops, operation_journal, pasteboard, quick_look, undo_journal};
 use filesystem_helpers::*;
+use presentation_support::*;
+use transient_state::*;
 
 actions!(
     finder,
@@ -100,213 +104,6 @@ struct DraggedPaths(Vec<PathBuf>);
 /// The little pill shown under the cursor while dragging.
 struct DragPreview {
     count: usize,
-}
-
-enum TransferEvent {
-    Progress(file_ops::TransferProgress),
-    Finished {
-        report: file_ops::TransferReport,
-        recovery_reviews: std::io::Result<Vec<operation_journal::RecoveryReview>>,
-        undo_availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
-    },
-}
-
-enum UndoEvent {
-    Progress(file_ops::CopyActivity),
-    Finished {
-        outcome: std::io::Result<Option<undo_journal::UndoOutcome>>,
-        availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
-    },
-}
-
-#[cfg(any(target_os = "linux", test))]
-#[derive(Clone, Copy)]
-enum TrashTaskKind {
-    Move,
-    Restore,
-    Delete,
-}
-
-#[cfg(any(target_os = "linux", test))]
-struct TrashCompletion {
-    kind: TrashTaskKind,
-    completed: usize,
-    cancelled: bool,
-    failures: Vec<file_ops::Failure>,
-    recovery: std::io::Result<(
-        trash_store::TrashRecovery,
-        Vec<trash_store::TrashRecoveryReview>,
-    )>,
-    undo_availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
-}
-
-#[cfg(any(target_os = "linux", test))]
-enum TrashEvent {
-    Progress { processed: usize, total: usize },
-    Finished(TrashCompletion),
-}
-
-#[derive(Clone)]
-struct ActiveTransfer {
-    label: SharedString,
-    phase: file_ops::TransferPhase,
-    processed: usize,
-    total: usize,
-    bytes_processed: u64,
-    bytes_total: u64,
-    cancel: Arc<AtomicBool>,
-    cancelling: bool,
-    keep_unfinished_in_clipboard: bool,
-    retained_clipboard: Vec<PathBuf>,
-}
-
-#[derive(Clone)]
-struct ActiveUndo {
-    label: SharedString,
-    phase: file_ops::TransferPhase,
-    bytes_processed: u64,
-    cancel: Arc<AtomicBool>,
-    cancelling: bool,
-}
-
-#[cfg(any(target_os = "linux", test))]
-#[derive(Clone)]
-struct ActiveTrash {
-    label: SharedString,
-    processed: usize,
-    total: usize,
-    cancel: Arc<AtomicBool>,
-    cancelling: bool,
-}
-
-#[cfg(any(target_os = "linux", test))]
-#[derive(Clone)]
-struct DeleteConfirmation {
-    items: Vec<trash_store::TrashedItem>,
-}
-
-#[derive(Clone)]
-struct OpenWithPicker {
-    path: PathBuf,
-    association: Option<rmac_apps::FileAssociation>,
-    selected: usize,
-    make_default: bool,
-    busy: bool,
-    error: Option<SharedString>,
-}
-
-#[derive(Clone)]
-struct QuickLookPanel {
-    paths: Vec<PathBuf>,
-    current: usize,
-    content: Option<quick_look::Content>,
-    error: Option<SharedString>,
-    cancel: Arc<AtomicBool>,
-}
-
-impl Render for DragPreview {
-    fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let n = self.count;
-        div()
-            .px_2()
-            .py_0p5()
-            .rounded(px(6.0))
-            .bg(rmac_ui::mac::accent())
-            .text_color(rmac_ui::mac::on_accent())
-            .text_size(rmac_ui::text_px(12.0))
-            .child(if n == 1 {
-                "1 item".to_string()
-            } else {
-                format!("{n} items")
-            })
-    }
-}
-
-#[derive(rust_embed::RustEmbed)]
-#[folder = "assets"]
-#[include = "icons/**/*.svg"]
-struct AppAssets;
-
-struct CombinedAssets;
-impl AssetSource for CombinedAssets {
-    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        if let Some(f) = AppAssets::get(path) {
-            return Ok(Some(f.data));
-        }
-        gpui_component_assets::Assets.load(path)
-    }
-    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let mut v: Vec<SharedString> = AppAssets::iter()
-            .filter(|p| p.starts_with(path))
-            .map(|p| SharedString::from(p.to_string()))
-            .collect();
-        if let Ok(mut o) = gpui_component_assets::Assets.list(path) {
-            v.append(&mut o);
-        }
-        Ok(v)
-    }
-}
-
-fn hsl(h: u32) -> Hsla {
-    gpui::rgb(h).into()
-}
-fn list_bg() -> Hsla {
-    rmac_ui::mac::list()
-}
-fn toolbar_bg() -> Hsla {
-    rmac_ui::mac::chrome()
-}
-fn sidebar_bg() -> Hsla {
-    rmac_ui::mac::sidebar()
-}
-fn alt_row() -> Hsla {
-    rmac_ui::mac::row_alternate()
-}
-fn sel() -> Hsla {
-    rmac_ui::mac::accent()
-}
-fn accent() -> Hsla {
-    rmac_ui::mac::accent()
-}
-fn sep() -> Hsla {
-    rmac_ui::mac::separator()
-}
-fn label() -> Hsla {
-    rmac_ui::mac::text()
-}
-fn secondary() -> Hsla {
-    rmac_ui::mac::text_secondary()
-}
-fn tertiary() -> Hsla {
-    rmac_ui::mac::text_tertiary()
-}
-fn drive_gray() -> Hsla {
-    rmac_ui::mac::text_secondary()
-}
-fn white() -> Hsla {
-    rmac_ui::mac::on_accent()
-}
-
-fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
-    svg()
-        .path(path)
-        .w(px(size))
-        .h(px(size))
-        .text_color(color)
-        .flex_none()
-}
-
-const SIDEBAR_W: f32 = 190.0;
-const DATE_W: f32 = 184.0;
-const SIZE_W: f32 = 80.0;
-const KIND_W: f32 = 150.0;
-
-fn root_volume_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Macintosh HD"
-    } else {
-        "Computer"
-    }
 }
 
 #[derive(Clone)]

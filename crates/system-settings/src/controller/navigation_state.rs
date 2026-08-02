@@ -17,6 +17,9 @@ impl Settings {
     }
 
     pub(super) fn push(&mut self, sub: SubPage, cx: &mut Context<Self>) {
+        if self.nav.len() >= rmac_system_settings::accessibility::MAX_NAVIGATION_DEPTH {
+            return;
+        }
         self.nav.push(sub);
         cx.notify();
     }

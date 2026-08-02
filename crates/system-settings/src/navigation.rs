@@ -22,6 +22,32 @@ pub(super) enum SubPage {
 }
 
 pub(super) const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
+pub(super) const PANE_ROUTES: [(&str, &str); 24] = [
+    ("wifi", "Wi-Fi"),
+    ("bluetooth", "Bluetooth"),
+    ("network", "Network"),
+    ("vpn", "VPN"),
+    ("battery", "Battery"),
+    ("general", "General"),
+    ("date-time", "Date & Time"),
+    ("language-region", "Language & Region"),
+    ("login-items", "Login Items"),
+    ("sharing", "Sharing"),
+    ("accessibility", "Accessibility"),
+    ("appearance", "Appearance"),
+    ("desktop-dock", "Desktop & Dock"),
+    ("displays", "Displays"),
+    ("spotlight", "Spotlight"),
+    ("wallpaper", "Wallpaper"),
+    ("notifications", "Notifications"),
+    ("sound", "Sound"),
+    ("keyboard", "Keyboard"),
+    ("mouse", "Mouse"),
+    ("trackpad", "Trackpad"),
+    ("focus", "Focus"),
+    ("lock-screen", "Lock Screen"),
+    ("privacy-security", "Privacy & Security"),
+];
 
 pub(super) fn categories() -> Vec<Vec<Category>> {
     let blue = color(0x0a84ff);
@@ -196,33 +222,15 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
 }
 
 pub(super) fn category_name_for_pane_id(pane_id: &str) -> Option<&'static str> {
-    Some(match pane_id {
-        "wifi" => "Wi-Fi",
-        "bluetooth" => "Bluetooth",
-        "network" => "Network",
-        "vpn" => "VPN",
-        "battery" => "Battery",
-        "general" => "General",
-        "date-time" => "Date & Time",
-        "language-region" => "Language & Region",
-        "login-items" => "Login Items",
-        "sharing" => "Sharing",
-        "accessibility" => "Accessibility",
-        "appearance" => "Appearance",
-        "desktop-dock" => "Desktop & Dock",
-        "displays" => "Displays",
-        "spotlight" => "Spotlight",
-        "wallpaper" => "Wallpaper",
-        "notifications" => "Notifications",
-        "sound" => "Sound",
-        "keyboard" => "Keyboard",
-        "mouse" => "Mouse",
-        "trackpad" => "Trackpad",
-        "focus" => "Focus",
-        "lock-screen" => "Lock Screen",
-        "privacy-security" => "Privacy & Security",
-        _ => return None,
-    })
+    PANE_ROUTES
+        .iter()
+        .find_map(|(id, name)| (*id == pane_id).then_some(*name))
+}
+
+pub(super) fn pane_id_for_category_name(name: &str) -> Option<&'static str> {
+    PANE_ROUTES
+        .iter()
+        .find_map(|(id, category)| (*category == name).then_some(*id))
 }
 
 pub(super) fn category_position(sections: &[Vec<Category>], name: &str) -> Option<(usize, usize)> {
@@ -311,5 +319,17 @@ mod tests {
         }
         assert!(category_name_for_pane_id("assistant").is_none());
         assert!(category_name_for_pane_id("screen-time").is_none());
+    }
+
+    #[test]
+    fn every_visible_category_has_one_stable_roundtrip_route() {
+        let categories = categories().into_iter().flatten().collect::<Vec<_>>();
+        assert_eq!(categories.len(), PANE_ROUTES.len());
+        for category in categories {
+            let name = category.name.as_ref();
+            let pane_id = pane_id_for_category_name(name)
+                .unwrap_or_else(|| panic!("missing pane ID for {name}"));
+            assert_eq!(category_name_for_pane_id(pane_id), Some(name));
+        }
     }
 }

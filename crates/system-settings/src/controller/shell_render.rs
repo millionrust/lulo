@@ -7,48 +7,7 @@ impl Render for Settings {
             self.focused_once = true;
             window.focus(&self.focus);
         }
-        let settings_error = self
-            .system_data_error
-            .clone()
-            .or_else(|| self.system_data_stream_error.clone())
-            .or_else(|| self.updates_error.clone())
-            .or_else(|| self.updates_stream_error.clone())
-            .or_else(|| self.storage_error.clone())
-            .or_else(|| self.storage_stream_error.clone())
-            .or_else(|| self.time_error.clone())
-            .or_else(|| self.time_stream_error.clone())
-            .or_else(|| self.locale_error.clone())
-            .or_else(|| self.locale_stream_error.clone())
-            .or_else(|| self.login_items_error.clone())
-            .or_else(|| self.login_items_stream_error.clone())
-            .or_else(|| self.sharing_error.clone())
-            .or_else(|| self.sharing_stream_error.clone())
-            .or_else(|| self.wifi_error.clone())
-            .or_else(|| self.wifi_stream_error.clone())
-            .or_else(|| self.bluetooth_error.clone())
-            .or_else(|| self.bluetooth_stream_error.clone())
-            .or_else(|| self.network_error.clone())
-            .or_else(|| self.network_stream_error.clone())
-            .or_else(|| self.vpn_error.clone())
-            .or_else(|| self.vpn_stream_error.clone())
-            .or_else(|| self.audio_error.clone())
-            .or_else(|| self.audio_stream_error.clone())
-            .or_else(|| self.power_error.clone())
-            .or_else(|| self.power_stream_error.clone())
-            .or_else(|| self.display_error.clone())
-            .or_else(|| self.input_error.clone())
-            .or_else(|| self.input_stream_error.clone())
-            .or_else(|| self.theme_error.clone())
-            .or_else(|| self.theme_store_stream_error.clone())
-            .or_else(|| self.theme_portal_stream_error.clone())
-            .or_else(|| self.shell_settings_error.clone())
-            .or_else(|| self.shell_settings_stream_error.clone())
-            .or_else(|| self.wallpaper_error.clone())
-            .or_else(|| self.spotlight_error.clone())
-            .or_else(|| self.gtk_text_error.clone())
-            .or_else(|| self.gtk_text_stream_error.clone())
-            .or_else(|| self.privacy_error.clone())
-            .or_else(|| self.privacy_stream_error.clone());
+        let settings_error = self.global_settings_error().cloned();
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         let wifi_enterprise_dialog = self.render_wifi_enterprise_dialog(cx);
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);
@@ -60,6 +19,7 @@ impl Render for Settings {
         let vpn_delete_dialog = self.render_vpn_delete_dialog(cx);
         let update_install_dialog = self.render_update_install_dialog(cx);
         div()
+            .id(rmac_system_settings::accessibility::ROOT_ID)
             .size_full()
             .v_flex()
             .track_focus(&self.focus)
@@ -209,54 +169,58 @@ impl Render for Settings {
             .child(self.render_topbar(cx))
             .when_some(settings_error, |settings, message| {
                 settings.child(
-                    Toast::new("settings-error", ToastKind::Error, "Settings error")
-                        .message(message)
-                        .rounded(px(0.0))
-                        .border_l_0()
-                        .border_r_0()
-                        .on_dismiss(cx.listener(|this, _, _, cx| {
-                            this.system_data_error = None;
-                            this.system_data_stream_error = None;
-                            this.updates_error = None;
-                            this.updates_stream_error = None;
-                            this.storage_error = None;
-                            this.storage_stream_error = None;
-                            this.time_error = None;
-                            this.time_stream_error = None;
-                            this.locale_error = None;
-                            this.locale_stream_error = None;
-                            this.login_items_error = None;
-                            this.login_items_stream_error = None;
-                            this.sharing_error = None;
-                            this.sharing_stream_error = None;
-                            this.wifi_error = None;
-                            this.wifi_stream_error = None;
-                            this.bluetooth_error = None;
-                            this.bluetooth_stream_error = None;
-                            this.network_error = None;
-                            this.network_stream_error = None;
-                            this.vpn_error = None;
-                            this.vpn_stream_error = None;
-                            this.audio_error = None;
-                            this.audio_stream_error = None;
-                            this.power_error = None;
-                            this.power_stream_error = None;
-                            this.display_error = None;
-                            this.input_error = None;
-                            this.input_stream_error = None;
-                            this.theme_error = None;
-                            this.theme_store_stream_error = None;
-                            this.theme_portal_stream_error = None;
-                            this.shell_settings_error = None;
-                            this.shell_settings_stream_error = None;
-                            this.wallpaper_error = None;
-                            this.spotlight_error = None;
-                            this.gtk_text_error = None;
-                            this.gtk_text_stream_error = None;
-                            this.privacy_error = None;
-                            this.privacy_stream_error = None;
-                            cx.notify();
-                        })),
+                    Toast::new(
+                        rmac_system_settings::accessibility::GLOBAL_ERROR_ID,
+                        ToastKind::Error,
+                        rmac_system_settings::accessibility::GLOBAL_ERROR_TITLE,
+                    )
+                    .message(message)
+                    .rounded(px(0.0))
+                    .border_l_0()
+                    .border_r_0()
+                    .on_dismiss(cx.listener(|this, _, _, cx| {
+                        this.system_data_error = None;
+                        this.system_data_stream_error = None;
+                        this.updates_error = None;
+                        this.updates_stream_error = None;
+                        this.storage_error = None;
+                        this.storage_stream_error = None;
+                        this.time_error = None;
+                        this.time_stream_error = None;
+                        this.locale_error = None;
+                        this.locale_stream_error = None;
+                        this.login_items_error = None;
+                        this.login_items_stream_error = None;
+                        this.sharing_error = None;
+                        this.sharing_stream_error = None;
+                        this.wifi_error = None;
+                        this.wifi_stream_error = None;
+                        this.bluetooth_error = None;
+                        this.bluetooth_stream_error = None;
+                        this.network_error = None;
+                        this.network_stream_error = None;
+                        this.vpn_error = None;
+                        this.vpn_stream_error = None;
+                        this.audio_error = None;
+                        this.audio_stream_error = None;
+                        this.power_error = None;
+                        this.power_stream_error = None;
+                        this.display_error = None;
+                        this.input_error = None;
+                        this.input_stream_error = None;
+                        this.theme_error = None;
+                        this.theme_store_stream_error = None;
+                        this.theme_portal_stream_error = None;
+                        this.shell_settings_error = None;
+                        this.shell_settings_stream_error = None;
+                        this.wallpaper_error = None;
+                        this.spotlight_error = None;
+                        this.gtk_text_error = None;
+                        this.gtk_text_stream_error = None;
+                        this.privacy_error = None;
+                        this.privacy_stream_error = None;
+                        cx.notify();
+                    })),
                 )
             })
             .child(

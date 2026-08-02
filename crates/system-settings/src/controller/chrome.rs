@@ -6,7 +6,7 @@ impl Settings {
     pub(super) fn render_topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let can_back = !self.nav.is_empty();
         let back = div()
-            .id("nav-back")
+            .id(rmac_system_settings::accessibility::BACK_ID)
             .flex()
             .items_center()
             .justify_center()
@@ -78,6 +78,7 @@ impl Settings {
 
     pub(super) fn render_sidebar(&self, cx: &Context<Self>) -> impl IntoElement {
         let search = div()
+            .id(rmac_system_settings::accessibility::SEARCH_ID)
             .mx_2()
             .mt_1()
             .mb_2()
@@ -94,7 +95,7 @@ impl Settings {
                     .flex_1()
                     .child(SearchField::new(&self.search).appearance(false)),
             );
-        let q = self.search.read(cx).value().to_lowercase();
+        let query = self.search.read(cx).value().to_string();
 
         let account = div()
             .flex()
@@ -131,12 +132,12 @@ impl Settings {
                         div()
                             .text_size(rmac_ui::text_px(11.0))
                             .text_color(secondary())
-                            .child("Local Account"),
+                            .child(rmac_system_settings::accessibility::LOCAL_ACCOUNT_LABEL),
                     ),
             );
 
         let mut col = div()
-            .id("sidebar-scroll")
+            .id(rmac_system_settings::accessibility::SIDEBAR_ID)
             .w(px(SIDEBAR_W))
             .h_full()
             .flex_shrink_0()
@@ -154,7 +155,12 @@ impl Settings {
             let matching: Vec<(usize, &Category)> = section
                 .iter()
                 .enumerate()
-                .filter(|(_, c)| q.is_empty() || c.name.to_lowercase().contains(&q))
+                .filter(|(_, category)| {
+                    rmac_system_settings::accessibility::category_matches(
+                        &query,
+                        category.name.as_ref(),
+                    )
+                })
                 .collect();
             if matching.is_empty() {
                 continue;

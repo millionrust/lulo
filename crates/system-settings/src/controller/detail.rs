@@ -40,7 +40,7 @@ impl Settings {
         };
 
         div()
-            .id("detail-scroll")
+            .id(rmac_system_settings::accessibility::DETAIL_ID)
             .flex_1()
             .h_full()
             .bg(pane_bg())
@@ -98,32 +98,14 @@ impl Settings {
         )])
     }
     pub(super) fn render_subpage(&self, sub: &SubPage, cx: &Context<Self>) -> Div {
-        let (title, body): (SharedString, Div) = match sub {
-            SubPage::About => ("About".into(), self.about_body(cx)),
-            SubPage::SoftwareUpdate => ("Software Update".into(), self.software_update_body(cx)),
-            SubPage::Storage => ("Storage".into(), self.storage_body(cx)),
-            SubPage::NotificationApp { app_id } => (
-                self.application_identity(app_id)
-                    .map(|identity| identity.name.clone())
-                    .unwrap_or_else(|| app_id.clone())
-                    .into(),
-                self.notification_app_body(app_id, cx),
-            ),
-            SubPage::FocusMode { mode_id } => {
-                let title = rmac_focus::ModeId::parse(mode_id)
-                    .ok()
-                    .and_then(|mode_id| {
-                        self.focus_policy_config
-                            .as_ref()
-                            .and_then(|configuration| configuration.mode(&mode_id))
-                            .map(|mode| mode.name().to_owned())
-                    })
-                    .unwrap_or_else(|| "Focus".into());
-                (title.into(), self.focus_mode_body(mode_id, cx))
-            }
-            SubPage::FocusSchedule { schedule_id } => {
-                ("Schedule".into(), self.focus_schedule_body(schedule_id, cx))
-            }
+        let title: SharedString = self.subpage_title(sub).into();
+        let body = match sub {
+            SubPage::About => self.about_body(cx),
+            SubPage::SoftwareUpdate => self.software_update_body(cx),
+            SubPage::Storage => self.storage_body(cx),
+            SubPage::NotificationApp { app_id } => self.notification_app_body(app_id, cx),
+            SubPage::FocusMode { mode_id } => self.focus_mode_body(mode_id, cx),
+            SubPage::FocusSchedule { schedule_id } => self.focus_schedule_body(schedule_id, cx),
         };
 
         let header = div()

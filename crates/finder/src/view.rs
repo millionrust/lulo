@@ -9,6 +9,7 @@ mod chrome_presentation;
 mod content_presentation;
 mod dialog_presentation;
 mod filesystem_helpers;
+mod item_operations;
 mod lifecycle_controller;
 mod mount_controller;
 mod navigation;
@@ -24,6 +25,7 @@ mod selection_controller;
 mod startup;
 mod transient_state;
 mod trash_controller;
+mod undo_controller;
 mod updates;
 
 use std::borrow::Cow;

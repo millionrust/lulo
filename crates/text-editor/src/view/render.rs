@@ -14,7 +14,10 @@ use crate::{
     ToggleFind, ToggleMono, ToggleReplace,
 };
 
-use super::{can_begin_print, ActiveAlert, EditorView, ExternalChange, Pending, CTX};
+use super::{
+    can_begin_print, responsive_layout::EditorLayout, ActiveAlert, EditorView, ExternalChange,
+    Pending, CTX,
+};
 
 impl EditorView {
     fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -63,6 +66,7 @@ impl EditorView {
             .child(
                 div()
                     .flex_1()
+                    .min_w_0()
                     .flex()
                     .items_center()
                     .justify_center()
@@ -70,10 +74,11 @@ impl EditorView {
                     .text_size(rmac_ui::text_px(13.0))
                     .font_weight(mac::MEDIUM)
                     .text_color(mac::text())
-                    .child(title)
+                    .child(div().min_w_0().truncate().child(title))
                     .when(dirty, |d| {
                         d.child(
                             div()
+                                .flex_none()
                                 .text_size(rmac_ui::text_px(12.0))
                                 .text_color(mac::text_secondary())
                                 .child("— Edited"),
@@ -144,7 +149,7 @@ impl EditorView {
         rmac_ui::toolbar(row)
     }
 
-    fn render_find_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_find_bar(&self, layout: EditorLayout, cx: &mut Context<Self>) -> impl IntoElement {
         let query_empty = self.find_input.read(cx).value().is_empty();
         let status: SharedString = if query_empty {
             "".into()
@@ -160,7 +165,7 @@ impl EditorView {
             .gap_2()
             .child(
                 div()
-                    .w(px(220.0))
+                    .w(px(layout.find_input_width))
                     .child(SearchField::new(&self.find_input).appearance(true)),
             )
             .child(
@@ -200,7 +205,7 @@ impl EditorView {
             .v_flex()
             .gap_2()
             .w_full()
-            .px(px(48.0))
+            .px(px(layout.content_padding))
             .py(px(8.0))
             .bg(mac::chrome())
             .border_b_1()
@@ -215,7 +220,7 @@ impl EditorView {
                     .gap_2()
                     .child(
                         div()
-                            .w(px(220.0))
+                            .w(px(layout.find_input_width))
                             .child(TextField::new(&self.replace_input).appearance(true)),
                     )
                     .child(
@@ -244,7 +249,7 @@ impl EditorView {
 
     /// The read-only formatted RTF preview: a banner plus styled text built from
     /// the parsed runs (weight / italic / underline / color preserved).
-    fn render_rtf_preview(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_rtf_preview(&self, layout: EditorLayout, cx: &mut Context<Self>) -> impl IntoElement {
         let base = if self.mono {
             rmac_ui::MONO_FONT
         } else {
@@ -290,9 +295,12 @@ impl EditorView {
 
         let banner = div()
             .flex_none()
-            .h_flex()
-            .items_center()
-            .justify_between()
+            .when(layout.compact, |banner| {
+                banner.v_flex().items_start().gap_2()
+            })
+            .when(!layout.compact, |banner| {
+                banner.h_flex().items_center().justify_between()
+            })
             .mb_4()
             .px_3()
             .py_2()
@@ -318,7 +326,7 @@ impl EditorView {
             .id("rtf-preview")
             .flex_1()
             .overflow_y_scroll()
-            .px(px(48.0))
+            .px(px(layout.content_padding))
             .py(px(20.0))
             .text_size(px(size))
             .line_height(px(size * 1.5))
@@ -540,6 +548,7 @@ impl EditorView {
 
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let layout = super::responsive_layout::editor_layout(f32::from(window.bounds().size.width));
         let filename = self.filename();
         let subject = if self.dirty {
             format!("{filename} — Edited")
@@ -741,14 +750,14 @@ impl Render for EditorView {
                         ),
                 )
             })
-            .when(self.find_open, |d| d.child(self.render_find_bar(cx)))
+            .when(self.find_open, |d| d.child(self.render_find_bar(layout, cx)))
             .child(if self.rtf_runs.is_some() {
-                self.render_rtf_preview(cx).into_any_element()
+                self.render_rtf_preview(layout, cx).into_any_element()
             } else {
                 div()
                     .flex_1()
                     .min_h(px(0.0))
-                    .px(px(48.0))
+                    .px(px(layout.content_padding))
                     .py(px(20.0))
                     .font_family(font_family)
                     .text_size(px(size))

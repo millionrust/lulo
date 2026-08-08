@@ -1,6 +1,7 @@
 //! Text Editor startup, document-window, and interaction controller.
 
 mod render;
+mod responsive_layout;
 
 use std::{
     ffi::OsString,

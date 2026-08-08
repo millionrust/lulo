@@ -11,8 +11,8 @@
 
 use gpui::{
     anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
-    ElementId, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, MouseButton,
-    ParentElement as _, Pixels, Point, SharedString, Styled as _, Window,
+    ElementId, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
+    MouseButton, ParentElement as _, Pixels, Point, SharedString, Styled as _, Window,
 };
 use gpui_component::StyledExt as _;
 
@@ -191,6 +191,35 @@ impl ContextMenuState {
     }
 }
 
+fn move_context_menu_focus(
+    menu_focus: &FocusHandle,
+    forward: bool,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if forward {
+        window.focus_next();
+        if !menu_focus.contains_focused(window, cx) {
+            window.focus(menu_focus);
+            window.focus_next();
+        }
+    } else {
+        window.focus_prev();
+        if !menu_focus.contains_focused(window, cx) {
+            // The menu is rendered last. Starting reverse traversal without a
+            // current focus therefore wraps to its final enabled item.
+            window.blur();
+            window.focus_prev();
+        }
+    }
+
+    // Empty or fully disabled menus retain focus on their overlay rather than
+    // leaking keyboard input to the application underneath.
+    if !menu_focus.contains_focused(window, cx) {
+        window.focus(menu_focus);
+    }
+}
+
 /// A macOS-style right-click context menu. Open a [`ContextMenuState`] in a
 /// right-mouse handler, store that state in the app, and render this menu as the
 /// LAST child of the app root. Clicking an item dispatches its action and the
@@ -288,6 +317,7 @@ impl ContextMenu {
     pub fn render(self, state: &ContextMenuState) -> impl IntoElement {
         let pos = self.pos;
         let menu_focus = state.menu_focus.clone();
+        let navigation_focus = menu_focus.clone();
         let return_focus = state.return_focus.clone();
         let mut panel = div()
             .min_w(px(190.0))
@@ -357,6 +387,18 @@ impl ContextMenu {
             .id("rmac-menu-scrim")
             .track_focus(&menu_focus)
             .key_context(MENU_CONTEXT)
+            .capture_key_down(move |event: &KeyDownEvent, window, cx| {
+                let forward = match event.keystroke.key.as_str() {
+                    "down" => Some(true),
+                    "up" => Some(false),
+                    "tab" => Some(!event.keystroke.modifiers.shift),
+                    _ => None,
+                };
+                if let Some(forward) = forward {
+                    cx.stop_propagation();
+                    move_context_menu_focus(&navigation_focus, forward, window, cx);
+                }
+            })
             .on_mouse_down(MouseButton::Left, |_, window, cx| {
                 window.dispatch_action(Box::new(DismissMenu), cx);
             })

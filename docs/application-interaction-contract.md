@@ -27,6 +27,8 @@ Every open menu uses `ContextMenuState`: keyboard focus moves into the menu so
 Escape is reliable, then returns to the invoking surface after an action,
 Escape, an outside click, or dismissal. The owning application also dismisses
 the menu when its window deactivates; menus never survive as stale overlays.
+Up/Down and forward/reverse Tab traversal wrap within the menu and never move
+focus into background application controls.
 
 ## Shortcut source of truth
 

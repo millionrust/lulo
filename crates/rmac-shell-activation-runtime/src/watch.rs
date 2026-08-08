@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 use crate::{Coordinator, Update};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,7 +17,7 @@ pub struct Error {
 }
 
 impl Error {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", test))]
     fn new(operation: Operation, detail: impl Into<String>) -> Self {
         Self {
             operation,
@@ -88,8 +88,8 @@ pub async fn watch(
     }
 }
 
-#[cfg(target_os = "linux")]
-async fn consume(
+#[cfg(any(target_os = "linux", test))]
+pub(super) async fn consume(
     sender: async_channel::Sender<Update>,
     shortcuts: async_channel::Receiver<rmac_shortcuts::Event>,
     endpoint: async_channel::Receiver<()>,
@@ -98,19 +98,20 @@ async fn consume(
     use futures_util::FutureExt as _;
 
     let mut coordinator = Coordinator::default();
+    let endpoint_ready = endpoint.recv().fuse();
+    futures_util::pin_mut!(endpoint_ready);
     loop {
         let shortcut = shortcuts.recv().fuse();
-        let endpoint = endpoint.recv().fuse();
         let runtime = runtime.recv().fuse();
         let closed = sender.closed().fuse();
-        futures_util::pin_mut!(shortcut, endpoint, runtime, closed);
+        futures_util::pin_mut!(shortcut, runtime, closed);
         let update = futures_util::select! {
             event = shortcut => Some(Update::Activated(Box::new(coordinator.activate(
                 event.map_err(|_| {
                     Error::new(Operation::WatchShortcut, "the shortcut endpoint stopped")
                 })?,
             )))),
-            ready = endpoint => {
+            ready = endpoint_ready => {
                 ready.map_err(|_| Error::new(
                     Operation::WatchShortcut,
                     "the shortcut endpoint stopped before readiness",

@@ -120,3 +120,26 @@ fn degraded_and_multi_seat_activations_fail_explicitly() {
         ))
     ));
 }
+
+#[test]
+fn one_shot_endpoint_readiness_stays_live_after_its_sender_closes() {
+    async_io::block_on(async {
+        let (updates_tx, updates_rx) = async_channel::bounded(4);
+        let (shortcuts_tx, shortcuts_rx) = async_channel::bounded(1);
+        let (endpoint_tx, endpoint_rx) = async_channel::bounded(1);
+        let (runtime_tx, runtime_rx) = async_channel::bounded(1);
+        let consumer = super::watch::consume(updates_tx, shortcuts_rx, endpoint_rx, runtime_rx);
+        let scenario = async {
+            endpoint_tx.send(()).await.unwrap();
+            drop(endpoint_tx);
+            runtime_tx.send(runtime(&["private-seat"])).await.unwrap();
+            assert!(matches!(updates_rx.recv().await, Ok(Update::Ready)));
+
+            shortcuts_tx.send(activated()).await.unwrap();
+            assert!(matches!(updates_rx.recv().await, Ok(Update::Activated(_))));
+            drop(updates_rx);
+        };
+        let (result, ()) = futures_util::join!(consumer, scenario);
+        result.unwrap();
+    });
+}

@@ -13,3 +13,6 @@ rmac-compositor.workspace = true
 rmac-shell-invocation.workspace = true
 rmac-shell-invocation-runtime.workspace = true
 rmac-shortcuts.workspace = true
+
+[dev-dependencies]
+async-io.workspace = true

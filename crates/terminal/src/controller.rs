@@ -138,6 +138,7 @@ pub(super) struct TerminalView {
     line_h: f32,
     cell_w: f32,
     focus: FocusHandle,
+    native_window_title: String,
     /// Last operating-system activation state observed for this window.
     window_active: bool,
     /// One visible editor is synchronized with the active tab's bounded query.
@@ -292,6 +293,7 @@ impl TerminalView {
             line_h: LINE_H,
             cell_w: CELL_W,
             focus,
+            native_window_title: "Terminal".into(),
             window_active,
             search,
             ime: None,

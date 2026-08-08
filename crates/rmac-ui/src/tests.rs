@@ -1,6 +1,6 @@
 use gpui::{SharedString, WindowBounds, WindowOptions};
 
-use super::{app_id, window::window_options_for_app_with_bounds};
+use super::{app_id, native_window_title, window::window_options_for_app_with_bounds};
 
 fn native_title(options: &WindowOptions) -> Option<&SharedString> {
     options
@@ -53,4 +53,19 @@ fn identified_window_options_publish_stable_native_titles() {
             Some(expected)
         );
     }
+}
+
+#[test]
+fn live_native_titles_are_bounded_and_spoof_resistant() {
+    assert_eq!(
+        native_window_title("  report.txt\n\u{202e}gpj.exe  ", "Text Editor"),
+        "report.txt gpj.exe — Text Editor"
+    );
+    assert_eq!(native_window_title("Terminal", "Terminal"), "Terminal");
+    assert_eq!(native_window_title("\n\t", "Files"), "Files");
+
+    let title = native_window_title(&format!("{}😀", "a".repeat(300)), "Terminal");
+    assert!(title.len() <= 256);
+    assert!(title.ends_with(" — Terminal"));
+    assert!(title.is_char_boundary(title.len()));
 }

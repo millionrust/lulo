@@ -213,6 +213,7 @@ struct EditorView {
 
     // Infra
     focus: FocusHandle,
+    native_window_title: String,
     recovery_directory: PathBuf,
     recovery_path: PathBuf,
     recovery_cleanup_paths: Vec<PathBuf>,
@@ -732,6 +733,7 @@ impl EditorView {
             font_size: 15.0,
             rtf_runs: None,
             focus: cx.focus_handle(),
+            native_window_title: "Text Editor".into(),
             recovery_directory,
             recovery_path,
             recovery_cleanup_paths: Vec::new(),

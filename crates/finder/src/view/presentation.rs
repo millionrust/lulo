@@ -1,7 +1,12 @@
 use super::*;
 
 impl Render for FinderView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let native_window_title = rmac_ui::native_window_title(self.title().as_ref(), "Files");
+        if self.native_window_title != native_window_title {
+            window.set_window_title(&native_window_title);
+            self.native_window_title = native_window_title;
+        }
         let info = self.info;
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();

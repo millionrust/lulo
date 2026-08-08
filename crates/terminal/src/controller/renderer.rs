@@ -380,6 +380,11 @@ impl Render for TerminalView {
         let active_title = self.tabs[self.active]
             .tab_title()
             .unwrap_or_else(|| "Terminal".into());
+        let native_window_title = rmac_ui::native_window_title(&active_title, "Terminal");
+        if self.native_window_title != native_window_title {
+            window.set_window_title(&native_window_title);
+            self.native_window_title = native_window_title;
+        }
         let multi = self.tabs.len() > 1;
         let operation_error_visible = self.operation_error.is_some();
         let terminal_error = self

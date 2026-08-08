@@ -13,6 +13,61 @@ use crate::{init_application, prepare_surface_window};
 const MIN_WINDOW_WIDTH: f32 = 640.0;
 const MIN_WINDOW_HEIGHT: f32 = 360.0;
 const WINDOW_STATE_QUIET_PERIOD: Duration = Duration::from_millis(250);
+const MAX_NATIVE_TITLE_BYTES: usize = 256;
+
+/// Compose a bounded, single-line compositor title without allowing document,
+/// folder, or terminal text to spoof surrounding desktop chrome.
+pub fn native_window_title(subject: &str, application: &str) -> String {
+    let application = normalize_title_fragment(application, MAX_NATIVE_TITLE_BYTES);
+    if application.is_empty() {
+        return String::new();
+    }
+    let separator = " — ";
+    let subject_limit = MAX_NATIVE_TITLE_BYTES
+        .saturating_sub(separator.len())
+        .saturating_sub(application.len());
+    let subject = normalize_title_fragment(subject, subject_limit);
+    if subject.is_empty() || subject == application {
+        application
+    } else {
+        format!("{subject}{separator}{application}")
+    }
+}
+
+fn normalize_title_fragment(value: &str, limit: usize) -> String {
+    let mut output = String::with_capacity(value.len().min(limit));
+    let mut pending_space = false;
+    for character in value.chars() {
+        if character.is_whitespace() {
+            pending_space = !output.is_empty();
+            continue;
+        }
+        if character.is_control()
+            || matches!(
+                character,
+                '\u{061c}'
+                    | '\u{200e}'
+                    | '\u{200f}'
+                    | '\u{202a}'..='\u{202e}'
+                    | '\u{2066}'..='\u{2069}'
+            )
+        {
+            continue;
+        }
+        if pending_space {
+            if output.len() + 1 > limit {
+                break;
+            }
+            output.push(' ');
+            pending_space = false;
+        }
+        if output.len() + character.len_utf8() > limit {
+            break;
+        }
+        output.push(character);
+    }
+    output
+}
 
 fn minimum_window_size(width: f32, height: f32) -> Size<Pixels> {
     size(

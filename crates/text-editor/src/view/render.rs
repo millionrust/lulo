@@ -539,7 +539,18 @@ impl EditorView {
 }
 
 impl Render for EditorView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let filename = self.filename();
+        let subject = if self.dirty {
+            format!("{filename} — Edited")
+        } else {
+            filename.to_string()
+        };
+        let native_window_title = rmac_ui::native_window_title(&subject, "Text Editor");
+        if self.native_window_title != native_window_title {
+            window.set_window_title(&native_window_title);
+            self.native_window_title = native_window_title;
+        }
         let font_family = if self.mono {
             rmac_ui::MONO_FONT
         } else {

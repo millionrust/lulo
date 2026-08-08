@@ -262,6 +262,7 @@ struct FinderView {
     free_bytes: Option<u64>,
     dragging: bool,
     focus: FocusHandle,
+    native_window_title: String,
     watcher: Option<RecommendedWatcher>,
     filesystem_events: async_channel::Sender<()>,
     filesystem_hints: Arc<Mutex<FilesystemHints>>,

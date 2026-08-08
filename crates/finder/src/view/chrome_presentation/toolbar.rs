@@ -168,7 +168,7 @@ impl FinderView {
             .child(search)
     }
 
-    fn title(&self) -> SharedString {
+    pub(in crate::view) fn title(&self) -> SharedString {
         if let Some(rt) = &self.result_title {
             return rt.clone();
         }

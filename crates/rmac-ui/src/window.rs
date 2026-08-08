@@ -74,11 +74,12 @@ fn window_options_with_bounds(
     width: f32,
     height: f32,
     window_bounds: WindowBounds,
+    title: Option<SharedString>,
 ) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(window_bounds),
         titlebar: Some(TitlebarOptions {
-            title: None,
+            title,
             appears_transparent: true,
             // Push the OS traffic lights off-screen — rmac draws its own in the
             // title bar (see `title_bar`). The window keeps a full-size content
@@ -94,7 +95,12 @@ fn window_options_with_bounds(
 /// canonical position, transparent titlebar so our chrome draws through, and
 /// first-launch placement centered on the active primary display.
 pub fn window_options(width: f32, height: f32, cx: &App) -> WindowOptions {
-    window_options_with_bounds(width, height, centered_window_bounds(width, height, cx))
+    window_options_with_bounds(
+        width,
+        height,
+        centered_window_bounds(width, height, cx),
+        None,
+    )
 }
 
 /// Standard window options with a stable Linux desktop identity.
@@ -105,6 +111,28 @@ pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -
             width,
             height,
             restored_window_bounds(app_id, width, height, cx),
+            rmac_apps::identity::window_title(app_id).map(SharedString::from),
+        )
+    }
+}
+
+/// Identified window options with an explicit native title. This is useful for
+/// document windows whose compositor title is more specific than the stable
+/// application name.
+pub fn window_options_for_app_with_title(
+    app_id: &str,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    cx: &App,
+) -> WindowOptions {
+    WindowOptions {
+        app_id: Some(app_id.to_owned()),
+        ..window_options_with_bounds(
+            width,
+            height,
+            restored_window_bounds(app_id, width, height, cx),
+            Some(title.into()),
         )
     }
 }
@@ -112,7 +140,12 @@ pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -
 /// Window options for an app with a **unified 52pt toolbar** (Finder-style):
 /// our own traffic lights are drawn by the app's toolbar.
 pub fn window_options_unified(width: f32, height: f32, cx: &App) -> WindowOptions {
-    window_options_with_bounds(width, height, centered_window_bounds(width, height, cx))
+    window_options_with_bounds(
+        width,
+        height,
+        centered_window_bounds(width, height, cx),
+        None,
+    )
 }
 
 /// Unified-toolbar options with a stable Linux desktop identity.
@@ -128,6 +161,7 @@ pub fn window_options_unified_for_app(
             width,
             height,
             restored_window_bounds(app_id, width, height, cx),
+            rmac_apps::identity::window_title(app_id).map(SharedString::from),
         )
     }
 }
@@ -141,7 +175,12 @@ pub(crate) fn window_options_for_app_with_bounds(
 ) -> WindowOptions {
     WindowOptions {
         app_id: Some(app_id.to_owned()),
-        ..window_options_with_bounds(width, height, window_bounds)
+        ..window_options_with_bounds(
+            width,
+            height,
+            window_bounds,
+            rmac_apps::identity::window_title(app_id).map(SharedString::from),
+        )
     }
 }
 
@@ -310,12 +349,15 @@ pub fn boot_app_with_assets<A, V, F>(
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    let title: SharedString = title.into();
+    let fallback_title: SharedString = title.into();
+    let title = rmac_apps::identity::window_title(app_id)
+        .map(SharedString::from)
+        .unwrap_or(fallback_title);
     Application::new()
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
-            let options = window_options_for_app(app_id, width, height, cx);
+            let options = window_options_for_app_with_title(app_id, title, width, height, cx);
 
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
@@ -329,7 +371,6 @@ pub fn boot_app_with_assets<A, V, F>(
 
             cx.activate(true);
         });
-    let _ = title;
 }
 
 /// Like [`boot`], but with a custom asset source (e.g. an app that embeds its
@@ -351,7 +392,12 @@ pub fn boot_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
-            let options = window_options(width, height, cx);
+            let options = window_options_with_bounds(
+                width,
+                height,
+                centered_window_bounds(width, height, cx),
+                Some(title),
+            );
 
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
@@ -362,5 +408,4 @@ pub fn boot_with_assets<A, V, F>(
 
             cx.activate(true);
         });
-    let _ = title; // reserved for window title once GPUI exposes it post-open
 }

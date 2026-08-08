@@ -7,6 +7,7 @@ mod input;
 mod navigation;
 mod notifications;
 mod power;
+mod responsive_layout;
 mod service_updates;
 mod settings_search;
 mod shell_settings;

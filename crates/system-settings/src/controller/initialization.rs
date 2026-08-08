@@ -1454,6 +1454,7 @@ impl Settings {
             nav: Vec::new(),
             search,
             search_selection: 0,
+            compact_sidebar_open: false,
             focus: cx.focus_handle(),
             native_window_title: "Settings".into(),
             focused_once: false,

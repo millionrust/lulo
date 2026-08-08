@@ -44,6 +44,11 @@ impl Settings {
         self.search_selection = 0;
     }
 
+    pub(super) fn toggle_compact_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.compact_sidebar_open = !self.compact_sidebar_open;
+        cx.notify();
+    }
+
     pub(super) fn activate_search_selection(
         &mut self,
         window: &mut Window,
@@ -104,6 +109,7 @@ impl Settings {
         };
         self.selected = target;
         self.nav.clear();
+        self.compact_sidebar_open = false;
         self.navigation_persistence.schedule(pane_id);
         cx.notify();
     }

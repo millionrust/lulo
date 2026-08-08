@@ -17,6 +17,10 @@ impl Render for Settings {
             window.set_window_title(&native_window_title);
             self.native_window_title = native_window_title;
         }
+        let layout = crate::responsive_layout::responsive_layout(
+            f32::from(window.bounds().size.width),
+            self.compact_sidebar_open,
+        );
         let settings_error = self.global_settings_error().cloned();
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         let wifi_enterprise_dialog = self.render_wifi_enterprise_dialog(cx);
@@ -191,7 +195,7 @@ impl Render for Settings {
             }))
             .bg(pane_bg())
             .text_color(label())
-            .child(self.render_topbar(cx))
+            .child(self.render_topbar(layout, cx))
             .when_some(settings_error, |settings, message| {
                 settings.child(
                     Toast::new(
@@ -252,8 +256,12 @@ impl Render for Settings {
                 div()
                     .flex_1()
                     .flex()
-                    .child(self.render_sidebar(cx))
-                    .child(self.render_detail(cx)),
+                    .when(layout.sidebar_visible, |body| {
+                        body.child(self.render_sidebar(layout.compact, cx))
+                    })
+                    .when(layout.detail_visible, |body| {
+                        body.child(self.render_detail(cx))
+                    }),
             )
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_enterprise_dialog, |root, dialog| root.child(dialog))

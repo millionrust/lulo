@@ -3,7 +3,11 @@
 use super::*;
 
 impl Settings {
-    pub(super) fn render_topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_topbar(
+        &self,
+        layout: crate::responsive_layout::SettingsLayout,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let can_back = !self.nav.is_empty();
         let back = ListRow::new(
             rmac_system_settings::accessibility::BACK_ID,
@@ -22,6 +26,25 @@ impl Settings {
         .h(px(26.0))
         .justify_center()
         .on_activate(cx.listener(|t, _, _, cx| t.go_back(cx)));
+        let sidebar_toggle =
+            Button::new(rmac_system_settings::accessibility::SIDEBAR_TOGGLE_ID, "")
+                .icon(
+                    Icon::new(if layout.sidebar_visible {
+                        IconName::PanelLeftClose
+                    } else {
+                        IconName::PanelLeftOpen
+                    })
+                    .text_color(label()),
+                )
+                .ghost()
+                .xsmall()
+                .selected(layout.sidebar_visible)
+                .tooltip(if layout.sidebar_visible {
+                    rmac_system_settings::accessibility::HIDE_SIDEBAR_NAME
+                } else {
+                    rmac_system_settings::accessibility::SHOW_SIDEBAR_NAME
+                })
+                .on_click(cx.listener(|this, _, _, cx| this.toggle_compact_sidebar(cx)));
 
         div()
             .id("topbar")
@@ -45,13 +68,19 @@ impl Settings {
             }))
             .child(
                 div()
-                    .w(px(SIDEBAR_W))
+                    .w(px(if layout.compact { 132.0 } else { SIDEBAR_W }))
                     .h_full()
-                    .bg(sidebar_bg())
+                    .bg(if layout.compact {
+                        pane_bg()
+                    } else {
+                        sidebar_bg()
+                    })
                     .flex()
                     .items_center()
+                    .gap_2()
                     .pl(px(13.0))
-                    .child(rmac_ui::traffic_lights()),
+                    .child(rmac_ui::traffic_lights())
+                    .when(layout.compact, |leading| leading.child(sidebar_toggle)),
             )
             .child(
                 div()
@@ -71,7 +100,7 @@ impl Settings {
             )
     }
 
-    pub(super) fn render_sidebar(&self, cx: &Context<Self>) -> impl IntoElement {
+    pub(super) fn render_sidebar(&self, compact: bool, cx: &Context<Self>) -> impl IntoElement {
         let search = div()
             .id(rmac_system_settings::accessibility::SEARCH_ID)
             .mx_2()
@@ -139,7 +168,8 @@ impl Settings {
 
         let mut col = div()
             .id(rmac_system_settings::accessibility::SIDEBAR_ID)
-            .w(px(SIDEBAR_W))
+            .when(compact, |sidebar| sidebar.w_full())
+            .when(!compact, |sidebar| sidebar.w(px(SIDEBAR_W)))
             .h_full()
             .flex_shrink_0()
             .v_flex()
@@ -227,7 +257,11 @@ impl Settings {
                                     .when_some(search_context, |content, context| {
                                         content.child(
                                             div()
-                                                .max_w(px(SIDEBAR_W - 68.0))
+                                                .max_w(px(if compact {
+                                                    480.0
+                                                } else {
+                                                    SIDEBAR_W - 68.0
+                                                }))
                                                 .overflow_hidden()
                                                 .text_size(rmac_ui::text_px(9.5))
                                                 .text_color(if selected {

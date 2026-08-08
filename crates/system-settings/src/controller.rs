@@ -124,7 +124,7 @@ use gpui::{
     ParentElement, Render, Result, SharedString, StatefulInteractiveElement as _, Styled,
     StyledImage as _, Svg, Window,
 };
-use gpui_component::StyledExt as _;
+use gpui_component::{Icon, IconName, StyledExt as _};
 use navigation_persistence::NavigationPersistence;
 use rmac_ui::{
     Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,

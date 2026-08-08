@@ -6,6 +6,7 @@ impl Settings {
     #[allow(dead_code)]
     pub(super) fn navigation_accessibility_snapshot(
         &self,
+        layout: crate::responsive_layout::SettingsLayout,
         cx: &Context<Self>,
     ) -> std::result::Result<
         rmac_system_settings::accessibility::SettingsNavigationAccessibilitySnapshot,
@@ -41,6 +42,8 @@ impl Settings {
             subpage_title: subpage_title.as_deref(),
             back_depth: self.nav.len(),
             global_error: self.global_settings_error().map(|error| error.as_ref()),
+            sidebar_visible: layout.sidebar_visible,
+            detail_visible: layout.detail_visible,
         })
     }
 

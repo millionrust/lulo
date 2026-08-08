@@ -8,6 +8,9 @@ pub const ROOT_ID: &str = "system-settings";
 pub const SEARCH_ID: &str = "settings-search";
 pub const SEARCH_NAME: &str = "Search";
 pub const SIDEBAR_ID: &str = "sidebar-scroll";
+pub const SIDEBAR_TOGGLE_ID: &str = "toggle-settings-sidebar";
+pub const SHOW_SIDEBAR_NAME: &str = "Show Settings Sidebar";
+pub const HIDE_SIDEBAR_NAME: &str = "Hide Settings Sidebar";
 pub const DETAIL_ID: &str = "detail-scroll";
 pub const BACK_ID: &str = "nav-back";
 pub const BACK_NAME: &str = "Back";
@@ -42,6 +45,8 @@ pub struct NavigationInput<'a> {
     pub subpage_title: Option<&'a str>,
     pub back_depth: usize,
     pub global_error: Option<&'a str>,
+    pub sidebar_visible: bool,
+    pub detail_visible: bool,
 }
 
 impl fmt::Debug for NavigationInput<'_> {
@@ -55,6 +60,8 @@ impl fmt::Debug for NavigationInput<'_> {
             .field("has_subpage", &self.subpage_title.is_some())
             .field("back_depth", &self.back_depth)
             .field("has_global_error", &self.global_error.is_some())
+            .field("sidebar_visible", &self.sidebar_visible)
+            .field("detail_visible", &self.detail_visible)
             .finish()
     }
 }
@@ -62,6 +69,7 @@ impl fmt::Debug for NavigationInput<'_> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NavigationActionKind {
     SelectPane,
+    ToggleSidebar,
     Back,
     DismissError,
 }
@@ -218,11 +226,14 @@ pub struct SettingsNavigationAccessibilitySnapshot {
     pub search: AccessibleSearchField,
     pub account: AccessibleAccount,
     pub sidebar_id: &'static str,
+    pub sidebar_visible: bool,
     pub sections: Vec<AccessibleNavigationSection>,
     pub selected_pane_id: String,
     pub selected_visible: bool,
     pub detail_id: &'static str,
+    pub detail_visible: bool,
     pub detail: AccessibleDetail,
+    pub sidebar_toggle_action: Option<AccessibleNavigationAction>,
     pub back_action: Option<AccessibleNavigationAction>,
     pub error_action: Option<AccessibleNavigationAction>,
     /// Shell-chrome controls only; pane-owned controls append their own order.
@@ -248,7 +259,13 @@ impl fmt::Debug for SettingsNavigationAccessibilitySnapshot {
             )
             .field("selected_pane_id", &self.selected_pane_id)
             .field("selected_visible", &self.selected_visible)
+            .field("sidebar_visible", &self.sidebar_visible)
+            .field("detail_visible", &self.detail_visible)
             .field("detail", &self.detail)
+            .field(
+                "has_sidebar_toggle_action",
+                &self.sidebar_toggle_action.is_some(),
+            )
             .field("has_back_action", &self.back_action.is_some())
             .field("has_error_action", &self.error_action.is_some())
             .field("navigation_focus_order", &self.navigation_focus_order)
@@ -264,6 +281,7 @@ pub enum AccessibilityProjectionError {
     CategoryLimit,
     NavigationDepth,
     InvalidSelection,
+    InvalidVisibility,
     InvalidCategory,
     DuplicateCategory,
     InvalidSubpage,
@@ -291,6 +309,9 @@ pub fn project_settings_navigation(
     if input.back_depth > MAX_NAVIGATION_DEPTH {
         return Err(AccessibilityProjectionError::NavigationDepth);
     }
+    if !input.sidebar_visible && !input.detail_visible {
+        return Err(AccessibilityProjectionError::InvalidVisibility);
+    }
     if (input.back_depth == 0) != input.subpage_title.is_none() {
         return Err(AccessibilityProjectionError::InvalidSubpage);
     }
@@ -302,6 +323,9 @@ pub fn project_settings_navigation(
         SEARCH_ID,
         SEARCH_NAME,
         SIDEBAR_ID,
+        SIDEBAR_TOGGLE_ID,
+        SHOW_SIDEBAR_NAME,
+        HIDE_SIDEBAR_NAME,
         DETAIL_ID,
         BACK_ID,
         BACK_NAME,
@@ -349,27 +373,31 @@ pub fn project_settings_navigation(
         }
     }
 
-    let visible_indices = input
-        .sections
-        .iter()
-        .enumerate()
-        .filter_map(|(section_index, section)| {
-            let items = section
-                .iter()
-                .enumerate()
-                .filter_map(|(item_index, category)| {
-                    category_matches(
-                        input.query,
-                        category.name,
-                        category.description,
-                        category.search_terms,
-                    )
-                    .then_some((section_index, item_index))
-                })
-                .collect::<Vec<_>>();
-            (!items.is_empty()).then_some(items)
-        })
-        .collect::<Vec<_>>();
+    let visible_indices = if input.sidebar_visible {
+        input
+            .sections
+            .iter()
+            .enumerate()
+            .filter_map(|(section_index, section)| {
+                let items = section
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(item_index, category)| {
+                        category_matches(
+                            input.query,
+                            category.name,
+                            category.description,
+                            category.search_terms,
+                        )
+                        .then_some((section_index, item_index))
+                    })
+                    .collect::<Vec<_>>();
+                (!items.is_empty()).then_some(items)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     let visible_section_count = visible_indices.len();
     let visible_category_count = visible_indices.iter().map(Vec::len).sum::<usize>();
 
@@ -377,6 +405,21 @@ pub fn project_settings_navigation(
     let mut sections = Vec::with_capacity(visible_section_count);
     let mut selected_visible = false;
     let mut navigation_focus_order = Vec::with_capacity(visible_category_count + 3);
+    let compact = input.sidebar_visible != input.detail_visible;
+    let sidebar_toggle_action = compact.then(|| AccessibleNavigationAction {
+        id: SIDEBAR_TOGGLE_ID.into(),
+        name: if input.sidebar_visible {
+            HIDE_SIDEBAR_NAME
+        } else {
+            SHOW_SIDEBAR_NAME
+        }
+        .into(),
+        kind: NavigationActionKind::ToggleSidebar,
+        enabled: true,
+    });
+    if sidebar_toggle_action.is_some() {
+        navigation_focus_order.push(SIDEBAR_TOGGLE_ID.into());
+    }
     let back_action = (input.back_depth > 0).then(|| AccessibleNavigationAction {
         id: BACK_ID.into(),
         name: BACK_NAME.into(),
@@ -395,7 +438,9 @@ pub fn project_settings_navigation(
     if error_action.is_some() {
         navigation_focus_order.push(GLOBAL_ERROR_DISMISS_ID.into());
     }
-    navigation_focus_order.push(SEARCH_ID.into());
+    if input.sidebar_visible {
+        navigation_focus_order.push(SEARCH_ID.into());
+    }
 
     for (visible_section_index, indices) in visible_indices.into_iter().enumerate() {
         let section_size = indices.len();
@@ -442,7 +487,7 @@ pub fn project_settings_navigation(
     let heading = input.subpage_title.unwrap_or(selected.name).to_owned();
     budget.add_required(&heading, MAX_LABEL_BYTES, false)?;
     let mut announcements = Vec::new();
-    if !input.query.is_empty() {
+    if input.sidebar_visible && !input.query.is_empty() {
         let text = if visible_category_count == 1 {
             "1 matching settings pane".to_owned()
         } else {
@@ -465,8 +510,10 @@ pub fn project_settings_navigation(
 
     let initial_focus = if input.back_depth > 0 {
         BACK_ID
-    } else {
+    } else if input.sidebar_visible {
         SEARCH_ID
+    } else {
+        DETAIL_ID
     }
     .to_owned();
     validate_actions(&navigation_focus_order)?;
@@ -486,10 +533,12 @@ pub fn project_settings_navigation(
             description: LOCAL_ACCOUNT_LABEL,
         },
         sidebar_id: SIDEBAR_ID,
+        sidebar_visible: input.sidebar_visible,
         sections,
         selected_pane_id: selected.pane_id.into(),
         selected_visible,
         detail_id: DETAIL_ID,
+        detail_visible: input.detail_visible,
         detail: AccessibleDetail {
             pane_id: selected.pane_id.into(),
             pane_name: selected.name.into(),
@@ -498,6 +547,7 @@ pub fn project_settings_navigation(
             subpage_title: input.subpage_title.map(str::to_owned),
             back_depth: input.back_depth,
         },
+        sidebar_toggle_action,
         back_action,
         error_action,
         navigation_focus_order,
@@ -662,6 +712,8 @@ mod tests {
             subpage_title: None,
             back_depth: 0,
             global_error: None,
+            sidebar_visible: true,
+            detail_visible: true,
         })
         .unwrap();
 
@@ -695,6 +747,8 @@ mod tests {
             subpage_title: Some("Private Application"),
             back_depth: 1,
             global_error: Some("Private backend detail"),
+            sidebar_visible: true,
+            detail_visible: true,
         };
         let projected = project_settings_navigation(input).unwrap();
 
@@ -735,6 +789,8 @@ mod tests {
             subpage_title: None,
             back_depth: 0,
             global_error: None,
+            sidebar_visible: true,
+            detail_visible: true,
         })
         .unwrap();
 
@@ -745,6 +801,36 @@ mod tests {
             Some("Dark appearance")
         );
         assert_eq!(projected.announcements[0].text, "1 matching settings pane");
+    }
+
+    #[test]
+    fn compact_detail_hides_sidebar_items_search_focus_and_announcements() {
+        let sections = sections();
+        let projected = project_settings_navigation(NavigationInput {
+            sections: &sections,
+            selected: (1, 1),
+            query: "display",
+            account_name: "Account",
+            subpage_title: None,
+            back_depth: 0,
+            global_error: None,
+            sidebar_visible: false,
+            detail_visible: true,
+        })
+        .unwrap();
+
+        assert!(!projected.sidebar_visible);
+        assert!(projected.detail_visible);
+        assert!(projected.sections.is_empty());
+        assert_eq!(projected.search.result_count, 0);
+        assert!(!projected.selected_visible);
+        assert_eq!(projected.initial_focus, DETAIL_ID);
+        assert_eq!(projected.navigation_focus_order, [SIDEBAR_TOGGLE_ID]);
+        assert_eq!(
+            projected.sidebar_toggle_action.unwrap().name,
+            SHOW_SIDEBAR_NAME
+        );
+        assert!(projected.announcements.is_empty());
     }
 
     #[test]
@@ -760,6 +846,8 @@ mod tests {
                 subpage_title: None,
                 back_depth: 0,
                 global_error: None,
+                sidebar_visible: true,
+                detail_visible: true,
             }),
             Err(AccessibilityProjectionError::DuplicateCategory)
         );
@@ -773,6 +861,8 @@ mod tests {
             subpage_title: None,
             back_depth: 0,
             global_error: None,
+            sidebar_visible: true,
+            detail_visible: true,
         };
         assert_eq!(
             project_settings_navigation(base),

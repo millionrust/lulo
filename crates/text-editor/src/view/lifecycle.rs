@@ -2,6 +2,8 @@
 
 use super::*;
 
+static NEXT_WINDOW_GENERATION: AtomicU64 = AtomicU64::new(1);
+
 impl EditorView {
     pub(super) fn new_with_path(
         initial_path: Option<PathBuf>,

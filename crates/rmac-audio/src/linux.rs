@@ -669,7 +669,7 @@ pub(super) fn spa_channel_volume(value: u32) -> String {
 #[cfg(not(target_os = "macos"))]
 pub(super) fn read_graph_metadata(operation: &'static str) -> Result<GraphMetadata, Error> {
     let dump = command("pw-dump", &["--no-colors"], operation)?;
-    parse_pw_dump_metadata(&dump).map_err(|error| Error::new(operation, error.detail))
+    parse_pw_dump_metadata(&dump).map_err(|error| Error::new(operation, error.detail()))
 }
 
 #[cfg(not(target_os = "macos"))]

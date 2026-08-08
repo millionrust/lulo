@@ -170,6 +170,11 @@ impl Error {
             detail: detail.into(),
         }
     }
+
+    #[cfg(any(not(target_os = "macos"), test))]
+    pub(super) fn detail(&self) -> &str {
+        &self.detail
+    }
 }
 
 impl fmt::Display for Error {

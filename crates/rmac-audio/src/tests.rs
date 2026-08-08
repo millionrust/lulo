@@ -167,7 +167,8 @@ fn pipewire_json_correlates_exact_profiles_routes_and_node_identity() {
         Some(50)
     );
     assert!(!graph.nodes.contains_key("53"));
-    assert!(parse_pw_dump_metadata("not json").is_err());
+    let error = parse_pw_dump_metadata("not json").unwrap_err();
+    assert_eq!(error.detail(), "pw-dump returned invalid JSON");
 }
 
 #[test]

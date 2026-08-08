@@ -56,16 +56,6 @@ impl FinderView {
                 ViewMode::Gallery,
             ));
 
-        let tool = |glyph: &'static str| {
-            div()
-                .w(px(30.0))
-                .h(px(24.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(icon(glyph, 16.0, secondary()))
-        };
-
         let search = div()
             .w(px(200.0))
             .h(px(28.0))
@@ -144,8 +134,6 @@ impl FinderView {
             )
             .child(div().flex_1())
             .child(view_control)
-            .child(tool("icons/share-2.svg"))
-            .child(tool("icons/tag.svg"))
             // The ⋯ button opens the item context menu (anchored below itself).
             .child(
                 Button::new("more", "")

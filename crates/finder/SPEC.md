@@ -422,7 +422,10 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
 
 ## Toolbar controls
 - Left: back/forward chevrons. Title (left, 13 pt semibold) after nav.
-- Right: view segmented control (grid/list[active]/columns/gallery), share, tag, more, Search field.
+- Right: view segmented control (grid/list[active]/columns/gallery), More, and
+  Search. Share and Tag are intentionally absent until a real Linux authority,
+  capability state, failure path, and keyboard action are implemented; Files
+  never renders them as inert reference-only glyphs.
 - Back/forward, view selection, and More use shared semantic buttons with
   visible selected/disabled state and keyboard focus. Tabs and their close/new
   actions, sidebar destinations and volume eject, sortable column headers,

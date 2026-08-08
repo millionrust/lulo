@@ -34,7 +34,7 @@ impl Render for Settings {
             .v_flex()
             .track_focus(&self.focus)
             .key_context("SystemSettings")
-            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "enter"
                     && this.clock_confirmation.is_some()
                     && !this.clock_setting
@@ -95,6 +95,21 @@ impl Render for Settings {
                 {
                     cx.stop_propagation();
                     this.cancel_network_edit(cx);
+                } else if !this.search.read(cx).value().trim().is_empty() {
+                    let handled = match event.keystroke.key.as_str() {
+                        "down" => this.move_search_selection(1, cx),
+                        "up" => this.move_search_selection(-1, cx),
+                        "enter" => this.activate_search_selection(window, cx),
+                        "escape" => {
+                            this.clear_search(window, cx);
+                            true
+                        }
+                        _ => false,
+                    };
+                    if handled {
+                        cx.stop_propagation();
+                        cx.notify();
+                    }
                 }
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))

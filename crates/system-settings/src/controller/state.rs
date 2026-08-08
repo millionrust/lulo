@@ -94,6 +94,7 @@ pub(super) struct Settings {
     pub(super) navigation_persistence: NavigationPersistence,
     pub(super) nav: Vec<SubPage>,
     pub(super) search: Entity<InputState>,
+    pub(super) search_selection: usize,
     pub(super) focus: FocusHandle,
     pub(super) native_window_title: String,
     pub(super) focused_once: bool,

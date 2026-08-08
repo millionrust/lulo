@@ -46,7 +46,11 @@ impl Settings {
             InputState::new(window, cx)
                 .placeholder(rmac_system_settings::accessibility::SEARCH_NAME)
         });
-        cx.observe(&search, |_, _, cx| cx.notify()).detach();
+        cx.observe(&search, |this: &mut Settings, _, cx| {
+            this.search_selection = 0;
+            cx.notify();
+        })
+        .detach();
 
         let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
         let app_catalog_watcher = rmac_apps::watch_catalog(move || {
@@ -1449,6 +1453,7 @@ impl Settings {
             navigation_persistence,
             nav: Vec::new(),
             search,
+            search_selection: 0,
             focus: cx.focus_handle(),
             native_window_title: "Settings".into(),
             focused_once: false,

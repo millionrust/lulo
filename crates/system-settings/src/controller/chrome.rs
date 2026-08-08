@@ -91,6 +91,12 @@ impl Settings {
                     .child(SearchField::new(&self.search).appearance(false)),
             );
         let query = self.search.read(cx).value().to_string();
+        let searching = !query.trim().is_empty();
+        let search_matches = self.search_matches(cx);
+        let no_search_results = searching && search_matches.is_empty();
+        let active_search_result = self
+            .search_selection
+            .min(search_matches.len().saturating_sub(1));
 
         let account = div()
             .flex()
@@ -143,9 +149,34 @@ impl Settings {
             .border_color(sep())
             .overflow_y_scroll()
             .child(search)
-            .child(account);
+            .child(account)
+            .when(no_search_results, |sidebar| {
+                sidebar.child(
+                    div()
+                        .mx_4()
+                        .mt_6()
+                        .v_flex()
+                        .items_center()
+                        .gap_1()
+                        .text_center()
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(13.0))
+                                .font_weight(rmac_ui::mac::SEMIBOLD)
+                                .text_color(label())
+                                .child("No Settings Found"),
+                        )
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(secondary())
+                                .child("Try a different search."),
+                        ),
+                )
+            });
 
         let mut first_section = true;
+        let mut search_result_index = 0;
         for (si, section) in self.sections.iter().enumerate() {
             let matching: Vec<(usize, &Category)> = section
                 .iter()
@@ -165,7 +196,12 @@ impl Settings {
             }
             first_section = false;
             for (ci, cat) in matching {
-                let selected = self.selected == (si, ci);
+                let selected = if searching {
+                    search_result_index == active_search_result
+                } else {
+                    self.selected == (si, ci)
+                };
+                search_result_index += 1;
                 col = col.child(
                     ListRow::new(
                         SharedString::from(format!("cat-{si}-{ci}")),
@@ -184,8 +220,12 @@ impl Settings {
                     .selected(selected)
                     .mx_2()
                     .px_2()
-                    .on_activate(cx.listener(move |t, _, _, cx| {
+                    .on_activate(cx.listener(move |t, _, window, cx| {
                         t.select_position((si, ci), cx);
+                        if searching {
+                            t.clear_search(window, cx);
+                            window.focus(&t.focus);
+                        }
                     })),
                 );
             }

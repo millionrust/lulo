@@ -11,6 +11,62 @@ impl Settings {
         rmac_apps::find_desktop_entry(&self.app_catalog, app_id)
     }
 
+    pub(super) fn search_matches(&self, cx: &Context<Self>) -> Vec<(usize, usize)> {
+        let query = self.search.read(cx).value();
+        self.sections
+            .iter()
+            .enumerate()
+            .flat_map(|(section_index, section)| {
+                section
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, category)| {
+                        rmac_system_settings::accessibility::category_matches(
+                            &query,
+                            category.name.as_ref(),
+                        )
+                    })
+                    .map(move |(category_index, _)| (section_index, category_index))
+            })
+            .collect()
+    }
+
+    pub(super) fn move_search_selection(&mut self, delta: isize, cx: &Context<Self>) -> bool {
+        let count = self.search_matches(cx).len();
+        if count == 0 {
+            return false;
+        }
+        self.search_selection = self
+            .search_selection
+            .saturating_add_signed(delta)
+            .min(count - 1);
+        true
+    }
+
+    pub(super) fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.search_selection = 0;
+    }
+
+    pub(super) fn activate_search_selection(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let matches = self.search_matches(cx);
+        let Some(target) = matches
+            .get(self.search_selection.min(matches.len().saturating_sub(1)))
+            .copied()
+        else {
+            return false;
+        };
+        self.select_position(target, cx);
+        self.clear_search(window, cx);
+        window.focus(&self.focus);
+        true
+    }
+
     pub(super) fn go_back(&mut self, cx: &mut Context<Self>) {
         self.nav.pop();
         cx.notify();

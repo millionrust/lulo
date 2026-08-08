@@ -87,6 +87,8 @@ use presentation_support::*;
 use search_helpers::*;
 use transient_state::*;
 
+pub(crate) use presentation_support::sanitize_dialog_name;
+
 actions!(
     finder,
     [
@@ -272,28 +274,6 @@ struct FinderView {
     watched_parent: Option<PathBuf>,
     search_generation: u64,
     search_cancel: Option<Arc<AtomicBool>>,
-}
-
-// ---- helpers ----
-
-pub(crate) fn sanitize_dialog_name(name: &str) -> String {
-    let mut output = String::new();
-    let mut truncated = false;
-    for (index, character) in name.chars().enumerate() {
-        if index == 120 {
-            truncated = true;
-            break;
-        }
-        output.push(if character.is_control() {
-            '\u{fffd}'
-        } else {
-            character
-        });
-    }
-    if truncated {
-        output.push('…');
-    }
-    output
 }
 
 pub(crate) fn run() {

@@ -1,5 +1,25 @@
 use super::*;
 
+pub(crate) fn sanitize_dialog_name(name: &str) -> String {
+    let mut output = String::new();
+    let mut truncated = false;
+    for (index, character) in name.chars().enumerate() {
+        if index == 120 {
+            truncated = true;
+            break;
+        }
+        output.push(if character.is_control() {
+            '\u{fffd}'
+        } else {
+            character
+        });
+    }
+    if truncated {
+        output.push('…');
+    }
+    output
+}
+
 impl Render for DragPreview {
     fn render(&mut self, _w: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let n = self.count;

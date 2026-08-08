@@ -8,6 +8,7 @@
 mod ime_bridge;
 mod pointer;
 mod renderer;
+mod responsive_layout;
 
 use crate::emulator::{
     grid_dimensions, scrollback_limit_for_tab_count, terminal_config, MIN_COLS, MIN_ROWS,

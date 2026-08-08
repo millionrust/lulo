@@ -27,15 +27,21 @@ impl TerminalView {
         )
     }
 
-    pub(super) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_tabs(
+        &self,
+        tab_title_max_width: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let tab_count = self.tabs.len();
         let active_tab = self.active;
         let history_limit = scrollback_limit_for_tab_count(tab_count);
         let mut bar = div()
+            .id("terminal-tabs")
             .h(px(32.0))
             .flex_none()
             .flex()
             .items_center()
+            .overflow_x_scroll()
             .px_2()
             .gap_1()
             .bg(rmac_ui::mac::chrome())
@@ -51,6 +57,7 @@ impl TerminalView {
                 .map_or(title.clone(), |state| format!("{title} — {state}"));
             bar = bar.child(
                 div()
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap_1()
@@ -61,7 +68,7 @@ impl TerminalView {
                     .child(
                         div()
                             .id(("tabname", index))
-                            .max_w(px(180.0))
+                            .max_w(px(tab_title_max_width))
                             .truncate()
                             .text_size(rmac_ui::text_px(12.0))
                             .text_color(if is_active {
@@ -89,6 +96,7 @@ impl TerminalView {
         bar.child(div().flex_1())
             .child(
                 div()
+                    .flex_none()
                     .px_1()
                     .text_size(rmac_ui::text_px(10.0))
                     .text_color(rmac_ui::mac::text_secondary())
@@ -97,6 +105,7 @@ impl TerminalView {
             .child(
                 div()
                     .id("newtab")
+                    .flex_none()
                     .w(px(22.0))
                     .h(px(26.0))
                     .flex()
@@ -362,6 +371,7 @@ impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         profiles::set_active(self.profile);
         self.resize_to(window);
+        let layout = responsive_layout::terminal_layout(f32::from(window.bounds().size.width));
         let raw_query = self.search.read(cx).value().to_string();
         let bounded_query = bounded_search_query(&raw_query);
         if bounded_query != raw_query {
@@ -437,7 +447,12 @@ impl Render for TerminalView {
                     .items_center()
                     .text_size(rmac_ui::text_px(13.0))
                     .child(div().flex_1())
-                    .child(div().max_w(px(360.0)).truncate().child(active_title))
+                    .child(
+                        div()
+                            .max_w(px(layout.title_max_width))
+                            .truncate()
+                            .child(active_title),
+                    )
                     .child(
                         div()
                             .flex_1()
@@ -448,7 +463,9 @@ impl Render for TerminalView {
                             .child(self.profile_chip(cx)),
                     ),
             ))
-            .when(multi, |el: Div| el.child(self.render_tabs(cx)))
+            .when(multi, |el: Div| {
+                el.child(self.render_tabs(layout.tab_title_max_width, cx))
+            })
             .child(
                 div()
                     .track_focus(&self.focus)
@@ -736,7 +753,7 @@ impl Render for TerminalView {
                         .absolute()
                         .top(px(40.0))
                         .right(px(12.0))
-                        .w(px(240.0))
+                        .w(px(layout.find_width))
                         .h(px(30.0))
                         .flex()
                         .items_center()

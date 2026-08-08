@@ -1,5 +1,8 @@
 //! System Monitor summary, CPU, memory, and network presentation.
 
+mod memory;
+mod network;
+
 use super::*;
 
 impl MonitorView {
@@ -118,116 +121,6 @@ impl MonitorView {
                         )
                 }),
             ))
-    }
-
-    /// Network is system-wide because the current authority has no reliable
-    /// per-process network accounting.
-    pub(super) fn render_network_pane(&self) -> impl IntoElement {
-        let teal = gpui::rgb(0x32ade6);
-        let figure = |value: String, color: gpui::Hsla| {
-            div()
-                .w(px(110.0))
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(color)
-                .text_right()
-                .child(value)
-        };
-
-        let header = div()
-            .h_flex()
-            .items_center()
-            .px_3()
-            .py_2()
-            .border_b_1()
-            .border_color(mac::separator())
-            .child(
-                div()
-                    .flex_1()
-                    .text_size(rmac_ui::text_px(11.0))
-                    .font_weight(mac::SEMIBOLD)
-                    .text_color(mac::text_tertiary())
-                    .child("INTERFACE"),
-            )
-            .children(
-                ["RCVD", "SENT", "↓ RATE", "↑ RATE"]
-                    .into_iter()
-                    .map(|label| {
-                        div()
-                            .w(px(110.0))
-                            .text_size(rmac_ui::text_px(11.0))
-                            .font_weight(mac::SEMIBOLD)
-                            .text_color(mac::text_tertiary())
-                            .text_right()
-                            .child(label)
-                    }),
-            );
-
-        let rows: Vec<gpui::AnyElement> = self
-            .sampler
-            .interfaces
-            .iter()
-            .enumerate()
-            .map(|(index, interface)| {
-                let active = interface.recv_rate + interface.sent_rate > 0.0;
-                div()
-                    .h_flex()
-                    .items_center()
-                    .px_3()
-                    .py_1p5()
-                    .when(index % 2 == 1, |element| element.bg(mac::hover()))
-                    .child(
-                        div()
-                            .flex_1()
-                            .h_flex()
-                            .items_center()
-                            .gap_2()
-                            .child(div().size(px(7.0)).rounded_full().bg(if active {
-                                teal.into()
-                            } else {
-                                mac::text_tertiary()
-                            }))
-                            .child(
-                                div()
-                                    .text_size(rmac_ui::text_px(13.0))
-                                    .text_color(mac::text())
-                                    .child(interface.name.clone()),
-                            ),
-                    )
-                    .child(figure(format_bytes(interface.total_recv), mac::text()))
-                    .child(figure(format_bytes(interface.total_sent), mac::text()))
-                    .child(figure(
-                        format_rate(interface.recv_rate),
-                        if active {
-                            teal.into()
-                        } else {
-                            mac::text_secondary()
-                        },
-                    ))
-                    .child(figure(
-                        format_rate(interface.sent_rate),
-                        if active {
-                            teal.into()
-                        } else {
-                            mac::text_secondary()
-                        },
-                    ))
-                    .into_any_element()
-            })
-            .collect();
-
-        div().flex_1().min_h(px(0.0)).px_4().pb_4().child(
-            div()
-                .id("net-iface-table")
-                .size_full()
-                .min_h(px(0.0))
-                .overflow_y_scroll()
-                .border_1()
-                .border_color(mac::separator())
-                .rounded(px(8.0))
-                .bg(mac::window())
-                .child(header)
-                .children(rows),
-        )
     }
 
     pub(super) fn render_summary(&self, cx: &Context<Self>) -> impl IntoElement {
@@ -376,57 +269,6 @@ impl MonitorView {
             .when(
                 matches!(self.tab, Tab::Memory) && self.sampler.aggregates.mem_total > 0,
                 |element| element.child(self.render_mem_pressure()),
-            )
-    }
-
-    pub(super) fn render_mem_pressure(&self) -> impl IntoElement {
-        let fraction = (self.sampler.aggregates.mem_used as f32
-            / self.sampler.aggregates.mem_total as f32)
-            .clamp(0.0, 1.0);
-        let (color, label): (gpui::Hsla, &str) = if fraction < 0.60 {
-            (gpui::rgb(0x28b463).into(), "Normal")
-        } else if fraction < 0.80 {
-            (gpui::rgb(0xff9500).into(), "Elevated")
-        } else {
-            (gpui::rgb(0xff3b30).into(), "High")
-        };
-        div()
-            .v_flex()
-            .gap_2()
-            .pt_1()
-            .child(
-                div()
-                    .h_flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(11.0))
-                            .font_weight(mac::SEMIBOLD)
-                            .text_color(mac::text_tertiary())
-                            .child("MEMORY PRESSURE"),
-                    )
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(11.0))
-                            .font_weight(mac::SEMIBOLD)
-                            .text_color(color)
-                            .child(label),
-                    ),
-            )
-            .child(
-                div()
-                    .h(px(10.0))
-                    .w_full()
-                    .rounded(px(5.0))
-                    .bg(mac::chrome())
-                    .child(
-                        div()
-                            .h_full()
-                            .w(gpui::relative(fraction))
-                            .rounded(px(5.0))
-                            .bg(color),
-                    ),
             )
     }
 }

@@ -148,6 +148,9 @@ impl Render for ComponentGallery {
         div()
             .key_context(KEY_CONTEXT)
             .track_focus(&self.focus)
+            .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
+                window.remove_window()
+            }))
             .on_action(cx.listener(|this, _: &Scale100, _, cx| this.set_scale(0, cx)))
             .on_action(cx.listener(|this, _: &Scale150, _, cx| this.set_scale(1, cx)))
             .on_action(cx.listener(|this, _: &Scale200, _, cx| this.set_scale(2, cx)))

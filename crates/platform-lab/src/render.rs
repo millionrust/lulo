@@ -6,6 +6,9 @@ impl Render for PlatformLab {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .key_context("PlatformLab")
+            .on_action(
+                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
+            )
             .on_action(cx.listener(|this, _: &CopyProbe, _, cx| this.copy_probe(cx)))
             .on_action(cx.listener(|this, _: &ReadProbe, _, cx| this.read_probe(cx)))
             .on_action(cx.listener(|this, _: &OpenProbe, window, cx| this.open_probe(window, cx)))

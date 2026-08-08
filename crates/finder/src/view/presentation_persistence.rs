@@ -1,7 +1,8 @@
-//! Private, versioned Finder view and sidebar continuity.
+//! Private, versioned Finder presentation and safe tab-session continuity.
 
 use std::fmt;
 use std::io;
+use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -14,9 +15,11 @@ use super::{FinderView, ViewMode};
 
 pub(super) const MIN_SIDEBAR_WIDTH: f32 = 160.0;
 pub(super) const MAX_SIDEBAR_WIDTH: f32 = 360.0;
+pub(super) const MAX_RESTORED_TABS: usize = 16;
 const DEFAULT_SIDEBAR_WIDTH: f32 = 190.0;
-const VERSION: u32 = 1;
-const MAX_FILE_BYTES: usize = 4 * 1024;
+const CURRENT_VERSION: u32 = 2;
+const MAX_FILE_BYTES: usize = 80 * 1024;
+const MAX_PATH_BYTES: usize = 4 * 1024;
 const SAVE_QUIET_PERIOD: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -55,19 +58,74 @@ impl PresentationState {
     }
 }
 
-pub(super) struct PresentationPersistence {
-    pending: Arc<Mutex<Option<PresentationState>>>,
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub(super) struct FinderState {
+    pub(super) presentation: PresentationState,
+    pub(super) tabs: Vec<PathBuf>,
+    pub(super) active_tab: usize,
+}
+
+impl FinderState {
+    pub(super) fn checked(
+        presentation: PresentationState,
+        tabs: Vec<PathBuf>,
+        active_tab: usize,
+    ) -> Option<Self> {
+        let state = Self {
+            presentation,
+            tabs,
+            active_tab,
+        };
+        state.is_valid().then_some(state)
+    }
+
+    pub(super) fn restorable_session(&self, home: &Path) -> (Vec<PathBuf>, usize) {
+        let mut restored = Vec::new();
+        let mut restored_active = None;
+        for (index, path) in self.tabs.iter().enumerate() {
+            if !path.is_dir() {
+                continue;
+            }
+            if index == self.active_tab {
+                restored_active = Some(restored.len());
+            }
+            restored.push(path.clone());
+        }
+        if restored.is_empty() {
+            return (vec![home.to_path_buf()], 0);
+        }
+        (restored, restored_active.unwrap_or(0))
+    }
+
+    fn is_valid(&self) -> bool {
+        self.presentation.is_valid()
+            && self.tabs.len() <= MAX_RESTORED_TABS
+            && if self.tabs.is_empty() {
+                self.active_tab == 0
+            } else {
+                self.active_tab < self.tabs.len()
+            }
+            && self.tabs.iter().all(|path| {
+                path.is_absolute()
+                    && path.to_str().is_some()
+                    && path.as_os_str().as_bytes().len() <= MAX_PATH_BYTES
+            })
+    }
+}
+
+pub(super) struct FinderPersistence {
+    pending: Arc<Mutex<Option<FinderState>>>,
     wake: async_channel::Sender<()>,
 }
 
-impl PresentationPersistence {
+impl FinderPersistence {
     pub(super) fn start<T: 'static>(cx: &Context<T>) -> Self {
-        let pending: Arc<Mutex<Option<PresentationState>>> = Arc::new(Mutex::new(None));
+        let pending: Arc<Mutex<Option<FinderState>>> = Arc::new(Mutex::new(None));
         let (wake, updates) = async_channel::bounded(1);
         let worker_pending = Arc::clone(&pending);
         cx.background_executor()
             .spawn(async move {
-                let Ok(store) = PresentationStore::from_environment() else {
+                let Ok(store) = FinderStateStore::from_environment() else {
                     return;
                 };
                 while updates.recv().await.is_ok() {
@@ -78,7 +136,7 @@ impl PresentationPersistence {
                         .ok()
                         .and_then(|mut pending| pending.take());
                     if let Some(state) = state {
-                        let _ = store.save(state);
+                        let _ = store.save(&state);
                     }
                 }
             })
@@ -86,15 +144,15 @@ impl PresentationPersistence {
         Self { pending, wake }
     }
 
-    pub(super) fn restore() -> PresentationState {
-        PresentationStore::from_environment()
+    pub(super) fn restore() -> FinderState {
+        FinderStateStore::from_environment()
             .and_then(|store| store.load())
             .ok()
             .flatten()
             .unwrap_or_default()
     }
 
-    pub(super) fn schedule(&self, state: PresentationState) {
+    pub(super) fn schedule(&self, state: FinderState) {
         if !state.is_valid() {
             return;
         }
@@ -113,14 +171,14 @@ impl FinderView {
             return;
         }
         self.view = mode;
-        self.persist_presentation();
+        self.persist_finder_state();
         cx.notify();
     }
 
     pub(super) fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_visible = !self.sidebar_visible;
         self.resizing_sidebar = false;
-        self.persist_presentation();
+        self.persist_finder_state();
         cx.notify();
     }
 
@@ -133,7 +191,7 @@ impl FinderView {
             return;
         }
         self.sidebar_width = width.clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
-        self.persist_presentation();
+        self.persist_finder_state();
         cx.notify();
     }
 
@@ -141,11 +199,26 @@ impl FinderView {
         self.resizing_sidebar = false;
     }
 
-    fn persist_presentation(&self) {
-        if let Some(state) =
+    pub(super) fn persist_finder_state(&self) {
+        let Some(presentation) =
             PresentationState::checked(self.view, self.sidebar_visible, self.sidebar_width)
-        {
-            self.presentation_persistence.schedule(state);
+        else {
+            return;
+        };
+        let tabs = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                if index == self.active {
+                    self.cwd.clone()
+                } else {
+                    tab.cwd.clone()
+                }
+            })
+            .collect();
+        if let Some(state) = FinderState::checked(presentation, tabs, self.active) {
+            self.finder_persistence.schedule(state);
         }
     }
 }
@@ -189,7 +262,7 @@ impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "Finder presentation operation failed ({:?})",
+            "Finder state operation failed ({:?})",
             self.operation
         )
     }
@@ -198,11 +271,11 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 #[derive(Clone, Debug)]
-struct PresentationStore {
+struct FinderStateStore {
     path: PathBuf,
 }
 
-impl PresentationStore {
+impl FinderStateStore {
     fn from_environment() -> Result<Self, Error> {
         let state_home = std::env::var_os("XDG_STATE_HOME")
             .filter(|value| !value.is_empty())
@@ -221,7 +294,7 @@ impl PresentationStore {
         Self { path }
     }
 
-    fn load(&self) -> Result<Option<PresentationState>, Error> {
+    fn load(&self) -> Result<Option<FinderState>, Error> {
         match self.read(&self.path) {
             Ok(Some(state)) => Ok(Some(state)),
             Ok(None) => self.read(&self.last_good_path()),
@@ -233,25 +306,35 @@ impl PresentationStore {
         }
     }
 
-    fn read(&self, path: &Path) -> Result<Option<PresentationState>, Error> {
+    fn read(&self, path: &Path) -> Result<Option<FinderState>, Error> {
         let bytes = match FileSystem.read_bounded_no_follow(path, MAX_FILE_BYTES) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(Error::io(Operation::Read, error)),
         };
-        let stored: StoredPresentation = serde_json::from_slice(&bytes)
+        let version: VersionProbe = serde_json::from_slice(&bytes)
             .map_err(|_| Error::new(Operation::Parse, ErrorKind::Invalid))?;
-        if stored.version != VERSION {
-            return Err(Error::new(Operation::Parse, ErrorKind::UnsupportedVersion));
-        }
-        stored
-            .state
-            .is_valid()
-            .then_some(Some(stored.state))
+        let state = match version.version {
+            1 => {
+                let stored: StoredVersion1 = serde_json::from_slice(&bytes)
+                    .map_err(|_| Error::new(Operation::Parse, ErrorKind::Invalid))?;
+                FinderState::checked(stored.state, Vec::new(), 0)
+            }
+            CURRENT_VERSION => {
+                let stored: StoredVersion2 = serde_json::from_slice(&bytes)
+                    .map_err(|_| Error::new(Operation::Parse, ErrorKind::Invalid))?;
+                stored.state.is_valid().then_some(stored.state)
+            }
+            _ => {
+                return Err(Error::new(Operation::Parse, ErrorKind::UnsupportedVersion));
+            }
+        };
+        state
+            .map(Some)
             .ok_or_else(|| Error::new(Operation::Validate, ErrorKind::Invalid))
     }
 
-    fn save(&self, state: PresentationState) -> Result<(), Error> {
+    fn save(&self, state: &FinderState) -> Result<(), Error> {
         if !state.is_valid() {
             return Err(Error::new(Operation::Validate, ErrorKind::Invalid));
         }
@@ -261,9 +344,9 @@ impl PresentationStore {
             .ok_or_else(|| Error::new(Operation::ResolvePath, ErrorKind::Invalid))?;
         rmac_storage::create_dir_all_private(parent)
             .map_err(|error| Error::io(Operation::CreateDirectory, error))?;
-        let bytes = serde_json::to_vec(&StoredPresentation {
-            version: VERSION,
-            state,
+        let bytes = serde_json::to_vec(&StoredVersion2 {
+            version: CURRENT_VERSION,
+            state: state.clone(),
         })
         .map_err(|_| Error::new(Operation::Serialize, ErrorKind::Invalid))?;
         if bytes.len() > MAX_FILE_BYTES {
@@ -290,10 +373,21 @@ fn recoverable(error: Error) -> bool {
     )
 }
 
+#[derive(Debug, Deserialize)]
+struct VersionProbe {
+    version: u32,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-struct StoredPresentation {
+struct StoredVersion1 {
     version: u32,
     state: PresentationState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredVersion2 {
+    version: u32,
+    state: FinderState,
 }
 
 #[cfg(test)]
@@ -306,36 +400,56 @@ mod tests {
     fn test_path(name: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "rmac-finder-presentation-{name}-{}-{sequence}/presentation.json",
+            "rmac-finder-state-{name}-{}-{sequence}/presentation.json",
             std::process::id()
         ))
     }
 
     #[test]
-    fn presentation_round_trips_and_recovers_from_primary_corruption() {
+    fn state_round_trips_and_recovers_from_primary_corruption() {
         let path = test_path("round-trip");
-        let store = PresentationStore::at(path.clone());
-        let state = PresentationState::checked(ViewMode::Gallery, false, 248.0).unwrap();
-        store.save(state).unwrap();
-        assert_eq!(store.load().unwrap(), Some(state));
+        let store = FinderStateStore::at(path.clone());
+        let presentation = PresentationState::checked(ViewMode::Gallery, false, 248.0).unwrap();
+        let state = FinderState::checked(presentation, vec![PathBuf::from("/tmp")], 0).unwrap();
+        store.save(&state).unwrap();
+        assert_eq!(store.load().unwrap(), Some(state.clone()));
         std::fs::write(&path, b"corrupt").unwrap();
         assert_eq!(store.load().unwrap(), Some(state));
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
-    fn restored_sidebar_width_is_bounded() {
+    fn version_one_presentation_migrates_without_unsafe_tabs() {
+        let path = test_path("migration");
+        let parent = path.parent().unwrap();
+        std::fs::create_dir_all(parent).unwrap();
+        let presentation = PresentationState::checked(ViewMode::Icon, true, 220.0).unwrap();
+        let bytes = serde_json::to_vec(&StoredVersion1 {
+            version: 1,
+            state: presentation,
+        })
+        .unwrap();
+        std::fs::write(&path, bytes).unwrap();
+
         assert_eq!(
-            PresentationState::checked(ViewMode::Icon, true, 10.0)
-                .unwrap()
-                .sidebar_width,
-            MIN_SIDEBAR_WIDTH
+            FinderStateStore::at(path.clone()).load().unwrap(),
+            Some(FinderState {
+                presentation,
+                tabs: Vec::new(),
+                active_tab: 0,
+            })
         );
-        assert_eq!(
-            PresentationState::checked(ViewMode::List, true, 900.0)
-                .unwrap()
-                .sidebar_width,
-            MAX_SIDEBAR_WIDTH
-        );
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn missing_tabs_are_dropped_and_sidebar_width_is_bounded() {
+        let presentation = PresentationState::checked(ViewMode::List, true, 900.0).unwrap();
+        assert_eq!(presentation.sidebar_width, MAX_SIDEBAR_WIDTH);
+        let home = std::env::temp_dir();
+        let missing = home.join("rmac-definitely-missing-tab");
+        let state = FinderState::checked(presentation, vec![home.clone(), missing], 1).unwrap();
+
+        assert_eq!(state.restorable_session(&home), (vec![home], 0));
     }
 }

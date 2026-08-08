@@ -22,6 +22,11 @@ impl FinderView {
     }
 
     pub(super) fn new_tab(&mut self, cx: &mut Context<Self>) {
+        if self.tabs.len() >= MAX_RESTORED_TABS {
+            self.operation_error = Some("A Finder window can contain up to 16 tabs".into());
+            cx.notify();
+            return;
+        }
         self.save_tab();
         self.trash_view = false;
         self.tabs.push(Tab {
@@ -32,6 +37,7 @@ impl FinderView {
         });
         self.active = self.tabs.len() - 1;
         self.load_tab(self.active);
+        self.persist_finder_state();
         self.reload(cx);
     }
 
@@ -52,8 +58,10 @@ impl FinderView {
         if was_active {
             self.trash_view = false;
             self.load_tab(self.active);
+            self.persist_finder_state();
             self.reload(cx);
         } else {
+            self.persist_finder_state();
             cx.notify();
         }
     }
@@ -66,6 +74,7 @@ impl FinderView {
         self.trash_view = false;
         self.active = index;
         self.load_tab(index);
+        self.persist_finder_state();
         self.reload(cx);
     }
 
@@ -78,6 +87,7 @@ impl FinderView {
         self.fwd.clear();
         self.cwd = path;
         self.cwd_identity = None;
+        self.persist_finder_state();
         self.reload(cx);
     }
 
@@ -91,6 +101,7 @@ impl FinderView {
             self.fwd.push(self.cwd.clone());
             self.cwd = path;
             self.cwd_identity = None;
+            self.persist_finder_state();
             self.reload(cx);
         }
     }
@@ -100,6 +111,7 @@ impl FinderView {
             self.back.push(self.cwd.clone());
             self.cwd = path;
             self.cwd_identity = None;
+            self.persist_finder_state();
             self.reload(cx);
         }
     }

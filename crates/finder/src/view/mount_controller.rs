@@ -101,10 +101,12 @@ impl FinderView {
             }
             self.operation_notice =
                 Some("A mounted volume disconnected; affected tabs returned to Home".into());
+            self.persist_finder_state();
             self.reload(cx);
         } else {
             self.operation_notice =
                 Some("A mounted volume disconnected; stale locations were removed".into());
+            self.persist_finder_state();
             cx.notify();
         }
     }

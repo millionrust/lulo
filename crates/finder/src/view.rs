@@ -80,7 +80,7 @@ use crate::watchers::{
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
 use crate::{directory_state, file_ops, operation_journal, pasteboard, quick_look, undo_journal};
 use filesystem_helpers::*;
-use presentation_persistence::PresentationPersistence;
+use presentation_persistence::{FinderPersistence, MAX_RESTORED_TABS};
 use presentation_support::*;
 use search_helpers::*;
 use transient_state::*;
@@ -207,7 +207,7 @@ struct FinderView {
     sidebar_visible: bool,
     sidebar_width: f32,
     resizing_sidebar: bool,
-    presentation_persistence: presentation_persistence::PresentationPersistence,
+    finder_persistence: FinderPersistence,
     col_stack: Vec<PathBuf>,
     sort_key: SortKey,
     sort_asc: bool,

@@ -66,6 +66,7 @@ impl FinderView {
                     this.cwd = resolution.current;
                     this.operation_notice =
                         Some("The current folder was renamed; Files followed it".into());
+                    this.persist_finder_state();
                 }
                 this.reload_inner(cx, false);
             });
@@ -265,6 +266,7 @@ impl FinderView {
                             }
                             .into(),
                         );
+                        this.persist_finder_state();
                         this.reload_inner(cx, true);
                     }
                     Err(_) => {

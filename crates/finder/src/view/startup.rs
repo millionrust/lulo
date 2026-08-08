@@ -166,19 +166,25 @@ impl FinderView {
 
         let focus = cx.focus_handle();
         window.focus(&focus);
-        let presentation = PresentationPersistence::restore();
-        let presentation_persistence = PresentationPersistence::start(cx);
-        presentation_persistence.schedule(presentation);
-
-        let mut view = Self {
-            cwd: home.clone(),
-            tabs: vec![Tab {
-                cwd: home.clone(),
+        let restored = FinderPersistence::restore();
+        let presentation = restored.presentation;
+        let (restored_paths, active) = restored.restorable_session(&home);
+        let cwd = restored_paths[active].clone();
+        let tabs = restored_paths
+            .into_iter()
+            .map(|cwd| Tab {
+                cwd,
                 identity: None,
                 back: Vec::new(),
                 fwd: Vec::new(),
-            }],
-            active: 0,
+            })
+            .collect();
+        let finder_persistence = FinderPersistence::start(cx);
+
+        let mut view = Self {
+            cwd: cwd.clone(),
+            tabs,
+            active,
             home: home.clone(),
             mounts: mounts.clone(),
             mount_generation: 0,
@@ -199,8 +205,8 @@ impl FinderView {
             sidebar_visible: presentation.sidebar_visible,
             sidebar_width: presentation.sidebar_width,
             resizing_sidebar: false,
-            presentation_persistence,
-            col_stack: vec![home.clone()],
+            finder_persistence,
+            col_stack: vec![cwd],
             sort_key: SortKey::Name,
             sort_asc: true,
             query,
@@ -261,6 +267,7 @@ impl FinderView {
             search_generation: 0,
             search_cancel: None,
         };
+        view.persist_finder_state();
         view.reload(cx);
 
         spawn_recovery_loaders(cx);

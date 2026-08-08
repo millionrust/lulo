@@ -5,7 +5,7 @@ BindsTo=graphical-session.target
 After=graphical-session.target
 StartLimitIntervalSec=30s
 StartLimitBurst=5
-ConditionPathIsExecutable=%h/.local/libexec/rmac-evidence/rmac-lock-provider
+ConditionFileIsExecutable=%h/.local/libexec/rmac-evidence/rmac-lock-provider
 ConditionPathExists=%t/rmac-lock-evidence/environment
 
 [Service]

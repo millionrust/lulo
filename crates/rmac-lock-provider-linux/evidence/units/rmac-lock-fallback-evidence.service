@@ -4,7 +4,7 @@ Documentation=https://github.com/rmac/rmac
 BindsTo=graphical-session.target
 After=graphical-session.target
 StartLimitIntervalSec=0
-ConditionPathIsExecutable=%h/.local/libexec/rmac/rmac-locker
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-locker
 ConditionPathExists=%h/.config/rmac/swaylock.conf
 ConditionPathExists=%t/rmac-lock-evidence/environment
 

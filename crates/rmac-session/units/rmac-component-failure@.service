@@ -1,9 +1,9 @@
 [Unit]
-Description=Record failure of rmac component %I
+Description=Record failure of rmac component %i
 Documentation=https://github.com/rmac/rmac
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/libexec/rmac/rmac-session-supervisor observe-failure %I.service
+ExecStart=%h/.local/libexec/rmac/rmac-session-supervisor observe-failure %i.service
 NoNewPrivileges=yes
 PrivateTmp=yes

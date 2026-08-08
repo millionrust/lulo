@@ -137,9 +137,12 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         assert!(unit.contains("StartLimitIntervalSec=60s"));
         assert!(unit.contains("StartLimitBurst=4"));
         assert!(unit.contains("OnFailure=rmac-component-failure@%N.service"));
-        assert!(unit.contains("ConditionPathIsExecutable=%h/.local/libexec/rmac/"));
+        assert!(unit.contains("ConditionFileIsExecutable=%h/.local/libexec/rmac/"));
         assert!(!unit.contains("/bin/sh"));
     }
+    let failure = include_str!("../units/rmac-component-failure@.service");
+    assert!(failure.contains("observe-failure %i.service"));
+    assert!(!failure.contains("%I.service"));
     let notifications = include_str!("../units/rmac-notification-center.service");
     assert!(notifications.contains("Type=dbus"));
     assert!(notifications.contains("BusName=org.freedesktop.impl.portal.desktop.rmac"));

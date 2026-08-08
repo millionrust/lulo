@@ -6,7 +6,7 @@ After=rmac-session-supervisor.service xdg-desktop-portal.service rmac-launcher.s
 OnFailure=rmac-component-failure@%N.service
 StartLimitIntervalSec=60s
 StartLimitBurst=4
-ConditionPathIsExecutable=%h/.local/libexec/rmac/rmac-shortcut-broker
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-shortcut-broker
 
 [Service]
 Type=simple

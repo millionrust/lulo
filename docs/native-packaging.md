@@ -17,7 +17,7 @@ and Settings appear in both payloads because the ordinary applications launch
 from `/usr/bin`, while their supervised session modes use the immutable
 `/usr/libexec/rmac` boundary. The currently gated Top Bar, Dock, and Wallpaper
 units do not receive invented executables; their existing
-`ConditionPathIsExecutable` checks keep them inactive until the real
+`ConditionFileIsExecutable` checks keep them inactive until the real
 layer-surface binaries land after the framework decision.
 
 ## Build contract

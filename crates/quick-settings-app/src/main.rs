@@ -244,7 +244,15 @@ fn main() {
                     }
                     Ok::<(), String>(())
                 };
-                let watcher = async { activation_done.await.map_err(|error| error.to_string()) };
+                let watcher = async {
+                    activation_done.await.map_err(|error| {
+                        format!(
+                            "Quick Settings shell activation {:?} failed: {}",
+                            error.operation(),
+                            error.detail()
+                        )
+                    })
+                };
                 if let Err(error) = futures_util::try_join!(watcher, consume) {
                     eprintln!("{error}");
                     std::process::exit(1);

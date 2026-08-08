@@ -17,7 +17,9 @@ mod metrics_panes;
 mod overlays;
 
 impl Render for MonitorView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let layout =
+            super::responsive_layout::toolbar_layout(f32::from(window.bounds().size.width));
         let persistence_error = self.persistence_error.clone();
         let process_feedback = self.process_action_feedback.clone();
         div()
@@ -46,7 +48,7 @@ impl Render for MonitorView {
             .bg(mac::window())
             .text_color(mac::text())
             .child(rmac_ui::title_bar("System Monitor"))
-            .child(self.render_toolbar(cx))
+            .child(self.render_toolbar(layout, cx))
             .when_some(persistence_error, |monitor, message| {
                 monitor.child(
                     div()
@@ -127,7 +129,7 @@ impl Render for MonitorView {
             })
             .when(
                 self.cols_menu_open && self.tab.has_process_table(),
-                |monitor| monitor.child(self.render_columns_menu(cx)),
+                |monitor| monitor.child(self.render_columns_menu(layout, cx)),
             )
             .children(self.render_confirm(cx))
             .children(self.render_inspector(cx))

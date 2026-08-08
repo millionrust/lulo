@@ -1,6 +1,7 @@
 //! System Monitor session controller.
 
 mod render;
+mod responsive_layout;
 
 use std::time::Duration;
 

@@ -20,12 +20,7 @@ impl Settings {
                 section
                     .iter()
                     .enumerate()
-                    .filter(|(_, category)| {
-                        rmac_system_settings::accessibility::category_matches(
-                            &query,
-                            category.name.as_ref(),
-                        )
-                    })
+                    .filter(|(_, category)| crate::settings_search::matches(category, &query))
                     .map(move |(category_index, _)| (section_index, category_index))
             })
             .collect()

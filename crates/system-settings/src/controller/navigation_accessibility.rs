@@ -26,6 +26,7 @@ impl Settings {
                     pane_id,
                     name: category.name.as_ref(),
                     description: category.desc.as_ref(),
+                    search_terms: category.search_terms,
                 });
             }
             sections.push(categories);

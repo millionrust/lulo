@@ -18,6 +18,7 @@ pub const GLOBAL_ERROR_DISMISS_ID: &str = "settings-error-dismiss";
 pub const DISMISS_NAME: &str = "Dismiss";
 pub const MAX_NAVIGATION_SECTIONS: usize = 8;
 pub const MAX_NAVIGATION_CATEGORIES: usize = 64;
+pub const MAX_CATEGORY_SEARCH_TERMS: usize = 32;
 pub const MAX_NAVIGATION_DEPTH: usize = 8;
 pub const MAX_QUERY_BYTES: usize = 4 * 1024;
 pub const MAX_LABEL_BYTES: usize = 4 * 1024;
@@ -29,6 +30,7 @@ pub struct NavigationCategoryInput<'a> {
     pub pane_id: &'a str,
     pub name: &'a str,
     pub description: &'a str,
+    pub search_terms: &'a [&'a str],
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -89,6 +91,8 @@ pub struct AccessibleNavigationItem {
     pub pane_id: String,
     pub name: String,
     pub description: String,
+    /// The implemented setting label that best explains a filtered result.
+    pub match_hint: Option<String>,
     pub selected: bool,
     pub position_in_section: usize,
     pub section_size: usize,
@@ -104,6 +108,7 @@ impl fmt::Debug for AccessibleNavigationItem {
             .field("pane_id", &self.pane_id)
             .field("name", &self.name)
             .field("description", &self.description)
+            .field("match_hint", &self.match_hint)
             .field("selected", &self.selected)
             .field("position_in_section", &self.position_in_section)
             .field("section_size", &self.section_size)
@@ -328,6 +333,16 @@ pub fn project_settings_navigation(
             budget.add_required(category.pane_id, 128, false)?;
             budget.add_required(category.name, MAX_LABEL_BYTES, false)?;
             budget.add_required(category.description, MAX_LABEL_BYTES, true)?;
+            if category.search_terms.len() > MAX_CATEGORY_SEARCH_TERMS {
+                return Err(AccessibilityProjectionError::InvalidCategory);
+            }
+            let mut seen_terms = HashSet::with_capacity(category.search_terms.len());
+            for term in category.search_terms {
+                budget.add_required(term, MAX_LABEL_BYTES, false)?;
+                if !seen_terms.insert(*term) {
+                    return Err(AccessibilityProjectionError::DuplicateCategory);
+                }
+            }
             if !seen_ids.insert(category.pane_id) || !seen_names.insert(category.name) {
                 return Err(AccessibilityProjectionError::DuplicateCategory);
             }
@@ -343,8 +358,13 @@ pub fn project_settings_navigation(
                 .iter()
                 .enumerate()
                 .filter_map(|(item_index, category)| {
-                    category_matches(input.query, category.name)
-                        .then_some((section_index, item_index))
+                    category_matches(
+                        input.query,
+                        category.name,
+                        category.description,
+                        category.search_terms,
+                    )
+                    .then_some((section_index, item_index))
                 })
                 .collect::<Vec<_>>();
             (!items.is_empty()).then_some(items)
@@ -387,13 +407,18 @@ pub fn project_settings_navigation(
             selected_visible |= is_selected;
             let action_id = format!("cat-{section_index}-{item_index}");
             let action_name = format!("Open {} settings", category.name);
+            let match_hint = category_match_hint(input.query, category.search_terms);
             budget.add_required(&action_id, 128, false)?;
             budget.add_required(&action_name, MAX_LABEL_BYTES, false)?;
+            if let Some(match_hint) = match_hint {
+                budget.add_required(match_hint, MAX_LABEL_BYTES, false)?;
+            }
             navigation_focus_order.push(action_id.clone());
             items.push(AccessibleNavigationItem {
                 pane_id: category.pane_id.into(),
                 name: category.name.into(),
                 description: category.description.into(),
+                match_hint: match_hint.map(str::to_owned),
                 selected: is_selected,
                 position_in_section: position_in_section + 1,
                 section_size,
@@ -419,9 +444,9 @@ pub fn project_settings_navigation(
     let mut announcements = Vec::new();
     if !input.query.is_empty() {
         let text = if visible_category_count == 1 {
-            "1 matching settings category".to_owned()
+            "1 matching settings pane".to_owned()
         } else {
-            format!("{visible_category_count} matching settings categories")
+            format!("{visible_category_count} matching settings panes")
         };
         budget.add_required(&text, MAX_LABEL_BYTES, false)?;
         announcements.push(LiveAnnouncement {
@@ -481,8 +506,63 @@ pub fn project_settings_navigation(
     })
 }
 
-pub fn category_matches(query: &str, category_name: &str) -> bool {
-    query.is_empty() || category_name.to_lowercase().contains(&query.to_lowercase())
+pub fn category_matches(
+    query: &str,
+    category_name: &str,
+    category_description: &str,
+    search_terms: &[&str],
+) -> bool {
+    if query.len() > MAX_QUERY_BYTES {
+        return false;
+    }
+    let query_terms = query
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    if query_terms.is_empty() {
+        return true;
+    }
+    let fields = [category_name, category_description]
+        .into_iter()
+        .chain(search_terms.iter().copied())
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    query_terms.iter().all(|query_term| {
+        fields
+            .iter()
+            .any(|field| text_has_word_prefix(field, query_term))
+    })
+}
+
+pub fn category_match_hint<'a>(query: &str, search_terms: &'a [&'a str]) -> Option<&'a str> {
+    if query.len() > MAX_QUERY_BYTES {
+        return None;
+    }
+    let query_terms = query
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    if query_terms.is_empty() {
+        return None;
+    }
+    search_terms
+        .iter()
+        .copied()
+        .filter_map(|term| {
+            let lower = term.to_lowercase();
+            let score = query_terms
+                .iter()
+                .filter(|query_term| text_has_word_prefix(&lower, query_term))
+                .count();
+            (score != 0).then_some((score, term))
+        })
+        .max_by_key(|(score, _)| *score)
+        .map(|(_, term)| term)
+}
+
+fn text_has_word_prefix(text: &str, query_term: &str) -> bool {
+    text.split(|character: char| !character.is_alphanumeric())
+        .any(|word| !word.is_empty() && word.starts_with(query_term))
 }
 
 fn validate_pane_id(pane_id: &str) -> Result<(), AccessibilityProjectionError> {
@@ -554,6 +634,7 @@ mod tests {
             pane_id: id,
             name,
             description: "Authoritative settings description",
+            search_terms: &[],
         }
     }
 
@@ -640,6 +721,30 @@ mod tests {
         ] {
             assert!(!diagnostics.contains(private));
         }
+    }
+
+    #[test]
+    fn search_finds_implemented_setting_labels_and_exposes_the_match_reason() {
+        let mut sections = sections();
+        sections[1][0].search_terms = &["Light appearance", "Dark appearance", "Accent color"];
+        let projected = project_settings_navigation(NavigationInput {
+            sections: &sections,
+            selected: (0, 0),
+            query: "dark",
+            account_name: "Account",
+            subpage_title: None,
+            back_depth: 0,
+            global_error: None,
+        })
+        .unwrap();
+
+        assert_eq!(projected.search.result_count, 1);
+        assert_eq!(projected.sections[0].items[0].pane_id, "appearance");
+        assert_eq!(
+            projected.sections[0].items[0].match_hint.as_deref(),
+            Some("Dark appearance")
+        );
+        assert_eq!(projected.announcements[0].text, "1 matching settings pane");
     }
 
     #[test]

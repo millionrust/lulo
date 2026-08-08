@@ -181,12 +181,7 @@ impl Settings {
             let matching: Vec<(usize, &Category)> = section
                 .iter()
                 .enumerate()
-                .filter(|(_, category)| {
-                    rmac_system_settings::accessibility::category_matches(
-                        &query,
-                        category.name.as_ref(),
-                    )
-                })
+                .filter(|(_, category)| crate::settings_search::matches(category, &query))
                 .collect();
             if matching.is_empty() {
                 continue;
@@ -196,6 +191,11 @@ impl Settings {
             }
             first_section = false;
             for (ci, cat) in matching {
+                let search_context = searching.then(|| {
+                    crate::settings_search::match_hint(cat, &query)
+                        .map(SharedString::from)
+                        .unwrap_or_else(|| cat.desc.clone())
+                });
                 let selected = if searching {
                     search_result_index == active_search_result
                 } else {
@@ -212,14 +212,38 @@ impl Settings {
                             .child(tile(cat.icon, cat.color, 20.0))
                             .child(
                                 div()
-                                    .text_size(rmac_ui::text_px(13.0))
-                                    .text_color(if selected { on_accent() } else { label() })
-                                    .child(cat.name.clone()),
+                                    .min_w_0()
+                                    .v_flex()
+                                    .child(
+                                        div()
+                                            .text_size(rmac_ui::text_px(13.0))
+                                            .text_color(if selected {
+                                                on_accent()
+                                            } else {
+                                                label()
+                                            })
+                                            .child(cat.name.clone()),
+                                    )
+                                    .when_some(search_context, |content, context| {
+                                        content.child(
+                                            div()
+                                                .max_w(px(SIDEBAR_W - 68.0))
+                                                .overflow_hidden()
+                                                .text_size(rmac_ui::text_px(9.5))
+                                                .text_color(if selected {
+                                                    on_accent()
+                                                } else {
+                                                    secondary()
+                                                })
+                                                .child(context),
+                                        )
+                                    }),
                             ),
                     )
                     .selected(selected)
                     .mx_2()
                     .px_2()
+                    .h(px(if searching { 42.0 } else { 30.0 }))
                     .on_activate(cx.listener(move |t, _, window, cx| {
                         t.select_position((si, ci), cx);
                         if searching {

@@ -8,6 +8,9 @@ pub(super) struct Category {
     pub(super) icon: &'static str,
     pub(super) color: Hsla,
     pub(super) desc: SharedString,
+    /// Exact labels and concepts implemented by this pane. These make a
+    /// setting discoverable without inventing a destination or deep link.
+    pub(super) search_terms: &'static [&'static str],
 }
 
 /// A navigation subpage pushed onto the back stack from a row chevron.
@@ -63,6 +66,7 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
         icon,
         color,
         desc: desc.to_string().into(),
+        search_terms: crate::settings_search::terms_for_pane(name),
     };
 
     vec![

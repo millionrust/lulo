@@ -8,6 +8,7 @@ mod navigation;
 mod notifications;
 mod power;
 mod service_updates;
+mod settings_search;
 mod shell_settings;
 mod sound;
 mod system_environment;

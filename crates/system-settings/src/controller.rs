@@ -22,6 +22,7 @@ mod locale;
 mod lock_screen;
 mod login_items;
 mod navigation_accessibility;
+mod navigation_persistence;
 mod navigation_state;
 mod network;
 mod notifications;
@@ -124,6 +125,7 @@ use gpui::{
     StyledImage as _, Svg, Window,
 };
 use gpui_component::StyledExt as _;
+use navigation_persistence::NavigationPersistence;
 use rmac_ui::{
     Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
     SliderState, Tabs, TextField, Toast, ToastKind, Toggle,

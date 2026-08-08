@@ -185,9 +185,7 @@ impl Settings {
                     .mx_2()
                     .px_2()
                     .on_activate(cx.listener(move |t, _, _, cx| {
-                        t.selected = (si, ci);
-                        t.nav.clear();
-                        cx.notify();
+                        t.select_position((si, ci), cx);
                     })),
                 );
             }

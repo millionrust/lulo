@@ -91,6 +91,7 @@ pub(super) struct Settings {
     pub(super) security_coverage: Option<rmac_privacy::SecurityCoverageSnapshot>,
     pub(super) sections: Vec<Vec<Category>>,
     pub(super) selected: (usize, usize),
+    pub(super) navigation_persistence: NavigationPersistence,
     pub(super) nav: Vec<SubPage>,
     pub(super) search: Entity<InputState>,
     pub(super) focus: FocusHandle,

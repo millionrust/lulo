@@ -36,9 +36,24 @@ impl Settings {
                     .map(|item| (section, item))
             });
         if let Some(target) = target {
-            self.selected = target;
-            self.nav.clear();
-            cx.notify();
+            self.select_position(target, cx);
         }
+    }
+
+    pub(super) fn select_position(&mut self, target: (usize, usize), cx: &mut Context<Self>) {
+        let Some(category) = self
+            .sections
+            .get(target.0)
+            .and_then(|section| section.get(target.1))
+        else {
+            return;
+        };
+        let Some(pane_id) = pane_id_for_category_name(category.name.as_ref()) else {
+            return;
+        };
+        self.selected = target;
+        self.nav.clear();
+        self.navigation_persistence.schedule(pane_id);
+        cx.notify();
     }
 }

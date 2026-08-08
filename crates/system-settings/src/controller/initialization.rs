@@ -1333,16 +1333,26 @@ impl Settings {
         .detach();
 
         let sections = categories();
-        let selected = std::env::args()
-            .collect::<Vec<_>>()
-            .windows(2)
-            .find_map(|arguments| {
-                (arguments[0] == "--pane")
-                    .then(|| category_name_for_pane_id(&arguments[1]))
-                    .flatten()
-            })
+        let requested_category =
+            std::env::args()
+                .collect::<Vec<_>>()
+                .windows(2)
+                .find_map(|arguments| {
+                    (arguments[0] == "--pane")
+                        .then(|| category_name_for_pane_id(&arguments[1]))
+                        .flatten()
+                });
+        let restored_pane = NavigationPersistence::restore();
+        let selected = requested_category
+            .or_else(|| restored_pane.as_deref().and_then(category_name_for_pane_id))
             .and_then(|category| category_position(&sections, category))
             .unwrap_or((1, 0));
+        let navigation_persistence = NavigationPersistence::start(cx);
+        if let Some(pane_id) =
+            pane_id_for_category_name(sections[selected.0][selected.1].name.as_ref())
+        {
+            navigation_persistence.schedule(pane_id);
+        }
 
         Self {
             system_data_loading: true,
@@ -1436,6 +1446,7 @@ impl Settings {
             security_coverage: None,
             sections,
             selected,
+            navigation_persistence,
             nav: Vec::new(),
             search,
             focus: cx.focus_handle(),

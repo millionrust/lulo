@@ -191,7 +191,7 @@ fn main() {
             #[cfg(target_os = "linux")]
             let (activation_tx, activation_rx) = async_channel::bounded(8);
             #[cfg(target_os = "linux")]
-            let activation_done = cx.background_executor().spawn(async move {
+            let activation_done = cx.spawn(async move |_: &mut gpui::AsyncApp| {
                 rmac_shell_activation_runtime::watch(
                     rmac_shortcuts::ShortcutId("notification-center".into()),
                     activation_tx,

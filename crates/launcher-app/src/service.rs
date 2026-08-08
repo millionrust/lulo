@@ -151,7 +151,7 @@ pub(crate) fn run() {
             #[cfg(target_os = "linux")]
             let (activation_tx, activation_rx) = async_channel::bounded(16);
             #[cfg(target_os = "linux")]
-            let activation_done = cx.background_executor().spawn(async move {
+            let activation_done = cx.spawn(async move |_: &mut gpui::AsyncApp| {
                 rmac_shell_activation_runtime::watch(
                     rmac_shortcuts::ShortcutId("launcher".into()),
                     activation_tx,

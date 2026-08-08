@@ -142,3 +142,94 @@ impl TerminalView {
         rows
     }
 }
+
+fn span(text: &str, style: Style) -> gpui::AnyElement {
+    let mut element = div()
+        .text_color(style.fg)
+        .bg(style.bg)
+        .child(text.to_string());
+    if style.bold {
+        element = element.font_weight(FontWeight::BOLD);
+    }
+    if style.italic {
+        element = element.italic();
+    }
+    if style.underline {
+        element = element.underline();
+    }
+    if style.strike {
+        element = element.line_through();
+    }
+    element.into_any_element()
+}
+
+/// Map a terminal color to RGB.
+fn conv(color: Color) -> Hsla {
+    let (red, green, blue) = match color {
+        Color::Spec(rgb) => (rgb.r, rgb.g, rgb.b),
+        Color::Named(named) => named_color(named),
+        Color::Indexed(index) => indexed_color(index),
+    };
+    gpui::rgb(((red as u32) << 16) | ((green as u32) << 8) | (blue as u32)).into()
+}
+
+fn named_color(color: NamedColor) -> (u8, u8, u8) {
+    use NamedColor::*;
+    let profile = active();
+    let ansi = |index: usize| split(profile.ansi[index]);
+    match color {
+        Background => split(profile.bg),
+        Foreground => split(profile.fg),
+        Cursor => split(profile.cursor),
+        Black => ansi(0),
+        Red => ansi(1),
+        Green => ansi(2),
+        Yellow => ansi(3),
+        Blue => ansi(4),
+        Magenta => ansi(5),
+        Cyan => ansi(6),
+        White => ansi(7),
+        BrightBlack => ansi(8),
+        BrightRed => ansi(9),
+        BrightGreen => ansi(10),
+        BrightYellow => ansi(11),
+        BrightBlue => ansi(12),
+        BrightMagenta => ansi(13),
+        BrightCyan => ansi(14),
+        BrightWhite => ansi(15),
+        _ => split(profile.fg),
+    }
+}
+
+fn indexed_color(index: u8) -> (u8, u8, u8) {
+    match index {
+        0..=15 => split(active().ansi[index as usize]),
+        16..=231 => {
+            let index = index - 16;
+            let component = |value: u8| -> u8 {
+                if value == 0 {
+                    0
+                } else {
+                    55 + 40 * value
+                }
+            };
+            (
+                component(index / 36),
+                component((index % 36) / 6),
+                component(index % 6),
+            )
+        }
+        _ => {
+            let value = 8 + (index - 232) * 10;
+            (value, value, value)
+        }
+    }
+}
+
+fn split(hex: u32) -> (u8, u8, u8) {
+    (
+        ((hex >> 16) & 0xff) as u8,
+        ((hex >> 8) & 0xff) as u8,
+        (hex & 0xff) as u8,
+    )
+}

@@ -1,6 +1,7 @@
 mod chrome;
 mod dialogs;
 mod grid;
+mod overlays;
 
 use super::*;
 
@@ -384,156 +385,24 @@ impl Render for TerminalView {
                     .when_some(ime_preedit, |body, preedit| body.child(preedit))
                     .child(input_bridge),
             )
-            .when(searching, |el| {
-                el.child(
-                    div()
-                        .absolute()
-                        .top(px(40.0))
-                        .right(px(12.0))
-                        .w(px(layout.find_width))
-                        .h(px(30.0))
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_2()
-                        .rounded(px(7.0))
-                        .bg(rmac_ui::mac::raised())
-                        .child(
-                            div()
-                                .flex_1()
-                                .child(SearchField::new(&self.search).appearance(false)),
-                        )
-                        .child(
-                            div()
-                                .id("find-close")
-                                .text_color(rmac_ui::mac::text_secondary())
-                                .child("×")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.capture_active_search_query(cx);
-                                    this.tabs[this.active].ui.search_open = false;
-                                    window.focus(&this.focus);
-                                    cx.notify();
-                                })),
-                        ),
-                )
+            .when(searching, |terminal| {
+                terminal.child(self.render_find_panel(layout.find_width, cx))
             })
             // The picker is an absolute overlay — render it LAST so it paints on
             // top of the opaque terminal body instead of behind it.
             .when(self.picker_open, |el: Div| el.child(self.render_picker(cx)))
             // The right-click context menu paints above everything else.
-            .when_some(self.menu_at.clone(), |el: Div, state| {
-                el.child(
-                    rmac_ui::ContextMenu::new(state.position())
-                        .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(Copy))
-                        .command_item("Paste", rmac_ui::shortcuts::PASTE, Box::new(Paste))
-                        .command_item(
-                            "Select All",
-                            rmac_ui::shortcuts::SELECT_ALL,
-                            Box::new(SelectAll),
-                        )
-                        .separator()
-                        .command_item(
-                            "Previous Prompt",
-                            rmac_ui::shortcuts::PREVIOUS_MARK,
-                            Box::new(PreviousPrompt),
-                        )
-                        .command_item(
-                            "Next Prompt",
-                            rmac_ui::shortcuts::NEXT_MARK,
-                            Box::new(NextPrompt),
-                        )
-                        .item("Select Command", Box::new(SelectCommand))
-                        .command_item(
-                            "Select Command Output",
-                            rmac_ui::shortcuts::SELECT_COMMAND_OUTPUT,
-                            Box::new(SelectCommandOutput),
-                        )
-                        .separator()
-                        .command_item("Clear", rmac_ui::shortcuts::CLEAR, Box::new(Clear))
-                        .separator()
-                        .item("Profiles…", Box::new(ShowProfiles))
-                        .render(&state),
-                )
+            .when_some(self.menu_at.clone(), |terminal: Div, state| {
+                terminal.child(self.render_context_menu(state))
             })
             .when_some(session_status, |terminal, message| {
-                terminal.child(
-                    div()
-                        .id("session-status")
-                        .absolute()
-                        .left(px(8.0))
-                        .right(px(8.0))
-                        .bottom(px(if has_terminal_error { 54.0 } else { 8.0 }))
-                        .h_flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .py_2()
-                        .rounded(px(7.0))
-                        .bg(rmac_ui::mac::raised())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(rmac_ui::mac::text())
-                        .shadow_lg()
-                        .child(div().flex_1().child(message))
-                        .child(
-                            Button::new("new-tab-after-exit", "New Tab")
-                                .small()
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.new_tab(window, cx);
-                                })),
-                        ),
-                )
+                terminal.child(self.render_session_status(message, has_terminal_error, cx))
             })
             .when_some(hyperlink_status, |terminal, message| {
-                terminal.child(
-                    div()
-                        .id("hyperlink-status")
-                        .absolute()
-                        .left(px(8.0))
-                        .bottom(px(if has_terminal_error { 54.0 } else { 8.0 }))
-                        .max_w(px(460.0))
-                        .px_3()
-                        .py_2()
-                        .rounded(px(7.0))
-                        .bg(rmac_ui::mac::raised())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(rmac_ui::mac::text_secondary())
-                        .shadow_lg()
-                        .truncate()
-                        .child(message),
-                )
+                terminal.child(self.render_hyperlink_status(message, has_terminal_error))
             })
             .when_some(terminal_error, |terminal, message| {
-                terminal.child(
-                    div()
-                        .id("terminal-error")
-                        .absolute()
-                        .left(px(8.0))
-                        .right(px(8.0))
-                        .bottom(px(8.0))
-                        .h_flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .py_2()
-                        .rounded(px(7.0))
-                        .bg(rmac_ui::mac::danger())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(rmac_ui::mac::on_danger())
-                        .shadow_lg()
-                        .child(div().flex_1().child(message))
-                        .child(
-                            Button::new("dismiss-terminal-error", "Dismiss")
-                                .ghost()
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if operation_error_visible {
-                                        this.operation_error = None;
-                                    } else {
-                                        this.persistence_error = None;
-                                    }
-                                    cx.notify();
-                                })),
-                        ),
-                )
+                terminal.child(self.render_terminal_error(message, operation_error_visible, cx))
             })
             // Modal reviews remain the final children so no terminal surface
             // can paint over them or receive pointer input.
@@ -542,97 +411,6 @@ impl Render for TerminalView {
     }
 }
 
-fn span(text: &str, style: Style) -> gpui::AnyElement {
-    let mut element = div()
-        .text_color(style.fg)
-        .bg(style.bg)
-        .child(text.to_string());
-    if style.bold {
-        element = element.font_weight(FontWeight::BOLD);
-    }
-    if style.italic {
-        element = element.italic();
-    }
-    if style.underline {
-        element = element.underline();
-    }
-    if style.strike {
-        element = element.line_through();
-    }
-    element.into_any_element()
-}
-
 fn hsla(hex: u32) -> Hsla {
     gpui::rgb(hex).into()
-}
-
-/// Map a terminal color to RGB.
-fn conv(color: Color) -> Hsla {
-    let (red, green, blue) = match color {
-        Color::Spec(rgb) => (rgb.r, rgb.g, rgb.b),
-        Color::Named(named) => named_color(named),
-        Color::Indexed(index) => indexed_color(index),
-    };
-    gpui::rgb(((red as u32) << 16) | ((green as u32) << 8) | (blue as u32)).into()
-}
-
-fn named_color(color: NamedColor) -> (u8, u8, u8) {
-    use NamedColor::*;
-    let profile = active();
-    let ansi = |index: usize| split(profile.ansi[index]);
-    match color {
-        Background => split(profile.bg),
-        Foreground => split(profile.fg),
-        Cursor => split(profile.cursor),
-        Black => ansi(0),
-        Red => ansi(1),
-        Green => ansi(2),
-        Yellow => ansi(3),
-        Blue => ansi(4),
-        Magenta => ansi(5),
-        Cyan => ansi(6),
-        White => ansi(7),
-        BrightBlack => ansi(8),
-        BrightRed => ansi(9),
-        BrightGreen => ansi(10),
-        BrightYellow => ansi(11),
-        BrightBlue => ansi(12),
-        BrightMagenta => ansi(13),
-        BrightCyan => ansi(14),
-        BrightWhite => ansi(15),
-        _ => split(profile.fg),
-    }
-}
-
-fn indexed_color(index: u8) -> (u8, u8, u8) {
-    match index {
-        0..=15 => split(active().ansi[index as usize]),
-        16..=231 => {
-            let index = index - 16;
-            let component = |value: u8| -> u8 {
-                if value == 0 {
-                    0
-                } else {
-                    55 + 40 * value
-                }
-            };
-            (
-                component(index / 36),
-                component((index % 36) / 6),
-                component(index % 6),
-            )
-        }
-        _ => {
-            let value = 8 + (index - 232) * 10;
-            (value, value, value)
-        }
-    }
-}
-
-fn split(hex: u32) -> (u8, u8, u8) {
-    (
-        ((hex >> 16) & 0xff) as u8,
-        ((hex >> 8) & 0xff) as u8,
-        (hex & 0xff) as u8,
-    )
 }

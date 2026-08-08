@@ -1,6 +1,6 @@
 use gpui::{
-    point, px, size, App, AppContext as _, Application, Bounds, Context, Pixels, Render,
-    SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowOptions,
+    point, px, size, App, AppContext as _, Application, Context, Pixels, Render, SharedString,
+    Size, TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
 use gpui_component::Root;
 
@@ -16,14 +16,17 @@ fn minimum_window_size(width: f32, height: f32) -> Size<Pixels> {
     )
 }
 
-/// Standard window options for an rmac app window: macOS traffic lights in the
-/// canonical position, transparent titlebar so our chrome draws through.
-pub fn window_options(width: f32, height: f32) -> WindowOptions {
+fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
+    WindowBounds::centered(size(px(width), px(height)), cx)
+}
+
+fn window_options_with_bounds(
+    width: f32,
+    height: f32,
+    window_bounds: WindowBounds,
+) -> WindowOptions {
     WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-            point(px(200.0), px(120.0)),
-            size(px(width), px(height)),
-        ))),
+        window_bounds: Some(window_bounds),
         titlebar: Some(TitlebarOptions {
             title: None,
             appears_transparent: true,
@@ -37,38 +40,50 @@ pub fn window_options(width: f32, height: f32) -> WindowOptions {
     }
 }
 
+/// Standard window options for an rmac app window: macOS traffic lights in the
+/// canonical position, transparent titlebar so our chrome draws through, and
+/// first-launch placement centered on the active primary display.
+pub fn window_options(width: f32, height: f32, cx: &App) -> WindowOptions {
+    window_options_with_bounds(width, height, centered_window_bounds(width, height, cx))
+}
+
 /// Standard window options with a stable Linux desktop identity.
-pub fn window_options_for_app(app_id: &str, width: f32, height: f32) -> WindowOptions {
+pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -> WindowOptions {
     WindowOptions {
         app_id: Some(app_id.to_owned()),
-        ..window_options(width, height)
+        ..window_options(width, height, cx)
     }
 }
 
 /// Window options for an app with a **unified 52pt toolbar** (Finder-style):
 /// our own traffic lights are drawn by the app's toolbar.
-pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
-    WindowOptions {
-        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-            point(px(200.0), px(120.0)),
-            size(px(width), px(height)),
-        ))),
-        titlebar: Some(TitlebarOptions {
-            title: None,
-            appears_transparent: true,
-            // OS traffic lights hidden off-screen; rmac draws its own.
-            traffic_light_position: Some(point(px(-200.0), px(0.0))),
-        }),
-        window_min_size: Some(minimum_window_size(width, height)),
-        ..Default::default()
-    }
+pub fn window_options_unified(width: f32, height: f32, cx: &App) -> WindowOptions {
+    window_options_with_bounds(width, height, centered_window_bounds(width, height, cx))
 }
 
 /// Unified-toolbar options with a stable Linux desktop identity.
-pub fn window_options_unified_for_app(app_id: &str, width: f32, height: f32) -> WindowOptions {
+pub fn window_options_unified_for_app(
+    app_id: &str,
+    width: f32,
+    height: f32,
+    cx: &App,
+) -> WindowOptions {
     WindowOptions {
         app_id: Some(app_id.to_owned()),
-        ..window_options_unified(width, height)
+        ..window_options_unified(width, height, cx)
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn window_options_for_app_with_bounds(
+    app_id: &str,
+    width: f32,
+    height: f32,
+    window_bounds: WindowBounds,
+) -> WindowOptions {
+    WindowOptions {
+        app_id: Some(app_id.to_owned()),
+        ..window_options_with_bounds(width, height, window_bounds)
     }
 }
 
@@ -85,7 +100,8 @@ where
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
-            cx.open_window(window_options_unified(width, height), move |window, cx| {
+            let options = window_options_unified(width, height, cx);
+            cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
                 let view = cx.new(|cx| build(window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
@@ -111,14 +127,12 @@ pub fn boot_unified_app_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
-            cx.open_window(
-                window_options_unified_for_app(app_id, width, height),
-                move |window, cx| {
-                    prepare_surface_window(window, cx);
-                    let view = cx.new(|cx| build(window, cx));
-                    cx.new(|cx| Root::new(view, window, cx))
-                },
-            )
+            let options = window_options_unified_for_app(app_id, width, height, cx);
+            cx.open_window(options, move |window, cx| {
+                prepare_surface_window(window, cx);
+                let view = cx.new(|cx| build(window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            })
             .expect("failed to open window");
             cx.activate(true);
         });
@@ -179,15 +193,13 @@ pub fn boot_app_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
+            let options = window_options_for_app(app_id, width, height, cx);
 
-            cx.open_window(
-                window_options_for_app(app_id, width, height),
-                move |window, cx| {
-                    prepare_surface_window(window, cx);
-                    let view = cx.new(|cx| build(window, cx));
-                    cx.new(|cx| Root::new(view, window, cx))
-                },
-            )
+            cx.open_window(options, move |window, cx| {
+                prepare_surface_window(window, cx);
+                let view = cx.new(|cx| build(window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            })
             .expect("failed to open window");
 
             cx.activate(true);
@@ -214,8 +226,9 @@ pub fn boot_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
+            let options = window_options(width, height, cx);
 
-            cx.open_window(window_options(width, height), move |window, cx| {
+            cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
                 let view = cx.new(|cx| build(window, cx));
                 cx.new(|cx| Root::new(view, window, cx))

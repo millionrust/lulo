@@ -234,14 +234,17 @@ struct EditorView {
 }
 
 fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) -> Result<(), ()> {
-    cx.open_window(
-        rmac_ui::window_options_for_app(rmac_ui::app_id::TEXT_EDITOR, WINDOW_WIDTH, WINDOW_HEIGHT),
-        |window, cx| {
-            rmac_ui::prepare_surface_window(window, cx);
-            let view = cx.new(|cx| EditorView::new_with_path(initial_path, window, cx));
-            cx.new(|cx| Root::new(view, window, cx))
-        },
-    )
+    let options = rmac_ui::window_options_for_app(
+        rmac_ui::app_id::TEXT_EDITOR,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        cx,
+    );
+    cx.open_window(options, |window, cx| {
+        rmac_ui::prepare_surface_window(window, cx);
+        let view = cx.new(|cx| EditorView::new_with_path(initial_path, window, cx));
+        cx.new(|cx| Root::new(view, window, cx))
+    })
     .map(|_| ())
     .map_err(|_| ())
 }

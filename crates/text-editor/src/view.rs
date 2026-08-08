@@ -242,7 +242,10 @@ fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) -> Result<(),
     );
     cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| EditorView::new_with_path(initial_path, window, cx));
+        let view = cx.new(|cx| {
+            rmac_ui::observe_window_state(rmac_ui::app_id::TEXT_EDITOR, window, cx);
+            EditorView::new_with_path(initial_path, window, cx)
+        });
         cx.new(|cx| Root::new(view, window, cx))
     })
     .map(|_| ())

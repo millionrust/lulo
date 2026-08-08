@@ -106,7 +106,10 @@ fn route_shortcut(cx: &mut GpuiApp) {
     let options = rmac_ui::window_options_for_app(rmac_ui::app_id::APP_DRAWER, 1080.0, 720.0, cx);
     let handle = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));
+        let view = cx.new(|cx| {
+            rmac_ui::observe_window_state(rmac_ui::app_id::APP_DRAWER, window, cx);
+            AppDrawer::new(Some(token), window, cx)
+        });
         drawer = Some(view.downgrade());
         cx.new(|cx| Root::new(view, window, cx))
     });

@@ -114,6 +114,7 @@ rmac-wallpaper-image = { version = "=0.1.0", path = "crates/rmac-wallpaper-image
 rmac-wallpaper-portal = { version = "=0.1.0", path = "crates/rmac-wallpaper-portal" }
 rmac-wallpaper-runtime = { version = "=0.1.0", path = "crates/rmac-wallpaper-runtime" }
 rmac-wallpaper-system = { version = "=0.1.0", path = "crates/rmac-wallpaper-system" }
+rmac-window-state = { version = "=0.1.0", path = "crates/rmac-window-state" }
 pam-sys2 = "=1.0.2"
 quick-xml = "0.39.4"
 raw-window-handle = "=0.6.2"

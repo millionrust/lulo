@@ -5866,6 +5866,7 @@ name = "rmac-ui"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
+ "async-io",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
@@ -5873,6 +5874,7 @@ dependencies = [
  "rmac-appearance-portal",
  "rmac-apps",
  "rmac-theme",
+ "rmac-window-state",
 ]
 
 [[package]]
@@ -5953,6 +5955,15 @@ dependencies = [
  "rmac-compositor",
  "rmac-shell-settings",
  "rmac-wallpaper",
+]
+
+[[package]]
+name = "rmac-window-state"
+version = "0.1.0"
+dependencies = [
+ "rmac-storage",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

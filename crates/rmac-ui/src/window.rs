@@ -1,13 +1,18 @@
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use gpui::{
-    point, px, size, App, AppContext as _, Application, Context, Pixels, Render, SharedString,
-    Size, TitlebarOptions, Window, WindowBounds, WindowOptions,
+    point, px, size, App, AppContext as _, Application, Bounds, Context, Pixels, Render,
+    SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
 use gpui_component::Root;
+use rmac_window_state::{DisplayBounds, Store as WindowStateStore, WindowMode, WindowState};
 
 use crate::{init_application, prepare_surface_window};
 
 const MIN_WINDOW_WIDTH: f32 = 640.0;
 const MIN_WINDOW_HEIGHT: f32 = 360.0;
+const WINDOW_STATE_QUIET_PERIOD: Duration = Duration::from_millis(250);
 
 fn minimum_window_size(width: f32, height: f32) -> Size<Pixels> {
     size(
@@ -18,6 +23,51 @@ fn minimum_window_size(width: f32, height: f32) -> Size<Pixels> {
 
 fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
     WindowBounds::centered(size(px(width), px(height)), cx)
+}
+
+fn restored_window_bounds(app_id: &str, width: f32, height: f32, cx: &App) -> WindowBounds {
+    let fallback = || centered_window_bounds(width, height, cx);
+    let Some(state) = WindowStateStore::from_environment(app_id)
+        .and_then(|store| store.load())
+        .ok()
+        .flatten()
+    else {
+        return fallback();
+    };
+    let displays = connected_display_bounds(cx);
+    let minimum = minimum_window_size(width, height);
+    let Some(state) = state.fit_to_displays(
+        &displays,
+        f64::from(minimum.width),
+        f64::from(minimum.height),
+    ) else {
+        return fallback();
+    };
+    let bounds = Bounds::new(
+        point(px(state.x as f32), px(state.y as f32)),
+        size(px(state.width as f32), px(state.height as f32)),
+    );
+    match state.mode {
+        WindowMode::Windowed => WindowBounds::Windowed(bounds),
+        WindowMode::Maximized => WindowBounds::Maximized(bounds),
+        WindowMode::Fullscreen => WindowBounds::Fullscreen(bounds),
+    }
+}
+
+fn connected_display_bounds(cx: &App) -> Vec<DisplayBounds> {
+    cx.primary_display()
+        .into_iter()
+        .chain(cx.displays())
+        .filter_map(|display| {
+            let bounds = display.bounds();
+            DisplayBounds::checked(
+                f64::from(bounds.origin.x),
+                f64::from(bounds.origin.y),
+                f64::from(bounds.size.width),
+                f64::from(bounds.size.height),
+            )
+        })
+        .collect()
 }
 
 fn window_options_with_bounds(
@@ -51,7 +101,11 @@ pub fn window_options(width: f32, height: f32, cx: &App) -> WindowOptions {
 pub fn window_options_for_app(app_id: &str, width: f32, height: f32, cx: &App) -> WindowOptions {
     WindowOptions {
         app_id: Some(app_id.to_owned()),
-        ..window_options(width, height, cx)
+        ..window_options_with_bounds(
+            width,
+            height,
+            restored_window_bounds(app_id, width, height, cx),
+        )
     }
 }
 
@@ -70,7 +124,11 @@ pub fn window_options_unified_for_app(
 ) -> WindowOptions {
     WindowOptions {
         app_id: Some(app_id.to_owned()),
-        ..window_options_unified(width, height, cx)
+        ..window_options_with_bounds(
+            width,
+            height,
+            restored_window_bounds(app_id, width, height, cx),
+        )
     }
 }
 
@@ -84,6 +142,67 @@ pub(crate) fn window_options_for_app_with_bounds(
     WindowOptions {
         app_id: Some(app_id.to_owned()),
         ..window_options_with_bounds(width, height, window_bounds)
+    }
+}
+
+/// Observe one app window and durably save only its latest stable geometry.
+/// Resize bursts coalesce for a short quiet period, and persistence runs away
+/// from the render thread. Failure is deliberately non-fatal: geometry is a
+/// convenience and the next launch falls back to safe centered bounds.
+pub fn observe_window_state<V: 'static>(app_id: &str, window: &mut Window, cx: &Context<V>) {
+    let Ok(store) = WindowStateStore::from_environment(app_id) else {
+        return;
+    };
+    let pending = Arc::new(Mutex::new(None));
+    let (wake, events) = async_channel::bounded(1);
+    queue_window_state(window, &pending, &wake);
+
+    let observer_pending = Arc::clone(&pending);
+    let observer_wake = wake.clone();
+    cx.observe_window_bounds(window, move |_, window, _| {
+        queue_window_state(window, &observer_pending, &observer_wake);
+    })
+    .detach();
+    drop(wake);
+
+    cx.background_executor()
+        .spawn(async move {
+            while events.recv().await.is_ok() {
+                async_io::Timer::after(WINDOW_STATE_QUIET_PERIOD).await;
+                while events.try_recv().is_ok() {}
+                let state = pending.lock().ok().and_then(|mut pending| pending.take());
+                if let Some(state) = state {
+                    let _ = store.save(state);
+                }
+            }
+        })
+        .detach();
+}
+
+fn queue_window_state(
+    window: &Window,
+    pending: &Arc<Mutex<Option<WindowState>>>,
+    wake: &async_channel::Sender<()>,
+) {
+    let bounds = window.window_bounds();
+    let mode = match bounds {
+        WindowBounds::Windowed(_) => WindowMode::Windowed,
+        WindowBounds::Maximized(_) => WindowMode::Maximized,
+        WindowBounds::Fullscreen(_) => WindowMode::Fullscreen,
+    };
+    let bounds = bounds.get_bounds();
+    let Some(state) = WindowState::checked(
+        f64::from(bounds.origin.x),
+        f64::from(bounds.origin.y),
+        f64::from(bounds.size.width),
+        f64::from(bounds.size.height),
+        mode,
+    ) else {
+        return;
+    };
+    if let Ok(mut pending) = pending.lock() {
+        *pending = Some(state);
+        let _ = wake.try_send(());
     }
 }
 
@@ -130,7 +249,10 @@ pub fn boot_unified_app_with_assets<A, V, F>(
             let options = window_options_unified_for_app(app_id, width, height, cx);
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
-                let view = cx.new(|cx| build(window, cx));
+                let view = cx.new(|cx| {
+                    observe_window_state(app_id, window, cx);
+                    build(window, cx)
+                });
                 cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("failed to open window");
@@ -197,7 +319,10 @@ pub fn boot_app_with_assets<A, V, F>(
 
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
-                let view = cx.new(|cx| build(window, cx));
+                let view = cx.new(|cx| {
+                    observe_window_state(app_id, window, cx);
+                    build(window, cx)
+                });
                 cx.new(|cx| Root::new(view, window, cx))
             })
             .expect("failed to open window");

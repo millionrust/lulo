@@ -20,6 +20,7 @@ mod open_with_controller;
 mod operations;
 mod permanent_delete_controller;
 mod presentation;
+mod presentation_persistence;
 mod presentation_support;
 mod quick_look_controller;
 mod recovery_controller;
@@ -51,7 +52,7 @@ use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource,
     ClickEvent, ClipboardItem, Context, Div, ExternalPaths, FocusHandle, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
-    ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
+    MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
@@ -79,6 +80,7 @@ use crate::watchers::{
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
 use crate::{directory_state, file_ops, operation_journal, pasteboard, quick_look, undo_journal};
 use filesystem_helpers::*;
+use presentation_persistence::PresentationPersistence;
 use presentation_support::*;
 use search_helpers::*;
 use transient_state::*;
@@ -109,7 +111,8 @@ actions!(
     ]
 );
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 enum ViewMode {
     Icon,
     List,
@@ -201,6 +204,10 @@ struct FinderView {
     renaming: Option<(usize, gpui::Entity<InputState>)>,
     show_hidden: bool,
     view: ViewMode,
+    sidebar_visible: bool,
+    sidebar_width: f32,
+    resizing_sidebar: bool,
+    presentation_persistence: presentation_persistence::PresentationPersistence,
     col_stack: Vec<PathBuf>,
     sort_key: SortKey,
     sort_asc: bool,

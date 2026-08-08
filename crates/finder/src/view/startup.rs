@@ -166,6 +166,9 @@ impl FinderView {
 
         let focus = cx.focus_handle();
         window.focus(&focus);
+        let presentation = PresentationPersistence::restore();
+        let presentation_persistence = PresentationPersistence::start(cx);
+        presentation_persistence.schedule(presentation);
 
         let mut view = Self {
             cwd: home.clone(),
@@ -192,7 +195,11 @@ impl FinderView {
             clip_cut: false,
             renaming: None,
             show_hidden: false,
-            view: ViewMode::List,
+            view: presentation.view,
+            sidebar_visible: presentation.sidebar_visible,
+            sidebar_width: presentation.sidebar_width,
+            resizing_sidebar: false,
+            presentation_persistence,
             col_stack: vec![home.clone()],
             sort_key: SortKey::Name,
             sort_asc: true,

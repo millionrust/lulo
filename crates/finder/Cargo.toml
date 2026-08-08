@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 async-channel.workspace = true
+async-io.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
@@ -19,6 +20,7 @@ rmac-apps.workspace = true
 rmac-mounts.workspace = true
 rmac-ui.workspace = true
 rmac-search.workspace = true
+rmac-storage.workspace = true
 rmac-thumbnails.workspace = true
 chrono.workspace = true
 libc.workspace = true

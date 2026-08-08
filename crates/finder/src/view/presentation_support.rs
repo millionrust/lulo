@@ -92,7 +92,6 @@ pub(super) fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
         .flex_none()
 }
 
-pub(super) const SIDEBAR_W: f32 = 190.0;
 pub(super) const DATE_W: f32 = 184.0;
 pub(super) const SIZE_W: f32 = 80.0;
 pub(super) const KIND_W: f32 = 150.0;

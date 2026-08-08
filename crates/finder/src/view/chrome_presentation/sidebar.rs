@@ -91,12 +91,13 @@ impl FinderView {
         self.reload_trash(cx);
     }
 
-    pub(in crate::view) fn render_sidebar(&self, cx: &Context<Self>) -> impl IntoElement {
+    pub(in crate::view) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut col = div()
-            .w(px(SIDEBAR_W))
+            .w(px(self.sidebar_width))
             .h_full()
             .flex_shrink_0()
             .v_flex()
+            .relative()
             .pt_2()
             .px_2()
             .gap_0p5()
@@ -118,6 +119,28 @@ impl FinderView {
                 col = col.child(self.render_place(p, cx));
             }
         }
-        col
+        col.child(
+            div()
+                .id("sidebar-resizer")
+                .absolute()
+                .right_0()
+                .top_0()
+                .bottom_0()
+                .w(px(5.0))
+                .hover(|handle| handle.bg(rmac_ui::mac::accent_subtle()))
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, _| this.begin_sidebar_resize()),
+                )
+                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                    if event.pressed_button == Some(MouseButton::Left) {
+                        this.resize_sidebar(f32::from(event.position.x), cx);
+                    }
+                }))
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, _| this.finish_sidebar_resize()),
+                ),
+        )
     }
 }

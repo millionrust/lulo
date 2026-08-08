@@ -320,7 +320,9 @@ impl Render for FinderView {
                     .flex_1()
                     .min_h(px(0.0))
                     .flex()
-                    .child(self.render_sidebar(cx))
+                    .when(self.sidebar_visible, |content| {
+                        content.child(self.render_sidebar(cx))
+                    })
                     .child(self.render_list(cx)),
             )
             .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))

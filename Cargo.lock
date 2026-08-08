@@ -5030,6 +5030,7 @@ name = "rmac-finder"
 version = "0.1.0"
 dependencies = [
  "async-channel 2.5.0",
+ "async-io",
  "chrono",
  "gpui",
  "gpui-component",
@@ -5043,6 +5044,7 @@ dependencies = [
  "rmac-apps",
  "rmac-mounts",
  "rmac-search",
+ "rmac-storage",
  "rmac-thumbnails",
  "rmac-ui",
  "rust-embed",

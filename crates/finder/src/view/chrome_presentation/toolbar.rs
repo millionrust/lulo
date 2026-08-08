@@ -20,13 +20,7 @@ impl FinderView {
                 .selected(active)
                 .tooltip(tooltip)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    if this.trash_view && mode == ViewMode::Column {
-                        this.operation_error = Some("Column view is unavailable in Trash".into());
-                        cx.notify();
-                        return;
-                    }
-                    this.view = mode;
-                    cx.notify();
+                    this.select_view_mode(mode, cx);
                 }))
         };
         let view_control = div()
@@ -100,6 +94,26 @@ impl FinderView {
                 }
             }))
             .child(div().mr_1().child(rmac_ui::traffic_lights()))
+            .child(
+                Button::new("toggle-sidebar", "")
+                    .icon(
+                        Icon::new(if self.sidebar_visible {
+                            IconName::PanelLeftClose
+                        } else {
+                            IconName::PanelLeftOpen
+                        })
+                        .text_color(rmac_ui::mac::text()),
+                    )
+                    .ghost()
+                    .with_size(Size::Small)
+                    .selected(self.sidebar_visible)
+                    .tooltip(if self.sidebar_visible {
+                        "Hide Sidebar"
+                    } else {
+                        "Show Sidebar"
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx))),
+            )
             .child(
                 div()
                     .flex()

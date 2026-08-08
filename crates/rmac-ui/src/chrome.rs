@@ -1,8 +1,11 @@
 use gpui::{
     div, px, rgb, rgba, App, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    ParentElement as _, SharedString, Styled as _, Window,
 };
-use gpui_component::{ActiveTheme as _, StyledExt as _, TitleBar};
+use gpui_component::{
+    button::{Button as ComponentButton, ButtonVariants as _},
+    ActiveTheme as _, StyledExt as _, TitleBar,
+};
 
 use crate::{components, mac, text_px};
 
@@ -13,21 +16,33 @@ fn traffic_light(
     id: impl Into<ElementId>,
     color: Hsla,
     glyph: &'static str,
+    tooltip: &'static str,
     on_click: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    div()
-        .id(id)
-        .size(px(12.0))
+    ComponentButton::new(id)
+        .ghost()
+        .tooltip(tooltip)
+        .w(px(20.0))
+        .h(px(24.0))
+        .p_0()
         .rounded_full()
-        .bg(color)
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_size(text_px(9.0))
-        .font_weight(mac::BOLD)
-        .text_color(rgba(0x00000000))
-        .hover(|s| s.text_color(rgba(0x00000088)))
-        .child(glyph)
+        .bg(rgba(0x00000000))
+        .border_color(rgba(0x00000000))
+        .shadow_none()
+        .child(
+            div()
+                .size(px(12.0))
+                .rounded_full()
+                .bg(color)
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(text_px(9.0))
+                .font_weight(mac::BOLD)
+                .text_color(rgba(0x00000000))
+                .hover(|circle| circle.text_color(rgba(0x00000088)))
+                .child(glyph),
+        )
         .on_click(move |_, window, cx| on_click(window, cx))
 }
 
@@ -37,11 +52,11 @@ pub fn traffic_lights() -> impl IntoElement {
     div()
         .flex()
         .items_center()
-        .gap(px(8.0))
         .child(traffic_light(
             "tl-close",
             rgb(0xff5f57).into(),
             "✕",
+            "Close",
             // Route through the app's close guard (e.g. unsaved-changes prompt)
             // rather than closing the window directly. Apps bind `RequestClose`.
             |window, cx| window.dispatch_action(Box::new(components::RequestClose), cx),
@@ -50,12 +65,14 @@ pub fn traffic_lights() -> impl IntoElement {
             "tl-min",
             rgb(0xfebc2e).into(),
             "—",
+            "Minimize",
             |window, _| window.minimize_window(),
         ))
         .child(traffic_light(
             "tl-zoom",
             rgb(0x28c840).into(),
             "+",
+            "Zoom",
             |window, _| window.zoom_window(),
         ))
 }

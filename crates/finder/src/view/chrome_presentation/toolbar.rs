@@ -1,7 +1,11 @@
 use super::*;
 
 impl FinderView {
-    pub(in crate::view) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(in crate::view) fn render_toolbar(
+        &self,
+        layout: crate::view::responsive_layout::ResponsiveLayout,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let nav = |id: &'static str, icon_name: IconName, tooltip: &'static str, enabled: bool| {
             Button::new(id, "")
                 .icon(Icon::new(icon_name).text_color(rmac_ui::mac::text()))
@@ -51,7 +55,7 @@ impl FinderView {
             ));
 
         let search = div()
-            .w(px(200.0))
+            .w(px(layout.search_width))
             .h(px(28.0))
             .flex()
             .items_center()
@@ -97,7 +101,7 @@ impl FinderView {
             .child(
                 Button::new("toggle-sidebar", "")
                     .icon(
-                        Icon::new(if self.sidebar_visible {
+                        Icon::new(if layout.sidebar_visible {
                             IconName::PanelLeftClose
                         } else {
                             IconName::PanelLeftOpen
@@ -106,8 +110,11 @@ impl FinderView {
                     )
                     .ghost()
                     .with_size(Size::Small)
-                    .selected(self.sidebar_visible)
-                    .tooltip(if self.sidebar_visible {
+                    .selected(layout.sidebar_visible)
+                    .disabled(!layout.sidebar_available)
+                    .tooltip(if !layout.sidebar_available {
+                        "Sidebar hidden until the window is wider"
+                    } else if layout.sidebar_visible {
                         "Hide Sidebar"
                     } else {
                         "Show Sidebar"
@@ -138,16 +145,20 @@ impl FinderView {
                         .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
                     ),
             )
-            .child(
-                div()
-                    .pl_1()
-                    .text_size(rmac_ui::text_px(15.0))
-                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                    .text_color(label())
-                    .child(self.title()),
-            )
+            .when(layout.title_visible, |toolbar| {
+                toolbar.child(
+                    div()
+                        .pl_1()
+                        .text_size(rmac_ui::text_px(15.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(label())
+                        .child(self.title()),
+                )
+            })
             .child(div().flex_1())
-            .child(view_control)
+            .when(layout.view_control_visible, |toolbar| {
+                toolbar.child(view_control)
+            })
             // The ⋯ button opens the item context menu (anchored below itself).
             .child(
                 Button::new("more", "")

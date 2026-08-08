@@ -7,6 +7,11 @@ impl Render for FinderView {
             window.set_window_title(&native_window_title);
             self.native_window_title = native_window_title;
         }
+        let layout = responsive_layout::responsive_layout(
+            f32::from(window.bounds().size.width),
+            self.sidebar_visible,
+            self.sidebar_width,
+        );
         let info = self.info;
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();
@@ -138,7 +143,7 @@ impl Render for FinderView {
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
-            .child(self.render_toolbar(cx))
+            .child(self.render_toolbar(layout, cx))
             .when_some(operation_notice, |el, message| {
                 el.child(
                     div()
@@ -326,7 +331,7 @@ impl Render for FinderView {
                     .flex_1()
                     .min_h(px(0.0))
                     .flex()
-                    .when(self.sidebar_visible, |content| {
+                    .when(layout.sidebar_visible, |content| {
                         content.child(self.render_sidebar(cx))
                     })
                     .child(self.render_list(cx)),

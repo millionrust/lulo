@@ -26,6 +26,7 @@ mod presentation_support;
 mod quick_look_controller;
 mod recovery_controller;
 mod rename_controller;
+mod responsive_layout;
 mod search_helpers;
 mod search_info_controller;
 mod selection_controller;

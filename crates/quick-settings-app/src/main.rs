@@ -124,6 +124,7 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
     });
     let mut popover = None;
     let handle = cx.open_window(popover_options(bounds), |window, cx| {
+        window.set_window_title("Quick Settings");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| QuickSettingsView::new(token, window, cx));
         popover = Some(view.downgrade());

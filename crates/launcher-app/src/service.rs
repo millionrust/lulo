@@ -152,6 +152,7 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
         });
     let mut launcher = None;
     let handle = cx.open_window(options, |window, cx| {
+        window.set_window_title("Spotlight");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {
             LauncherView::new(

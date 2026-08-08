@@ -112,6 +112,7 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
     });
     let mut panel = None;
     let handle = cx.open_window(panel_options(bounds), |window, cx| {
+        window.set_window_title("Notification Center");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| NotificationCenterView::new(token, window, cx));
         panel = Some(view.downgrade());

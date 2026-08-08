@@ -1,0 +1,167 @@
+//! Text Editor new-window, portal selection, RTF conversion, and document loading.
+
+use super::*;
+
+impl EditorView {
+    pub(super) fn new_file(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy || self.file_action_blocked() {
+            return;
+        }
+        if open_editor_window(cx, None).is_err() {
+            self.alert = Some(ActiveAlert::Error {
+                title: "Could not open a new document window.",
+                message: "Text Editor could not create another window. This document remains open."
+                    .into(),
+            });
+            cx.notify();
+        }
+    }
+
+    pub(super) fn open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy || self.file_action_blocked() {
+            return;
+        }
+        self.do_open(window, cx);
+    }
+
+    /// Leave the read-only RTF preview and continue editing the extracted text
+    /// as a new untitled plain-text document — the original `.rtf` is never
+    /// overwritten.
+    pub(super) fn edit_as_plain_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.rtf_runs.take().is_some() {
+            self.path = None;
+            self.saved_bytes = None;
+            self.text_format = document::TextFormat::default();
+            self.reset_document_watch();
+            self.dirty = true;
+            self.schedule_autosave(cx);
+            cx.notify();
+        }
+    }
+
+    fn do_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy {
+            return;
+        }
+        self.file_busy = true;
+        let reuse_current = should_reuse_untitled_window(
+            self.dirty,
+            self.path.is_some(),
+            self.rtf_runs.is_some(),
+            self.input.read(cx).value().is_empty(),
+        );
+        cx.notify();
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: None,
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let picker = receiver.await;
+            let Ok(Ok(Some(paths))) = picker else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.file_busy = false;
+                    if !matches!(picker, Ok(Ok(None))) {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Could not open the file chooser.",
+                            message: "The desktop file chooser is temporarily unavailable.".into(),
+                        });
+                    }
+                    cx.notify();
+                });
+                return;
+            };
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.file_busy = false;
+                let mut paths = paths.into_iter();
+                if reuse_current {
+                    if let Some(path) = paths.next() {
+                        this.load_document_path(path, "Failed to open the file.", window, cx);
+                    }
+                }
+                let mut failed_windows = 0_usize;
+                for path in paths {
+                    if open_editor_window(cx, Some(path)).is_err() {
+                        failed_windows += 1;
+                    }
+                }
+                if failed_windows > 0 {
+                    this.status_notice = Some(
+                        format!(
+                            "Text Editor could not create {} selected document {}.",
+                            failed_windows,
+                            if failed_windows == 1 {
+                                "window"
+                            } else {
+                                "windows"
+                            }
+                        )
+                        .into(),
+                    );
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn load_document_path(
+        &mut self,
+        path: PathBuf,
+        error_title: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.file_busy {
+            return;
+        }
+        self.file_busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let loaded = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move { load_selected_document(&path) }
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.file_busy = false;
+                match loaded {
+                    Ok(LoadedFile::Plain(document)) => {
+                        this.input.update(cx, |state, cx| {
+                            state.set_value(document.text.clone(), window, cx)
+                        });
+                        this.path = Some(path);
+                        this.saved_bytes = Some(document.original_bytes);
+                        this.text_format = document.format;
+                        this.rtf_runs = None;
+                        this.reset_document_watch();
+                        this.mark_clean(document.text, cx);
+                        this.record_current_document(cx);
+                    }
+                    Ok(LoadedFile::RichText { text, runs }) => {
+                        this.input
+                            .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+                        this.path = Some(path);
+                        this.saved_bytes = None;
+                        this.text_format = document::TextFormat::default();
+                        this.rtf_runs = Some(runs);
+                        this.reset_document_watch();
+                        this.mark_clean(text, cx);
+                        this.record_current_document(cx);
+                    }
+                    Err(message) => {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: error_title,
+                            message,
+                        });
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+}

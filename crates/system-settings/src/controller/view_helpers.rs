@@ -4,18 +4,24 @@ mod appearance_input;
 mod bluetooth;
 mod displays;
 mod focus;
+mod locale;
 mod network;
+mod power;
 mod shell;
 mod sound;
+mod storage;
 
 use super::*;
 pub(super) use appearance_input::*;
 pub(super) use bluetooth::*;
 pub(super) use displays::*;
 pub(super) use focus::*;
+pub(super) use locale::*;
 pub(super) use network::*;
+pub(super) use power::*;
 pub(super) use shell::*;
 pub(super) use sound::*;
+pub(super) use storage::*;
 // ---- row / control builders ----------------------------------------------
 
 pub(super) fn row_base() -> Div {
@@ -85,34 +91,8 @@ pub(super) fn value_row(
         .into_any_element()
 }
 
-pub(super) fn locale_format(snapshot: &rmac_locale::Snapshot, key: &str) -> String {
-    snapshot.effective_format_locale(key).to_owned()
-}
-
-pub(super) fn locale_preview_row(
-    icon: &'static str,
-    title: &'static str,
-    source: String,
-    example: Option<&str>,
-) -> AnyElement {
-    row_base()
-        .child(tile(icon, secondary(), 22.0))
-        .child(text_block(
-            title.into(),
-            Some(format!("Locale: {source}").into()),
-        ))
-        .child(
-            div()
-                .max_w(px(260.0))
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(secondary())
-                .child(example.unwrap_or("Uses locale convention").to_owned()),
-        )
-        .into_any_element()
-}
-
-/// An informational note card, e.g. to flag a pane as simulated/demo state
 /// rather than a reflection of (or control over) real system hardware.
+/// An informational note card, e.g. to flag a pane as simulated/demo state
 pub(super) fn note_card(text: impl Into<SharedString>) -> Div {
     div()
         .flex()
@@ -294,77 +274,4 @@ pub(super) fn card(rows: Vec<AnyElement>) -> Div {
         }
     }
     c
-}
-
-pub(super) fn battery_history_card(points: &[rmac_power::BatteryHistoryPoint]) -> Div {
-    let samples = sample_battery_history(points, 48);
-    let minimum = points
-        .iter()
-        .map(|point| point.percentage)
-        .min()
-        .unwrap_or_default();
-    let maximum = points
-        .iter()
-        .map(|point| point.percentage)
-        .max()
-        .unwrap_or_default();
-    let latest = points
-        .last()
-        .map(|point| point.percentage)
-        .unwrap_or_default();
-    let bars = samples.into_iter().map(|point| {
-        let color = if matches!(
-            point.state,
-            rmac_power::BatteryState::Charging | rmac_power::BatteryState::PendingCharge
-        ) {
-            hsl(0x34c759)
-        } else {
-            accent()
-        };
-        div()
-            .flex_1()
-            .min_w(px(2.0))
-            .h(px(4.0 + f32::from(point.percentage) * 0.72))
-            .rounded(px(2.0))
-            .bg(color)
-    });
-    div()
-        .v_flex()
-        .mb_3()
-        .gap_2()
-        .p_3()
-        .rounded(px(10.0))
-        .bg(card_bg())
-        .border_1()
-        .border_color(sep())
-        .child(
-            div()
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(secondary())
-                .child(format!(
-                    "Last 24 hours · {minimum}% minimum · {maximum}% maximum · {latest}% latest"
-                )),
-        )
-        .child(
-            div()
-                .h(px(80.0))
-                .flex()
-                .items_end()
-                .gap(px(2.0))
-                .children(bars),
-        )
-        .child(
-            div()
-                .flex()
-                .justify_between()
-                .text_size(rmac_ui::text_px(10.5))
-                .text_color(rmac_ui::mac::text_tertiary())
-                .child("24 hours ago")
-                .child("Now"),
-        )
-}
-
-/// Format bytes as decimal GB (matching macOS storage display).
-pub(super) fn fmt_gb(bytes: u64) -> String {
-    format!("{:.1} GB", bytes as f64 / 1_000_000_000.0)
 }

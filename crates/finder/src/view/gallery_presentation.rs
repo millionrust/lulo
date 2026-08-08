@@ -11,7 +11,7 @@ impl FinderView {
     ) -> impl IntoElement {
         let active_index = self
             .anchor
-            .filter(|index| visible_indices.contains(index))
+            .filter(|index| self.selected.contains(index) && visible_indices.contains(index))
             .or_else(|| {
                 self.selected
                     .iter()

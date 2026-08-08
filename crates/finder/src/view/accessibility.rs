@@ -2,8 +2,9 @@
 
 use rmac_finder::accessibility::{
     AccessibilityProjectionError, AccessibleDialog, AccessibleDialogAction, AccessibleDialogOption,
-    AccessibleLiveRegion, AccessibleProgress, DialogActionKind, DialogFocus, DialogKind,
-    FilesAccessibilitySnapshot, LivePoliteness, ProgressUnit, project_files_accessibility,
+    AccessibleGallery, AccessibleGalleryItem, AccessibleLiveRegion, AccessibleProgress,
+    DialogActionKind, DialogFocus, DialogKind, FilesAccessibilitySnapshot, LivePoliteness,
+    ProgressUnit, project_files_accessibility,
 };
 
 use super::*;
@@ -16,8 +17,140 @@ impl FinderView {
     #[allow(dead_code)]
     pub(super) fn accessibility_snapshot(
         &self,
+        cx: &Context<Self>,
     ) -> Result<FilesAccessibilitySnapshot, AccessibilityProjectionError> {
-        project_files_accessibility(self.accessible_dialogs(), self.accessible_live_regions())
+        project_files_accessibility(
+            self.accessible_gallery(cx),
+            self.accessible_dialogs(),
+            self.accessible_live_regions(),
+        )
+    }
+
+    fn accessible_gallery(&self, cx: &Context<Self>) -> Option<AccessibleGallery> {
+        if self.view != ViewMode::Gallery {
+            return None;
+        }
+        let query = if self.search_summary.is_some() {
+            String::new()
+        } else {
+            self.query.read(cx).value().to_lowercase()
+        };
+        let visible_indices = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                (query.is_empty() || entry.name.to_lowercase().contains(&query)).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let selection_count = self
+            .selected
+            .iter()
+            .filter(|index| visible_indices.contains(index))
+            .count();
+        let active_entry_index = self
+            .anchor
+            .filter(|index| self.selected.contains(index) && visible_indices.contains(index))
+            .or_else(|| {
+                self.selected
+                    .iter()
+                    .copied()
+                    .find(|index| visible_indices.contains(index))
+            });
+        let active_item = active_entry_index
+            .and_then(|index| visible_indices.iter().position(|visible| *visible == index));
+        let items = visible_indices
+            .iter()
+            .filter_map(|index| self.entries.get(*index).map(|entry| (*index, entry)))
+            .map(|(index, entry)| AccessibleGalleryItem {
+                stable_id: format!("gallery-item-{index}"),
+                name: sanitize_dialog_name(entry.name.as_ref()),
+                description: format!("{} · {} · {}", entry.kind, entry.size, entry.modified),
+                selected: self.selected.contains(&index),
+                is_directory: entry.is_dir,
+            })
+            .collect();
+        let active_entry = active_entry_index.and_then(|index| self.entries.get(index));
+        let preview_name = active_entry.map(|entry| {
+            if selection_count > 1 {
+                format!("{selection_count} items selected")
+            } else {
+                sanitize_dialog_name(entry.name.as_ref())
+            }
+        });
+        let preview_description = active_entry.map_or_else(
+            || {
+                if visible_indices.is_empty() {
+                    "No matching items. Try a different search."
+                } else {
+                    "Select an item in the filmstrip to preview it."
+                }
+                .to_string()
+            },
+            |entry| {
+                if selection_count > 1 {
+                    "The focused item is shown".to_string()
+                } else {
+                    format!("{} · {} · {}", entry.kind, entry.size, entry.modified)
+                }
+            },
+        );
+        let has_selection = selection_count != 0;
+        let can_open_with = selection_count == 1 && active_entry.is_some_and(|entry| !entry.is_dir);
+        let actions = if self.trash_view {
+            vec![
+                dialog_action("gallery-restore", "Restore", DialogActionKind::Default)
+                    .disabled(!has_selection),
+                dialog_action(
+                    "gallery-delete-permanently",
+                    "Delete Permanently",
+                    DialogActionKind::Destructive,
+                )
+                .disabled(!has_selection),
+            ]
+        } else {
+            vec![
+                dialog_action("gallery-open", "Open", DialogActionKind::Default)
+                    .disabled(!has_selection),
+                dialog_action("gallery-open-with", "Open With", DialogActionKind::Normal)
+                    .disabled(!can_open_with),
+                dialog_action("gallery-rename", "Rename", DialogActionKind::Normal)
+                    .disabled(selection_count != 1),
+                dialog_action("gallery-duplicate", "Duplicate", DialogActionKind::Normal)
+                    .disabled(!has_selection),
+                dialog_action("gallery-quick-look", "Quick Look", DialogActionKind::Normal)
+                    .disabled(!has_selection),
+                dialog_action("gallery-copy", "Copy", DialogActionKind::Normal)
+                    .disabled(!has_selection),
+                dialog_action("gallery-cut", "Cut", DialogActionKind::Normal)
+                    .disabled(!has_selection),
+                dialog_action("gallery-get-info", "Get Info", DialogActionKind::Normal)
+                    .disabled(selection_count != 1),
+                dialog_action(
+                    "gallery-move-to-trash",
+                    "Move to Trash",
+                    DialogActionKind::Normal,
+                )
+                .disabled(!has_selection),
+                dialog_action(
+                    "gallery-delete-immediately",
+                    "Delete Immediately",
+                    DialogActionKind::Destructive,
+                )
+                .disabled(!has_selection),
+                dialog_action("gallery-paste", "Paste Item", DialogActionKind::Normal)
+                    .disabled(self.clipboard.is_empty()),
+                dialog_action("gallery-new-folder", "New Folder", DialogActionKind::Normal),
+            ]
+        };
+        Some(AccessibleGallery {
+            items,
+            active_item,
+            selection_count,
+            preview_name,
+            preview_description,
+            actions,
+        })
     }
 
     fn accessible_dialogs(&self) -> Vec<AccessibleDialog> {

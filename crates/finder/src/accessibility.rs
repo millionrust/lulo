@@ -9,6 +9,7 @@ pub const MAX_ACCESSIBLE_DOCUMENT_BYTES: usize = 64 * 1024;
 pub const MAX_ACCESSIBLE_TEXT_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_ACCESSIBLE_LABEL_BYTES: usize = 4 * 1024;
 pub const MAX_ACCESSIBLE_OPTION_ID_BYTES: usize = 512;
+pub const MAX_ACCESSIBLE_GALLERY_ITEMS: usize = 4_096;
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum DialogKind {
@@ -128,7 +129,30 @@ pub struct AccessibleDialog {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessibleGalleryItem {
+    pub stable_id: String,
+    pub name: String,
+    pub description: String,
+    pub selected: bool,
+    pub is_directory: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessibleGallery {
+    /// Filmstrip items in the same filtered order as the visible renderer.
+    pub items: Vec<AccessibleGalleryItem>,
+    /// Active large preview, indexed into `items`.
+    pub active_item: Option<usize>,
+    pub selection_count: usize,
+    pub preview_name: Option<String>,
+    pub preview_description: String,
+    pub actions: Vec<AccessibleDialogAction>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FilesAccessibilitySnapshot {
+    /// Present only while the distinct Gallery view is active.
+    pub gallery: Option<AccessibleGallery>,
     /// Dialogs in visual stacking order. The last entry is the active modal.
     pub dialogs: Vec<AccessibleDialog>,
     pub active_dialog: Option<usize>,
@@ -148,6 +172,8 @@ pub enum AccessibilityProjectionError {
     InvalidOptions,
     InvalidFocus,
     InvalidProgress,
+    GalleryLimit,
+    InvalidGallery,
     TextLimit,
 }
 
@@ -155,6 +181,7 @@ pub enum AccessibilityProjectionError {
 /// only already-visible text and stable option IDs, never hidden operation
 /// records, launch specifications, or query text.
 pub fn project_files_accessibility(
+    gallery: Option<AccessibleGallery>,
     dialogs: Vec<AccessibleDialog>,
     live_regions: Vec<AccessibleLiveRegion>,
 ) -> Result<FilesAccessibilitySnapshot, AccessibilityProjectionError> {
@@ -162,6 +189,9 @@ pub fn project_files_accessibility(
         return Err(AccessibilityProjectionError::DialogLimit);
     }
     let mut budget = TextBudget::default();
+    if let Some(gallery) = &gallery {
+        validate_gallery(gallery, &mut budget)?;
+    }
     let mut kinds = HashSet::with_capacity(dialogs.len());
     for dialog in &dialogs {
         if !kinds.insert(dialog.kind) {
@@ -197,10 +227,47 @@ pub fn project_files_accessibility(
         validate_live_region(live_region, &mut budget)?;
     }
     Ok(FilesAccessibilitySnapshot {
+        gallery,
         active_dialog: dialogs.len().checked_sub(1),
         dialogs,
         live_regions,
     })
+}
+
+fn validate_gallery(
+    gallery: &AccessibleGallery,
+    budget: &mut TextBudget,
+) -> Result<(), AccessibilityProjectionError> {
+    if gallery.items.len() > MAX_ACCESSIBLE_GALLERY_ITEMS {
+        return Err(AccessibilityProjectionError::GalleryLimit);
+    }
+    let mut ids = HashSet::with_capacity(gallery.items.len());
+    let mut selected_count = 0usize;
+    for item in &gallery.items {
+        if !valid_id(&item.stable_id, MAX_ACCESSIBLE_OPTION_ID_BYTES) || !valid_label(&item.name) {
+            return Err(AccessibilityProjectionError::InvalidGallery);
+        }
+        validate_text(&item.description, budget, false)?;
+        if !ids.insert(item.stable_id.as_str()) {
+            return Err(AccessibilityProjectionError::InvalidGallery);
+        }
+        selected_count = selected_count.saturating_add(usize::from(item.selected));
+        budget.add(&item.stable_id)?;
+        budget.add(&item.name)?;
+    }
+    if selected_count != gallery.selection_count
+        || gallery
+            .active_item
+            .is_some_and(|index| index >= gallery.items.len() || !gallery.items[index].selected)
+        || gallery.active_item.is_none() != gallery.preview_name.is_none()
+    {
+        return Err(AccessibilityProjectionError::InvalidGallery);
+    }
+    if let Some(name) = &gallery.preview_name {
+        validate_text(name, budget, false)?;
+    }
+    validate_text(&gallery.preview_description, budget, false)?;
+    validate_actions(&gallery.actions, budget)
 }
 
 fn validate_actions(
@@ -381,7 +448,8 @@ mod tests {
             status: None,
         };
 
-        let snapshot = project_files_accessibility(vec![delete, open_with], Vec::new()).unwrap();
+        let snapshot =
+            project_files_accessibility(None, vec![delete, open_with], Vec::new()).unwrap();
         assert_eq!(snapshot.active_dialog, Some(1));
         assert_eq!(snapshot.dialogs[0].initial_focus, DialogFocus::Action(0));
         assert_eq!(
@@ -396,6 +464,7 @@ mod tests {
     #[test]
     fn live_regions_retain_render_order_priority_progress_and_cancel_state() {
         let snapshot = project_files_accessibility(
+            None,
             Vec::new(),
             vec![
                 AccessibleLiveRegion {
@@ -441,7 +510,7 @@ mod tests {
         let mut invalid = dialog(DialogKind::Conflict, "Conflict");
         invalid.initial_focus = DialogFocus::Action(9);
         assert_eq!(
-            project_files_accessibility(vec![invalid], Vec::new()),
+            project_files_accessibility(None, vec![invalid], Vec::new()),
             Err(AccessibilityProjectionError::InvalidFocus)
         );
 
@@ -450,14 +519,14 @@ mod tests {
             dialog(DialogKind::Recovery, "Two"),
         ];
         assert_eq!(
-            project_files_accessibility(duplicates, Vec::new()),
+            project_files_accessibility(None, duplicates, Vec::new()),
             Err(AccessibilityProjectionError::DuplicateDialog)
         );
 
         let mut busy = dialog(DialogKind::Conflict, "Conflict");
         busy.actions[1].busy = true;
         assert_eq!(
-            project_files_accessibility(vec![busy], Vec::new()),
+            project_files_accessibility(None, vec![busy], Vec::new()),
             Err(AccessibilityProjectionError::InvalidAction)
         );
 
@@ -465,8 +534,73 @@ mod tests {
         preview.document_text = Some("x".repeat(MAX_ACCESSIBLE_DOCUMENT_BYTES + 1));
         preview.initial_focus = DialogFocus::Document;
         assert_eq!(
-            project_files_accessibility(vec![preview], Vec::new()),
+            project_files_accessibility(None, vec![preview], Vec::new()),
             Err(AccessibilityProjectionError::TextLimit)
+        );
+    }
+
+    #[test]
+    fn gallery_preserves_filmstrip_preview_selection_and_actions() {
+        let gallery = AccessibleGallery {
+            items: vec![
+                AccessibleGalleryItem {
+                    stable_id: "gallery-item-0".into(),
+                    name: "Pictures".into(),
+                    description: "Folder · 3 items".into(),
+                    selected: false,
+                    is_directory: true,
+                },
+                AccessibleGalleryItem {
+                    stable_id: "gallery-item-1".into(),
+                    name: "Sunset.jpg".into(),
+                    description: "JPEG image · 2 MB".into(),
+                    selected: true,
+                    is_directory: false,
+                },
+            ],
+            active_item: Some(1),
+            selection_count: 1,
+            preview_name: Some("Sunset.jpg".into()),
+            preview_description: "JPEG image · 2 MB · Today".into(),
+            actions: vec![action("gallery-open", "Open", DialogActionKind::Default)],
+        };
+
+        let snapshot = project_files_accessibility(Some(gallery), Vec::new(), Vec::new()).unwrap();
+        let gallery = snapshot.gallery.unwrap();
+        assert_eq!(gallery.active_item, Some(1));
+        assert_eq!(gallery.selection_count, 1);
+        assert!(gallery.items[0].is_directory);
+        assert!(gallery.items[1].selected);
+        assert_eq!(gallery.actions[0].name, "Open");
+    }
+
+    #[test]
+    fn gallery_rejects_duplicate_items_and_preview_selection_mismatch() {
+        let mut gallery = AccessibleGallery {
+            items: vec![AccessibleGalleryItem {
+                stable_id: "gallery-item-0".into(),
+                name: "One".into(),
+                description: "Text document".into(),
+                selected: false,
+                is_directory: false,
+            }],
+            active_item: Some(0),
+            selection_count: 0,
+            preview_name: Some("One".into()),
+            preview_description: "Text document".into(),
+            actions: vec![action("gallery-open", "Open", DialogActionKind::Default)],
+        };
+        assert_eq!(
+            project_files_accessibility(Some(gallery.clone()), Vec::new(), Vec::new()),
+            Err(AccessibilityProjectionError::InvalidGallery)
+        );
+
+        gallery.active_item = None;
+        gallery.preview_name = None;
+        gallery.items.push(gallery.items[0].clone());
+        assert_eq!(
+            project_files_accessibility(Some(gallery), Vec::new(), Vec::new()),
+            Err(AccessibilityProjectionError::InvalidGallery)
         );
     }
 }

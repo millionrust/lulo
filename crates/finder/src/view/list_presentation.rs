@@ -235,6 +235,14 @@ impl FinderView {
                         .into_any_element(),
                     None => icon(glyph, 52.0, icon_color).into_any_element(),
                 };
+                let drag_paths = if selected {
+                    self.selected_paths()
+                } else {
+                    vec![e.path.clone()]
+                };
+                let drag_count = drag_paths.len();
+                let drop_directory = e.path.clone();
+                let is_directory = e.is_dir;
                 tiles.push(
                     div()
                         .id(("tile", ix))
@@ -285,6 +293,20 @@ impl FinderView {
                             window.focus(&this.focus);
                             cx.notify();
                         }))
+                        .when(!self.trash_view, |element| {
+                            element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                                cx.new(|_| DragPreview { count: drag_count })
+                            })
+                        })
+                        .when(is_directory && !self.trash_view, |element| {
+                            element
+                                .drag_over::<DraggedPaths>(|style, _, _, _| {
+                                    style.bg(rmac_ui::mac::accent_subtle())
+                                })
+                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
+                                    this.drop_into(drop_directory.clone(), &paths.0, cx)
+                                }))
+                        })
                         .into_any_element(),
                 );
             }

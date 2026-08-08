@@ -2,6 +2,7 @@
 
 mod alerts;
 mod conflicts;
+mod document_io;
 mod document_state;
 mod editing;
 mod lifecycle;
@@ -36,6 +37,11 @@ use crate::{document, recovery, rtf, storage};
 use crate::{
     CloseBar, CloseWindow, DecreaseFont, FindNext, FindPrev, IncreaseFont, NewFile, OpenFile,
     SaveFile, SaveFileAs, ToggleFind, ToggleMono, ToggleReplace,
+};
+
+use document_io::{
+    can_begin_print, inspect_external_revision, load_selected_document, save_document,
+    save_document_copy, should_reuse_untitled_window, LoadedFile, SaveFailure,
 };
 
 const CTX: &str = "TextEditor";
@@ -157,33 +163,6 @@ struct RecoveryPrompt {
     document_label: String,
     format: document::TextFormat,
     additional_drafts: usize,
-}
-
-enum LoadedFile {
-    Plain(document::DecodedDocument),
-    RichText {
-        text: String,
-        runs: Vec<rtf::RtfRun>,
-    },
-}
-
-#[derive(Debug)]
-enum SaveFailure {
-    Codec(document::CodecError),
-    Storage(storage::SaveDocumentError),
-    ConflictingCopyDestination,
-}
-
-impl std::fmt::Display for SaveFailure {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Codec(error) => error.fmt(formatter),
-            Self::Storage(error) => error.fmt(formatter),
-            Self::ConflictingCopyDestination => formatter.write_str(
-                "Save a Copy requires a different file; the conflicting source was not changed",
-            ),
-        }
-    }
 }
 
 struct EditorView {
@@ -420,114 +399,6 @@ fn startup_recovery() -> StartupRecovery {
     }
 }
 
-fn load_selected_document(path: &Path) -> Result<LoadedFile, String> {
-    let bytes = storage::read_bounded(
-        &storage::RealStorage,
-        storage::Operation::LoadDocument,
-        path,
-        document::MAX_DOCUMENT_BYTES,
-    )
-    .map_err(|_| "Text Editor could not read the selected document".to_string())?;
-    let is_rtf = path
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("rtf"));
-    if is_rtf {
-        let runs = rtf::parse_rtf(&bytes)
-            .ok_or_else(|| "the RTF document could not be decoded safely".to_string())?;
-        let text = runs.iter().map(|run| run.text.as_str()).collect();
-        Ok(LoadedFile::RichText { text, runs })
-    } else {
-        document::decode(bytes)
-            .map(LoadedFile::Plain)
-            .map_err(|error| error.to_string())
-    }
-}
-
-fn save_document(
-    path: &Path,
-    expected: Option<&[u8]>,
-    text: &str,
-    format: document::TextFormat,
-) -> Result<document::DecodedDocument, SaveFailure> {
-    let encoded = document::encode(text, format).map_err(SaveFailure::Codec)?;
-    storage::write_document_if_unchanged(&storage::RealStorage, path, expected, &encoded)
-        .map_err(SaveFailure::Storage)?;
-    // Encoding a valid Rust string through a supported format is guaranteed to
-    // decode. Keeping this fallible preserves the invariant without panicking.
-    document::decode(encoded).map_err(SaveFailure::Codec)
-}
-
-fn same_file_identity(left: &Path, right: &Path) -> bool {
-    if left == right {
-        return true;
-    }
-    let (Ok(left_metadata), Ok(right_metadata)) =
-        (std::fs::metadata(left), std::fs::metadata(right))
-    else {
-        return false;
-    };
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt as _;
-        left_metadata.dev() == right_metadata.dev() && left_metadata.ino() == right_metadata.ino()
-    }
-    #[cfg(not(unix))]
-    {
-        match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
-            (Ok(left), Ok(right)) => left == right,
-            _ => false,
-        }
-    }
-}
-
-fn save_document_copy(
-    path: &Path,
-    forbidden_destination: Option<&Path>,
-    text: &str,
-    format: document::TextFormat,
-) -> Result<document::DecodedDocument, SaveFailure> {
-    if forbidden_destination.is_some_and(|source| same_file_identity(source, path)) {
-        Err(SaveFailure::ConflictingCopyDestination)
-    } else {
-        save_document(path, None, text, format)
-    }
-}
-
-fn inspect_external_revision(path: &Path, expected: &[u8]) -> Option<ExternalChange> {
-    match storage::read_bounded(
-        &storage::RealStorage,
-        storage::Operation::ValidateDocumentRevision,
-        path,
-        document::MAX_DOCUMENT_BYTES,
-    ) {
-        Ok(current) if current == expected => None,
-        Ok(_) => Some(ExternalChange::Modified),
-        Err(failure) if failure.error_kind == std::io::ErrorKind::NotFound => {
-            Some(ExternalChange::Missing)
-        }
-        Err(_) => Some(ExternalChange::Unreadable),
-    }
-}
-
-fn should_reuse_untitled_window(
-    dirty: bool,
-    has_path: bool,
-    rich_text_preview: bool,
-    empty: bool,
-) -> bool {
-    !dirty && !has_path && !rich_text_preview && empty
-}
-
-fn can_begin_print(
-    file_busy: bool,
-    print_busy: bool,
-    recovery_loading: bool,
-    alert_open: bool,
-    rich_text_preview: bool,
-) -> bool {
-    !file_busy && !print_busy && !recovery_loading && !alert_open && !rich_text_preview
-}
-
 fn recovery_failure_message() -> SharedString {
     "Text Editor could not safely update its private recovery data. The current buffer remains open; save the document before closing."
         .into()
@@ -558,10 +429,11 @@ pub(crate) fn run() {
 
 #[cfg(test)]
 mod tests {
+    use super::document_io::same_file_identity;
     use super::{
         can_begin_print, document, parse_startup_request, recovery_path_for_platform,
-        same_file_identity, save_document_copy, should_reuse_untitled_window, RecoveryClock,
-        SaveFailure, StartupRequest, MAX_STARTUP_DOCUMENTS,
+        save_document_copy, should_reuse_untitled_window, RecoveryClock, SaveFailure,
+        StartupRequest, MAX_STARTUP_DOCUMENTS,
     };
     use std::ffi::OsString;
     use std::path::PathBuf;

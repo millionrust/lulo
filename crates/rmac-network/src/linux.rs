@@ -1161,9 +1161,9 @@ pub(super) fn linux_network_snapshot() -> Result<NetworkSnapshot, Error> {
 
 #[cfg(not(target_os = "macos"))]
 pub(super) struct VpnRecord {
-    profile: VpnProfile,
+    pub(super) profile: VpnProfile,
     connection_path: zbus::zvariant::OwnedObjectPath,
-    active_path: Option<zbus::zvariant::OwnedObjectPath>,
+    pub(super) active_path: Option<zbus::zvariant::OwnedObjectPath>,
 }
 
 #[cfg(not(target_os = "macos"))]

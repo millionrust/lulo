@@ -18,10 +18,10 @@ pub(super) const ASSOCIATION_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
 pub(super) const PROCESS_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 #[cfg(target_os = "linux")]
-struct BoundedCommandOutput {
-    status: ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
+pub(super) struct BoundedCommandOutput {
+    pub(super) status: ExitStatus,
+    pub(super) stdout: Vec<u8>,
+    pub(super) stderr: Vec<u8>,
 }
 
 #[cfg(target_os = "macos")]

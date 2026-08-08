@@ -5,6 +5,7 @@
 //! background thread reads PTY output and feeds the parser; model changes wake
 //! the view, which renders the grid and writes keystrokes back to the PTY.
 
+mod focus;
 mod ime_bridge;
 mod input;
 mod pointer;
@@ -12,6 +13,9 @@ mod renderer;
 mod responsive_layout;
 mod tab_lifecycle;
 mod view_state;
+
+#[cfg(test)]
+mod tests;
 
 use crate::emulator::{
     grid_dimensions, scrollback_limit_for_tab_count, terminal_config, MIN_COLS, MIN_ROWS,
@@ -23,8 +27,7 @@ use crate::ime::{ImeBuffer, MAX_TEXT_BYTES as MAX_IME_TEXT_BYTES};
 #[cfg(test)]
 use crate::keyboard::encode_key;
 use crate::keyboard::{
-    cursor_key_sequence, encode_key_event, encode_text_input, uses_platform_text_input,
-    KeyEventKind,
+    cursor_key_sequence, encode_key_event, uses_platform_text_input, KeyEventKind,
 };
 use crate::mouse::{
     accumulate_wheel_reports, encode_report as encode_mouse_report,
@@ -331,246 +334,5 @@ impl TerminalView {
 
     fn modal_open(&self) -> bool {
         self.pending_close.is_some() || self.pending_paste.is_some()
-    }
-
-    fn report_focus_for_session(
-        &mut self,
-        index: usize,
-        focused: bool,
-    ) -> Result<(), SessionWriteError> {
-        if !self.tabs[index].accepts_input() {
-            return Ok(());
-        }
-        let report = {
-            let term = self.tabs[index]
-                .term
-                .lock()
-                .map_err(|_| SessionWriteError::State)?;
-            focus_report(*term.mode(), focused)
-        };
-        let Some(report) = report else {
-            return Ok(());
-        };
-        self.tabs[index].write(report)
-    }
-
-    /// Report one truthful focus transition without repainting the ordinary
-    /// success path. Returns whether visible failure state changed.
-    fn report_active_focus(&mut self, focused: bool) -> bool {
-        let was_live = self.tabs[self.active].accepts_input();
-        let result = self.report_focus_for_session(self.active, focused);
-        if matches!(result, Err(SessionWriteError::State)) {
-            self.operation_error = Some(SessionWriteError::State.to_string().into());
-        }
-        was_live != self.tabs[self.active].accepts_input()
-            || matches!(result, Err(SessionWriteError::State))
-    }
-
-    fn handle_window_activation(
-        &mut self,
-        active: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.window_active == active {
-            return;
-        }
-        self.window_active = active;
-        let menu_closed = !active && rmac_ui::ContextMenuState::dismiss(&mut self.menu_at, window);
-        if self.report_active_focus(active) || menu_closed {
-            cx.notify();
-        }
-    }
-
-    fn reject_ime(&mut self, message: &'static str, cx: &mut Context<Self>) {
-        self.ime = None;
-        self.operation_error = Some(message.into());
-        cx.notify();
-    }
-
-    fn commit_text_input(&mut self, session_id: u64, text: &str, cx: &mut Context<Self>) {
-        if text.is_empty() {
-            cx.notify();
-            return;
-        }
-        if text.len() > MAX_IME_TEXT_BYTES {
-            self.reject_ime(
-                "Text input exceeds Terminal's 16 KiB composition safety limit; nothing was sent.",
-                cx,
-            );
-            return;
-        }
-        if text.chars().any(char::is_control) {
-            self.reject_ime(
-                "Terminal refused non-text control data from the input method.",
-                cx,
-            );
-            return;
-        }
-        if self.modal_open() {
-            self.reject_ime(
-                "Terminal did not send text while a confirmation was open.",
-                cx,
-            );
-            return;
-        }
-        if self.tabs[self.active].id != session_id {
-            self.reject_ime(
-                "Text composition belonged to another terminal tab; nothing was sent.",
-                cx,
-            );
-            return;
-        }
-        let mode = match self.active_terminal_mode() {
-            Ok(mode) => mode,
-            Err(error) => {
-                self.operation_error = Some(error.to_string().into());
-                cx.notify();
-                return;
-            }
-        };
-        let bytes = encode_text_input(text, mode);
-        match self.tabs[self.active].write(&bytes) {
-            Ok(()) => {
-                if let Ok(mut term) = self.tabs[self.active].term.lock() {
-                    term.scroll_display(Scroll::Bottom);
-                }
-                self.tabs[self.active].ui.selection = None;
-            }
-            Err(SessionWriteError::State) => {
-                self.operation_error = Some(SessionWriteError::State.to_string().into());
-            }
-            Err(SessionWriteError::Exited | SessionWriteError::Write) => {}
-        }
-        cx.notify();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn terminal_resources_have_explicit_bounds() {
-        assert_eq!(MAX_SEARCH_QUERY_BYTES, 4096);
-        assert_eq!(FOCUS_IN_REPORT.len(), 3);
-        assert_eq!(FOCUS_OUT_REPORT.len(), 3);
-        assert_eq!(MAX_TABS, 16);
-        assert_eq!(terminal_content_top(1), 42.0);
-        assert_eq!(terminal_content_top(2), 74.0);
-    }
-
-    #[test]
-    fn focus_reports_follow_the_parsed_xterm_mode() {
-        let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
-        let mut parser: Processor = Processor::new();
-
-        assert_eq!(focus_report(*term.mode(), true), None);
-        assert_eq!(focus_report(*term.mode(), false), None);
-
-        parser.advance(&mut term, b"\x1b[?1004h");
-        assert!(term.mode().contains(TermMode::FOCUS_IN_OUT));
-        assert_eq!(focus_report(*term.mode(), true), Some(FOCUS_IN_REPORT));
-        assert_eq!(focus_report(*term.mode(), false), Some(FOCUS_OUT_REPORT));
-
-        parser.advance(&mut term, b"\x1b[?1004l");
-        assert!(!term.mode().contains(TermMode::FOCUS_IN_OUT));
-        assert_eq!(focus_report(*term.mode(), true), None);
-    }
-
-    #[test]
-    fn mouse_modes_follow_parsed_xterm_state() {
-        let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(terminal_config(10), &size, EventProxy::default());
-        let mut parser: Processor = Processor::new();
-        parser.advance(&mut term, b"\x1b[?1002;1006h");
-        let mode = *term.mode();
-        assert!(mode.contains(TermMode::MOUSE_DRAG | TermMode::SGR_MOUSE));
-        assert!(!mode.contains(TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_MOTION));
-
-        parser.advance(&mut term, b"\x1b[?1002;1006l");
-        assert!(!term
-            .mode()
-            .intersects(TermMode::MOUSE_MODE | TermMode::SGR_MOUSE));
-    }
-
-    #[test]
-    fn bracketed_paste_mode_follows_parsed_xterm_state() {
-        let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(
-            terminal_config(SCROLLBACK_LINES),
-            &size,
-            EventProxy::default(),
-        );
-        let mut parser: Processor = Processor::new();
-        parser.advance(&mut term, b"\x1b[?2004h");
-        assert!(term.mode().contains(TermMode::BRACKETED_PASTE));
-        parser.advance(&mut term, b"\x1b[?2004l");
-        assert!(!term.mode().contains(TermMode::BRACKETED_PASTE));
-    }
-
-    fn test_keystroke(
-        key: &str,
-        key_char: Option<&str>,
-        modifiers: gpui::Modifiers,
-    ) -> gpui::Keystroke {
-        gpui::Keystroke {
-            key: key.into(),
-            key_char: key_char.map(str::to_owned),
-            modifiers,
-        }
-    }
-
-    #[test]
-    fn cursor_keys_follow_the_parsed_application_mode() {
-        let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(
-            terminal_config(SCROLLBACK_LINES),
-            &size,
-            EventProxy::default(),
-        );
-        let mut parser: Processor = Processor::new();
-        let up = test_keystroke("up", None, gpui::Modifiers::default());
-        let home = test_keystroke("home", None, gpui::Modifiers::default());
-
-        assert_eq!(encode_key(&up, *term.mode()), b"\x1b[A");
-        assert_eq!(encode_key(&home, *term.mode()), b"\x1b[H");
-
-        parser.advance(&mut term, b"\x1b[?1h");
-        assert!(term.mode().contains(TermMode::APP_CURSOR));
-        assert_eq!(encode_key(&up, *term.mode()), b"\x1bOA");
-        assert_eq!(encode_key(&home, *term.mode()), b"\x1bOH");
-
-        parser.advance(&mut term, b"\x1b[?1l");
-        assert!(!term.mode().contains(TermMode::APP_CURSOR));
-        assert_eq!(encode_key(&up, *term.mode()), b"\x1b[A");
-    }
-
-    #[test]
-    fn enhanced_keyboard_protocol_modes_follow_the_parsed_stack() {
-        assert!(terminal_config(SCROLLBACK_LINES).kitty_keyboard);
-        let size = TermSize { cols: 20, lines: 5 };
-        let mut term = Term::new(
-            terminal_config(SCROLLBACK_LINES),
-            &size,
-            EventProxy::default(),
-        );
-        let mut parser: Processor = Processor::new();
-
-        parser.advance(&mut term, b"\x1b[>1u");
-        assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
-        parser.advance(&mut term, b"\x1b[>31u");
-        assert!(term.mode().contains(TermMode::KITTY_KEYBOARD_PROTOCOL));
-        parser.advance(&mut term, b"\x1b[<u");
-        assert!(term.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES));
-        assert!(!term.mode().contains(
-            TermMode::REPORT_EVENT_TYPES
-                | TermMode::REPORT_ALTERNATE_KEYS
-                | TermMode::REPORT_ALL_KEYS_AS_ESC
-                | TermMode::REPORT_ASSOCIATED_TEXT
-        ));
-        parser.advance(&mut term, b"\x1b[<u");
-        assert!(!term.mode().intersects(TermMode::KITTY_KEYBOARD_PROTOCOL));
     }
 }

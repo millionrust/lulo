@@ -3,13 +3,80 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use super::{ImeComposition, TerminalView, BODY_PAD, LEFT_PAD};
+use super::{ImeComposition, TerminalView, BODY_PAD, LEFT_PAD, MAX_IME_TEXT_BYTES};
 use crate::ime::{
     byte_range_for_utf16, replace_buffer as replace_ime_buffer, utf16_len, ImeEditError,
 };
+use crate::keyboard::encode_text_input;
+use crate::session::SessionWriteError;
 use alacritty_terminal::grid::Scroll;
 use gpui::{px, Bounds, Context, EntityInputHandler, Pixels, Point, UTF16Selection, Window};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+impl TerminalView {
+    fn reject_ime(&mut self, message: &'static str, cx: &mut Context<Self>) {
+        self.ime = None;
+        self.operation_error = Some(message.into());
+        cx.notify();
+    }
+
+    fn commit_text_input(&mut self, session_id: u64, text: &str, cx: &mut Context<Self>) {
+        if text.is_empty() {
+            cx.notify();
+            return;
+        }
+        if text.len() > MAX_IME_TEXT_BYTES {
+            self.reject_ime(
+                "Text input exceeds Terminal's 16 KiB composition safety limit; nothing was sent.",
+                cx,
+            );
+            return;
+        }
+        if text.chars().any(char::is_control) {
+            self.reject_ime(
+                "Terminal refused non-text control data from the input method.",
+                cx,
+            );
+            return;
+        }
+        if self.modal_open() {
+            self.reject_ime(
+                "Terminal did not send text while a confirmation was open.",
+                cx,
+            );
+            return;
+        }
+        if self.tabs[self.active].id != session_id {
+            self.reject_ime(
+                "Text composition belonged to another terminal tab; nothing was sent.",
+                cx,
+            );
+            return;
+        }
+        let mode = match self.active_terminal_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                self.operation_error = Some(error.to_string().into());
+                cx.notify();
+                return;
+            }
+        };
+        let bytes = encode_text_input(text, mode);
+        match self.tabs[self.active].write(&bytes) {
+            Ok(()) => {
+                if let Ok(mut terminal) = self.tabs[self.active].term.lock() {
+                    terminal.scroll_display(Scroll::Bottom);
+                }
+                self.tabs[self.active].ui.selection = None;
+            }
+            Err(SessionWriteError::State) => {
+                self.operation_error = Some(SessionWriteError::State.to_string().into());
+            }
+            Err(SessionWriteError::Exited | SessionWriteError::Write) => {}
+        }
+        cx.notify();
+    }
+}
 
 impl EntityInputHandler for TerminalView {
     fn text_for_range(

@@ -33,9 +33,9 @@ pub(super) fn command(
 }
 
 pub(super) struct CommandOutput {
-    status: ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
+    pub(super) status: ExitStatus,
+    pub(super) stdout: Vec<u8>,
+    pub(super) stderr: Vec<u8>,
 }
 
 pub(super) fn bounded_command_output(

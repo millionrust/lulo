@@ -74,12 +74,13 @@ pub(super) fn system_restore_snapshot(
 
     match verify_snapshot_restore(expected, &layout) {
         Ok(snapshot) => Ok(snapshot),
-        Err(verification) => Err(first_error.map_or(verification, |command| {
-            Error::new(
+        Err(verification) => Err(match first_error {
+            Some(command) => Error::new(
                 "restore display layout",
                 format!("{command}; {verification}"),
-            )
-        })),
+            ),
+            None => verification,
+        }),
     }
 }
 

@@ -7,6 +7,16 @@ impl Render for Settings {
             self.focused_once = true;
             window.focus(&self.focus);
         }
+        let title_subject = self
+            .nav
+            .last()
+            .map(|subpage| self.subpage_title(subpage))
+            .unwrap_or_else(|| self.current().name.to_string());
+        let native_window_title = rmac_ui::native_window_title(&title_subject, "Settings");
+        if self.native_window_title != native_window_title {
+            window.set_window_title(&native_window_title);
+            self.native_window_title = native_window_title;
+        }
         let settings_error = self.global_settings_error().cloned();
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         let wifi_enterprise_dialog = self.render_wifi_enterprise_dialog(cx);

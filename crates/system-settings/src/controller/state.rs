@@ -95,6 +95,7 @@ pub(super) struct Settings {
     pub(super) nav: Vec<SubPage>,
     pub(super) search: Entity<InputState>,
     pub(super) focus: FocusHandle,
+    pub(super) native_window_title: String,
     pub(super) focused_once: bool,
     pub(super) dragging: bool,
     pub(super) wifi_error: Option<SharedString>,

@@ -1450,6 +1450,7 @@ impl Settings {
             nav: Vec::new(),
             search,
             focus: cx.focus_handle(),
+            native_window_title: "Settings".into(),
             focused_once: false,
             dragging: false,
             wifi_error: None,

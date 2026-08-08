@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod render;
+
 impl Settings {
     pub(super) fn queue_storage_stream_refresh(&mut self, cx: &mut Context<Self>) {
         if self.system_data_loading || self.storage_busy || self.storage_stream_refreshing {

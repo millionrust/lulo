@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod dialog;
+
 impl Settings {
     pub(in crate::controller) fn software_update_body(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();

@@ -9,7 +9,7 @@ use gpui::{
 use gpui_component::StyledExt as _;
 use rmac_ui::{
     gallery::{ComponentSpec, PreviewScale, COMPONENT_SPECS, PREVIEW_SCALES},
-    mac,
+    mac, Tabs,
 };
 
 gpui::actions!(
@@ -63,44 +63,15 @@ impl ComponentGallery {
     }
 
     fn render_scale_selector(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .children(PREVIEW_SCALES.iter().enumerate().map(|(index, scale)| {
-                let selected = index == self.scale_index;
-                div()
-                    .id(("gallery-scale", index))
-                    .h(px(28.0))
-                    .min_w(px(62.0))
-                    .px_3()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(7.0))
-                    .border_1()
-                    .border_color(if selected {
-                        mac::accent_border()
-                    } else {
-                        mac::separator()
-                    })
-                    .bg(if selected {
-                        mac::accent()
-                    } else {
-                        mac::control_fill()
-                    })
-                    .text_color(if selected {
-                        mac::on_accent()
-                    } else {
-                        mac::text()
-                    })
-                    .text_size(px(12.0))
-                    .font_weight(mac::MEDIUM)
-                    .cursor_pointer()
-                    .hover(|style| style.bg(mac::control_fill_hover()))
-                    .on_click(cx.listener(move |this, _, _, cx| this.set_scale(index, cx)))
-                    .child(format!("{}  [{}]", scale.label, index + 1))
-            }))
+        Tabs::new(
+            "gallery-scale",
+            PREVIEW_SCALES
+                .iter()
+                .enumerate()
+                .map(|(index, scale)| format!("{}  [{}]", scale.label, index + 1)),
+        )
+        .selected(self.scale_index)
+        .on_change(cx.listener(|this, index: &usize, _, cx| this.set_scale(*index, cx)))
     }
 
     fn render_spec(&self, spec: &ComponentSpec) -> impl IntoElement {

@@ -200,7 +200,7 @@ struct FinderView {
     clipboard: Vec<PathBuf>,
     clip_cut: bool,
     /// Where the right-click context menu is open (window-relative), if any.
-    menu_at: Option<Point<Pixels>>,
+    menu_at: Option<rmac_ui::ContextMenuState>,
     renaming: Option<(usize, gpui::Entity<InputState>)>,
     show_hidden: bool,
     view: ViewMode,

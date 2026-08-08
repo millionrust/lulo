@@ -166,6 +166,14 @@ impl FinderView {
 
         let focus = cx.focus_handle();
         window.focus(&focus);
+        cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active()
+                && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window)
+            {
+                cx.notify();
+            }
+        })
+        .detach();
         let restored = FinderPersistence::restore();
         let presentation = restored.presentation;
         let (restored_paths, active) = restored.restorable_session(&home);

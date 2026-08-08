@@ -84,9 +84,14 @@ impl AppDrawer {
             }))
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     this.selected = position;
-                    this.menu_at = Some(event.position);
+                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                        event.position,
+                        &this.focus,
+                        window,
+                        cx,
+                    ));
                     cx.notify();
                 }),
             )
@@ -136,9 +141,14 @@ impl AppDrawer {
             }))
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     this.selected = position;
-                    this.menu_at = Some(event.position);
+                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                        event.position,
+                        &this.focus,
+                        window,
+                        cx,
+                    ));
                     cx.notify();
                 }),
             )
@@ -258,7 +268,10 @@ impl Render for AppDrawer {
                 .or_else(|| self.catalog_error.clone())
                 .map(|message| (message, true))
         };
-        let context_menu = self.menu_at.map(|position| self.app_menu(position, cx));
+        let context_menu = self.menu_at.clone().map(|state| {
+            let menu = self.app_menu(state.position(), cx);
+            (menu, state)
+        });
 
         let body: gpui::AnyElement = if visible.is_empty() {
             let empty = if self.apps.is_empty() {
@@ -338,9 +351,10 @@ impl Render for AppDrawer {
             .on_action(cx.listener(|this, _: &ClearSearch, window, cx| {
                 this.clear_search(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
-                this.menu_at = None;
-                cx.notify();
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                if rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window) {
+                    cx.notify();
+                }
             }))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.dismiss(window, cx);
@@ -417,8 +431,8 @@ impl Render for AppDrawer {
                     .pb_8()
                     .child(body),
             )
-            .when_some(context_menu, |element: Div, menu| {
-                element.child(menu.render())
+            .when_some(context_menu, |element: Div, (menu, state)| {
+                element.child(menu.render(&state))
             })
     }
 }

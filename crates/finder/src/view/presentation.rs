@@ -4,7 +4,7 @@ impl Render for FinderView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let info = self.info;
         let multi = self.tabs.len() > 1;
-        let menu_at = self.menu_at;
+        let menu_at = self.menu_at.clone();
         let has_sel = !self.selected.is_empty();
         let can_open_with = !self.trash_view
             && self.selected.len() == 1
@@ -125,9 +125,10 @@ impl Render for FinderView {
                     }
                 }
             }))
-            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
-                this.menu_at = None;
-                cx.notify();
+            .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                if rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window) {
+                    cx.notify();
+                }
             }))
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
@@ -326,17 +327,17 @@ impl Render for FinderView {
                     .child(self.render_list(cx)),
             )
             .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))
-            .when_some(menu_at, |el, pos| {
+            .when_some(menu_at, |el, state| {
                 el.child(
                     Self::build_context_menu(
-                        pos,
+                        state.position(),
                         has_sel,
                         can_open_with,
                         can_paste,
                         self.trash_view,
                         undo_label,
                     )
-                    .render(),
+                    .render(&state),
                 )
             })
             .when_some(conflict_dialog, |el, dialog| el.child(dialog))

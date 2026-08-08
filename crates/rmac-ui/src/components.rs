@@ -10,9 +10,9 @@
 //! app's root element or opaque siblings paint over it.
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, ElementId,
-    InteractiveElement as _, IntoElement, KeyBinding, MouseButton, ParentElement as _, Pixels,
-    Point, SharedString, Styled as _,
+    anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
+    ElementId, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, MouseButton,
+    ParentElement as _, Pixels, Point, SharedString, Styled as _, Window,
 };
 use gpui_component::StyledExt as _;
 
@@ -147,11 +147,55 @@ enum MenuEntry {
     Separator,
 }
 
-/// A macOS-style right-click context menu. Build it in a right-mouse handler,
-/// store it in app state (`Option<ContextMenu>`), and render it as the LAST
-/// child of the app root. Clicking an item dispatches its action and the
-/// [`DismissMenu`] action; clicking away dispatches [`DismissMenu`]. The app
-/// binds `DismissMenu` to clear its menu state.
+/// Focus and placement state for one open context menu.
+///
+/// The menu temporarily owns keyboard focus so its Escape binding is reliable,
+/// while retaining the invoking control's focus for every dismissal path.
+#[derive(Clone)]
+pub struct ContextMenuState {
+    position: Point<Pixels>,
+    menu_focus: FocusHandle,
+    return_focus: FocusHandle,
+}
+
+impl ContextMenuState {
+    /// Open a menu at `position`, transfer keyboard focus to it, and remember
+    /// the invoking control so focus can be restored when it closes.
+    pub fn open<V>(
+        position: Point<Pixels>,
+        return_focus: &FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<V>,
+    ) -> Self {
+        let menu_focus = cx.focus_handle();
+        window.focus(&menu_focus);
+        Self {
+            position,
+            menu_focus,
+            return_focus: return_focus.clone(),
+        }
+    }
+
+    /// Cursor-relative position used to anchor the menu.
+    pub fn position(&self) -> Point<Pixels> {
+        self.position
+    }
+
+    /// Close `menu`, returning focus to the control that opened it.
+    pub fn dismiss(menu: &mut Option<Self>, window: &mut Window) -> bool {
+        let Some(menu) = menu.take() else {
+            return false;
+        };
+        window.focus(&menu.return_focus);
+        true
+    }
+}
+
+/// A macOS-style right-click context menu. Open a [`ContextMenuState`] in a
+/// right-mouse handler, store that state in the app, and render this menu as the
+/// LAST child of the app root. Clicking an item dispatches its action and the
+/// [`DismissMenu`] action; clicking away or pressing Escape dispatches
+/// [`DismissMenu`]. The app binds `DismissMenu` to dismiss its menu state.
 ///
 /// Items dispatch GPUI actions (the same `Box::new(MyAction)` pattern apps
 /// already use), so the menu needs no app-view type to wire its clicks.
@@ -241,8 +285,10 @@ impl ContextMenu {
     }
 
     /// Build the overlay element. Render this as the LAST child of the app root.
-    pub fn render(self) -> impl IntoElement {
+    pub fn render(self, state: &ContextMenuState) -> impl IntoElement {
         let pos = self.pos;
+        let menu_focus = state.menu_focus.clone();
+        let return_focus = state.return_focus.clone();
         let mut panel = div()
             .min_w(px(190.0))
             .py(px(5.0))
@@ -291,9 +337,13 @@ impl ContextMenu {
                     let row = ListRow::new(("rmac-menu-item", i), content)
                         .mx(px(5.0))
                         .px(px(8.0))
-                        .on_activate(move |_, window, cx| {
-                            window.dispatch_action(action.boxed_clone(), cx);
-                            window.dispatch_action(Box::new(DismissMenu), cx);
+                        .on_activate({
+                            let return_focus = return_focus.clone();
+                            move |_, window, cx| {
+                                window.focus(&return_focus);
+                                window.dispatch_action(action.boxed_clone(), cx);
+                                window.dispatch_action(Box::new(DismissMenu), cx);
+                            }
                         });
                     panel = panel.child(row);
                 }
@@ -305,6 +355,7 @@ impl ContextMenu {
             .absolute()
             .inset_0()
             .id("rmac-menu-scrim")
+            .track_focus(&menu_focus)
             .key_context(MENU_CONTEXT)
             .on_mouse_down(MouseButton::Left, |_, window, cx| {
                 window.dispatch_action(Box::new(DismissMenu), cx);

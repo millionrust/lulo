@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use gpui::{AppContext as _, Context, Entity, FocusHandle, Pixels, Point, SharedString, Window};
 use rmac_app_drawer::accessibility::{
-    AppDrawerAccessibilitySnapshot, ApplicationCategory, DrawerFeedback, DrawerProjectionState,
-    DrawerView, OPEN_ACTION_NAME, SHOW_IN_FOLDER_ACTION_NAME, project_app_drawer,
+    project_app_drawer, AppDrawerAccessibilitySnapshot, ApplicationCategory, DrawerFeedback,
+    DrawerProjectionState, DrawerView, OPEN_ACTION_NAME, SHOW_IN_FOLDER_ACTION_NAME,
 };
 use rmac_ui::InputState;
 
@@ -53,7 +53,7 @@ pub(crate) struct AppDrawer {
     /// Cursor into the currently-visible (filtered) list.
     selected: usize,
     /// Where the right-click context menu is open (window-relative), if any.
-    menu_at: Option<Point<Pixels>>,
+    menu_at: Option<rmac_ui::ContextMenuState>,
     /// Columns in the grid as last laid out — used for up/down navigation.
     cols: usize,
     catalog_error: Option<SharedString>,
@@ -95,6 +95,14 @@ impl AppDrawer {
 
         let focus = cx.focus_handle();
         focus.focus(window);
+        cx.observe_window_activation(window, |this, window, cx| {
+            if !window.is_window_active()
+                && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window)
+            {
+                cx.notify();
+            }
+        })
+        .detach();
 
         // Extract macOS bundle icons off the main thread, then fill them in.
         #[cfg(target_os = "macos")]

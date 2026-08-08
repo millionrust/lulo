@@ -163,7 +163,7 @@ pub(super) struct TerminalView {
     pending_close: Option<PendingClose>,
     pending_paste: Option<PendingPaste>,
     /// Where the right-click context menu is open (window-relative), if any.
-    menu_at: Option<Point<Pixels>>,
+    menu_at: Option<rmac_ui::ContextMenuState>,
 }
 
 impl TerminalView {
@@ -257,7 +257,7 @@ impl TerminalView {
         window.focus(&focus);
         let window_active = window.is_window_active();
         cx.observe_window_activation(window, |this, window, cx| {
-            this.handle_window_activation(window.is_window_active(), cx);
+            this.handle_window_activation(window.is_window_active(), window, cx);
         })
         .detach();
         let (profile, persistence_error) = match load_profile() {
@@ -360,12 +360,18 @@ impl TerminalView {
             || matches!(result, Err(SessionWriteError::State))
     }
 
-    fn handle_window_activation(&mut self, active: bool, cx: &mut Context<Self>) {
+    fn handle_window_activation(
+        &mut self,
+        active: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.window_active == active {
             return;
         }
         self.window_active = active;
-        if self.report_active_focus(active) {
+        let menu_closed = !active && rmac_ui::ContextMenuState::dismiss(&mut self.menu_at, window);
+        if self.report_active_focus(active) || menu_closed {
             cx.notify();
         }
     }

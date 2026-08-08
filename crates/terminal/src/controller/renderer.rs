@@ -539,9 +539,10 @@ impl Render for TerminalView {
                             cx.notify();
                         }
                     }))
-                    .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, _, cx| {
-                        this.menu_at = None;
-                        cx.notify();
+                    .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
+                        if rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window) {
+                            cx.notify();
+                        }
                     }))
                     .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                         this.request_close_window(window, cx)
@@ -557,7 +558,7 @@ impl Render for TerminalView {
                     // Applications own unshifted pointer input only while the
                     // parsed terminal mode requests it. Shift always preserves
                     // Terminal's local selection/context-menu path.
-                    .on_any_mouse_down(cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                    .on_any_mouse_down(cx.listener(|this, ev: &MouseDownEvent, window, cx| {
                         if this.modal_open() {
                             return;
                         }
@@ -594,7 +595,12 @@ impl Render for TerminalView {
                                 this.selecting = true;
                             }
                             MouseButton::Right => {
-                                this.menu_at = Some(ev.position);
+                                this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                    ev.position,
+                                    &this.focus,
+                                    window,
+                                    cx,
+                                ));
                             }
                             MouseButton::Middle | MouseButton::Navigate(_) => {}
                         }
@@ -756,9 +762,9 @@ impl Render for TerminalView {
             // top of the opaque terminal body instead of behind it.
             .when(self.picker_open, |el: Div| el.child(self.render_picker(cx)))
             // The right-click context menu paints above everything else.
-            .when_some(self.menu_at, |el: Div, pos| {
+            .when_some(self.menu_at.clone(), |el: Div, state| {
                 el.child(
-                    rmac_ui::ContextMenu::new(pos)
+                    rmac_ui::ContextMenu::new(state.position())
                         .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(Copy))
                         .command_item("Paste", rmac_ui::shortcuts::PASTE, Box::new(Paste))
                         .command_item(
@@ -787,7 +793,7 @@ impl Render for TerminalView {
                         .command_item("Clear", rmac_ui::shortcuts::CLEAR, Box::new(Clear))
                         .separator()
                         .item("Profiles…", Box::new(ShowProfiles))
-                        .render(),
+                        .render(&state),
                 )
             })
             .when_some(session_status, |terminal, message| {

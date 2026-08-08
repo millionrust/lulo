@@ -155,8 +155,13 @@ impl FinderView {
                     .ghost()
                     .with_size(Size::Small)
                     .tooltip("More Actions")
-                    .on_click(cx.listener(|this, ev: &ClickEvent, _, cx| {
-                        this.menu_at = Some(ev.position());
+                    .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
+                        this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                            ev.position(),
+                            &this.focus,
+                            window,
+                            cx,
+                        ));
                         cx.notify();
                     })),
             )

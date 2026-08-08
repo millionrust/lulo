@@ -161,7 +161,12 @@ impl FinderView {
                                 this.select_single(ix);
                             }
                             window.focus(&this.focus);
-                            this.menu_at = Some(ev.position);
+                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                ev.position,
+                                &this.focus,
+                                window,
+                                cx,
+                            ));
                             cx.notify();
                         }),
                     )
@@ -251,7 +256,12 @@ impl FinderView {
                                     this.select_single(ix);
                                 }
                                 window.focus(&this.focus);
-                                this.menu_at = Some(ev.position);
+                                this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                    ev.position,
+                                    &this.focus,
+                                    window,
+                                    cx,
+                                ));
                                 cx.notify();
                             }),
                         )
@@ -293,8 +303,13 @@ impl FinderView {
                     .child(div().v_flex().children(rows))
                     .on_mouse_down(
                         MouseButton::Right,
-                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                            this.menu_at = Some(ev.position);
+                        cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                ev.position,
+                                &this.focus,
+                                window,
+                                cx,
+                            ));
                             cx.notify();
                         }),
                     )
@@ -309,8 +324,13 @@ impl FinderView {
                     .child(div().flex().flex_wrap().gap_2().children(tiles))
                     .on_mouse_down(
                         MouseButton::Right,
-                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                            this.menu_at = Some(ev.position);
+                        cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                ev.position,
+                                &this.focus,
+                                window,
+                                cx,
+                            ));
                             cx.notify();
                         }),
                     )

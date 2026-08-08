@@ -23,6 +23,11 @@ groups, and use the shared danger presentation for irreversible actions. An
 application may omit an unavailable action. It must not display a shortcut hint
 for a command that is not registered in that application context.
 
+Every open menu uses `ContextMenuState`: keyboard focus moves into the menu so
+Escape is reliable, then returns to the invoking surface after an action,
+Escape, an outside click, or dismissal. The owning application also dismisses
+the menu when its window deactivates; menus never survive as stale overlays.
+
 ## Shortcut source of truth
 
 Every reusable application command is represented by one

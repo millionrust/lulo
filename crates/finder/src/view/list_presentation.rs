@@ -201,9 +201,19 @@ impl FinderView {
         }
 
         let show_list = self.view == ViewMode::List;
-        let show_icons = matches!(self.view, ViewMode::Icon | ViewMode::Gallery);
+        let show_icons = self.view == ViewMode::Icon;
+        let visible_indices = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                (q.is_empty() || entry.name.to_lowercase().contains(&q)).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let navigation_indices = visible_indices.clone();
+        let horizontal_navigation = matches!(self.view, ViewMode::Icon | ViewMode::Gallery);
 
-        // Icon-grid tiles (Icon & Gallery modes).
+        // Icon-grid tiles. Gallery owns a distinct preview + filmstrip tree.
         let mut tiles: Vec<gpui::AnyElement> = Vec::new();
         if show_icons {
             for (ix, e) in self.entries.iter().enumerate() {
@@ -315,7 +325,8 @@ impl FinderView {
                     )
                     .into_any_element(),
                 ViewMode::Column => self.render_columns(cx).into_any_element(),
-                _ => div()
+                ViewMode::Gallery => self.render_gallery(&visible_indices, cx).into_any_element(),
+                ViewMode::Icon => div()
                     .id("icon-grid")
                     .flex_1()
                     .min_h(px(0.0))
@@ -368,28 +379,51 @@ impl FinderView {
                 let a = this.active;
                 this.close_tab(a, cx);
             }))
-            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
+                let current = this.anchor.and_then(|anchor| {
+                    navigation_indices.iter().position(|index| *index == anchor)
+                });
+                let select_position = match ev.keystroke.key.as_str() {
+                    "down" => Some(
+                        current
+                            .map(|position| position + 1)
+                            .unwrap_or(0)
+                            .min(navigation_indices.len().saturating_sub(1)),
+                    ),
+                    "right" if horizontal_navigation => Some(
+                        current
+                            .map(|position| position + 1)
+                            .unwrap_or(0)
+                            .min(navigation_indices.len().saturating_sub(1)),
+                    ),
+                    "up" => Some(
+                        current
+                            .map(|position| position.saturating_sub(1))
+                            .unwrap_or(0),
+                    ),
+                    "left" if horizontal_navigation => Some(
+                        current
+                            .map(|position| position.saturating_sub(1))
+                            .unwrap_or(0),
+                    ),
+                    "home" => Some(0),
+                    "end" => Some(navigation_indices.len().saturating_sub(1)),
+                    _ => None,
+                };
                 match ev.keystroke.key.as_str() {
                     "escape" => {
                         if this.info.take().is_some() {
                             cx.notify();
                         }
                     }
-                    "down" => {
-                        let next = this
-                            .anchor
-                            .map(|a| a + 1)
-                            .unwrap_or(0)
-                            .min(this.entries.len().saturating_sub(1));
-                        this.select_single(next);
-                        cx.notify();
+                    _ => {
+                        if let Some(position) = select_position {
+                            if !navigation_indices.is_empty() {
+                                this.select_single(navigation_indices[position]);
+                                cx.notify();
+                            }
+                        }
                     }
-                    "up" => {
-                        let prev = this.anchor.map(|a| a.saturating_sub(1)).unwrap_or(0);
-                        this.select_single(prev);
-                        cx.notify();
-                    }
-                    _ => {}
                 }
             }))
             .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(rmac_ui::mac::accent_subtle()))

@@ -11,6 +11,7 @@ mod conflict_controller;
 mod content_presentation;
 mod dialog_presentation;
 mod filesystem_helpers;
+mod gallery_presentation;
 mod item_operations;
 mod lifecycle_controller;
 mod list_presentation;

@@ -1,10 +1,20 @@
 use gpui::{
-    point, px, size, App, AppContext as _, Application, Bounds, Context, Render, SharedString,
-    TitlebarOptions, Window, WindowBounds, WindowOptions,
+    point, px, size, App, AppContext as _, Application, Bounds, Context, Pixels, Render,
+    SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
 use gpui_component::Root;
 
 use crate::{init_application, prepare_surface_window};
+
+const MIN_WINDOW_WIDTH: f32 = 640.0;
+const MIN_WINDOW_HEIGHT: f32 = 360.0;
+
+fn minimum_window_size(width: f32, height: f32) -> Size<Pixels> {
+    size(
+        px(width.min(MIN_WINDOW_WIDTH)),
+        px(height.min(MIN_WINDOW_HEIGHT)),
+    )
+}
 
 /// Standard window options for an rmac app window: macOS traffic lights in the
 /// canonical position, transparent titlebar so our chrome draws through.
@@ -22,6 +32,7 @@ pub fn window_options(width: f32, height: f32) -> WindowOptions {
             // view so our chrome draws to the top edge.
             traffic_light_position: Some(point(px(-200.0), px(0.0))),
         }),
+        window_min_size: Some(minimum_window_size(width, height)),
         ..Default::default()
     }
 }
@@ -48,6 +59,7 @@ pub fn window_options_unified(width: f32, height: f32) -> WindowOptions {
             // OS traffic lights hidden off-screen; rmac draws its own.
             traffic_light_position: Some(point(px(-200.0), px(0.0))),
         }),
+        window_min_size: Some(minimum_window_size(width, height)),
         ..Default::default()
     }
 }

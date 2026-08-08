@@ -95,11 +95,16 @@ def evaluate_host(
         failures.append(f"required commands are missing: {', '.join(missing)}")
 
     vulkan = snapshot.vulkan_summary.lower()
+    hardware_vulkan_present = HARDWARE_VULKAN_DEVICE.search(
+        snapshot.vulkan_summary
+    ) is not None
     if not snapshot.vulkan_succeeded:
         failures.append("vulkaninfo --summary did not complete")
+    elif hardware_vulkan_present:
+        pass
     elif any(marker in vulkan for marker in SOFTWARE_VULKAN_MARKERS):
         failures.append("a software Vulkan renderer is not reference-PC evidence")
-    elif HARDWARE_VULKAN_DEVICE.search(snapshot.vulkan_summary) is None:
+    else:
         failures.append("an integrated or discrete Vulkan GPU was not proven")
 
     if not snapshot.worktree_clean:

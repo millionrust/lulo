@@ -52,6 +52,17 @@ class ReferencePreflightTests(unittest.TestCase):
     def test_accepts_clean_hardware_backed_gnome_wayland(self):
         self.assertEqual(evaluate(passing_host()), [])
 
+    def test_accepts_hardware_gpu_when_software_fallback_is_also_enumerated(self):
+        host = passing_host(
+            vulkan_summary=(
+                "GPU0 deviceType = PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU\n"
+                "GPU0 deviceName = Intel(R) HD Graphics 5500\n"
+                "GPU1 deviceType = PHYSICAL_DEVICE_TYPE_CPU\n"
+                "GPU1 deviceName = llvmpipe"
+            )
+        )
+        self.assertEqual(evaluate(host), [])
+
     def test_accepts_rmac_prefixed_niri_session_for_niri_gate(self):
         host = passing_host(current_desktop="rmac:niri")
         self.assertEqual(evaluate(host, expected_desktop="niri"), [])

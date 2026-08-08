@@ -61,6 +61,8 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("niri", session.static_dependencies)
         self.assertIn("swaylock", session.static_dependencies)
         self.assertIn("swayidle", session.static_dependencies)
+        self.assertIn("brightnessctl", session.static_dependencies)
+        self.assertIn("pipewire-bin", session.static_dependencies)
 
     def test_accepts_exact_amd64_and_arm64_elf_inventories(self):
         for architecture, machine in contract.ARCHITECTURES.items():

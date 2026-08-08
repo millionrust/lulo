@@ -1,0 +1,3 @@
+// User-owned rmac niri entry point. System Settings may add isolated managed
+// display and input includes around this package-owned shell include.
+include "/usr/share/rmac/niri/shell.kdl"

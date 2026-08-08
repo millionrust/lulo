@@ -1,0 +1,99 @@
+// Package-owned rmac niri shell policy. Updated with the rmac package.
+
+input {
+    touchpad {
+        tap
+        natural-scroll
+    }
+}
+
+layout {
+    gaps 12
+    center-focused-column "never"
+    default-column-width { proportion 0.5; }
+
+    focus-ring {
+        off
+    }
+
+    border {
+        off
+    }
+}
+
+hotkey-overlay {
+    skip-at-startup
+}
+
+screenshot-path "~/Pictures/Screenshots/Screenshot %Y-%m-%d at %H.%M.%S.png"
+
+// rmac owns its shell shortcuts in this session. The portal broker remains
+// available to applications, while these bindings make the desktop usable
+// immediately after login without a manual config step.
+include "/usr/share/rmac/niri/shortcuts-fallback.kdl"
+
+binds {
+    Mod+T repeat=false hotkey-overlay-title="Open Terminal" { spawn "rmac-terminal"; }
+    Mod+Q repeat=false hotkey-overlay-title="Close Window" { close-window; }
+    Mod+Tab repeat=false hotkey-overlay-title="Next Window" { focus-column-right; }
+    Mod+Shift+Tab repeat=false hotkey-overlay-title="Previous Window" { focus-column-left; }
+    Mod+H repeat=false { focus-column-left; }
+    Mod+L repeat=false { focus-column-right; }
+    Mod+J repeat=false { focus-workspace-down; }
+    Mod+K repeat=false { focus-workspace-up; }
+    Mod+Shift+H repeat=false { move-column-left; }
+    Mod+Shift+L repeat=false { move-column-right; }
+    Mod+Shift+J repeat=false { move-column-to-workspace-down; }
+    Mod+Shift+K repeat=false { move-column-to-workspace-up; }
+    Mod+F repeat=false hotkey-overlay-title="Fill Screen" { maximize-column; }
+    Mod+Ctrl+F repeat=false hotkey-overlay-title="Full Screen" { fullscreen-window; }
+    Mod+O repeat=false hotkey-overlay-title="Mission Control" { toggle-overview; }
+    Mod+Shift+Slash repeat=false { show-hotkey-overlay; }
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05+" "--limit" "1.0"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05-"; }
+    XF86AudioMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
+    XF86AudioMicMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle"; }
+    XF86MonBrightnessUp allow-when-locked=true { spawn "brightnessctl" "set" "+5%"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "set" "5%-"; }
+}
+
+// GPUI 0.2 popups are ordinary xdg-shell windows. Keep them out of niri's
+// scrolling layout and give each one the intended macOS-style presentation.
+window-rule {
+    match app-id=r#"^org\.rmac\.Launcher$"#
+    open-floating true
+    default-column-width { fixed 720; }
+    default-window-height { fixed 540; }
+    default-floating-position x=0 y=44 relative-to="top"
+    focus-ring { off; }
+    border { off; }
+}
+
+window-rule {
+    match app-id=r#"^org\.rmac\.QuickSettings$"#
+    open-floating true
+    default-column-width { fixed 380; }
+    default-window-height { fixed 548; }
+    default-floating-position x=12 y=12 relative-to="top-right"
+    focus-ring { off; }
+    border { off; }
+}
+
+window-rule {
+    match app-id=r#"^org\.rmac\.NotificationCenter$"#
+    open-floating true
+    default-column-width { fixed 420; }
+    default-window-height { fixed 720; }
+    default-floating-position x=12 y=12 relative-to="top-right"
+    focus-ring { off; }
+    border { off; }
+}
+
+window-rule {
+    match app-id=r#"^org\.rmac\.AppDrawer$"#
+    open-floating true
+    default-column-width { fixed 1080; }
+    default-window-height { fixed 720; }
+    focus-ring { off; }
+    border { off; }
+}

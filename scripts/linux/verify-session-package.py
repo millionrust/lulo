@@ -53,6 +53,8 @@ EXPECTED_PATHS = {
     Path("usr/share/wayland-sessions/rmac.desktop"),
     Path("usr/libexec/rmac/rmac-wayland-session"),
     Path("usr/libexec/rmac/rmac-session-start"),
+    Path("usr/share/rmac/niri/config.kdl"),
+    Path("usr/share/rmac/niri/shell.kdl"),
     Path("usr/share/rmac/niri/shortcuts-fallback.kdl"),
     Path("usr/share/rmac/session/swaylock.conf"),
     Path("usr/share/rmac/session/lock-policy.json"),

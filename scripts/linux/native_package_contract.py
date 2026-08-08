@@ -105,10 +105,12 @@ PACKAGE_SPECS = (
         install_directory="usr/libexec/rmac",
         binaries=SESSION_BINARIES,
         static_dependencies=(
+            "brightnessctl",
             "coreutils",
             "dbus-user-session",
             "gawk | mawk",
             "niri",
+            "pipewire-bin",
             "rmac-apps (= {version})",
             "swayidle",
             "swaylock",

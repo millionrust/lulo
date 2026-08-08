@@ -64,6 +64,7 @@ def rendered_session_wrapper(root: Path) -> Path:
         stage_package.REPO_ROOT / "packaging/rmac-session/rmac-wayland-session"
     ).read_text(encoding="utf-8")
     source = source.replace("/usr/libexec/rmac/", f"{root}/usr/libexec/rmac/")
+    source = source.replace("/usr/share/rmac/niri", f"{root}/usr/share/rmac/niri")
     source = source.replace("/usr/bin/", f"{root}/usr/bin/")
     wrapper = root / "wrapper"
     wrapper.write_text(source, encoding="utf-8")
@@ -90,6 +91,15 @@ def write_program(path: Path, contents: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("#!/bin/sh\n" + contents, encoding="utf-8")
     path.chmod(0o755)
+
+
+def add_wrapper_config_fixture(root: Path) -> None:
+    packaged = root / "usr/share/rmac/niri/config.kdl"
+    packaged.parent.mkdir(parents=True, exist_ok=True)
+    packaged.write_text('include "/usr/share/rmac/niri/shell.kdl"\n', encoding="utf-8")
+    install = shutil.which("install")
+    assert install is not None
+    write_program(root / "usr/bin/install", f'exec "{install}" "$@"\n')
 
 
 class SessionPackageTests(unittest.TestCase):
@@ -236,6 +246,7 @@ class SessionPackageTests(unittest.TestCase):
     def test_session_wrapper_starts_normal_and_safe_modes_with_exact_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            add_wrapper_config_fixture(root)
             write_program(root / "usr/bin/niri-session", "/bin/sleep 0.2\n")
             write_program(
                 root / "usr/bin/systemctl",
@@ -246,6 +257,7 @@ class SessionPackageTests(unittest.TestCase):
                 '    echo "XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP"\n'
                 '    echo "XDG_SESSION_DESKTOP=$XDG_SESSION_DESKTOP"\n'
                 '    echo "XDG_SESSION_TYPE=$XDG_SESSION_TYPE"\n'
+                '    [ -z "${NIRI_CONFIG-}" ] || echo "NIRI_CONFIG=$NIRI_CONFIG"\n'
                 '    echo "NIRI_SOCKET=/run/user/1000/niri"\n'
                 '    exit 0 ;;\n'
                 "  *) exit 0 ;;\n"
@@ -260,8 +272,9 @@ class SessionPackageTests(unittest.TestCase):
                 )
             write_program(
                 root / "usr/libexec/rmac/rmac-session-start",
-                'printf "%s|%s|%s\\n" "$XDG_CURRENT_DESKTOP" '
-                '"$XDG_SESSION_DESKTOP" "$*" >"$RMAC_TEST_CAPTURE"\n',
+                'printf "%s|%s|%s|%s\\n" "$XDG_CURRENT_DESKTOP" '
+                '"$XDG_SESSION_DESKTOP" "${NIRI_CONFIG-}" '
+                '"$*" >"$RMAC_TEST_CAPTURE"\n',
             )
             wrapper = rendered_session_wrapper(root)
 
@@ -287,8 +300,15 @@ class SessionPackageTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 capture.read_text(encoding="utf-8"),
-                "rmac:niri|rmac|--system-package\n",
+                f"rmac:niri|rmac|{root}/home/.config/rmac/niri/config.kdl|"
+                "--system-package\n",
             )
+            user_config = root / "home/.config/rmac/niri/config.kdl"
+            self.assertEqual(
+                user_config.read_text(encoding="utf-8"),
+                'include "/usr/share/rmac/niri/shell.kdl"\n',
+            )
+            self.assertEqual(stat.S_IMODE(user_config.stat().st_mode), 0o600)
             cleanup = systemctl_capture.read_text(encoding="utf-8")
             for unit in (
                 "rmac-session.target",
@@ -315,14 +335,21 @@ class SessionPackageTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 capture.read_text(encoding="utf-8"),
-                "niri|niri|--system-package\n",
+                "niri|niri||--system-package\n",
             )
 
     def test_session_wrapper_rejects_clean_exit_before_readiness(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            add_wrapper_config_fixture(root)
             write_program(root / "usr/bin/niri-session", "exit 0\n")
-            write_program(root / "usr/bin/systemctl", "exit 1\n")
+            write_program(
+                root / "usr/bin/systemctl",
+                'case "$*" in\n'
+                '  "--user import-environment NIRI_CONFIG") exit 0 ;;\n'
+                '  *) exit 1 ;;\n'
+                "esac\n",
+            )
             for executable in ("awk", "sleep"):
                 target = shutil.which(executable)
                 assert target is not None

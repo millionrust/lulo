@@ -3,6 +3,7 @@ set -u
 
 session_pid=
 rmac_started=false
+rmac_config_imported=false
 
 stop_rmac()
 {
@@ -12,6 +13,11 @@ stop_rmac()
             rmac-idle-lock.service rmac-lock-coordinator.service \
             rmac-session-supervisor.service >/dev/null 2>&1 || :
         rmac_started=false
+    fi
+    if [ "${rmac_config_imported}" = true ]; then
+        /usr/bin/systemctl --user unset-environment NIRI_CONFIG \
+            >/dev/null 2>&1 || :
+        rmac_config_imported=false
     fi
 }
 
@@ -47,12 +53,51 @@ if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
     # does not select rmac portal backends or optional shell surfaces.
     XDG_CURRENT_DESKTOP=niri
     XDG_SESSION_DESKTOP=niri
+    unset NIRI_CONFIG
+    /usr/bin/systemctl --user unset-environment NIRI_CONFIG \
+        >/dev/null 2>&1 || :
 else
     XDG_CURRENT_DESKTOP=rmac:niri
     XDG_SESSION_DESKTOP=rmac
+
+    # The rmac login has its own user-writable niri authority. Its small entry
+    # point includes package-owned shell policy, so upgrades can improve the
+    # desktop without replacing display/input choices saved by System Settings.
+    config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
+    case ${config_home} in
+        /*) ;;
+        *)
+            echo "the rmac config home must be an absolute path" >&2
+            exit 1
+            ;;
+    esac
+    packaged_config=/usr/share/rmac/niri/config.kdl
+    rmac_config=${config_home}/rmac/niri/config.kdl
+    if [ ! -f "${packaged_config}" ] || [ -L "${packaged_config}" ]; then
+        echo "the packaged rmac niri configuration is unavailable" >&2
+        exit 1
+    fi
+    /usr/bin/install -d -m 0700 "${config_home}/rmac/niri"
+    if [ ! -e "${rmac_config}" ]; then
+        /usr/bin/install -m 0600 "${packaged_config}" "${rmac_config}"
+    fi
+    if [ ! -f "${rmac_config}" ] || [ -L "${rmac_config}" ]; then
+        echo "the rmac niri configuration is not a regular file" >&2
+        exit 1
+    fi
+    NIRI_CONFIG=${rmac_config}
+    export NIRI_CONFIG
 fi
 XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
+
+if [ -n "${NIRI_CONFIG-}" ]; then
+    if ! /usr/bin/systemctl --user import-environment NIRI_CONFIG; then
+        echo "could not select the rmac niri configuration" >&2
+        exit 1
+    fi
+    rmac_config_imported=true
+fi
 
 /usr/bin/niri-session &
 session_pid=$!
@@ -76,12 +121,19 @@ while [ "${attempt}" -lt 300 ]; do
         /usr/bin/systemctl --user show-environment 2>/dev/null |
             /usr/bin/awk \
                 -v current_desktop="${XDG_CURRENT_DESKTOP}" \
-                -v session_desktop="${XDG_SESSION_DESKTOP}" '
+                -v session_desktop="${XDG_SESSION_DESKTOP}" \
+                -v niri_config="${NIRI_CONFIG-}" '
                 $0 == "XDG_CURRENT_DESKTOP=" current_desktop { current = 1 }
                 $0 == "XDG_SESSION_DESKTOP=" session_desktop { desktop = 1 }
                 $0 == "XDG_SESSION_TYPE=wayland" { wayland = 1 }
+                $0 == "NIRI_CONFIG=" niri_config { config = 1 }
                 index($0, "NIRI_SOCKET=") == 1 && length($0) > 12 { socket = 1 }
-                END { exit !(current && desktop && wayland && socket) }
+                END {
+                    if (current_desktop == "rmac:niri") {
+                        exit !(current && desktop && wayland && config && socket)
+                    }
+                    exit !(current && desktop && wayland && socket)
+                }
             '; then
             ready=true
             break

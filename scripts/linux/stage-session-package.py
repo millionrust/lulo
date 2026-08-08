@@ -97,6 +97,14 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(package / "shortcuts-fallback.kdl"),
             0o644,
         ),
+        "usr/share/rmac/niri/config.kdl": (
+            _read_regular(package / "config.kdl"),
+            0o644,
+        ),
+        "usr/share/rmac/niri/shell.kdl": (
+            _read_regular(package / "shell.kdl"),
+            0o644,
+        ),
         "usr/share/rmac/session/swaylock.conf": (
             _read_regular(session / "swaylock.conf"),
             0o644,

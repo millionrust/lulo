@@ -11,10 +11,14 @@ native package and VM install/upgrade/uninstall gates.
 rename, select, or remove the distribution's Ubuntu/GNOME session:
 
 1. GDM launches `/usr/libexec/rmac/rmac-wayland-session`.
-2. The wrapper selects `XDG_CURRENT_DESKTOP=rmac:niri` and executes the
-   distribution's `/usr/bin/niri-session` lifecycle as a child.
+2. The wrapper selects `XDG_CURRENT_DESKTOP=rmac:niri`, provisions a private
+   `$XDG_CONFIG_HOME/rmac/niri/config.kdl` entry point when it is missing,
+   exports that exact path as `NIRI_CONFIG`, and executes the distribution's
+   `/usr/bin/niri-session` lifecycle as a child. The ordinary user niri config
+   is neither loaded nor changed by the rmac login.
 3. It waits at most 30 seconds for `niri.service`, `NIRI_SOCKET`, Wayland
-   session type, and the exact desktop identities in the user manager.
+   session type, the exact desktop identities, and the selected rmac config in
+   the user manager.
 4. Only then does it provision missing user-owned lock defaults and start
    `rmac-session.target`.
 5. Logout, startup failure, or a termination signal stops only the two rmac
@@ -48,6 +52,17 @@ The package carries immutable swaylock and lock-policy defaults under
 `$XDG_CONFIG_HOME/rmac` with private permissions. An existing file—including
 an older user choice—is never overwritten by session startup.
 
+The user-owned niri entry point contains only an include of the immutable
+`/usr/share/rmac/niri/shell.kdl`. Package upgrades can therefore update rmac
+window rules and desktop bindings without rewriting user data. System Settings
+may place its isolated display include first and input include last in the
+entry point. The initial shell policy suppresses niri's default Waybar startup,
+provides the rmac session shortcuts and hardware volume/brightness keys, and
+opens Spotlight, App Drawer, Quick Settings, and Notification Center as sized
+floating surfaces rather than scrolling-layout application windows. Persistent
+safe mode removes `NIRI_CONFIG` before niri starts and remains independent of
+this shell policy.
+
 ## Staging a native package payload
 
 The assembler accepts only an absolute, empty `DESTDIR`. It refuses `/`, so it
@@ -68,7 +83,8 @@ with one rename. The payload contains:
 - rmac notification and Focus D-Bus activation;
 - rmac portal metadata and desktop-specific backend selection;
 - immutable lock defaults and the original MIT license;
-- an optional, shell-free niri shortcut fallback fragment;
+- an upgradable niri shell policy, private user entry-point seed, and
+  shell-free shortcut fragment;
 - a deterministic manifest of every package-owned file, mode, and SHA-256.
 
 The payload does **not** include binaries. The future native package set must
@@ -76,8 +92,9 @@ install the manifest's `/usr/libexec/rmac` executables from the matching rmac
 build and declare the exact Ubuntu runtime dependencies. Keeping integration
 separate lets the package manager reject a partial version combination.
 
-The shortcut fragment is deliberately not enabled automatically. Include
-`/usr/share/rmac/niri/shortcuts-fallback.kdl` only when the runtime reports
+The dedicated rmac session includes its package-owned shortcut fragment so it
+is usable immediately and does not depend on edits to another niri session.
+Outside the rmac session, include the fragment only when the runtime reports
 that the GlobalShortcuts portal is unavailable. A Rust test proves the shipped
 fragment remains byte-for-byte derived from the typed shortcut domain.
 

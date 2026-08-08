@@ -1,6 +1,7 @@
 //! Launcher query, selection, activation, and system-surface controller.
 
 mod render;
+mod surface;
 
 use std::process::Command;
 use std::sync::Arc;
@@ -14,40 +15,7 @@ use rmac_launcher_system::{BackendError, FailureKind, Surface, SystemBackend};
 use rmac_ui::{InputEvent, InputState};
 
 use crate::service;
-
-#[derive(Clone)]
-struct SurfaceBridge {
-    clipboard: async_channel::Sender<String>,
-}
-
-impl Surface for SurfaceBridge {
-    fn open_setting(&self, pane_id: &str) -> Result<(), BackendError> {
-        if !rmac_launcher_providers::system_settings_entries()
-            .iter()
-            .any(|entry| entry.pane_id == pane_id)
-        {
-            return Err(BackendError::new(
-                FailureKind::InvalidAction,
-                "unknown Settings destination",
-            ));
-        }
-        let executable = std::env::current_exe()
-            .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))?
-            .with_file_name("rmac-system-settings");
-        Command::new(executable)
-            .arg("--pane")
-            .arg(pane_id)
-            .spawn()
-            .map(|_| ())
-            .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))
-    }
-
-    fn copy_text(&self, text: &str) -> Result<(), BackendError> {
-        self.clipboard.try_send(text.to_owned()).map_err(|_| {
-            BackendError::new(FailureKind::Unavailable, "clipboard surface is unavailable")
-        })
-    }
-}
+use surface::SurfaceBridge;
 
 pub(crate) struct LauncherView {
     token: u64,

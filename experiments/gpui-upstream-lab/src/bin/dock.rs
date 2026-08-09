@@ -47,8 +47,10 @@ mod linux_wayland {
         fn new(
             compositor: async_channel::Receiver<rmac_compositor::Event>,
             sources: async_channel::Receiver<SourceEvent>,
+            reconcile: async_channel::Sender<()>,
             cx: &mut Context<Self>,
         ) -> Self {
+            let compositor_reconcile = reconcile.clone();
             cx.spawn(async move |this, cx| {
                 while let Ok(event) = compositor.recv().await {
                     if this
@@ -62,11 +64,14 @@ mod linux_wayland {
                     {
                         break;
                     }
+                    let _ = compositor_reconcile.try_send(());
                 }
             })
             .detach();
+            let source_reconcile = reconcile;
             cx.spawn(async move |this, cx| {
                 while let Ok(event) = sources.recv().await {
+                    let settings_changed = matches!(&event, SourceEvent::Settings(Ok(_)));
                     if this
                         .update(cx, |this, cx| match event {
                             SourceEvent::Settings(Ok(settings)) if this.settings != settings => {
@@ -97,6 +102,9 @@ mod linux_wayland {
                         .is_err()
                     {
                         break;
+                    }
+                    if settings_changed {
+                        let _ = source_reconcile.try_send(());
                     }
                 }
             })
@@ -131,7 +139,7 @@ mod linux_wayland {
             )
         }
 
-        fn surfaces(&self) -> Option<Vec<rmac_dock::SurfaceDescription>> {
+        fn surfaces(&self) -> Option<Vec<DockSurface>> {
             if !self.compositor_ready {
                 return None;
             }
@@ -142,7 +150,22 @@ mod linux_wayland {
                 .filter(|output| output.enabled())
                 .map(|output| &output.id)
                 .min();
-            rmac_dock::surface_descriptions(&snapshot, &self.settings.dock, primary, false).ok()
+            let fullscreen = rmac_gpui_upstream_lab::top_bar_output_policies(&snapshot);
+            rmac_dock::surface_descriptions(&snapshot, &self.settings.dock, primary, false)
+                .ok()
+                .map(|surfaces| {
+                    surfaces
+                        .iter()
+                        .map(|surface| {
+                            let output =
+                                rmac_gpui_upstream_lab::stable_output_uuid(&surface.output);
+                            DockSurface::from_description(
+                                surface,
+                                fullscreen.get(&output).copied().unwrap_or(false),
+                            )
+                        })
+                        .collect()
+                })
         }
     }
 
@@ -155,28 +178,32 @@ mod linux_wayland {
         input_region: Option<(f32, f32, bool)>,
         pointer_inside: bool,
         hidden: bool,
-        autohide_configured: Option<bool>,
+        fullscreen: bool,
+        overview_visible: bool,
+        visibility_policy: Option<(bool, bool)>,
         hide_generation: u64,
     }
 
     impl Dock {
         fn new(
             display_id: DisplayId,
-            placement: rmac_shell_settings::DockPlacement,
+            surface: DockSurface,
             status: Entity<DockStatus>,
             cx: &mut Context<Self>,
         ) -> Self {
             cx.observe(&status, |_, _, cx| cx.notify()).detach();
             Self {
                 display_id: u64::from(display_id),
-                placement,
+                placement: surface.placement,
                 render_count: 0,
                 status,
                 hovered_item: None,
                 input_region: None,
                 pointer_inside: false,
-                hidden: false,
-                autohide_configured: None,
+                hidden: surface.fullscreen && !surface.overview_visible,
+                fullscreen: surface.fullscreen,
+                overview_visible: surface.overview_visible,
+                visibility_policy: None,
                 hide_generation: 0,
             }
         }
@@ -208,13 +235,15 @@ mod linux_wayland {
             let status = self.status.read(cx);
             let dock_settings = status.settings.dock.clone();
             let model = status.model();
-            if self.autohide_configured != Some(dock_settings.autohide) {
-                self.autohide_configured = Some(dock_settings.autohide);
-                if dock_settings.autohide {
-                    self.schedule_hide(cx);
-                } else {
+            let effective_autohide = dock_settings.autohide || self.fullscreen;
+            let visibility_policy = (effective_autohide, self.overview_visible);
+            if self.visibility_policy != Some(visibility_policy) {
+                self.visibility_policy = Some(visibility_policy);
+                if self.overview_visible || !effective_autohide {
                     self.hide_generation = self.hide_generation.saturating_add(1);
                     self.hidden = false;
+                } else if !self.hidden {
+                    self.schedule_hide(cx);
                 }
             }
             let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
@@ -327,7 +356,7 @@ mod linux_wayland {
                             .top(px(icon_center - 18.0)),
                     }
                 });
-            let autohide = dock_settings.autohide;
+            let autohide = effective_autohide;
             let root = div()
                 .id(format!("dock-{}", self.display_id))
                 .role(Role::Toolbar)
@@ -895,6 +924,8 @@ mod linux_wayland {
         output: Option<rmac_compositor::OutputId>,
         placement: rmac_shell_settings::DockPlacement,
         reserve_space: bool,
+        fullscreen: bool,
+        overview_visible: bool,
     }
 
     impl Default for DockSurface {
@@ -903,16 +934,20 @@ mod linux_wayland {
                 output: None,
                 placement: rmac_shell_settings::DockPlacement::Bottom,
                 reserve_space: true,
+                fullscreen: false,
+                overview_visible: false,
             }
         }
     }
 
-    impl From<&rmac_dock::SurfaceDescription> for DockSurface {
-        fn from(surface: &rmac_dock::SurfaceDescription) -> Self {
+    impl DockSurface {
+        fn from_description(surface: &rmac_dock::SurfaceDescription, fullscreen: bool) -> Self {
             Self {
                 output: Some(surface.output.clone()),
                 placement: surface.placement,
-                reserve_space: surface.exclusive_zone > 0.0,
+                reserve_space: surface.exclusive_zone > 0.0 && !fullscreen,
+                fullscreen,
+                overview_visible: surface.overview_visible,
             }
         }
     }
@@ -925,7 +960,7 @@ mod linux_wayland {
     impl DockWindows {
         fn reconcile(
             &mut self,
-            desired: Option<&[rmac_dock::SurfaceDescription]>,
+            desired: Option<&[DockSurface]>,
             status: &Entity<DockStatus>,
             cx: &mut App,
         ) {
@@ -933,14 +968,13 @@ mod linux_wayland {
             let desired = desired.map(|surfaces| {
                 surfaces
                     .iter()
-                    .map(|surface| {
-                        (
-                            uuid::Uuid::new_v5(
-                                &uuid::Uuid::NAMESPACE_DNS,
-                                surface.output.0.as_bytes(),
-                            ),
-                            DockSurface::from(surface),
-                        )
+                    .filter_map(|surface| {
+                        surface.output.as_ref().map(|output| {
+                            (
+                                rmac_gpui_upstream_lab::stable_output_uuid(output),
+                                surface.clone(),
+                            )
+                        })
                     })
                     .collect::<std::collections::BTreeMap<_, _>>()
             });
@@ -948,18 +982,18 @@ mod linux_wayland {
                 .iter()
                 .filter_map(|display| display.uuid().ok())
                 .collect::<std::collections::BTreeSet<_>>();
-            let stale = self
+            let unavailable = self
                 .windows
-                .iter()
-                .filter(|(uuid, (surface, _))| {
+                .keys()
+                .filter(|uuid| {
                     !available.contains(uuid)
                         || desired
                             .as_ref()
-                            .is_some_and(|desired| desired.get(uuid) != Some(surface))
+                            .is_some_and(|desired| !desired.contains_key(uuid))
                 })
-                .map(|(uuid, _)| *uuid)
+                .copied()
                 .collect::<Vec<_>>();
-            for uuid in stale {
+            for uuid in unavailable {
                 if let Some((_, handle)) = self.windows.remove(&uuid) {
                     let _ = handle.update(cx, |_, window, _| window.remove_window());
                 }
@@ -968,9 +1002,6 @@ mod linux_wayland {
                 let Ok(uuid) = display.uuid() else {
                     continue;
                 };
-                if self.windows.contains_key(&uuid) {
-                    continue;
-                }
                 let surface = match &desired {
                     Some(desired) => match desired.get(&uuid) {
                         Some(surface) => surface.clone(),
@@ -978,8 +1009,17 @@ mod linux_wayland {
                     },
                     None => DockSurface::default(),
                 };
+                if self
+                    .windows
+                    .get(&uuid)
+                    .is_some_and(|(current, _)| *current == surface)
+                {
+                    continue;
+                }
                 let handle = open_dock(display, surface.clone(), status.clone(), cx);
-                self.windows.insert(uuid, (surface, handle));
+                if let Some((_, previous)) = self.windows.insert(uuid, (surface, handle)) {
+                    let _ = previous.update(cx, |_, window, _| window.remove_window());
+                }
             }
         }
     }
@@ -1031,7 +1071,7 @@ mod linux_wayland {
                 },
                 {
                     let status = status.clone();
-                    move |_, cx| cx.new(|cx| Dock::new(display_id, surface.placement, status, cx))
+                    move |_, cx| cx.new(|cx| Dock::new(display_id, surface, status, cx))
                 },
             )
             .expect("open Dock layer surface");
@@ -1058,6 +1098,7 @@ mod linux_wayland {
                 })
                 .detach();
             let (source_tx, source_rx) = async_channel::bounded(4);
+            let (reconcile_tx, reconcile_rx) = async_channel::bounded(1);
             cx.background_executor()
                 .spawn(watch_settings(source_tx.clone()))
                 .detach();
@@ -1067,17 +1108,16 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(watch_places(source_tx))
                 .detach();
-            let status = cx.new(|cx| DockStatus::new(compositor_rx, source_rx, cx));
+            let status =
+                cx.new(|cx| DockStatus::new(compositor_rx, source_rx, reconcile_tx.clone(), cx));
+            let _ = reconcile_tx.try_send(());
             cx.spawn(async move |cx| {
                 let mut windows = DockWindows::default();
-                loop {
+                while reconcile_rx.recv().await.is_ok() {
                     cx.update(|cx| {
                         let surfaces = status.read(cx).surfaces();
                         windows.reconcile(surfaces.as_deref(), &status, cx);
                     });
-                    cx.background_executor()
-                        .timer(Duration::from_millis(100))
-                        .await;
                 }
             })
             .detach();

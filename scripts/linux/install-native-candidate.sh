@@ -106,6 +106,7 @@ python3 "$repo_root/scripts/linux/verify-session-package.py" \
   --root / --recovery-only
 python3 "$repo_root/scripts/linux/verify-native-packages.py" \
   --directory "$package_directory" --architecture "$architecture"
+python3 "$repo_root/scripts/linux/archive-development-install.py" --check
 
 shopt -s nullglob
 apps_packages=("$package_directory"/rmac-apps_*_"$architecture".deb)
@@ -128,7 +129,8 @@ Verified native candidate install plan
   Packages: rmac-apps, rmac-session
   Package removals: forbidden
   Existing GNOME recovery session: verified
-  User data mutation: none during package installation
+  Legacy source-install artifacts: archived if present
+  User settings and documents: preserved
 EOF
 
 if [[ "$mode" == check ]]; then
@@ -142,6 +144,7 @@ fi
 [[ -f "$marker" && ! -L "$marker" && "$(<"$marker")" == "$marker_value" ]] \
   || fail "$marker does not contain the exact one-boot authorization marker"
 sudo -v
+python3 "$repo_root/scripts/linux/archive-development-install.py" --execute
 sudo rm -- "$marker"
 sudo apt-get install --yes --no-remove "$apps_package" "$session_package"
 require_space "$minimum_kib" "completed candidate installation"

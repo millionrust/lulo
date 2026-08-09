@@ -267,10 +267,28 @@ pub(super) fn machine_devices(kind: DeviceKind) -> Result<Vec<Device>, Error> {
         DeviceKind::Output => ("sinks", "read PipeWire output devices"),
         DeviceKind::Input => ("sources", "read PipeWire input devices"),
     };
-    parse_wpctl_list(
-        &command("wpctl", &["list", "audio", object_type], operation)?,
-        kind,
-    )
+    let listed = command("wpctl", &["list", "audio", object_type], operation)
+        .and_then(|output| parse_wpctl_list(&output, kind));
+    match listed {
+        Ok(devices) => Ok(devices),
+        Err(_) => machine_devices_from_graph(kind, operation),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn machine_devices_from_graph(
+    kind: DeviceKind,
+    operation: &'static str,
+) -> Result<Vec<Device>, Error> {
+    let graph = read_graph_metadata(operation)?;
+    if !graph.nodes.values().any(|node| node.kind == kind) {
+        return Ok(Vec::new());
+    }
+    let target = wpctl_default_target(kind);
+    let default =
+        parse_wpctl_default_inspect(&command("wpctl", &["inspect", target], operation)?, kind)
+            .ok_or_else(|| Error::new(operation, "wpctl returned an invalid default device"))?;
+    graph_devices(&graph, kind, &default, operation)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -761,6 +779,79 @@ pub(super) const MAX_DEVICE_LABEL_CHARS: usize = 256;
 pub(super) const MAX_GRAPH_OBJECTS: usize = 4096;
 #[cfg(any(not(target_os = "macos"), test))]
 pub(super) const MAX_DEVICE_CAPABILITIES: usize = 128;
+
+#[cfg(any(not(target_os = "macos"), test))]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct DefaultNode {
+    id: String,
+    authority_name: String,
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+pub(super) fn parse_wpctl_default_inspect(output: &str, kind: DeviceKind) -> Option<DefaultNode> {
+    let mut lines = output.lines();
+    let id = lines.next()?.trim().strip_prefix("id ")?.split_once(',')?.0;
+    if id.parse::<u32>().ok().filter(|id| *id > 0).is_none() {
+        return None;
+    }
+    let expected_class = match kind {
+        DeviceKind::Output => "Audio/Sink",
+        DeviceKind::Input => "Audio/Source",
+    };
+    let mut authority_name = None;
+    let mut media_class = None;
+    for line in lines {
+        let property = line.trim().strip_prefix("* ").unwrap_or(line.trim());
+        let Some((key, raw_value)) = property.split_once(" = ") else {
+            continue;
+        };
+        let parsed = || serde_json::from_str::<String>(raw_value).ok();
+        match key {
+            "node.name" if authority_name.is_none() => authority_name = parsed(),
+            "node.name" => return None,
+            "media.class" if media_class.is_none() => media_class = parsed(),
+            "media.class" => return None,
+            _ => {}
+        }
+    }
+    let authority_name = bounded_authority_name(&authority_name?)?;
+    (media_class.as_deref() == Some(expected_class)).then(|| DefaultNode {
+        id: id.to_owned(),
+        authority_name,
+    })
+}
+
+#[cfg(any(not(target_os = "macos"), test))]
+pub(super) fn graph_devices(
+    graph: &GraphMetadata,
+    kind: DeviceKind,
+    default: &DefaultNode,
+    operation: &'static str,
+) -> Result<Vec<Device>, Error> {
+    let mut devices = graph
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.kind == kind)
+        .map(|(id, node)| Device {
+            id: id.clone(),
+            name: node.description.clone(),
+            is_default: id == &default.id && node.authority_name == default.authority_name,
+            routes: Vec::new(),
+            balance: None,
+            authority_name: node.authority_name.clone(),
+            authority_device_id: None,
+            authority_route_device: None,
+        })
+        .collect::<Vec<_>>();
+    if !devices.iter().any(|device| device.is_default) {
+        return Err(Error::new(
+            operation,
+            "the default PipeWire node changed while audio state was being read",
+        ));
+    }
+    sort_devices(&mut devices);
+    Ok(devices)
+}
 
 #[cfg(any(not(target_os = "macos"), test))]
 pub(super) fn parse_wpctl_list(output: &str, kind: DeviceKind) -> Result<Vec<Device>, Error> {

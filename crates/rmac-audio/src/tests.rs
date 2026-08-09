@@ -100,6 +100,54 @@ fn machine_readable_wpctl_list_rejects_ambiguous_or_malformed_identity() {
 }
 
 #[test]
+fn wpctl_inspect_and_pipewire_graph_support_stable_wireplumber() {
+    let inspected = parse_wpctl_default_inspect(
+        concat!(
+            "id 58, type PipeWire:Interface:Node\n",
+            "  * media.class = \"Audio/Sink\"\n",
+            "  * node.description = \"Built-in Audio Analog Stereo\"\n",
+            "  * node.name = \"alsa_output.pci-0000_00_1b.0.analog-stereo\"\n",
+        ),
+        DeviceKind::Output,
+    )
+    .unwrap();
+    assert_eq!(inspected.id, "58");
+
+    let graph = parse_pw_dump_metadata(
+        r#"[
+            {"id":58,"type":"PipeWire:Interface:Node","info":{"props":{
+                "media.class":"Audio/Sink",
+                "node.name":"alsa_output.pci-0000_00_1b.0.analog-stereo",
+                "node.description":"Built-in Audio Analog Stereo"
+            }}},
+            {"id":59,"type":"PipeWire:Interface:Node","info":{"props":{
+                "media.class":"Audio/Source",
+                "node.name":"alsa_input.pci-0000_00_1b.0.analog-stereo",
+                "node.description":"Built-in Audio Analog Stereo"
+            }}}
+        ]"#,
+    )
+    .unwrap();
+    let devices = graph_devices(
+        &graph,
+        DeviceKind::Output,
+        &inspected,
+        "read PipeWire output devices",
+    )
+    .unwrap();
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices[0].id, "58");
+    assert_eq!(devices[0].name, "Built-in Audio Analog Stereo");
+    assert!(devices[0].is_default);
+
+    assert!(parse_wpctl_default_inspect(
+        "id 58, type PipeWire:Interface:Node\n  * node.name = \"sink\"\n",
+        DeviceKind::Output,
+    )
+    .is_none());
+}
+
+#[test]
 fn device_debug_output_does_not_disclose_private_authority_name() {
     let device = Device {
         id: "52".into(),

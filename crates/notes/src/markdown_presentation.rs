@@ -2,7 +2,8 @@
 
 use gpui::{
     div, font, prelude::FluentBuilder as _, px, AnyElement, InteractiveElement as _, IntoElement,
-    ParentElement, StrikethroughStyle, Styled, StyledText, TextRun,
+    ParentElement, StatefulInteractiveElement as _, StrikethroughStyle, Styled, StyledText,
+    TextRun,
 };
 use rmac_notes_storage::{MarkdownPreviewBlock, MarkdownPreviewBlockKind, MarkdownPreviewDocument};
 use rmac_ui::{mac, StyledExt as _};

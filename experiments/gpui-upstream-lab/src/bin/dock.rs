@@ -16,7 +16,7 @@ mod linux_wayland {
     };
     use gpui_platform::application;
 
-    const SURFACE_HEIGHT: f32 = 124.0;
+    const SURFACE_HEIGHT: f32 = 184.0;
     const EXCLUSIVE_ZONE: f32 = 88.0;
     const ICON_SIZE: f32 = 56.0;
     const ICON_GAP: f32 = 8.0;
@@ -153,7 +153,10 @@ mod linux_wayland {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
-            let model = self.status.read(cx).model();
+            let status = self.status.read(cx);
+            let dock_settings = status.settings.dock.clone();
+            let model = status.model();
+            drop(status);
             let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
             let trash = model
                 .special_items
@@ -192,10 +195,14 @@ mod linux_wayland {
             }
             let tooltip = self.hovered_item.as_ref().map(|(relative_center, label)| {
                 let icon_center = shelf_start + *relative_center;
+                let tooltip_bottom = TOOLTIP_BOTTOM.max(
+                    magnified_icon_size(*relative_center, Some(*relative_center), &dock_settings)
+                        + 36.0,
+                );
                 div()
                     .absolute()
                     .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
-                    .bottom(px(TOOLTIP_BOTTOM))
+                    .bottom(px(tooltip_bottom))
                     .w(px(TOOLTIP_WIDTH))
                     .flex()
                     .justify_center()
@@ -263,32 +270,52 @@ mod linux_wayland {
                                 entry.activity != rmac_dock::presentation::ActivityIndicator::None;
                             let icon_path = item_icon_path(&entry.icon, &app_id);
                             let tooltip_label = entry.label.clone();
+                            let visual_size = magnified_icon_size(
+                                relative_center,
+                                self.hovered_item.as_ref().map(|(center, _)| *center),
+                                &dock_settings,
+                            );
+                            let visual_offset = (ICON_SIZE - visual_size) / 2.0;
                             let mut item = div()
                                 .id(format!("dock-item-{}-{index}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label(entry.accessible_label)
                                 .relative()
-                                .w(px(56.0))
-                                .h(px(56.0))
+                                .w(px(ICON_SIZE))
+                                .h(px(ICON_SIZE))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(13.0))
-                                .bg(rgba(if icon_path.is_some() {
-                                    0x00000000
-                                } else {
-                                    item_color(&app_id, available)
-                                }))
                                 .text_color(rgba(0xffffffff))
                                 .text_lg()
                                 .font_weight(FontWeight::BOLD)
                                 .opacity(if available { 1.0 } else { 0.58 });
+                            let mut visual = div()
+                                .absolute()
+                                .left(px(visual_offset))
+                                .bottom_0()
+                                .w(px(visual_size))
+                                .h(px(visual_size))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(13.0 * visual_size / ICON_SIZE))
+                                .bg(rgba(if icon_path.is_some() {
+                                    0x00000000
+                                } else {
+                                    item_color(&app_id, available)
+                                }));
                             if let Some(path) = icon_path {
-                                item =
-                                    item.child(img(path).w(px(54.0)).h(px(54.0)).rounded(px(14.0)));
+                                visual = visual.child(
+                                    img(path)
+                                        .w(px(visual_size - 2.0))
+                                        .h(px(visual_size - 2.0))
+                                        .rounded(px(14.0 * visual_size / ICON_SIZE)),
+                                );
                             } else {
-                                item = item.child(item_mark(&entry.label));
+                                visual = visual.child(item_mark(&entry.label));
                             }
+                            item = item.child(visual);
                             if actionable {
                                 item = item
                                     .cursor_pointer()
@@ -359,6 +386,12 @@ mod linux_wayland {
                             )
                         })
                         .child({
+                            let visual_size = magnified_icon_size(
+                                trash_center,
+                                self.hovered_item.as_ref().map(|(center, _)| *center),
+                                &dock_settings,
+                            );
+                            let visual_offset = (ICON_SIZE - visual_size) / 2.0;
                             let mut trash = div()
                                 .id(format!("dock-trash-{}", self.display_id))
                                 .role(Role::Button)
@@ -390,13 +423,40 @@ mod linux_wayland {
                                 });
                             }
                             if let Some(path) = trash_icon_path(trash_full) {
-                                trash = trash
-                                    .child(img(path).w(px(54.0)).h(px(54.0)).rounded(px(14.0)));
+                                trash = trash.child(
+                                    img(path)
+                                        .absolute()
+                                        .left(px(visual_offset))
+                                        .bottom_0()
+                                        .w(px(visual_size - 2.0))
+                                        .h(px(visual_size - 2.0))
+                                        .rounded(px(14.0 * visual_size / ICON_SIZE)),
+                                );
                             }
                             trash
                         }),
                 )
         }
+    }
+
+    fn magnified_icon_size(
+        center: f32,
+        pointer: Option<f32>,
+        settings: &rmac_shell_settings::DockSettings,
+    ) -> f32 {
+        if !settings.magnification {
+            return ICON_SIZE;
+        }
+        let config = rmac_dock::motion::MagnificationConfig {
+            icon_size: ICON_SIZE,
+            maximum_scale: settings.magnification_scale,
+            ..Default::default()
+        };
+        let pointer = pointer.map(|pointer| ICON_SIZE / 2.0 + pointer - center);
+        rmac_dock::motion::magnified_layout(1, pointer, true, false, config)
+            .ok()
+            .and_then(|layout| layout.items.first().map(|item| item.size))
+            .unwrap_or(ICON_SIZE)
     }
 
     fn item_mark(label: &str) -> String {

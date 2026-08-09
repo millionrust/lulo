@@ -285,7 +285,7 @@ mod tests {
             categories: Vec::new(),
             mime_types: Vec::new(),
             launch: rmac_apps::LaunchSpec::Command {
-                program: PathBuf::from("/usr/bin/true"),
+                program: "/usr/bin/true".into(),
                 args: Vec::new(),
                 working_dir: None,
                 terminal: false,

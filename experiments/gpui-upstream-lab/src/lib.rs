@@ -1,8 +1,53 @@
-use std::{env, fs, time::Duration};
+use std::{collections::BTreeMap, env, fs, time::Duration};
 
 use gpui::Window;
+use uuid::Uuid;
 
 const READY_FILE_ENV: &str = "RMAC_SMOKE_READY_FILE";
+
+/// Stable per-output menu-bar policy derived from niri's authoritative
+/// workspace/window geometry. Niri does not publish a separate fullscreen
+/// boolean: a fullscreen tile is the one active tile whose logical extent
+/// exactly covers its complete output instead of the compositor work area.
+pub fn top_bar_output_policies(snapshot: &rmac_compositor::Snapshot) -> BTreeMap<Uuid, bool> {
+    snapshot
+        .outputs
+        .iter()
+        .filter_map(|output| {
+            let logical = output.logical.as_ref()?;
+            if !output.enabled() || !logical.size.is_valid() {
+                return None;
+            }
+            let fullscreen = !snapshot.overview_visible
+                && snapshot
+                    .workspaces
+                    .iter()
+                    .find(|workspace| {
+                        workspace.active && workspace.output.as_ref() == Some(&output.id)
+                    })
+                    .and_then(|workspace| workspace.active_window)
+                    .and_then(|window_id| {
+                        snapshot
+                            .windows
+                            .iter()
+                            .find(|window| window.id == window_id && window.workspace.is_some())
+                    })
+                    .is_some_and(|window| {
+                        nearly_equal(window.layout.tile_size.width, logical.size.width)
+                            && nearly_equal(window.layout.tile_size.height, logical.size.height)
+                    });
+            Some((stable_output_uuid(&output.id), fullscreen))
+        })
+        .collect()
+}
+
+fn nearly_equal(left: f64, right: f64) -> bool {
+    left.is_finite() && right.is_finite() && (left - right).abs() <= 0.5
+}
+
+pub fn stable_output_uuid(output: &rmac_compositor::OutputId) -> Uuid {
+    Uuid::new_v5(&Uuid::NAMESPACE_DNS, output.0.as_bytes())
+}
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 pub mod output_surfaces {
@@ -84,8 +129,36 @@ pub mod output_surfaces {
                     .outputs
                     .into_iter()
                     .filter(|output| output.enabled())
-                    .map(|output| Uuid::new_v5(&Uuid::NAMESPACE_DNS, output.id.0.as_bytes()))
+                    .map(|output| crate::stable_output_uuid(&output.id))
                     .collect::<BTreeSet<_>>();
+                if next != published {
+                    published = next.clone();
+                    if sender.send(next).await.is_err() {
+                        return Ok(());
+                    }
+                }
+            }
+            Ok(())
+        };
+        futures_util::try_join!(watcher, consumer)?;
+        Ok(())
+    }
+
+    pub async fn watch_top_bar(
+        sender: async_channel::Sender<BTreeMap<Uuid, bool>>,
+    ) -> Result<(), String> {
+        let (event_tx, event_rx) = async_channel::bounded(64);
+        let watcher = async {
+            rmac_compositor_niri::watch(event_tx)
+                .await
+                .map_err(|error| error.to_string())
+        };
+        let consumer = async {
+            let mut state = rmac_compositor::State::default();
+            let mut published = BTreeMap::new();
+            while let Ok(event) = event_rx.recv().await {
+                state.apply(event);
+                let next = crate::top_bar_output_policies(&state.snapshot());
                 if next != published {
                     published = next.clone();
                     if sender.send(next).await.is_err() {
@@ -295,11 +368,100 @@ fn network_state_label(state: rmac_shell_status::NetworkState) -> &'static str {
 mod tests {
     use super::*;
 
+    fn compositor_snapshot(
+        tile_height: f64,
+        active_window: Option<u64>,
+    ) -> rmac_compositor::Snapshot {
+        rmac_compositor::Snapshot {
+            outputs: vec![rmac_compositor::Output {
+                id: rmac_compositor::OutputId::from("eDP-1"),
+                make: String::new(),
+                model: String::new(),
+                serial: None,
+                physical_size_mm: None,
+                modes: vec![rmac_compositor::OutputMode {
+                    physical_size: rmac_compositor::PhysicalSize {
+                        width: 1920,
+                        height: 1080,
+                    },
+                    refresh_millihz: 60_000,
+                    preferred: true,
+                }],
+                current_mode: Some(0),
+                custom_mode: false,
+                vrr_supported: false,
+                vrr_enabled: false,
+                logical: Some(rmac_compositor::LogicalOutput {
+                    position: rmac_compositor::LogicalPoint::default(),
+                    size: rmac_compositor::LogicalSize {
+                        width: 1536.0,
+                        height: 864.0,
+                    },
+                    scale: 1.25,
+                    transform: "normal".into(),
+                }),
+            }],
+            workspaces: vec![rmac_compositor::Workspace {
+                id: rmac_compositor::WorkspaceId(1),
+                index: 1,
+                name: None,
+                output: Some(rmac_compositor::OutputId::from("eDP-1")),
+                urgent: false,
+                active: true,
+                focused: true,
+                active_window: active_window.map(rmac_compositor::WindowId),
+            }],
+            windows: active_window
+                .map(|id| rmac_compositor::Window {
+                    id: rmac_compositor::WindowId(id),
+                    title: None,
+                    app_id: Some("org.rmac.Test".into()),
+                    pid: None,
+                    workspace: Some(rmac_compositor::WorkspaceId(1)),
+                    focused: true,
+                    floating: false,
+                    urgent: false,
+                    focus_timestamp: None,
+                    layout: rmac_compositor::WindowLayout {
+                        tile_size: rmac_compositor::LogicalSize {
+                            width: 1536.0,
+                            height: tile_height,
+                        },
+                        ..Default::default()
+                    },
+                })
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn minute_delay_is_bounded_and_never_busy_loops() {
         assert_eq!(delay_until_next_minute(0), Duration::from_secs(60));
         assert_eq!(delay_until_next_minute(59_999), Duration::from_millis(1));
         assert_eq!(delay_until_next_minute(60_000), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn top_bar_fullscreen_policy_uses_complete_output_geometry() {
+        let uuid = stable_output_uuid(&rmac_compositor::OutputId::from("eDP-1"));
+        assert_eq!(
+            top_bar_output_policies(&compositor_snapshot(836.0, Some(7))).get(&uuid),
+            Some(&false)
+        );
+        assert_eq!(
+            top_bar_output_policies(&compositor_snapshot(864.0, Some(7))).get(&uuid),
+            Some(&true)
+        );
+        assert_eq!(
+            top_bar_output_policies(&compositor_snapshot(864.0, None)).get(&uuid),
+            Some(&false)
+        );
+
+        let mut overview = compositor_snapshot(864.0, Some(7));
+        overview.overview_visible = true;
+        assert_eq!(top_bar_output_policies(&overview).get(&uuid), Some(&false));
     }
 
     #[test]

@@ -1,5 +1,6 @@
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
+    use std::collections::BTreeMap;
     use std::env;
     use std::fs::{self, OpenOptions};
     use std::io::Write as _;
@@ -22,11 +23,14 @@ mod linux_wayland {
         delay_until_next_clock_tick, top_bar_active_app_name, top_bar_clock_pattern,
         top_bar_indicator_labels, top_bar_workspace_label, TopBarIndicatorKind,
     };
+    use uuid::Uuid;
 
     const BAR_HEIGHT: f32 = 28.0;
     const MENU_SURFACE_HEIGHT: f32 = 420.0;
     const MENU_WIDTH: f32 = 248.0;
     const MENU_ROW_HEIGHT: f32 = 28.0;
+    const FULLSCREEN_REVEAL_EDGE: f32 = 2.0;
+    const FULLSCREEN_HIDE_DELAY: Duration = Duration::from_millis(500);
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
 
@@ -125,6 +129,10 @@ mod linux_wayland {
         open_menu: Option<usize>,
         selected_item: usize,
         open_app_id: Option<String>,
+        fullscreen: bool,
+        revealed: bool,
+        pointer_inside: bool,
+        hide_generation: u64,
         focus: FocusHandle,
         _blur: Subscription,
     }
@@ -133,6 +141,7 @@ mod linux_wayland {
         fn new(
             display_id: DisplayId,
             status: Entity<ShellStatus>,
+            fullscreen: bool,
             window: &mut Window,
             cx: &mut Context<Self>,
         ) -> Self {
@@ -150,6 +159,10 @@ mod linux_wayland {
                 open_menu: None,
                 selected_item: 0,
                 open_app_id: None,
+                fullscreen,
+                revealed: !fullscreen,
+                pointer_inside: false,
+                hide_generation: 0,
                 focus,
                 _blur: blur,
             }
@@ -162,6 +175,9 @@ mod linux_wayland {
                 window.refresh();
                 cx.notify();
             }
+            if self.fullscreen && !self.pointer_inside {
+                self.schedule_fullscreen_hide(cx);
+            }
         }
 
         fn open_menu(
@@ -172,11 +188,50 @@ mod linux_wayland {
             cx: &mut Context<Self>,
         ) {
             self.open_menu = Some(index);
+            self.hide_generation = self.hide_generation.saturating_add(1);
+            self.revealed = true;
             self.selected_item = 0;
             self.open_app_id = Some(app_id);
             window.focus(&self.focus, cx);
             window.refresh();
             cx.notify();
+        }
+
+        fn schedule_fullscreen_hide(&mut self, cx: &mut Context<Self>) {
+            if !self.fullscreen {
+                return;
+            }
+            self.hide_generation = self.hide_generation.saturating_add(1);
+            let generation = self.hide_generation;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(FULLSCREEN_HIDE_DELAY).await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.hide_generation == generation
+                        && !this.pointer_inside
+                        && this.open_menu.is_none()
+                    {
+                        this.revealed = false;
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+
+        fn set_pointer_inside(&mut self, inside: bool, cx: &mut Context<Self>) {
+            self.pointer_inside = inside;
+            self.hide_generation = self.hide_generation.saturating_add(1);
+            if !self.fullscreen {
+                return;
+            }
+            if inside {
+                if !self.revealed {
+                    self.revealed = true;
+                    cx.notify();
+                }
+            } else if self.open_menu.is_none() {
+                self.schedule_fullscreen_hide(cx);
+            }
         }
 
         fn handle_key(
@@ -253,6 +308,7 @@ mod linux_wayland {
             let focused_app_id = snapshot.focused.app_id.clone();
             let focused_window_id = snapshot.focused.window_id;
             let menus = status.menus.clone();
+            let visible = !self.fullscreen || self.revealed || self.open_menu.is_some();
 
             if self.open_menu.is_some()
                 && (self.open_app_id != focused_app_id || self.open_menu >= Some(menus.len()))
@@ -270,14 +326,25 @@ mod linux_wayland {
                 .map(menu_panel_height);
             let bar_region = Bounds {
                 origin: point(px(0.0), px(0.0)),
-                size: Size::new(window.bounds().size.width, px(BAR_HEIGHT)),
+                size: Size::new(
+                    window.bounds().size.width,
+                    px(if visible {
+                        BAR_HEIGHT
+                    } else {
+                        FULLSCREEN_REVEAL_EDGE
+                    }),
+                ),
             };
-            if let (Some(left), Some(height)) = (menu_left, menu_height) {
-                let popup_region = Bounds {
-                    origin: point(px(left), px(BAR_HEIGHT)),
-                    size: Size::new(px(MENU_WIDTH), px(height + 4.0)),
-                };
-                window.set_input_region(Some(&[bar_region, popup_region]));
+            if visible {
+                if let (Some(left), Some(height)) = (menu_left, menu_height) {
+                    let popup_region = Bounds {
+                        origin: point(px(left), px(BAR_HEIGHT)),
+                        size: Size::new(px(MENU_WIDTH), px(height + 4.0)),
+                    };
+                    window.set_input_region(Some(&[bar_region, popup_region]));
+                } else {
+                    window.set_input_region(Some(&[bar_region]));
+                }
             } else {
                 window.set_input_region(Some(&[bar_region]));
             }
@@ -387,7 +454,7 @@ mod linux_wayland {
                 .role(Role::Toolbar)
                 .aria_label("rmac top bar")
                 .absolute()
-                .top_0()
+                .top(px(if visible { 0.0 } else { -BAR_HEIGHT }))
                 .left_0()
                 .right_0()
                 .h(px(BAR_HEIGHT))
@@ -529,6 +596,9 @@ mod linux_wayland {
                 .id(format!("top-bar-{}", self.display_id))
                 .size_full()
                 .track_focus(&self.focus)
+                .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                    this.set_pointer_inside(*hovered, cx);
+                }))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                     if this.open_menu.is_some() {
                         cx.stop_propagation();
@@ -667,9 +737,65 @@ mod linux_wayland {
         cx.new(|cx| ShellStatus::new(status_rx, cx))
     }
 
+    #[derive(Default)]
+    struct TopBarTracker {
+        windows: BTreeMap<Uuid, (bool, AnyWindowHandle)>,
+    }
+
+    impl TopBarTracker {
+        fn len(&self) -> usize {
+            self.windows.len()
+        }
+
+        fn reconcile(
+            &mut self,
+            desired: Option<&BTreeMap<Uuid, bool>>,
+            status: &Entity<ShellStatus>,
+            cx: &mut App,
+        ) {
+            let displays = cx.displays();
+            let available = displays
+                .iter()
+                .filter_map(|display| display.uuid().ok().map(|uuid| (uuid, display.clone())))
+                .collect::<BTreeMap<_, _>>();
+            let target = desired
+                .map(|desired| {
+                    desired
+                        .iter()
+                        .filter(|(uuid, _)| available.contains_key(uuid))
+                        .map(|(uuid, fullscreen)| (*uuid, *fullscreen))
+                        .collect::<BTreeMap<_, _>>()
+                })
+                .unwrap_or_else(|| available.keys().map(|uuid| (*uuid, false)).collect());
+
+            let removed = self
+                .windows
+                .iter()
+                .filter(|(uuid, (fullscreen, _))| target.get(uuid) != Some(fullscreen))
+                .map(|(uuid, _)| *uuid)
+                .collect::<Vec<_>>();
+            for uuid in removed {
+                if let Some((_, handle)) = self.windows.remove(&uuid) {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                }
+            }
+
+            for (uuid, fullscreen) in target {
+                if self.windows.contains_key(&uuid) {
+                    continue;
+                }
+                if let Some(display) = available.get(&uuid) {
+                    let handle = open_top_bar(display.clone(), status.clone(), fullscreen, cx);
+                    self.windows.insert(uuid, (fullscreen, handle));
+                }
+            }
+        }
+    }
+
     fn open_top_bar(
         display: Rc<dyn PlatformDisplay>,
         status: Entity<ShellStatus>,
+        fullscreen: bool,
         cx: &mut App,
     ) -> AnyWindowHandle {
         let display_id = display.id();
@@ -691,14 +817,16 @@ mod linux_wayland {
                         layer: Layer::Top,
                         anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
                         keyboard_interactivity: KeyboardInteractivity::OnDemand,
-                        exclusive_zone: Some(px(BAR_HEIGHT)),
+                        exclusive_zone: Some(px(if fullscreen { 0.0 } else { BAR_HEIGHT })),
                         ..Default::default()
                     }),
                     ..Default::default()
                 },
                 {
                     let status = status.clone();
-                    move |window, cx| cx.new(|cx| TopBar::new(display_id, status, window, cx))
+                    move |window, cx| {
+                        cx.new(|cx| TopBar::new(display_id, status, fullscreen, window, cx))
+                    }
                 },
             )
             .expect("open top-bar layer surface");
@@ -721,21 +849,19 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(async move {
                     if let Err(error) =
-                        rmac_gpui_upstream_lab::output_surfaces::watch_enabled(output_tx).await
+                        rmac_gpui_upstream_lab::output_surfaces::watch_top_bar(output_tx).await
                     {
                         eprintln!("top-bar output watcher unavailable: {error}");
                     }
                 })
                 .detach();
             cx.spawn(async move |cx| {
-                let mut tracker = rmac_gpui_upstream_lab::output_surfaces::Tracker::default();
+                let mut tracker = TopBarTracker::default();
                 match output_rx.recv().await {
                     Ok(mut desired) => loop {
                         for _ in 0..20 {
                             let complete = cx.update(|cx| {
-                                tracker.reconcile(Some(&desired), cx, |display, cx| {
-                                    open_top_bar(display, status.clone(), cx)
-                                });
+                                tracker.reconcile(Some(&desired), &status, cx);
                                 tracker.len() == desired.len()
                             });
                             if complete {
@@ -751,11 +877,7 @@ mod linux_wayland {
                         desired = next;
                     },
                     Err(_) => loop {
-                        cx.update(|cx| {
-                            tracker.reconcile(None, cx, |display, cx| {
-                                open_top_bar(display, status.clone(), cx)
-                            })
-                        });
+                        cx.update(|cx| tracker.reconcile(None, &status, cx));
                         cx.background_executor()
                             .timer(Duration::from_millis(500))
                             .await;

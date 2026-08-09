@@ -226,7 +226,17 @@ pub async fn stream_once(path: &Path, sender: &Sender<domain::Event>) -> Result<
     loop {
         let line = read_line(&mut stream).await?;
         let decoded = decode_event(&line)?;
+        let refresh_outputs = decoded.source_kind == "WorkspacesChanged";
         for event in translate(decoded.event, decoded.source_kind, decoded.payload, &state) {
+            state.apply(event.clone());
+            send(sender, event).await?;
+        }
+        if refresh_outputs {
+            let outputs = match request_once(path, &Request::Outputs).await? {
+                Response::Outputs(outputs) => convert_outputs(outputs),
+                _ => return Err(Error::UnexpectedResponse("outputs")),
+            };
+            let event = domain::Event::OutputsReplaced { outputs };
             state.apply(event.clone());
             send(sender, event).await?;
         }

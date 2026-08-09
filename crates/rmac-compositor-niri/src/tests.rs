@@ -196,6 +196,9 @@ fn stream_emits_one_coherent_initial_snapshot() {
             urgent: true,
         })
     ));
+    assert!(events.iter().any(
+        |event| matches!(event, domain::Event::OutputsReplaced { outputs } if outputs.is_empty())
+    ));
     let _ = fs::remove_file(socket);
 }
 
@@ -228,6 +231,13 @@ fn serve_fixture(listener: UnixListener) {
     stream
         .write_all(b"{\"WindowUrgencyChanged\":{\"id\":7,\"urgent\":true}}\n")
         .unwrap();
+    stream
+        .write_all(b"{\"WorkspacesChanged\":{\"workspaces\":[]}}\n")
+        .unwrap();
+
+    let (mut outputs, _) = listener.accept().unwrap();
+    assert_eq!(read_sync_line(&mut outputs), "\"Outputs\"");
+    outputs.write_all(b"{\"Ok\":{\"Outputs\":{}}}\n").unwrap();
 }
 
 fn read_sync_line(stream: &mut UnixStream) -> String {

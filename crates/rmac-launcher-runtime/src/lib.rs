@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use futures_util::stream::{self, StreamExt as _};
 use rmac_launcher::{
-    ActivationMode, MoveSelection, ProviderDescriptor, ProviderError, Request, ResultId,
+    ActivationMode, Category, MoveSelection, ProviderDescriptor, ProviderError, Request, ResultId,
 };
 use rmac_launcher_providers::{Batch, Provider};
 

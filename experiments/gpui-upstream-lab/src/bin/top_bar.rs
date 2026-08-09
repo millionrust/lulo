@@ -142,6 +142,7 @@ mod linux_wayland {
                         .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app))
                         .children(workspace.map(|workspace| {
                             div()
+                                .id(format!("workspace-{}", self.display_id))
                                 .text_color(rgba(0xf7f8faaa))
                                 .aria_label(format!("Workspace {workspace}"))
                                 .child(workspace)

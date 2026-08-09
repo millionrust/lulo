@@ -42,7 +42,7 @@ pub const BACK: Shortcut = Shortcut::new("cmd-[", "⌘[");
 pub const DUPLICATE: Shortcut = Shortcut::new("cmd-d", "⌘D");
 pub const DELETE: Shortcut = Shortcut::new("cmd-backspace", "⌘⌫");
 pub const FORCE_DELETE: Shortcut = Shortcut::new("cmd-shift-backspace", "⇧⌘⌫");
-pub const DELETE_PERMANENT: Shortcut = Shortcut::new("cmd-option-backspace", "⌥⌘⌫");
+pub const DELETE_PERMANENT: Shortcut = Shortcut::new("cmd-alt-backspace", "⌥⌘⌫");
 pub const NEW_FOLDER: Shortcut = Shortcut::new("cmd-shift-n", "⇧⌘N");
 pub const GO_UP: Shortcut = Shortcut::new("cmd-up", "⌘↑");
 pub const OPEN_SELECTION: Shortcut = Shortcut::new("cmd-down", "⌘↓");
@@ -120,10 +120,13 @@ mod tests {
     fn shortcut_vocabulary_is_canonical_and_has_consistent_hints() {
         let mut hints = HashMap::new();
         for shortcut in ALL {
+            gpui::Keystroke::parse(shortcut.keystroke)
+                .unwrap_or_else(|error| panic!("invalid shortcut {}: {error}", shortcut.keystroke));
             assert!(!shortcut.keystroke.is_empty());
             assert!(!shortcut.hint.is_empty());
             assert!(!shortcut.keystroke.contains("shift-cmd"));
             assert!(!shortcut.keystroke.contains("option-cmd"));
+            assert!(!shortcut.keystroke.contains("option"));
             if let Some(existing) = hints.insert(shortcut.keystroke, shortcut.hint) {
                 assert_eq!(existing, shortcut.hint);
             }

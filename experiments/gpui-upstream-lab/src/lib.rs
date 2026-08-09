@@ -92,18 +92,14 @@ pub fn top_bar_indicator_labels(
             ),
         });
     }
-    if let Some(sound) = snapshot.sound {
+    if let Some(sound) = snapshot.sound.filter(|sound| sound.available) {
         labels.push(TopBarIndicatorLabel {
-            visible: if !sound.available {
-                "Sound".into()
-            } else if sound.muted {
+            visible: if sound.muted {
                 "Mute".into()
             } else {
                 format!("Vol {}%", sound.volume)
             },
-            accessible: if !sound.available {
-                "Sound unavailable".into()
-            } else if sound.muted {
+            accessible: if sound.muted {
                 "Sound muted".into()
             } else {
                 format!("Sound volume {} percent", sound.volume)
@@ -170,13 +166,12 @@ mod tests {
     }
 
     #[test]
-    fn unavailable_sound_is_not_presented_as_zero_volume() {
+    fn unavailable_sound_is_not_shown_as_a_meaningless_status_item() {
         let mut snapshot = rmac_shell_status::Snapshot::default();
         snapshot.sound = Some(rmac_shell_status::SoundIndicator::default());
 
         let labels = top_bar_indicator_labels(&snapshot);
-        assert_eq!(labels[0].visible, "Sound");
-        assert_eq!(labels[0].accessible, "Sound unavailable");
+        assert!(labels.is_empty());
     }
 
     #[test]

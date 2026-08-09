@@ -103,11 +103,12 @@ mod linux_wayland {
                 .flex()
                 .items_center()
                 .px_3()
-                .bg(rgba(0xf4f5f6ed))
+                .bg(rgba(0xe7ecf1a6))
                 .text_color(rgba(0x15171aff))
                 .text_sm()
                 .border_b_1()
-                .border_color(rgba(0x00000024))
+                .border_color(rgba(0xffffff70))
+                .shadow_sm()
                 .child(
                     div()
                         .flex()
@@ -117,9 +118,17 @@ mod linux_wayland {
                         .child(
                             div()
                                 .id(format!("desktop-mark-{}", self.display_id))
+                                .w(px(18.0))
+                                .h(px(18.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .bg(rgba(0x15171ae8))
+                                .text_color(rgba(0xffffffff))
                                 .font_weight(FontWeight::BOLD)
                                 .aria_label("rmac desktop")
-                                .child("◆"),
+                                .child("r"),
                         )
                         .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app)),
                 )
@@ -207,7 +216,7 @@ mod linux_wayland {
                         })),
                         display_id: Some(display_id),
                         app_id: Some("dev.rmac.TopBar".to_owned()),
-                        window_background: WindowBackgroundAppearance::Transparent,
+                        window_background: WindowBackgroundAppearance::Blurred,
                         kind: WindowKind::LayerShell(LayerShellOptions {
                             namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
                             layer: Layer::Top,

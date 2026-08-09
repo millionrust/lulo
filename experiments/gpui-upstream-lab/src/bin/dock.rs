@@ -14,7 +14,7 @@ mod linux_wayland {
     };
     use gpui_platform::application;
 
-    const SURFACE_HEIGHT: f32 = 84.0;
+    const SURFACE_HEIGHT: f32 = 88.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
     static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
@@ -133,10 +133,10 @@ mod linux_wayland {
                         .items_end()
                         .gap_2()
                         .p_2()
-                        .rounded(px(20.0))
-                        .bg(rgba(0xf4f5f6d8))
+                        .rounded(px(22.0))
+                        .bg(rgba(0xe7ecf18c))
                         .border_1()
-                        .border_color(rgba(0xffffff80))
+                        .border_color(rgba(0xffffffb8))
                         .shadow_lg()
                         .children(entries.into_iter().enumerate().map(|(index, entry)| {
                             let app_id = match &entry.id {
@@ -162,8 +162,8 @@ mod linux_wayland {
                                 .role(Role::Button)
                                 .aria_label(entry.accessible_label)
                                 .relative()
-                                .w(px(52.0))
-                                .h(px(52.0))
+                                .w(px(56.0))
+                                .h(px(56.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -179,7 +179,7 @@ mod linux_wayland {
                                 .opacity(if available { 1.0 } else { 0.58 });
                             if let Some(path) = icon_path {
                                 item =
-                                    item.child(img(path).w(px(50.0)).h(px(50.0)).rounded(px(13.0)));
+                                    item.child(img(path).w(px(54.0)).h(px(54.0)).rounded(px(14.0)));
                             } else {
                                 item = item.child(item_mark(&entry.label));
                             }
@@ -444,7 +444,7 @@ mod linux_wayland {
                         })),
                         display_id: Some(display_id),
                         app_id: Some("dev.rmac.Dock".to_owned()),
-                        window_background: WindowBackgroundAppearance::Transparent,
+                        window_background: WindowBackgroundAppearance::Blurred,
                         kind: WindowKind::LayerShell(LayerShellOptions {
                             namespace: format!("rmac-dock-{}", u64::from(display_id)),
                             layer: Layer::Top,

@@ -189,6 +189,7 @@ mod linux_wayland {
             );
             root.child(
                 div()
+                    .id(format!("system-osd-{}", self.output))
                     .size_full()
                     .flex()
                     .flex_col()

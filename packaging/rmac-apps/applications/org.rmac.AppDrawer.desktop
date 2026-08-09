@@ -16,3 +16,4 @@ Icon=org.rmac.AppDrawer
 Terminal=false
 Categories=System;
 StartupWMClass=org.rmac.AppDrawer
+NoDisplay=true

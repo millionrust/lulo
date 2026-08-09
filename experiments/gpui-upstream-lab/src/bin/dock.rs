@@ -704,6 +704,7 @@ mod linux_wayland {
         let identity = app_id.trim_end_matches(".desktop");
         let file = match identity {
             rmac_apps::identity::FILES => "org.rmac.Files.svg",
+            rmac_apps::identity::APP_DRAWER => "org.rmac.AppDrawer.svg",
             rmac_apps::identity::TERMINAL => "org.rmac.Terminal.svg",
             rmac_apps::identity::NOTES => "org.rmac.Notes.svg",
             rmac_apps::identity::TEXT_EDITOR => "org.rmac.TextEditor.svg",
@@ -852,7 +853,7 @@ mod linux_wayland {
     async fn watch_catalog(sender: async_channel::Sender<SourceEvent>) {
         let (changed_tx, changed_rx) = async_channel::bounded(1);
         let setup = blocking::unblock(move || {
-            let catalog = rmac_apps::discover()
+            let catalog = discover_dock_catalog()
                 .map_err(|_| "the application catalog could not be loaded".to_owned())?;
             let watcher = rmac_apps::watch_catalog(move || {
                 let _ = changed_tx.try_send(());
@@ -877,7 +878,7 @@ mod linux_wayland {
         }
         while changed_rx.recv().await.is_ok() {
             let result = blocking::unblock(|| {
-                rmac_apps::discover()
+                discover_dock_catalog()
                     .map_err(|_| "the changed application catalog could not be loaded".to_owned())
             })
             .await;
@@ -885,6 +886,46 @@ mod linux_wayland {
                 return;
             }
         }
+    }
+
+    fn discover_dock_catalog() -> std::io::Result<Vec<rmac_apps::Application>> {
+        let mut catalog = rmac_apps::discover()?;
+        if catalog.iter().any(|application| {
+            application
+                .id
+                .trim_end_matches(".desktop")
+                .eq_ignore_ascii_case(rmac_apps::identity::APP_DRAWER)
+        }) {
+            return Ok(catalog);
+        }
+
+        // Applications is intentionally NoDisplay so it cannot list itself,
+        // but the Dock still needs the macOS-style Launchpad entry.
+        let installed_icon =
+            PathBuf::from("/usr/share/icons/hicolor/scalable/apps/org.rmac.AppDrawer.svg");
+        let source_icon = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../packaging/rmac-apps/icons/org.rmac.AppDrawer.svg");
+        catalog.push(rmac_apps::Application {
+            id: format!("{}.desktop", rmac_apps::identity::APP_DRAWER),
+            name: "Applications".into(),
+            generic_name: Some("Application Launcher".into()),
+            keywords: vec!["applications".into(), "apps".into(), "launcher".into()],
+            source: PathBuf::from("/usr/share/applications/org.rmac.AppDrawer.desktop"),
+            icon: installed_icon
+                .is_file()
+                .then_some(installed_icon)
+                .or_else(|| source_icon.is_file().then_some(source_icon)),
+            categories: vec!["System".into()],
+            mime_types: Vec::new(),
+            launch: rmac_apps::LaunchSpec::Command {
+                program: "/usr/bin/rmac-app-drawer".into(),
+                args: Vec::new(),
+                working_dir: None,
+                terminal: false,
+            },
+            actions: Vec::new(),
+        });
+        Ok(catalog)
     }
 
     async fn watch_places(sender: async_channel::Sender<SourceEvent>) {

@@ -411,6 +411,7 @@ class SessionPackageTests(unittest.TestCase):
                 "XDG_STATE_HOME": str(root / "state"),
                 "XDG_CURRENT_DESKTOP": "niri",
                 "XDG_SESSION_TYPE": "wayland",
+                "WAYLAND_DISPLAY": "wayland-1",
                 "RMAC_TEST_LOG": str(log),
             }
             result = subprocess.run(
@@ -438,6 +439,31 @@ class SessionPackageTests(unittest.TestCase):
                 )
             )
             self.assertTrue(any("try-restart xdg-desktop-portal.service" in line for line in lines))
+
+            log.write_text("", encoding="utf-8")
+            nongraphical = {
+                **environment,
+                "XDG_CURRENT_DESKTOP": "ssh",
+                "XDG_SESSION_TYPE": "tty",
+            }
+            nongraphical.pop("WAYLAND_DISPLAY")
+            result = subprocess.run(
+                [str(script), "--system-package"],
+                env=nongraphical,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = log.read_text(encoding="utf-8").splitlines()
+            self.assertFalse(any("import-environment" in line for line in lines))
+            self.assertTrue(
+                any(
+                    line.startswith("ssh|") and "start rmac-session.target" in line
+                    for line in lines
+                )
+            )
 
             marker = root / "state/rmac/session/safe-mode.json"
             marker.parent.mkdir(parents=True)

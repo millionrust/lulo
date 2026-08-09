@@ -44,9 +44,18 @@ fi
 # environment because it can contain credentials and application secrets.
 state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
 normal_session=true
+graphical_invocation=false
+case ${XDG_SESSION_TYPE:-} in
+    wayland)
+        [ -n "${WAYLAND_DISPLAY:-}" ] && graphical_invocation=true
+        ;;
+    x11)
+        [ -n "${DISPLAY:-}" ] && graphical_invocation=true
+        ;;
+esac
 if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
     normal_session=false
-else
+elif [ "${graphical_invocation}" = true ]; then
     case ":${XDG_CURRENT_DESKTOP:-}:" in
         *:rmac:*) ;;
         ::) XDG_CURRENT_DESKTOP=rmac ;;
@@ -56,16 +65,18 @@ else
 fi
 
 set --
-[ "${WAYLAND_DISPLAY+x}" = x ] && set -- "$@" WAYLAND_DISPLAY
-[ "${DISPLAY+x}" = x ] && set -- "$@" DISPLAY
-[ "${XAUTHORITY+x}" = x ] && set -- "$@" XAUTHORITY
-[ "${XDG_CURRENT_DESKTOP+x}" = x ] && set -- "$@" XDG_CURRENT_DESKTOP
-[ "${XDG_SESSION_ID+x}" = x ] && set -- "$@" XDG_SESSION_ID
-[ "${XDG_SESSION_DESKTOP+x}" = x ] && set -- "$@" XDG_SESSION_DESKTOP
-[ "${XDG_SESSION_TYPE+x}" = x ] && set -- "$@" XDG_SESSION_TYPE
-[ "${XDG_RUNTIME_DIR+x}" = x ] && set -- "$@" XDG_RUNTIME_DIR
-[ "${DBUS_SESSION_BUS_ADDRESS+x}" = x ] && set -- "$@" DBUS_SESSION_BUS_ADDRESS
-[ "${NIRI_SOCKET+x}" = x ] && set -- "$@" NIRI_SOCKET
+if [ "${graphical_invocation}" = true ]; then
+    [ "${WAYLAND_DISPLAY+x}" = x ] && set -- "$@" WAYLAND_DISPLAY
+    [ "${DISPLAY+x}" = x ] && set -- "$@" DISPLAY
+    [ "${XAUTHORITY+x}" = x ] && set -- "$@" XAUTHORITY
+    [ "${XDG_CURRENT_DESKTOP+x}" = x ] && set -- "$@" XDG_CURRENT_DESKTOP
+    [ "${XDG_SESSION_ID+x}" = x ] && set -- "$@" XDG_SESSION_ID
+    [ "${XDG_SESSION_DESKTOP+x}" = x ] && set -- "$@" XDG_SESSION_DESKTOP
+    [ "${XDG_SESSION_TYPE+x}" = x ] && set -- "$@" XDG_SESSION_TYPE
+    [ "${XDG_RUNTIME_DIR+x}" = x ] && set -- "$@" XDG_RUNTIME_DIR
+    [ "${DBUS_SESSION_BUS_ADDRESS+x}" = x ] && set -- "$@" DBUS_SESSION_BUS_ADDRESS
+    [ "${NIRI_SOCKET+x}" = x ] && set -- "$@" NIRI_SOCKET
+fi
 
 if [ "$#" -gt 0 ]; then
     /usr/bin/systemctl --user import-environment "$@"

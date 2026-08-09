@@ -4860,6 +4860,7 @@ dependencies = [
  "gpui-component-assets",
  "rmac-app-launch",
  "rmac-apps",
+ "rmac-shell-activation-runtime",
  "rmac-shortcuts",
  "rmac-ui",
 ]

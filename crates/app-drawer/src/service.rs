@@ -1,6 +1,7 @@
 use gpui::{
-    AnyWindowHandle, App as GpuiApp, AppContext as _, Application, BorrowAppContext as _, Global,
-    KeyBinding, WeakEntity,
+    point, px, size, AnyWindowHandle, App as GpuiApp, AppContext as _, Application,
+    BorrowAppContext as _, Bounds, Global, KeyBinding, Pixels, WeakEntity,
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 
@@ -81,7 +82,7 @@ fn notify_ready() -> Result<(), String> {
         .ok_or_else(|| "systemd rejected App Drawer readiness".to_owned())
 }
 
-fn route_shortcut(cx: &mut GpuiApp) {
+fn dismiss_active(cx: &mut GpuiApp) -> bool {
     let active = cx.read_global::<AppDrawerService, _>(|service, _| service.active.clone());
     if let Some(active) = active {
         if let Some(view) = active.view.upgrade() {
@@ -92,29 +93,45 @@ fn route_shortcut(cx: &mut GpuiApp) {
                 .is_ok();
             cx.update_global::<AppDrawerService, _>(|service, _| service.active = None);
             if dismissed {
-                return;
+                return true;
             }
         }
         cx.update_global::<AppDrawerService, _>(|service, _| service.active = None);
     }
+    false
+}
 
+fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::PopUp,
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Transparent,
+        app_id: Some(rmac_ui::app_id::APP_DRAWER.to_owned()),
+        window_decorations: Some(WindowDecorations::Client),
+        ..Default::default()
+    }
+}
+
+fn fallback_bounds(cx: &GpuiApp) -> Bounds<Pixels> {
+    WindowBounds::centered(size(px(DRAWER_WIDTH), px(DRAWER_HEIGHT)), cx).get_bounds()
+}
+
+fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
     let token = cx.update_global::<AppDrawerService, _>(|service, _| {
         service.next_token = service.next_token.wrapping_add(1).max(1);
         service.next_token
     });
     let mut drawer = None;
-    let options = rmac_ui::window_options_for_app(
-        rmac_ui::app_id::APP_DRAWER,
-        DRAWER_WIDTH,
-        DRAWER_HEIGHT,
-        cx,
-    );
-    let handle = cx.open_window(options, |window, cx| {
+    let handle = cx.open_window(drawer_options(bounds), |window, cx| {
+        window.set_window_title("Applications");
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| {
-            rmac_ui::observe_window_state(rmac_ui::app_id::APP_DRAWER, window, cx);
-            AppDrawer::new(Some(token), window, cx)
-        });
+        let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));
         drawer = Some(view.downgrade());
         cx.new(|cx| Root::new(view, window, cx))
     });
@@ -130,6 +147,39 @@ fn route_shortcut(cx: &mut GpuiApp) {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn route_shortcut(cx: &mut GpuiApp) {
+    if dismiss_active(cx) {
+        return;
+    }
+    open_drawer(fallback_bounds(cx), cx);
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &mut GpuiApp) {
+    if dismiss_active(cx) {
+        return;
+    }
+    let context = match activation.context() {
+        Ok(context) => context,
+        Err(error) => {
+            eprintln!("App Drawer activation rejected: {error}");
+            return;
+        }
+    };
+    let bounds = match context.centered_bounds(DRAWER_WIDTH as f64, DRAWER_HEIGHT as f64) {
+        Ok(bounds) => Bounds::new(
+            point(px(bounds.x), px(bounds.y)),
+            size(px(bounds.width), px(bounds.height)),
+        ),
+        Err(error) => {
+            eprintln!("App Drawer surface bounds rejected: {error}");
+            return;
+        }
+    };
+    open_drawer(bounds, cx);
+}
+
 pub(crate) fn run(show_on_start: bool) {
     Application::new()
         .with_assets(gpui_component_assets::Assets)
@@ -141,42 +191,87 @@ pub(crate) fn run(show_on_start: bool) {
                 next_token: 0,
             });
 
-            let (shortcut_tx, shortcut_rx) = async_channel::bounded(8);
-            let (ready_tx, ready_rx) = async_channel::bounded(1);
-            let shortcut_done = cx.background_executor().spawn(async move {
-                rmac_shortcuts::watch_dispatches_ready(
+            #[cfg(target_os = "linux")]
+            let (activation_tx, activation_rx) = async_channel::bounded(16);
+            #[cfg(target_os = "linux")]
+            let activation_done = cx.spawn(async move |_: &mut gpui::AsyncApp| {
+                rmac_shell_activation_runtime::watch(
                     rmac_shortcuts::ShortcutId("app-drawer".into()),
-                    shortcut_tx,
-                    ready_tx,
+                    activation_tx,
                 )
                 .await
             });
+            #[cfg(target_os = "linux")]
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                 let consume = async {
-                    while shortcut_rx.recv().await.is_ok() {
-                        if cx.update(route_shortcut).is_err() {
-                            return Err("App Drawer application context stopped".to_owned());
+                    while let Ok(update) = activation_rx.recv().await {
+                        match update {
+                            rmac_shell_activation_runtime::Update::Ready => {
+                                blocking::unblock(notify_ready).await?;
+                            }
+                            rmac_shell_activation_runtime::Update::Activated(activation) => {
+                                if cx.update(|cx| route_activation(*activation, cx)).is_err() {
+                                    return Err("App Drawer application context stopped".to_owned());
+                                }
+                            }
                         }
                     }
                     Ok::<(), String>(())
                 };
-                let watcher = async { shortcut_done.await.map_err(|error| error.to_string()) };
-                let readiness = async {
-                    ready_rx
-                        .recv()
-                        .await
-                        .map_err(|_| "App Drawer endpoint stopped before readiness".to_owned())?;
-                    blocking::unblock(notify_ready).await
+                let watcher = async {
+                    activation_done.await.map_err(|error| {
+                        format!(
+                            "App Drawer shell activation {:?} failed: {}",
+                            error.operation(),
+                            error.detail()
+                        )
+                    })
                 };
-                if let Err(error) = futures_util::try_join!(watcher, consume, readiness) {
+                if let Err(error) = futures_util::try_join!(watcher, consume) {
                     eprintln!("{error}");
                     std::process::exit(1);
                 }
             })
             .detach();
 
+            #[cfg(not(target_os = "linux"))]
+            {
+                let (shortcut_tx, shortcut_rx) = async_channel::bounded(8);
+                let (ready_tx, ready_rx) = async_channel::bounded(1);
+                let shortcut_done = cx.background_executor().spawn(async move {
+                    rmac_shortcuts::watch_dispatches_ready(
+                        rmac_shortcuts::ShortcutId("app-drawer".into()),
+                        shortcut_tx,
+                        ready_tx,
+                    )
+                    .await
+                });
+                cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+                    let consume = async {
+                        while shortcut_rx.recv().await.is_ok() {
+                            if cx.update(route_shortcut).is_err() {
+                                return Err("App Drawer application context stopped".to_owned());
+                            }
+                        }
+                        Ok::<(), String>(())
+                    };
+                    let watcher = async { shortcut_done.await.map_err(|error| error.to_string()) };
+                    let readiness = async {
+                        ready_rx.recv().await.map_err(|_| {
+                            "App Drawer endpoint stopped before readiness".to_owned()
+                        })?;
+                        blocking::unblock(notify_ready).await
+                    };
+                    if let Err(error) = futures_util::try_join!(watcher, consume, readiness) {
+                        eprintln!("{error}");
+                        std::process::exit(1);
+                    }
+                })
+                .detach();
+            }
+
             if show_on_start {
-                route_shortcut(cx);
+                open_drawer(fallback_bounds(cx), cx);
             }
         });
 }

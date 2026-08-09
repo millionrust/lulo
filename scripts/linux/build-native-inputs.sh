@@ -5,6 +5,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 target_dir="$repo_root/target"
+lab_dir="$repo_root/experiments/gpui-upstream-lab"
+lab_target_dir="$lab_dir/target"
 minimum_kib=$((15 * 1024 * 1024))
 build_minimum_kib=$((25 * 1024 * 1024))
 
@@ -61,7 +63,7 @@ from native_package_contract import ALL_BINARIES
 print("\n".join(ALL_BINARIES))
 ' "$repo_root/scripts/linux")" || fail "native package inventory could not be loaded"
 mapfile -t binary_names <<<"$inventory"
-[[ ${#binary_names[@]} -eq 18 ]] || fail "native package inventory is not exact"
+[[ ${#binary_names[@]} -eq 21 ]] || fail "native package inventory is not exact"
 
 # Reuse the repository's one normal target graph even if the caller exports a
 # different Cargo target directory.
@@ -89,11 +91,25 @@ export CARGO_TARGET_DIR="$target_dir"
       --bin rmac-lock-coordinator \
       --bin rmac-idle-locker
 )
+(
+  cd "$lab_dir"
+  CARGO_TARGET_DIR="$lab_target_dir" cargo build --locked --release \
+    --features wayland --bin wallpaper --bin top-bar --bin dock
+)
+
+binary_source() {
+  case "$1" in
+    rmac-wallpaper) printf '%s\n' "$lab_target_dir/release/wallpaper" ;;
+    rmac-top-bar) printf '%s\n' "$lab_target_dir/release/top-bar" ;;
+    rmac-dock) printf '%s\n' "$lab_target_dir/release/dock" ;;
+    *) printf '%s\n' "$target_dir/release/$1" ;;
+  esac
+}
 
 require_space "$minimum_kib" "completed release build"
 total_kib=0
 for name in "${binary_names[@]}"; do
-  source_path="$target_dir/release/$name"
+  source_path="$(binary_source "$name")"
   [[ -f "$source_path" && ! -L "$source_path" && -x "$source_path" ]] \
     || fail "Cargo did not produce the required executable: $name"
   size="$(stat -c '%s' "$source_path")"
@@ -110,7 +126,7 @@ fi
 staging="$(mktemp -d "$output_parent/.rmac-native-inputs.XXXXXX")"
 trap 'rm -rf "${staging:-}"' EXIT HUP INT TERM
 for name in "${binary_names[@]}"; do
-  install -m 0755 "$target_dir/release/$name" "$staging/$name"
+  install -m 0755 "$(binary_source "$name")" "$staging/$name"
 done
 
 for name in "${binary_names[@]}"; do

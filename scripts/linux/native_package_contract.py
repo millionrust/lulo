@@ -58,6 +58,9 @@ APPLICATION_BINARIES = (
 
 SESSION_BINARIES = (
     "rmac-session-supervisor",
+    "rmac-wallpaper",
+    "rmac-top-bar",
+    "rmac-dock",
     "rmac-launcher",
     "rmac-app-drawer",
     "rmac-quick-settings",

@@ -123,6 +123,46 @@ pub fn delay_until_next_minute(epoch_millis: u128) -> Duration {
     Duration::from_millis(remaining as u64)
 }
 
+pub fn delay_until_next_clock_tick(epoch_millis: u128, show_seconds: bool) -> Duration {
+    if show_seconds {
+        let remaining = 1_000 - epoch_millis % 1_000;
+        Duration::from_millis(remaining as u64)
+    } else {
+        delay_until_next_minute(epoch_millis)
+    }
+}
+
+pub fn top_bar_clock_pattern(settings: &rmac_shell_settings::ClockSettings) -> &'static str {
+    use rmac_shell_settings::ClockFormat;
+
+    match (settings.show_date, settings.show_seconds, settings.format) {
+        (true, false, ClockFormat::TwentyFourHour) => "%a %-d %b %H:%M",
+        (true, true, ClockFormat::TwentyFourHour) => "%a %-d %b %H:%M:%S",
+        (false, false, ClockFormat::TwentyFourHour) => "%H:%M",
+        (false, true, ClockFormat::TwentyFourHour) => "%H:%M:%S",
+        (true, false, ClockFormat::Locale | ClockFormat::TwelveHour) => "%a %-d %b %-I:%M %p",
+        (true, true, ClockFormat::Locale | ClockFormat::TwelveHour) => "%a %-d %b %-I:%M:%S %p",
+        (false, false, ClockFormat::Locale | ClockFormat::TwelveHour) => "%-I:%M %p",
+        (false, true, ClockFormat::Locale | ClockFormat::TwelveHour) => "%-I:%M:%S %p",
+    }
+}
+
+pub fn top_bar_workspace_label(snapshot: &rmac_shell_status::Snapshot) -> Option<String> {
+    snapshot.clock.show_workspace.then(|| {
+        snapshot
+            .focused
+            .workspace_label
+            .clone()
+            .or_else(|| {
+                snapshot
+                    .focused
+                    .workspace_id
+                    .map(|workspace| workspace.0.to_string())
+            })
+            .unwrap_or_else(|| "No workspace".into())
+    })
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TopBarIndicatorLabel {
     pub kind: TopBarIndicatorKind,
@@ -260,6 +300,37 @@ mod tests {
         assert_eq!(delay_until_next_minute(0), Duration::from_secs(60));
         assert_eq!(delay_until_next_minute(59_999), Duration::from_millis(1));
         assert_eq!(delay_until_next_minute(60_000), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn clock_tick_and_pattern_follow_visible_precision() {
+        let mut settings = rmac_shell_settings::ClockSettings::default();
+        assert_eq!(
+            delay_until_next_clock_tick(59_999, false),
+            Duration::from_millis(1)
+        );
+        assert_eq!(top_bar_clock_pattern(&settings), "%a %-d %b %-I:%M %p");
+
+        settings.show_date = false;
+        settings.show_seconds = true;
+        settings.format = rmac_shell_settings::ClockFormat::TwentyFourHour;
+        assert_eq!(
+            delay_until_next_clock_tick(1_999, true),
+            Duration::from_millis(1)
+        );
+        assert_eq!(top_bar_clock_pattern(&settings), "%H:%M:%S");
+    }
+
+    #[test]
+    fn workspace_label_is_only_projected_when_enabled() {
+        let mut snapshot = rmac_shell_status::Snapshot::default();
+        snapshot.focused.workspace_label = Some("Writing".into());
+        assert_eq!(top_bar_workspace_label(&snapshot), None);
+        snapshot.clock.show_workspace = true;
+        assert_eq!(
+            top_bar_workspace_label(&snapshot).as_deref(),
+            Some("Writing")
+        );
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod linux_wayland {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::Local;
+    use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
         Context, DisplayId, Entity, FontWeight, PlatformDisplay, Role, Size, Window,
@@ -16,8 +17,8 @@ mod linux_wayland {
     };
     use gpui_platform::application;
     use rmac_gpui_upstream_lab::{
-        delay_until_next_minute, top_bar_active_app_name, top_bar_indicator_labels,
-        TopBarIndicatorKind,
+        delay_until_next_clock_tick, top_bar_active_app_name, top_bar_clock_pattern,
+        top_bar_indicator_labels, top_bar_workspace_label, TopBarIndicatorKind,
     };
 
     const BAR_HEIGHT: f32 = 28.0;
@@ -33,19 +34,37 @@ mod linux_wayland {
             receiver: async_channel::Receiver<rmac_shell_runtime::Update>,
             cx: &mut Context<Self>,
         ) -> Self {
-            cx.spawn(async move |this, cx| {
-                while let Ok(update) = receiver.recv().await {
-                    let visible = update.visible;
-                    if this
-                        .update(cx, |this, cx| {
+            cx.spawn(async move |this, cx| loop {
+                let show_seconds = this
+                    .read_with(cx, |this, _| this.update.snapshot.status.clock.show_seconds)
+                    .unwrap_or(false);
+                let epoch_millis = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis();
+                let update = receiver.recv().fuse();
+                let tick = cx
+                    .background_executor()
+                    .timer(delay_until_next_clock_tick(epoch_millis, show_seconds))
+                    .fuse();
+                futures_util::pin_mut!(update, tick);
+                futures_util::select! {
+                    update = update => {
+                        let Ok(update) = update else { break };
+                        let visible = update.visible;
+                        if this.update(cx, |this, cx| {
                             this.update = update;
                             if visible {
                                 cx.notify();
                             }
-                        })
-                        .is_err()
-                    {
-                        break;
+                        }).is_err() {
+                            break;
+                        }
+                    }
+                    _ = tick => {
+                        if this.update(cx, |_, cx| cx.notify()).is_err() {
+                            break;
+                        }
                     }
                 }
             })
@@ -66,19 +85,6 @@ mod linux_wayland {
         fn new(display_id: DisplayId, status: Entity<ShellStatus>, cx: &mut Context<Self>) -> Self {
             let display_id = u64::from(display_id);
             cx.observe(&status, |_, _, cx| cx.notify()).detach();
-            cx.spawn(async move |this, cx| loop {
-                let epoch_millis = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis();
-                cx.background_executor()
-                    .timer(delay_until_next_minute(epoch_millis))
-                    .await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
-                    break;
-                }
-            })
-            .detach();
             Self {
                 display_id,
                 render_count: 0,
@@ -92,10 +98,13 @@ mod linux_wayland {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
             let now = Local::now();
-            let clock = now.format("%a %-d %b %-I:%M %p").to_string();
-            let clock_label = now.format("%A, %B %-d, %-I:%M %p").to_string();
             let snapshot = &self.status.read(cx).update.snapshot.status;
+            let clock = now
+                .format(top_bar_clock_pattern(&snapshot.clock))
+                .to_string();
+            let clock_label = clock.clone();
             let active_app = top_bar_active_app_name(snapshot);
+            let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
 
             div()
@@ -130,7 +139,13 @@ mod linux_wayland {
                                 .aria_label("rmac desktop")
                                 .child("r"),
                         )
-                        .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app)),
+                        .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app))
+                        .children(workspace.map(|workspace| {
+                            div()
+                                .text_color(rgba(0xf7f8faaa))
+                                .aria_label(format!("Workspace {workspace}"))
+                                .child(workspace)
+                        })),
                 )
                 .child(
                     div()

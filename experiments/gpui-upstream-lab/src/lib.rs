@@ -57,6 +57,22 @@ pub mod output_surfaces {
     use gpui::{AnyWindowHandle, App, PlatformDisplay};
     use uuid::Uuid;
 
+    pub fn newest_displays(cx: &App) -> BTreeMap<Uuid, Rc<dyn PlatformDisplay>> {
+        let mut displays: BTreeMap<Uuid, Rc<dyn PlatformDisplay>> = BTreeMap::new();
+        for display in cx.displays() {
+            let Ok(uuid) = display.uuid() else {
+                continue;
+            };
+            let replace = displays
+                .get(&uuid)
+                .is_some_and(|current| u64::from(display.id()) > u64::from(current.id()));
+            if replace || !displays.contains_key(&uuid) {
+                displays.insert(uuid, display);
+            }
+        }
+        displays
+    }
+
     #[derive(Default)]
     pub struct Tracker {
         windows: BTreeMap<Uuid, AnyWindowHandle>,
@@ -73,11 +89,8 @@ pub mod output_surfaces {
             cx: &mut App,
             mut open: impl FnMut(Rc<dyn PlatformDisplay>, &mut App) -> AnyWindowHandle,
         ) {
-            let displays = cx.displays();
-            let available = displays
-                .iter()
-                .filter_map(|display| display.uuid().ok())
-                .collect::<BTreeSet<_>>();
+            let displays = newest_displays(cx);
+            let available = displays.keys().copied().collect::<BTreeSet<_>>();
             let active = desired
                 .map(|desired| {
                     desired
@@ -99,10 +112,7 @@ pub mod output_surfaces {
                 }
             }
 
-            for display in displays {
-                let Ok(uuid) = display.uuid() else {
-                    continue;
-                };
+            for (uuid, display) in displays {
                 if active.contains(&uuid) && !self.windows.contains_key(&uuid) {
                     self.windows.insert(uuid, open(display, cx));
                 }

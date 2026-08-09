@@ -753,11 +753,7 @@ mod linux_wayland {
             status: &Entity<ShellStatus>,
             cx: &mut App,
         ) {
-            let displays = cx.displays();
-            let available = displays
-                .iter()
-                .filter_map(|display| display.uuid().ok().map(|uuid| (uuid, display.clone())))
-                .collect::<BTreeMap<_, _>>();
+            let available = rmac_gpui_upstream_lab::output_surfaces::newest_displays(cx);
             let target = desired
                 .map(|desired| {
                     desired

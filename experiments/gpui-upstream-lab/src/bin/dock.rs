@@ -969,7 +969,7 @@ mod linux_wayland {
             status: &Entity<DockStatus>,
             cx: &mut App,
         ) {
-            let displays = cx.displays();
+            let displays = rmac_gpui_upstream_lab::output_surfaces::newest_displays(cx);
             let desired = desired.map(|surfaces| {
                 surfaces
                     .iter()
@@ -984,8 +984,8 @@ mod linux_wayland {
                     .collect::<std::collections::BTreeMap<_, _>>()
             });
             let available = displays
-                .iter()
-                .filter_map(|display| display.uuid().ok())
+                .keys()
+                .copied()
                 .collect::<std::collections::BTreeSet<_>>();
             let unavailable = self
                 .windows
@@ -1003,10 +1003,7 @@ mod linux_wayland {
                     let _ = handle.update(cx, |_, window, _| window.remove_window());
                 }
             }
-            for display in displays {
-                let Ok(uuid) = display.uuid() else {
-                    continue;
-                };
+            for (uuid, display) in displays {
                 let surface = match &desired {
                     Some(desired) => match desired.get(&uuid) {
                         Some(surface) => surface.clone(),

@@ -112,6 +112,18 @@ tracked input, a changed upstream revision, low storage, root, a non-reference
 Ubuntu release, or a simultaneously running manual preview. Native packages
 remain unchanged until A4/A5 and the representative product migration pass.
 
+On 2026-08-09, the supervised handoff passed on the Ubuntu 26.04/niri Intel HD
+Graphics 5500 reference PC at rmac commit `80a9c07` and GPUI revision
+`76c93968`. The host plan passed with 198 GiB free, the execute path reused the
+already compiled exact binaries, and the revision manifest matched both inputs.
+After reviewing and clearing a pre-existing launcher safe-mode marker, the
+normal rmac target and all ten supervised components reported healthy. The
+wallpaper, menu bar, and Dock each had one installed process owner, zero
+restarts, successful exit state, no warning-or-higher journal entry from the
+handoff window, and no remaining foreground-preview duplicate. This proves the
+supervised development integration, not the still-pending A4 interaction,
+Orca, scale, fullscreen, or soak gates.
+
 ## Evidence collected on macOS
 
 Environment: Apple arm64, macOS development host.

@@ -45,7 +45,10 @@ altering public packages or GNOME. If the rmac target is already active, it
 restarts only those three units. Otherwise the next normal
 `rmac-session-start` starts the entire supervised desktop together. A manually
 launched preview must be stopped first so two bars, Docks, or wallpapers cannot
-claim the same session.
+claim the same session. The handoff never clears safe mode automatically: when
+a previous component failure marker exists, it prints the bounded diagnostics
+and recovery commands for the user to review before returning to the normal
+target.
 
 That command remains a development installer. Native packaging stages the
 separate, immutable integration payload described in

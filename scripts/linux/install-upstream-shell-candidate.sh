@@ -189,7 +189,14 @@ if systemctl --user is-active --quiet rmac-session.target; then
     rmac-wallpaper.service rmac-top-bar.service rmac-dock.service
   echo "Restarted the three shell surfaces in the active rmac session."
 else
-  echo "The rmac session is not active; start it from niri with ~/.local/bin/rmac-session-start."
+  state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
+  if [[ -f "$state_home/rmac/session/safe-mode.json" ]]; then
+    echo "A previous component failure has kept rmac in safe mode."
+    echo "Review: ~/.local/libexec/rmac/rmac-session-supervisor diagnostics"
+    echo "Recover: ~/.local/libexec/rmac/rmac-session-supervisor clear-safe-mode"
+  else
+    echo "The rmac session is not active; start it from niri with ~/.local/bin/rmac-session-start."
+  fi
 fi
 
 echo "Installed the pinned upstream wallpaper, menu bar, and Dock as supervised development candidates."

@@ -102,7 +102,18 @@ mod linux_wayland {
                 settings: rmac_shell_settings::ShellSettings::default(),
                 catalog: Vec::new(),
                 compositor: rmac_compositor::State::default(),
-                places: rmac_places::Snapshot::default(),
+                places: rmac_places::Snapshot {
+                    home: rmac_places::Place {
+                        path: PathBuf::new(),
+                        exists: false,
+                    },
+                    downloads: rmac_places::Place {
+                        path: PathBuf::new(),
+                        exists: false,
+                    },
+                    downloads_configured: false,
+                    trash: rmac_places::TrashSnapshot::default(),
+                },
             }
         }
 

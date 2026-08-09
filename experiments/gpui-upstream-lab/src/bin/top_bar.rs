@@ -25,7 +25,7 @@ mod linux_wayland {
     };
     use uuid::Uuid;
 
-    const BAR_HEIGHT: f32 = 28.0;
+    const BAR_HEIGHT: f32 = 26.0;
     const MENU_SURFACE_HEIGHT: f32 = 420.0;
     const MENU_WIDTH: f32 = 248.0;
     const MENU_ROW_HEIGHT: f32 = 28.0;
@@ -460,30 +460,26 @@ mod linux_wayland {
                 .h(px(BAR_HEIGHT))
                 .flex()
                 .items_center()
-                .px_2()
-                .bg(rgba(0x10151d52))
+                .px_4()
+                .bg(rgba(0x0b0d143d))
                 .text_color(rgba(0xf7f8faff))
-                .text_sm()
-                .border_b_1()
-                .border_color(rgba(0xffffff25))
-                .shadow_sm()
+                .text_size(px(12.0))
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
+                        .gap_3()
                         .flex_1()
                         .child(
                             div()
                                 .id(format!("desktop-mark-{}", self.display_id))
-                                .w(px(18.0))
-                                .h(px(18.0))
+                                .w(px(16.0))
+                                .h(px(16.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .font_weight(FontWeight::BOLD)
                                 .aria_label("rmac desktop")
-                                .child("r"),
+                                .child(img(shell_icon_path("rmac.svg")).w(px(15.0)).h(px(15.0))),
                         )
                         .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app))
                         .children(menu_buttons)
@@ -620,7 +616,7 @@ mod linux_wayland {
             .take(index)
             .map(|menu| menu.label.chars().count() as f32 * 7.0 + 16.0)
             .sum::<f32>();
-        (34.0 + app_width + preceding).max(8.0)
+        (44.0 + app_width + preceding).max(16.0)
     }
 
     fn menu_panel_height(menu: &rmac_app_menu::Menu) -> f32 {

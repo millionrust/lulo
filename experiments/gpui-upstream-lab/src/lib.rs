@@ -279,10 +279,31 @@ pub fn top_bar_active_app_name(snapshot: &rmac_shell_status::Snapshot) -> String
         .focused
         .app_id
         .as_deref()
-        .and_then(|app_id| app_id.rsplit(['.', '/']).next())
+        .map(|app_id| {
+            rmac_apps::identity::window_title(app_id)
+                .map(str::to_owned)
+                .unwrap_or_else(|| humanize_app_id(app_id))
+        })
         .filter(|name| !name.is_empty())
-        .unwrap_or("rmac")
-        .to_owned()
+        .unwrap_or_else(|| "rmac".to_owned())
+}
+
+fn humanize_app_id(app_id: &str) -> String {
+    let leaf = app_id.rsplit(['.', '/']).next().unwrap_or(app_id);
+    leaf.split(['-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut characters = part.chars();
+            match characters.next() {
+                Some(first) if first.is_lowercase() => {
+                    first.to_uppercase().chain(characters).collect()
+                }
+                Some(first) => first.to_string() + characters.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn top_bar_indicator_labels(
@@ -533,6 +554,21 @@ mod tests {
         snapshot.focused.app_id = Some("dev.rmac.Finder".into());
         snapshot.focused.title = Some("Downloads".into());
         assert_eq!(top_bar_active_app_name(&snapshot), "Finder");
+    }
+
+    #[test]
+    fn first_party_identity_uses_its_reviewed_application_name() {
+        let mut snapshot = rmac_shell_status::Snapshot::default();
+        snapshot.focused.app_id = Some(rmac_apps::identity::APP_DRAWER.into());
+        assert_eq!(top_bar_active_app_name(&snapshot), "Applications");
+    }
+
+    #[test]
+    fn generic_desktop_ids_are_humanized_without_using_document_titles() {
+        let mut snapshot = rmac_shell_status::Snapshot::default();
+        snapshot.focused.app_id = Some("org.mozilla.firefox-nightly".into());
+        snapshot.focused.title = Some("Private document title".into());
+        assert_eq!(top_bar_active_app_name(&snapshot), "Firefox Nightly");
     }
 
     #[test]

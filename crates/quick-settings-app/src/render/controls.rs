@@ -76,17 +76,8 @@ impl QuickSettingsView {
         let view = cx.entity();
         let disabled = !tile.available || tile.busy;
         let next_value = !tile.value;
-        let accessible_label = if tile.busy {
-            format!("{title}, changing")
-        } else {
-            format!("{title}, {}", tile.summary)
-        };
         div()
             .id(SharedString::from(format!("quick-{control:?}")))
-            .role(Role::Button)
-            .aria_label(accessible_label)
-            .focusable()
-            .tab_stop(true)
             .w_full()
             .h(px(50.0))
             .overflow_hidden()

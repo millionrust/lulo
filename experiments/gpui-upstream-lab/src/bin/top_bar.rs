@@ -5,13 +5,14 @@ mod linux_wayland {
     use std::io::Write as _;
     use std::path::PathBuf;
     use std::process::Command;
+    use std::rc::Rc;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::Local;
     use gpui::{
-        div, img, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId,
-        Entity, FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowKind, WindowOptions,
+        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
+        Context, DisplayId, Entity, FontWeight, PlatformDisplay, Role, Size, Window,
+        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_gpui_upstream_lab::{
@@ -297,7 +298,7 @@ mod linux_wayland {
         });
     }
 
-    fn open_top_bars(cx: &mut App) {
+    fn start_status(cx: &mut App) -> Entity<ShellStatus> {
         let (status_tx, status_rx) = async_channel::bounded(16);
         cx.background_executor()
             .spawn(async move {
@@ -306,65 +307,102 @@ mod linux_wayland {
                 }
             })
             .detach();
-        let status = cx.new(|cx| ShellStatus::new(status_rx, cx));
-        for display in cx.displays() {
-            let display_id = display.id();
-            let width = display.bounds().size.width;
-            let handle = cx
-                .open_window(
-                    WindowOptions {
-                        titlebar: None,
-                        focus: false,
-                        window_bounds: Some(WindowBounds::Windowed(Bounds {
-                            origin: point(px(0.), px(0.)),
-                            size: Size::new(width, px(BAR_HEIGHT)),
-                        })),
-                        display_id: Some(display_id),
-                        app_id: Some("dev.rmac.TopBar".to_owned()),
-                        window_background: WindowBackgroundAppearance::Blurred,
-                        kind: WindowKind::LayerShell(LayerShellOptions {
-                            namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
-                            layer: Layer::Top,
-                            anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-                            keyboard_interactivity: KeyboardInteractivity::None,
-                            exclusive_zone: Some(px(BAR_HEIGHT)),
-                            ..Default::default()
-                        }),
+        cx.new(|cx| ShellStatus::new(status_rx, cx))
+    }
+
+    fn open_top_bar(
+        display: Rc<dyn PlatformDisplay>,
+        status: Entity<ShellStatus>,
+        cx: &mut App,
+    ) -> AnyWindowHandle {
+        let display_id = display.id();
+        let width = display.bounds().size.width;
+        let handle = cx
+            .open_window(
+                WindowOptions {
+                    titlebar: None,
+                    focus: false,
+                    window_bounds: Some(WindowBounds::Windowed(Bounds {
+                        origin: point(px(0.), px(0.)),
+                        size: Size::new(width, px(BAR_HEIGHT)),
+                    })),
+                    display_id: Some(display_id),
+                    app_id: Some("dev.rmac.TopBar".to_owned()),
+                    window_background: WindowBackgroundAppearance::Blurred,
+                    kind: WindowKind::LayerShell(LayerShellOptions {
+                        namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
+                        layer: Layer::Top,
+                        anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+                        keyboard_interactivity: KeyboardInteractivity::None,
+                        exclusive_zone: Some(px(BAR_HEIGHT)),
                         ..Default::default()
-                    },
-                    {
-                        let status = status.clone();
-                        move |_, cx| cx.new(|cx| TopBar::new(display_id, status, cx))
-                    },
-                )
-                .expect("open top-bar layer surface");
-            cx.spawn(async move |cx| {
-                cx.background_executor()
-                    .timer(Duration::from_millis(250))
-                    .await;
-                handle
-                    .update(cx, |_, window, _| {
-                        record_configured_surface(window, u64::from(display_id));
-                    })
-                    .expect("sample configured top-bar surface");
-            })
-            .detach();
-        }
+                    }),
+                    ..Default::default()
+                },
+                {
+                    let status = status.clone();
+                    move |_, cx| cx.new(|cx| TopBar::new(display_id, status, cx))
+                },
+            )
+            .expect("open top-bar layer surface");
+        cx.spawn(async move |cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(250))
+                .await;
+            let _ = handle.update(cx, |_, window, _| {
+                record_configured_surface(window, u64::from(display_id));
+            });
+        })
+        .detach();
+        handle.into()
     }
 
     pub fn run() {
         application().run(|cx: &mut App| {
-            cx.spawn(async move |cx| {
-                // Wayland outputs arrive through the registry after the application callback
-                // begins. Wait for that first round-trip before creating output-bound surfaces.
-                loop {
-                    if !cx.update(|cx| cx.displays().is_empty()) {
-                        cx.update(open_top_bars);
-                        break;
+            let status = start_status(cx);
+            let (output_tx, output_rx) = async_channel::bounded(4);
+            cx.background_executor()
+                .spawn(async move {
+                    if let Err(error) =
+                        rmac_gpui_upstream_lab::output_surfaces::watch_enabled(output_tx).await
+                    {
+                        eprintln!("top-bar output watcher unavailable: {error}");
                     }
-                    cx.background_executor()
-                        .timer(Duration::from_millis(10))
-                        .await;
+                })
+                .detach();
+            cx.spawn(async move |cx| {
+                let mut tracker = rmac_gpui_upstream_lab::output_surfaces::Tracker::default();
+                match output_rx.recv().await {
+                    Ok(mut desired) => loop {
+                        for _ in 0..20 {
+                            let complete = cx.update(|cx| {
+                                tracker.reconcile(Some(&desired), cx, |display, cx| {
+                                    open_top_bar(display, status.clone(), cx)
+                                });
+                                tracker.len() == desired.len()
+                            });
+                            if complete {
+                                break;
+                            }
+                            cx.background_executor()
+                                .timer(Duration::from_millis(50))
+                                .await;
+                        }
+                        let Ok(next) = output_rx.recv().await else {
+                            break;
+                        };
+                        desired = next;
+                    },
+                    Err(_) => loop {
+                        cx.update(|cx| {
+                            tracker.reconcile(None, cx, |display, cx| {
+                                open_top_bar(display, status.clone(), cx)
+                            })
+                        });
+                        cx.background_executor()
+                            .timer(Duration::from_millis(500))
+                            .await;
+                    },
                 }
             })
             .detach();

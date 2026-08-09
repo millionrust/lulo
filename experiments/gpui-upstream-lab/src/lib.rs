@@ -4,6 +4,102 @@ use gpui::Window;
 
 const READY_FILE_ENV: &str = "RMAC_SMOKE_READY_FILE";
 
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+pub mod output_surfaces {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::rc::Rc;
+
+    use gpui::{AnyWindowHandle, App, PlatformDisplay};
+    use uuid::Uuid;
+
+    #[derive(Default)]
+    pub struct Tracker {
+        windows: BTreeMap<Uuid, AnyWindowHandle>,
+    }
+
+    impl Tracker {
+        pub fn len(&self) -> usize {
+            self.windows.len()
+        }
+
+        pub fn reconcile(
+            &mut self,
+            desired: Option<&BTreeSet<Uuid>>,
+            cx: &mut App,
+            mut open: impl FnMut(Rc<dyn PlatformDisplay>, &mut App) -> AnyWindowHandle,
+        ) {
+            let displays = cx.displays();
+            let available = displays
+                .iter()
+                .filter_map(|display| display.uuid().ok())
+                .collect::<BTreeSet<_>>();
+            let active = desired
+                .map(|desired| {
+                    desired
+                        .intersection(&available)
+                        .copied()
+                        .collect::<BTreeSet<_>>()
+                })
+                .unwrap_or(available);
+
+            let removed = self
+                .windows
+                .keys()
+                .filter(|uuid| !active.contains(uuid))
+                .copied()
+                .collect::<Vec<_>>();
+            for uuid in removed {
+                if let Some(handle) = self.windows.remove(&uuid) {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                }
+            }
+
+            for display in displays {
+                let Ok(uuid) = display.uuid() else {
+                    continue;
+                };
+                if active.contains(&uuid) && !self.windows.contains_key(&uuid) {
+                    self.windows.insert(uuid, open(display, cx));
+                }
+            }
+        }
+    }
+
+    pub async fn watch_enabled(
+        sender: async_channel::Sender<BTreeSet<Uuid>>,
+    ) -> Result<(), String> {
+        let (event_tx, event_rx) = async_channel::bounded(64);
+        let watcher = async {
+            rmac_compositor_niri::watch(event_tx)
+                .await
+                .map_err(|error| error.to_string())
+        };
+        let consumer = async {
+            let mut state = rmac_compositor::State::default();
+            let mut published = BTreeSet::new();
+            while let Ok(event) = event_rx.recv().await {
+                state.apply(event);
+                let next = state
+                    .snapshot()
+                    .outputs
+                    .into_iter()
+                    .filter(|output| output.enabled())
+                    .map(|output| Uuid::new_v5(&Uuid::NAMESPACE_DNS, output.id.0.as_bytes()))
+                    .collect::<BTreeSet<_>>();
+                if next != published {
+                    published = next.clone();
+                    if sender.send(next).await.is_err() {
+                        return Ok(());
+                    }
+                }
+            }
+            Ok(())
+        };
+        futures_util::try_join!(watcher, consumer)?;
+        Ok(())
+    }
+}
+
 /// Writes an opt-in marker after GPUI finishes the window's first frame.
 ///
 /// The nested-Wayland smoke harness uses this to distinguish a rendered

@@ -5,13 +5,14 @@ mod linux_wayland {
     use std::io::Write as _;
     use std::path::PathBuf;
     use std::process::Command;
+    use std::rc::Rc;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     use gpui::{
-        div, img, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId,
-        Entity, FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowKind, WindowOptions,
+        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
+        Context, DisplayId, Entity, FontWeight, PlatformDisplay, Role, Size, Window,
+        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
 
@@ -588,50 +589,51 @@ mod linux_wayland {
         });
     }
 
-    fn open_docks(cx: &mut App, status: Entity<DockStatus>) {
-        for display in cx.displays() {
-            let display_id = display.id();
-            let width = display.bounds().size.width;
-            let handle = cx
-                .open_window(
-                    WindowOptions {
-                        titlebar: None,
-                        focus: false,
-                        window_bounds: Some(WindowBounds::Windowed(Bounds {
-                            origin: point(px(0.0), px(0.0)),
-                            size: Size::new(width, px(SURFACE_HEIGHT)),
-                        })),
-                        display_id: Some(display_id),
-                        app_id: Some("dev.rmac.Dock".to_owned()),
-                        window_background: WindowBackgroundAppearance::Blurred,
-                        kind: WindowKind::LayerShell(LayerShellOptions {
-                            namespace: format!("rmac-dock-{}", u64::from(display_id)),
-                            layer: Layer::Top,
-                            anchor: Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
-                            keyboard_interactivity: KeyboardInteractivity::None,
-                            exclusive_zone: Some(px(EXCLUSIVE_ZONE)),
-                            ..Default::default()
-                        }),
+    fn open_dock(
+        display: Rc<dyn PlatformDisplay>,
+        status: Entity<DockStatus>,
+        cx: &mut App,
+    ) -> AnyWindowHandle {
+        let display_id = display.id();
+        let width = display.bounds().size.width;
+        let handle = cx
+            .open_window(
+                WindowOptions {
+                    titlebar: None,
+                    focus: false,
+                    window_bounds: Some(WindowBounds::Windowed(Bounds {
+                        origin: point(px(0.0), px(0.0)),
+                        size: Size::new(width, px(SURFACE_HEIGHT)),
+                    })),
+                    display_id: Some(display_id),
+                    app_id: Some("dev.rmac.Dock".to_owned()),
+                    window_background: WindowBackgroundAppearance::Blurred,
+                    kind: WindowKind::LayerShell(LayerShellOptions {
+                        namespace: format!("rmac-dock-{}", u64::from(display_id)),
+                        layer: Layer::Top,
+                        anchor: Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+                        keyboard_interactivity: KeyboardInteractivity::None,
+                        exclusive_zone: Some(px(EXCLUSIVE_ZONE)),
                         ..Default::default()
-                    },
-                    {
-                        let status = status.clone();
-                        move |_, cx| cx.new(|cx| Dock::new(display_id, status, cx))
-                    },
-                )
-                .expect("open Dock layer surface");
-            cx.spawn(async move |cx| {
-                cx.background_executor()
-                    .timer(Duration::from_millis(250))
-                    .await;
-                handle
-                    .update(cx, |_, window, _| {
-                        record_configured_surface(window, u64::from(display_id));
-                    })
-                    .expect("sample configured Dock surface");
-            })
-            .detach();
-        }
+                    }),
+                    ..Default::default()
+                },
+                {
+                    let status = status.clone();
+                    move |_, cx| cx.new(|cx| Dock::new(display_id, status, cx))
+                },
+            )
+            .expect("open Dock layer surface");
+        cx.spawn(async move |cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(250))
+                .await;
+            let _ = handle.update(cx, |_, window, _| {
+                record_configured_surface(window, u64::from(display_id));
+            });
+        })
+        .detach();
+        handle.into()
     }
 
     pub fn run() {
@@ -652,14 +654,50 @@ mod linux_wayland {
                 .spawn(watch_catalog(source_tx))
                 .detach();
             let status = cx.new(|cx| DockStatus::new(compositor_rx, source_rx, cx));
-            cx.spawn(async move |cx| loop {
-                if !cx.update(|cx| cx.displays().is_empty()) {
-                    cx.update(|cx| open_docks(cx, status));
-                    break;
+            let (output_tx, output_rx) = async_channel::bounded(4);
+            cx.background_executor()
+                .spawn(async move {
+                    if let Err(error) =
+                        rmac_gpui_upstream_lab::output_surfaces::watch_enabled(output_tx).await
+                    {
+                        eprintln!("Dock output watcher unavailable: {error}");
+                    }
+                })
+                .detach();
+            cx.spawn(async move |cx| {
+                let mut tracker = rmac_gpui_upstream_lab::output_surfaces::Tracker::default();
+                match output_rx.recv().await {
+                    Ok(mut desired) => loop {
+                        for _ in 0..20 {
+                            let complete = cx.update(|cx| {
+                                tracker.reconcile(Some(&desired), cx, |display, cx| {
+                                    open_dock(display, status.clone(), cx)
+                                });
+                                tracker.len() == desired.len()
+                            });
+                            if complete {
+                                break;
+                            }
+                            cx.background_executor()
+                                .timer(Duration::from_millis(50))
+                                .await;
+                        }
+                        let Ok(next) = output_rx.recv().await else {
+                            break;
+                        };
+                        desired = next;
+                    },
+                    Err(_) => loop {
+                        cx.update(|cx| {
+                            tracker.reconcile(None, cx, |display, cx| {
+                                open_dock(display, status.clone(), cx)
+                            })
+                        });
+                        cx.background_executor()
+                            .timer(Duration::from_millis(500))
+                            .await;
+                    },
                 }
-                cx.background_executor()
-                    .timer(Duration::from_millis(10))
-                    .await;
             })
             .detach();
         });

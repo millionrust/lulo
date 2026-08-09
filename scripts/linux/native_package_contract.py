@@ -61,6 +61,7 @@ SESSION_BINARIES = (
     "rmac-wallpaper",
     "rmac-top-bar",
     "rmac-dock",
+    "rmac-osd",
     "rmac-launcher",
     "rmac-app-drawer",
     "rmac-quick-settings",
@@ -109,7 +110,6 @@ PACKAGE_SPECS = (
         install_directory="usr/libexec/rmac",
         binaries=SESSION_BINARIES,
         static_dependencies=(
-            "brightnessctl",
             "coreutils",
             "dbus-user-session",
             "gawk | mawk",

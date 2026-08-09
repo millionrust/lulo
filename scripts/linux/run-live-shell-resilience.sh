@@ -6,7 +6,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 minimum_kib=$((15 * 1024 * 1024))
 mode=
-components=(rmac-wallpaper.service rmac-top-bar.service rmac-dock.service)
+components=(rmac-wallpaper.service rmac-top-bar.service rmac-dock.service rmac-osd.service)
 supervisor=rmac-session-supervisor.service
 all_units=("${components[@]}" "$supervisor")
 config="${XDG_CONFIG_HOME:-$HOME/.config}/rmac/shell.json"
@@ -71,7 +71,7 @@ revision="$(git -C "$repo_root" rev-parse HEAD)"
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || fail "the repository revision is invalid"
 echo "Live shell resilience plan"
 echo "  revision: ${revision:0:12}"
-echo "  crash recovery: wallpaper, top bar, Dock, supervisor"
+echo "  crash recovery: wallpaper, menu bar, Dock, system OSD, supervisor"
 echo "  malformed config: isolated absent-file fixture"
 echo "  storage floor: 15 GiB"
 
@@ -117,6 +117,7 @@ recover_unit "$supervisor"
 wallpaper_pid="$(systemctl --user show rmac-wallpaper.service -p MainPID --value)"
 top_bar_pid="$(systemctl --user show rmac-top-bar.service -p MainPID --value)"
 dock_pid="$(systemctl --user show rmac-dock.service -p MainPID --value)"
+osd_pid="$(systemctl --user show rmac-osd.service -p MainPID --value)"
 if [[ ! -d "$config_dir" ]]; then
   install -d -m 0700 "$config_dir"
 fi
@@ -131,6 +132,8 @@ done
   || fail "top bar restarted on malformed settings"
 [[ "$(systemctl --user show rmac-dock.service -p MainPID --value)" == "$dock_pid" ]] \
   || fail "Dock restarted on malformed settings"
+[[ "$(systemctl --user show rmac-osd.service -p MainPID --value)" == "$osd_pid" ]] \
+  || fail "system OSD restarted on malformed settings"
 rm -f -- "$config"
 sleep 3
 for unit in "${components[@]}"; do
@@ -139,7 +142,7 @@ done
 echo "malformed_settings=pass"
 
 layers="$(niri msg --json layers | jq -r '.. | objects | select(has("namespace")) | .namespace')"
-for namespace in rmac-wallpaper- rmac-top-bar- rmac-dock-; do
+for namespace in rmac-wallpaper- rmac-top-bar- rmac-dock- rmac-osd-; do
   grep -q "^$namespace" <<<"$layers" || fail "the $namespace layer was not restored"
 done
 [[ ! -e "$safe_mode" ]] || fail "fault injection entered safe mode"

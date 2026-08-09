@@ -17,6 +17,7 @@ MANIFEST = Path("usr/share/rmac/session-package-manifest.json")
 MAX_MANIFEST_BYTES = 64 * 1024
 REQUIRED_RMAC_EXECUTABLES = (
     "rmac-session-supervisor",
+    "rmac-osd",
     "rmac-launcher",
     "rmac-app-drawer",
     "rmac-quick-settings",
@@ -43,6 +44,7 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-lock.service",
     "rmac-notification-center-panel.service",
     "rmac-notification-center.service",
+    "rmac-osd.service",
     "rmac-quick-settings.service",
     "rmac-safe-mode.target",
     "rmac-session-supervisor.service",

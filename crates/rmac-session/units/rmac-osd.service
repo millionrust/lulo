@@ -1,0 +1,16 @@
+[Unit]
+Description=rmac system controls OSD
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+OnFailure=rmac-component-failure@%N.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-osd
+
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-osd --service
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

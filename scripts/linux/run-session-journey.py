@@ -33,6 +33,7 @@ NORMAL_UNITS = (
     "rmac-notification-center-panel.service",
     "rmac-focus.service",
     "rmac-wallpaper.service",
+    "rmac-osd.service",
     "rmac-shortcut-broker.service",
 )
 SAFE_UNITS = (

@@ -59,12 +59,32 @@ binds {
     Mod+Ctrl+F repeat=false hotkey-overlay-title="Full Screen" { fullscreen-window; }
     Mod+O repeat=false hotkey-overlay-title="Mission Control" { toggle-overview; }
     Mod+Shift+Slash repeat=false { show-hotkey-overlay; }
-    XF86AudioRaiseVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05+" "--limit" "1.0"; }
-    XF86AudioLowerVolume allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05-"; }
-    XF86AudioMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
-    XF86AudioMicMute allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle"; }
-    XF86MonBrightnessUp allow-when-locked=true { spawn "brightnessctl" "set" "+5%"; }
-    XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "set" "5%-"; }
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-up"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-down"; }
+    XF86AudioMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-output-mute"; }
+    XF86AudioMicMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-input-mute"; }
+    XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
+}
+
+// macOS 26-style system feedback lives beneath the menu bar on the display
+// receiving keyboard focus. Niri owns the backdrop sampling and rounded blur.
+layer-rule {
+    match namespace=r#"^rmac-osd-"#
+    geometry-corner-radius 28
+    shadow {
+        on
+        softness 24
+        spread 2
+        offset x=0 y=8
+        color "#00000050"
+    }
+    background-effect {
+        xray false
+        blur true
+        noise 0.025
+        saturation 1.35
+    }
 }
 
 // GPUI 0.2 popups are ordinary xdg-shell windows. Keep them out of niri's

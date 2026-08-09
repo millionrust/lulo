@@ -4708,6 +4708,7 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-dock",
+ "rmac-osd",
  "rmac-places",
  "rmac-places-system",
  "rmac-shell-runtime",
@@ -4790,6 +4791,17 @@ dependencies = [
  "rmac-storage",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rmac-osd"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rmac-audio",
+ "serde",
+ "serde_json",
+ "zbus",
 ]
 
 [[package]]

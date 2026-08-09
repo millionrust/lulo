@@ -63,7 +63,7 @@ from native_package_contract import ALL_BINARIES
 print("\n".join(ALL_BINARIES))
 ' "$repo_root/scripts/linux")" || fail "native package inventory could not be loaded"
 mapfile -t binary_names <<<"$inventory"
-[[ ${#binary_names[@]} -eq 22 ]] || fail "native package inventory is not exact"
+[[ ${#binary_names[@]} -eq 23 ]] || fail "native package inventory is not exact"
 
 # Reuse the repository's one normal target graph even if the caller exports a
 # different Cargo target directory.
@@ -95,7 +95,7 @@ export CARGO_TARGET_DIR="$target_dir"
 (
   cd "$lab_dir"
   CARGO_TARGET_DIR="$lab_target_dir" cargo build --locked --release \
-    --features wayland --bin wallpaper --bin top-bar --bin dock
+    --features wayland --bin wallpaper --bin top-bar --bin dock --bin osd
 )
 
 binary_source() {
@@ -103,6 +103,7 @@ binary_source() {
     rmac-wallpaper) printf '%s\n' "$lab_target_dir/release/wallpaper" ;;
     rmac-top-bar) printf '%s\n' "$lab_target_dir/release/top-bar" ;;
     rmac-dock) printf '%s\n' "$lab_target_dir/release/dock" ;;
+    rmac-osd) printf '%s\n' "$lab_target_dir/release/osd" ;;
     *) printf '%s\n' "$target_dir/release/$1" ;;
   esac
 }

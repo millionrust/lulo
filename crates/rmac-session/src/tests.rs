@@ -125,6 +125,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         include_str!("../units/rmac-notification-center.service"),
         include_str!("../units/rmac-focus.service"),
         include_str!("../units/rmac-wallpaper.service"),
+        include_str!("../units/rmac-osd.service"),
         include_str!("../units/rmac-shortcut-broker.service"),
     ];
     for unit in resident_units {
@@ -231,6 +232,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
     assert!(normal_target.contains("rmac-notification-center-panel.service"));
     assert!(normal_target.contains("rmac-app-drawer.service"));
+    assert!(normal_target.contains("rmac-osd.service"));
     assert!(safe_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
 

@@ -5405,6 +5405,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-osd"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rmac-audio",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-places"
 version = "0.1.0"
 

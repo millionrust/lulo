@@ -17,6 +17,7 @@ mod linux_wayland {
     use gpui_platform::application;
 
     const SURFACE_HEIGHT: f32 = 184.0;
+    const SIDE_SURFACE_WIDTH: f32 = 344.0;
     const EXCLUSIVE_ZONE: f32 = 88.0;
     const ICON_SIZE: f32 = 56.0;
     const ICON_GAP: f32 = 8.0;
@@ -38,6 +39,7 @@ mod linux_wayland {
         settings: rmac_shell_settings::ShellSettings,
         catalog: Vec<rmac_apps::Application>,
         compositor: rmac_compositor::State,
+        compositor_ready: bool,
         places: rmac_places::Snapshot,
     }
 
@@ -51,6 +53,7 @@ mod linux_wayland {
                 while let Ok(event) = compositor.recv().await {
                     if this
                         .update(cx, |this, cx| {
+                            this.compositor_ready = true;
                             if this.compositor.apply(event).visible {
                                 cx.notify();
                             }
@@ -102,6 +105,7 @@ mod linux_wayland {
                 settings: rmac_shell_settings::ShellSettings::default(),
                 catalog: Vec::new(),
                 compositor: rmac_compositor::State::default(),
+                compositor_ready: false,
                 places: rmac_places::Snapshot {
                     home: rmac_places::Place {
                         path: PathBuf::new(),
@@ -126,10 +130,25 @@ mod linux_wayland {
                 &self.places,
             )
         }
+
+        fn surfaces(&self) -> Option<Vec<rmac_dock::SurfaceDescription>> {
+            if !self.compositor_ready {
+                return None;
+            }
+            let snapshot = self.compositor.snapshot();
+            let primary = snapshot
+                .outputs
+                .iter()
+                .filter(|output| output.enabled())
+                .map(|output| &output.id)
+                .min();
+            rmac_dock::surface_descriptions(&snapshot, &self.settings.dock, primary, false).ok()
+        }
     }
 
     struct Dock {
         display_id: u64,
+        placement: rmac_shell_settings::DockPlacement,
         render_count: u64,
         status: Entity<DockStatus>,
         hovered_item: Option<(f32, String)>,
@@ -137,10 +156,16 @@ mod linux_wayland {
     }
 
     impl Dock {
-        fn new(display_id: DisplayId, status: Entity<DockStatus>, cx: &mut Context<Self>) -> Self {
+        fn new(
+            display_id: DisplayId,
+            placement: rmac_shell_settings::DockPlacement,
+            status: Entity<DockStatus>,
+            cx: &mut Context<Self>,
+        ) -> Self {
             cx.observe(&status, |_, _, cx| cx.notify()).detach();
             Self {
                 display_id: u64::from(display_id),
+                placement,
                 render_count: 0,
                 status,
                 hovered_item: None,
@@ -177,7 +202,13 @@ mod linux_wayland {
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
             let item_count = entries.len() + 1;
             let child_count = item_count + separator_count;
-            let axis = f32::from(window.bounds().size.width);
+            let window_size = window.bounds().size;
+            let horizontal = self.placement == rmac_shell_settings::DockPlacement::Bottom;
+            let axis = if horizontal {
+                f32::from(window_size.width)
+            } else {
+                f32::from(window_size.height)
+            };
             let shelf_extent = ICON_SIZE * item_count as f32
                 + SEPARATOR_WIDTH * separator_count as f32
                 + ICON_GAP * child_count.saturating_sub(1) as f32
@@ -186,10 +217,24 @@ mod linux_wayland {
             let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
             let input_region = (shelf_start, shelf_extent);
             if self.input_region != Some(input_region) {
-                window.set_input_region(Some(&[Bounds {
-                    origin: point(px(shelf_start), px(SURFACE_HEIGHT - EXCLUSIVE_ZONE)),
-                    size: Size::new(px(shelf_extent), px(EXCLUSIVE_ZONE)),
-                }]));
+                let bounds = match self.placement {
+                    rmac_shell_settings::DockPlacement::Bottom => Bounds {
+                        origin: point(px(shelf_start), px(SURFACE_HEIGHT - EXCLUSIVE_ZONE)),
+                        size: Size::new(px(shelf_extent), px(EXCLUSIVE_ZONE)),
+                    },
+                    rmac_shell_settings::DockPlacement::Left => Bounds {
+                        origin: point(px(0.0), px(shelf_start)),
+                        size: Size::new(px(EXCLUSIVE_ZONE), px(shelf_extent)),
+                    },
+                    rmac_shell_settings::DockPlacement::Right => Bounds {
+                        origin: point(
+                            px(f32::from(window_size.width) - EXCLUSIVE_ZONE),
+                            px(shelf_start),
+                        ),
+                        size: Size::new(px(EXCLUSIVE_ZONE), px(shelf_extent)),
+                    },
+                };
+                window.set_input_region(Some(&[bounds]));
                 self.input_region = Some(input_region);
             }
             let tooltip = self.hovered_item.as_ref().map(|(relative_center, label)| {
@@ -198,10 +243,8 @@ mod linux_wayland {
                     magnified_icon_size(*relative_center, Some(*relative_center), &dock_settings)
                         + 36.0,
                 );
-                div()
+                let tooltip = div()
                     .absolute()
-                    .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
-                    .bottom(px(tooltip_bottom))
                     .w(px(TOOLTIP_WIDTH))
                     .flex()
                     .justify_center()
@@ -217,224 +260,274 @@ mod linux_wayland {
                             .text_sm()
                             .text_color(rgba(0xffffffff))
                             .child(label.clone()),
-                    )
+                    );
+                match self.placement {
+                    rmac_shell_settings::DockPlacement::Bottom => tooltip
+                        .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
+                        .bottom(px(tooltip_bottom)),
+                    rmac_shell_settings::DockPlacement::Left => tooltip
+                        .left(px(EXCLUSIVE_ZONE + 8.0))
+                        .top(px(icon_center - 18.0)),
+                    rmac_shell_settings::DockPlacement::Right => tooltip
+                        .right(px(EXCLUSIVE_ZONE + 8.0))
+                        .top(px(icon_center - 18.0)),
+                }
             });
-            div()
+            let root = div()
                 .id(format!("dock-{}", self.display_id))
                 .role(Role::Toolbar)
                 .aria_label("rmac Dock")
                 .size_full()
                 .relative()
                 .flex()
-                .items_end()
-                .justify_center()
-                .pb_2()
-                .children(tooltip)
-                .child(
-                    div()
-                        .flex()
-                        .items_end()
-                        .gap_2()
-                        .p_2()
-                        .rounded(px(22.0))
-                        .bg(rgba(0xe7ecf18c))
-                        .border_1()
-                        .border_color(rgba(0xffffffb8))
-                        .shadow_lg()
-                        .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
-                            let relative_center = SHELF_PADDING
-                                + ICON_SIZE / 2.0
-                                + index as f32 * (ICON_SIZE + ICON_GAP)
-                                + if separates_running && index >= pinned_count {
-                                    SEPARATOR_WIDTH + ICON_GAP
-                                } else {
-                                    0.0
-                                };
-                            let app_id = match &entry.id {
-                                rmac_dock::presentation::EntryId::Application(app_id) => {
-                                    app_id.clone()
-                                }
-                                _ => unreachable!("the application group contains only apps"),
-                            };
-                            let activation = model.activate(&app_id);
-                            let available = entry.enabled;
-                            let actionable = matches!(
-                                activation,
-                                rmac_dock::Activation::Launch { .. }
-                                    | rmac_dock::Activation::FocusWindow(_)
-                            );
-                            let active = entry.activity
-                                == rmac_dock::presentation::ActivityIndicator::Active;
-                            let running =
-                                entry.activity != rmac_dock::presentation::ActivityIndicator::None;
-                            let icon_path = item_icon_path(&entry.icon, &app_id);
-                            let tooltip_label = entry.label.clone();
-                            let visual_size = magnified_icon_size(
-                                relative_center,
-                                self.hovered_item.as_ref().map(|(center, _)| *center),
-                                &dock_settings,
-                            );
-                            let visual_offset = (ICON_SIZE - visual_size) / 2.0;
-                            let mut item = div()
-                                .id(format!("dock-item-{}-{index}", self.display_id))
-                                .role(Role::Button)
-                                .aria_label(entry.accessible_label)
-                                .relative()
-                                .w(px(ICON_SIZE))
-                                .h(px(ICON_SIZE))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_color(rgba(0xffffffff))
-                                .text_lg()
-                                .font_weight(FontWeight::BOLD)
-                                .opacity(if available { 1.0 } else { 0.58 });
-                            let mut visual = div()
-                                .absolute()
-                                .left(px(visual_offset))
-                                .bottom_0()
-                                .w(px(visual_size))
-                                .h(px(visual_size))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(13.0 * visual_size / ICON_SIZE))
-                                .bg(rgba(if icon_path.is_some() {
-                                    0x00000000
-                                } else {
-                                    item_color(&app_id, available)
-                                }));
-                            if let Some(path) = icon_path {
-                                visual = visual.child(
-                                    img(path)
-                                        .w(px(visual_size - 2.0))
-                                        .h(px(visual_size - 2.0))
-                                        .rounded(px(14.0 * visual_size / ICON_SIZE)),
-                                );
+                .children(tooltip);
+            let root = match self.placement {
+                rmac_shell_settings::DockPlacement::Bottom => {
+                    root.items_end().justify_center().pb_2()
+                }
+                rmac_shell_settings::DockPlacement::Left => {
+                    root.items_start().justify_center().pl_2()
+                }
+                rmac_shell_settings::DockPlacement::Right => {
+                    root.items_end().justify_center().pr_2()
+                }
+            };
+            let shelf = div()
+                .flex()
+                .gap_2()
+                .p_2()
+                .rounded(px(22.0))
+                .bg(rgba(0xe7ecf18c))
+                .border_1()
+                .border_color(rgba(0xffffffb8))
+                .shadow_lg();
+            let shelf = if horizontal {
+                shelf.items_end()
+            } else {
+                shelf.flex_col().items_center()
+            };
+            root.child(
+                shelf
+                    .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
+                        let relative_center = SHELF_PADDING
+                            + ICON_SIZE / 2.0
+                            + index as f32 * (ICON_SIZE + ICON_GAP)
+                            + if separates_running && index >= pinned_count {
+                                SEPARATOR_WIDTH + ICON_GAP
                             } else {
-                                visual = visual.child(item_mark(&entry.label));
+                                0.0
+                            };
+                        let app_id = match &entry.id {
+                            rmac_dock::presentation::EntryId::Application(app_id) => app_id.clone(),
+                            _ => unreachable!("the application group contains only apps"),
+                        };
+                        let activation = model.activate(&app_id);
+                        let available = entry.enabled;
+                        let actionable = matches!(
+                            activation,
+                            rmac_dock::Activation::Launch { .. }
+                                | rmac_dock::Activation::FocusWindow(_)
+                        );
+                        let active =
+                            entry.activity == rmac_dock::presentation::ActivityIndicator::Active;
+                        let running =
+                            entry.activity != rmac_dock::presentation::ActivityIndicator::None;
+                        let icon_path = item_icon_path(&entry.icon, &app_id);
+                        let tooltip_label = entry.label.clone();
+                        let visual_size = magnified_icon_size(
+                            relative_center,
+                            self.hovered_item.as_ref().map(|(center, _)| *center),
+                            &dock_settings,
+                        );
+                        let visual_offset = (ICON_SIZE - visual_size) / 2.0;
+                        let mut item = div()
+                            .id(format!("dock-item-{}-{index}", self.display_id))
+                            .role(Role::Button)
+                            .aria_label(entry.accessible_label)
+                            .relative()
+                            .w(px(ICON_SIZE))
+                            .h(px(ICON_SIZE))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(rgba(0xffffffff))
+                            .text_lg()
+                            .font_weight(FontWeight::BOLD)
+                            .opacity(if available { 1.0 } else { 0.58 });
+                        let mut visual = div()
+                            .absolute()
+                            .w(px(visual_size))
+                            .h(px(visual_size))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(13.0 * visual_size / ICON_SIZE))
+                            .bg(rgba(if icon_path.is_some() {
+                                0x00000000
+                            } else {
+                                item_color(&app_id, available)
+                            }));
+                        visual = match self.placement {
+                            rmac_shell_settings::DockPlacement::Bottom => {
+                                visual.left(px(visual_offset)).bottom_0()
                             }
-                            item = item.child(visual);
-                            if actionable {
-                                item = item
-                                    .cursor_pointer()
-                                    .hover(|style| style.opacity(0.88))
-                                    .on_click(move |_, _, cx| {
-                                        dispatch_activation(activation.clone(), cx);
-                                    });
+                            rmac_shell_settings::DockPlacement::Left => {
+                                visual.left_0().top(px(visual_offset))
                             }
-                            item =
-                                item.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                    if *hovered {
-                                        this.hovered_item =
-                                            Some((relative_center, tooltip_label.clone()));
-                                        cx.notify();
-                                    } else if this
-                                        .hovered_item
-                                        .as_ref()
-                                        .is_some_and(|(center, _)| *center == relative_center)
-                                    {
-                                        this.hovered_item = None;
-                                        cx.notify();
-                                    }
-                                }));
-                            if running {
-                                item = item.child(
-                                    div()
-                                        .absolute()
-                                        .bottom(px(-7.0))
-                                        .w(px(if active { 7.0 } else { 5.0 }))
-                                        .h(px(if active { 7.0 } else { 5.0 }))
-                                        .rounded_full()
-                                        .bg(rgba(if active { 0x2563ebff } else { 0x60656dff })),
-                                );
+                            rmac_shell_settings::DockPlacement::Right => {
+                                visual.right_0().top(px(visual_offset))
                             }
-                            if entry.urgent {
-                                item = item.child(
-                                    div()
-                                        .absolute()
-                                        .top(px(-3.0))
-                                        .right(px(-3.0))
-                                        .w(px(10.0))
-                                        .h(px(10.0))
-                                        .rounded_full()
-                                        .bg(rgba(0xff3b30ff)),
-                                );
-                            }
-                            let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
-                            if separates_running && index == pinned_count {
-                                children.push(
-                                    div()
-                                        .w(px(SEPARATOR_WIDTH))
-                                        .h(px(48.0))
-                                        .mb_1()
-                                        .bg(rgba(0x4a56646b))
-                                        .into_any_element(),
-                                );
-                            }
-                            children.push(item.into_any_element());
-                            children
-                        }))
-                        .when(!model.items.is_empty(), |shelf| {
-                            shelf.child(
-                                div()
-                                    .w(px(SEPARATOR_WIDTH))
-                                    .h(px(48.0))
-                                    .mb_1()
-                                    .bg(rgba(0x4a56646b)),
-                            )
-                        })
-                        .child({
-                            let visual_size = magnified_icon_size(
-                                trash_center,
-                                self.hovered_item.as_ref().map(|(center, _)| *center),
-                                &dock_settings,
+                        };
+                        if let Some(path) = icon_path {
+                            visual = visual.child(
+                                img(path)
+                                    .w(px(visual_size - 2.0))
+                                    .h(px(visual_size - 2.0))
+                                    .rounded(px(14.0 * visual_size / ICON_SIZE)),
                             );
-                            let visual_offset = (ICON_SIZE - visual_size) / 2.0;
-                            let mut trash = div()
-                                .id(format!("dock-trash-{}", self.display_id))
-                                .role(Role::Button)
-                                .aria_label(trash_label)
-                                .relative()
-                                .w(px(ICON_SIZE))
-                                .h(px(ICON_SIZE))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(13.0))
+                        } else {
+                            visual = visual.child(item_mark(&entry.label));
+                        }
+                        item = item.child(visual);
+                        if actionable {
+                            item = item
+                                .cursor_pointer()
                                 .hover(|style| style.opacity(0.88))
-                                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                    if *hovered {
-                                        this.hovered_item = Some((trash_center, "Trash".into()));
-                                        cx.notify();
-                                    } else if this
-                                        .hovered_item
-                                        .as_ref()
-                                        .is_some_and(|(center, _)| *center == trash_center)
-                                    {
-                                        this.hovered_item = None;
-                                        cx.notify();
-                                    }
-                                }));
-                            if trash_available {
-                                trash = trash.cursor_pointer().on_click(move |_, _, cx| {
-                                    dispatch_special(trash_activation.clone(), cx)
+                                .on_click(move |_, _, cx| {
+                                    dispatch_activation(activation.clone(), cx);
                                 });
+                        }
+                        item = item.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            if *hovered {
+                                this.hovered_item = Some((relative_center, tooltip_label.clone()));
+                                cx.notify();
+                            } else if this
+                                .hovered_item
+                                .as_ref()
+                                .is_some_and(|(center, _)| *center == relative_center)
+                            {
+                                this.hovered_item = None;
+                                cx.notify();
                             }
-                            if let Some(path) = trash_icon_path(trash_full) {
-                                trash = trash.child(
-                                    img(path)
-                                        .absolute()
-                                        .left(px(visual_offset))
-                                        .bottom_0()
-                                        .w(px(visual_size - 2.0))
-                                        .h(px(visual_size - 2.0))
-                                        .rounded(px(14.0 * visual_size / ICON_SIZE)),
-                                );
-                            }
-                            trash
-                        }),
-                )
+                        }));
+                        if running {
+                            let indicator = div()
+                                .absolute()
+                                .w(px(if active { 7.0 } else { 5.0 }))
+                                .h(px(if active { 7.0 } else { 5.0 }))
+                                .rounded_full()
+                                .bg(rgba(if active { 0x2563ebff } else { 0x60656dff }));
+                            let indicator = match self.placement {
+                                rmac_shell_settings::DockPlacement::Bottom => {
+                                    indicator.bottom(px(-7.0))
+                                }
+                                rmac_shell_settings::DockPlacement::Left => {
+                                    indicator.right(px(-7.0))
+                                }
+                                rmac_shell_settings::DockPlacement::Right => {
+                                    indicator.left(px(-7.0))
+                                }
+                            };
+                            item = item.child(indicator);
+                        }
+                        if entry.urgent {
+                            item = item.child(
+                                div()
+                                    .absolute()
+                                    .top(px(-3.0))
+                                    .right(px(-3.0))
+                                    .w(px(10.0))
+                                    .h(px(10.0))
+                                    .rounded_full()
+                                    .bg(rgba(0xff3b30ff)),
+                            );
+                        }
+                        let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
+                        if separates_running && index == pinned_count {
+                            children.push(dock_separator(self.placement));
+                        }
+                        children.push(item.into_any_element());
+                        children
+                    }))
+                    .when(!model.items.is_empty(), |shelf| {
+                        shelf.child(dock_separator(self.placement))
+                    })
+                    .child({
+                        let visual_size = magnified_icon_size(
+                            trash_center,
+                            self.hovered_item.as_ref().map(|(center, _)| *center),
+                            &dock_settings,
+                        );
+                        let visual_offset = (ICON_SIZE - visual_size) / 2.0;
+                        let mut trash = div()
+                            .id(format!("dock-trash-{}", self.display_id))
+                            .role(Role::Button)
+                            .aria_label(trash_label)
+                            .relative()
+                            .w(px(ICON_SIZE))
+                            .h(px(ICON_SIZE))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(13.0))
+                            .hover(|style| style.opacity(0.88))
+                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                if *hovered {
+                                    this.hovered_item = Some((trash_center, "Trash".into()));
+                                    cx.notify();
+                                } else if this
+                                    .hovered_item
+                                    .as_ref()
+                                    .is_some_and(|(center, _)| *center == trash_center)
+                                {
+                                    this.hovered_item = None;
+                                    cx.notify();
+                                }
+                            }));
+                        if trash_available {
+                            trash = trash.cursor_pointer().on_click(move |_, _, cx| {
+                                dispatch_special(trash_activation.clone(), cx)
+                            });
+                        }
+                        if let Some(path) = trash_icon_path(trash_full) {
+                            let image = img(path)
+                                .absolute()
+                                .w(px(visual_size - 2.0))
+                                .h(px(visual_size - 2.0))
+                                .rounded(px(14.0 * visual_size / ICON_SIZE));
+                            let image = match self.placement {
+                                rmac_shell_settings::DockPlacement::Bottom => {
+                                    image.left(px(visual_offset)).bottom_0()
+                                }
+                                rmac_shell_settings::DockPlacement::Left => {
+                                    image.left_0().top(px(visual_offset))
+                                }
+                                rmac_shell_settings::DockPlacement::Right => {
+                                    image.right_0().top(px(visual_offset))
+                                }
+                            };
+                            trash = trash.child(image);
+                        }
+                        trash
+                    }),
+            )
+        }
+    }
+
+    fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {
+        let separator = div().bg(rgba(0x4a56646b));
+        match placement {
+            rmac_shell_settings::DockPlacement::Bottom => separator
+                .w(px(SEPARATOR_WIDTH))
+                .h(px(48.0))
+                .mb_1()
+                .into_any_element(),
+            rmac_shell_settings::DockPlacement::Left
+            | rmac_shell_settings::DockPlacement::Right => separator
+                .w(px(48.0))
+                .h(px(SEPARATOR_WIDTH))
+                .mx_1()
+                .into_any_element(),
         }
     }
 
@@ -728,13 +821,123 @@ mod linux_wayland {
         });
     }
 
+    #[derive(Clone, Debug, PartialEq)]
+    struct DockSurface {
+        output: Option<rmac_compositor::OutputId>,
+        placement: rmac_shell_settings::DockPlacement,
+        reserve_space: bool,
+    }
+
+    impl Default for DockSurface {
+        fn default() -> Self {
+            Self {
+                output: None,
+                placement: rmac_shell_settings::DockPlacement::Bottom,
+                reserve_space: true,
+            }
+        }
+    }
+
+    impl From<&rmac_dock::SurfaceDescription> for DockSurface {
+        fn from(surface: &rmac_dock::SurfaceDescription) -> Self {
+            Self {
+                output: Some(surface.output.clone()),
+                placement: surface.placement,
+                reserve_space: surface.exclusive_zone > 0.0,
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct DockWindows {
+        windows: std::collections::BTreeMap<uuid::Uuid, (DockSurface, AnyWindowHandle)>,
+    }
+
+    impl DockWindows {
+        fn reconcile(
+            &mut self,
+            desired: Option<&[rmac_dock::SurfaceDescription]>,
+            status: &Entity<DockStatus>,
+            cx: &mut App,
+        ) {
+            let displays = cx.displays();
+            let desired = desired.map(|surfaces| {
+                surfaces
+                    .iter()
+                    .map(|surface| {
+                        (
+                            uuid::Uuid::new_v5(
+                                &uuid::Uuid::NAMESPACE_DNS,
+                                surface.output.0.as_bytes(),
+                            ),
+                            DockSurface::from(surface),
+                        )
+                    })
+                    .collect::<std::collections::BTreeMap<_, _>>()
+            });
+            let available = displays
+                .iter()
+                .filter_map(|display| display.uuid().ok())
+                .collect::<std::collections::BTreeSet<_>>();
+            let stale = self
+                .windows
+                .iter()
+                .filter(|(uuid, (surface, _))| {
+                    !available.contains(uuid)
+                        || desired
+                            .as_ref()
+                            .is_some_and(|desired| desired.get(uuid) != Some(surface))
+                })
+                .map(|(uuid, _)| *uuid)
+                .collect::<Vec<_>>();
+            for uuid in stale {
+                if let Some((_, handle)) = self.windows.remove(&uuid) {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                }
+            }
+            for display in displays {
+                let Ok(uuid) = display.uuid() else {
+                    continue;
+                };
+                if self.windows.contains_key(&uuid) {
+                    continue;
+                }
+                let surface = match &desired {
+                    Some(desired) => match desired.get(&uuid) {
+                        Some(surface) => surface.clone(),
+                        None => continue,
+                    },
+                    None => DockSurface::default(),
+                };
+                let handle = open_dock(display, surface.clone(), status.clone(), cx);
+                self.windows.insert(uuid, (surface, handle));
+            }
+        }
+    }
+
     fn open_dock(
         display: Rc<dyn PlatformDisplay>,
+        surface: DockSurface,
         status: Entity<DockStatus>,
         cx: &mut App,
     ) -> AnyWindowHandle {
         let display_id = display.id();
-        let width = display.bounds().size.width;
+        let display_size = display.bounds().size;
+        let (size, anchor) = match surface.placement {
+            rmac_shell_settings::DockPlacement::Bottom => (
+                Size::new(display_size.width, px(SURFACE_HEIGHT)),
+                Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+            ),
+            rmac_shell_settings::DockPlacement::Left => (
+                Size::new(px(SIDE_SURFACE_WIDTH), display_size.height),
+                Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT,
+            ),
+            rmac_shell_settings::DockPlacement::Right => (
+                Size::new(px(SIDE_SURFACE_WIDTH), display_size.height),
+                Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM,
+            ),
+        };
+        let exclusive_zone = surface.reserve_space.then_some(px(EXCLUSIVE_ZONE));
         let handle = cx
             .open_window(
                 WindowOptions {
@@ -742,7 +945,7 @@ mod linux_wayland {
                     focus: false,
                     window_bounds: Some(WindowBounds::Windowed(Bounds {
                         origin: point(px(0.0), px(0.0)),
-                        size: Size::new(width, px(SURFACE_HEIGHT)),
+                        size,
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.Dock".to_owned()),
@@ -750,16 +953,16 @@ mod linux_wayland {
                     kind: WindowKind::LayerShell(LayerShellOptions {
                         namespace: format!("rmac-dock-{}", u64::from(display_id)),
                         layer: Layer::Top,
-                        anchor: Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
+                        anchor,
                         keyboard_interactivity: KeyboardInteractivity::None,
-                        exclusive_zone: Some(px(EXCLUSIVE_ZONE)),
+                        exclusive_zone,
                         ..Default::default()
                     }),
                     ..Default::default()
                 },
                 {
                     let status = status.clone();
-                    move |_, cx| cx.new(|cx| Dock::new(display_id, status, cx))
+                    move |_, cx| cx.new(|cx| Dock::new(display_id, surface.placement, status, cx))
                 },
             )
             .expect("open Dock layer surface");
@@ -796,49 +999,16 @@ mod linux_wayland {
                 .spawn(watch_places(source_tx))
                 .detach();
             let status = cx.new(|cx| DockStatus::new(compositor_rx, source_rx, cx));
-            let (output_tx, output_rx) = async_channel::bounded(4);
-            cx.background_executor()
-                .spawn(async move {
-                    if let Err(error) =
-                        rmac_gpui_upstream_lab::output_surfaces::watch_enabled(output_tx).await
-                    {
-                        eprintln!("Dock output watcher unavailable: {error}");
-                    }
-                })
-                .detach();
             cx.spawn(async move |cx| {
-                let mut tracker = rmac_gpui_upstream_lab::output_surfaces::Tracker::default();
-                match output_rx.recv().await {
-                    Ok(mut desired) => loop {
-                        for _ in 0..20 {
-                            let complete = cx.update(|cx| {
-                                tracker.reconcile(Some(&desired), cx, |display, cx| {
-                                    open_dock(display, status.clone(), cx)
-                                });
-                                tracker.len() == desired.len()
-                            });
-                            if complete {
-                                break;
-                            }
-                            cx.background_executor()
-                                .timer(Duration::from_millis(50))
-                                .await;
-                        }
-                        let Ok(next) = output_rx.recv().await else {
-                            break;
-                        };
-                        desired = next;
-                    },
-                    Err(_) => loop {
-                        cx.update(|cx| {
-                            tracker.reconcile(None, cx, |display, cx| {
-                                open_dock(display, status.clone(), cx)
-                            })
-                        });
-                        cx.background_executor()
-                            .timer(Duration::from_millis(500))
-                            .await;
-                    },
+                let mut windows = DockWindows::default();
+                loop {
+                    cx.update(|cx| {
+                        let surfaces = status.read(cx).surfaces();
+                        windows.reconcile(surfaces.as_deref(), &status, cx);
+                    });
+                    cx.background_executor()
+                        .timer(Duration::from_millis(100))
+                        .await;
                 }
             })
             .detach();

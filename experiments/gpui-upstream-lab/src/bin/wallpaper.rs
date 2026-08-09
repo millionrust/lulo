@@ -126,7 +126,9 @@ mod linux_wayland {
                     .color_space(gpui::ColorSpace::Oklab)),
                 );
             if let Some(surface) = surface {
-                root = root.children(render_surface(surface));
+                root = root
+                    .child(div().absolute().inset_0().bg(rgba(0x1e1e20ff)))
+                    .children(render_surface(surface));
             }
             root
         }

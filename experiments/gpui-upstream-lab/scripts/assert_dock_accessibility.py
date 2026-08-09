@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Assert the passive layer Dock's bounded semantic projection."""
 
+import os
 import time
 
 import pyatspi
+
+
+EXPECTED_DOCKS = int(os.environ.get("RMAC_EXPECTED_DOCKS", "2"))
+if not 1 <= EXPECTED_DOCKS <= 16:
+    raise ValueError("RMAC_EXPECTED_DOCKS must be between 1 and 16")
 
 
 def descendants(node):
@@ -24,20 +30,23 @@ while time.monotonic() < deadline:
         for node in descendants(desktop)
         if node.getRoleName() == "tool bar" and node.name == "rmac Dock"
     ]
-    if len(docks) == 2:
+    if len(docks) == EXPECTED_DOCKS:
         break
     time.sleep(0.1)
 
-if len(docks) != 2:
-    raise AssertionError(f"expected two accessible Docks, found {len(docks)}")
+if len(docks) != EXPECTED_DOCKS:
+    raise AssertionError(
+        f"expected {EXPECTED_DOCKS} accessible Docks, found {len(docks)}"
+    )
 
 for dock in docks:
     nodes = list(descendants(dock))
     buttons = [node for node in nodes if node.getRoleName() == "push button"]
-    if len(buttons) != 6 or any(not button.name for button in buttons):
+    names = [button.name for button in buttons]
+    if len(buttons) < 2 or names.count("Trash") != 1 or any(not name for name in names):
         roles = [(node.getRoleName(), node.name) for node in nodes]
         raise AssertionError(
-            "a fresh-profile Dock must expose six named application buttons; "
+            "a Dock must expose at least one named application and exactly one Trash; "
             f"found {roles!r}"
         )
     focusable = [
@@ -47,3 +56,5 @@ for dock in docks:
     ]
     if focusable:
         raise AssertionError("the non-keyboard-interactive Dock added focus stops")
+
+print(f"AT-SPI exposed {EXPECTED_DOCKS} passive Docks with named app and Trash actions")

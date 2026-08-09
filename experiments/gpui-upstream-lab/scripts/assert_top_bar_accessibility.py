@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
+"""Assert the current top bar's bounded semantic projection."""
+
+import os
 import time
 
 import pyatspi
+
+
+EXPECTED_BARS = int(os.environ.get("RMAC_EXPECTED_TOP_BARS", "2"))
+if not 1 <= EXPECTED_BARS <= 16:
+    raise ValueError("RMAC_EXPECTED_TOP_BARS must be between 1 and 16")
 
 
 def descendants(node):
@@ -19,26 +27,27 @@ while time.monotonic() < deadline:
         for node in descendants(desktop)
         if node.getRoleName() == "tool bar" and node.name == "rmac top bar"
     ]
-    if len(bars) == 2:
+    if len(bars) == EXPECTED_BARS:
         break
     time.sleep(0.1)
 
-if len(bars) != 2:
-    raise AssertionError(f"expected two accessible top bars, found {len(bars)}")
+if len(bars) != EXPECTED_BARS:
+    raise AssertionError(
+        f"expected {EXPECTED_BARS} accessible top bars, found {len(bars)}"
+    )
 
 for bar in bars:
     nodes = list(descendants(bar))
-    # AccessKit maps its semantic Time role to AT-SPI's Static role because
-    # AT-SPI has no dedicated time role. The accessible name carries the value.
-    clocks = [
-        node
-        for node in nodes
-        if node.getRoleName() == "static" and node.name
-    ]
-    if len(clocks) != 1 or not clocks[0].name:
+    buttons = [node for node in nodes if node.getRoleName() == "push button"]
+    names = [button.name for button in buttons]
+    required = {"Spotlight", "Control Center"}
+    missing = required.difference(names)
+    clocks = [name for name in names if name.startswith("Date and time:")]
+    if missing or len(clocks) != 1 or any(not name for name in names):
         roles = [(node.getRoleName(), node.name) for node in nodes]
         raise AssertionError(
-            f"top bar must expose exactly one named static clock node; found {roles!r}"
+            "top bar must expose named Spotlight, Control Center, and one "
+            f"date/time button; missing={sorted(missing)!r}, found={roles!r}"
         )
     focusable = [
         node
@@ -46,4 +55,8 @@ for bar in bars:
         if node.getState().contains(pyatspi.STATE_FOCUSABLE)
     ]
     if focusable:
-        raise AssertionError("static top bar must not add keyboard focus stops")
+        raise AssertionError("passive top bar must not add keyboard focus stops")
+
+print(
+    f"AT-SPI exposed {EXPECTED_BARS} passive top bars with current actionable semantics"
+)

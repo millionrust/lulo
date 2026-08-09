@@ -56,6 +56,44 @@ of running a frame timer. Opt-in environment variables publish configured
 scale and render-count evidence for the smoke harness; normal launches perform
 no evidence-file I/O.
 
+### Static wallpaper candidate
+
+`wallpaper` creates one output-bound background-layer surface for every GPUI
+display and anchors it to all four output edges. It requests the layer-shell
+`-1` exclusive zone so the original procedural Aurora artwork extends behind
+the menu bar and future Dock without changing application work areas. Each
+surface is passive, non-keyboard-interactive, and exposes only a path-free
+named image semantic. Its render tree contains no timer, animation, file
+watcher, or evidence I/O unless the smoke-only ready-file variable is present.
+
+This first candidate proves surface ownership, original default artwork, and
+idle behavior. It does not yet consume custom wallpaper settings or decoded
+file rasters; that connection remains behind the framework promotion gate.
+
+### Static Dock candidate
+
+`dock` creates one output-bound 84-logical-pixel bottom surface with a centered
+translucent shelf and fixed, shell-free activation for the six first-party apps
+in a fresh profile. The layer never requests keyboard focus, never invents a
+running indicator, and has no animation or redraw timer. Smoke-only variables
+record configured scale and frame counts on each output.
+
+This is deliberately the smallest D4 layer-host proof. Live catalog/niri
+projection, original icon decoding, typed activation/focus dispatch, pointer
+magnification, autohide, menus, drag reorder, and accessibility focus handoff
+remain in the framework-neutral Dock crates until the promotion gate allows
+them to be connected to this host.
+
+### Whole-shell preview
+
+`scripts/run-shell-preview.sh` builds and launches the wallpaper, menu bar, and
+Dock candidates as one foreground desktop preview in the active Wayland
+session. It owns child-process cleanup, reports if any component dies, limits
+Cargo to two jobs by default, requires 25 GiB free before building, and refuses
+to launch below the 15 GiB absolute floor. It exists so reference-PC review is
+of one coherent shell rather than a sequence of unrelated demo commands; it
+does not bypass the A4/A5 promotion gate or claim installer completion.
+
 ## Evidence collected on macOS
 
 Environment: Apple arm64, macOS development host.

@@ -31,7 +31,21 @@ cargo check --features wayland --bins
 cargo run --features wayland --bin a11y
 cargo run --features wayland --bin layer-shell
 cargo run --features wayland --bin top-bar
+cargo run --features wayland --bin wallpaper
+cargo run --features wayland --bin dock
 ```
+
+To build and launch the visible shell candidates together instead of opening
+them one by one, run this from the active niri session:
+
+```sh
+bash scripts/run-shell-preview.sh
+```
+
+That single foreground command starts the wallpaper, menu bar, and Dock, and
+stops all three together when Ctrl+C is pressed. It enforces 25 GiB free before
+the first build and the project's 15 GiB absolute floor afterward. This is the
+framework-promotion preview; it is not the final signed rmac installer.
 
 With Orca running, verify the application/heading/spin-button/switch roles,
 their labels and state/value changes, Tab and Shift-Tab order, and Orca-issued
@@ -49,6 +63,23 @@ lead the bar.
 Verify one bar and one exclusive zone per output, mixed/fractional scaling, no
 keyboard focus theft, output hotplug, fullscreen behavior, named toolbar,
 clock, and status semantics in Orca, and no continuous idle redraw.
+
+The `wallpaper` candidate creates one passive background-layer surface per
+output. It renders the original procedural rmac Aurora palette, extends behind
+the top bar and Dock exclusive zones, requests no keyboard focus, exposes one
+path-free image semantic per surface, and schedules no redraws after its first
+frame. Verify that it covers every output without changing the work area,
+stays behind ordinary and fullscreen windows, and never enters keyboard or
+Orca focus order.
+
+The `dock` candidate creates one bottom top-layer surface per output with an
+84-logical-pixel stable reservation and a centered translucent shelf. Its six
+first-login items match the shell-settings authority and launch the installed
+rmac applications through fixed argument-separated executable names. It has
+pointer activation but no keyboard-interactive layer surface, creates no fake
+running state, and schedules no idle redraw. Live catalog/window indicators,
+typed Dock dispatch, icon files, magnification, and accessible focus handoff
+remain the next candidate slice rather than being represented as complete.
 
 Record the compositor, display protocol, scale factors, GPU/driver, Orca
 version, and pass/fail evidence in `docs/gpui-current-upstream-spike.md` before
@@ -84,7 +115,8 @@ dbus-run-session -- bash scripts/nested-wayland-smoke.sh
 
 The script builds all Wayland probes, starts a two-output headless nested Sway
 session, verifies the layer-shell protocol and 40-pixel probe zone, then checks
-one 32-pixel top bar per 1x/2x output, configured scale, idle-render deltas, and
+one wallpaper, 32-pixel top bar, and 84-pixel Dock per 1x/2x output. It verifies
+configured scale, work-area ownership, idle-render deltas, process health, and
 non-focusable toolbar/clock semantics. It also checks the interactive probe's
 roles, names, numeric value, click actions, and toggled state over AT-SPI. It is
 a deterministic smoke gate, not a replacement for the Ubuntu/niri/GNOME/Orca

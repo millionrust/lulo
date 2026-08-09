@@ -195,7 +195,7 @@ pub struct SpotlightSettings {
     pub include_removable_mounts: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ShellSettings {
     pub pinned_apps: Vec<AppId>,
@@ -206,6 +206,31 @@ pub struct ShellSettings {
     pub focus: FocusSettings,
     pub providers: BTreeMap<ProviderId, ProviderPolicy>,
     pub spotlight: SpotlightSettings,
+}
+
+impl Default for ShellSettings {
+    fn default() -> Self {
+        Self {
+            pinned_apps: [
+                rmac_apps::identity::FILES,
+                rmac_apps::identity::TERMINAL,
+                rmac_apps::identity::NOTES,
+                rmac_apps::identity::TEXT_EDITOR,
+                rmac_apps::identity::SYSTEM_MONITOR,
+                rmac_apps::identity::SYSTEM_SETTINGS,
+            ]
+            .into_iter()
+            .map(|identity| AppId(identity.into()))
+            .collect(),
+            dock: DockSettings::default(),
+            clock: ClockSettings::default(),
+            indicators: IndicatorSettings::default(),
+            wallpaper: WallpaperSettings::default(),
+            focus: FocusSettings::default(),
+            providers: BTreeMap::new(),
+            spotlight: SpotlightSettings::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

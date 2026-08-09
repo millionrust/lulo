@@ -17,6 +17,7 @@ gpui = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8
 gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
 rmac-shell-runtime = { path = "../../crates/rmac-shell-runtime" }
 rmac-shell-status = { path = "../../crates/rmac-shell-status" }
+rmac-wallpaper = { path = "../../crates/rmac-wallpaper" }
 
 [[bin]]
 name = "a11y"
@@ -29,3 +30,11 @@ path = "src/bin/layer_shell.rs"
 [[bin]]
 name = "top-bar"
 path = "src/bin/top_bar.rs"
+
+[[bin]]
+name = "wallpaper"
+path = "src/bin/wallpaper.rs"
+
+[[bin]]
+name = "dock"
+path = "src/bin/dock.rs"

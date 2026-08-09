@@ -5,6 +5,25 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn fresh_profile_has_a_deliberate_first_party_dock() {
+    let settings = ShellSettings::default();
+    assert_eq!(
+        settings.pinned_apps,
+        [
+            rmac_apps::identity::FILES,
+            rmac_apps::identity::TERMINAL,
+            rmac_apps::identity::NOTES,
+            rmac_apps::identity::TEXT_EDITOR,
+            rmac_apps::identity::SYSTEM_MONITOR,
+            rmac_apps::identity::SYSTEM_SETTINGS,
+        ]
+        .into_iter()
+        .map(|identity| AppId(identity.into()))
+        .collect::<Vec<_>>()
+    );
+}
+
 fn test_store(label: &str) -> (PathBuf, ShellSettingsStore) {
     let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let root = std::env::temp_dir().join(format!(

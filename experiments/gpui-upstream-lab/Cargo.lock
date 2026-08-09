@@ -4513,6 +4513,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-apps"
+version = "0.1.0"
+dependencies = [
+ "notify",
+]
+
+[[package]]
 name = "rmac-audio"
 version = "0.1.0"
 
@@ -4553,6 +4560,7 @@ dependencies = [
  "gpui_platform",
  "rmac-shell-runtime",
  "rmac-shell-status",
+ "rmac-wallpaper",
 ]
 
 [[package]]
@@ -4594,9 +4602,11 @@ version = "0.1.0"
 dependencies = [
  "async-channel",
  "notify",
+ "rmac-apps",
  "rmac-storage",
  "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -4621,6 +4631,15 @@ dependencies = [
  "futures-lite",
  "futures-util",
  "zbus",
+]
+
+[[package]]
+name = "rmac-wallpaper"
+version = "0.1.0"
+dependencies = [
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "url",
 ]
 
 [[package]]

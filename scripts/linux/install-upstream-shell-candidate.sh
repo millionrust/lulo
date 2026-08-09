@@ -187,7 +187,9 @@ for index in "${!app_binaries[@]}"; do
   desktop_temporary="$(mktemp "$applications_dir/.${app_id}.XXXXXX")"
   staged+=("$desktop_temporary")
   destinations+=("$desktop_destination")
-  sed "s|^Exec=/usr/bin/${binary}|Exec=${libexec_dir}/${binary}|" \
+  sed \
+    -e "s|^TryExec=/usr/bin/${binary}|TryExec=${libexec_dir}/${binary}|" \
+    -e "s|^Exec=/usr/bin/${binary}|Exec=${libexec_dir}/${binary}|" \
     "$desktop_source" >"$desktop_temporary"
   chmod 0644 "$desktop_temporary"
 

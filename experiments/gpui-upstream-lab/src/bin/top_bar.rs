@@ -865,23 +865,31 @@ mod linux_wayland {
             cx.spawn(async move |cx| {
                 let mut tracker = TopBarTracker::default();
                 match output_rx.recv().await {
-                    Ok(mut desired) => loop {
-                        for _ in 0..20 {
-                            let complete = cx.update(|cx| {
-                                tracker.reconcile(Some(&desired), &status, cx);
-                                tracker.len() == desired.len()
-                            });
-                            if complete {
+                    Ok(mut desired) => 'updates: loop {
+                        let complete = cx.update(|cx| {
+                            tracker.reconcile(Some(&desired), &status, cx);
+                            tracker.len() == desired.len()
+                        });
+                        if complete {
+                            let Ok(next) = output_rx.recv().await else {
                                 break;
-                            }
-                            cx.background_executor()
-                                .timer(Duration::from_millis(50))
-                                .await;
+                            };
+                            desired = next;
+                            continue;
                         }
-                        let Ok(next) = output_rx.recv().await else {
-                            break;
-                        };
-                        desired = next;
+                        let update = output_rx.recv().fuse();
+                        let retry = cx
+                            .background_executor()
+                            .timer(Duration::from_millis(50))
+                            .fuse();
+                        futures_util::pin_mut!(update, retry);
+                        futures_util::select! {
+                            next = update => match next {
+                                Ok(next) => desired = next,
+                                Err(_) => break 'updates,
+                            },
+                            _ = retry => {}
+                        }
                     },
                     Err(_) => loop {
                         cx.update(|cx| tracker.reconcile(None, &status, cx));

@@ -9,6 +9,7 @@ mod linux_wayland {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
+    use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
         Context, DisplayId, Entity, FontWeight, PlatformDisplay, QuitMode, Role, Size, Window,
@@ -958,6 +959,10 @@ mod linux_wayland {
     }
 
     impl DockWindows {
+        fn len(&self) -> usize {
+            self.windows.len()
+        }
+
         fn reconcile(
             &mut self,
             desired: Option<&[DockSurface]>,
@@ -1115,10 +1120,30 @@ mod linux_wayland {
             cx.spawn(async move |cx| {
                 let mut windows = DockWindows::default();
                 while reconcile_rx.recv().await.is_ok() {
-                    cx.update(|cx| {
-                        let surfaces = status.read(cx).surfaces();
-                        windows.reconcile(surfaces.as_deref(), &status, cx);
-                    });
+                    loop {
+                        let complete = cx.update(|cx| {
+                            let surfaces = status.read(cx).surfaces();
+                            let expected = surfaces
+                                .as_ref()
+                                .map(Vec::len)
+                                .unwrap_or_else(|| cx.displays().len());
+                            windows.reconcile(surfaces.as_deref(), &status, cx);
+                            windows.len() == expected
+                        });
+                        if complete {
+                            break;
+                        }
+                        let update = reconcile_rx.recv().fuse();
+                        let retry = cx
+                            .background_executor()
+                            .timer(Duration::from_millis(50))
+                            .fuse();
+                        futures_util::pin_mut!(update, retry);
+                        futures_util::select! {
+                            update = update => if update.is_err() { return },
+                            _ = retry => {}
+                        }
+                    }
                 }
             })
             .detach();

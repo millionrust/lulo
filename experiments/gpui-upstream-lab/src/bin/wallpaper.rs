@@ -8,6 +8,7 @@ mod linux_wayland {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
         AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, PlatformDisplay, QuitMode,
@@ -353,25 +354,33 @@ mod linux_wayland {
             cx.spawn(async move |cx| {
                 let mut tracker = rmac_gpui_upstream_lab::output_surfaces::Tracker::default();
                 match output_rx.recv().await {
-                    Ok(mut desired) => loop {
-                        for _ in 0..20 {
-                            let complete = cx.update(|cx| {
-                                tracker.reconcile(Some(&desired), cx, |display, cx| {
-                                    open_wallpaper(display, status.clone(), cx)
-                                });
-                                tracker.len() == desired.len()
+                    Ok(mut desired) => 'updates: loop {
+                        let complete = cx.update(|cx| {
+                            tracker.reconcile(Some(&desired), cx, |display, cx| {
+                                open_wallpaper(display, status.clone(), cx)
                             });
-                            if complete {
+                            tracker.len() == desired.len()
+                        });
+                        if complete {
+                            let Ok(next) = output_rx.recv().await else {
                                 break;
-                            }
-                            cx.background_executor()
-                                .timer(Duration::from_millis(50))
-                                .await;
+                            };
+                            desired = next;
+                            continue;
                         }
-                        let Ok(next) = output_rx.recv().await else {
-                            break;
-                        };
-                        desired = next;
+                        let update = output_rx.recv().fuse();
+                        let retry = cx
+                            .background_executor()
+                            .timer(Duration::from_millis(50))
+                            .fuse();
+                        futures_util::pin_mut!(update, retry);
+                        futures_util::select! {
+                            next = update => match next {
+                                Ok(next) => desired = next,
+                                Err(_) => break 'updates,
+                            },
+                            _ = retry => {}
+                        }
                     },
                     Err(_) => loop {
                         cx.update(|cx| {

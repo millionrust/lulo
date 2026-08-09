@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use gpui::{px, size, AppContext as _, Context, Entity, Focusable as _, SharedString, Window};
-use rmac_launcher::{ActivationMode, ResultId};
+use rmac_launcher::{ActivationMode, Category, MoveSelection, ResultId};
 use rmac_launcher_runtime::{
     CatalogUpdate, Coordinator, KeyCommand, KeyEffect, Registry, ShortcutEffect,
 };
@@ -26,6 +26,22 @@ pub(crate) struct LauncherView {
     settings_error: Option<SharedString>,
     was_active: bool,
     compact: bool,
+    browse_mode: Option<BrowseMode>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BrowseMode {
+    Applications,
+    Files,
+}
+
+impl BrowseMode {
+    pub(crate) fn category(self) -> Category {
+        match self {
+            Self::Applications => Category::Applications,
+            Self::Files => Category::Files,
+        }
+    }
 }
 
 pub(crate) struct OverlayEnvironment {
@@ -76,7 +92,7 @@ impl LauncherView {
         cx.subscribe(&query, move |this, query, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let value = query.read(cx).value().to_string();
-                let compact = value.is_empty();
+                let compact = value.is_empty() && this.browse_mode.is_none();
                 if this.compact != compact {
                     this.compact = compact;
                     let (width, height) = if compact {
@@ -128,6 +144,7 @@ impl LauncherView {
             settings_error,
             was_active: false,
             compact: true,
+            browse_mode: None,
         };
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
         view
@@ -147,6 +164,7 @@ impl LauncherView {
                     if this
                         .update(cx, |this, cx| {
                             if this.coordinator.apply(batch) {
+                                this.ensure_browse_selection();
                                 cx.notify();
                             }
                         })
@@ -219,8 +237,58 @@ impl LauncherView {
     }
 
     fn handle_key(&mut self, command: KeyCommand, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(mode) = self.browse_mode {
+            let direction = match command {
+                KeyCommand::ArrowDown => Some(MoveSelection::Next),
+                KeyCommand::ArrowUp => Some(MoveSelection::Previous),
+                _ => None,
+            };
+            if let Some(direction) = direction {
+                if self
+                    .coordinator
+                    .move_selection_in_category(mode.category(), direction)
+                {
+                    cx.notify();
+                }
+                return;
+            }
+        }
         let effect = self.coordinator.handle_key(command);
         self.apply_key_effect(effect, window, cx);
+    }
+
+    pub(crate) fn open_browse(
+        &mut self,
+        mode: BrowseMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.browse_mode = Some(mode);
+        self.compact = false;
+        window.resize(size(
+            px(rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32),
+            px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
+        ));
+        self.ensure_browse_selection();
+        cx.notify();
+    }
+
+    fn ensure_browse_selection(&mut self) {
+        let Some(mode) = self.browse_mode else {
+            return;
+        };
+        let category = mode.category();
+        let snapshot = self.coordinator.snapshot();
+        if snapshot
+            .rows
+            .iter()
+            .any(|row| row.category == category && row.selected)
+        {
+            return;
+        }
+        if let Some(row) = snapshot.rows.iter().find(|row| row.category == category) {
+            self.coordinator.select(&row.id);
+        }
     }
 
     fn select_and_activate(

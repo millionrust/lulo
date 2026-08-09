@@ -3,8 +3,9 @@
 use std::fmt;
 
 pub const NAMESPACE: &str = "rmac-launcher";
-/// The idle Spotlight surface is the compact search capsule used by macOS 26.
-pub const LOGICAL_WIDTH: f64 = 388.0;
+/// The idle Spotlight surface contains the search capsule and four browse
+/// mode controls used by macOS 26.
+pub const LOGICAL_WIDTH: f64 = 644.0;
 pub const LOGICAL_HEIGHT: f64 = 60.0;
 /// Search results expand in place without opening a second surface.
 pub const EXPANDED_LOGICAL_WIDTH: f64 = 720.0;

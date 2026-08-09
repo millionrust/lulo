@@ -202,6 +202,39 @@ impl Session {
         self.selected.as_ref()
     }
 
+    /// Move only through results in a Tahoe-style Spotlight browse mode.
+    pub fn move_selection_in_category(
+        &mut self,
+        category: Category,
+        direction: MoveSelection,
+    ) -> Option<&ResultId> {
+        let matching = self
+            .ranked
+            .iter()
+            .enumerate()
+            .filter_map(|(index, ranked)| (ranked.result.category == category).then_some(index))
+            .collect::<Vec<_>>();
+        if matching.is_empty() {
+            self.selected = None;
+            return None;
+        }
+        let current = self.selected.as_ref().and_then(|selected| {
+            matching
+                .iter()
+                .position(|index| &self.ranked[*index].result.id == selected)
+        });
+        let position = match (current, direction) {
+            (Some(position), MoveSelection::Next) => (position + 1) % matching.len(),
+            (Some(0), MoveSelection::Previous) | (None, MoveSelection::Previous) => {
+                matching.len() - 1
+            }
+            (Some(position), MoveSelection::Previous) => position - 1,
+            (None, MoveSelection::Next) => 0,
+        };
+        self.selected = Some(self.ranked[matching[position]].result.id.clone());
+        self.selected.as_ref()
+    }
+
     pub fn select(&mut self, id: &ResultId) -> bool {
         if self.ranked.iter().any(|ranked| &ranked.result.id == id)
             && self.selected.as_ref() != Some(id)

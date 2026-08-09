@@ -72,7 +72,7 @@ binds {
 window-rule {
     match app-id=r#"^org\.rmac\.Launcher$"#
     open-floating true
-    default-column-width { fixed 388; }
+    default-column-width { fixed 644; }
     default-window-height { fixed 60; }
     default-floating-position x=0 y=44 relative-to="top"
     geometry-corner-radius 24

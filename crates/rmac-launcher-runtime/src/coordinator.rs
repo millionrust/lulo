@@ -88,6 +88,21 @@ impl Coordinator {
             && self.launcher.session_mut().select(id)
     }
 
+    pub fn move_selection_in_category(
+        &mut self,
+        category: Category,
+        direction: MoveSelection,
+    ) -> bool {
+        if self.activation.is_some() || !self.launcher.is_open() {
+            return false;
+        }
+        let before = self.launcher.session().selected().cloned();
+        self.launcher
+            .session_mut()
+            .move_selection_in_category(category, direction);
+        before != self.launcher.session().selected().cloned()
+    }
+
     pub fn activate_selected(&mut self, mode: ActivationMode) -> KeyEffect {
         if !self.launcher.is_open() {
             KeyEffect::None

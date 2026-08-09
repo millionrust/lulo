@@ -309,6 +309,51 @@ fn empty_query_selection_order_matches_application_grid_then_suggestions() {
 }
 
 #[test]
+fn browse_mode_selection_stays_inside_its_category() {
+    let mut session = Session::default();
+    let request = session.begin(
+        "",
+        vec![
+            provider("apps", Category::Applications, Privacy::default()),
+            provider("files", Category::Files, private_files()),
+        ],
+    );
+    session.apply(
+        request.generation,
+        rmac_shell_settings::ProviderId("apps".into()),
+        Ok(vec![result(
+            "apps",
+            "terminal",
+            Category::Applications,
+            "Terminal",
+        )]),
+    );
+    session.apply(
+        request.generation,
+        rmac_shell_settings::ProviderId("files".into()),
+        Ok(vec![
+            result("files", "alpha", Category::Files, "Alpha"),
+            result("files", "beta", Category::Files, "Beta"),
+        ]),
+    );
+
+    session.move_selection_in_category(Category::Files, MoveSelection::Next);
+    assert_eq!(
+        session.selected().map(|id| id.local.as_str()),
+        Some("alpha")
+    );
+    session.move_selection_in_category(Category::Files, MoveSelection::Next);
+    assert_eq!(session.selected().map(|id| id.local.as_str()), Some("beta"));
+    session.move_selection_in_category(Category::Files, MoveSelection::Next);
+    assert_eq!(
+        session.selected().map(|id| id.local.as_str()),
+        Some("alpha")
+    );
+    session.move_selection_in_category(Category::Files, MoveSelection::Previous);
+    assert_eq!(session.selected().map(|id| id.local.as_str()), Some("beta"));
+}
+
+#[test]
 fn pointer_selection_accepts_only_a_visible_result() {
     let mut session = Session::default();
     let request = session.begin(

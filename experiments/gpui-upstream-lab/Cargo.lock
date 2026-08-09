@@ -243,6 +243,24 @@ dependencies = [
 
 [[package]]
 name = "ashpd"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33a3c86f3fd70c0ffa500ed189abfa90b5a52398a45d5dc372fcc38ebeb7a645"
+dependencies = [
+ "async-fs",
+ "async-net",
+ "enumflags2",
+ "futures-channel",
+ "futures-util",
+ "rand 0.9.4",
+ "serde",
+ "serde_repr",
+ "url",
+ "zbus",
+]
+
+[[package]]
+name = "ashpd"
 version = "0.13.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "281e6645758940dee594495e28807a7672ce40f11ebf4df6c22c4fcd59e2689f"
@@ -2067,7 +2085,7 @@ dependencies = [
  "raw-window-handle",
  "refineable",
  "regex",
- "resvg",
+ "resvg 0.46.0",
  "scheduler",
  "schemars",
  "seahash",
@@ -2083,7 +2101,7 @@ dependencies = [
  "thiserror 2.0.18",
  "ttf-parser",
  "url",
- "usvg",
+ "usvg 0.46.0",
  "util_macros",
  "uuid",
  "waker-fn",
@@ -2102,7 +2120,7 @@ dependencies = [
  "accesskit_unix",
  "anyhow",
  "as-raw-xcb-connection",
- "ashpd",
+ "ashpd 0.13.12",
  "bitflags 2.13.0",
  "bytemuck",
  "calloop",
@@ -2658,6 +2676,12 @@ dependencies = [
 
 [[package]]
 name = "imagesize"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edcd27d72f2f071c64249075f42e205ff93c9a4c5f6c6da53e79ed9f9832c285"
+
+[[package]]
+name = "imagesize"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
@@ -2878,6 +2902,17 @@ checksum = "07293a4e297ac234359b510362495713f75ea345d5307140414f20c69ffeb087"
 dependencies = [
  "bitflags 2.13.0",
  "libc",
+]
+
+[[package]]
+name = "kurbo"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c62026ae44756f8a599ba21140f350303d4f08dcdcc71b5ad9c9bb8128c13c62"
+dependencies = [
+ "arrayvec",
+ "euclid",
+ "smallvec",
 ]
 
 [[package]]
@@ -3688,7 +3723,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78f2bfed90f1618b4b48dcad9307f25e14ae894e2949642c87c351601d62cebd"
 dependencies = [
  "aes",
- "ashpd",
+ "ashpd 0.13.12",
  "async-fs",
  "async-io",
  "async-lock",
@@ -4488,6 +4523,20 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "resvg"
+version = "0.45.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8928798c0a55e03c9ca6c4c6846f76377427d2c1e1f7e6de3c06ae57942df43"
+dependencies = [
+ "log",
+ "pico-args",
+ "rgb",
+ "svgtypes 0.15.3",
+ "tiny-skia",
+ "usvg 0.45.1",
+]
+
+[[package]]
+name = "resvg"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b563218631706d614e23059436526d005b50ab5f2d506b55a17eb65c5eb83419"
@@ -4497,9 +4546,9 @@ dependencies = [
  "log",
  "pico-args",
  "rgb",
- "svgtypes",
+ "svgtypes 0.16.1",
  "tiny-skia",
- "usvg",
+ "usvg 0.46.0",
  "zune-jpeg",
 ]
 
@@ -4513,6 +4562,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-app-launch"
+version = "0.1.0"
+dependencies = [
+ "blocking",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-portal",
+ "rmac-recent-documents",
+]
+
+[[package]]
+name = "rmac-appearance"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+]
+
+[[package]]
 name = "rmac-apps"
 version = "0.1.0"
 dependencies = [
@@ -4522,12 +4590,25 @@ dependencies = [
 [[package]]
 name = "rmac-audio"
 version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "async-process",
+ "futures-lite",
+ "futures-util",
+ "rustix 1.1.4",
+ "serde_json",
+]
 
 [[package]]
 name = "rmac-bluetooth"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-util",
  "zbus",
+ "zeroize",
 ]
 
 [[package]]
@@ -4561,6 +4642,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-focus"
+version = "0.1.0"
+dependencies = [
+ "rmac-notifications",
+]
+
+[[package]]
+name = "rmac-focus-linux"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-util",
+ "rmac-focus",
+ "rmac-focus-runtime",
+ "rmac-focus-store",
+ "rmac-notifications",
+ "zbus",
+]
+
+[[package]]
+name = "rmac-focus-runtime"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rmac-focus",
+ "rmac-focus-store",
+ "rmac-notifications",
+]
+
+[[package]]
+name = "rmac-focus-store"
+version = "0.1.0"
+dependencies = [
+ "rmac-focus",
+ "rmac-notifications",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "rmac-gpui-upstream-lab"
 version = "0.1.0"
 dependencies = [
@@ -4580,22 +4703,134 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-icon"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "libc",
+ "quick-xml 0.39.4",
+ "resvg 0.45.1",
+]
+
+[[package]]
 name = "rmac-network"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-util",
+ "libloading",
+ "url",
+ "uuid",
  "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "rmac-notifications"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-notifications-linux"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "futures-util",
+ "image",
+ "libc",
+ "quick-xml 0.39.4",
+ "rmac-app-launch",
+ "rmac-appearance",
+ "rmac-apps",
+ "rmac-audio",
+ "rmac-compositor",
+ "rmac-focus-linux",
+ "rmac-icon",
+ "rmac-notifications",
+ "rmac-notifications-runtime",
+ "rmac-notifications-store",
+ "rmac-shell-invocation",
+ "url",
+ "zbus",
+]
+
+[[package]]
+name = "rmac-notifications-runtime"
+version = "0.1.0"
+dependencies = [
+ "rmac-appearance",
+ "rmac-compositor",
+ "rmac-notifications",
+]
+
+[[package]]
+name = "rmac-notifications-store"
+version = "0.1.0"
+dependencies = [
+ "rmac-notifications",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rmac-places"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-portal"
+version = "0.1.0"
+dependencies = [
+ "ashpd 0.12.3",
+ "url",
 ]
 
 [[package]]
 name = "rmac-power"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-util",
  "zbus",
 ]
 
 [[package]]
-name = "rmac-places"
+name = "rmac-quick-settings"
 version = "0.1.0"
+dependencies = [
+ "rmac-audio",
+ "rmac-bluetooth",
+ "rmac-compositor",
+ "rmac-network",
+ "rmac-power",
+ "rmac-shell-invocation",
+ "rmac-shell-settings",
+]
+
+[[package]]
+name = "rmac-recent-documents"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rmac-storage",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "rmac-shell-invocation"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-util",
+ "rmac-compositor",
+ "wayland-client",
+]
 
 [[package]]
 name = "rmac-shell-runtime"
@@ -4609,8 +4844,13 @@ dependencies = [
  "rmac-bluetooth",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-focus-linux",
+ "rmac-focus-runtime",
  "rmac-network",
+ "rmac-notifications",
+ "rmac-notifications-linux",
  "rmac-power",
+ "rmac-quick-settings",
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-shell-status-linux",
@@ -4654,6 +4894,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-storage"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "sha2",
+]
+
+[[package]]
 name = "rmac-wallpaper"
 version = "0.1.0"
 dependencies = [
@@ -4661,10 +4909,6 @@ dependencies = [
  "rmac-shell-settings",
  "url",
 ]
-
-[[package]]
-name = "rmac-storage"
-version = "0.1.0"
 
 [[package]]
 name = "roxmltree"
@@ -5339,11 +5583,21 @@ checksum = "0193cc4331cfd2f3d2011ef287590868599a2f33c3e69bc22c1a3d3acf9e02fb"
 
 [[package]]
 name = "svgtypes"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68c7541fff44b35860c1a7a47a7cadf3e4a304c457b58f9870d9706ece028afc"
+dependencies = [
+ "kurbo 0.11.3",
+ "siphasher",
+]
+
+[[package]]
+name = "svgtypes"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "695b5790b3131dafa99b3bbfd25a216edb3d216dad9ca208d4657bfb8f2abc3d"
 dependencies = [
- "kurbo",
+ "kurbo 0.13.1",
  "siphasher",
 ]
 
@@ -5830,6 +6084,29 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+ "serde_derive",
+]
+
+[[package]]
+name = "usvg"
+version = "0.45.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80be9b06fbae3b8b303400ab20778c80bbaf338f563afe567cf3c9eea17b47ef"
+dependencies = [
+ "base64",
+ "data-url",
+ "flate2",
+ "imagesize 0.13.0",
+ "kurbo 0.11.3",
+ "log",
+ "pico-args",
+ "roxmltree 0.20.0",
+ "simplecss",
+ "siphasher",
+ "strict-num",
+ "svgtypes 0.15.3",
+ "tiny-skia-path",
+ "xmlwriter",
 ]
 
 [[package]]
@@ -5842,8 +6119,8 @@ dependencies = [
  "data-url",
  "flate2",
  "fontdb",
- "imagesize",
- "kurbo",
+ "imagesize 0.14.0",
+ "kurbo 0.13.1",
  "log",
  "pico-args",
  "roxmltree 0.21.1",
@@ -5851,7 +6128,7 @@ dependencies = [
  "simplecss",
  "siphasher",
  "strict-num",
- "svgtypes",
+ "svgtypes 0.16.1",
  "tiny-skia-path",
  "unicode-bidi",
  "unicode-script",
@@ -7294,6 +7571,7 @@ dependencies = [
  "enumflags2",
  "serde",
  "serde_bytes",
+ "url",
  "winnow 1.0.3",
  "zvariant_derive",
  "zvariant_utils",

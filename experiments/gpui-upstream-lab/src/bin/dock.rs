@@ -9,18 +9,18 @@ mod linux_wayland {
 
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId,
-        Entity, FontWeight, MouseMoveEvent, Role, Size, Window, WindowBackgroundAppearance,
-        WindowBounds, WindowKind, WindowOptions,
+        Entity, FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowKind, WindowOptions,
     };
     use gpui_platform::application;
 
-    const SURFACE_HEIGHT: f32 = 112.0;
+    const SURFACE_HEIGHT: f32 = 124.0;
     const EXCLUSIVE_ZONE: f32 = 88.0;
     const ICON_SIZE: f32 = 56.0;
     const ICON_GAP: f32 = 8.0;
     const SHELF_PADDING: f32 = 8.0;
-    const SHELF_BOTTOM: f32 = 4.0;
-    const MAXIMUM_PREVIEW_SCALE: f32 = 1.5;
+    const TOOLTIP_WIDTH: f32 = 240.0;
+    const TOOLTIP_BOTTOM: f32 = 92.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
     static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
@@ -105,7 +105,8 @@ mod linux_wayland {
         display_id: u64,
         render_count: u64,
         status: Entity<DockStatus>,
-        pointer_x: Option<f32>,
+        hovered_item: Option<(usize, String)>,
+        input_region: Option<(f32, f32)>,
     }
 
     impl Dock {
@@ -115,7 +116,8 @@ mod linux_wayland {
                 display_id: u64::from(display_id),
                 render_count: 0,
                 status,
-                pointer_x: None,
+                hovered_item: None,
+                input_region: None,
             }
         }
     }
@@ -124,78 +126,74 @@ mod linux_wayland {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
-            let status = self.status.read(cx);
-            let model = status.model();
+            let model = self.status.read(cx).model();
             let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
-            let item_count = entries.len();
-            let base_extent =
-                ICON_SIZE * item_count as f32 + ICON_GAP * item_count.saturating_sub(1) as f32;
             let axis = f32::from(window.bounds().size.width);
-            let base_start = (axis - base_extent) / 2.0;
-            let pointer = self.pointer_x.map(|pointer| pointer - base_start);
-            let requested_scale = status.settings.dock.magnification_scale;
-            let maximum_scale = if requested_scale.is_finite() {
-                requested_scale.clamp(1.0, MAXIMUM_PREVIEW_SCALE)
-            } else {
-                MAXIMUM_PREVIEW_SCALE
-            };
-            let layout = rmac_dock::motion::magnified_layout(
-                item_count,
-                pointer,
-                status.settings.dock.magnification,
-                false,
-                rmac_dock::motion::MagnificationConfig {
-                    icon_size: ICON_SIZE,
-                    gap: ICON_GAP,
-                    influence_radius: 128.0,
-                    maximum_scale,
-                },
-            )
-            .expect("the fixed Dock preview geometry is valid");
-            let shelf_left = base_start + layout.start - SHELF_PADDING;
-            let shelf_width = layout.extent() + 2.0 * SHELF_PADDING;
-            let shelf_height = layout
-                .items
-                .iter()
-                .map(|item| item.size)
-                .fold(ICON_SIZE, f32::max)
+            let shelf_extent = ICON_SIZE * entries.len() as f32
+                + ICON_GAP * entries.len().saturating_sub(1) as f32
                 + 2.0 * SHELF_PADDING;
-            let geometry = layout.items;
+            let shelf_start = (axis - shelf_extent) / 2.0;
+            let input_region = (shelf_start, shelf_extent);
+            if self.input_region != Some(input_region) {
+                window.set_input_region(Some(&[Bounds {
+                    origin: point(px(shelf_start), px(SURFACE_HEIGHT - EXCLUSIVE_ZONE)),
+                    size: Size::new(px(shelf_extent), px(EXCLUSIVE_ZONE)),
+                }]));
+                self.input_region = Some(input_region);
+            }
+            let tooltip = self
+                .hovered_item
+                .as_ref()
+                .filter(|(index, _)| *index < entries.len())
+                .map(|(index, label)| {
+                    let icon_center = shelf_start
+                        + SHELF_PADDING
+                        + ICON_SIZE / 2.0
+                        + *index as f32 * (ICON_SIZE + ICON_GAP);
+                    div()
+                        .absolute()
+                        .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
+                        .bottom(px(TOOLTIP_BOTTOM))
+                        .w(px(TOOLTIP_WIDTH))
+                        .flex()
+                        .justify_center()
+                        .child(
+                            div()
+                                .px_3()
+                                .py_1()
+                                .rounded(px(8.0))
+                                .bg(rgba(0x18263aee))
+                                .border_1()
+                                .border_color(rgba(0xffffff35))
+                                .shadow_lg()
+                                .text_sm()
+                                .text_color(rgba(0xffffffff))
+                                .child(label.clone()),
+                        )
+                });
             div()
                 .id(format!("dock-{}", self.display_id))
                 .role(Role::Toolbar)
                 .aria_label("rmac Dock")
                 .size_full()
                 .relative()
+                .flex()
+                .items_end()
+                .justify_center()
+                .pb_2()
+                .children(tooltip)
                 .child(
                     div()
-                        .id(format!("dock-shelf-{}", self.display_id))
-                        .absolute()
-                        .left(px(shelf_left))
-                        .bottom(px(SHELF_BOTTOM))
-                        .w(px(shelf_width))
-                        .h(px(shelf_height))
+                        .flex()
+                        .items_end()
+                        .gap_2()
+                        .p_2()
                         .rounded(px(22.0))
                         .bg(rgba(0xe7ecf18c))
                         .border_1()
                         .border_color(rgba(0xffffffb8))
                         .shadow_lg()
-                        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                            if !*hovered && this.pointer_x.take().is_some() {
-                                cx.notify();
-                            }
-                        }))
-                        .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                            let pointer_x = f32::from(event.position.x);
-                            if this.pointer_x != Some(pointer_x) {
-                                this.pointer_x = Some(pointer_x);
-                                cx.notify();
-                            }
-                        }))
                         .children(entries.into_iter().enumerate().map(|(index, entry)| {
-                            let geometry = geometry[index];
-                            let item_left = geometry.center - geometry.size / 2.0 - layout.start
-                                + SHELF_PADDING;
                             let app_id = match &entry.id {
                                 rmac_dock::presentation::EntryId::Application(app_id) => {
                                     app_id.clone()
@@ -214,15 +212,14 @@ mod linux_wayland {
                             let running =
                                 entry.activity != rmac_dock::presentation::ActivityIndicator::None;
                             let icon_path = item_icon_path(&entry.icon, &app_id);
+                            let tooltip_label = entry.label.clone();
                             let mut item = div()
                                 .id(format!("dock-item-{}-{index}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label(entry.accessible_label)
-                                .absolute()
-                                .left(px(item_left))
-                                .bottom(px(SHELF_PADDING))
-                                .w(px(geometry.size))
-                                .h(px(geometry.size))
+                                .relative()
+                                .w(px(56.0))
+                                .h(px(56.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -237,13 +234,8 @@ mod linux_wayland {
                                 .font_weight(FontWeight::BOLD)
                                 .opacity(if available { 1.0 } else { 0.58 });
                             if let Some(path) = icon_path {
-                                let image_size = geometry.size - 2.0;
-                                item = item.child(
-                                    img(path)
-                                        .w(px(image_size))
-                                        .h(px(image_size))
-                                        .rounded(px(14.0)),
-                                );
+                                item =
+                                    item.child(img(path).w(px(54.0)).h(px(54.0)).rounded(px(14.0)));
                             } else {
                                 item = item.child(item_mark(&entry.label));
                             }
@@ -255,6 +247,20 @@ mod linux_wayland {
                                         dispatch_activation(activation.clone(), cx);
                                     });
                             }
+                            item =
+                                item.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                    if *hovered {
+                                        this.hovered_item = Some((index, tooltip_label.clone()));
+                                        cx.notify();
+                                    } else if this
+                                        .hovered_item
+                                        .as_ref()
+                                        .is_some_and(|(hovered_index, _)| *hovered_index == index)
+                                    {
+                                        this.hovered_item = None;
+                                        cx.notify();
+                                    }
+                                }));
                             if running {
                                 item = item.child(
                                     div()

@@ -8,6 +8,7 @@ static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[test]
 fn fresh_profile_has_a_deliberate_first_party_dock() {
     let settings = ShellSettings::default();
+    assert!(!settings.dock.magnification);
     assert_eq!(
         settings.pinned_apps,
         [

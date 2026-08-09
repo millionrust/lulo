@@ -59,7 +59,7 @@ impl Default for DockSettings {
             placement: DockPlacement::Bottom,
             outputs: OutputScope::All,
             autohide: false,
-            magnification: true,
+            magnification: false,
             magnification_scale: default_magnification_scale(),
             reserve_space: true,
             repeated_click: RepeatedClickBehavior::CycleWindows,

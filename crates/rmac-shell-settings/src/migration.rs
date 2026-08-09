@@ -22,7 +22,7 @@ impl Default for LegacyDockSettings {
         Self {
             placement: DockPlacement::Bottom,
             autohide: false,
-            magnification: true,
+            magnification: false,
         }
     }
 }

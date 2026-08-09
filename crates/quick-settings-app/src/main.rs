@@ -15,9 +15,9 @@ use gpui_component::Root;
 use crate::view::QuickSettingsView;
 
 #[cfg(not(target_os = "linux"))]
-const WIDTH: f32 = 380.0;
+const WIDTH: f32 = 304.0;
 #[cfg(not(target_os = "linux"))]
-const HEIGHT: f32 = 548.0;
+const HEIGHT: f32 = 360.0;
 #[cfg(not(target_os = "linux"))]
 const EDGE_GAP: f32 = 12.0;
 #[cfg(not(target_os = "linux"))]

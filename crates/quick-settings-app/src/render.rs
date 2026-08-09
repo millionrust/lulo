@@ -8,8 +8,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_quick_settings::accessibility::{
-    CHANGING_LABEL, DISMISS_LABEL, QUICK_SETTINGS_DESCRIPTION, QUICK_SETTINGS_TITLE,
-    READING_SYSTEM_STATE_LABEL, SYSTEM_SETTINGS_LABEL,
+    CHANGING_LABEL, DISMISS_LABEL, READING_SYSTEM_STATE_LABEL, SYSTEM_SETTINGS_LABEL,
 };
 use rmac_quick_settings::{Command, Control, FocusValue, PowerValue, SoundValue, Tile};
 use rmac_ui::{mac, Button, ButtonRole, Progress, Slider, Toggle};
@@ -38,39 +37,6 @@ impl Render for QuickSettingsView {
             .shadow_xl()
             .bg(mac::material())
             .text_color(mac::text())
-            .child(
-                div()
-                    .h(px(58.0))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_4()
-                    .border_b_1()
-                    .border_color(mac::separator())
-                    .child(
-                        div()
-                            .v_flex()
-                            .child(
-                                div()
-                                    .text_size(rmac_ui::text_px(17.0))
-                                    .font_weight(mac::SEMIBOLD)
-                                    .child(QUICK_SETTINGS_TITLE),
-                            )
-                            .child(
-                                div()
-                                    .text_size(rmac_ui::text_px(10.5))
-                                    .text_color(mac::text_secondary())
-                                    .child(QUICK_SETTINGS_DESCRIPTION),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(10.0))
-                            .text_color(mac::text_tertiary())
-                            .child("Esc Close"),
-                    ),
-            )
             .when_some(self.stream_error.clone(), |panel, error| {
                 panel.child(
                     div()
@@ -135,29 +101,48 @@ impl Render for QuickSettingsView {
                                 .child(Progress::indeterminate().label(READING_SYSTEM_STATE_LABEL)),
                         )
                     })
-                    .child(self.binary_tile(
-                        Control::Wifi,
-                        "Wi-Fi",
-                        "icons/wifi.svg",
-                        &view.wifi,
-                        Command::SetWifiEnabled,
-                        cx,
-                    ))
-                    .child(self.binary_tile(
-                        Control::Bluetooth,
-                        "Bluetooth",
-                        "icons/bluetooth.svg",
-                        &view.bluetooth,
-                        Command::SetBluetoothPowered,
-                        cx,
-                    ))
-                    .child(self.sound_card(&view.sound, cx))
-                    .child(self.power_card(&view.power, cx))
-                    .child(self.focus_tile(&view.focus, cx)),
+                    .child(
+                        div()
+                            .h(px(166.0))
+                            .flex()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .v_flex()
+                                    .gap_2()
+                                    .child(self.binary_tile(
+                                        Control::Wifi,
+                                        "Wi-Fi",
+                                        "icons/wifi.svg",
+                                        &view.wifi,
+                                        Command::SetWifiEnabled,
+                                        cx,
+                                    ))
+                                    .child(self.binary_tile(
+                                        Control::Bluetooth,
+                                        "Bluetooth",
+                                        "icons/bluetooth.svg",
+                                        &view.bluetooth,
+                                        Command::SetBluetoothPowered,
+                                        cx,
+                                    ))
+                                    .child(self.focus_tile(&view.focus, cx)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .h_full()
+                                    .child(self.power_card(&view.power, cx)),
+                            ),
+                    )
+                    .child(self.sound_card(&view.sound, cx)),
             )
             .child(
                 div()
-                    .h(px(46.0))
+                    .h(px(40.0))
                     .flex_none()
                     .flex()
                     .items_center()

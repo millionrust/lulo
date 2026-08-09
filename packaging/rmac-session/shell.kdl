@@ -84,8 +84,8 @@ window-rule {
 window-rule {
     match app-id=r#"^org\.rmac\.QuickSettings$"#
     open-floating true
-    default-column-width { fixed 380; }
-    default-window-height { fixed 548; }
+    default-column-width { fixed 304; }
+    default-window-height { fixed 360; }
     default-floating-position x=12 y=12 relative-to="top-right"
     geometry-corner-radius 20
     background-effect { blur true; }

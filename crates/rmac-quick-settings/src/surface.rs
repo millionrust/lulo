@@ -3,8 +3,8 @@
 use std::fmt;
 
 pub const NAMESPACE: &str = "rmac-quick-settings";
-pub const LOGICAL_WIDTH: f64 = 380.0;
-pub const LOGICAL_HEIGHT: f64 = 548.0;
+pub const LOGICAL_WIDTH: f64 = 304.0;
+pub const LOGICAL_HEIGHT: f64 = 360.0;
 pub const TOP_MARGIN: f64 = 44.0;
 pub const RIGHT_MARGIN: f64 = 12.0;
 pub const MAX_SEAT_ID_BYTES: usize = 128;
@@ -792,7 +792,13 @@ mod tests {
             plan(&"DP-2".into(), seat(), &snapshot),
             Err(PlanError::OutputDisabled)
         );
-        snapshot.outputs[0] = output("DP-2", true, 380.0, 580.0, 1.0);
+        snapshot.outputs[0] = output(
+            "DP-2",
+            true,
+            LOGICAL_WIDTH + RIGHT_MARGIN - 1.0,
+            LOGICAL_HEIGHT + TOP_MARGIN,
+            1.0,
+        );
         assert_eq!(
             plan(&"DP-2".into(), seat(), &snapshot),
             Err(PlanError::DoesNotFit)

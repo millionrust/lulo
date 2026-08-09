@@ -118,6 +118,7 @@ impl QuickSettingsView {
             .collect::<Vec<_>>();
         div()
             .w_full()
+            .h_full()
             .rounded(px(mac::radius_card()))
             .border_1()
             .border_color(mac::separator())

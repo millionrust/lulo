@@ -4693,6 +4693,7 @@ dependencies = [
  "futures-util",
  "gpui",
  "gpui_platform",
+ "image",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
@@ -4703,6 +4704,8 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
  "uuid",
 ]
 
@@ -4923,6 +4926,43 @@ dependencies = [
  "rmac-compositor",
  "rmac-shell-settings",
  "url",
+]
+
+[[package]]
+name = "rmac-wallpaper-image"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "image",
+ "notify",
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "rmac-wallpaper",
+ "rmac-wallpaper-system",
+]
+
+[[package]]
+name = "rmac-wallpaper-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "futures-util",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-shell-settings",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+]
+
+[[package]]
+name = "rmac-wallpaper-system"
+version = "0.1.0"
+dependencies = [
+ "rmac-compositor",
+ "rmac-shell-settings",
+ "rmac-wallpaper",
 ]
 
 [[package]]

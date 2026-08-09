@@ -17,6 +17,7 @@ chrono = "0.4"
 futures-util = "0.3"
 gpui = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui" }
 gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
+image = { version = "0.25", default-features = false }
 rmac-apps = { path = "../../crates/rmac-apps" }
 rmac-compositor = { path = "../../crates/rmac-compositor" }
 rmac-compositor-niri = { path = "../../crates/rmac-compositor-niri" }
@@ -27,6 +28,8 @@ rmac-shell-runtime = { path = "../../crates/rmac-shell-runtime" }
 rmac-shell-settings = { path = "../../crates/rmac-shell-settings" }
 rmac-shell-status = { path = "../../crates/rmac-shell-status" }
 rmac-wallpaper = { path = "../../crates/rmac-wallpaper" }
+rmac-wallpaper-image = { path = "../../crates/rmac-wallpaper-image" }
+rmac-wallpaper-runtime = { path = "../../crates/rmac-wallpaper-runtime" }
 uuid = { version = "1", features = ["v5"] }
 
 [[bin]]

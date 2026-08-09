@@ -55,6 +55,11 @@ for binary in wallpaper top-bar dock; do
   fi
 done
 
+if pgrep -x waybar >/dev/null 2>&1; then
+  echo "note: Waybar is already running, so this development preview will show two menu bars" >&2
+  echo "the installed rmac login session does not start Waybar" >&2
+fi
+
 declare -a component_names=(wallpaper top-bar dock)
 declare -a component_pids=()
 

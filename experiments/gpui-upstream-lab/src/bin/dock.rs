@@ -8,9 +8,9 @@ mod linux_wayland {
     use std::time::Duration;
 
     use gpui::{
-        div, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId, Entity,
-        FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
-        WindowOptions,
+        div, img, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId,
+        Entity, FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowKind, WindowOptions,
     };
     use gpui_platform::application;
 
@@ -156,6 +156,7 @@ mod linux_wayland {
                                 == rmac_dock::presentation::ActivityIndicator::Active;
                             let running =
                                 entry.activity != rmac_dock::presentation::ActivityIndicator::None;
+                            let icon_path = item_icon_path(&entry.icon, &app_id);
                             let mut item = div()
                                 .id(format!("dock-item-{}-{index}", self.display_id))
                                 .role(Role::Button)
@@ -167,12 +168,21 @@ mod linux_wayland {
                                 .items_center()
                                 .justify_center()
                                 .rounded(px(13.0))
-                                .bg(rgba(item_color(&app_id, available)))
+                                .bg(rgba(if icon_path.is_some() {
+                                    0x00000000
+                                } else {
+                                    item_color(&app_id, available)
+                                }))
                                 .text_color(rgba(0xffffffff))
                                 .text_lg()
                                 .font_weight(FontWeight::BOLD)
-                                .opacity(if available { 1.0 } else { 0.48 })
-                                .child(item_mark(&entry.label));
+                                .opacity(if available { 1.0 } else { 0.58 });
+                            if let Some(path) = icon_path {
+                                item =
+                                    item.child(img(path).w(px(50.0)).h(px(50.0)).rounded(px(13.0)));
+                            } else {
+                                item = item.child(item_mark(&entry.label));
+                            }
                             if actionable {
                                 item = item
                                     .cursor_pointer()
@@ -222,6 +232,33 @@ mod linux_wayland {
         } else {
             mark
         }
+    }
+
+    fn item_icon_path(icon: &rmac_dock::presentation::Icon, app_id: &str) -> Option<PathBuf> {
+        match icon {
+            rmac_dock::presentation::Icon::File(path) if path.is_file() => Some(path.clone()),
+            rmac_dock::presentation::Icon::File(_) | rmac_dock::presentation::Icon::Builtin(_) => {
+                first_party_icon_path(app_id)
+            }
+        }
+    }
+
+    fn first_party_icon_path(app_id: &str) -> Option<PathBuf> {
+        let identity = app_id.trim_end_matches(".desktop");
+        let file = match identity {
+            rmac_apps::identity::FILES => "org.rmac.Files.svg",
+            rmac_apps::identity::TERMINAL => "org.rmac.Terminal.svg",
+            rmac_apps::identity::NOTES => "org.rmac.Notes.svg",
+            rmac_apps::identity::TEXT_EDITOR => "org.rmac.TextEditor.svg",
+            rmac_apps::identity::SYSTEM_MONITOR => "org.rmac.SystemMonitor.svg",
+            rmac_apps::identity::SYSTEM_SETTINGS => "org.rmac.SystemSettings.svg",
+            _ => return None,
+        };
+        Some(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../packaging/rmac-apps/icons")
+                .join(file),
+        )
     }
 
     fn item_color(app_id: &str, enabled: bool) -> u32 {

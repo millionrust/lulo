@@ -123,13 +123,13 @@ impl QuickSettingsView {
             .border_1()
             .border_color(mac::separator())
             .bg(mac::raised())
-            .px_3()
+            .px_2()
             .py_3()
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap_2()
                     .child(Self::icon_badge(
                         "icons/battery-charging.svg",
                         power.available,

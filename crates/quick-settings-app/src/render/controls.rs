@@ -75,8 +75,21 @@ impl QuickSettingsView {
     ) -> AnyElement {
         let view = cx.entity();
         let disabled = !tile.available || tile.busy;
+        let next_value = !tile.value;
+        let accessible_label = if tile.busy {
+            format!("{title}, changing")
+        } else {
+            format!("{title}, {}", tile.summary)
+        };
         div()
+            .id(SharedString::from(format!("quick-{control:?}")))
+            .role(Role::Button)
+            .aria_label(accessible_label)
+            .focusable()
+            .tab_stop(true)
             .w_full()
+            .h(px(50.0))
+            .overflow_hidden()
             .rounded(px(mac::radius_card()))
             .border_1()
             .border_color(if tile.value && tile.available {
@@ -89,13 +102,22 @@ impl QuickSettingsView {
             } else {
                 mac::raised()
             })
-            .px_3()
+            .px_2()
             .py_2()
+            .when(!disabled, |surface| {
+                surface
+                    .cursor_pointer()
+                    .hover(|hover| hover.bg(mac::control_fill_hover()))
+                    .on_click(move |_, _, cx| {
+                        view.update(cx, |this, cx| this.execute(command(next_value), cx));
+                    })
+            })
+            .when(disabled, |surface| surface.opacity(0.66))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap_2()
                     .child(Self::icon_badge(symbol, tile.value && tile.available))
                     .child(
                         div()
@@ -118,15 +140,6 @@ impl QuickSettingsView {
                                         tile.summary.clone()
                                     }),
                             ),
-                    )
-                    .child(
-                        Toggle::new(SharedString::from(format!("quick-{control:?}")))
-                            .checked(tile.value)
-                            .disabled(disabled)
-                            .tooltip(title)
-                            .on_click(move |value, _, cx| {
-                                view.update(cx, |this, cx| this.execute(command(*value), cx));
-                            }),
                     ),
             )
             .when_some(

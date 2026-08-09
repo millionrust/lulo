@@ -4,7 +4,8 @@ mod controls;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, px, svg, AnyElement, Context, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_quick_settings::accessibility::{

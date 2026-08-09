@@ -76,24 +76,11 @@ impl NotificationCenterView {
             .w_full()
             .flex()
             .items_start()
-            .gap_2()
             .px_3()
             .py_2()
             .when(index > 0, |row| {
                 row.border_t_1().border_color(mac::separator())
             })
-            .child(
-                div()
-                    .mt(px(6.0))
-                    .size(px(6.0))
-                    .flex_none()
-                    .rounded_full()
-                    .bg(if record.unread {
-                        mac::accent()
-                    } else {
-                        gpui::transparent_black()
-                    }),
-            )
             .child(
                 div()
                     .flex_1()
@@ -162,13 +149,10 @@ impl NotificationCenterView {
     ) -> AnyElement {
         let identity = self.identity(group.app_id);
         let clear_id = group.app_id.to_owned();
-        let disable_id = group.app_id.to_owned();
         let view = cx.entity();
         let clear_view = view.clone();
-        let disable_view = view.clone();
         let busy = self.busy.is_some();
         let clear_busy = matches!(&self.busy, Some(Busy::ClearApp(id)) if id == group.app_id);
-        let disable_busy = matches!(&self.busy, Some(Busy::DisableApp(id)) if id == group.app_id);
         let records = group
             .records
             .iter()
@@ -183,19 +167,19 @@ impl NotificationCenterView {
             .rounded(px(mac::radius_popover()))
             .border_1()
             .border_color(mac::separator())
-            .bg(mac::raised())
-            .shadow_sm()
+            .bg(mac::material())
+            .shadow_lg()
             .child(
                 div()
-                    .h(px(48.0))
+                    .h(px(40.0))
                     .flex_none()
                     .flex()
                     .items_center()
                     .gap_2()
-                    .px_3()
+                    .px_2()
                     .border_b_1()
                     .border_color(mac::separator())
-                    .child(Self::app_icon(&identity, 28.0))
+                    .child(Self::app_icon(&identity, 24.0))
                     .child(
                         div()
                             .flex_1()
@@ -204,48 +188,32 @@ impl NotificationCenterView {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(rmac_ui::text_px(12.0))
+                                    .text_size(rmac_ui::text_px(11.5))
                                     .font_weight(mac::SEMIBOLD)
                                     .text_color(mac::text())
                                     .child(identity.name),
                             )
-                            .child(
-                                div()
-                                    .text_size(rmac_ui::text_px(10.0))
-                                    .text_color(mac::text_tertiary())
-                                    .child(notification_count_label(group.records.len())),
-                            ),
+                            .when(group.records.len() > 1, |identity| {
+                                identity.child(
+                                    div()
+                                        .text_size(rmac_ui::text_px(9.5))
+                                        .text_color(mac::text_tertiary())
+                                        .child(notification_count_label(group.records.len())),
+                                )
+                            }),
                     )
-                    .when(self.policy_enabled(group.app_id), |header| {
-                        header.child(
-                            Button::new(
-                                SharedString::from(format!("disable-group-{index}")),
-                                TURN_OFF_LABEL,
-                            )
+                    .child(
+                        Button::new(SharedString::from(format!("clear-group-{index}")), "")
+                            .icon(IconName::Close)
+                            .tooltip(CLEAR_LABEL)
                             .ghost()
                             .xsmall()
                             .disabled(busy)
-                            .busy(disable_busy)
+                            .busy(clear_busy)
                             .on_click(move |_, _, cx| {
-                                disable_view.update(cx, |this, cx| {
-                                    this.disable_app(disable_id.clone(), cx)
-                                });
+                                clear_view
+                                    .update(cx, |this, cx| this.clear(Some(clear_id.clone()), cx));
                             }),
-                        )
-                    })
-                    .child(
-                        Button::new(
-                            SharedString::from(format!("clear-group-{index}")),
-                            CLEAR_LABEL,
-                        )
-                        .ghost()
-                        .xsmall()
-                        .disabled(busy)
-                        .busy(clear_busy)
-                        .on_click(move |_, _, cx| {
-                            clear_view
-                                .update(cx, |this, cx| this.clear(Some(clear_id.clone()), cx));
-                        }),
                     ),
             )
             .children(records)

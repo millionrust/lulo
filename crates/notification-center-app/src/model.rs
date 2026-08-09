@@ -42,7 +42,7 @@ pub(crate) fn application_identities(
 }
 
 pub(crate) fn fallback_app_name(app_id: &str) -> String {
-    if app_id.is_empty() {
+    if app_id.is_empty() || app_id.starts_with(':') || app_id.starts_with(".1.") {
         "Application".into()
     } else {
         app_id.to_owned()
@@ -60,5 +60,7 @@ mod tests {
             "org.example.Private.desktop"
         );
         assert_eq!(fallback_app_name(""), "Application");
+        assert_eq!(fallback_app_name(":1.42"), "Application");
+        assert_eq!(fallback_app_name(".1.42"), "Application");
     }
 }

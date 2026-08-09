@@ -96,7 +96,7 @@ window-rule {
 window-rule {
     match app-id=r#"^org\.rmac\.NotificationCenter$"#
     open-floating true
-    default-column-width { fixed 420; }
+    default-column-width { fixed 360; }
     default-window-height { fixed 720; }
     default-floating-position x=12 y=12 relative-to="top-right"
     geometry-corner-radius 20

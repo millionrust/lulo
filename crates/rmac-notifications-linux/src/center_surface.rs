@@ -3,7 +3,7 @@
 use std::fmt;
 
 pub const NAMESPACE: &str = "rmac-notification-center";
-pub const LOGICAL_WIDTH: f64 = 420.0;
+pub const LOGICAL_WIDTH: f64 = 360.0;
 pub const LOGICAL_HEIGHT: f64 = 720.0;
 pub const TOP_MARGIN: f64 = 44.0;
 pub const RIGHT_MARGIN: f64 = 12.0;

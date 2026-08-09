@@ -14,7 +14,7 @@ use gpui_component::Root;
 use crate::view::NotificationCenterView;
 
 #[cfg(not(target_os = "linux"))]
-const WIDTH: f32 = 420.0;
+const WIDTH: f32 = rmac_notifications_linux::center_surface::LOGICAL_WIDTH as f32;
 #[cfg(not(target_os = "linux"))]
 const HEIGHT: f32 = 720.0;
 #[cfg(not(target_os = "linux"))]
@@ -46,7 +46,7 @@ fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Blurred,
+        window_background: WindowBackgroundAppearance::Transparent,
         app_id: Some("org.rmac.NotificationCenter".into()),
         window_decorations: Some(WindowDecorations::Client),
         ..Default::default()

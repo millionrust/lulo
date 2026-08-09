@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+
+set -euo pipefail
+
+repo_root="${RMAC_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+[[ "$repo_root" == /* ]] || {
+  echo "upstream shell candidate refused: RMAC_REPO_ROOT must be absolute" >&2
+  exit 1
+}
+lab_dir="$repo_root/experiments/gpui-upstream-lab"
+target_dir="$lab_dir/target"
+libexec_dir="${HOME}/.local/libexec/rmac"
+data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"
+manifest_dir="$data_home/rmac/development"
+manifest_path="$manifest_dir/upstream-shell-candidate.txt"
+minimum_kib=$((15 * 1024 * 1024))
+build_minimum_kib=$((25 * 1024 * 1024))
+expected_upstream_revision=76c93968da5b8b8809bdd72e4ad9e7d0e946bad0
+components=(wallpaper top-bar dock)
+
+usage() {
+  echo "usage: $0 --check|--execute [--no-build]" >&2
+}
+
+fail() {
+  echo "upstream shell candidate refused: $*" >&2
+  exit 1
+}
+
+available_kib() {
+  df -Pk "$repo_root" | awk 'NR == 2 { print $4 }'
+}
+
+require_space() {
+  local required_kib=$1
+  local phase=$2
+  local available
+  available="$(available_kib)"
+  if [[ ! "$available" =~ ^[0-9]+$ ]] || (( available < required_kib )); then
+    fail "$phase requires at least $((required_kib / 1024 / 1024)) GiB free"
+  fi
+}
+
+mode=""
+build=true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check|--execute)
+      [[ -z "$mode" ]] || { usage; exit 2; }
+      mode=${1#--}
+      ;;
+    --no-build)
+      build=false
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+  shift
+done
+[[ -n "$mode" ]] || { usage; exit 2; }
+[[ "$mode" == execute || "$build" == true ]] \
+  || fail "--no-build is meaningful only with --execute"
+
+[[ "$(uname -s)" == Linux ]] || fail "Linux is required"
+[[ ${EUID} -ne 0 ]] || fail "run as the desktop user, not root"
+[[ -f /etc/os-release ]] || fail "/etc/os-release is unavailable"
+# shellcheck disable=SC1091
+source /etc/os-release
+[[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 26.04 ]] \
+  || fail "Ubuntu 26.04 is required"
+if ! command -v cargo >/dev/null 2>&1 && [[ -x "$HOME/.cargo/bin/cargo" ]]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
+command -v cargo >/dev/null 2>&1 || fail "cargo is required"
+command -v git >/dev/null 2>&1 || fail "git is required"
+command -v systemctl >/dev/null 2>&1 || fail "systemctl is required"
+[[ -f "$lab_dir/Cargo.toml" && -f "$lab_dir/Cargo.lock" ]] \
+  || fail "the pinned upstream GPUI lab is incomplete"
+[[ -d "$repo_root/.git" ]] || fail "run from the rmac source checkout"
+
+mapfile -t pinned_revisions < <(
+  sed -nE 's/.*rev = "([0-9a-f]{40})".*/\1/p' "$lab_dir/Cargo.toml" | sort -u
+)
+[[ ${#pinned_revisions[@]} -eq 1 ]] \
+  || fail "the upstream GPUI revision is not one exact immutable pin"
+[[ "${pinned_revisions[0]}" == "$expected_upstream_revision" ]] \
+  || fail "the upstream GPUI revision changed without updating this handoff"
+
+git -C "$repo_root" diff --quiet --ignore-submodules -- \
+  || fail "tracked worktree changes must be committed before installation"
+git -C "$repo_root" diff --cached --quiet --ignore-submodules -- \
+  || fail "staged worktree changes must be committed before installation"
+
+if [[ "$build" == true ]]; then
+  require_space "$build_minimum_kib" "building the upstream shell candidate"
+else
+  require_space "$minimum_kib" "installing the upstream shell candidate"
+fi
+
+repo_revision="$(git -C "$repo_root" rev-parse HEAD)"
+[[ "$repo_revision" =~ ^[0-9a-f]{40}$ ]] || fail "the rmac revision is invalid"
+
+echo "Upstream shell candidate plan"
+echo "  rmac revision: ${repo_revision:0:12}"
+echo "  GPUI revision: ${pinned_revisions[0]:0:12}"
+echo "  components: wallpaper, top bar, Dock"
+echo "  destination: $libexec_dir"
+echo "  build: $build"
+echo "  supervised units: preserved"
+echo "  GNOME recovery session: untouched"
+echo "  public packages: unchanged"
+
+if [[ "$mode" == check ]]; then
+  echo "Host checks passed. Re-run with --execute to build and install this development candidate."
+  exit 0
+fi
+
+if [[ "$build" == true ]]; then
+  (
+    cd "$lab_dir"
+    CARGO_TARGET_DIR="$target_dir" cargo build --locked --jobs "${CARGO_BUILD_JOBS:-2}" \
+      --features wayland --bin wallpaper --bin top-bar --bin dock
+  )
+fi
+require_space "$minimum_kib" "installing the built upstream shell candidate"
+
+for component in "${components[@]}"; do
+  source_path="$target_dir/debug/$component"
+  [[ -f "$source_path" && ! -L "$source_path" && -x "$source_path" ]] \
+    || fail "$source_path is not a built executable; rerun without --no-build"
+done
+
+if pgrep -f "^${target_dir}/debug/(wallpaper|top-bar|dock)$" >/dev/null 2>&1; then
+  fail "the manual shell preview is still running; stop it before installing supervised copies"
+fi
+
+install -d -m 0755 "$libexec_dir" "$manifest_dir"
+declare -a staged=()
+declare -a destinations=()
+cleanup() {
+  for path in "${staged[@]:-}"; do
+    rm -f -- "$path"
+  done
+}
+trap cleanup EXIT HUP INT TERM
+
+for component in "${components[@]}"; do
+  destination="$libexec_dir/rmac-$component"
+  temporary="$(mktemp "$libexec_dir/.rmac-${component}.XXXXXX")"
+  staged+=("$temporary")
+  destinations+=("$destination")
+  install -m 0755 "$target_dir/debug/$component" "$temporary"
+done
+for index in "${!staged[@]}"; do
+  mv -f -- "${staged[$index]}" "${destinations[$index]}"
+done
+
+manifest_temporary="$(mktemp "$manifest_dir/.upstream-shell-candidate.XXXXXX")"
+staged+=("$manifest_temporary")
+{
+  echo "format=1"
+  echo "rmac_revision=$repo_revision"
+  echo "gpui_revision=${pinned_revisions[0]}"
+  echo "cargo_profile=debug"
+  echo "components=rmac-wallpaper,rmac-top-bar,rmac-dock"
+} >"$manifest_temporary"
+chmod 0644 "$manifest_temporary"
+mv -f -- "$manifest_temporary" "$manifest_path"
+
+trap - EXIT HUP INT TERM
+if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
+  runtime_dir="/run/user/$(id -u)"
+  [[ -d "$runtime_dir" && -O "$runtime_dir" ]] \
+    || fail "the current user's systemd runtime directory is unavailable"
+  export XDG_RUNTIME_DIR="$runtime_dir"
+fi
+if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "$XDG_RUNTIME_DIR/bus" ]]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+fi
+systemctl --user daemon-reload
+systemctl --user reset-failed \
+  rmac-wallpaper.service rmac-top-bar.service rmac-dock.service >/dev/null 2>&1 || true
+
+if systemctl --user is-active --quiet rmac-session.target; then
+  systemctl --user restart \
+    rmac-wallpaper.service rmac-top-bar.service rmac-dock.service
+  echo "Restarted the three shell surfaces in the active rmac session."
+else
+  echo "The rmac session is not active; start it from niri with ~/.local/bin/rmac-session-start."
+fi
+
+echo "Installed the pinned upstream wallpaper, menu bar, and Dock as supervised development candidates."
+echo "This handoff does not promote GPUI or make these binaries public release artifacts."

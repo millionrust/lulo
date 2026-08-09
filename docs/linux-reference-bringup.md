@@ -148,11 +148,19 @@ start command to niri's session startup configuration:
 
 ```sh
 bash scripts/linux/install-session-units.sh
+bash scripts/linux/install-upstream-shell-candidate.sh --check
+bash scripts/linux/install-upstream-shell-candidate.sh --execute
 ~/.local/bin/rmac-session-start
 systemctl --user --no-pager status rmac-session.target
 ~/.local/libexec/rmac/rmac-session-supervisor status
 cat "$XDG_RUNTIME_DIR/rmac/shortcuts-status.json"
 ```
+
+The second installer is the single development-only handoff for the pinned
+upstream wallpaper, menu bar, and Dock. Stop `run-shell-preview.sh` before
+executing it. It uses the existing three systemd crash domains, records both
+the rmac and GPUI revisions, and deliberately does not add the candidates to
+native release packages before the framework promotion gate passes.
 
 After `rmac-session-start`, `XDG_CURRENT_DESKTOP` in the user manager must begin
 with `rmac:`, `XDG_SESSION_ID` must identify the current logind session, and the

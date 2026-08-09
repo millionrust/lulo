@@ -97,6 +97,21 @@ to launch below the 15 GiB absolute floor. It exists so reference-PC review is
 of one coherent shell rather than a sequence of unrelated demo commands; it
 does not bypass the A4/A5 promotion gate or claim installer completion.
 
+### Supervised reference-session handoff
+
+`scripts/linux/install-upstream-shell-candidate.sh` closes the operational gap
+between the foreground preview and the existing rmac session crash domains on
+the Ubuntu reference PC. One guarded command builds the exact pinned wallpaper,
+menu bar, and Dock, atomically installs them as `rmac-wallpaper`, `rmac-top-bar`,
+and `rmac-dock`, and restarts only those services when the rmac target is
+already active. The installed revision manifest is local evidence rather than a
+release artifact.
+
+This is a development integration gate, not GPUI promotion. It refuses dirty
+tracked input, a changed upstream revision, low storage, root, a non-reference
+Ubuntu release, or a simultaneously running manual preview. Native packages
+remain unchanged until A4/A5 and the representative product migration pass.
+
 ## Evidence collected on macOS
 
 Environment: Apple arm64, macOS development host.

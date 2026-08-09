@@ -27,6 +27,26 @@ builds the notification and Focus services, installs the notification
 portal descriptor and desktop-specific backend selection, and installs D-Bus
 activation files for both authorities.
 
+The selected current-upstream GPUI wallpaper, menu bar, and Dock are still
+framework-gated candidates, so the ordinary development installer does not
+silently mix them into the stable product build. On the Ubuntu reference PC,
+install all three into their already supervised unit paths with one guarded
+handoff:
+
+```sh
+bash scripts/linux/install-upstream-shell-candidate.sh --check
+bash scripts/linux/install-upstream-shell-candidate.sh --execute
+```
+
+The handoff requires the exact committed GPUI revision, a clean tracked
+worktree, Ubuntu 26.04, 25 GiB before building, and the 15 GiB absolute floor.
+It atomically installs the three executables and a revision manifest without
+altering public packages or GNOME. If the rmac target is already active, it
+restarts only those three units. Otherwise the next normal
+`rmac-session-start` starts the entire supervised desktop together. A manually
+launched preview must be stopped first so two bars, Docks, or wallpapers cannot
+claim the same session.
+
 That command remains a development installer. Native packaging stages the
 separate, immutable integration payload described in
 `docs/ubuntu-session-packaging.md`. Its GDM wrapper delegates compositor

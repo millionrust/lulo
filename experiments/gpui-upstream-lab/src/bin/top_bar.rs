@@ -308,7 +308,6 @@ mod linux_wayland {
             let focused_app_id = snapshot.focused.app_id.clone();
             let focused_window_id = snapshot.focused.window_id;
             let menus = status.menus.clone();
-            let visible = !self.fullscreen || self.revealed || self.open_menu.is_some();
 
             if self.open_menu.is_some()
                 && (self.open_app_id != focused_app_id || self.open_menu >= Some(menus.len()))
@@ -317,6 +316,7 @@ mod linux_wayland {
                 self.open_app_id = None;
                 self.selected_item = 0;
             }
+            let visible = !self.fullscreen || self.revealed || self.open_menu.is_some();
             let menu_left = self
                 .open_menu
                 .map(|index| menu_anchor_x(&active_app, &menus, index));
@@ -768,25 +768,31 @@ mod linux_wayland {
                 })
                 .unwrap_or_else(|| available.keys().map(|uuid| (*uuid, false)).collect());
 
-            let removed = self
+            let unavailable = self
                 .windows
-                .iter()
-                .filter(|(uuid, (fullscreen, _))| target.get(uuid) != Some(fullscreen))
-                .map(|(uuid, _)| *uuid)
+                .keys()
+                .filter(|uuid| !target.contains_key(uuid))
+                .copied()
                 .collect::<Vec<_>>();
-            for uuid in removed {
+            for uuid in unavailable {
                 if let Some((_, handle)) = self.windows.remove(&uuid) {
                     let _ = handle.update(cx, |_, window, _| window.remove_window());
                 }
             }
 
             for (uuid, fullscreen) in target {
-                if self.windows.contains_key(&uuid) {
+                if self
+                    .windows
+                    .get(&uuid)
+                    .is_some_and(|(current, _)| *current == fullscreen)
+                {
                     continue;
                 }
                 if let Some(display) = available.get(&uuid) {
                     let handle = open_top_bar(display.clone(), status.clone(), fullscreen, cx);
-                    self.windows.insert(uuid, (fullscreen, handle));
+                    if let Some((_, previous)) = self.windows.insert(uuid, (fullscreen, handle)) {
+                        let _ = previous.update(cx, |_, window, _| window.remove_window());
+                    }
                 }
             }
         }

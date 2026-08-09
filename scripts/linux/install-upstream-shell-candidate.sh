@@ -23,7 +23,7 @@ app_binaries=(rmac-files rmac-terminal rmac-text-editor rmac-system-monitor rmac
 app_ids=(org.rmac.Files org.rmac.Terminal org.rmac.TextEditor org.rmac.SystemMonitor org.rmac.SystemSettings)
 
 usage() {
-  echo "usage: $0 --check|--execute [--no-build]" >&2
+  echo "usage: $0 --check|--execute [--no-build] [--release-shell]" >&2
 }
 
 fail() {
@@ -47,6 +47,7 @@ require_space() {
 
 mode=""
 build=true
+shell_profile=debug
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --check|--execute)
@@ -55,6 +56,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-build)
       build=false
+      ;;
+    --release-shell)
+      shell_profile=release
       ;;
     *)
       usage
@@ -112,6 +116,8 @@ echo "  GPUI revision: ${pinned_revisions[0]:0:12}"
 echo "  components: wallpaper, top bar, Dock, and five first-party apps"
 echo "  destination: $libexec_dir"
 echo "  build: $build"
+echo "  shell profile: $shell_profile"
+echo "  app profile: debug"
 echo "  supervised units: preserved"
 echo "  GNOME recovery session: untouched"
 echo "  public packages: unchanged"
@@ -124,7 +130,11 @@ fi
 if [[ "$build" == true ]]; then
   (
     cd "$lab_dir"
-    CARGO_TARGET_DIR="$target_dir" cargo build --locked --jobs "${CARGO_BUILD_JOBS:-2}" \
+    shell_build=(build --locked --jobs "${CARGO_BUILD_JOBS:-2}")
+    if [[ "$shell_profile" == release ]]; then
+      shell_build+=(--release)
+    fi
+    CARGO_TARGET_DIR="$target_dir" cargo "${shell_build[@]}" \
       --features wayland --bin wallpaper --bin top-bar --bin dock
   )
   build_args=(build --locked --jobs "${CARGO_BUILD_JOBS:-2}")
@@ -139,7 +149,7 @@ fi
 require_space "$minimum_kib" "installing the built upstream shell candidate"
 
 for component in "${components[@]}"; do
-  source_path="$target_dir/debug/$component"
+  source_path="$target_dir/$shell_profile/$component"
   [[ -f "$source_path" && ! -L "$source_path" && -x "$source_path" ]] \
     || fail "$source_path is not a built executable; rerun without --no-build"
 done
@@ -149,7 +159,7 @@ for binary in "${app_binaries[@]}"; do
     || fail "$source_path is not a built executable; rerun without --no-build"
 done
 
-if pgrep -f "^${target_dir}/debug/(wallpaper|top-bar|dock)$" >/dev/null 2>&1; then
+if pgrep -f "^${target_dir}/${shell_profile}/(wallpaper|top-bar|dock)$" >/dev/null 2>&1; then
   fail "the manual shell preview is still running; stop it before installing supervised copies"
 fi
 
@@ -170,7 +180,7 @@ for component in "${components[@]}"; do
   temporary="$(mktemp "$libexec_dir/.rmac-${component}.XXXXXX")"
   staged+=("$temporary")
   destinations+=("$destination")
-  install -m 0755 "$target_dir/debug/$component" "$temporary"
+  install -m 0755 "$target_dir/$shell_profile/$component" "$temporary"
 done
 for index in "${!app_binaries[@]}"; do
   binary="${app_binaries[$index]}"
@@ -213,7 +223,13 @@ staged+=("$manifest_temporary")
   echo "format=1"
   echo "rmac_revision=$repo_revision"
   echo "gpui_revision=${pinned_revisions[0]}"
-  echo "cargo_profile=debug"
+  if [[ "$shell_profile" == debug ]]; then
+    echo "cargo_profile=debug"
+  else
+    echo "cargo_profile=mixed"
+  fi
+  echo "shell_cargo_profile=$shell_profile"
+  echo "app_cargo_profile=debug"
   echo "components=rmac-wallpaper,rmac-top-bar,rmac-dock,rmac-files,rmac-terminal,rmac-text-editor,rmac-system-monitor,rmac-system-settings"
 } >"$manifest_temporary"
 chmod 0644 "$manifest_temporary"

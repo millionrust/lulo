@@ -19,7 +19,7 @@ use crate::service;
 use crate::{OpenApp, RevealInFinder};
 
 pub(crate) const DRAWER_WIDTH: f32 = 846.0;
-pub(crate) const DRAWER_HEIGHT: f32 = 800.0;
+pub(crate) const DRAWER_HEIGHT: f32 = 720.0;
 const TILE_W: f32 = 104.0;
 const ICON: f32 = 60.0;
 const ROW_ICON: f32 = 32.0;

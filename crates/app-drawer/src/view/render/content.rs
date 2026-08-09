@@ -61,7 +61,7 @@ impl AppDrawer {
             .child(self.icon_element(app, ICON))
             .child(
                 div()
-                    .max_w(px(TILE_W - 8.0))
+                    .w(px(TILE_W - 8.0))
                     .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::text())
                     .text_center()

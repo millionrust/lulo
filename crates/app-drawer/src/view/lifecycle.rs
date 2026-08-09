@@ -111,9 +111,13 @@ impl AppDrawer {
                 let result = cx
                     .background_executor()
                     .spawn(async move {
-                        let (mut apps, error) = catalog::scan();
+                        let (apps, error) = catalog::scan();
                         #[cfg(target_os = "macos")]
-                        catalog::hydrate_icons(&mut apps);
+                        let apps = {
+                            let mut apps = apps;
+                            catalog::hydrate_icons(&mut apps);
+                            apps
+                        };
                         (apps, error)
                     })
                     .await;

@@ -109,7 +109,7 @@ window-rule {
     match app-id=r#"^org\.rmac\.AppDrawer$"#
     open-floating true
     default-column-width { fixed 846; }
-    default-window-height { fixed 800; }
+    default-window-height { fixed 720; }
     geometry-corner-radius 24
     background-effect { blur true; }
     focus-ring { off; }

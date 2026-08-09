@@ -2,8 +2,9 @@ mod results;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, img, px, AnyElement, Context, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    div, img, px, svg, AnyElement, Context, Hsla, InteractiveElement as _, IntoElement,
+    KeyDownEvent, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_launcher::{ActivationMode, Category};
@@ -23,6 +24,7 @@ impl Render for LauncherView {
         let activating = snapshot.phase == Phase::Activating;
         let rows = snapshot.rows.clone();
         let query = snapshot.query.clone();
+        let compact = query.is_empty();
         let has_rows = !rows.is_empty();
 
         div()
@@ -46,7 +48,11 @@ impl Render for LauncherView {
             }))
             .v_flex()
             .overflow_hidden()
-            .rounded(px(mac::radius_large_surface()))
+            .rounded(px(if compact {
+                mac::radius_pill()
+            } else {
+                mac::radius_large_surface()
+            }))
             .border_1()
             .border_color(mac::separator())
             .shadow_xl()
@@ -54,90 +60,95 @@ impl Render for LauncherView {
             .text_color(mac::text())
             .child(
                 div()
-                    .h(px(76.0))
+                    .h(px(if compact { 60.0 } else { 72.0 }))
                     .flex_none()
                     .flex()
                     .items_center()
                     .gap_3()
-                    .px_5()
-                    .border_b_1()
-                    .border_color(mac::separator())
+                    .px_4()
+                    .when(!compact, |header| {
+                        header.border_b_1().border_color(mac::separator())
+                    })
                     .child(
-                        div()
-                            .text_size(rmac_ui::text_px(26.0))
-                            .text_color(mac::text_secondary())
-                            .child("⌕"),
+                        svg()
+                            .path("icons/search.svg")
+                            .size(px(if compact { 22.0 } else { 20.0 }))
+                            .text_color(mac::text_secondary()),
                     )
                     .child(
                         div().id(QUERY_ID).flex_1().child(
                             SearchField::new(&self.query)
                                 .appearance(false)
-                                .disabled(activating),
+                                .disabled(activating)
+                                .text_size(rmac_ui::text_px(if compact { 20.0 } else { 17.0 })),
                         ),
                     ),
             )
-            .when_some(self.settings_error.clone(), |surface, error| {
-                surface.child(
-                    div()
-                        .flex_none()
-                        .px_5()
-                        .py_2()
-                        .bg(mac::warning_background())
-                        .border_b_1()
-                        .border_color(mac::warning_border())
-                        .text_size(rmac_ui::text_px(11.0))
-                        .text_color(mac::warning_text())
-                        .child(error),
-                )
-            })
-            .child(
-                div()
-                    .id(RESULTS_ID)
-                    .flex_1()
-                    .overflow_y_scroll()
-                    .px_4()
-                    .py_3()
-                    .when(has_rows, |content| {
-                        content.child(self.results(&rows, &query, cx))
-                    })
-                    .when(!has_rows, |content| {
-                        content.child(
+            .when(!compact, |surface| {
+                surface
+                    .when_some(self.settings_error.clone(), |surface, error| {
+                        surface.child(
                             div()
-                                .size_full()
-                                .v_flex()
-                                .items_center()
-                                .justify_center()
-                                .gap_2()
-                                .text_color(mac::text_secondary())
-                                .child(
-                                    div()
-                                        .text_size(rmac_ui::text_px(15.0))
-                                        .font_weight(mac::MEDIUM)
-                                        .child(phase_message.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(rmac_ui::text_px(11.0))
-                                        .text_color(mac::text_tertiary())
-                                        .child(SEARCH_SCOPE_DESCRIPTION),
-                                ),
+                                .flex_none()
+                                .px_5()
+                                .py_2()
+                                .bg(mac::warning_background())
+                                .border_b_1()
+                                .border_color(mac::warning_border())
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(mac::warning_text())
+                                .child(error),
                         )
-                    }),
-            )
-            .child(
-                div()
-                    .h(px(36.0))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_4()
-                    .border_t_1()
-                    .border_color(mac::separator())
-                    .text_size(rmac_ui::text_px(10.0))
-                    .text_color(mac::text_tertiary())
-                    .child(phase_message)
-                    .child(KEYBOARD_HELP),
-            )
+                    })
+                    .child(
+                        div()
+                            .id(RESULTS_ID)
+                            .flex_1()
+                            .overflow_y_scroll()
+                            .px_4()
+                            .py_3()
+                            .when(has_rows, |content| {
+                                content.child(self.results(&rows, &query, cx))
+                            })
+                            .when(!has_rows, |content| {
+                                content.child(
+                                    div()
+                                        .size_full()
+                                        .v_flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap_2()
+                                        .text_color(mac::text_secondary())
+                                        .child(
+                                            div()
+                                                .text_size(rmac_ui::text_px(15.0))
+                                                .font_weight(mac::MEDIUM)
+                                                .child(phase_message.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_size(rmac_ui::text_px(11.0))
+                                                .text_color(mac::text_tertiary())
+                                                .child(SEARCH_SCOPE_DESCRIPTION),
+                                        ),
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .h(px(36.0))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px_4()
+                            .border_t_1()
+                            .border_color(mac::separator())
+                            .text_size(rmac_ui::text_px(10.0))
+                            .text_color(mac::text_tertiary())
+                            .child(phase_message)
+                            .child(KEYBOARD_HELP),
+                    )
+            })
     }
 }

@@ -6,7 +6,7 @@ mod surface;
 use std::process::Command;
 use std::sync::Arc;
 
-use gpui::{AppContext as _, Context, Entity, Focusable as _, SharedString, Window};
+use gpui::{px, size, AppContext as _, Context, Entity, Focusable as _, SharedString, Window};
 use rmac_launcher::{ActivationMode, ResultId};
 use rmac_launcher_runtime::{
     CatalogUpdate, Coordinator, KeyCommand, KeyEffect, Registry, ShortcutEffect,
@@ -25,6 +25,7 @@ pub(crate) struct LauncherView {
     backend: Arc<SystemBackend<SurfaceBridge>>,
     settings_error: Option<SharedString>,
     was_active: bool,
+    compact: bool,
 }
 
 pub(crate) struct OverlayEnvironment {
@@ -71,9 +72,28 @@ impl LauncherView {
             InputState::new(window, cx)
                 .placeholder(rmac_launcher_runtime::accessibility::QUERY_NAME)
         });
-        cx.subscribe(&query, |this, query, event: &InputEvent, cx| {
+        let window_handle = window.window_handle();
+        cx.subscribe(&query, move |this, query, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let value = query.read(cx).value().to_string();
+                let compact = value.is_empty();
+                if this.compact != compact {
+                    this.compact = compact;
+                    let (width, height) = if compact {
+                        (
+                            rmac_launcher::surface::LOGICAL_WIDTH as f32,
+                            rmac_launcher::surface::LOGICAL_HEIGHT as f32,
+                        )
+                    } else {
+                        (
+                            rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32,
+                            rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32,
+                        )
+                    };
+                    let _ = cx.update_window(window_handle, |_, window, _| {
+                        window.resize(size(px(width), px(height)));
+                    });
+                }
                 if let Some(request) = this.coordinator.set_query(value) {
                     this.dispatch(request, cx);
                 }
@@ -107,6 +127,7 @@ impl LauncherView {
             backend: Arc::new(SystemBackend::new(SurfaceBridge { clipboard })),
             settings_error,
             was_active: false,
+            compact: true,
         };
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
         view

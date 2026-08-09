@@ -25,9 +25,9 @@ use overlay::route_shortcut;
 use registry::build_registry;
 
 #[cfg(not(target_os = "linux"))]
-const WIDTH: f32 = 720.0;
+const WIDTH: f32 = rmac_launcher::surface::LOGICAL_WIDTH as f32;
 #[cfg(not(target_os = "linux"))]
-const HEIGHT: f32 = 540.0;
+const HEIGHT: f32 = rmac_launcher::surface::LOGICAL_HEIGHT as f32;
 
 #[derive(Clone)]
 struct ActiveOverlay {

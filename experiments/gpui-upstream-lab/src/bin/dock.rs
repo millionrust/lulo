@@ -295,17 +295,18 @@ mod linux_wayland {
                                         .bg(rgba(0xff3b30ff)),
                                 );
                             }
-                            let mut children = Vec::with_capacity(2);
+                            let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
                             if separates_running && index == pinned_count {
                                 children.push(
                                     div()
                                         .w(px(SEPARATOR_WIDTH))
                                         .h(px(48.0))
                                         .mb_1()
-                                        .bg(rgba(0x4a56646b)),
+                                        .bg(rgba(0x4a56646b))
+                                        .into_any_element(),
                                 );
                             }
-                            children.push(item);
+                            children.push(item.into_any_element());
                             children
                         }))
                         .when(!model.items.is_empty(), |shelf| {

@@ -60,13 +60,10 @@ impl Model {
                 build_item(&source_id, application, false, grouped)
             })
             .collect();
-        running.sort_by_key(|item| {
-            (
-                Reverse(latest_focus_timestamp(&item.windows)),
-                item.name.to_lowercase(),
-                item.id.clone(),
-            )
-        });
+        // Focus changes must never move a button out from under the pointer.
+        // A renderer/runtime may later retain launch order, but the stateless
+        // model uses this deterministic identity order rather than recency.
+        running.sort_by_key(|item| (item.name.to_lowercase(), item.id.clone()));
         items.extend(running);
 
         Self {
@@ -389,13 +386,5 @@ pub(super) fn fallback_name(app_id: &str) -> String {
 pub(super) fn timestamp_key(timestamp: Option<rmac_compositor::Timestamp>) -> (u64, u32) {
     timestamp
         .map(|timestamp| (timestamp.seconds, timestamp.nanoseconds))
-        .unwrap_or_default()
-}
-
-pub(super) fn latest_focus_timestamp(windows: &[WindowItem]) -> (u64, u32) {
-    windows
-        .iter()
-        .map(|window| timestamp_key(window.focus_timestamp))
-        .max()
         .unwrap_or_default()
 }

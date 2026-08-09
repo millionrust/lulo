@@ -87,6 +87,41 @@ fn pinned_order_leads_and_running_windows_group_by_desktop_identity() {
 }
 
 #[test]
+fn unpinned_running_apps_do_not_reorder_when_focus_changes() {
+    let catalog = [
+        application("alacritty.desktop", "Alacritty"),
+        application("firefox.desktop", "Firefox"),
+    ];
+    let order = |windows| {
+        Model::build(
+            &[],
+            &Default::default(),
+            &catalog,
+            &rmac_compositor::Snapshot {
+                windows,
+                ..Default::default()
+            },
+        )
+        .items
+        .into_iter()
+        .map(|item| item.name)
+        .collect::<Vec<_>>()
+    };
+
+    let alacritty_focused = order(vec![
+        window(1, "alacritty", true, false, 20),
+        window(2, "firefox", false, false, 10),
+    ]);
+    let firefox_focused = order(vec![
+        window(1, "alacritty", false, false, 20),
+        window(2, "firefox", true, false, 30),
+    ]);
+
+    assert_eq!(alacritty_focused, ["Alacritty", "Firefox"]);
+    assert_eq!(firefox_focused, alacritty_focused);
+}
+
+#[test]
 fn click_launches_or_focuses_without_optimistic_state() {
     let catalog = [application("finder.desktop", "Finder")];
     let pinned = [rmac_shell_settings::AppId("finder.desktop".into())];

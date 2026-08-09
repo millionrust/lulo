@@ -14,9 +14,17 @@ not permission to copy Apple assets or incompatible source code.
 The current Apple guidance makes material adaptive rather than merely
 transparent. Foreground content must remain legible over different wallpapers,
 with reduced-transparency and reduced-motion behavior treated as first-class
-states. Dock size, magnification, placement, autohide, launch animation,
-running indicators, recent apps, window behavior, and per-display Spaces are
-user policy rather than hard-coded decoration.
+states. Dock size, optional magnification, placement, autohide, launch
+animation, running indicators, recent apps, window behavior, and per-display
+Spaces are user policy rather than hard-coded decoration.
+
+The Dock is not one flat application list. Its separators describe real
+groups: kept applications lead; recent or running applications not already
+kept occupy the next application group; files, folders, minimized windows, and
+Trash follow the application boundary. Apple currently documents up to three
+recent applications, a default Downloads folder, drag reordering, folder
+stacks, and separate controls for recent apps, running indicators, minimize
+behavior, launch animation, size, placement, magnification, and autohide.
 
 ## Open-source implementation references
 
@@ -82,8 +90,11 @@ with original rmac identity:
   edge, dark outer edge, and wallpaper-aware shadow;
 - real desktop-entry artwork for installed applications and original embedded
   rmac artwork for first-party or fallback entries;
-- stable icon order during focus changes, running dots, urgent badges,
-  tooltip labels, magnification from stable centers, and reduced-motion mode;
+- stable icon order during focus changes, semantic pinned/running/place
+  separators, running dots, urgent badges, and tooltip labels;
+- the reference profile keeps magnification off, matching the reference Mac;
+  Settings may enable stable-center magnification explicitly, while reduced
+  motion always disables it;
 - active-app identity and menus on the leading side, time in the center, and
   meaningful live status controls on the trailing side;
 - no compositor debug borders, duplicate third-party bar, decorative fake

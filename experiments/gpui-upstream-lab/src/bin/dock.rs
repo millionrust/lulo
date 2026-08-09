@@ -4,6 +4,7 @@ mod linux_wayland {
     use std::fs::{self, OpenOptions};
     use std::io::Write as _;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
@@ -19,6 +20,7 @@ mod linux_wayland {
     const ICON_SIZE: f32 = 56.0;
     const ICON_GAP: f32 = 8.0;
     const SHELF_PADDING: f32 = 8.0;
+    const SEPARATOR_WIDTH: f32 = 1.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
     const TOOLTIP_BOTTOM: f32 = 92.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
@@ -105,7 +107,7 @@ mod linux_wayland {
         display_id: u64,
         render_count: u64,
         status: Entity<DockStatus>,
-        hovered_item: Option<(usize, String)>,
+        hovered_item: Option<(f32, String)>,
         input_region: Option<(f32, f32)>,
     }
 
@@ -128,11 +130,18 @@ mod linux_wayland {
             record_render_count(window, self.display_id, self.render_count);
             let model = self.status.read(cx).model();
             let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
+            let pinned_count = model.items.iter().take_while(|item| item.pinned).count();
+            let separates_running = pinned_count > 0 && pinned_count < entries.len();
+            let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
+            let item_count = entries.len() + 1;
+            let child_count = item_count + separator_count;
             let axis = f32::from(window.bounds().size.width);
-            let shelf_extent = ICON_SIZE * entries.len() as f32
-                + ICON_GAP * entries.len().saturating_sub(1) as f32
+            let shelf_extent = ICON_SIZE * item_count as f32
+                + SEPARATOR_WIDTH * separator_count as f32
+                + ICON_GAP * child_count.saturating_sub(1) as f32
                 + 2.0 * SHELF_PADDING;
             let shelf_start = (axis - shelf_extent) / 2.0;
+            let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
             let input_region = (shelf_start, shelf_extent);
             if self.input_region != Some(input_region) {
                 window.set_input_region(Some(&[Bounds {
@@ -141,36 +150,29 @@ mod linux_wayland {
                 }]));
                 self.input_region = Some(input_region);
             }
-            let tooltip = self
-                .hovered_item
-                .as_ref()
-                .filter(|(index, _)| *index < entries.len())
-                .map(|(index, label)| {
-                    let icon_center = shelf_start
-                        + SHELF_PADDING
-                        + ICON_SIZE / 2.0
-                        + *index as f32 * (ICON_SIZE + ICON_GAP);
-                    div()
-                        .absolute()
-                        .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
-                        .bottom(px(TOOLTIP_BOTTOM))
-                        .w(px(TOOLTIP_WIDTH))
-                        .flex()
-                        .justify_center()
-                        .child(
-                            div()
-                                .px_3()
-                                .py_1()
-                                .rounded(px(8.0))
-                                .bg(rgba(0x18263aee))
-                                .border_1()
-                                .border_color(rgba(0xffffff35))
-                                .shadow_lg()
-                                .text_sm()
-                                .text_color(rgba(0xffffffff))
-                                .child(label.clone()),
-                        )
-                });
+            let tooltip = self.hovered_item.as_ref().map(|(relative_center, label)| {
+                let icon_center = shelf_start + *relative_center;
+                div()
+                    .absolute()
+                    .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
+                    .bottom(px(TOOLTIP_BOTTOM))
+                    .w(px(TOOLTIP_WIDTH))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .rounded(px(8.0))
+                            .bg(rgba(0x18263aee))
+                            .border_1()
+                            .border_color(rgba(0xffffff35))
+                            .shadow_lg()
+                            .text_sm()
+                            .text_color(rgba(0xffffffff))
+                            .child(label.clone()),
+                    )
+            });
             div()
                 .id(format!("dock-{}", self.display_id))
                 .role(Role::Toolbar)
@@ -193,7 +195,15 @@ mod linux_wayland {
                         .border_1()
                         .border_color(rgba(0xffffffb8))
                         .shadow_lg()
-                        .children(entries.into_iter().enumerate().map(|(index, entry)| {
+                        .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
+                            let relative_center = SHELF_PADDING
+                                + ICON_SIZE / 2.0
+                                + index as f32 * (ICON_SIZE + ICON_GAP)
+                                + if separates_running && index >= pinned_count {
+                                    SEPARATOR_WIDTH + ICON_GAP
+                                } else {
+                                    0.0
+                                };
                             let app_id = match &entry.id {
                                 rmac_dock::presentation::EntryId::Application(app_id) => {
                                     app_id.clone()
@@ -250,12 +260,13 @@ mod linux_wayland {
                             item =
                                 item.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                     if *hovered {
-                                        this.hovered_item = Some((index, tooltip_label.clone()));
+                                        this.hovered_item =
+                                            Some((relative_center, tooltip_label.clone()));
                                         cx.notify();
                                     } else if this
                                         .hovered_item
                                         .as_ref()
-                                        .is_some_and(|(hovered_index, _)| *hovered_index == index)
+                                        .is_some_and(|(center, _)| *center == relative_center)
                                     {
                                         this.hovered_item = None;
                                         cx.notify();
@@ -284,8 +295,62 @@ mod linux_wayland {
                                         .bg(rgba(0xff3b30ff)),
                                 );
                             }
-                            item
-                        })),
+                            let mut children = Vec::with_capacity(2);
+                            if separates_running && index == pinned_count {
+                                children.push(
+                                    div()
+                                        .w(px(SEPARATOR_WIDTH))
+                                        .h(px(48.0))
+                                        .mb_1()
+                                        .bg(rgba(0x4a56646b)),
+                                );
+                            }
+                            children.push(item);
+                            children
+                        }))
+                        .when(!model.items.is_empty(), |shelf| {
+                            shelf.child(
+                                div()
+                                    .w(px(SEPARATOR_WIDTH))
+                                    .h(px(48.0))
+                                    .mb_1()
+                                    .bg(rgba(0x4a56646b)),
+                            )
+                        })
+                        .child({
+                            let mut trash = div()
+                                .id(format!("dock-trash-{}", self.display_id))
+                                .role(Role::Button)
+                                .aria_label("Trash")
+                                .relative()
+                                .w(px(ICON_SIZE))
+                                .h(px(ICON_SIZE))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(13.0))
+                                .cursor_pointer()
+                                .hover(|style| style.opacity(0.88))
+                                .on_click(|_, _, cx| dispatch_trash(cx))
+                                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                    if *hovered {
+                                        this.hovered_item = Some((trash_center, "Trash".into()));
+                                        cx.notify();
+                                    } else if this
+                                        .hovered_item
+                                        .as_ref()
+                                        .is_some_and(|(center, _)| *center == trash_center)
+                                    {
+                                        this.hovered_item = None;
+                                        cx.notify();
+                                    }
+                                }));
+                            if let Some(path) = trash_icon_path() {
+                                trash = trash
+                                    .child(img(path).w(px(54.0)).h(px(54.0)).rounded(px(14.0)));
+                            }
+                            trash
+                        }),
                 )
         }
     }
@@ -329,6 +394,12 @@ mod linux_wayland {
                 .join("../../packaging/rmac-apps/icons")
                 .join(file),
         )
+    }
+
+    fn trash_icon_path() -> Option<PathBuf> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/rmac-dock/assets/icons/trash-empty.svg");
+        path.is_file().then_some(path)
     }
 
     fn item_color(app_id: &str, enabled: bool) -> u32 {
@@ -388,6 +459,23 @@ mod linux_wayland {
             }
             rmac_dock::Activation::NoAction | rmac_dock::Activation::Unavailable { .. } => {}
         }
+    }
+
+    fn dispatch_trash(cx: &mut App) {
+        cx.background_executor()
+            .spawn(async move {
+                let opened = blocking::unblock(|| {
+                    Command::new("gio")
+                        .args(["open", "trash:///"])
+                        .spawn()
+                        .map(|_| ())
+                })
+                .await;
+                if opened.is_err() {
+                    eprintln!("could not open Trash");
+                }
+            })
+            .detach();
     }
 
     async fn watch_settings(sender: async_channel::Sender<SourceEvent>) {

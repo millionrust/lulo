@@ -29,8 +29,12 @@ only. Apple fonts, icons, logos, wallpapers, and sounds are never copied.
 ## Menu bar, Dock, and desktop services
 
 - Apple: app name and menus lead; status/Spotlight/Control Center/privacy/time
-  trail; date/time opens Notification Center. Dock owns pinned/running apps,
-  indicators, magnification, autohide, Downloads, minimized windows, and Trash.
+  trail; date/time opens Notification Center. Dock owns kept applications,
+  recent and unpinned-running applications, semantic separators, indicators,
+  optional magnification, autohide, Downloads and other folder stacks,
+  minimized windows, and Trash. Desktop & Dock separately controls size,
+  position, launch animation, recent apps, running indicators, minimized-window
+  placement/effect, autohide, and multi-display Spaces behavior.
 - Open source: macos-web and playground-macos for layout/motion; Noctalia for
   hotplug, layer-shell, status services, lock, OSD, and live configuration.
 - rmac target: typed live Linux state, original status icons, no placeholder

@@ -18,6 +18,9 @@ minimum_kib=$((15 * 1024 * 1024))
 build_minimum_kib=$((25 * 1024 * 1024))
 expected_upstream_revision=76c93968da5b8b8809bdd72e4ad9e7d0e946bad0
 components=(wallpaper top-bar dock)
+app_packages=(rmac-finder rmac-terminal rmac-text-editor rmac-activity-monitor rmac-system-settings)
+app_binaries=(rmac-files rmac-terminal rmac-text-editor rmac-system-monitor rmac-system-settings)
+app_ids=(org.rmac.Files org.rmac.Terminal org.rmac.TextEditor org.rmac.SystemMonitor org.rmac.SystemSettings)
 
 usage() {
   echo "usage: $0 --check|--execute [--no-build]" >&2
@@ -106,7 +109,7 @@ repo_revision="$(git -C "$repo_root" rev-parse HEAD)"
 echo "Upstream shell candidate plan"
 echo "  rmac revision: ${repo_revision:0:12}"
 echo "  GPUI revision: ${pinned_revisions[0]:0:12}"
-echo "  components: wallpaper, top bar, Dock"
+echo "  components: wallpaper, top bar, Dock, and five first-party apps"
 echo "  destination: $libexec_dir"
 echo "  build: $build"
 echo "  supervised units: preserved"
@@ -124,6 +127,14 @@ if [[ "$build" == true ]]; then
     CARGO_TARGET_DIR="$target_dir" cargo build --locked --jobs "${CARGO_BUILD_JOBS:-2}" \
       --features wayland --bin wallpaper --bin top-bar --bin dock
   )
+  build_args=(build --locked --jobs "${CARGO_BUILD_JOBS:-2}")
+  for package in "${app_packages[@]}"; do
+    build_args+=(--package "$package")
+  done
+  (
+    cd "$repo_root"
+    cargo "${build_args[@]}"
+  )
 fi
 require_space "$minimum_kib" "installing the built upstream shell candidate"
 
@@ -132,12 +143,19 @@ for component in "${components[@]}"; do
   [[ -f "$source_path" && ! -L "$source_path" && -x "$source_path" ]] \
     || fail "$source_path is not a built executable; rerun without --no-build"
 done
+for binary in "${app_binaries[@]}"; do
+  source_path="$repo_root/target/debug/$binary"
+  [[ -f "$source_path" && ! -L "$source_path" && -x "$source_path" ]] \
+    || fail "$source_path is not a built executable; rerun without --no-build"
+done
 
 if pgrep -f "^${target_dir}/debug/(wallpaper|top-bar|dock)$" >/dev/null 2>&1; then
   fail "the manual shell preview is still running; stop it before installing supervised copies"
 fi
 
-install -d -m 0755 "$libexec_dir" "$manifest_dir"
+applications_dir="$data_home/applications"
+icons_dir="$data_home/icons/hicolor/scalable/apps"
+install -d -m 0755 "$libexec_dir" "$manifest_dir" "$applications_dir" "$icons_dir"
 declare -a staged=()
 declare -a destinations=()
 cleanup() {
@@ -154,9 +172,38 @@ for component in "${components[@]}"; do
   destinations+=("$destination")
   install -m 0755 "$target_dir/debug/$component" "$temporary"
 done
+for index in "${!app_binaries[@]}"; do
+  binary="${app_binaries[$index]}"
+  app_id="${app_ids[$index]}"
+
+  destination="$libexec_dir/$binary"
+  temporary="$(mktemp "$libexec_dir/.${binary}.XXXXXX")"
+  staged+=("$temporary")
+  destinations+=("$destination")
+  install -m 0755 "$repo_root/target/debug/$binary" "$temporary"
+
+  desktop_source="$repo_root/packaging/rmac-apps/applications/${app_id}.desktop"
+  desktop_destination="$applications_dir/${app_id}.desktop"
+  desktop_temporary="$(mktemp "$applications_dir/.${app_id}.XXXXXX")"
+  staged+=("$desktop_temporary")
+  destinations+=("$desktop_destination")
+  sed "s|^Exec=/usr/bin/${binary}|Exec=${libexec_dir}/${binary}|" \
+    "$desktop_source" >"$desktop_temporary"
+  chmod 0644 "$desktop_temporary"
+
+  icon_source="$repo_root/packaging/rmac-apps/icons/${app_id}.svg"
+  icon_destination="$icons_dir/${app_id}.svg"
+  icon_temporary="$(mktemp "$icons_dir/.${app_id}.XXXXXX")"
+  staged+=("$icon_temporary")
+  destinations+=("$icon_destination")
+  install -m 0644 "$icon_source" "$icon_temporary"
+done
 for index in "${!staged[@]}"; do
   mv -f -- "${staged[$index]}" "${destinations[$index]}"
 done
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$applications_dir"
+fi
 
 manifest_temporary="$(mktemp "$manifest_dir/.upstream-shell-candidate.XXXXXX")"
 staged+=("$manifest_temporary")
@@ -165,7 +212,7 @@ staged+=("$manifest_temporary")
   echo "rmac_revision=$repo_revision"
   echo "gpui_revision=${pinned_revisions[0]}"
   echo "cargo_profile=debug"
-  echo "components=rmac-wallpaper,rmac-top-bar,rmac-dock"
+  echo "components=rmac-wallpaper,rmac-top-bar,rmac-dock,rmac-files,rmac-terminal,rmac-text-editor,rmac-system-monitor,rmac-system-settings"
 } >"$manifest_temporary"
 chmod 0644 "$manifest_temporary"
 mv -f -- "$manifest_temporary" "$manifest_path"
@@ -199,5 +246,5 @@ else
   fi
 fi
 
-echo "Installed the pinned upstream wallpaper, menu bar, and Dock as supervised development candidates."
+echo "Installed the pinned upstream shell and five first-party app candidates."
 echo "This handoff does not promote GPUI or make these binaries public release artifacts."

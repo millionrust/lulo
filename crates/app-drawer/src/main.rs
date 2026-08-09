@@ -6,7 +6,7 @@ mod view;
 
 use rmac_app_drawer::{run_mode, RunMode};
 
-use view::AppDrawer;
+use view::{AppDrawer, DRAWER_HEIGHT, DRAWER_WIDTH};
 
 gpui::actions!(
     app_drawer,
@@ -28,8 +28,8 @@ fn main() {
         RunMode::Standalone => rmac_ui::boot_app(
             rmac_ui::app_id::APP_DRAWER,
             "Applications",
-            1080.0,
-            720.0,
+            DRAWER_WIDTH,
+            DRAWER_HEIGHT,
             |window, cx| {
                 cx.bind_keys(service::key_bindings());
                 AppDrawer::new(None, window, cx)

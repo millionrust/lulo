@@ -18,7 +18,9 @@ use crate::catalog::{self, App, Category};
 use crate::service;
 use crate::{OpenApp, RevealInFinder};
 
-const TILE_W: f32 = 116.0;
+pub(crate) const DRAWER_WIDTH: f32 = 846.0;
+pub(crate) const DRAWER_HEIGHT: f32 = 800.0;
+const TILE_W: f32 = 104.0;
 const ICON: f32 = 60.0;
 const ROW_ICON: f32 = 32.0;
 
@@ -53,6 +55,9 @@ pub(crate) struct AppDrawer {
     filter: Option<Category>,
     /// Cursor into the currently-visible (filtered) list.
     selected: usize,
+    /// macOS does not paint a selection merely because the surface opened.
+    /// The highlight appears only after directional keyboard navigation.
+    selection_visible: bool,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<rmac_ui::ContextMenuState>,
     /// Columns in the grid as last laid out — used for up/down navigation.
@@ -139,6 +144,12 @@ impl AppDrawer {
         if count == 0 {
             return;
         }
+        if !self.selection_visible {
+            self.selected = 0;
+            self.selection_visible = true;
+            cx.notify();
+            return;
+        }
         let cols = if self.view == ViewMode::List {
             1
         } else {
@@ -148,10 +159,14 @@ impl AppDrawer {
         let step = dx + dy * cols;
         let next = (cur + step).clamp(0, count as isize - 1);
         self.selected = next as usize;
+        self.selection_visible = true;
         cx.notify();
     }
 
     fn launch_selected(&mut self, cx: &mut Context<Self>) {
+        if !self.selection_visible && self.query.read(cx).value().trim().is_empty() {
+            return;
+        }
         let vis = self.visible_indices(cx);
         if let Some(&idx) = vis.get(self.selected.min(vis.len().saturating_sub(1))) {
             let launch = self.apps[idx].launch.clone();
@@ -243,15 +258,25 @@ impl AppDrawer {
     }
 
     fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.query.update(cx, |st, cx| st.set_value("", window, cx));
-        self.selected = 0;
-        self.focus.focus(window);
+        if !self.query.read(cx).value().trim().is_empty() {
+            self.query.update(cx, |st, cx| st.set_value("", window, cx));
+            self.selected = 0;
+            self.selection_visible = false;
+            self.focus.focus(window);
+        } else if self.filter.take().is_some() {
+            self.selected = 0;
+            self.selection_visible = false;
+        } else {
+            self.dismiss(window, cx);
+            return;
+        }
         cx.notify();
     }
 
     fn set_filter(&mut self, filter: Option<Category>, cx: &mut Context<Self>) {
         self.filter = filter;
         self.selected = 0;
+        self.selection_visible = false;
         cx.notify();
     }
 }

@@ -4,7 +4,7 @@ use gpui::{
 };
 use gpui_component::Root;
 
-use crate::view::AppDrawer;
+use crate::view::{AppDrawer, DRAWER_HEIGHT, DRAWER_WIDTH};
 use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp};
 
 #[derive(Clone)]
@@ -103,7 +103,12 @@ fn route_shortcut(cx: &mut GpuiApp) {
         service.next_token
     });
     let mut drawer = None;
-    let options = rmac_ui::window_options_for_app(rmac_ui::app_id::APP_DRAWER, 1080.0, 720.0, cx);
+    let options = rmac_ui::window_options_for_app(
+        rmac_ui::app_id::APP_DRAWER,
+        DRAWER_WIDTH,
+        DRAWER_HEIGHT,
+        cx,
+    );
     let handle = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| {

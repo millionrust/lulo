@@ -46,7 +46,7 @@ impl AppDrawer {
             .items_center()
             .gap_2()
             .px_1()
-            .py_2()
+            .py_1p5()
             .rounded(px(10.0))
             .when(selected, |element: Stateful<Div>| {
                 element
@@ -203,11 +203,17 @@ impl AppDrawer {
                     .rounded(px(13.0))
                     .text_size(rmac_ui::text_px(12.0))
                     .when(active, |element: Stateful<Div>| {
-                        element.bg(mac::accent()).text_color(mac::on_accent())
+                        element
+                            .bg(mac::accent_subtle())
+                            .border_1()
+                            .border_color(mac::accent_border())
+                            .text_color(mac::text())
                     })
                     .when(!active, |element: Stateful<Div>| {
                         element
                             .bg(mac::control_fill())
+                            .border_1()
+                            .border_color(gpui::transparent_black())
                             .text_color(mac::text())
                             .hover(|hover| hover.bg(mac::control_fill_hover()))
                     })
@@ -222,8 +228,8 @@ impl AppDrawer {
             .flex_wrap()
             .gap_2()
             .justify_center()
-            .px_8()
-            .pb_2()
+            .px_5()
+            .py_3()
             .child(pill(
                 "cat-all".into(),
                 "All".into(),

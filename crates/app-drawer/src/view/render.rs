@@ -17,7 +17,7 @@ use super::{AppDrawer, LaunchDesktopAction, ViewMode, ICON, ROW_ICON, TILE_W};
 impl Render for AppDrawer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport_width = f32::from(window.viewport_size().width);
-        let usable_width = (viewport_width - 64.0).max(TILE_W);
+        let usable_width = (viewport_width - 48.0).max(TILE_W);
         self.cols = ((usable_width / (TILE_W + 8.0)).floor() as usize).max(1);
 
         let visible = self.visible_indices(cx);
@@ -55,7 +55,12 @@ impl Render for AppDrawer {
                 .iter()
                 .enumerate()
                 .map(|(position, &index)| {
-                    self.tile(&self.apps[index], position, position == selected, cx)
+                    self.tile(
+                        &self.apps[index],
+                        position,
+                        self.selection_visible && position == selected,
+                        cx,
+                    )
                 })
                 .collect::<Vec<_>>();
             div()
@@ -70,7 +75,12 @@ impl Render for AppDrawer {
                 .iter()
                 .enumerate()
                 .map(|(position, &index)| {
-                    self.row(&self.apps[index], position, position == selected, cx)
+                    self.row(
+                        &self.apps[index],
+                        position,
+                        self.selection_visible && position == selected,
+                        cx,
+                    )
                 })
                 .collect::<Vec<_>>();
             div()
@@ -123,9 +133,37 @@ impl Render for AppDrawer {
             }))
             .size_full()
             .v_flex()
-            .bg(mac::window())
+            .bg(mac::material())
+            .rounded(px(mac::radius_large_surface()))
+            .border_1()
+            .border_color(mac::separator())
             .text_color(mac::text())
-            .child(rmac_ui::title_bar("Applications"))
+            .child(
+                div()
+                    .h(px(58.0))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_5()
+                    .border_b_1()
+                    .border_color(mac::separator())
+                    .child(
+                        svg()
+                            .path("icons/layout-dashboard.svg")
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .text_color(mac::text_secondary()),
+                    )
+                    .child(
+                        div().flex_1().child(
+                            SearchField::new(&self.query)
+                                .appearance(false)
+                                .text_size(rmac_ui::text_px(25.0)),
+                        ),
+                    )
+                    .child(self.view_toggle(cx)),
+            )
             .when_some(notice, |drawer, (message, is_error)| {
                 drawer.child(
                     div()
@@ -167,30 +205,14 @@ impl Render for AppDrawer {
                         }),
                 )
             })
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .px_8()
-                    .py_4()
-                    .child(div().w(px(34.0)))
-                    .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .justify_center()
-                            .child(div().w(px(280.0)).child(SearchField::new(&self.query))),
-                    )
-                    .child(self.view_toggle(cx)),
-            )
             .child(self.category_bar(cx))
             .child(
                 div()
                     .id("grid-scroll")
                     .flex_1()
                     .overflow_y_scroll()
-                    .px_8()
-                    .pb_8()
+                    .px_5()
+                    .pb_5()
                     .child(body),
             )
             .when_some(context_menu, |element: Div, (menu, state)| {

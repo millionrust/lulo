@@ -9,7 +9,7 @@ impl AppDrawer {
         cx: &mut Context<Self>,
     ) -> Self {
         let (apps, mut catalog_error) = catalog::scan();
-        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Applications"));
 
         if let Some(token) = service_token {
             cx.on_release(move |_, cx| {
@@ -22,6 +22,7 @@ impl AppDrawer {
         // and is the redraw trigger for live filtering.
         cx.observe(&query, |this: &mut AppDrawer, _, cx| {
             this.selected = 0;
+            this.selection_visible = false;
             // If the active category filter no longer has any matches under the
             // new search, drop back to "All" so we never show an empty view.
             if let Some(c) = this.filter {
@@ -136,6 +137,7 @@ impl AppDrawer {
             view: ViewMode::Grid,
             filter: None,
             selected: 0,
+            selection_visible: false,
             menu_at: None,
             cols: 6,
             catalog_error,

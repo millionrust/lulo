@@ -213,10 +213,13 @@ impl Default for ShellSettings {
         Self {
             pinned_apps: [
                 rmac_apps::identity::FILES,
+                rmac_apps::identity::APP_DRAWER,
+                // Ubuntu 26.04 ships Firefox as this desktop identity. Keeping
+                // the browser in the first-run shelf makes a fresh rmac
+                // session useful before the user has customised the Dock.
+                "firefox_firefox.desktop",
                 rmac_apps::identity::TERMINAL,
                 rmac_apps::identity::NOTES,
-                rmac_apps::identity::TEXT_EDITOR,
-                rmac_apps::identity::SYSTEM_MONITOR,
                 rmac_apps::identity::SYSTEM_SETTINGS,
             ]
             .into_iter()

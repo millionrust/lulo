@@ -124,6 +124,23 @@ fn invalid_inventory_and_unavailable_focus_fail_closed() {
 }
 
 #[test]
+fn shortcut_uses_only_enabled_output_when_focus_is_temporarily_absent() {
+    let seats = SeatInventory::new(vec!["seat-a".into()]).unwrap();
+    let mut snapshot = compositor();
+    snapshot.focus.output = None;
+    assert_eq!(
+        global_shortcut(&snapshot, &seats).unwrap().output().0,
+        "private-output-27"
+    );
+
+    snapshot.outputs.push(output("private-output-28", true));
+    assert_eq!(
+        global_shortcut(&snapshot, &seats),
+        Err(ResolveError::NoFocusedOutput)
+    );
+}
+
+#[test]
 fn registry_publishes_only_complete_hotplug_snapshots() {
     let mut registry = SeatRegistry::default();
     assert_eq!(registry.require_complete().unwrap().unwrap().len(), 0);

@@ -59,18 +59,24 @@ impl fmt::Display for ResolveError {
 
 impl std::error::Error for ResolveError {}
 
-/// Resolve a global shortcut only when the compositor has an exact focused
-/// output and the Wayland host has exactly one complete seat. Multi-seat
-/// sessions fail explicitly because portal shortcut activation carries no seat.
+/// Resolve a global shortcut from the focused output, or from the sole enabled
+/// output when the compositor temporarily publishes no focus. Multi-output
+/// sessions without focus and multi-seat sessions remain explicitly ambiguous.
 pub fn global_shortcut(
     compositor: &rmac_compositor::Snapshot,
     seats: &SeatInventory,
 ) -> Result<Invocation, ResolveError> {
-    let output = compositor
-        .focus
-        .output
-        .as_ref()
-        .ok_or(ResolveError::NoFocusedOutput)?;
+    let output = match compositor.focus.output.as_ref() {
+        Some(output) => output,
+        None => {
+            let mut enabled = compositor.outputs.iter().filter(|output| output.enabled());
+            let output = enabled.next().ok_or(ResolveError::NoFocusedOutput)?;
+            if enabled.next().is_some() {
+                return Err(ResolveError::NoFocusedOutput);
+            }
+            &output.id
+        }
+    };
     let seat = match seats.seats.as_slice() {
         [] => return Err(ResolveError::NoSeat),
         [seat] => seat.clone(),

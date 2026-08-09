@@ -22,6 +22,10 @@ pub fn snapshot() -> Result<Snapshot, Error> {
     system_snapshot()
 }
 
+pub fn default_device(kind: DeviceKind) -> Result<DefaultDevice, Error> {
+    system_default_device(kind)
+}
+
 pub fn set_volume(kind: DeviceKind, volume: u8) -> Result<(), Error> {
     system_set_volume(kind, volume.min(100))
 }

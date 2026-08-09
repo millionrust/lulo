@@ -249,6 +249,24 @@ pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
 }
 
 #[cfg(not(target_os = "macos"))]
+pub(super) fn system_default_device(kind: DeviceKind) -> Result<DefaultDevice, Error> {
+    let operation = match kind {
+        DeviceKind::Output => "read default output device",
+        DeviceKind::Input => "read default input device",
+    };
+    let target = wpctl_default_target(kind);
+    let default =
+        parse_wpctl_default_inspect(&command("wpctl", &["inspect", target], operation)?, kind)
+            .ok_or_else(|| Error::new(operation, "wpctl returned an invalid default device"))?;
+    let level = parse_wpctl_level(&command("wpctl", &["get-volume", target], operation)?)
+        .ok_or_else(|| Error::new(operation, "wpctl returned an invalid volume"))?;
+    Ok(DefaultDevice {
+        name: default.description,
+        level,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
 pub(super) fn read_default_level(devices: &[Device], kind: DeviceKind) -> Result<Level, Error> {
     let Some(id) = default_device_id(devices) else {
         return Ok(Level::default());
@@ -785,6 +803,7 @@ pub(super) const MAX_DEVICE_CAPABILITIES: usize = 128;
 pub(super) struct DefaultNode {
     pub(super) id: String,
     pub(super) authority_name: String,
+    pub(super) description: String,
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -799,6 +818,8 @@ pub(super) fn parse_wpctl_default_inspect(output: &str, kind: DeviceKind) -> Opt
         DeviceKind::Input => "Audio/Source",
     };
     let mut authority_name = None;
+    let mut description = None;
+    let mut nickname = None;
     let mut media_class = None;
     for line in lines {
         let property = line.trim().strip_prefix("* ").unwrap_or(line.trim());
@@ -809,15 +830,26 @@ pub(super) fn parse_wpctl_default_inspect(output: &str, kind: DeviceKind) -> Opt
         match key {
             "node.name" if authority_name.is_none() => authority_name = parsed(),
             "node.name" => return None,
+            "node.description" if description.is_none() => description = parsed(),
+            "node.description" => return None,
+            "node.nick" if nickname.is_none() => nickname = parsed(),
+            "node.nick" => return None,
             "media.class" if media_class.is_none() => media_class = parsed(),
             "media.class" => return None,
             _ => {}
         }
     }
     let authority_name = bounded_authority_name(&authority_name?)?;
+    let description = description
+        .as_deref()
+        .or(nickname.as_deref())
+        .map(bounded_label)
+        .filter(|label| !label.is_empty())
+        .unwrap_or_else(|| bounded_label(&authority_name));
     (media_class.as_deref() == Some(expected_class)).then(|| DefaultNode {
         id: id.to_owned(),
         authority_name,
+        description,
     })
 }
 

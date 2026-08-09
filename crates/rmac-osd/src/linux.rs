@@ -32,67 +32,49 @@ pub(super) fn execute(command: Command) -> Result<Presentation, Error> {
 fn execute_audio(command: Command) -> Result<Presentation, Error> {
     use rmac_audio::DeviceKind;
 
-    let before = rmac_audio::snapshot().map_err(|_| Error::new(Operation::ReadAudio))?;
+    let kind = if command == Command::ToggleInputMute {
+        DeviceKind::Input
+    } else {
+        DeviceKind::Output
+    };
+    let before = rmac_audio::default_device(kind).map_err(|_| Error::new(Operation::ReadAudio))?;
     match command {
         Command::VolumeUp | Command::VolumeDown => {
-            if !before.available || !before.has_output {
-                return Err(Error::new(Operation::ReadAudio));
-            }
             let volume = match command {
-                Command::VolumeUp => before.output.volume.saturating_add(AUDIO_STEP).min(100),
-                Command::VolumeDown => before.output.volume.saturating_sub(AUDIO_STEP),
+                Command::VolumeUp => before.level.volume.saturating_add(AUDIO_STEP).min(100),
+                Command::VolumeDown => before.level.volume.saturating_sub(AUDIO_STEP),
                 _ => unreachable!(),
             };
             rmac_audio::set_volume(DeviceKind::Output, volume)
                 .map_err(|_| Error::new(Operation::ChangeAudio))?;
-            if before.output.muted {
+            if before.level.muted {
                 rmac_audio::set_muted(DeviceKind::Output, false)
                     .map_err(|_| Error::new(Operation::ChangeAudio))?;
             }
         }
         Command::ToggleOutputMute => {
-            if !before.available || !before.has_output {
-                return Err(Error::new(Operation::ReadAudio));
-            }
-            rmac_audio::set_muted(DeviceKind::Output, !before.output.muted)
+            rmac_audio::set_muted(DeviceKind::Output, !before.level.muted)
                 .map_err(|_| Error::new(Operation::ChangeAudio))?;
         }
         Command::ToggleInputMute => {
-            if !before.available || !before.has_input || !before.can_mute_input {
-                return Err(Error::new(Operation::ReadAudio));
-            }
-            rmac_audio::set_muted(DeviceKind::Input, !before.input.muted)
+            rmac_audio::set_muted(DeviceKind::Input, !before.level.muted)
                 .map_err(|_| Error::new(Operation::ChangeAudio))?;
         }
         Command::ShowVolume => {}
         _ => unreachable!(),
     }
 
-    let after = rmac_audio::snapshot().map_err(|_| Error::new(Operation::ReadAudio))?;
-    match command {
-        Command::ToggleInputMute => Presentation::new(
-            Kind::Input,
-            default_device_name(&after.inputs, "Microphone"),
-            after.input.volume,
-            after.input.muted,
-        ),
-        _ => Presentation::new(
-            Kind::Output,
-            default_device_name(&after.outputs, "Sound"),
-            after.output.volume,
-            after.output.muted,
-        ),
-    }
-}
-
-fn default_device_name(devices: &[rmac_audio::Device], fallback: &str) -> String {
-    let title = devices
-        .iter()
-        .find(|device| device.is_default)
-        .map(|device| device.name.trim())
-        .filter(|name| !name.is_empty())
-        .unwrap_or(fallback);
-    truncate_utf8(title, 128)
+    let after = rmac_audio::default_device(kind).map_err(|_| Error::new(Operation::ReadAudio))?;
+    Presentation::new(
+        if kind == DeviceKind::Input {
+            Kind::Input
+        } else {
+            Kind::Output
+        },
+        truncate_utf8(&after.name, 128),
+        after.level.volume,
+        after.level.muted,
+    )
 }
 
 fn truncate_utf8(value: &str, limit: usize) -> String {

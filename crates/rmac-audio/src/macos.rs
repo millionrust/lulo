@@ -45,6 +45,30 @@ pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
     })
 }
 
+pub(super) fn system_default_device(kind: DeviceKind) -> Result<DefaultDevice, Error> {
+    let snapshot = system_snapshot()?;
+    let (devices, level, operation) = match kind {
+        DeviceKind::Output => (
+            &snapshot.outputs,
+            snapshot.output,
+            "read default output device",
+        ),
+        DeviceKind::Input => (
+            &snapshot.inputs,
+            snapshot.input,
+            "read default input device",
+        ),
+    };
+    let device = devices
+        .iter()
+        .find(|device| device.is_default)
+        .ok_or_else(|| Error::new(operation, "the system has no default audio device"))?;
+    Ok(DefaultDevice {
+        name: device.name.clone(),
+        level,
+    })
+}
+
 #[cfg(target_os = "macos")]
 pub(super) fn system_set_volume(kind: DeviceKind, volume: u8) -> Result<(), Error> {
     let script = match kind {

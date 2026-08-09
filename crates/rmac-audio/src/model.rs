@@ -141,6 +141,12 @@ pub struct Level {
     pub muted: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DefaultDevice {
+    pub name: String,
+    pub level: Level,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub available: bool,

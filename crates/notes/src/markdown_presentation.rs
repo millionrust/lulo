@@ -1,11 +1,11 @@
 //! Read-only Markdown preview projection for Notes.
 
 use gpui::{
-    div, font, prelude::FluentBuilder as _, px, AnyElement, IntoElement, ParentElement,
-    StrikethroughStyle, Styled, StyledText, TextRun,
+    div, font, prelude::FluentBuilder as _, px, AnyElement, InteractiveElement as _, IntoElement,
+    ParentElement, StrikethroughStyle, Styled, StyledText, TextRun,
 };
 use rmac_notes_storage::{MarkdownPreviewBlock, MarkdownPreviewBlockKind, MarkdownPreviewDocument};
-use rmac_ui::mac;
+use rmac_ui::{mac, StyledExt as _};
 
 use super::centered_state;
 

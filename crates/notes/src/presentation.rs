@@ -9,7 +9,7 @@ use gpui::{
     StrikethroughStyle, Styled, StyledText, TextRun, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size};
-use rmac_ui::mac;
+use rmac_ui::{mac, StyledExt as _};
 
 use super::search_highlight::SearchTextFragment;
 

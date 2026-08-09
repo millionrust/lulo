@@ -250,6 +250,7 @@ fn worker_failure_message(failure: WorkerFailure) -> String {
     match failure {
         WorkerFailure::WrongPhase => "Notes is not ready for that action".into(),
         WorkerFailure::CommitPending => "Resolve the pending Notes change first".into(),
+        WorkerFailure::PendingConflict(error) => error.to_string(),
         WorkerFailure::Scheduler(error) => error.to_string(),
         WorkerFailure::Mutation(error) => error.to_string(),
         WorkerFailure::Storage(error) => error.to_string(),

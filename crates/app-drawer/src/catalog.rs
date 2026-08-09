@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 #[cfg(target_os = "macos")]
 use std::path::Path;
 use std::path::PathBuf;
@@ -115,6 +116,7 @@ pub(crate) fn scan() -> (Vec<App>, Option<SharedString>) {
             );
         }
     };
+    let catalog = suppress_replaced_applications(catalog);
 
     #[cfg(target_os = "macos")]
     let categories = {
@@ -153,6 +155,28 @@ pub(crate) fn scan() -> (Vec<App>, Option<SharedString>) {
         })
         .collect();
     (apps, None)
+}
+
+fn suppress_replaced_applications(
+    catalog: Vec<rmac_apps::Application>,
+) -> Vec<rmac_apps::Application> {
+    let replaced_names = catalog
+        .iter()
+        .filter(|application| is_first_party(application.id.as_str()))
+        .map(|application| application.name.trim().to_lowercase())
+        .collect::<BTreeSet<_>>();
+    catalog
+        .into_iter()
+        .filter(|application| {
+            is_first_party(application.id.as_str())
+                || !replaced_names.contains(&application.name.trim().to_lowercase())
+        })
+        .collect()
+}
+
+fn is_first_party(desktop_id: &str) -> bool {
+    let app_id = desktop_id.strip_suffix(".desktop").unwrap_or(desktop_id);
+    rmac_apps::identity::ALL.contains(&app_id)
 }
 
 pub(crate) fn signal_change(sender: &async_channel::Sender<()>) {
@@ -246,7 +270,29 @@ fn icns_path(app: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::signal_change;
+    use std::path::PathBuf;
+
+    use super::{signal_change, suppress_replaced_applications};
+
+    fn application(id: &str, name: &str) -> rmac_apps::Application {
+        rmac_apps::Application {
+            id: id.into(),
+            name: name.into(),
+            generic_name: None,
+            keywords: Vec::new(),
+            source: PathBuf::from(format!("/usr/share/applications/{id}")),
+            icon: None,
+            categories: Vec::new(),
+            mime_types: Vec::new(),
+            launch: rmac_apps::LaunchSpec::Command {
+                program: PathBuf::from("/usr/bin/true"),
+                args: Vec::new(),
+                working_dir: None,
+                terminal: false,
+            },
+            actions: Vec::new(),
+        }
+    }
 
     #[test]
     fn catalog_change_bursts_coalesce() {
@@ -257,6 +303,39 @@ mod tests {
         signal_change(&sender);
 
         assert_eq!(receiver.len(), 1);
+    }
+
+    #[test]
+    fn first_party_replacements_hide_only_exact_name_duplicates() {
+        let catalog = vec![
+            application("org.gnome.Nautilus.desktop", "Files"),
+            application("org.rmac.Files.desktop", "Files"),
+            application("org.example.FileSearch.desktop", "File Search"),
+            application("org.example.Terminal.desktop", "Terminal"),
+        ];
+
+        let filtered = suppress_replaced_applications(catalog);
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|application| application.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "org.rmac.Files.desktop",
+                "org.example.FileSearch.desktop",
+                "org.example.Terminal.desktop"
+            ]
+        );
+    }
+
+    #[test]
+    fn duplicate_names_remain_when_rmac_does_not_replace_them() {
+        let catalog = vec![
+            application("org.example.EditorOne.desktop", "Code"),
+            application("org.example.EditorTwo.desktop", "Code"),
+        ];
+
+        assert_eq!(suppress_replaced_applications(catalog).len(), 2);
     }
 }
 mod category;

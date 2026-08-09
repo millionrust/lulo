@@ -45,7 +45,8 @@ for dock in docks:
         node for node in nodes if node.getRoleName() in {"button", "push button"}
     ]
     names = [button.name for button in buttons]
-    if len(buttons) < 2 or names.count("Trash") != 1 or any(not name for name in names):
+    trash_names = [name for name in names if name == "Trash" or name.startswith("Trash, ")]
+    if len(buttons) < 2 or len(trash_names) != 1 or any(not name for name in names):
         roles = [(node.getRoleName(), node.name) for node in nodes]
         raise AssertionError(
             "a Dock must expose at least one named application and exactly one Trash; "

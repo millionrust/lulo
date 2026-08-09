@@ -4697,6 +4697,8 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-dock",
+ "rmac-places",
+ "rmac-places-system",
  "rmac-shell-runtime",
  "rmac-shell-settings",
  "rmac-shell-status",

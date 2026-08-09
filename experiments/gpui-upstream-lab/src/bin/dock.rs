@@ -31,12 +31,14 @@ mod linux_wayland {
     enum SourceEvent {
         Settings(Result<rmac_shell_settings::ShellSettings, String>),
         Catalog(Result<Vec<rmac_apps::Application>, String>),
+        Places(Result<rmac_places::Snapshot, String>),
     }
 
     struct DockStatus {
         settings: rmac_shell_settings::ShellSettings,
         catalog: Vec<rmac_apps::Application>,
         compositor: rmac_compositor::State,
+        places: rmac_places::Snapshot,
     }
 
     impl DockStatus {
@@ -72,13 +74,22 @@ mod linux_wayland {
                                 this.catalog = catalog;
                                 cx.notify();
                             }
+                            SourceEvent::Places(Ok(places)) if this.places != places => {
+                                this.places = places;
+                                cx.notify();
+                            }
                             SourceEvent::Settings(Err(detail)) => {
                                 eprintln!("Dock settings unavailable: {detail}");
                             }
                             SourceEvent::Catalog(Err(detail)) => {
                                 eprintln!("Dock catalog unavailable: {detail}");
                             }
-                            SourceEvent::Settings(Ok(_)) | SourceEvent::Catalog(Ok(_)) => {}
+                            SourceEvent::Places(Err(detail)) => {
+                                eprintln!("Dock places unavailable: {detail}");
+                            }
+                            SourceEvent::Settings(Ok(_))
+                            | SourceEvent::Catalog(Ok(_))
+                            | SourceEvent::Places(Ok(_)) => {}
                         })
                         .is_err()
                     {
@@ -91,15 +102,17 @@ mod linux_wayland {
                 settings: rmac_shell_settings::ShellSettings::default(),
                 catalog: Vec::new(),
                 compositor: rmac_compositor::State::default(),
+                places: rmac_places::Snapshot::default(),
             }
         }
 
         fn model(&self) -> rmac_dock::Model {
-            rmac_dock::Model::build(
+            rmac_dock::Model::build_with_places(
                 &self.settings.pinned_apps,
                 &self.settings.dock,
                 &self.catalog,
                 &self.compositor.snapshot(),
+                &self.places,
             )
         }
     }
@@ -131,6 +144,21 @@ mod linux_wayland {
             record_render_count(window, self.display_id, self.render_count);
             let model = self.status.read(cx).model();
             let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
+            let trash = model
+                .special_items
+                .iter()
+                .find(|item| item.kind == rmac_dock::SpecialItemKind::Trash);
+            let trash_full = trash
+                .and_then(|trash| trash.item_count)
+                .is_some_and(|count| count > 0);
+            let trash_label = match trash.and_then(|trash| trash.item_count) {
+                Some(0) => "Trash, empty".into(),
+                Some(1) => "Trash, 1 item".into(),
+                Some(count) => format!("Trash, {count} items"),
+                None => "Trash unavailable".into(),
+            };
+            let trash_activation = model.activate_special(rmac_dock::SpecialItemKind::Trash);
+            let trash_available = trash_activation == rmac_dock::SpecialActivation::OpenTrash;
             let pinned_count = model.items.iter().take_while(|item| item.pinned).count();
             let separates_running = pinned_count > 0 && pinned_count < entries.len();
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
@@ -323,7 +351,7 @@ mod linux_wayland {
                             let mut trash = div()
                                 .id(format!("dock-trash-{}", self.display_id))
                                 .role(Role::Button)
-                                .aria_label("Trash")
+                                .aria_label(trash_label)
                                 .relative()
                                 .w(px(ICON_SIZE))
                                 .h(px(ICON_SIZE))
@@ -331,9 +359,7 @@ mod linux_wayland {
                                 .items_center()
                                 .justify_center()
                                 .rounded(px(13.0))
-                                .cursor_pointer()
                                 .hover(|style| style.opacity(0.88))
-                                .on_click(|_, _, cx| dispatch_trash(cx))
                                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                     if *hovered {
                                         this.hovered_item = Some((trash_center, "Trash".into()));
@@ -347,7 +373,12 @@ mod linux_wayland {
                                         cx.notify();
                                     }
                                 }));
-                            if let Some(path) = trash_icon_path() {
+                            if trash_available {
+                                trash = trash.cursor_pointer().on_click(move |_, _, cx| {
+                                    dispatch_special(trash_activation.clone(), cx)
+                                });
+                            }
+                            if let Some(path) = trash_icon_path(trash_full) {
                                 trash = trash
                                     .child(img(path).w(px(54.0)).h(px(54.0)).rounded(px(14.0)));
                             }
@@ -398,9 +429,14 @@ mod linux_wayland {
         )
     }
 
-    fn trash_icon_path() -> Option<PathBuf> {
+    fn trash_icon_path(full: bool) -> Option<PathBuf> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../crates/rmac-dock/assets/icons/trash-empty.svg");
+            .join("../../crates/rmac-dock/assets/icons")
+            .join(if full {
+                "trash-full.svg"
+            } else {
+                "trash-empty.svg"
+            });
         path.is_file().then_some(path)
     }
 
@@ -463,7 +499,10 @@ mod linux_wayland {
         }
     }
 
-    fn dispatch_trash(cx: &mut App) {
+    fn dispatch_special(activation: rmac_dock::SpecialActivation, cx: &mut App) {
+        if activation != rmac_dock::SpecialActivation::OpenTrash {
+            return;
+        }
         cx.background_executor()
             .spawn(async move {
                 let opened = blocking::unblock(|| {
@@ -562,6 +601,36 @@ mod linux_wayland {
         }
     }
 
+    async fn watch_places(sender: async_channel::Sender<SourceEvent>) {
+        let (changed_tx, changed_rx) = async_channel::bounded(1);
+        loop {
+            let callback_tx = changed_tx.clone();
+            let setup = blocking::unblock(move || {
+                let report = rmac_places_system::snapshot(&rmac_places_system::SystemBackend)
+                    .map_err(|error| error.to_string())?;
+                let watcher = rmac_places_system::watch(&report, move |_| {
+                    let _ = callback_tx.try_send(());
+                })
+                .map_err(|error| error.to_string())?;
+                Ok::<_, String>((watcher, report.snapshot))
+            })
+            .await;
+            let (_watcher, places) = match setup {
+                Ok(setup) => setup,
+                Err(detail) => {
+                    let _ = sender.send(SourceEvent::Places(Err(detail))).await;
+                    return;
+                }
+            };
+            if sender.send(SourceEvent::Places(Ok(places))).await.is_err() {
+                return;
+            }
+            if changed_rx.recv().await.is_err() {
+                return;
+            }
+        }
+    }
+
     fn record_configured_surface(window: &Window, display_id: u64) {
         let Some(path) = env::var_os(READY_FILE_ENV).map(PathBuf::from) else {
             return;
@@ -651,7 +720,10 @@ mod linux_wayland {
                 .spawn(watch_settings(source_tx.clone()))
                 .detach();
             cx.background_executor()
-                .spawn(watch_catalog(source_tx))
+                .spawn(watch_catalog(source_tx.clone()))
+                .detach();
+            cx.background_executor()
+                .spawn(watch_places(source_tx))
                 .detach();
             let status = cx.new(|cx| DockStatus::new(compositor_rx, source_rx, cx));
             let (output_tx, output_rx) = async_channel::bounded(4);

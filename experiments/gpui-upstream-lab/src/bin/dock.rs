@@ -152,7 +152,11 @@ mod linux_wayland {
         render_count: u64,
         status: Entity<DockStatus>,
         hovered_item: Option<(f32, String)>,
-        input_region: Option<(f32, f32)>,
+        input_region: Option<(f32, f32, bool)>,
+        pointer_inside: bool,
+        hidden: bool,
+        autohide_configured: Option<bool>,
+        hide_generation: u64,
     }
 
     impl Dock {
@@ -170,7 +174,30 @@ mod linux_wayland {
                 status,
                 hovered_item: None,
                 input_region: None,
+                pointer_inside: false,
+                hidden: false,
+                autohide_configured: None,
+                hide_generation: 0,
             }
+        }
+
+        fn schedule_hide(&mut self, cx: &mut Context<Self>) {
+            self.hide_generation = self.hide_generation.saturating_add(1);
+            let generation = self.hide_generation;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(rmac_dock::motion::HIDE_DELAY_MS))
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.hide_generation == generation && !this.pointer_inside {
+                        this.hidden = true;
+                        this.hovered_item = None;
+                        this.input_region = None;
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
         }
     }
 
@@ -181,6 +208,15 @@ mod linux_wayland {
             let status = self.status.read(cx);
             let dock_settings = status.settings.dock.clone();
             let model = status.model();
+            if self.autohide_configured != Some(dock_settings.autohide) {
+                self.autohide_configured = Some(dock_settings.autohide);
+                if dock_settings.autohide {
+                    self.schedule_hide(cx);
+                } else {
+                    self.hide_generation = self.hide_generation.saturating_add(1);
+                    self.hidden = false;
+                }
+            }
             let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
             let trash = model
                 .special_items
@@ -215,18 +251,30 @@ mod linux_wayland {
                 + 2.0 * SHELF_PADDING;
             let shelf_start = (axis - shelf_extent) / 2.0;
             let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
-            let input_region = (shelf_start, shelf_extent);
+            let input_region = (shelf_start, shelf_extent, self.hidden);
             if self.input_region != Some(input_region) {
-                let bounds = match self.placement {
-                    rmac_shell_settings::DockPlacement::Bottom => Bounds {
+                let bounds = match (self.placement, self.hidden) {
+                    (rmac_shell_settings::DockPlacement::Bottom, true) => Bounds {
+                        origin: point(px(shelf_start), px(SURFACE_HEIGHT - 2.0)),
+                        size: Size::new(px(shelf_extent), px(2.0)),
+                    },
+                    (rmac_shell_settings::DockPlacement::Left, true) => Bounds {
+                        origin: point(px(0.0), px(shelf_start)),
+                        size: Size::new(px(2.0), px(shelf_extent)),
+                    },
+                    (rmac_shell_settings::DockPlacement::Right, true) => Bounds {
+                        origin: point(px(f32::from(window_size.width) - 2.0), px(shelf_start)),
+                        size: Size::new(px(2.0), px(shelf_extent)),
+                    },
+                    (rmac_shell_settings::DockPlacement::Bottom, false) => Bounds {
                         origin: point(px(shelf_start), px(SURFACE_HEIGHT - EXCLUSIVE_ZONE)),
                         size: Size::new(px(shelf_extent), px(EXCLUSIVE_ZONE)),
                     },
-                    rmac_shell_settings::DockPlacement::Left => Bounds {
+                    (rmac_shell_settings::DockPlacement::Left, false) => Bounds {
                         origin: point(px(0.0), px(shelf_start)),
                         size: Size::new(px(EXCLUSIVE_ZONE), px(shelf_extent)),
                     },
-                    rmac_shell_settings::DockPlacement::Right => Bounds {
+                    (rmac_shell_settings::DockPlacement::Right, false) => Bounds {
                         origin: point(
                             px(f32::from(window_size.width) - EXCLUSIVE_ZONE),
                             px(shelf_start),
@@ -237,42 +285,49 @@ mod linux_wayland {
                 window.set_input_region(Some(&[bounds]));
                 self.input_region = Some(input_region);
             }
-            let tooltip = self.hovered_item.as_ref().map(|(relative_center, label)| {
-                let icon_center = shelf_start + *relative_center;
-                let tooltip_bottom = TOOLTIP_BOTTOM.max(
-                    magnified_icon_size(*relative_center, Some(*relative_center), &dock_settings)
-                        + 36.0,
-                );
-                let tooltip = div()
-                    .absolute()
-                    .w(px(TOOLTIP_WIDTH))
-                    .flex()
-                    .justify_center()
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded(px(8.0))
-                            .bg(rgba(0x18263aee))
-                            .border_1()
-                            .border_color(rgba(0xffffff35))
-                            .shadow_lg()
-                            .text_sm()
-                            .text_color(rgba(0xffffffff))
-                            .child(label.clone()),
+            let tooltip = (!self.hidden)
+                .then_some(self.hovered_item.as_ref())
+                .flatten()
+                .map(|(relative_center, label)| {
+                    let icon_center = shelf_start + *relative_center;
+                    let tooltip_bottom = TOOLTIP_BOTTOM.max(
+                        magnified_icon_size(
+                            *relative_center,
+                            Some(*relative_center),
+                            &dock_settings,
+                        ) + 36.0,
                     );
-                match self.placement {
-                    rmac_shell_settings::DockPlacement::Bottom => tooltip
-                        .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
-                        .bottom(px(tooltip_bottom)),
-                    rmac_shell_settings::DockPlacement::Left => tooltip
-                        .left(px(EXCLUSIVE_ZONE + 8.0))
-                        .top(px(icon_center - 18.0)),
-                    rmac_shell_settings::DockPlacement::Right => tooltip
-                        .right(px(EXCLUSIVE_ZONE + 8.0))
-                        .top(px(icon_center - 18.0)),
-                }
-            });
+                    let tooltip = div()
+                        .absolute()
+                        .w(px(TOOLTIP_WIDTH))
+                        .flex()
+                        .justify_center()
+                        .child(
+                            div()
+                                .px_3()
+                                .py_1()
+                                .rounded(px(8.0))
+                                .bg(rgba(0x18263aee))
+                                .border_1()
+                                .border_color(rgba(0xffffff35))
+                                .shadow_lg()
+                                .text_sm()
+                                .text_color(rgba(0xffffffff))
+                                .child(label.clone()),
+                        );
+                    match self.placement {
+                        rmac_shell_settings::DockPlacement::Bottom => tooltip
+                            .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
+                            .bottom(px(tooltip_bottom)),
+                        rmac_shell_settings::DockPlacement::Left => tooltip
+                            .left(px(EXCLUSIVE_ZONE + 8.0))
+                            .top(px(icon_center - 18.0)),
+                        rmac_shell_settings::DockPlacement::Right => tooltip
+                            .right(px(EXCLUSIVE_ZONE + 8.0))
+                            .top(px(icon_center - 18.0)),
+                    }
+                });
+            let autohide = dock_settings.autohide;
             let root = div()
                 .id(format!("dock-{}", self.display_id))
                 .role(Role::Toolbar)
@@ -280,6 +335,19 @@ mod linux_wayland {
                 .size_full()
                 .relative()
                 .flex()
+                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                    this.pointer_inside = *hovered;
+                    this.hide_generation = this.hide_generation.saturating_add(1);
+                    if *hovered {
+                        if this.hidden {
+                            this.hidden = false;
+                            this.input_region = None;
+                            cx.notify();
+                        }
+                    } else if autohide {
+                        this.schedule_hide(cx);
+                    }
+                }))
                 .children(tooltip);
             let root = match self.placement {
                 rmac_shell_settings::DockPlacement::Bottom => {
@@ -300,7 +368,8 @@ mod linux_wayland {
                 .bg(rgba(0xe7ecf18c))
                 .border_1()
                 .border_color(rgba(0xffffffb8))
-                .shadow_lg();
+                .shadow_lg()
+                .opacity(if self.hidden { 0.0 } else { 1.0 });
             let shelf = if horizontal {
                 shelf.items_end()
             } else {

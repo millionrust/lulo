@@ -9,6 +9,7 @@ lab_dir="$repo_root/experiments/gpui-upstream-lab"
 lab_target_dir="$lab_dir/target"
 minimum_kib=$((15 * 1024 * 1024))
 build_minimum_kib=$((25 * 1024 * 1024))
+cargo_jobs=${CARGO_BUILD_JOBS:-1}
 
 usage() {
   echo "usage: $0 --output /absolute/new/directory" >&2
@@ -24,6 +25,9 @@ fail() {
   echo "native input build refused: $*" >&2
   exit 1
 }
+
+[[ "$cargo_jobs" =~ ^[1-9][0-9]*$ ]] \
+  || fail "CARGO_BUILD_JOBS must be a positive decimal integer"
 
 available_kib() {
   df -Pk "$repo_root" | awk 'NR == 2 { print $4 }'
@@ -70,7 +74,7 @@ mapfile -t binary_names <<<"$inventory"
 export CARGO_TARGET_DIR="$target_dir"
 (
   cd "$repo_root"
-  cargo build --locked --release \
+  cargo build --locked --release --jobs "$cargo_jobs" \
     -p rmac-app-drawer --bin rmac-app-drawer \
     -p rmac-finder --bin rmac-files \
     -p rmac-notes --bin rmac-notes \
@@ -95,6 +99,7 @@ export CARGO_TARGET_DIR="$target_dir"
 (
   cd "$lab_dir"
   CARGO_TARGET_DIR="$lab_target_dir" cargo build --locked --release \
+    --jobs "$cargo_jobs" \
     --features wayland --bin wallpaper --bin top-bar --bin dock --bin osd
 )
 

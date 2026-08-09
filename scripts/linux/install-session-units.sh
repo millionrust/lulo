@@ -15,6 +15,13 @@ unit_dir=${RMAC_SYSTEMD_USER_DIR:-"${config_home}/systemd/user"}
 libexec_dir="${HOME}/.local/libexec/rmac"
 bin_dir=${RMAC_BIN_DIR:-"${HOME}/.local/bin"}
 target_dir=${CARGO_TARGET_DIR:-target}
+cargo_jobs=${CARGO_BUILD_JOBS:-1}
+case ${cargo_jobs} in
+    ''|0|0[0-9]*|*[!0-9]*)
+        echo "CARGO_BUILD_JOBS must be a positive decimal integer." >&2
+        exit 1
+        ;;
+esac
 if [ ! -x /usr/bin/swaylock ]; then
     echo "swaylock is required at /usr/bin/swaylock for secure session locking." >&2
     exit 1
@@ -48,7 +55,7 @@ case ${target_dir} in
     *) target_dir="${repo_root}/${target_dir}" ;;
 esac
 
-(cd "${repo_root}" && cargo build --locked --release \
+(cd "${repo_root}" && cargo build --locked --release --jobs "${cargo_jobs}" \
     -p rmac-session --bin rmac-session-supervisor \
     -p rmac-launcher-app --bin rmac-launcher \
     -p rmac-app-drawer --bin rmac-app-drawer \

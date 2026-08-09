@@ -4,15 +4,17 @@ PartOf=rmac-session.target
 After=rmac-session-supervisor.service rmac-focus.service
 Before=rmac-shortcut-broker.service
 OnFailure=rmac-component-failure@%N.service
-StartLimitIntervalSec=60s
-StartLimitBurst=4
+StartLimitIntervalSec=0
 ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-quick-settings
 
 [Service]
 Type=notify
 NotifyAccess=all
 ExecStart=%h/.local/libexec/rmac/rmac-quick-settings
-Restart=on-failure
-RestartSec=1s
+# GPUI's Linux event loop exits successfully when its final window closes.
+# Re-arm the endpoint after that expected lifecycle, but leave a non-zero exit
+# failed so OnFailure can move the session through its normal recovery path.
+Restart=on-success
+RestartSec=100ms
 NoNewPrivileges=yes
 PrivateTmp=yes

@@ -119,25 +119,37 @@ fn rejects_unrecognized_units_before_running_a_command() {
 
 #[test]
 fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
-    let units = [
+    let resident_units = [
         include_str!("../units/rmac-top-bar.service"),
         include_str!("../units/rmac-dock.service"),
-        include_str!("../units/rmac-launcher.service"),
-        include_str!("../units/rmac-app-drawer.service"),
-        include_str!("../units/rmac-quick-settings.service"),
         include_str!("../units/rmac-notification-center.service"),
-        include_str!("../units/rmac-notification-center-panel.service"),
         include_str!("../units/rmac-focus.service"),
         include_str!("../units/rmac-wallpaper.service"),
         include_str!("../units/rmac-shortcut-broker.service"),
     ];
-    for unit in units {
+    for unit in resident_units {
         assert!(unit.contains("Restart=on-failure"));
         assert!(unit.contains("RestartSec=1s"));
         assert!(unit.contains("StartLimitIntervalSec=60s"));
         assert!(unit.contains("StartLimitBurst=4"));
         assert!(unit.contains("OnFailure=rmac-component-failure@%N.service"));
         assert!(unit.contains("ConditionFileIsExecutable=%h/.local/libexec/rmac/"));
+        assert!(!unit.contains("/bin/sh"));
+    }
+    let on_demand_units = [
+        include_str!("../units/rmac-launcher.service"),
+        include_str!("../units/rmac-app-drawer.service"),
+        include_str!("../units/rmac-quick-settings.service"),
+        include_str!("../units/rmac-notification-center-panel.service"),
+    ];
+    for unit in on_demand_units {
+        assert!(unit.contains("Restart=on-success"));
+        assert!(unit.contains("RestartSec=100ms"));
+        assert!(unit.contains("StartLimitIntervalSec=0"));
+        assert!(unit.contains("OnFailure=rmac-component-failure@%N.service"));
+        assert!(unit.contains("ConditionFileIsExecutable=%h/.local/libexec/rmac/"));
+        assert!(!unit.contains("Restart=on-failure"));
+        assert!(!unit.contains("StartLimitBurst="));
         assert!(!unit.contains("/bin/sh"));
     }
     let failure = include_str!("../units/rmac-component-failure@.service");

@@ -11,7 +11,7 @@ mod linux_wayland {
 
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
-        Context, DisplayId, Entity, FontWeight, PlatformDisplay, Role, Size, Window,
+        Context, DisplayId, Entity, FontWeight, PlatformDisplay, QuitMode, Role, Size, Window,
         WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
@@ -1088,7 +1088,8 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        application().run(|cx: &mut App| {
+        let app = application().with_quit_mode(QuitMode::Explicit);
+        app.run(|cx: &mut App| {
             let (compositor_tx, compositor_rx) = async_channel::bounded(64);
             cx.background_executor()
                 .spawn(async move {

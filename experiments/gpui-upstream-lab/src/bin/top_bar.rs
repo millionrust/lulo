@@ -14,9 +14,9 @@ mod linux_wayland {
     use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
-        Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay, Role,
-        Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
-        WindowOptions,
+        Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay,
+        QuitMode, Role, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_gpui_upstream_lab::{
@@ -849,7 +849,8 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        application().run(|cx: &mut App| {
+        let app = application().with_quit_mode(QuitMode::Explicit);
+        app.run(|cx: &mut App| {
             let status = start_status(cx);
             let (output_tx, output_rx) = async_channel::bounded(4);
             cx.background_executor()

@@ -10,8 +10,9 @@ mod linux_wayland {
 
     use gpui::{
         div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
-        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, PlatformDisplay, RenderImage,
-        Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, PlatformDisplay, QuitMode,
+        RenderImage, Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
+        WindowOptions,
     };
     use gpui_platform::application;
     use uuid::Uuid;
@@ -336,7 +337,8 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        application().run(|cx: &mut App| {
+        let app = application().with_quit_mode(QuitMode::Explicit);
+        app.run(|cx: &mut App| {
             let status = start_status(cx);
             let (output_tx, output_rx) = async_channel::bounded(4);
             cx.background_executor()

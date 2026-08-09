@@ -236,9 +236,9 @@ wait_for_path "$runtime_root/layer-shell.ready" "$layer_pid" "layer-shell probe"
 grep -qx 'layer-shell' "$runtime_root/layer-shell.ready"
 
 tree_json="$(swaymsg -t get_tree -r)"
-workspace_y="$(jq -r '[.. | objects | select(.type? == "workspace" and .name? != "__i3_scratch")][0].rect.y' <<<"$tree_json")"
-if [[ "$workspace_y" != "40" ]]; then
-  echo "layer-shell exclusive zone did not reserve 40 pixels; workspace y=$workspace_y" >&2
+workspace_offsets="$(jq -r '[.. | objects | select(.type? == "workspace" and .name? != "__i3_scratch") | .rect.y] | unique | sort | join(",")' <<<"$tree_json")"
+if [[ "$workspace_offsets" != "0,40" ]]; then
+  echo "single-output layer-shell probe did not reserve 40 pixels; y=$workspace_offsets" >&2
   exit 1
 fi
 

@@ -4,6 +4,8 @@ set -u
 session_pid=
 rmac_started=false
 rmac_config_imported=false
+safe_mode=false
+manager_environment=
 
 stop_rmac()
 {
@@ -53,6 +55,7 @@ if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
     # does not select rmac portal backends or optional shell surfaces.
     XDG_CURRENT_DESKTOP=niri
     XDG_SESSION_DESKTOP=niri
+    safe_mode=true
     unset NIRI_CONFIG
     /usr/bin/systemctl --user unset-environment NIRI_CONFIG \
         >/dev/null 2>&1 || :
@@ -117,22 +120,22 @@ while [ "${attempt}" -lt 300 ]; do
         fi
         exit 1
     fi
+    manager_environment=$(
+        /usr/bin/systemctl --user show-environment 2>/dev/null
+    ) || manager_environment=
     if /usr/bin/systemctl --user --quiet is-active niri.service &&
-        /usr/bin/systemctl --user show-environment 2>/dev/null |
+        printf '%s\n' "${manager_environment}" |
             /usr/bin/awk \
-                -v current_desktop="${XDG_CURRENT_DESKTOP}" \
-                -v session_desktop="${XDG_SESSION_DESKTOP}" \
                 -v niri_config="${NIRI_CONFIG-}" '
-                $0 == "XDG_CURRENT_DESKTOP=" current_desktop { current = 1 }
-                $0 == "XDG_SESSION_DESKTOP=" session_desktop { desktop = 1 }
                 $0 == "XDG_SESSION_TYPE=wayland" { wayland = 1 }
                 $0 == "NIRI_CONFIG=" niri_config { config = 1 }
+                index($0, "WAYLAND_DISPLAY=") == 1 && length($0) > 16 { display = 1 }
                 index($0, "NIRI_SOCKET=") == 1 && length($0) > 12 { socket = 1 }
                 END {
-                    if (current_desktop == "rmac:niri") {
-                        exit !(current && desktop && wayland && config && socket)
+                    if (niri_config != "") {
+                        exit !(wayland && config && display && socket)
                     }
-                    exit !(current && desktop && wayland && socket)
+                    exit !(wayland && display && socket)
                 }
             '; then
             ready=true
@@ -145,6 +148,58 @@ done
 if [ "${ready}" != true ]; then
     echo "niri did not become ready for the rmac session" >&2
     terminate_session TERM 1
+fi
+
+# niri-session imports its own compositor identity into the user manager and
+# publishes the newly-created Wayland and IPC socket values there. Keep the
+# package wrapper's rmac identity, but copy only those two bounded routing
+# values back into this process before starting supervised shell services.
+environment_value()
+{
+    printf '%s\n' "${manager_environment}" |
+        /usr/bin/awk -v key="$1=" '
+            index($0, key) == 1 {
+                print substr($0, length(key) + 1)
+                found = 1
+                exit
+            }
+            END { if (!found) exit 1 }
+        '
+}
+
+WAYLAND_DISPLAY=$(environment_value WAYLAND_DISPLAY) || {
+    echo "niri did not publish a Wayland display" >&2
+    terminate_session TERM 1
+}
+NIRI_SOCKET=$(environment_value NIRI_SOCKET) || {
+    echo "niri did not publish its control socket" >&2
+    terminate_session TERM 1
+}
+case ${WAYLAND_DISPLAY} in
+    ''|*/*|*[!A-Za-z0-9._-]*)
+        echo "niri published an invalid Wayland display" >&2
+        terminate_session TERM 1
+        ;;
+esac
+case ${NIRI_SOCKET} in
+    "${XDG_RUNTIME_DIR:-/invalid}"/niri.*.sock) ;;
+    *)
+        echo "niri published an invalid control socket" >&2
+        terminate_session TERM 1
+        ;;
+esac
+export WAYLAND_DISPLAY NIRI_SOCKET
+if DISPLAY=$(environment_value DISPLAY 2>/dev/null); then
+    export DISPLAY
+else
+    unset DISPLAY
+fi
+
+if [ "${safe_mode}" = false ]; then
+    # Ubuntu's niri package may enable Waybar for graphical-session.target.
+    # rmac owns the only menu bar in its normal session; stop the third-party
+    # bar without disabling it for the separately selectable niri session.
+    /usr/bin/systemctl --user stop waybar.service >/dev/null 2>&1 || :
 fi
 
 if ! /usr/libexec/rmac/rmac-session-start --system-package; then

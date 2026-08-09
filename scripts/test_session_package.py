@@ -259,11 +259,12 @@ class SessionPackageTests(unittest.TestCase):
                 'case "$*" in\n'
                 '  *"is-active niri.service"*) exit 0 ;;\n'
                 '  *"show-environment"*)\n'
-                '    echo "XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP"\n'
-                '    echo "XDG_SESSION_DESKTOP=$XDG_SESSION_DESKTOP"\n'
-                '    echo "XDG_SESSION_TYPE=$XDG_SESSION_TYPE"\n'
+                '    echo "XDG_CURRENT_DESKTOP=niri"\n'
+                '    echo "XDG_SESSION_DESKTOP=niri"\n'
+                '    echo "XDG_SESSION_TYPE=wayland"\n'
                 '    [ -z "${NIRI_CONFIG-}" ] || echo "NIRI_CONFIG=$NIRI_CONFIG"\n'
-                '    echo "NIRI_SOCKET=/run/user/1000/niri"\n'
+                '    echo "WAYLAND_DISPLAY=wayland-9"\n'
+                '    echo "NIRI_SOCKET=$XDG_RUNTIME_DIR/niri.wayland-9.42.sock"\n'
                 '    exit 0 ;;\n'
                 "  *) exit 0 ;;\n"
                 "esac\n",
@@ -277,8 +278,9 @@ class SessionPackageTests(unittest.TestCase):
                 )
             write_program(
                 root / "usr/libexec/rmac/rmac-session-start",
-                'printf "%s|%s|%s|%s\\n" "$XDG_CURRENT_DESKTOP" '
+                'printf "%s|%s|%s|%s|%s|%s\\n" "$XDG_CURRENT_DESKTOP" '
                 '"$XDG_SESSION_DESKTOP" "${NIRI_CONFIG-}" '
+                '"$WAYLAND_DISPLAY" "$NIRI_SOCKET" '
                 '"$*" >"$RMAC_TEST_CAPTURE"\n',
             )
             wrapper = rendered_session_wrapper(root)
@@ -290,6 +292,7 @@ class SessionPackageTests(unittest.TestCase):
                 {
                     "HOME": str(root / "home"),
                     "XDG_STATE_HOME": str(root / "state"),
+                    "XDG_RUNTIME_DIR": str(root / "runtime"),
                     "RMAC_TEST_CAPTURE": str(capture),
                     "RMAC_TEST_SYSTEMCTL": str(systemctl_capture),
                 }
@@ -306,6 +309,7 @@ class SessionPackageTests(unittest.TestCase):
             self.assertEqual(
                 capture.read_text(encoding="utf-8"),
                 f"rmac:niri|rmac|{root}/home/.config/rmac/niri/config.kdl|"
+                f"wayland-9|{root}/runtime/niri.wayland-9.42.sock|"
                 "--system-package\n",
             )
             user_config = root / "home/.config/rmac/niri/config.kdl"
@@ -315,6 +319,7 @@ class SessionPackageTests(unittest.TestCase):
             )
             self.assertEqual(stat.S_IMODE(user_config.stat().st_mode), 0o600)
             cleanup = systemctl_capture.read_text(encoding="utf-8")
+            self.assertIn("--user stop waybar.service", cleanup)
             for unit in (
                 "rmac-session.target",
                 "rmac-safe-mode.target",
@@ -340,7 +345,8 @@ class SessionPackageTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 capture.read_text(encoding="utf-8"),
-                "niri|niri||--system-package\n",
+                f"niri|niri||wayland-9|{root}/runtime/niri.wayland-9.42.sock|"
+                "--system-package\n",
             )
 
     def test_session_wrapper_rejects_clean_exit_before_readiness(self):

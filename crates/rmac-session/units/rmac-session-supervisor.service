@@ -2,14 +2,14 @@
 Description=rmac session health supervisor
 Documentation=https://github.com/rmac/rmac
 After=graphical-session-pre.target
+StartLimitIntervalSec=60s
+StartLimitBurst=3
 
 [Service]
 Type=simple
 ExecStart=%h/.local/libexec/rmac/rmac-session-supervisor monitor
 Restart=on-failure
 RestartSec=2s
-StartLimitIntervalSec=60s
-StartLimitBurst=3
 NoNewPrivileges=yes
 PrivateTmp=yes
 

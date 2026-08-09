@@ -38,7 +38,9 @@ if len(bars) != EXPECTED_BARS:
 
 for bar in bars:
     nodes = list(descendants(bar))
-    buttons = [node for node in nodes if node.getRoleName() == "push button"]
+    buttons = [
+        node for node in nodes if node.getRoleName() in {"button", "push button"}
+    ]
     names = [button.name for button in buttons]
     required = {"Spotlight", "Control Center"}
     missing = required.difference(names)

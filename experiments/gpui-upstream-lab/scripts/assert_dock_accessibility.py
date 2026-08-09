@@ -41,7 +41,9 @@ if len(docks) != EXPECTED_DOCKS:
 
 for dock in docks:
     nodes = list(descendants(dock))
-    buttons = [node for node in nodes if node.getRoleName() == "push button"]
+    buttons = [
+        node for node in nodes if node.getRoleName() in {"button", "push button"}
+    ]
     names = [button.name for button in buttons]
     if len(buttons) < 2 or names.count("Trash") != 1 or any(not name for name in names):
         roles = [(node.getRoleName(), node.name) for node in nodes]

@@ -253,7 +253,6 @@ mod linux_wayland {
             let focused_app_id = snapshot.focused.app_id.clone();
             let focused_window_id = snapshot.focused.window_id;
             let menus = status.menus.clone();
-            drop(status);
 
             if self.open_menu.is_some()
                 && (self.open_app_id != focused_app_id || self.open_menu >= Some(menus.len()))

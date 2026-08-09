@@ -4703,6 +4703,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "image",
+ "rmac-app-launch",
  "rmac-app-menu",
  "rmac-apps",
  "rmac-compositor",

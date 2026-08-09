@@ -1,4 +1,4 @@
-//! Immutable Linux `memfd` backing for one painted `wl_shm` buffer.
+//! Fixed-size Linux `memfd` backing for one painted `wl_shm` buffer.
 
 use std::fmt;
 use std::fs::File;
@@ -53,7 +53,12 @@ impl ShmFrame {
         }
         fcntl_add_seals(
             &file,
-            SealFlags::SHRINK | SealFlags::GROW | SealFlags::WRITE | SealFlags::SEAL,
+            // A wl_shm compositor is allowed to create a shared writable
+            // mapping even though it only consumes the pixels. F_SEAL_WRITE
+            // rejects that valid mmap and made niri abort the native lock
+            // surface before its first frame. Keep the allocation and size
+            // immutable while retaining compositor-compatible mapping.
+            SealFlags::SHRINK | SealFlags::GROW | SealFlags::SEAL,
         )
         .map_err(Error::Seal)?;
 

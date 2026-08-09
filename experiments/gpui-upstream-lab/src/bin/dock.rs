@@ -754,10 +754,7 @@ mod linux_wayland {
             rmac_dock::Activation::Launch { spec, .. } => {
                 cx.background_executor()
                     .spawn(async move {
-                        if blocking::unblock(move || rmac_apps::launch(&spec))
-                            .await
-                            .is_err()
-                        {
+                        if rmac_app_launch::launch(spec).await.is_err() {
                             eprintln!("could not launch the selected Dock application");
                         }
                     })

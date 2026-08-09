@@ -156,7 +156,6 @@ mod linux_wayland {
             let status = self.status.read(cx);
             let dock_settings = status.settings.dock.clone();
             let model = status.model();
-            drop(status);
             let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
             let trash = model
                 .special_items

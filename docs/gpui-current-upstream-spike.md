@@ -70,19 +70,22 @@ This first candidate proves surface ownership, original default artwork, and
 idle behavior. It does not yet consume custom wallpaper settings or decoded
 file rasters; that connection remains behind the framework promotion gate.
 
-### Static Dock candidate
+### Live Dock candidate
 
 `dock` creates one output-bound 84-logical-pixel bottom surface with a centered
-translucent shelf and fixed, shell-free activation for the six first-party apps
-in a fresh profile. The layer never requests keyboard focus, never invents a
-running indicator, and has no animation or redraw timer. Smoke-only variables
-record configured scale and frame counts on each output.
+translucent shelf. It loads and watches durable shell settings and the installed
+desktop catalog, consumes niri's reconnecting window/focus/urgency stream, and
+projects those authorities through `rmac-dock::Model`. Stopped applications use
+their parsed shell-free launch specification; running applications receive a
+typed niri focus action. Active, running, urgent, unavailable, and accessible
+labels therefore come from the shared model. The layer never requests keyboard
+focus and has no animation or redraw timer. Smoke-only variables record
+configured scale and frame counts on each output.
 
-This is deliberately the smallest D4 layer-host proof. Live catalog/niri
-projection, original icon decoding, typed activation/focus dispatch, pointer
-magnification, autohide, menus, drag reorder, and accessibility focus handoff
-remain in the framework-neutral Dock crates until the promotion gate allows
-them to be connected to this host.
+This remains an isolated D4 layer-host proof. Original icon decoding,
+settings-driven surface placement, pointer magnification, autohide, menus, drag
+reorder, and accessibility focus handoff remain in the framework-neutral Dock
+crates until the promotion gate allows them to be connected to this host.
 
 ### Whole-shell preview
 

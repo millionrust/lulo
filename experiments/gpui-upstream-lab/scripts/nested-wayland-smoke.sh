@@ -209,10 +209,12 @@ if [[ "$workspace_heights" != "276,636" ]]; then
   echo "Dock did not reserve 84 logical pixels on every output; heights=$workspace_heights" >&2
   exit 1
 fi
+/usr/bin/python3 scripts/assert_dock_accessibility.py
 if [[ "$(find "$runtime_root/dock-renders" -type f | wc -l)" != "2" ]]; then
   echo "Dock did not publish one render counter per output" >&2
   exit 1
 fi
+sleep 1
 declare -A dock_counts_before
 while IFS= read -r counter; do
   dock_counts_before["$counter"]="$(cat "$counter")"

@@ -4551,14 +4551,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-dock"
+version = "0.1.0"
+dependencies = [
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-places",
+ "rmac-shell-settings",
+]
+
+[[package]]
 name = "rmac-gpui-upstream-lab"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "blocking",
  "chrono",
  "gpui",
  "gpui_platform",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-dock",
  "rmac-shell-runtime",
+ "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-wallpaper",
 ]
@@ -4576,6 +4592,10 @@ version = "0.1.0"
 dependencies = [
  "zbus",
 ]
+
+[[package]]
+name = "rmac-places"
+version = "0.1.0"
 
 [[package]]
 name = "rmac-shell-runtime"

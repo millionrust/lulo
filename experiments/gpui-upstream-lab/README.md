@@ -73,13 +73,16 @@ stays behind ordinary and fullscreen windows, and never enters keyboard or
 Orca focus order.
 
 The `dock` candidate creates one bottom top-layer surface per output with an
-84-logical-pixel stable reservation and a centered translucent shelf. Its six
-first-login items match the shell-settings authority and launch the installed
-rmac applications through fixed argument-separated executable names. It has
-pointer activation but no keyboard-interactive layer surface, creates no fake
-running state, and schedules no idle redraw. Live catalog/window indicators,
-typed Dock dispatch, icon files, magnification, and accessible focus handoff
-remain the next candidate slice rather than being represented as complete.
+84-logical-pixel stable reservation and a centered translucent shelf. It loads
+and watches the shell-settings authority and installed desktop catalog, watches
+niri's real window/focus/urgency stream, and projects all of that through the
+framework-neutral Dock model. Clicking a stopped app uses its parsed launch
+specification without a shell; clicking a running app issues a typed niri focus
+request. Active/running and urgency indicators are therefore authoritative,
+not invented. The layer has pointer activation but requests no keyboard focus
+and schedules no idle redraw. Decoded icon files, settings-driven surface
+placement, magnification, autohide, menus, drag reorder, and accessible focus
+handoff remain later candidate slices rather than being represented as done.
 
 Record the compositor, display protocol, scale factors, GPU/driver, Orca
 version, and pass/fail evidence in `docs/gpui-current-upstream-spike.md` before
@@ -116,10 +119,11 @@ dbus-run-session -- bash scripts/nested-wayland-smoke.sh
 The script builds all Wayland probes, starts a two-output headless nested Sway
 session, verifies the layer-shell protocol and 40-pixel probe zone, then checks
 one wallpaper, 32-pixel top bar, and 84-pixel Dock per 1x/2x output. It verifies
-configured scale, work-area ownership, idle-render deltas, process health, and
-non-focusable toolbar/clock semantics. It also checks the interactive probe's
-roles, names, numeric value, click actions, and toggled state over AT-SPI. It is
-a deterministic smoke gate, not a replacement for the Ubuntu/niri/GNOME/Orca
+configured scale, work-area ownership, idle-render deltas, process health, two
+named Dock toolbars with six fresh-profile app buttons each, and non-focusable
+toolbar/clock semantics. It also checks the interactive probe's roles, names,
+numeric value, click actions, and toggled state over AT-SPI. It is a
+deterministic smoke gate, not a replacement for the Ubuntu/niri/GNOME/Orca
 hardware protocol.
 
 The live-status extension must be rerun through this Linux smoke gate before

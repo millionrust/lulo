@@ -235,8 +235,13 @@ layer_pid=$!
 wait_for_path "$runtime_root/layer-shell.ready" "$layer_pid" "layer-shell probe"
 grep -qx 'layer-shell' "$runtime_root/layer-shell.ready"
 
-tree_json="$(swaymsg -t get_tree -r)"
-workspace_offsets="$(jq -r '[.. | objects | select(.type? == "workspace" and .name? != "__i3_scratch") | .rect.y] | unique | sort | join(",")' <<<"$tree_json")"
+workspace_offsets=""
+for _ in {1..50}; do
+  tree_json="$(swaymsg -t get_tree -r)"
+  workspace_offsets="$(jq -r '[.. | objects | select(.type? == "workspace" and .name? != "__i3_scratch") | .rect.y] | unique | sort | join(",")' <<<"$tree_json")"
+  [[ "$workspace_offsets" == "0,40" ]] && break
+  sleep 0.1
+done
 if [[ "$workspace_offsets" != "0,40" ]]; then
   echo "single-output layer-shell probe did not reserve 40 pixels; y=$workspace_offsets" >&2
   exit 1

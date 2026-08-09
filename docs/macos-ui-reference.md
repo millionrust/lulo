@@ -95,8 +95,11 @@ with original rmac identity:
 - the reference profile keeps magnification off, matching the reference Mac;
   Settings may enable stable-center magnification explicitly, while reduced
   motion always disables it;
-- active-app identity and menus on the leading side, time in the center, and
-  meaningful live status controls on the trailing side;
+- active-app identity and exported app menus on the leading side; compact live
+  status menus, Spotlight, Control Center, privacy state, and date/time on the
+  trailing side, with no centered clock;
+- external Linux apps that do not export a global command model keep their
+  commands inside the application window; rmac must not draw fake menu labels;
 - no compositor debug borders, duplicate third-party bar, decorative fake
   controls, Apple logo, SF font redistribution, or Apple application artwork;
 - one installable rmac login session that owns the complete shell, with the

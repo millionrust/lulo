@@ -4,6 +4,7 @@ mod linux_wayland {
     use std::fs::{self, OpenOptions};
     use std::io::Write as _;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::Local;
@@ -18,7 +19,7 @@ mod linux_wayland {
         TopBarIndicatorKind,
     };
 
-    const BAR_HEIGHT: f32 = 32.0;
+    const BAR_HEIGHT: f32 = 28.0;
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
 
@@ -90,7 +91,7 @@ mod linux_wayland {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
             let now = Local::now();
-            let clock = now.format("%a %b %-d  %-I:%M %p").to_string();
+            let clock = now.format("%a %-d %b %-I:%M %p").to_string();
             let clock_label = now.format("%A, %B %-d, %-I:%M %p").to_string();
             let snapshot = &self.status.read(cx).update.snapshot.status;
             let active_app = top_bar_active_app_name(snapshot);
@@ -103,18 +104,18 @@ mod linux_wayland {
                 .size_full()
                 .flex()
                 .items_center()
-                .px_3()
-                .bg(rgba(0xe7ecf1a6))
-                .text_color(rgba(0x15171aff))
+                .px_2()
+                .bg(rgba(0x10151d52))
+                .text_color(rgba(0xf7f8faff))
                 .text_sm()
                 .border_b_1()
-                .border_color(rgba(0xffffff70))
+                .border_color(rgba(0xffffff25))
                 .shadow_sm()
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap_4()
+                        .gap_2()
                         .flex_1()
                         .child(
                             div()
@@ -124,9 +125,6 @@ mod linux_wayland {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded_full()
-                                .bg(rgba(0x15171ae8))
-                                .text_color(rgba(0xffffffff))
                                 .font_weight(FontWeight::BOLD)
                                 .aria_label("rmac desktop")
                                 .child("r"),
@@ -135,39 +133,98 @@ mod linux_wayland {
                 )
                 .child(
                     div()
-                        .id(format!("clock-{}", self.display_id))
-                        .role(Role::Time)
-                        .aria_label(clock_label)
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(clock),
-                )
-                .child(
-                    div()
                         .flex()
                         .items_center()
-                        .gap_3()
-                        .flex_1()
+                        .gap_2()
                         .justify_end()
                         .children(
                             indicators
                                 .into_iter()
+                                .filter(|indicator| {
+                                    indicator.kind != TopBarIndicatorKind::Notifications
+                                })
                                 .enumerate()
                                 .map(|(index, indicator)| {
                                     let icon = indicator_icon_path(indicator.kind);
                                     let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
-                                        .role(Role::Status)
+                                        .role(Role::Button)
                                         .aria_label(indicator.accessible)
                                         .flex()
                                         .items_center()
                                         .gap_1()
+                                        .px_1()
+                                        .rounded(px(5.0))
+                                        .cursor_pointer()
+                                        .hover(|style| style.bg(rgba(0xffffff22)))
+                                        .on_click(|_, _, cx| {
+                                            dispatch_shortcut("quick-settings", cx)
+                                        })
                                         .font_weight(FontWeight::MEDIUM)
-                                        .child(img(icon).w(px(16.0)).h(px(16.0)));
+                                        .child(img(icon).w(px(14.0)).h(px(14.0)));
                                     if !indicator.visible.is_empty() {
                                         item = item.child(indicator.visible);
                                     }
                                     item
                                 }),
+                        )
+                        .child(
+                            div()
+                                .id(format!("spotlight-{}", self.display_id))
+                                .role(Role::Button)
+                                .aria_label("Spotlight")
+                                .w(px(22.0))
+                                .h(px(22.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(5.0))
+                                .cursor_pointer()
+                                .hover(|style| style.bg(rgba(0xffffff22)))
+                                .on_click(|_, _, cx| dispatch_shortcut("launcher", cx))
+                                .child(
+                                    img(shell_icon_path("spotlight.svg"))
+                                        .w(px(14.0))
+                                        .h(px(14.0)),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id(format!("control-center-{}", self.display_id))
+                                .role(Role::Button)
+                                .aria_label("Control Center")
+                                .w(px(22.0))
+                                .h(px(22.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(px(5.0))
+                                .cursor_pointer()
+                                .hover(|style| style.bg(rgba(0xffffff22)))
+                                .on_click(|_, _, cx| dispatch_shortcut("quick-settings", cx))
+                                .child(
+                                    img(shell_icon_path("control-center.svg"))
+                                        .w(px(15.0))
+                                        .h(px(15.0)),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id(format!("clock-{}", self.display_id))
+                                .role(Role::Button)
+                                .aria_label(format!(
+                                    "Date and time: {clock_label}. Open Notification Center"
+                                ))
+                                .px_1()
+                                .h(px(22.0))
+                                .flex()
+                                .items_center()
+                                .rounded(px(5.0))
+                                .cursor_pointer()
+                                .hover(|style| style.bg(rgba(0xffffff22)))
+                                .on_click(|_, _, cx| dispatch_shortcut("notification-center", cx))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(clock),
                         ),
                 )
         }
@@ -183,9 +240,33 @@ mod linux_wayland {
             TopBarIndicatorKind::Battery => "battery.svg",
             TopBarIndicatorKind::Notifications => "notifications.svg",
         };
+        shell_icon_path(file)
+    }
+
+    fn shell_icon_path(file: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("assets/status")
             .join(file)
+    }
+
+    fn dispatch_shortcut(shortcut: &'static str, cx: &mut App) {
+        let local = env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|home| home.join(".local/libexec/rmac/rmac-shortcut-dispatch"));
+        let dispatcher = local
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| PathBuf::from("/usr/libexec/rmac/rmac-shortcut-dispatch"));
+        cx.background_executor()
+            .spawn(async move {
+                let result = blocking::unblock(move || {
+                    Command::new(dispatcher).arg(shortcut).spawn().map(|_| ())
+                })
+                .await;
+                if result.is_err() {
+                    eprintln!("could not open {shortcut}");
+                }
+            })
+            .detach();
     }
 
     fn record_configured_surface(window: &Window, display_id: u64) {

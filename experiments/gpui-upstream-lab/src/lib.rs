@@ -75,7 +75,7 @@ pub fn top_bar_indicator_labels(
     {
         labels.push(TopBarIndicatorLabel {
             kind: TopBarIndicatorKind::Vpn,
-            visible: "VPN".into(),
+            visible: String::new(),
             accessible: if vpn.active_names.is_empty() {
                 "VPN connecting".into()
             } else {

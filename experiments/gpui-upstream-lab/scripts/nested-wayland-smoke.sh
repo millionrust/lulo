@@ -274,8 +274,8 @@ fi
 
 tree_json="$(swaymsg -t get_tree -r)"
 workspace_offsets="$(jq -r '[.. | objects | select(.type? == "workspace" and .name? != "__i3_scratch") | .rect.y] | unique | join(",")' <<<"$tree_json")"
-if [[ "$workspace_offsets" != "32" ]]; then
-  echo "top bars did not reserve 32 logical pixels on every output; y=$workspace_offsets" >&2
+if [[ "$workspace_offsets" != "28" ]]; then
+  echo "top bars did not reserve 28 logical pixels on every output; y=$workspace_offsets" >&2
   exit 1
 fi
 /usr/bin/python3 scripts/assert_top_bar_accessibility.py

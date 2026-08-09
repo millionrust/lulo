@@ -8,13 +8,14 @@ mod linux_wayland {
 
     use chrono::Local;
     use gpui::{
-        div, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId, Entity,
-        FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
-        WindowOptions,
+        div, img, layer_shell::*, point, prelude::*, px, rgba, App, Bounds, Context, DisplayId,
+        Entity, FontWeight, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_gpui_upstream_lab::{
         delay_until_next_minute, top_bar_active_app_name, top_bar_indicator_labels,
+        TopBarIndicatorKind,
     };
 
     const BAR_HEIGHT: f32 = 32.0;
@@ -152,16 +153,39 @@ mod linux_wayland {
                                 .into_iter()
                                 .enumerate()
                                 .map(|(index, indicator)| {
-                                    div()
+                                    let icon = indicator_icon_path(indicator.kind);
+                                    let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
                                         .role(Role::Status)
                                         .aria_label(indicator.accessible)
+                                        .flex()
+                                        .items_center()
+                                        .gap_1()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .child(indicator.visible)
+                                        .child(img(icon).w(px(16.0)).h(px(16.0)));
+                                    if !indicator.visible.is_empty() {
+                                        item = item.child(indicator.visible);
+                                    }
+                                    item
                                 }),
                         ),
                 )
         }
+    }
+
+    fn indicator_icon_path(kind: TopBarIndicatorKind) -> PathBuf {
+        let file = match kind {
+            TopBarIndicatorKind::Focus => "focus.svg",
+            TopBarIndicatorKind::Vpn => "vpn.svg",
+            TopBarIndicatorKind::Network => "wifi.svg",
+            TopBarIndicatorKind::Bluetooth => "bluetooth.svg",
+            TopBarIndicatorKind::Sound => "sound.svg",
+            TopBarIndicatorKind::Battery => "battery.svg",
+            TopBarIndicatorKind::Notifications => "notifications.svg",
+        };
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/status")
+            .join(file)
     }
 
     fn record_configured_surface(window: &Window, display_id: u64) {

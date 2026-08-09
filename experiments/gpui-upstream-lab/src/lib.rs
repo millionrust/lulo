@@ -29,8 +29,20 @@ pub fn delay_until_next_minute(epoch_millis: u128) -> Duration {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TopBarIndicatorLabel {
+    pub kind: TopBarIndicatorKind,
     pub visible: String,
     pub accessible: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TopBarIndicatorKind {
+    Focus,
+    Vpn,
+    Network,
+    Bluetooth,
+    Sound,
+    Battery,
+    Notifications,
 }
 
 pub fn top_bar_active_app_name(snapshot: &rmac_shell_status::Snapshot) -> String {
@@ -51,7 +63,8 @@ pub fn top_bar_indicator_labels(
     if let Some(focus) = snapshot.focus.as_ref().filter(|focus| focus.enabled) {
         let mode = focus.mode.as_deref().unwrap_or("Focus");
         labels.push(TopBarIndicatorLabel {
-            visible: "◐".into(),
+            kind: TopBarIndicatorKind::Focus,
+            visible: String::new(),
             accessible: format!("Focus enabled: {mode}"),
         });
     }
@@ -61,6 +74,7 @@ pub fn top_bar_indicator_labels(
         .filter(|vpn| vpn.transitioning || !vpn.active_names.is_empty())
     {
         labels.push(TopBarIndicatorLabel {
+            kind: TopBarIndicatorKind::Vpn,
             visible: "VPN".into(),
             accessible: if vpn.active_names.is_empty() {
                 "VPN connecting".into()
@@ -75,7 +89,8 @@ pub fn top_bar_indicator_labels(
             .map(|strength| format!(", signal {strength} percent"))
             .unwrap_or_default();
         labels.push(TopBarIndicatorLabel {
-            visible: "Wi-Fi".into(),
+            kind: TopBarIndicatorKind::Network,
+            visible: String::new(),
             accessible: format!("Wi-Fi {}{strength}", network_state_label(network.state)),
         });
     }
@@ -85,7 +100,8 @@ pub fn top_bar_indicator_labels(
         .filter(|bluetooth| bluetooth.powered)
     {
         labels.push(TopBarIndicatorLabel {
-            visible: "ᛒ".into(),
+            kind: TopBarIndicatorKind::Bluetooth,
+            visible: String::new(),
             accessible: format!(
                 "Bluetooth on, {} connected devices",
                 bluetooth.connected_devices
@@ -94,11 +110,8 @@ pub fn top_bar_indicator_labels(
     }
     if let Some(sound) = snapshot.sound.filter(|sound| sound.available) {
         labels.push(TopBarIndicatorLabel {
-            visible: if sound.muted {
-                "Mute".into()
-            } else {
-                format!("Vol {}%", sound.volume)
-            },
+            kind: TopBarIndicatorKind::Sound,
+            visible: String::new(),
             accessible: if sound.muted {
                 "Sound muted".into()
             } else {
@@ -109,10 +122,11 @@ pub fn top_bar_indicator_labels(
     if let Some(battery) = snapshot.battery {
         let percentage = format!("{}%", battery.percentage);
         labels.push(TopBarIndicatorLabel {
+            kind: TopBarIndicatorKind::Battery,
             visible: if snapshot.show_battery_percentage {
                 percentage.clone()
             } else {
-                "Battery".into()
+                String::new()
             },
             accessible: format!("Battery {percentage}, {}", battery.state.label()),
         });
@@ -122,6 +136,7 @@ pub fn top_bar_indicator_labels(
         .filter(|notifications| notifications.unread_count > 0)
     {
         labels.push(TopBarIndicatorLabel {
+            kind: TopBarIndicatorKind::Notifications,
             visible: notifications.unread_count.to_string(),
             accessible: format!("{} unread notifications", notifications.unread_count),
         });

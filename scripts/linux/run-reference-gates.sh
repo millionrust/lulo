@@ -6,6 +6,7 @@ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 evidence_dir="$repo_root/target/linux-evidence/$timestamp"
 run_upstream_smoke=false
 run_performance=false
+run_resilience=false
 preflight_only=false
 expected_desktop=gnome
 minimum_kib=$((15 * 1024 * 1024))
@@ -14,13 +15,14 @@ storage_blocked=false
 summary_file=""
 
 usage() {
-  echo "usage: $0 [--session gnome|niri|any] [--preflight-only] [--with-upstream-smoke] [--with-performance]" >&2
+  echo "usage: $0 [--session gnome|niri|any] [--preflight-only] [--with-upstream-smoke] [--with-performance] [--with-resilience]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-upstream-smoke) run_upstream_smoke=true ;;
     --with-performance) run_performance=true ;;
+    --with-resilience) run_resilience=true ;;
     --preflight-only) preflight_only=true ;;
     --session)
       shift
@@ -41,6 +43,11 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+if [[ "$run_resilience" == true && "$expected_desktop" != niri ]]; then
+  echo "--with-resilience requires --session niri" >&2
+  exit 2
+fi
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "reference preflight requires python3" >&2
@@ -75,6 +82,9 @@ if [[ "$run_upstream_smoke" == true ]]; then
     --require-command sway
   )
 fi
+if [[ "$run_resilience" == true ]]; then
+  preflight_args+=(--require-command jq)
+fi
 
 if [[ "$preflight_only" == true ]]; then
   exec python3 "$repo_root/scripts/linux/reference-preflight.py" "${preflight_args[@]}"
@@ -88,6 +98,7 @@ summary_file="$evidence_dir/gate-summary.tsv"
   printf 'expected_desktop\t%s\n' "$expected_desktop"
   printf 'upstream_smoke_requested\t%s\n' "$run_upstream_smoke"
   printf 'performance_requested\t%s\n' "$run_performance"
+  printf 'resilience_requested\t%s\n' "$run_resilience"
   printf 'gate\tstatus\texit_status\n'
 } >"$summary_file"
 
@@ -189,6 +200,11 @@ fi
 if [[ "$run_performance" == true ]]; then
   run_gate performance "$build_minimum_kib" python3 scripts/measure-baseline.py \
     --output "$evidence_dir/performance.json"
+fi
+
+if [[ "$run_resilience" == true ]]; then
+  run_gate live-shell-resilience "$minimum_kib" \
+    bash scripts/linux/run-live-shell-resilience.sh --execute
 fi
 
 echo

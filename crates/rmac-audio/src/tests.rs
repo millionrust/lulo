@@ -309,6 +309,7 @@ fn command_output_reader_drains_after_the_capture_limit() {
     assert!(truncated);
 }
 
+#[cfg(target_os = "macos")]
 #[test]
 fn macos_volume_fixture_preserves_input_and_output() {
     let (output, input) = parse_macos_volume_settings(
@@ -320,6 +321,7 @@ fn macos_volume_fixture_preserves_input_and_output() {
     assert_eq!(input.volume, 44);
 }
 
+#[cfg(target_os = "macos")]
 #[test]
 fn macos_device_fixture_identifies_defaults() {
     let (outputs, inputs) = parse_macos_audio_devices(concat!(

@@ -783,8 +783,8 @@ pub(super) const MAX_DEVICE_CAPABILITIES: usize = 128;
 #[cfg(any(not(target_os = "macos"), test))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct DefaultNode {
-    id: String,
-    authority_name: String,
+    pub(super) id: String,
+    pub(super) authority_name: String,
 }
 
 #[cfg(any(not(target_os = "macos"), test))]

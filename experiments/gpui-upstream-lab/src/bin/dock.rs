@@ -41,6 +41,8 @@ mod linux_wayland {
         catalog: Vec<rmac_apps::Application>,
         compositor: rmac_compositor::State,
         compositor_ready: bool,
+        outputs: std::collections::BTreeSet<uuid::Uuid>,
+        removed_outputs: std::collections::BTreeSet<uuid::Uuid>,
         places: rmac_places::Snapshot,
     }
 
@@ -56,10 +58,33 @@ mod linux_wayland {
                 while let Ok(event) = compositor.recv().await {
                     if this
                         .update(cx, |this, cx| {
-                            this.compositor_ready = true;
+                            let was_ready = this.compositor_ready;
                             if this.compositor.apply(event).visible {
                                 cx.notify();
                             }
+                            let outputs = this
+                                .compositor
+                                .snapshot()
+                                .outputs
+                                .into_iter()
+                                .filter(|output| output.enabled())
+                                .map(|output| {
+                                    rmac_gpui_upstream_lab::stable_output_uuid(&output.id)
+                                })
+                                .collect();
+                            if was_ready
+                                && rmac_gpui_upstream_lab::output_reappeared(
+                                    &this.outputs,
+                                    &outputs,
+                                    &mut this.removed_outputs,
+                                )
+                            {
+                                std::process::exit(
+                                    rmac_gpui_upstream_lab::WAYLAND_OUTPUT_RESTART_EXIT_CODE,
+                                );
+                            }
+                            this.outputs = outputs;
+                            this.compositor_ready = true;
                         })
                         .is_err()
                     {
@@ -115,6 +140,8 @@ mod linux_wayland {
                 catalog: Vec::new(),
                 compositor: rmac_compositor::State::default(),
                 compositor_ready: false,
+                outputs: std::collections::BTreeSet::new(),
+                removed_outputs: std::collections::BTreeSet::new(),
                 places: rmac_places::Snapshot {
                     home: rmac_places::Place {
                         path: PathBuf::new(),

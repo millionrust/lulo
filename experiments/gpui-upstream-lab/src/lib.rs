@@ -4,6 +4,16 @@ use gpui::Window;
 use uuid::Uuid;
 
 const READY_FILE_ENV: &str = "RMAC_SMOKE_READY_FILE";
+pub const WAYLAND_OUTPUT_RESTART_EXIT_CODE: i32 = 75;
+
+pub fn output_reappeared(
+    previous: &std::collections::BTreeSet<Uuid>,
+    current: &std::collections::BTreeSet<Uuid>,
+    removed: &mut std::collections::BTreeSet<Uuid>,
+) -> bool {
+    removed.extend(previous.difference(current).copied());
+    current.iter().any(|output| removed.contains(output))
+}
 
 /// Stable per-output menu-bar policy derived from niri's authoritative
 /// workspace/window geometry. Niri does not publish a separate fullscreen
@@ -472,6 +482,18 @@ mod tests {
         let mut overview = compositor_snapshot(864.0, Some(7));
         overview.overview_visible = true;
         assert_eq!(top_bar_output_policies(&overview).get(&uuid), Some(&false));
+    }
+
+    #[test]
+    fn output_reappearance_requires_a_fresh_wayland_registry() {
+        let first = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"first");
+        let second = Uuid::new_v5(&Uuid::NAMESPACE_DNS, b"second");
+        let mut removed = std::collections::BTreeSet::new();
+        let both = [first, second].into_iter().collect();
+        let first_only = [first].into_iter().collect();
+
+        assert!(!output_reappeared(&both, &first_only, &mut removed));
+        assert!(output_reappeared(&first_only, &both, &mut removed));
     }
 
     #[test]

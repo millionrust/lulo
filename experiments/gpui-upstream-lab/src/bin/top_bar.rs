@@ -1,6 +1,6 @@
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::env;
     use std::fs::{self, OpenOptions};
     use std::io::Write as _;
@@ -860,6 +860,7 @@ mod linux_wayland {
                 .detach();
             cx.spawn(async move |cx| {
                 let mut tracker = TopBarTracker::default();
+                let mut removed_outputs = BTreeSet::new();
                 match output_rx.recv().await {
                     Ok(mut desired) => 'updates: loop {
                         let complete = cx.update(|cx| {
@@ -870,6 +871,7 @@ mod linux_wayland {
                             let Ok(next) = output_rx.recv().await else {
                                 break;
                             };
+                            restart_for_reappeared_output(&desired, &next, &mut removed_outputs);
                             desired = next;
                             continue;
                         }
@@ -881,7 +883,14 @@ mod linux_wayland {
                         futures_util::pin_mut!(update, retry);
                         futures_util::select! {
                             next = update => match next {
-                                Ok(next) => desired = next,
+                                Ok(next) => {
+                                    restart_for_reappeared_output(
+                                        &desired,
+                                        &next,
+                                        &mut removed_outputs,
+                                    );
+                                    desired = next;
+                                },
                                 Err(_) => break 'updates,
                             },
                             _ = retry => {}
@@ -897,6 +906,18 @@ mod linux_wayland {
             })
             .detach();
         });
+    }
+
+    fn restart_for_reappeared_output(
+        previous: &BTreeMap<Uuid, bool>,
+        current: &BTreeMap<Uuid, bool>,
+        removed: &mut BTreeSet<Uuid>,
+    ) {
+        let previous = previous.keys().copied().collect();
+        let current = current.keys().copied().collect();
+        if rmac_gpui_upstream_lab::output_reappeared(&previous, &current, removed) {
+            std::process::exit(rmac_gpui_upstream_lab::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
+        }
     }
 }
 

@@ -23,6 +23,7 @@ impl ShmFrame {
         visual: LockVisualState,
         clock_text: Option<&TextRaster>,
         date_text: Option<&TextRaster>,
+        avatar_text: Option<&TextRaster>,
         account_text: Option<&TextRaster>,
         prompt_text: Option<&TextRaster>,
     ) -> Result<Self, Error> {
@@ -43,6 +44,7 @@ impl ShmFrame {
                 visual,
                 clock_text,
                 date_text,
+                avatar_text,
                 account_text,
                 prompt_text,
             )

@@ -39,7 +39,7 @@ impl LockPalette {
         glow: Rgb::new(34, 166, 161),
         secondary_glow: Rgb::new(217, 108, 157),
         panel: Rgb::new(244, 246, 252),
-        avatar: Rgb::new(229, 233, 244),
+        avatar: Rgb::new(33, 51, 79),
         accent: Rgb::new(118, 181, 255),
         error: Rgb::new(255, 105, 120),
     };
@@ -285,6 +285,7 @@ pub fn paint_lock_frame(
         visual,
         None,
         None,
+        None,
         account_text,
         prompt_text,
     )
@@ -299,6 +300,7 @@ pub fn paint_lock_frame_with_text(
     visual: LockVisualState,
     clock_text: Option<&TextRaster>,
     date_text: Option<&TextRaster>,
+    avatar_text: Option<&TextRaster>,
     account_text: Option<&TextRaster>,
     prompt_text: Option<&TextRaster>,
 ) -> io::Result<()> {
@@ -321,6 +323,7 @@ pub fn paint_lock_frame_with_text(
                     visual,
                     clock_text,
                     date_text,
+                    avatar_text,
                     account_text,
                     prompt_text,
                 );
@@ -345,6 +348,7 @@ fn paint_pixel(
     visual: LockVisualState,
     clock_text: Option<&TextRaster>,
     date_text: Option<&TextRaster>,
+    avatar_text: Option<&TextRaster>,
     account_text: Option<&TextRaster>,
     prompt_text: Option<&TextRaster>,
 ) -> Rgb {
@@ -388,13 +392,19 @@ fn paint_pixel(
     let avatar_y = percent(height, 66);
     let avatar_radius = u64::from((width.min(height) / 16).clamp(28 * scale, 64 * scale));
     let avatar_dy = i64::from(y) - avatar_y;
-    if (dx * dx + avatar_dy * avatar_dy) as u64 <= avatar_radius * avatar_radius {
+    let avatar_distance = (dx * dx + avatar_dy * avatar_dy) as u64;
+    let avatar_ring_radius = avatar_radius.saturating_add(u64::from(2 * scale));
+    if avatar_distance <= avatar_ring_radius * avatar_ring_radius {
+        color = color.blend(palette.panel, 92);
+    }
+    if avatar_distance <= avatar_radius * avatar_radius {
         color = color.blend(palette.avatar, 224);
     }
 
-    let panel_half_width = percent(width, 28).min(i64::from(180 * scale));
-    let panel_half_height = i64::from(19 * scale);
-    let panel_center_y = percent(height, 84);
+    let prompt_geometry = PromptGeometry::new(width, height, scale);
+    let panel_half_width = prompt_geometry.half_width;
+    let panel_half_height = prompt_geometry.half_height;
+    let panel_center_y = prompt_geometry.center_y;
     if inside_rounded_rect(
         i64::from(x),
         i64::from(y),
@@ -402,7 +412,7 @@ fn paint_pixel(
         panel_center_y,
         panel_half_width,
         panel_half_height,
-        i64::from(10 * scale),
+        panel_half_height,
     ) {
         let panel = if visual.authentication_failed {
             palette.error
@@ -428,7 +438,7 @@ fn paint_pixel(
             panel_center_y,
             panel_half_width + 2 * scale,
             panel_half_height + 2 * scale,
-            12 * scale,
+            panel_half_height + 2 * scale,
         );
         let inner = inside_rounded_rect(
             i64::from(x),
@@ -437,7 +447,7 @@ fn paint_pixel(
             panel_center_y,
             panel_half_width,
             panel_half_height,
-            10 * scale,
+            panel_half_height,
         );
         if outer && !inner {
             color = color.blend(
@@ -451,11 +461,13 @@ fn paint_pixel(
         }
     }
 
-    let accent_x = center_x + panel_half_width - i64::from(18 * scale);
-    let accent_radius = i64::from(4 * scale);
+    let accent_x = prompt_geometry.submit_x;
+    let accent_radius = prompt_geometry.submit_radius;
     let accent_dx = i64::from(x) - accent_x;
     let accent_dy = i64::from(y) - panel_center_y;
-    if accent_dx * accent_dx + accent_dy * accent_dy <= accent_radius * accent_radius {
+    let can_submit = prompt_can_submit(visual.prompt);
+    if can_submit && accent_dx * accent_dx + accent_dy * accent_dy <= accent_radius * accent_radius
+    {
         color = color.blend(
             if visual.authentication_failed {
                 palette.error
@@ -464,6 +476,14 @@ fn paint_pixel(
             },
             238,
         );
+        let shaft = (-6 * i64::from(scale)..=3 * i64::from(scale)).contains(&accent_dx)
+            && accent_dy.abs() <= i64::from(scale);
+        let head_x = accent_dx - i64::from(scale);
+        let head = (0..=5 * i64::from(scale)).contains(&head_x)
+            && (accent_dy.abs() - (5 * i64::from(scale) - head_x)).abs() <= i64::from(scale);
+        if shaft || head {
+            color = color.blend(Rgb::new(18, 25, 42), 232);
+        }
     }
 
     if visual.caps_lock_active
@@ -496,9 +516,15 @@ fn paint_pixel(
         visual.prompt,
     );
 
-    for text in [clock_text, date_text, account_text, prompt_text]
-        .into_iter()
-        .flatten()
+    for text in [
+        clock_text,
+        date_text,
+        avatar_text,
+        account_text,
+        prompt_text,
+    ]
+    .into_iter()
+    .flatten()
     {
         if let Some(alpha) = text.alpha_at(i64::from(x), i64::from(y)) {
             color = color.blend(palette.panel, alpha);
@@ -506,6 +532,39 @@ fn paint_pixel(
     }
 
     color
+}
+
+pub(crate) fn prompt_can_submit(prompt: PromptVisual) -> bool {
+    matches!(
+        prompt,
+        PromptVisual::Secret { .. }
+            | PromptVisual::Text { .. }
+            | PromptVisual::Notice
+            | PromptVisual::Radio { .. }
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PromptGeometry {
+    pub(crate) center_y: i64,
+    pub(crate) half_width: i64,
+    pub(crate) half_height: i64,
+    pub(crate) submit_x: i64,
+    pub(crate) submit_radius: i64,
+}
+
+impl PromptGeometry {
+    pub(crate) fn new(width: u32, height: u32, scale: u32) -> Self {
+        let scale = scale.max(1);
+        let half_width = percent(width, 28).min(i64::from(180 * scale));
+        Self {
+            center_y: percent(height, 84),
+            half_width,
+            half_height: i64::from(19 * scale),
+            submit_x: i64::from(width / 2) + half_width - i64::from(18 * scale),
+            submit_radius: i64::from(13 * scale),
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

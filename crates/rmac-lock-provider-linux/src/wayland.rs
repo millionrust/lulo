@@ -1042,6 +1042,7 @@ impl PreparedState {
             visual,
             text.clock(),
             text.date(),
+            text.avatar(),
             text.account(),
             text.prompt(),
         ) {

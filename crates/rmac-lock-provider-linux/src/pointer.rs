@@ -1,7 +1,7 @@
 //! Platform-neutral hit testing for lock-screen pointer controls.
 
 use crate::keyboard::DecodedKey;
-use crate::paint::PromptVisual;
+use crate::paint::{prompt_can_submit, PromptGeometry, PromptVisual};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PointerTarget {
@@ -69,22 +69,20 @@ pub(crate) fn hit_test(
     let x = x as i64;
     let y = y as i64;
     let center_x = i64::from(width / 2);
-    let center_y = percent(height, 58);
-    let panel_half_width = percent(width, 32).min(210);
-    let accent_x = center_x + panel_half_width - 18;
-    let can_submit = matches!(
-        prompt,
-        PromptVisual::Secret { .. }
-            | PromptVisual::Text { .. }
-            | PromptVisual::Notice
-            | PromptVisual::Radio { .. }
-    );
-    if inside_circle(x, y, accent_x, center_y, 14) && can_submit {
+    let geometry = PromptGeometry::new(width, height, 1);
+    if inside_circle(
+        x,
+        y,
+        geometry.submit_x,
+        geometry.center_y,
+        geometry.submit_radius,
+    ) && prompt_can_submit(prompt)
+    {
         return Some(PointerTarget::Submit);
     }
     if matches!(prompt, PromptVisual::Radio { .. })
         && (x - center_x).abs() <= 19
-        && (y - center_y).abs() <= 14
+        && (y - geometry.center_y).abs() <= 14
     {
         return Some(if x < center_x {
             PointerTarget::SelectPrevious
@@ -93,10 +91,6 @@ pub(crate) fn hit_test(
         });
     }
     None
-}
-
-fn percent(value: u32, numerator: u64) -> i64 {
-    (u64::from(value) * numerator / 100) as i64
 }
 
 fn inside_circle(x: i64, y: i64, center_x: i64, center_y: i64, radius: i64) -> bool {
@@ -111,15 +105,15 @@ mod tests {
 
     #[test]
     fn submit_target_matches_the_visible_accent_and_rejects_binary_prompts() {
-        // 800x600: center=(400,348), panel half-width=210, accent=(592,348).
+        // 800x600: center=(400,504), panel half-width=180, accent=(562,504).
         assert_eq!(
-            hit_test(800, 600, PromptVisual::secret(4), 592.0, 348.0),
+            hit_test(800, 600, PromptVisual::secret(4), 562.0, 504.0),
             Some(PointerTarget::Submit)
         );
-        assert_eq!(hit_test(800, 600, PromptVisual::Binary, 592.0, 348.0), None);
-        assert_eq!(hit_test(800, 600, PromptVisual::Hidden, 592.0, 348.0), None);
+        assert_eq!(hit_test(800, 600, PromptVisual::Binary, 562.0, 504.0), None);
+        assert_eq!(hit_test(800, 600, PromptVisual::Hidden, 562.0, 504.0), None);
         assert_eq!(
-            hit_test(800, 600, PromptVisual::Authenticating, 592.0, 348.0),
+            hit_test(800, 600, PromptVisual::Authenticating, 562.0, 504.0),
             None
         );
         assert!(matches!(
@@ -132,11 +126,11 @@ mod tests {
     fn radio_halves_select_and_release_outside_cannot_activate() {
         let radio = PromptVisual::Radio { selected: false };
         assert_eq!(
-            hit_test(800, 600, radio, 390.0, 348.0),
+            hit_test(800, 600, radio, 390.0, 504.0),
             Some(PointerTarget::SelectPrevious)
         );
         assert_eq!(
-            hit_test(800, 600, radio, 410.0, 348.0),
+            hit_test(800, 600, radio, 410.0, 504.0),
             Some(PointerTarget::SelectNext)
         );
         for (x, y) in [(-1.0, 0.0), (f64::NAN, 2.0), (800.0, 10.0)] {

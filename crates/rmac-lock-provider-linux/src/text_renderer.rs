@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
+use chrono::{DateTime, Local};
 use cosmic_text::{
     Align, Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache, Weight, Wrap,
 };
@@ -19,11 +20,13 @@ pub(crate) struct LockTextRenderer {
     swash_cache: SwashCache,
     account: Option<AccountLabel>,
     prompt: Option<PromptLabel>,
+    clock: ClockLabels,
     rasters: VecDeque<(TextRole, RasterKey, TextRaster)>,
 }
 
 impl Default for LockTextRenderer {
     fn default() -> Self {
+        let clock = ClockLabels::now();
         Self {
             // Font discovery happens while the Wayland connection is being
             // prepared, before the compositor receives a lock request.
@@ -31,6 +34,7 @@ impl Default for LockTextRenderer {
             swash_cache: SwashCache::new(),
             account: None,
             prompt: None,
+            clock,
             rasters: VecDeque::new(),
         }
     }
@@ -41,6 +45,20 @@ impl LockTextRenderer {
         self.account = Some(account);
         self.rasters
             .retain(|(role, _, _)| *role != TextRole::Account);
+    }
+
+    /// Refresh minute-granularity date and time labels. The Wayland pump calls
+    /// this before rendering pending frames so the lock screen stays current
+    /// without a second timer thread.
+    pub(crate) fn refresh_clock(&mut self) -> bool {
+        let clock = ClockLabels::now();
+        if self.clock.minute == clock.minute {
+            return false;
+        }
+        self.clock = clock;
+        self.rasters
+            .retain(|(role, _, _)| !matches!(role, TextRole::Clock | TextRole::Date));
+        true
     }
 
     pub(crate) fn update(
@@ -68,9 +86,43 @@ impl LockTextRenderer {
 
     pub(crate) fn rasters(&mut self, layout: BufferLayout) -> Result<LockTextRasters, Error> {
         Ok(LockTextRasters {
+            clock: self.label_raster(layout, TextRole::Clock)?,
+            date: self.label_raster(layout, TextRole::Date)?,
             account: self.account_raster(layout)?,
             prompt: self.prompt_raster(layout)?,
         })
+    }
+
+    fn label_raster(
+        &mut self,
+        layout: BufferLayout,
+        role: TextRole,
+    ) -> Result<Option<TextRaster>, Error> {
+        let text = match role {
+            TextRole::Clock => self.clock.time.as_str(),
+            TextRole::Date => self.clock.date.as_str(),
+            _ => return Err(Error::InvalidRaster),
+        };
+        let key = RasterKey::new(layout);
+        if let Some((_, _, raster)) = self
+            .rasters
+            .iter()
+            .find(|(candidate_role, candidate, _)| *candidate_role == role && *candidate == key)
+        {
+            return Ok(Some(raster.clone()));
+        }
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            rasterize(
+                &mut self.font_system,
+                &mut self.swash_cache,
+                layout,
+                text,
+                role,
+            )
+        }))
+        .map_err(|_| Error::Panicked)??;
+        self.cache(role, key, result.clone());
+        Ok(Some(result))
     }
 
     fn account_raster(&mut self, layout: BufferLayout) -> Result<Option<TextRaster>, Error> {
@@ -136,11 +188,21 @@ impl LockTextRenderer {
 }
 
 pub(crate) struct LockTextRasters {
+    clock: Option<TextRaster>,
+    date: Option<TextRaster>,
     account: Option<TextRaster>,
     prompt: Option<TextRaster>,
 }
 
 impl LockTextRasters {
+    pub(crate) fn clock(&self) -> Option<&TextRaster> {
+        self.clock.as_ref()
+    }
+
+    pub(crate) fn date(&self) -> Option<&TextRaster> {
+        self.date.as_ref()
+    }
+
     pub(crate) fn account(&self) -> Option<&TextRaster> {
         self.account.as_ref()
     }
@@ -171,6 +233,8 @@ struct RasterKey {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TextRole {
+    Clock,
+    Date,
     Account,
     Prompt,
 }
@@ -193,12 +257,18 @@ fn rasterize(
     role: TextRole,
 ) -> Result<TextRaster, Error> {
     let scale = layout.scale();
+    let maximum_width = match role {
+        TextRole::Clock => 720,
+        TextRole::Date | TextRole::Account | TextRole::Prompt => 560,
+    };
     let width = layout
         .width()
         .saturating_sub(48_u32.saturating_mul(scale))
         .max(1)
-        .min(560_u32.saturating_mul(scale));
+        .min(maximum_width * scale);
     let logical_height = match role {
+        TextRole::Clock => 124,
+        TextRole::Date => 42,
         TextRole::Account => 40,
         TextRole::Prompt => 56,
     };
@@ -215,8 +285,10 @@ fn rasterize(
 
     let scale = scale as f32;
     let (font_size, line_height) = match role {
-        TextRole::Account => (20.0, 28.0),
-        TextRole::Prompt => (18.0, 26.0),
+        TextRole::Clock => (96.0, 112.0),
+        TextRole::Date => (24.0, 34.0),
+        TextRole::Account => (21.0, 29.0),
+        TextRole::Prompt => (16.0, 24.0),
     };
     let metrics = Metrics::new(font_size * scale, line_height * scale);
     let mut buffer = Buffer::new(font_system, metrics);
@@ -224,7 +296,11 @@ fn rasterize(
     buffer.set_wrap(font_system, Wrap::WordOrGlyph);
     let attrs = Attrs::new()
         .family(Family::Name("Inter"))
-        .weight(Weight::NORMAL);
+        .weight(if role == TextRole::Clock {
+            Weight::LIGHT
+        } else {
+            Weight::NORMAL
+        });
     buffer.set_rich_text(
         font_system,
         [(text, attrs.clone())],
@@ -274,16 +350,44 @@ fn rasterize(
 
     let origin_x = i64::from(layout.width().saturating_sub(width) / 2);
     let origin_y = match role {
+        TextRole::Clock => {
+            let center = u64::from(layout.height()) * 18 / 100;
+            center.saturating_sub(u64::from(height) / 2) as i64
+        }
+        TextRole::Date => {
+            let center = u64::from(layout.height()) * 10 / 100;
+            center.saturating_sub(u64::from(height) / 2) as i64
+        }
         TextRole::Account => {
-            let center = u64::from(layout.height()) * 51 / 100;
+            let center = u64::from(layout.height()) * 76 / 100;
             center.saturating_sub(u64::from(height) / 2) as i64
         }
         TextRole::Prompt => {
-            let panel_center = u64::from(layout.height()) * 58 / 100;
-            panel_center.saturating_add(u64::from(32 * layout.scale())) as i64
+            let panel_center = u64::from(layout.height()) * 84 / 100;
+            panel_center.saturating_add(u64::from(26 * layout.scale())) as i64
         }
     };
     TextRaster::new(origin_x, origin_y, width, height, alpha).map_err(Error::Raster)
+}
+
+struct ClockLabels {
+    minute: i64,
+    time: String,
+    date: String,
+}
+
+impl ClockLabels {
+    fn now() -> Self {
+        Self::from_datetime(Local::now())
+    }
+
+    fn from_datetime(now: DateTime<Local>) -> Self {
+        Self {
+            minute: now.timestamp().div_euclid(60),
+            time: now.format("%-I:%M").to_string(),
+            date: now.format("%A, %-d %B").to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -339,21 +443,23 @@ mod tests {
             assert_eq!(first.account(), second.account());
             assert_eq!(first.prompt(), second.prompt());
             assert_ne!(first.account(), first.prompt());
-            let panel_center = i64::from(layout().height()) * 58 / 100;
+            let panel_center = i64::from(layout().height()) * 84 / 100;
+            assert!(first.clock().is_some());
+            assert!(first.date().is_some());
             assert!(first.account().unwrap().origin_y() > 0);
             assert!(first.account().unwrap().bottom() < panel_center);
             assert!(first.prompt().unwrap().origin_y() > panel_center);
-            assert_eq!(renderer.rasters.len(), 2);
+            assert_eq!(renderer.rasters.len(), 4);
             assert!(renderer.update(None, true, false));
             let failure = renderer.rasters(layout()).unwrap();
             assert_eq!(first.account(), failure.account());
             assert_ne!(first.prompt(), failure.prompt());
-            assert_eq!(renderer.rasters.len(), 2);
+            assert_eq!(renderer.rasters.len(), 4);
             assert!(renderer.update(None, false, true));
             let authenticating = renderer.rasters(layout()).unwrap();
             assert_eq!(first.account(), authenticating.account());
             assert_ne!(failure.prompt(), authenticating.prompt());
-            assert_eq!(renderer.rasters.len(), 2);
+            assert_eq!(renderer.rasters.len(), 4);
             assert_eq!(format!("{renderer:?}"), "LockTextRenderer(<redacted>)");
             assert_eq!(format!("{first:?}"), "LockTextRasters(<redacted>)");
             assert_eq!(

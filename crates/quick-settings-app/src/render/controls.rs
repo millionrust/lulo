@@ -44,7 +44,7 @@ impl QuickSettingsView {
                 .gap_2()
                 .px_2()
                 .py_1()
-                .rounded(px(7.0))
+                .rounded(px(mac::radius_control()))
                 .bg(mac::error_background())
                 .text_size(rmac_ui::text_px(10.0))
                 .text_color(mac::danger())
@@ -77,7 +77,7 @@ impl QuickSettingsView {
         let disabled = !tile.available || tile.busy;
         div()
             .w_full()
-            .rounded(px(12.0))
+            .rounded(px(mac::radius_card()))
             .border_1()
             .border_color(if tile.value && tile.available {
                 mac::accent_border()

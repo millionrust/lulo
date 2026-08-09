@@ -136,6 +136,7 @@ pub struct RadiusTokens {
     pub card: f32,
     pub popover: f32,
     pub large_surface: f32,
+    pub pill: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -296,10 +297,15 @@ impl ThemeTokens {
                 x8: 32.0,
             },
             radii: RadiusTokens {
-                control: 6.0,
-                card: 10.0,
-                popover: 12.0,
-                large_surface: 16.0,
+                // Measured from the 1920×1080 macOS references captured on
+                // the reference Mac. These form a deliberate hierarchy:
+                // compact controls < grouped cards < floating panels <
+                // Launchpad/window surfaces < search and toggle pills.
+                control: 8.0,
+                card: 12.0,
+                popover: 20.0,
+                large_surface: 24.0,
+                pill: 30.0,
             },
             focus: FocusTokens {
                 ring_width: if high_contrast { 3.0 } else { 2.0 },

@@ -178,11 +178,26 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(lock.contains("Type=notify"));
     assert!(lock.contains("NotifyAccess=all"));
     assert!(lock.contains("Restart=on-failure"));
-    assert!(lock.contains("StartLimitIntervalSec=0"));
+    assert!(lock.contains("StartLimitIntervalSec=30s"));
+    assert!(lock.contains("StartLimitBurst=4"));
+    assert!(lock.contains("OnFailure=rmac-lock-fallback.service"));
+    assert!(lock.contains("ExecStart=%h/.local/libexec/rmac/rmac-lock-provider"));
+    assert!(lock.contains("WatchdogSec=10s"));
     assert!(lock.contains("KillMode=control-group"));
     assert!(!lock.contains("OnFailure=rmac-component-failure"));
     assert!(!lock.contains("NoNewPrivileges=yes"));
     assert!(!lock.contains("/bin/sh"));
+
+    let fallback = include_str!("../units/rmac-lock-fallback.service");
+    assert!(fallback.contains("Type=notify"));
+    assert!(fallback.contains("NotifyAccess=all"));
+    assert!(fallback.contains("StartLimitIntervalSec=0"));
+    assert!(fallback.contains("Restart=on-failure"));
+    assert!(fallback.contains(
+        "ExecStart=%h/.local/libexec/rmac/rmac-locker --config %h/.config/rmac/swaylock.conf"
+    ));
+    assert!(fallback.contains("KillMode=control-group"));
+    assert!(!fallback.contains("/bin/sh"));
 
     let coordinator = include_str!("../units/rmac-lock-coordinator.service");
     assert!(coordinator.contains("Type=notify"));

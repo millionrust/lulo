@@ -24,6 +24,7 @@ pub struct LockPalette {
     pub top: Rgb,
     pub bottom: Rgb,
     pub glow: Rgb,
+    pub secondary_glow: Rgb,
     pub panel: Rgb,
     pub avatar: Rgb,
     pub accent: Rgb,
@@ -31,14 +32,15 @@ pub struct LockPalette {
 }
 
 impl LockPalette {
-    /// Original rmac midnight colors; no Apple asset or color token is used.
+    /// Original rmac Aurora colors, shared with the default desktop wallpaper.
     pub const MIDNIGHT: Self = Self {
-        top: Rgb::new(16, 25, 48),
-        bottom: Rgb::new(5, 10, 23),
-        glow: Rgb::new(75, 105, 170),
-        panel: Rgb::new(211, 220, 237),
-        avatar: Rgb::new(221, 228, 241),
-        accent: Rgb::new(105, 166, 255),
+        top: Rgb::new(16, 22, 47),
+        bottom: Rgb::new(33, 43, 92),
+        glow: Rgb::new(34, 166, 161),
+        secondary_glow: Rgb::new(217, 108, 157),
+        panel: Rgb::new(244, 246, 252),
+        avatar: Rgb::new(229, 233, 244),
+        accent: Rgb::new(118, 181, 255),
         error: Rgb::new(255, 105, 120),
     };
 }
@@ -276,6 +278,30 @@ pub fn paint_lock_frame(
     account_text: Option<&TextRaster>,
     prompt_text: Option<&TextRaster>,
 ) -> io::Result<()> {
+    paint_lock_frame_with_text(
+        writer,
+        layout,
+        palette,
+        visual,
+        None,
+        None,
+        account_text,
+        prompt_text,
+    )
+}
+
+/// Paint one lock frame with the complete modern lock-screen text hierarchy.
+#[allow(clippy::too_many_arguments)]
+pub fn paint_lock_frame_with_text(
+    writer: &mut impl Write,
+    layout: BufferLayout,
+    palette: LockPalette,
+    visual: LockVisualState,
+    clock_text: Option<&TextRaster>,
+    date_text: Option<&TextRaster>,
+    account_text: Option<&TextRaster>,
+    prompt_text: Option<&TextRaster>,
+) -> io::Result<()> {
     let width = layout.width();
     let height = layout.height();
     let mut chunk = vec![0_u8; CHUNK_PIXELS * 4];
@@ -293,6 +319,8 @@ pub fn paint_lock_frame(
                     layout.scale(),
                     palette,
                     visual,
+                    clock_text,
+                    date_text,
                     account_text,
                     prompt_text,
                 );
@@ -315,6 +343,8 @@ fn paint_pixel(
     scale: u32,
     palette: LockPalette,
     visual: LockVisualState,
+    clock_text: Option<&TextRaster>,
+    date_text: Option<&TextRaster>,
     account_text: Option<&TextRaster>,
     prompt_text: Option<&TextRaster>,
 ) -> Rgb {
@@ -324,8 +354,9 @@ fn paint_pixel(
         .interpolate(palette.bottom, y.min(denominator), denominator);
 
     let center_x = i64::from(width / 2);
-    let glow_y = percent(height, 42);
-    let dx = i64::from(x) - center_x;
+    let glow_x = percent(width, 70);
+    let glow_y = percent(height, 32);
+    let dx = i64::from(x) - glow_x;
     let dy = i64::from(y) - glow_y;
     let glow_radius = u64::from(width.min(height).max(1)) * 55 / 100;
     let distance_squared = (dx * dx + dy * dy) as u64;
@@ -335,16 +366,35 @@ fn paint_pixel(
         color = color.blend(palette.glow, strength);
     }
 
-    let avatar_y = percent(height, 38);
-    let avatar_radius = u64::from((width.min(height) / 13).clamp(28 * scale, 72 * scale));
+    let secondary_x = percent(width, 20);
+    let secondary_y = percent(height, 72);
+    let secondary_dx = i64::from(x) - secondary_x;
+    let secondary_dy = i64::from(y) - secondary_y;
+    let secondary_radius = u64::from(width.min(height).max(1)) * 62 / 100;
+    let secondary_distance = (secondary_dx * secondary_dx + secondary_dy * secondary_dy) as u64;
+    let secondary_radius_squared = secondary_radius.saturating_mul(secondary_radius).max(1);
+    if secondary_distance < secondary_radius_squared {
+        let strength =
+            ((secondary_radius_squared - secondary_distance) * 52 / secondary_radius_squared) as u8;
+        color = color.blend(palette.secondary_glow, strength);
+    }
+
+    // A restrained dark veil keeps white identity text readable like a
+    // wallpaper-backed macOS lock screen without flattening the Aurora color.
+    color = color.blend(Rgb::new(4, 7, 18), 54);
+
+    let dx = i64::from(x) - center_x;
+
+    let avatar_y = percent(height, 66);
+    let avatar_radius = u64::from((width.min(height) / 16).clamp(28 * scale, 64 * scale));
     let avatar_dy = i64::from(y) - avatar_y;
     if (dx * dx + avatar_dy * avatar_dy) as u64 <= avatar_radius * avatar_radius {
         color = color.blend(palette.avatar, 224);
     }
 
-    let panel_half_width = percent(width, 32).min(i64::from(210 * scale));
-    let panel_half_height = i64::from(22 * scale);
-    let panel_center_y = percent(height, 58);
+    let panel_half_width = percent(width, 28).min(i64::from(180 * scale));
+    let panel_half_height = i64::from(19 * scale);
+    let panel_center_y = percent(height, 84);
     if inside_rounded_rect(
         i64::from(x),
         i64::from(y),
@@ -352,7 +402,7 @@ fn paint_pixel(
         panel_center_y,
         panel_half_width,
         panel_half_height,
-        i64::from(12 * scale),
+        i64::from(10 * scale),
     ) {
         let panel = if visual.authentication_failed {
             palette.error
@@ -378,7 +428,7 @@ fn paint_pixel(
             panel_center_y,
             panel_half_width + 2 * scale,
             panel_half_height + 2 * scale,
-            14 * scale,
+            12 * scale,
         );
         let inner = inside_rounded_rect(
             i64::from(x),
@@ -387,7 +437,7 @@ fn paint_pixel(
             panel_center_y,
             panel_half_width,
             panel_half_height,
-            12 * scale,
+            10 * scale,
         );
         if outer && !inner {
             color = color.blend(
@@ -446,7 +496,10 @@ fn paint_pixel(
         visual.prompt,
     );
 
-    for text in [account_text, prompt_text].into_iter().flatten() {
+    for text in [clock_text, date_text, account_text, prompt_text]
+        .into_iter()
+        .flatten()
+    {
         if let Some(alpha) = text.alpha_at(i64::from(x), i64::from(y)) {
             color = color.blend(palette.panel, alpha);
         }

@@ -8,6 +8,7 @@ notification_install_dir="${repo_root}/crates/rmac-notifications-linux/install"
 focus_install_dir="${repo_root}/crates/rmac-focus-linux/install"
 lock_config_source="${repo_root}/crates/rmac-session/swaylock.conf"
 lock_policy_source="${repo_root}/crates/rmac-session/lock-policy.json"
+pam_source="${repo_root}/crates/rmac-lock-provider-linux/pam/rmac-lock"
 config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
 data_home=${XDG_DATA_HOME:-"${HOME}/.local/share"}
 unit_dir=${RMAC_SYSTEMD_USER_DIR:-"${config_home}/systemd/user"}
@@ -30,6 +31,18 @@ if [ ! -x /usr/bin/busctl ]; then
     echo "busctl is required at /usr/bin/busctl for automatic suspend requests." >&2
     exit 1
 fi
+if [ -e /etc/pam.d/rmac-lock ]; then
+    if [ ! -f /etc/pam.d/rmac-lock ] || ! cmp -s "${pam_source}" /etc/pam.d/rmac-lock; then
+        echo "existing /etc/pam.d/rmac-lock differs; refusing to replace authentication policy" >&2
+        exit 1
+    fi
+else
+    command -v sudo >/dev/null 2>&1 || {
+        echo "sudo is required to install the rmac PAM policy." >&2
+        exit 1
+    }
+    sudo install -m 0644 "${pam_source}" /etc/pam.d/rmac-lock
+fi
 case ${target_dir} in
     /*) ;;
     *) target_dir="${repo_root}/${target_dir}" ;;
@@ -44,6 +57,7 @@ esac
     -p rmac-system-settings --bin rmac-system-settings \
     -p rmac-notifications-linux --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
+    -p rmac-lock-provider-linux --features provider --bin rmac-lock-provider \
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker)
 
 install -d -m 0755 "${unit_dir}"
@@ -57,6 +71,7 @@ install -m 0755 "${target_dir}/release/rmac-notification-center-panel" "${libexe
 install -m 0755 "${target_dir}/release/rmac-system-settings" "${libexec_dir}/rmac-system-settings"
 install -m 0755 "${target_dir}/release/rmac-notification-center" "${libexec_dir}/rmac-notification-center"
 install -m 0755 "${target_dir}/release/rmac-focus-service" "${libexec_dir}/rmac-focus-service"
+install -m 0755 "${target_dir}/release/rmac-lock-provider" "${libexec_dir}/rmac-lock-provider"
 install -m 0755 "${target_dir}/release/rmac-shortcut-broker" "${libexec_dir}/rmac-shortcut-broker"
 install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/rmac-shortcut-dispatch"
 install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"
@@ -113,7 +128,7 @@ echo "Installed rmac user units in ${unit_dir}."
 echo "Installed the supervisor in ${libexec_dir}."
 echo "Installed the supervised App Drawer, notification service, on-demand Center and Quick Settings panels, and rmac notification portal backend."
 echo "Installed the Focus policy authority."
-echo "Installed secure swaylock supervision, logind coordination, idle locking, and default lock policy."
+echo "Installed the rmac lock screen with fail-closed swaylock recovery, logind coordination, idle locking, and default lock policy."
 echo "The three upstream shell surfaces remain an explicit framework-gated development candidate."
 echo "Check them with: bash ${script_dir}/install-upstream-shell-candidate.sh --check"
 echo "Start the session from niri with ${bin_dir}/rmac-session-start."

@@ -962,6 +962,15 @@ impl PreparedState {
     }
 
     fn render_pending(&mut self, queue_handle: &QueueHandle<Self>) -> Result<(), WireError> {
+        if self.text_renderer.refresh_clock() {
+            if let Some(locking) = &mut self.locking {
+                if locking.phase.accepts_surfaces() {
+                    locking
+                        .pending_renders
+                        .extend(locking.lock_surfaces.keys().copied());
+                }
+            }
+        }
         let pending = self
             .locking
             .as_mut()
@@ -1031,6 +1040,8 @@ impl PreparedState {
             &plan,
             LockPalette::MIDNIGHT,
             visual,
+            text.clock(),
+            text.date(),
             text.account(),
             text.prompt(),
         ) {

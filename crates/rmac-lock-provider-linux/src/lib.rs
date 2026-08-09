@@ -13,7 +13,7 @@ pub mod pam_broker;
 pub mod pam_conversation;
 #[cfg(any(target_os = "linux", test))]
 mod pointer;
-#[cfg(any(test, all(target_os = "linux", feature = "development-provider")))]
+#[cfg(any(test, all(target_os = "linux", feature = "provider")))]
 mod process;
 mod prompt_label;
 #[cfg(any(target_os = "linux", test))]
@@ -35,9 +35,8 @@ pub mod wayland;
 #[cfg(target_os = "linux")]
 mod xkb_keyboard;
 
-/// Uninstalled process entry point for the Linux recovery/evidence harness.
-#[cfg(all(target_os = "linux", feature = "development-provider"))]
-#[doc(hidden)]
+/// Installed fail-closed process entry point for the Linux session locker.
+#[cfg(all(target_os = "linux", feature = "provider"))]
 pub mod development_process;
 
 #[cfg(test)]

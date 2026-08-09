@@ -46,11 +46,11 @@ impl Render for LauncherView {
             }))
             .v_flex()
             .overflow_hidden()
-            .rounded(px(18.0))
+            .rounded(px(mac::radius_large_surface()))
             .border_1()
             .border_color(mac::separator())
             .shadow_xl()
-            .bg(mac::raised())
+            .bg(mac::material())
             .text_color(mac::text())
             .child(
                 div()

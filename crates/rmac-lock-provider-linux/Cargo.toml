@@ -7,9 +7,11 @@ authors.workspace = true
 publish = false
 
 [features]
-development-provider = ["dep:zbus"]
+provider = ["dep:zbus"]
+development-provider = ["provider"]
 
 [dependencies]
+chrono.workspace = true
 rmac-lock-provider.workspace = true
 zeroize.workspace = true
 
@@ -26,4 +28,4 @@ zbus = { workspace = true, optional = true }
 [[bin]]
 name = "rmac-lock-provider"
 path = "src/bin/provider.rs"
-required-features = ["development-provider"]
+required-features = ["provider"]

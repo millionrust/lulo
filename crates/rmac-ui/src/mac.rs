@@ -9,6 +9,13 @@ pub fn window() -> Hsla {
 pub fn raised() -> Hsla {
     crate::theme::current().colors.raised.hsla()
 }
+/// Translucent desktop material. The compositor supplies the pixels beneath
+/// it; rmac supplies the tint and content contrast above it.
+pub fn material() -> Hsla {
+    let mut color = crate::theme::current().colors.chrome;
+    color.alpha = 0xd8;
+    color.hsla()
+}
 /// Unified toolbar / window chrome.
 pub fn chrome() -> Hsla {
     crate::theme::current().colors.chrome.hsla()
@@ -20,6 +27,28 @@ pub fn sidebar() -> Hsla {
 /// Middle list column background.
 pub fn list() -> Hsla {
     crate::theme::current().colors.list.hsla()
+}
+
+// Corner-radius hierarchy shared by every rmac surface. Keeping these here
+// prevents each app from drifting into a different visual language.
+pub fn radius_control() -> f32 {
+    crate::theme::current().radii.control
+}
+
+pub fn radius_card() -> f32 {
+    crate::theme::current().radii.card
+}
+
+pub fn radius_popover() -> f32 {
+    crate::theme::current().radii.popover
+}
+
+pub fn radius_large_surface() -> f32 {
+    crate::theme::current().radii.large_surface
+}
+
+pub fn radius_pill() -> f32 {
+    crate::theme::current().radii.pill
 }
 
 // Text

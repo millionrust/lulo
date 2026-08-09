@@ -8,7 +8,7 @@ impl QuickSettingsView {
         let disabled = !sound.available || sound.busy;
         div()
             .w_full()
-            .rounded(px(12.0))
+            .rounded(px(mac::radius_card()))
             .border_1()
             .border_color(mac::separator())
             .bg(mac::raised())
@@ -118,7 +118,7 @@ impl QuickSettingsView {
             .collect::<Vec<_>>();
         div()
             .w_full()
-            .rounded(px(12.0))
+            .rounded(px(mac::radius_card()))
             .border_1()
             .border_color(mac::separator())
             .bg(mac::raised())

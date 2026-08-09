@@ -63,7 +63,7 @@ from native_package_contract import ALL_BINARIES
 print("\n".join(ALL_BINARIES))
 ' "$repo_root/scripts/linux")" || fail "native package inventory could not be loaded"
 mapfile -t binary_names <<<"$inventory"
-[[ ${#binary_names[@]} -eq 21 ]] || fail "native package inventory is not exact"
+[[ ${#binary_names[@]} -eq 22 ]] || fail "native package inventory is not exact"
 
 # Reuse the repository's one normal target graph even if the caller exports a
 # different Cargo target directory.
@@ -84,6 +84,7 @@ export CARGO_TARGET_DIR="$target_dir"
     -p rmac-notification-center-app --bin rmac-notification-center-panel \
     -p rmac-notifications-linux --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
+    -p rmac-lock-provider-linux --features provider --bin rmac-lock-provider \
     -p rmac-shortcuts \
       --bin rmac-shortcut-broker \
       --bin rmac-shortcut-dispatch \

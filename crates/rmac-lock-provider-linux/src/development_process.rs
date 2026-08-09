@@ -1,8 +1,4 @@
-//! Feature-gated Linux process wrapper for recovery testing.
-//!
-//! This module is not part of the installed session. It exists so the custom
-//! provider can enter the dedicated nested-compositor and reference-PC evidence
-//! gates without weakening the accepted swaylock fallback.
+//! Fail-closed Linux process wrapper for the installed lock provider.
 
 use std::env;
 use std::fmt;
@@ -23,8 +19,8 @@ const MAX_SEAT_NAME_BYTES: usize = 256;
 const WAYLAND_SESSION_TYPE: &str = "wayland";
 const POLL_WAIT: Duration = Duration::from_secs(1);
 
-/// Run the opt-in custom provider until authenticated unlock or a fail-closed
-/// restart condition.
+/// Run the provider until authenticated unlock or a fail-closed restart
+/// condition.
 pub fn run() -> Result<(), Error> {
     let session = SessionContext::connect()?;
     let watchdog_usec = env::var("WATCHDOG_USEC").ok();

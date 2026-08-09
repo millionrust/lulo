@@ -27,6 +27,16 @@ hotkey-overlay {
 
 screenshot-path "~/Pictures/Screenshots/Screenshot %Y-%m-%d at %H.%M.%S.png"
 
+// Niri 26.04 owns the background sampling and GPU blur. rmac windows remain
+// translucent clients, so protected or occluded desktop pixels never need to
+// be copied into an application-owned texture.
+blur {
+    passes 3
+    offset 3
+    noise 0.02
+    saturation 1.5
+}
+
 // rmac owns its shell shortcuts in this session. The portal broker remains
 // available to applications, while these bindings make the desktop usable
 // immediately after login without a manual config step.
@@ -65,6 +75,8 @@ window-rule {
     default-column-width { fixed 720; }
     default-window-height { fixed 540; }
     default-floating-position x=0 y=44 relative-to="top"
+    geometry-corner-radius 24
+    background-effect { blur true; }
     focus-ring { off; }
     border { off; }
 }
@@ -75,6 +87,8 @@ window-rule {
     default-column-width { fixed 380; }
     default-window-height { fixed 548; }
     default-floating-position x=12 y=12 relative-to="top-right"
+    geometry-corner-radius 20
+    background-effect { blur true; }
     focus-ring { off; }
     border { off; }
 }
@@ -85,6 +99,8 @@ window-rule {
     default-column-width { fixed 420; }
     default-window-height { fixed 720; }
     default-floating-position x=12 y=12 relative-to="top-right"
+    geometry-corner-radius 20
+    background-effect { blur true; }
     focus-ring { off; }
     border { off; }
 }
@@ -94,6 +110,8 @@ window-rule {
     open-floating true
     default-column-width { fixed 1080; }
     default-window-height { fixed 720; }
+    geometry-corner-radius 24
+    background-effect { blur true; }
     focus-ring { off; }
     border { off; }
 }

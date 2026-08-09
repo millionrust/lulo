@@ -421,7 +421,7 @@ mod linux_wayland {
                 .flex()
                 .gap_2()
                 .p_2()
-                .rounded(px(22.0))
+                .rounded(px(26.0))
                 .bg(rgba(0xe7ecf18c))
                 .border_1()
                 .border_color(rgba(0xffffffb8))

@@ -180,7 +180,7 @@ impl NotificationCenterView {
             .w_full()
             .v_flex()
             .overflow_hidden()
-            .rounded(px(14.0))
+            .rounded(px(mac::radius_popover()))
             .border_1()
             .border_color(mac::separator())
             .bg(mac::raised())

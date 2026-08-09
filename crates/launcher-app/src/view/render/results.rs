@@ -43,7 +43,7 @@ impl LauncherView {
             .items_center()
             .justify_center()
             .gap_2()
-            .rounded(px(12.0))
+            .rounded(px(mac::radius_card()))
             .cursor_pointer()
             .when(row.selected, |tile| tile.bg(mac::accent_subtle()))
             .when(!row.selected, |tile| {
@@ -78,7 +78,7 @@ impl LauncherView {
             .items_center()
             .gap_3()
             .px_3()
-            .rounded(px(9.0))
+            .rounded(px(mac::radius_control()))
             .cursor_pointer()
             .when(row.selected, |item| item.bg(mac::accent_subtle()))
             .when(!row.selected, |item| {
@@ -125,7 +125,7 @@ impl LauncherView {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .rounded(px(7.0))
+                        .rounded(px(mac::radius_control()))
                         .bg(mac::control_fill())
                         .hover(|hover| hover.bg(mac::control_fill_hover()))
                         .child("•••")

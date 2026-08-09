@@ -79,6 +79,7 @@ def package_files() -> dict[str, tuple[bytes, int]]:
     session = REPO_ROOT / "crates" / "rmac-session"
     notifications = REPO_ROOT / "crates" / "rmac-notifications-linux" / "install"
     focus = REPO_ROOT / "crates" / "rmac-focus-linux" / "install"
+    lock_provider = REPO_ROOT / "crates" / "rmac-lock-provider-linux"
 
     files: dict[str, tuple[bytes, int]] = {
         "usr/share/wayland-sessions/rmac.desktop": (
@@ -111,6 +112,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         ),
         "usr/share/rmac/session/lock-policy.json": (
             _read_regular(session / "lock-policy.json"),
+            0o644,
+        ),
+        "etc/pam.d/rmac-lock": (
+            _read_regular(lock_provider / "pam" / "rmac-lock"),
             0o644,
         ),
         "usr/share/xdg-desktop-portal/portals/rmac.portal": (

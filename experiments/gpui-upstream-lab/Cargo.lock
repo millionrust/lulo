@@ -4690,6 +4690,7 @@ dependencies = [
  "async-channel",
  "blocking",
  "chrono",
+ "futures-util",
  "gpui",
  "gpui_platform",
  "rmac-apps",
@@ -4700,6 +4701,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-wallpaper",
+ "uuid",
 ]
 
 [[package]]

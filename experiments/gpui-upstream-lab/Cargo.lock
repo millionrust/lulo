@@ -4574,6 +4574,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-app-menu"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "rmac-apps",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-appearance"
 version = "0.1.0"
 dependencies = [
@@ -4694,6 +4703,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "image",
+ "rmac-app-menu",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",

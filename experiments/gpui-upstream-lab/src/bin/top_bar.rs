@@ -6,14 +6,16 @@ mod linux_wayland {
     use std::path::PathBuf;
     use std::process::Command;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::Local;
     use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
-        Context, DisplayId, Entity, FontWeight, PlatformDisplay, Role, Size, Window,
-        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay, Role,
+        Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
+        WindowOptions,
     };
     use gpui_platform::application;
     use rmac_gpui_upstream_lab::{
@@ -22,11 +24,17 @@ mod linux_wayland {
     };
 
     const BAR_HEIGHT: f32 = 28.0;
+    const MENU_SURFACE_HEIGHT: f32 = 420.0;
+    const MENU_WIDTH: f32 = 248.0;
+    const MENU_ROW_HEIGHT: f32 = 28.0;
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
 
     struct ShellStatus {
         update: rmac_shell_runtime::Update,
+        menu_app_id: Option<String>,
+        menus: Vec<rmac_app_menu::Menu>,
+        menu_generation: u64,
     }
 
     impl ShellStatus {
@@ -53,6 +61,17 @@ mod linux_wayland {
                         let Ok(update) = update else { break };
                         let visible = update.visible;
                         if this.update(cx, |this, cx| {
+                            let focused_app = update.snapshot.status.focused.app_id.clone();
+                            if focused_app != this.menu_app_id {
+                                this.menu_app_id = focused_app.clone();
+                                this.menus.clear();
+                                this.menu_generation = this.menu_generation.saturating_add(1);
+                                if let Some(app_id) = focused_app
+                                    .filter(|app_id| rmac_app_menu::bus_name(app_id).is_some())
+                                {
+                                    request_app_menus(app_id, this.menu_generation, cx);
+                                }
+                            }
                             this.update = update;
                             if visible {
                                 cx.notify();
@@ -71,24 +90,148 @@ mod linux_wayland {
             .detach();
             Self {
                 update: rmac_shell_runtime::Update::default(),
+                menu_app_id: None,
+                menus: Vec::new(),
+                menu_generation: 0,
             }
         }
+    }
+
+    fn request_app_menus(app_id: String, generation: u64, cx: &mut Context<ShellStatus>) {
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let app_id = app_id.clone();
+                    async move { rmac_app_menu::fetch(&app_id).await }
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.menu_generation == generation
+                    && this.menu_app_id.as_deref() == Some(app_id.as_str())
+                {
+                    this.menus = result.unwrap_or_default();
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     struct TopBar {
         display_id: u64,
         render_count: u64,
         status: Entity<ShellStatus>,
+        open_menu: Option<usize>,
+        selected_item: usize,
+        open_app_id: Option<String>,
+        focus: FocusHandle,
+        _blur: Subscription,
     }
 
     impl TopBar {
-        fn new(display_id: DisplayId, status: Entity<ShellStatus>, cx: &mut Context<Self>) -> Self {
+        fn new(
+            display_id: DisplayId,
+            status: Entity<ShellStatus>,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) -> Self {
             let display_id = u64::from(display_id);
             cx.observe(&status, |_, _, cx| cx.notify()).detach();
+            let focus = cx.focus_handle();
+            let blur_focus = focus.clone();
+            let blur = cx.on_blur(&blur_focus, window, |this, window, cx| {
+                this.close_menu(window, cx);
+            });
             Self {
                 display_id,
                 render_count: 0,
                 status,
+                open_menu: None,
+                selected_item: 0,
+                open_app_id: None,
+                focus,
+                _blur: blur,
+            }
+        }
+
+        fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            if self.open_menu.take().is_some() {
+                self.open_app_id = None;
+                self.selected_item = 0;
+                window.refresh();
+                cx.notify();
+            }
+        }
+
+        fn open_menu(
+            &mut self,
+            index: usize,
+            app_id: String,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            self.open_menu = Some(index);
+            self.selected_item = 0;
+            self.open_app_id = Some(app_id);
+            window.focus(&self.focus, cx);
+            window.refresh();
+            cx.notify();
+        }
+
+        fn handle_key(
+            &mut self,
+            event: &KeyDownEvent,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            let (menus, window_id) = {
+                let status = self.status.read(cx);
+                (
+                    status.menus.clone(),
+                    status.update.snapshot.status.focused.window_id,
+                )
+            };
+            let Some(menu_index) = self.open_menu else {
+                return;
+            };
+            let Some(menu) = menus.get(menu_index).cloned() else {
+                self.close_menu(window, cx);
+                return;
+            };
+            match event.keystroke.key.as_str() {
+                "escape" => self.close_menu(window, cx),
+                "down" => {
+                    self.selected_item = (self.selected_item + 1) % menu.items.len();
+                    cx.notify();
+                }
+                "up" => {
+                    self.selected_item = self
+                        .selected_item
+                        .checked_sub(1)
+                        .unwrap_or(menu.items.len() - 1);
+                    cx.notify();
+                }
+                "right" | "left" => {
+                    let next = if event.keystroke.key == "right" {
+                        (menu_index + 1) % menus.len()
+                    } else {
+                        menu_index.checked_sub(1).unwrap_or(menus.len() - 1)
+                    };
+                    self.open_menu = Some(next);
+                    self.selected_item = 0;
+                    cx.notify();
+                }
+                "enter" | "space" => {
+                    if let (Some(app_id), Some(item)) = (
+                        self.open_app_id.clone(),
+                        menu.items.get(self.selected_item).cloned(),
+                    ) {
+                        self.close_menu(window, cx);
+                        dispatch_app_menu(app_id, item.action, window_id, cx);
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -98,7 +241,8 @@ mod linux_wayland {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
             let now = Local::now();
-            let snapshot = &self.status.read(cx).update.snapshot.status;
+            let status = self.status.read(cx);
+            let snapshot = &status.update.snapshot.status;
             let clock = now
                 .format(top_bar_clock_pattern(&snapshot.clock))
                 .to_string();
@@ -106,12 +250,148 @@ mod linux_wayland {
             let active_app = top_bar_active_app_name(snapshot);
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
+            let focused_app_id = snapshot.focused.app_id.clone();
+            let focused_window_id = snapshot.focused.window_id;
+            let menus = status.menus.clone();
+            drop(status);
 
-            div()
-                .id(format!("top-bar-{}", self.display_id))
+            if self.open_menu.is_some()
+                && (self.open_app_id != focused_app_id || self.open_menu >= Some(menus.len()))
+            {
+                self.open_menu = None;
+                self.open_app_id = None;
+                self.selected_item = 0;
+            }
+            let menu_left = self
+                .open_menu
+                .map(|index| menu_anchor_x(&active_app, &menus, index));
+            let menu_height = self
+                .open_menu
+                .and_then(|index| menus.get(index))
+                .map(menu_panel_height);
+            let bar_region = Bounds {
+                origin: point(px(0.0), px(0.0)),
+                size: Size::new(window.bounds().size.width, px(BAR_HEIGHT)),
+            };
+            if let (Some(left), Some(height)) = (menu_left, menu_height) {
+                let popup_region = Bounds {
+                    origin: point(px(left), px(BAR_HEIGHT)),
+                    size: Size::new(px(MENU_WIDTH), px(height + 4.0)),
+                };
+                window.set_input_region(Some(&[bar_region, popup_region]));
+            } else {
+                window.set_input_region(Some(&[bar_region]));
+            }
+
+            let app_id_for_buttons = focused_app_id.clone();
+            let menu_buttons = menus
+                .iter()
+                .enumerate()
+                .map(|(index, menu)| {
+                    let app_id = app_id_for_buttons.clone().unwrap_or_default();
+                    let open = self.open_menu == Some(index);
+                    div()
+                        .id(format!("app-menu-{}-{index}", self.display_id))
+                        .role(Role::Button)
+                        .aria_label(format!("{} menu", menu.label))
+                        .focusable()
+                        .tab_stop(true)
+                        .h(px(22.0))
+                        .px_1()
+                        .flex()
+                        .items_center()
+                        .rounded(px(5.0))
+                        .cursor_pointer()
+                        .when(open, |style| style.bg(rgba(0xffffff2d)))
+                        .hover(|style| style.bg(rgba(0xffffff22)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            if this.open_menu == Some(index) {
+                                this.close_menu(window, cx);
+                            } else {
+                                this.open_menu(index, app_id.clone(), window, cx);
+                            }
+                        }))
+                        .child(menu.label.clone())
+                })
+                .collect::<Vec<_>>();
+
+            let popup = self.open_menu.and_then(|menu_index| {
+                let menu = menus.get(menu_index)?.clone();
+                let app_id = focused_app_id.clone()?;
+                let left = menu_left?;
+                let selected = self.selected_item.min(menu.items.len().saturating_sub(1));
+                let mut panel = div()
+                    .id(format!("app-menu-panel-{}-{menu_index}", self.display_id))
+                    .role(Role::Menu)
+                    .aria_label(format!("{} menu", menu.label))
+                    .absolute()
+                    .top(px(BAR_HEIGHT + 2.0))
+                    .left(px(left))
+                    .w(px(MENU_WIDTH))
+                    .py_1()
+                    .rounded(px(9.0))
+                    .bg(rgba(0x202630f4))
+                    .border_1()
+                    .border_color(rgba(0xffffff35))
+                    .shadow_lg()
+                    .occlude();
+                for (item_index, item) in menu.items.into_iter().enumerate() {
+                    if item.separator_before {
+                        panel = panel.child(div().h(px(1.0)).mx_2().my_1().bg(rgba(0xffffff25)));
+                    }
+                    let action = item.action.clone();
+                    let item_app_id = app_id.clone();
+                    let enabled = item.enabled;
+                    let mut row = div()
+                        .id(format!(
+                            "app-menu-item-{}-{menu_index}-{item_index}",
+                            self.display_id
+                        ))
+                        .role(Role::MenuItem)
+                        .aria_label(item.label.clone())
+                        .h(px(MENU_ROW_HEIGHT))
+                        .mx_1()
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .rounded(px(5.0))
+                        .when(selected == item_index, |style| style.bg(rgba(0x2878d4ff)))
+                        .when(!enabled, |style| style.text_color(rgba(0xf7f8fa66)))
+                        .child(item.label);
+                    if !item.shortcut.is_empty() {
+                        row = row.child(div().text_color(rgba(0xf7f8faaa)).child(item.shortcut));
+                    }
+                    if enabled {
+                        row = row
+                            .cursor_pointer()
+                            .hover(|style| style.bg(rgba(0x2878d4ff)))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.close_menu(window, cx);
+                                dispatch_app_menu(
+                                    item_app_id.clone(),
+                                    action.clone(),
+                                    focused_window_id,
+                                    cx,
+                                );
+                            }));
+                    }
+                    panel = panel.child(row);
+                }
+                Some(panel)
+            });
+
+            let bar = div()
+                .id(format!("top-bar-strip-{}", self.display_id))
                 .role(Role::Toolbar)
                 .aria_label("rmac top bar")
-                .size_full()
+                .absolute()
+                .top_0()
+                .left_0()
+                .right_0()
+                .h(px(BAR_HEIGHT))
                 .flex()
                 .items_center()
                 .px_2()
@@ -140,6 +420,7 @@ mod linux_wayland {
                                 .child("r"),
                         )
                         .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app))
+                        .children(menu_buttons)
                         .children(workspace.map(|workspace| {
                             div()
                                 .id(format!("workspace-{}", self.display_id))
@@ -243,8 +524,43 @@ mod linux_wayland {
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(clock),
                         ),
-                )
+                );
+
+            div()
+                .id(format!("top-bar-{}", self.display_id))
+                .size_full()
+                .track_focus(&self.focus)
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                    if this.open_menu.is_some() {
+                        cx.stop_propagation();
+                        this.handle_key(event, window, cx);
+                    }
+                }))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.close_menu(window, cx);
+                }))
+                .child(bar)
+                .children(popup)
         }
+    }
+
+    fn menu_anchor_x(active_app: &str, menus: &[rmac_app_menu::Menu], index: usize) -> f32 {
+        let app_width = active_app.chars().count() as f32 * 7.2 + 16.0;
+        let preceding = menus
+            .iter()
+            .take(index)
+            .map(|menu| menu.label.chars().count() as f32 * 7.0 + 16.0)
+            .sum::<f32>();
+        (34.0 + app_width + preceding).max(8.0)
+    }
+
+    fn menu_panel_height(menu: &rmac_app_menu::Menu) -> f32 {
+        let separators = menu
+            .items
+            .iter()
+            .filter(|item| item.separator_before)
+            .count() as f32;
+        8.0 + MENU_ROW_HEIGHT * menu.items.len() as f32 + separators * 9.0
     }
 
     fn indicator_icon_path(kind: TopBarIndicatorKind) -> PathBuf {
@@ -281,6 +597,32 @@ mod linux_wayland {
                 .await;
                 if result.is_err() {
                     eprintln!("could not open {shortcut}");
+                }
+            })
+            .detach();
+    }
+
+    fn dispatch_app_menu(
+        app_id: String,
+        action: String,
+        window_id: Option<rmac_compositor::WindowId>,
+        cx: &mut App,
+    ) {
+        static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(1);
+        cx.background_executor()
+            .spawn(async move {
+                if let Some(window) = window_id {
+                    let id = NEXT_ACTIVATION.fetch_add(1, Ordering::Relaxed).max(1);
+                    let request = rmac_compositor::ActionRequest {
+                        id: rmac_compositor::ActivationId(id),
+                        action: rmac_compositor::Action::FocusWindow { window },
+                    };
+                    if rmac_compositor_niri::execute(request).await.result.is_err() {
+                        eprintln!("could not return focus to the application menu owner");
+                    }
+                }
+                if let Err(error) = rmac_app_menu::activate(&app_id, &action).await {
+                    eprintln!("could not activate {app_id} menu command: {error}");
                 }
             })
             .detach();
@@ -340,16 +682,16 @@ mod linux_wayland {
                     focus: false,
                     window_bounds: Some(WindowBounds::Windowed(Bounds {
                         origin: point(px(0.), px(0.)),
-                        size: Size::new(width, px(BAR_HEIGHT)),
+                        size: Size::new(width, px(MENU_SURFACE_HEIGHT)),
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.TopBar".to_owned()),
-                    window_background: WindowBackgroundAppearance::Blurred,
+                    window_background: WindowBackgroundAppearance::Transparent,
                     kind: WindowKind::LayerShell(LayerShellOptions {
                         namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
                         layer: Layer::Top,
                         anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-                        keyboard_interactivity: KeyboardInteractivity::None,
+                        keyboard_interactivity: KeyboardInteractivity::OnDemand,
                         exclusive_zone: Some(px(BAR_HEIGHT)),
                         ..Default::default()
                     }),
@@ -357,7 +699,7 @@ mod linux_wayland {
                 },
                 {
                     let status = status.clone();
-                    move |_, cx| cx.new(|cx| TopBar::new(display_id, status, cx))
+                    move |window, cx| cx.new(|cx| TopBar::new(display_id, status, window, cx))
                 },
             )
             .expect("open top-bar layer surface");

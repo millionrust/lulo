@@ -19,6 +19,7 @@ gpui = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8
 gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
 image = { version = "0.25", default-features = false }
 rmac-apps = { path = "../../crates/rmac-apps" }
+rmac-app-menu = { path = "../../crates/rmac-app-menu" }
 rmac-compositor = { path = "../../crates/rmac-compositor" }
 rmac-compositor-niri = { path = "../../crates/rmac-compositor-niri" }
 rmac-dock = { path = "../../crates/rmac-dock" }

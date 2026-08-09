@@ -19,6 +19,36 @@ pub fn init_application(cx: &mut App) {
     start_theme_runtime(cx);
 }
 
+/// Publish this first-party app's registered commands and route activations
+/// from the desktop menu bar into the currently active GPUI window.
+pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(menus) = rmac_app_menu::definition(app_id, cx.all_action_names()) else {
+            return;
+        };
+        let (activation_tx, activation_rx) = rmac_app_menu::activation_channel();
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_app_menu::serve(app_id, menus, activation_tx).await {
+                    eprintln!("{app_id} menu export stopped: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(action_name) = activation_rx.recv().await {
+                let _ = cx.update(|cx| match cx.build_action(&action_name, None) {
+                    Ok(action) => cx.dispatch_action(action.as_ref()),
+                    Err(error) => eprintln!("ignored unavailable {app_id} menu action: {error}"),
+                });
+            }
+        })
+        .detach();
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (app_id, cx);
+}
+
 /// Apply the current shared theme and text scale before an on-demand shell
 /// surface renders its first frame.
 pub fn prepare_surface_window(window: &mut Window, cx: &mut App) {

@@ -8,7 +8,7 @@ use gpui::{
 use gpui_component::Root;
 use rmac_window_state::{DisplayBounds, Store as WindowStateStore, WindowMode, WindowState};
 
-use crate::{init_application, prepare_surface_window};
+use crate::{init_application, install_app_menu, prepare_surface_window};
 
 const MIN_WINDOW_WIDTH: f32 = 640.0;
 const MIN_WINDOW_HEIGHT: f32 = 360.0;
@@ -340,6 +340,7 @@ pub fn boot_unified_app_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
+            install_app_menu(app_id, cx);
             let options = window_options_unified_for_app(app_id, width, height, cx);
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
@@ -412,6 +413,7 @@ pub fn boot_app_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
+            install_app_menu(app_id, cx);
             let options = window_options_for_app_with_title(app_id, title, width, height, cx);
 
             cx.open_window(options, move |window, cx| {

@@ -83,6 +83,7 @@ pub(crate) fn run() {
         .with_assets(gpui_component_assets::Assets)
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
+            rmac_ui::install_app_menu(rmac_ui::app_id::TEXT_EDITOR, cx);
             if request.open_untitled && open_editor_window(cx, None).is_err() {
                 eprintln!("Text Editor could not open a document window");
             }

@@ -13,6 +13,7 @@ async-channel.workspace = true
 async-io.workspace = true
 rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
+rmac-app-menu.workspace = true
 rmac-apps.workspace = true
 rmac-theme.workspace = true
 rmac-window-state.workspace = true

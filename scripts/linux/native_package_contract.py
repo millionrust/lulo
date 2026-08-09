@@ -88,7 +88,7 @@ PACKAGE_SPECS = (
             "dbus-user-session",
             "libglib2.0-bin",
             "network-manager",
-            "packagekit-tools",
+            "packagekit",
             "pipewire-bin",
             "power-profiles-daemon",
             "upower",

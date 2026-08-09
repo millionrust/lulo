@@ -180,7 +180,7 @@ mod linux_wayland {
                         .border_1()
                         .border_color(rgba(0xffffffb8))
                         .shadow_lg()
-                        .on_hover(cx.listener(|this, hovered, _, cx| {
+                        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                             if !*hovered && this.pointer_x.take().is_some() {
                                 cx.notify();
                             }

@@ -89,6 +89,8 @@ Read these before choosing work, and update them when their contract changes:
 - `PLAN_V2.md` — architecture, phases, journeys, and release gates.
 - `PARITY.md` — application capability and framework gaps.
 - `docs/product-reference-matrix.md` — research routing per product surface.
+- `docs/macos-tahoe-parity-spec.md` — master current-macOS inventory, default
+  policy, built-in app map, implementation order, and acceptance contract.
 - `docs/macos-ui-reference.md` — shell research and asset policy.
 - `docs/known-limitations.md` — truthful open blockers.
 - `docs/linux-reference-bringup.md` — real-hardware validation procedure.

@@ -310,14 +310,9 @@ mod linux_wayland {
         let compositor_status = status.clone();
         cx.spawn(async move |cx| {
             while let Ok(event) = compositor_rx.recv().await {
-                if compositor_status
-                    .update(cx, |status, _| {
-                        status.compositor.apply(event);
-                    })
-                    .is_err()
-                {
-                    break;
-                }
+                compositor_status.update(cx, |status, _| {
+                    status.compositor.apply(event);
+                });
             }
         })
         .detach();

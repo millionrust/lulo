@@ -758,7 +758,7 @@ mod linux_wayland {
         geometry: Option<(f32, f32)>,
         display_id: u64,
         cx: &Context<Dock>,
-    ) -> Option<gpui::Div> {
+    ) -> Option<gpui::AnyElement> {
         let menu = menu?;
         let (start, _) = geometry?;
         let selected = menu.session.selected().cloned();
@@ -850,7 +850,7 @@ mod linux_wayland {
             }
             panel = panel.child(element);
         }
-        Some(panel)
+        Some(panel.into_any_element())
     }
 
     fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {

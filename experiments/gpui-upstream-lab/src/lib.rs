@@ -315,7 +315,9 @@ pub fn top_bar_active_app_name(snapshot: &rmac_shell_status::Snapshot) -> String
                 .unwrap_or_else(|| humanize_app_id(app_id))
         })
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "rmac".to_owned())
+        // Like macOS Finder, the first-party file manager owns the desktop
+        // identity when no application window has focus.
+        .unwrap_or_else(|| "Finder".to_owned())
 }
 
 fn humanize_app_id(app_id: &str) -> String {
@@ -591,6 +593,14 @@ mod tests {
         let mut snapshot = rmac_shell_status::Snapshot::default();
         snapshot.focused.app_id = Some(rmac_apps::identity::APP_DRAWER.into());
         assert_eq!(top_bar_active_app_name(&snapshot), "Applications");
+    }
+
+    #[test]
+    fn desktop_without_a_focused_window_is_owned_by_finder() {
+        assert_eq!(
+            top_bar_active_app_name(&rmac_shell_status::Snapshot::default()),
+            "Finder"
+        );
     }
 
     #[test]

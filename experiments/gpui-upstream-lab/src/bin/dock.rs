@@ -1317,7 +1317,7 @@ mod linux_wayland {
         for (identity, name, generic_name, program, icon) in [
             (
                 rmac_apps::identity::FILES,
-                "Files",
+                "Finder",
                 "File Manager",
                 "/usr/bin/rmac-files",
                 "org.rmac.Files.svg",

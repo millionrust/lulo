@@ -31,6 +31,27 @@ window-rule {
     border { off; }
 }
 
+// Finder uses the large macOS document-window radius and lets niri clip and
+// blur the translucent source-list material behind its unified toolbar.
+window-rule {
+    match app-id=r#"^org\.rmac\.Files$"#
+    geometry-corner-radius 24
+    clip-to-geometry true
+    shadow {
+        on
+        softness 28
+        spread 2
+        offset x=0 y=8
+        color "#00000050"
+    }
+    background-effect {
+        xray false
+        blur true
+        noise 0.02
+        saturation 1.25
+    }
+}
+
 hotkey-overlay {
     skip-at-startup
 }

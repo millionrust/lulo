@@ -80,9 +80,19 @@ impl FinderView {
             .gap_2()
             .pl(px(13.0))
             .pr_3()
-            .bg(toolbar_bg())
-            .border_b_1()
-            .border_color(sep())
+            .relative()
+            .bg(list_bg())
+            .when(layout.sidebar_visible, |toolbar| {
+                toolbar.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top_0()
+                        .bottom_0()
+                        .w(px(self.sidebar_width))
+                        .bg(sidebar_bg()),
+                )
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|t, _, _, _| t.dragging = true),
@@ -97,7 +107,7 @@ impl FinderView {
                     window.start_window_move();
                 }
             }))
-            .child(div().mr_1().child(rmac_ui::traffic_lights()))
+            .child(div().relative().mr_1().child(rmac_ui::traffic_lights()))
             .child(
                 Button::new("toggle-sidebar", "")
                     .icon(

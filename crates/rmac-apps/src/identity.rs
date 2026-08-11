@@ -24,7 +24,7 @@ pub const ALL: [&str; 7] = [
 /// toplevel still publishes this non-empty base title to the compositor.
 pub fn window_title(app_id: &str) -> Option<&'static str> {
     match app_id {
-        FILES => Some("Files"),
+        FILES => Some("Finder"),
         TERMINAL => Some("Terminal"),
         NOTES => Some("Notes"),
         TEXT_EDITOR => Some("Text Editor"),

@@ -36,7 +36,7 @@ fn window_options_publish_the_exact_application_id() {
 #[test]
 fn identified_window_options_publish_stable_native_titles() {
     let cases = [
-        (app_id::FILES, "Files"),
+        (app_id::FILES, "Finder"),
         (app_id::TERMINAL, "Terminal"),
         (app_id::NOTES, "Notes"),
         (app_id::TEXT_EDITOR, "Text Editor"),
@@ -62,7 +62,7 @@ fn live_native_titles_are_bounded_and_spoof_resistant() {
         "report.txt gpj.exe — Text Editor"
     );
     assert_eq!(native_window_title("Terminal", "Terminal"), "Terminal");
-    assert_eq!(native_window_title("\n\t", "Files"), "Files");
+    assert_eq!(native_window_title("\n\t", "Finder"), "Finder");
 
     let title = native_window_title(&format!("{}😀", "a".repeat(300)), "Terminal");
     assert!(title.len() <= 256);

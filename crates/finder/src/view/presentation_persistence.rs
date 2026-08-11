@@ -16,7 +16,7 @@ use super::{FinderView, ViewMode};
 pub(super) const MIN_SIDEBAR_WIDTH: f32 = 160.0;
 pub(super) const MAX_SIDEBAR_WIDTH: f32 = 360.0;
 pub(super) const MAX_RESTORED_TABS: usize = 16;
-const DEFAULT_SIDEBAR_WIDTH: f32 = 190.0;
+const DEFAULT_SIDEBAR_WIDTH: f32 = 220.0;
 const CURRENT_VERSION: u32 = 2;
 const MAX_FILE_BYTES: usize = 80 * 1024;
 const MAX_PATH_BYTES: usize = 4 * 1024;

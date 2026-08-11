@@ -4,12 +4,12 @@
   <id>org.rmac.Files</id>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
-  <name>Files</name>
-  <name xml:lang="hi">फ़ाइलें</name>
+  <name>Finder</name>
+  <name xml:lang="hi">फ़ाइंडर</name>
   <summary>Browse and organize files and folders</summary>
   <summary xml:lang="hi">फ़ाइलें और फ़ोल्डर देखें और व्यवस्थित करें</summary>
   <description>
-    <p>Files provides a clear native view of local folders, file details, and common organization actions.</p>
+    <p>Finder provides a clear native view of local folders, file details, and common organization actions.</p>
     <p>It is designed for keyboard and pointer workflows while preserving Linux filesystem behavior and permissions.</p>
   </description>
   <launchable type="desktop-id">org.rmac.Files.desktop</launchable>

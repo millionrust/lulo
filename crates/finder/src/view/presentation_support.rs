@@ -69,11 +69,8 @@ pub(super) fn hsl(h: u32) -> Hsla {
 pub(super) fn list_bg() -> Hsla {
     rmac_ui::mac::list()
 }
-pub(super) fn toolbar_bg() -> Hsla {
-    rmac_ui::mac::chrome()
-}
 pub(super) fn sidebar_bg() -> Hsla {
-    rmac_ui::mac::sidebar()
+    rmac_ui::mac::material()
 }
 pub(super) fn alt_row() -> Hsla {
     rmac_ui::mac::row_alternate()

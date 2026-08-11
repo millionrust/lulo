@@ -2,7 +2,7 @@ use super::*;
 
 impl Render for FinderView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let native_window_title = rmac_ui::native_window_title(self.title().as_ref(), "Files");
+        let native_window_title = rmac_ui::native_window_title(self.title().as_ref(), "Finder");
         if self.native_window_title != native_window_title {
             window.set_window_title(&native_window_title);
             self.native_window_title = native_window_title;
@@ -68,6 +68,8 @@ impl Render for FinderView {
             .relative()
             .v_flex()
             .bg(list_bg())
+            .rounded(px(rmac_ui::mac::radius_large_surface()))
+            .overflow_hidden()
             .text_color(label())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 if this.quick_look.is_some() {

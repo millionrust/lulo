@@ -19,7 +19,7 @@ impl FinderView {
                 .bg(p.tint)
                 .into_any_element()
         } else {
-            icon(p.icon, 17.0, p.tint).into_any_element()
+            icon(p.icon, 17.0, if selected { accent() } else { label() }).into_any_element()
         };
 
         let np = p.path.clone();

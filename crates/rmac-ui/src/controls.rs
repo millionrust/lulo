@@ -315,8 +315,8 @@ impl RenderOnce for Toggle {
             .hover(mac::control_fill_hover())
             .active(mac::hover());
         let track = div()
-            .w(px(28.0))
-            .h(px(16.0))
+            .w(px(mac::toggle_width()))
+            .h(px(mac::toggle_height()))
             .px(px(2.0))
             .flex()
             .items_center()
@@ -335,7 +335,7 @@ impl RenderOnce for Toggle {
             })
             .child(
                 div()
-                    .size(px(12.0))
+                    .size(px(mac::toggle_thumb()))
                     .rounded_full()
                     .bg(mac::raised())
                     .shadow_sm(),
@@ -729,7 +729,7 @@ impl RenderOnce for List {
                         .my_1()
                         .px_2()
                         .py_1()
-                        .rounded(px(6.0))
+                        .rounded(px(mac::radius_control()))
                         .bg(mac::warning_background())
                         .border_1()
                         .border_color(mac::warning_border())
@@ -838,7 +838,7 @@ impl RenderOnce for ListRow {
             .selected(self.selected)
             .disabled(self.disabled)
             .w_full()
-            .h(px(30.0))
+            .h(px(mac::list_row_height()))
             .justify_start()
             .refine_style(&self.style)
             .child(self.content);

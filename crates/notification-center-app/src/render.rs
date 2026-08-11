@@ -83,7 +83,7 @@ impl Render for NotificationCenterView {
                         .px_3()
                         .py_2()
                         .rounded(px(mac::radius_control()))
-                        .bg(mac::material())
+                        .bg(mac::warning_background())
                         .border_1()
                         .border_color(mac::warning_border())
                         .text_size(rmac_ui::text_px(11.0))
@@ -99,7 +99,7 @@ impl Render for NotificationCenterView {
                         .px_3()
                         .py_2()
                         .rounded(px(mac::radius_control()))
-                        .bg(mac::material())
+                        .bg(mac::error_background())
                         .border_1()
                         .border_color(mac::error_border())
                         .text_size(rmac_ui::text_px(11.0))
@@ -125,7 +125,7 @@ impl Render for NotificationCenterView {
                                     .rounded(px(mac::radius_popover()))
                                     .border_1()
                                     .border_color(mac::separator())
-                                    .bg(mac::material())
+                                    .bg(mac::material_content())
                                     .child(Progress::indeterminate().label(LOADING_LABEL)),
                             ),
                         )
@@ -139,7 +139,7 @@ impl Render for NotificationCenterView {
                                     .rounded(px(mac::radius_popover()))
                                     .border_1()
                                     .border_color(mac::separator())
-                                    .bg(mac::material())
+                                    .bg(mac::material_content())
                                     .child(
                                         EmptyState::new(UNAVAILABLE_TITLE)
                                             .message(UNAVAILABLE_MESSAGE),
@@ -156,7 +156,7 @@ impl Render for NotificationCenterView {
                                     .rounded(px(mac::radius_popover()))
                                     .border_1()
                                     .border_color(mac::separator())
-                                    .bg(mac::material())
+                                    .bg(mac::material_content())
                                     .child(EmptyState::new(EMPTY_TITLE).message(EMPTY_MESSAGE)),
                             ),
                         )

@@ -47,6 +47,10 @@ impl RgbaColor {
         (self.red as u32) << 16 | (self.green as u32) << 8 | self.blue as u32
     }
 
+    pub const fn with_opacity(self, alpha: u8) -> Self {
+        Self { alpha, ..self }
+    }
+
     pub fn hsla(self) -> Hsla {
         if self.alpha == 0xff {
             rgb(self.hex()).into()
@@ -139,6 +143,36 @@ pub struct RadiusTokens {
     pub pill: f32,
 }
 
+/// Adaptive material tints for the distinct macOS visual layers.
+///
+/// Content remains opaque. Navigation and transient controls may let the
+/// compositor-provided background blur show through, while a clear material is
+/// reserved for small controls over visually rich content.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MaterialTokens {
+    pub content: RgbaColor,
+    pub regular: RgbaColor,
+    pub clear: RgbaColor,
+    pub sidebar: RgbaColor,
+    pub hud: RgbaColor,
+}
+
+/// Shared component geometry in logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ComponentMetricsTokens {
+    pub compact_control_height: f32,
+    pub regular_control_height: f32,
+    pub toolbar_height: f32,
+    pub sidebar_row_height: f32,
+    pub list_row_height: f32,
+    pub toggle_width: f32,
+    pub toggle_height: f32,
+    pub toggle_thumb: f32,
+    pub traffic_light_hit_width: f32,
+    pub traffic_light_hit_height: f32,
+    pub traffic_light_diameter: f32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FocusTokens {
     pub ring_width: f32,
@@ -175,6 +209,8 @@ pub struct ThemeTokens {
     pub typography: TypographyTokens,
     pub spacing: SpacingTokens,
     pub radii: RadiusTokens,
+    pub materials: MaterialTokens,
+    pub metrics: ComponentMetricsTokens,
     pub focus: FocusTokens,
     pub elevation: ElevationTokens,
     pub motion: MotionTokens,
@@ -273,6 +309,9 @@ impl ThemeTokens {
             },
         };
         let text_factor = appearance.text_scale.factor();
+        let material_opacity = if high_contrast { 0xf6 } else { 0xe8 };
+        let sidebar_opacity = if high_contrast { 0xf8 } else { 0xe0 };
+        let clear_opacity = if high_contrast { 0xe8 } else { 0xb8 };
         Self {
             color_scheme: appearance.color_scheme,
             colors,
@@ -306,6 +345,28 @@ impl ThemeTokens {
                 popover: 20.0,
                 large_surface: 24.0,
                 pill: 30.0,
+            },
+            materials: MaterialTokens {
+                content: colors.window,
+                regular: colors.raised.with_opacity(material_opacity),
+                clear: colors.raised.with_opacity(clear_opacity),
+                sidebar: colors.chrome.with_opacity(sidebar_opacity),
+                hud: colors
+                    .raised
+                    .with_opacity(if high_contrast { 0xfa } else { 0xf0 }),
+            },
+            metrics: ComponentMetricsTokens {
+                compact_control_height: 24.0,
+                regular_control_height: 28.0,
+                toolbar_height: 52.0,
+                sidebar_row_height: 28.0,
+                list_row_height: 30.0,
+                toggle_width: 28.0,
+                toggle_height: 16.0,
+                toggle_thumb: 12.0,
+                traffic_light_hit_width: 20.0,
+                traffic_light_hit_height: 24.0,
+                traffic_light_diameter: 12.0,
             },
             focus: FocusTokens {
                 ring_width: if high_contrast { 3.0 } else { 2.0 },
@@ -472,6 +533,34 @@ mod tests {
         ));
         assert!(high.colors.separator.alpha > normal.colors.separator.alpha);
         assert!(high.focus.ring_width > normal.focus.ring_width);
+        assert!(high.materials.regular.alpha > normal.materials.regular.alpha);
+        assert!(high.materials.clear.alpha > normal.materials.clear.alpha);
+    }
+
+    #[test]
+    fn materials_keep_content_opaque_and_glass_roles_ordered() {
+        for scheme in [ResolvedColorScheme::Light, ResolvedColorScheme::Dark] {
+            let tokens = ThemeTokens::from_appearance(appearance(
+                scheme,
+                (0.0, 0.48, 1.0),
+                Contrast::Normal,
+                MotionPreference::Full,
+            ));
+            assert_eq!(tokens.materials.content.alpha, 0xff);
+            assert!(tokens.materials.regular.alpha > tokens.materials.clear.alpha);
+            assert!(tokens.materials.hud.alpha >= tokens.materials.regular.alpha);
+        }
+    }
+
+    #[test]
+    fn shared_component_metrics_preserve_desktop_density() {
+        let metrics = ThemeTokens::light_default().metrics;
+        assert!(metrics.compact_control_height < metrics.regular_control_height);
+        assert!(metrics.regular_control_height < metrics.toolbar_height);
+        assert!(metrics.toggle_thumb < metrics.toggle_height);
+        assert!(metrics.traffic_light_diameter < metrics.traffic_light_hit_width);
+        assert_eq!(metrics.sidebar_row_height % 2.0, 0.0);
+        assert_eq!(metrics.list_row_height % 2.0, 0.0);
     }
 
     #[test]

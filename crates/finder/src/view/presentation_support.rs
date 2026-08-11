@@ -73,7 +73,7 @@ pub(super) fn toolbar_bg() -> Hsla {
     rmac_ui::mac::chrome()
 }
 pub(super) fn sidebar_bg() -> Hsla {
-    rmac_ui::mac::material()
+    rmac_ui::mac::material_sidebar()
 }
 pub(super) fn alt_row() -> Hsla {
     rmac_ui::mac::row_alternate()

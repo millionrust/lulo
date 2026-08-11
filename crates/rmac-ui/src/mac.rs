@@ -9,12 +9,27 @@ pub fn window() -> Hsla {
 pub fn raised() -> Hsla {
     crate::theme::current().colors.raised.hsla()
 }
-/// Translucent desktop material. The compositor supplies the pixels beneath
-/// it; rmac supplies the tint and content contrast above it.
+/// Regular Liquid Glass-style material for navigation and transient panels.
+/// The compositor supplies the blurred pixels beneath it; rmac supplies the
+/// adaptive tint and foreground contrast.
 pub fn material() -> Hsla {
-    let mut color = crate::theme::current().colors.chrome;
-    color.alpha = 0xd8;
-    color.hsla()
+    crate::theme::current().materials.regular.hsla()
+}
+/// Clear material for compact floating controls over rich backgrounds.
+pub fn material_clear() -> Hsla {
+    crate::theme::current().materials.clear.hsla()
+}
+/// Regular material tuned for navigation sidebars.
+pub fn material_sidebar() -> Hsla {
+    crate::theme::current().materials.sidebar.hsla()
+}
+/// Opaque standard material for the content layer.
+pub fn material_content() -> Hsla {
+    crate::theme::current().materials.content.hsla()
+}
+/// Strong legibility material for heads-up displays and tooltips.
+pub fn material_hud() -> Hsla {
+    crate::theme::current().materials.hud.hsla()
 }
 /// Unified toolbar / window chrome.
 pub fn chrome() -> Hsla {
@@ -49,6 +64,41 @@ pub fn radius_large_surface() -> f32 {
 
 pub fn radius_pill() -> f32 {
     crate::theme::current().radii.pill
+}
+
+// Shared desktop component metrics.
+pub fn compact_control_height() -> f32 {
+    crate::theme::current().metrics.compact_control_height
+}
+pub fn regular_control_height() -> f32 {
+    crate::theme::current().metrics.regular_control_height
+}
+pub fn toolbar_height() -> f32 {
+    crate::theme::current().metrics.toolbar_height
+}
+pub fn sidebar_row_height() -> f32 {
+    crate::theme::current().metrics.sidebar_row_height
+}
+pub fn list_row_height() -> f32 {
+    crate::theme::current().metrics.list_row_height
+}
+pub fn toggle_width() -> f32 {
+    crate::theme::current().metrics.toggle_width
+}
+pub fn toggle_height() -> f32 {
+    crate::theme::current().metrics.toggle_height
+}
+pub fn toggle_thumb() -> f32 {
+    crate::theme::current().metrics.toggle_thumb
+}
+pub fn traffic_light_hit_width() -> f32 {
+    crate::theme::current().metrics.traffic_light_hit_width
+}
+pub fn traffic_light_hit_height() -> f32 {
+    crate::theme::current().metrics.traffic_light_hit_height
+}
+pub fn traffic_light_diameter() -> f32 {
+    crate::theme::current().metrics.traffic_light_diameter
 }
 
 // Text

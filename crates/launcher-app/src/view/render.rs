@@ -36,7 +36,7 @@ impl LauncherView {
             .rounded_full()
             .border_1()
             .border_color(mac::separator())
-            .bg(mac::material())
+            .bg(mac::material_clear())
             .when_some(mode, |button, mode| {
                 button.on_click(
                     cx.listener(move |this, _, window, cx| this.open_browse(mode, window, cx)),

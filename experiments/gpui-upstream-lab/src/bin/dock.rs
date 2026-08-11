@@ -18,8 +18,6 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_gpui_upstream_lab::shell_visuals as visuals;
 
-    const SURFACE_HEIGHT: f32 = 520.0;
-    const SIDE_SURFACE_WIDTH: f32 = 344.0;
     const EXCLUSIVE_ZONE: f32 = 88.0;
     const ICON_SIZE: f32 = 56.0;
     const ICON_GAP: f32 = 8.0;
@@ -306,11 +304,13 @@ mod linux_wayland {
             let item_count = entries.len() + 1;
             let child_count = item_count + separator_count;
             let window_size = window.bounds().size;
+            let surface_width = f32::from(window_size.width);
+            let surface_height = f32::from(window_size.height);
             let horizontal = self.placement == rmac_shell_settings::DockPlacement::Bottom;
             let axis = if horizontal {
-                f32::from(window_size.width)
+                surface_width
             } else {
-                f32::from(window_size.height)
+                surface_height
             };
             let shelf_extent = ICON_SIZE * item_count as f32
                 + SEPARATOR_WIDTH * separator_count as f32
@@ -340,7 +340,7 @@ mod linux_wayland {
             if self.input_region != Some(input_region) {
                 let shelf_bounds = match (self.placement, self.hidden) {
                     (rmac_shell_settings::DockPlacement::Bottom, true) => Bounds {
-                        origin: point(px(shelf_start), px(SURFACE_HEIGHT - 2.0)),
+                        origin: point(px(shelf_start), px(surface_height - 2.0)),
                         size: Size::new(px(shelf_extent), px(2.0)),
                     },
                     (rmac_shell_settings::DockPlacement::Left, true) => Bounds {
@@ -352,7 +352,7 @@ mod linux_wayland {
                         size: Size::new(px(2.0), px(shelf_extent)),
                     },
                     (rmac_shell_settings::DockPlacement::Bottom, false) => Bounds {
-                        origin: point(px(shelf_start), px(SURFACE_HEIGHT - EXCLUSIVE_ZONE)),
+                        origin: point(px(shelf_start), px(surface_height - EXCLUSIVE_ZONE)),
                         size: Size::new(px(shelf_extent), px(EXCLUSIVE_ZONE)),
                     },
                     (rmac_shell_settings::DockPlacement::Left, false) => Bounds {
@@ -367,32 +367,18 @@ mod linux_wayland {
                         size: Size::new(px(EXCLUSIVE_ZONE), px(shelf_extent)),
                     },
                 };
-                let mut regions = vec![shelf_bounds];
-                if let Some((start, height)) = menu_geometry {
-                    regions.push(match self.placement {
-                        rmac_shell_settings::DockPlacement::Bottom => Bounds {
-                            origin: point(
-                                px(start),
-                                px(SURFACE_HEIGHT - EXCLUSIVE_ZONE - height - 8.0),
-                            ),
-                            size: Size::new(px(MENU_WIDTH), px(height)),
-                        },
-                        rmac_shell_settings::DockPlacement::Left => Bounds {
-                            origin: point(px(EXCLUSIVE_ZONE + 8.0), px(start)),
-                            size: Size::new(px(MENU_WIDTH), px(height)),
-                        },
-                        rmac_shell_settings::DockPlacement::Right => Bounds {
-                            origin: point(
-                                px(f32::from(window_size.width)
-                                    - EXCLUSIVE_ZONE
-                                    - MENU_WIDTH
-                                    - 8.0),
-                                px(start),
-                            ),
-                            size: Size::new(px(MENU_WIDTH), px(height)),
-                        },
-                    });
-                }
+                // A native menu owns pointer interaction until it is
+                // dismissed. Capture one click across the output while the
+                // Dock menu is open; otherwise only the visible shelf is
+                // interactive and this transparent layer is inert.
+                let regions = if menu_geometry.is_some() {
+                    vec![Bounds {
+                        origin: point(px(0.0), px(0.0)),
+                        size: Size::new(window_size.width, window_size.height),
+                    }]
+                } else {
+                    vec![shelf_bounds]
+                };
                 window.set_input_region(Some(&regions));
                 self.input_region = Some(input_region);
             }
@@ -1457,19 +1443,14 @@ mod linux_wayland {
     ) -> AnyWindowHandle {
         let display_id = display.id();
         let display_size = display.bounds().size;
-        let (size, anchor) = match surface.placement {
-            rmac_shell_settings::DockPlacement::Bottom => (
-                Size::new(display_size.width, px(SURFACE_HEIGHT)),
-                Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT,
-            ),
-            rmac_shell_settings::DockPlacement::Left => (
-                Size::new(px(SIDE_SURFACE_WIDTH), display_size.height),
-                Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT,
-            ),
-            rmac_shell_settings::DockPlacement::Right => (
-                Size::new(px(SIDE_SURFACE_WIDTH), display_size.height),
-                Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM,
-            ),
+        let anchor = match surface.placement {
+            rmac_shell_settings::DockPlacement::Bottom => {
+                Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT
+            }
+            rmac_shell_settings::DockPlacement::Left => Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT,
+            rmac_shell_settings::DockPlacement::Right => {
+                Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM
+            }
         };
         let exclusive_zone = surface.reserve_space.then_some(px(EXCLUSIVE_ZONE));
         let handle = cx
@@ -1479,7 +1460,7 @@ mod linux_wayland {
                     focus: false,
                     window_bounds: Some(WindowBounds::Windowed(Bounds {
                         origin: point(px(0.0), px(0.0)),
-                        size,
+                        size: display_size,
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.Dock".to_owned()),

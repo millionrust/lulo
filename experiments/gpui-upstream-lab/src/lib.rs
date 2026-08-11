@@ -592,7 +592,7 @@ mod tests {
     fn first_party_identity_uses_its_reviewed_application_name() {
         let mut snapshot = rmac_shell_status::Snapshot::default();
         snapshot.focused.app_id = Some(rmac_apps::identity::APP_DRAWER.into());
-        assert_eq!(top_bar_active_app_name(&snapshot), "Applications");
+        assert_eq!(top_bar_active_app_name(&snapshot), "Apps");
     }
 
     #[test]

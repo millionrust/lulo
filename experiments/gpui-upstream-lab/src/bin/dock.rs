@@ -1221,8 +1221,8 @@ mod linux_wayland {
             ),
             (
                 rmac_apps::identity::APP_DRAWER,
-                "Applications",
-                "Application Launcher",
+                "Apps",
+                "Application Browser",
                 "/usr/bin/rmac-app-drawer",
                 "org.rmac.AppDrawer.svg",
             ),

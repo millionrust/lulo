@@ -29,7 +29,7 @@ pub fn window_title(app_id: &str) -> Option<&'static str> {
         NOTES => Some("Notes"),
         TEXT_EDITOR => Some("Text Editor"),
         SYSTEM_MONITOR => Some("System Monitor"),
-        APP_DRAWER => Some("Applications"),
+        APP_DRAWER => Some("Apps"),
         SYSTEM_SETTINGS => Some("Settings"),
         _ => None,
     }

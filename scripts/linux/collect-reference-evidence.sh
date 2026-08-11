@@ -112,7 +112,7 @@ fi
   if command -v systemctl >/dev/null 2>&1; then
     for unit in rmac-session.target rmac-safe-mode.target \
       rmac-session-supervisor.service rmac-top-bar.service rmac-dock.service \
-      rmac-launcher.service rmac-app-drawer.service rmac-quick-settings.service rmac-notification-center.service rmac-notification-center-panel.service rmac-focus.service rmac-wallpaper.service rmac-osd.service \
+      rmac-launcher.service rmac-quick-settings.service rmac-notification-center.service rmac-notification-center-panel.service rmac-focus.service rmac-wallpaper.service rmac-osd.service \
       rmac-shortcut-broker.service; do
       systemctl --user show "$unit" --no-pager \
         --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,MainPID,ExecMainStatus \

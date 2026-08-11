@@ -213,7 +213,7 @@ fn open_focuses_before_search_and_new_queries_reject_stale_batches() {
 }
 
 #[test]
-fn launcher_shortcut_toggles_once_and_ignores_replays_and_other_ids() {
+fn spotlight_entry_points_toggle_once_and_ignore_replays_and_other_ids() {
     let mut coordinator = Coordinator::new(
         vec![descriptor("apps", Category::Applications, false)],
         BTreeMap::new(),
@@ -258,6 +258,16 @@ fn launcher_shortcut_toggles_once_and_ignores_replays_and_other_ids() {
         }),
         ShortcutEffect::None
     ));
+
+    let apps = rmac_shortcuts::Event::Activated {
+        id: rmac_shortcuts::ShortcutId("app-drawer".into()),
+        timestamp_ms: 13,
+    };
+    assert!(matches!(
+        coordinator.handle_shortcut(&apps),
+        ShortcutEffect::Open(_)
+    ));
+    assert!(coordinator.snapshot().open);
 }
 
 #[test]

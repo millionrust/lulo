@@ -152,19 +152,27 @@ pub(crate) fn run() {
             let (activation_tx, activation_rx) = async_channel::bounded(16);
             #[cfg(target_os = "linux")]
             let activation_done = cx.spawn(async move |_: &mut gpui::AsyncApp| {
-                rmac_shell_activation_runtime::watch(
+                let launcher = rmac_shell_activation_runtime::watch(
                     rmac_shortcuts::ShortcutId("launcher".into()),
+                    activation_tx.clone(),
+                );
+                let apps = rmac_shell_activation_runtime::watch(
+                    rmac_shortcuts::ShortcutId("app-drawer".into()),
                     activation_tx,
-                )
-                .await
+                );
+                futures_util::try_join!(launcher, apps).map(|_| ())
             });
             #[cfg(target_os = "linux")]
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+                let mut ready_endpoints = 0_u8;
                 let consume = async {
                     while let Ok(update) = activation_rx.recv().await {
                         match update {
                             rmac_shell_activation_runtime::Update::Ready => {
-                                blocking::unblock(notify_ready).await?;
+                                ready_endpoints = ready_endpoints.saturating_add(1);
+                                if ready_endpoints == 2 {
+                                    blocking::unblock(notify_ready).await?;
+                                }
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
                                 if cx.update(|cx| route_activation(*activation, cx)).is_err() {

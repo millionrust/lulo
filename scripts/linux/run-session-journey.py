@@ -27,7 +27,6 @@ NORMAL_UNITS = (
     "rmac-top-bar.service",
     "rmac-dock.service",
     "rmac-launcher.service",
-    "rmac-app-drawer.service",
     "rmac-quick-settings.service",
     "rmac-notification-center.service",
     "rmac-notification-center-panel.service",

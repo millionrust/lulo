@@ -44,6 +44,15 @@ impl BrowseMode {
     }
 }
 
+fn requested_browse_mode(event: &rmac_shortcuts::Event) -> Option<BrowseMode> {
+    match event {
+        rmac_shortcuts::Event::Activated { id, .. } if id.0 == "app-drawer" => {
+            Some(BrowseMode::Applications)
+        }
+        _ => None,
+    }
+}
+
 pub(crate) struct OverlayEnvironment {
     pub(crate) token: u64,
     pub(crate) event: rmac_shortcuts::Event,
@@ -84,6 +93,7 @@ impl LauncherView {
             settings_error,
             clipboard,
         } = environment;
+        let initial_browse_mode = requested_browse_mode(&event);
         let query = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder(rmac_launcher_runtime::accessibility::QUERY_NAME)
@@ -135,7 +145,14 @@ impl LauncherView {
             unreachable!("a fresh launcher surface starts from one launcher activation")
         };
         query.read(cx).focus_handle(cx).focus(window);
-        let view = Self {
+        let compact = initial_browse_mode.is_none();
+        if !compact {
+            window.resize(size(
+                px(rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32),
+                px(rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32),
+            ));
+        }
+        let mut view = Self {
             token,
             query,
             coordinator,
@@ -143,9 +160,10 @@ impl LauncherView {
             backend: Arc::new(SystemBackend::new(SurfaceBridge { clipboard })),
             settings_error,
             was_active: false,
-            compact: true,
-            browse_mode: None,
+            compact,
+            browse_mode: initial_browse_mode,
         };
+        view.ensure_browse_selection();
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
         view
     }
@@ -222,6 +240,12 @@ impl LauncherView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if requested_browse_mode(event) == Some(BrowseMode::Applications)
+            && self.browse_mode != Some(BrowseMode::Applications)
+        {
+            self.open_browse(BrowseMode::Applications, window, cx);
+            return;
+        }
         if matches!(
             self.coordinator.handle_shortcut(event),
             ShortcutEffect::Dismissed

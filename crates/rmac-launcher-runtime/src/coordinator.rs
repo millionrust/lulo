@@ -144,13 +144,15 @@ impl Coordinator {
         }
     }
 
-    /// Handle only the stable launcher shortcut. Duplicate or older portal
-    /// timestamps are ignored, and a fresh activation toggles the overlay.
+    /// Handle the two macOS entry points owned by Spotlight. Command-Space
+    /// opens ordinary search while the Dock's Apps item opens Apps browsing.
+    /// Duplicate or older portal timestamps are ignored, and a fresh
+    /// activation toggles the overlay.
     pub fn handle_shortcut(&mut self, event: &rmac_shortcuts::Event) -> ShortcutEffect {
         let rmac_shortcuts::Event::Activated { id, timestamp_ms } = event else {
             return ShortcutEffect::None;
         };
-        if id.0 != "launcher"
+        if !matches!(id.0.as_str(), "launcher" | "app-drawer")
             || self
                 .last_shortcut_timestamp_ms
                 .is_some_and(|last| *timestamp_ms <= last)

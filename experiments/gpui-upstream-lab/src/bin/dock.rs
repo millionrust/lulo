@@ -282,20 +282,7 @@ mod linux_wayland {
                     self.schedule_hide(cx);
                 }
             }
-            let content = rmac_dock::presentation::ShelfContent::project(&model);
-            let entries = content.applications;
-            let downloads = content.places.into_iter().find(|entry| {
-                entry.id
-                    == rmac_dock::presentation::EntryId::Special(
-                        rmac_dock::SpecialItemKind::Downloads,
-                    )
-            });
-            let downloads_activation =
-                model.activate_special(rmac_dock::SpecialItemKind::Downloads);
-            let downloads_available = matches!(
-                &downloads_activation,
-                rmac_dock::SpecialActivation::OpenDirectory { .. }
-            );
+            let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
             let trash = model
                 .special_items
                 .iter()
@@ -314,7 +301,7 @@ mod linux_wayland {
             let pinned_count = model.items.iter().take_while(|item| item.pinned).count();
             let separates_running = pinned_count > 0 && pinned_count < entries.len();
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
-            let item_count = entries.len() + usize::from(downloads.is_some()) + 1;
+            let item_count = entries.len() + 1;
             let child_count = item_count + separator_count;
             let window_size = window.bounds().size;
             let surface_width = f32::from(window_size.width);
@@ -331,7 +318,6 @@ mod linux_wayland {
                 + 2.0 * SHELF_PADDING;
             let shelf_start = (axis - shelf_extent) / 2.0;
             let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
-            let downloads_center = trash_center - ICON_SIZE - ICON_GAP;
             let menu_geometry = self.context_menu.as_ref().map(|menu| {
                 let row_count = menu.session.rows().len() as f32;
                 let section_breaks = menu
@@ -658,89 +644,6 @@ mod linux_wayland {
                     .when(!model.items.is_empty(), |shelf| {
                         shelf.child(dock_separator(self.placement))
                     })
-                    .children(downloads.map(|entry| {
-                        let visual_size = magnified_icon_size(
-                            downloads_center,
-                            self.hovered_item.as_ref().map(|(center, _)| *center),
-                            &dock_settings,
-                        );
-                        let visual_offset = (ICON_SIZE - visual_size) / 2.0;
-                        let tooltip_label = entry.label.clone();
-                        let mut downloads = div()
-                            .id(format!("dock-downloads-{}", self.display_id))
-                            .role(Role::Button)
-                            .aria_label(entry.accessible_label)
-                            .relative()
-                            .w(px(ICON_SIZE))
-                            .h(px(ICON_SIZE))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(13.0))
-                            .opacity(if entry.enabled { 1.0 } else { 0.58 })
-                            .hover(|style| style.opacity(0.88))
-                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                if *hovered {
-                                    this.hovered_item =
-                                        Some((downloads_center, tooltip_label.clone()));
-                                    cx.notify();
-                                } else if this
-                                    .hovered_item
-                                    .as_ref()
-                                    .is_some_and(|(center, _)| *center == downloads_center)
-                                {
-                                    this.hovered_item = None;
-                                    cx.notify();
-                                }
-                            }));
-                        if downloads_available {
-                            let activation = downloads_activation.clone();
-                            downloads = downloads
-                                .cursor_pointer()
-                                .on_click(move |_, _, cx| dispatch_special(activation.clone(), cx));
-                        }
-                        downloads = downloads.on_mouse_down(
-                            MouseButton::Right,
-                            cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                let session = {
-                                    let status = this.status.read(cx);
-                                    status
-                                        .model()
-                                        .special_context_menu(rmac_dock::SpecialItemKind::Downloads)
-                                        .and_then(|menu| {
-                                            rmac_dock::menu::Session::special(&menu).ok()
-                                        })
-                                };
-                                this.context_menu = session.map(|session| DockMenu {
-                                    anchor: downloads_center,
-                                    session,
-                                });
-                                this.input_region = None;
-                                cx.notify();
-                            }),
-                        );
-                        if let Some(path) = downloads_icon_path() {
-                            let image = img(path)
-                                .absolute()
-                                .w(px(visual_size - 2.0))
-                                .h(px(visual_size - 2.0))
-                                .rounded(px(14.0 * visual_size / ICON_SIZE));
-                            let image = match self.placement {
-                                rmac_shell_settings::DockPlacement::Bottom => {
-                                    image.left(px(visual_offset)).bottom_0()
-                                }
-                                rmac_shell_settings::DockPlacement::Left => {
-                                    image.left_0().top(px(visual_offset))
-                                }
-                                rmac_shell_settings::DockPlacement::Right => {
-                                    image.right_0().top(px(visual_offset))
-                                }
-                            };
-                            downloads = downloads.child(image);
-                        }
-                        downloads
-                    }))
                     .child({
                         let visual_size = magnified_icon_size(
                             trash_center,
@@ -1023,12 +926,6 @@ mod linux_wayland {
             } else {
                 "trash-empty.svg"
             });
-        path.is_file().then_some(path)
-    }
-
-    fn downloads_icon_path() -> Option<PathBuf> {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../crates/rmac-dock/assets/icons/downloads.svg");
         path.is_file().then_some(path)
     }
 

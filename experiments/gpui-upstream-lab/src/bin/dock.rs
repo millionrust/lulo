@@ -16,6 +16,7 @@ mod linux_wayland {
         WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
+    use rmac_gpui_upstream_lab::shell_visuals as visuals;
 
     const SURFACE_HEIGHT: f32 = 184.0;
     const SIDE_SURFACE_WIDTH: f32 = 344.0;
@@ -363,10 +364,10 @@ mod linux_wayland {
                             div()
                                 .px_3()
                                 .py_1()
-                                .rounded(px(8.0))
+                                .rounded(px(visuals::TOOLTIP_RADIUS))
                                 .bg(rgba(0x18263aee))
                                 .border_1()
-                                .border_color(rgba(0xffffff35))
+                                .border_color(rgba(visuals::LIGHT_BORDER))
                                 .shadow_lg()
                                 .text_sm()
                                 .text_color(rgba(0xffffffff))
@@ -421,10 +422,10 @@ mod linux_wayland {
                 .flex()
                 .gap_2()
                 .p_2()
-                .rounded(px(26.0))
-                .bg(rgba(0xe7ecf18c))
+                .rounded(px(visuals::DOCK_RADIUS))
+                .bg(rgba(visuals::DOCK_TINT))
                 .border_1()
-                .border_color(rgba(0xffffffb8))
+                .border_color(rgba(visuals::DOCK_BORDER))
                 .shadow_lg()
                 .opacity(if self.hidden { 0.0 } else { 1.0 });
             let shelf = if horizontal {
@@ -641,7 +642,7 @@ mod linux_wayland {
     }
 
     fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {
-        let separator = div().bg(rgba(0x4a56646b));
+        let separator = div().bg(rgba(visuals::SEPARATOR));
         match placement {
             rmac_shell_settings::DockPlacement::Bottom => separator
                 .w(px(SEPARATOR_WIDTH))

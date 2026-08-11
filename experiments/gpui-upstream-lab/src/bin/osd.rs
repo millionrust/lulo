@@ -13,6 +13,7 @@ mod linux_wayland {
         Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
+    use rmac_gpui_upstream_lab::shell_visuals as visuals;
     use rmac_osd::{Kind, Presentation};
     use uuid::Uuid;
 
@@ -197,8 +198,8 @@ mod linux_wayland {
                     .gap_1()
                     .px_4()
                     .py_2()
-                    .rounded(px(28.0))
-                    .bg(rgba(0x18202b9c))
+                    .rounded(px(visuals::HUD_RADIUS))
+                    .bg(rgba(visuals::HUD_TINT))
                     .border_1()
                     .border_color(rgba(0xffffff26))
                     .role(Role::Status)

@@ -68,6 +68,19 @@ blur {
     saturation 1.5
 }
 
+// The menu bar and Dock are shell materials, not flat painted panels. Niri
+// samples the wallpaper and windows behind their translucent pixels so both
+// surfaces keep the depth and color response expected from macOS materials.
+layer-rule {
+    match namespace=r#"^rmac-(top-bar|dock)-"#
+    background-effect {
+        xray false
+        blur true
+        noise 0.018
+        saturation 1.35
+    }
+}
+
 // rmac owns its shell shortcuts in this session. The portal broker remains
 // available to applications, while these bindings make the desktop usable
 // immediately after login without a manual config step.

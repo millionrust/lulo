@@ -6,6 +6,36 @@ use uuid::Uuid;
 const READY_FILE_ENV: &str = "RMAC_SMOKE_READY_FILE";
 pub const WAYLAND_OUTPUT_RESTART_EXIT_CODE: i32 = 75;
 
+/// Renderer-neutral shell materials shared by the menu bar, Dock and OSD.
+///
+/// The compositor owns backdrop sampling and blur. These colors provide the
+/// tint and hierarchy above that sampled backdrop without baking wallpaper
+/// pixels into an application texture.
+pub mod shell_visuals {
+    pub const PRIMARY_TEXT: u32 = 0xf7f8faff;
+    pub const SECONDARY_TEXT: u32 = 0xf7f8faaa;
+    pub const DISABLED_TEXT: u32 = 0xf7f8fa66;
+
+    pub const TOP_BAR_TINT: u32 = 0x0b0d143d;
+    pub const REGULAR_DARK_TINT: u32 = 0x202630f4;
+    pub const HUD_TINT: u32 = 0x18202b9c;
+    pub const DOCK_TINT: u32 = 0xe7ecf18c;
+
+    pub const LIGHT_HOVER: u32 = 0xffffff22;
+    pub const LIGHT_SELECTION: u32 = 0xffffff2d;
+    pub const LIGHT_BORDER: u32 = 0xffffff35;
+    pub const DOCK_BORDER: u32 = 0xffffffb8;
+    pub const SEPARATOR: u32 = 0x4a56646b;
+    pub const ACCENT: u32 = 0x2878d4ff;
+    pub const ACCENT_HOVER: u32 = 0x3488e8ff;
+
+    pub const MENU_RADIUS: f32 = 9.0;
+    pub const MENU_ITEM_RADIUS: f32 = 5.0;
+    pub const DOCK_RADIUS: f32 = 26.0;
+    pub const TOOLTIP_RADIUS: f32 = 8.0;
+    pub const HUD_RADIUS: f32 = 28.0;
+}
+
 pub fn output_reappeared(
     previous: &std::collections::BTreeSet<Uuid>,
     current: &std::collections::BTreeSet<Uuid>,

@@ -19,6 +19,7 @@ mod linux_wayland {
         WindowKind, WindowOptions,
     };
     use gpui_platform::application;
+    use rmac_gpui_upstream_lab::shell_visuals as visuals;
     use rmac_gpui_upstream_lab::{
         delay_until_next_clock_tick, top_bar_active_app_name, top_bar_clock_pattern,
         top_bar_indicator_labels, top_bar_workspace_label, TopBarIndicatorKind,
@@ -399,7 +400,7 @@ mod linux_wayland {
                         .px_1()
                         .flex()
                         .items_center()
-                        .rounded(px(5.0))
+                        .rounded(px(visuals::MENU_ITEM_RADIUS))
                         .cursor_pointer()
                         .when(open, |style| style.bg(rgba(0xffffff2d)))
                         .hover(|style| style.bg(rgba(0xffffff22)))
@@ -433,10 +434,10 @@ mod linux_wayland {
                     .left(px(left))
                     .w(px(MENU_WIDTH))
                     .py_1()
-                    .rounded(px(9.0))
-                    .bg(rgba(0x202630f4))
+                    .rounded(px(visuals::MENU_RADIUS))
+                    .bg(rgba(visuals::REGULAR_DARK_TINT))
                     .border_1()
-                    .border_color(rgba(0xffffff35))
+                    .border_color(rgba(visuals::LIGHT_BORDER))
                     .shadow_lg()
                     .occlude();
                 if let Some(action) = self.pending_system_action.clone() {
@@ -491,9 +492,9 @@ mod linux_wayland {
                                             .flex()
                                             .items_center()
                                             .rounded(px(6.0))
-                                            .bg(rgba(0x2878d4ff))
+                                            .bg(rgba(visuals::ACCENT))
                                             .cursor_pointer()
-                                            .hover(|style| style.bg(rgba(0x3488e8ff)))
+                                            .hover(|style| style.bg(rgba(visuals::ACCENT_HOVER)))
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 cx.stop_propagation();
                                                 this.close_menu(window, cx);
@@ -525,9 +526,13 @@ mod linux_wayland {
                         .flex()
                         .items_center()
                         .justify_between()
-                        .rounded(px(5.0))
-                        .when(selected == item_index, |style| style.bg(rgba(0x2878d4ff)))
-                        .when(!enabled, |style| style.text_color(rgba(0xf7f8fa66)))
+                        .rounded(px(visuals::MENU_ITEM_RADIUS))
+                        .when(selected == item_index, |style| {
+                            style.bg(rgba(visuals::ACCENT))
+                        })
+                        .when(!enabled, |style| {
+                            style.text_color(rgba(visuals::DISABLED_TEXT))
+                        })
                         .child(item.label);
                     if !item.shortcut.is_empty() {
                         row = row.child(div().text_color(rgba(0xf7f8faaa)).child(item.shortcut));
@@ -535,7 +540,7 @@ mod linux_wayland {
                     if enabled {
                         row = row
                             .cursor_pointer()
-                            .hover(|style| style.bg(rgba(0x2878d4ff)))
+                            .hover(|style| style.bg(rgba(visuals::ACCENT)))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
                                 if item_app_id == SYSTEM_MENU_ID
@@ -571,8 +576,8 @@ mod linux_wayland {
                 .flex()
                 .items_center()
                 .px_4()
-                .bg(rgba(0x0b0d143d))
-                .text_color(rgba(0xf7f8faff))
+                .bg(rgba(visuals::TOP_BAR_TINT))
+                .text_color(rgba(visuals::PRIMARY_TEXT))
                 .text_size(px(12.0))
                 .child(
                     div()

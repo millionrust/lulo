@@ -76,6 +76,7 @@ if [ "${graphical_invocation}" = true ]; then
     [ "${XDG_RUNTIME_DIR+x}" = x ] && set -- "$@" XDG_RUNTIME_DIR
     [ "${DBUS_SESSION_BUS_ADDRESS+x}" = x ] && set -- "$@" DBUS_SESSION_BUS_ADDRESS
     [ "${NIRI_SOCKET+x}" = x ] && set -- "$@" NIRI_SOCKET
+    [ "${RMAC_COLOR_SCHEME+x}" = x ] && set -- "$@" RMAC_COLOR_SCHEME
 fi
 
 if [ "$#" -gt 0 ]; then

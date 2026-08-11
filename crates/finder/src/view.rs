@@ -276,13 +276,19 @@ struct FinderView {
     search_cancel: Option<Arc<AtomicBool>>,
 }
 
-pub(crate) fn run() {
+pub(crate) fn run(destination: crate::StartupDestination) {
     rmac_ui::boot_unified_app_with_assets(
         rmac_ui::app_id::FILES,
         CombinedAssets,
         1100.0,
         720.0,
-        FinderView::new,
+        move |window, cx| {
+            let mut finder = FinderView::new(window, cx);
+            if destination == crate::StartupDestination::Trash {
+                finder.trash_click(cx);
+            }
+            finder
+        },
     );
 }
 

@@ -5,6 +5,7 @@ use gpui::{px, App, AppContext as _, Window};
 use crate::{components, theme};
 
 const BENCHMARK_READY_FILE_ENV: &str = "RMAC_BENCHMARK_READY_FILE";
+const COLOR_SCHEME_ENV: &str = "RMAC_COLOR_SCHEME";
 const BASE_REM_SIZE: f32 = 16.0;
 
 fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScale) {
@@ -14,9 +15,44 @@ fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScal
 /// Initialize the shared component, theme, and accessibility runtimes for a
 /// long-lived shell process that creates windows on demand.
 pub fn init_application(cx: &mut App) {
+    seed_initial_theme();
     gpui_component::init(cx);
     components::init(cx);
     start_theme_runtime(cx);
+}
+
+/// Resolve the session's exported host scheme and any explicit rmac preference
+/// before the first window is painted. The portal remains authoritative after
+/// startup, but it must not make dark sessions flash a light first frame.
+fn seed_initial_theme() {
+    let Some(host) = initial_host_appearance() else {
+        return;
+    };
+    if let Ok(tokens) = load_tokens_with_host(host) {
+        let _ = theme::set_current(tokens);
+    }
+}
+
+fn initial_host_appearance() -> Option<rmac_appearance::Snapshot> {
+    let value = env::var(COLOR_SCHEME_ENV).ok()?;
+    initial_host_appearance_from(&value)
+}
+
+fn initial_host_appearance_from(value: &str) -> Option<rmac_appearance::Snapshot> {
+    let color_scheme = match value {
+        "dark" => rmac_appearance::ColorScheme::PreferDark,
+        "light" => rmac_appearance::ColorScheme::PreferLight,
+        _ => return None,
+    };
+    Some(rmac_appearance::Snapshot {
+        available: true,
+        color_scheme,
+        capabilities: rmac_appearance::Capabilities {
+            color_scheme: true,
+            ..rmac_appearance::Capabilities::default()
+        },
+        ..rmac_appearance::Snapshot::default()
+    })
 }
 
 /// Publish this first-party app's registered commands and route activations
@@ -184,5 +220,23 @@ fn component_theme_mode(
     match scheme {
         rmac_appearance::ResolvedColorScheme::Light => gpui_component::theme::ThemeMode::Light,
         rmac_appearance::ResolvedColorScheme::Dark => gpui_component::theme::ThemeMode::Dark,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initial_host_scheme_accepts_only_session_owned_values() {
+        assert_eq!(
+            initial_host_appearance_from("dark").unwrap().color_scheme,
+            rmac_appearance::ColorScheme::PreferDark
+        );
+        assert_eq!(
+            initial_host_appearance_from("light").unwrap().color_scheme,
+            rmac_appearance::ColorScheme::PreferLight
+        );
+        assert!(initial_host_appearance_from("unknown").is_none());
     }
 }

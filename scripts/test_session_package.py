@@ -357,7 +357,7 @@ class SessionPackageTests(unittest.TestCase):
             write_program(
                 root / "usr/bin/systemctl",
                 'case "$*" in\n'
-                '  "--user import-environment NIRI_CONFIG") exit 0 ;;\n'
+                '  "--user import-environment NIRI_CONFIG RMAC_COLOR_SCHEME") exit 0 ;;\n'
                 '  *) exit 1 ;;\n'
                 "esac\n",
             )

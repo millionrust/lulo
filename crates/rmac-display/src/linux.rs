@@ -821,9 +821,9 @@ pub(super) fn validate_config_transaction(
     }
     let mut validation = Command::new("niri");
     validation
+        .arg("validate")
         .arg("--config")
-        .arg(&main_candidate)
-        .arg("validate");
+        .arg(&main_candidate);
     let result = bounded_command_output(&mut validation, "run niri validation");
     let _ = std::fs::remove_file(&main_candidate);
     let _ = std::fs::remove_file(&managed_candidate);

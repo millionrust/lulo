@@ -17,7 +17,7 @@ pub struct ShortcutSpec {
 pub fn default_shortcuts() -> Vec<ShortcutSpec> {
     vec![
         shortcut("launcher", "Open rmac launcher", "LOGO+space", "Mod+Space"),
-        shortcut("app-drawer", "Open Apps in Spotlight", "LOGO+a", "Mod+A"),
+        shortcut("app-drawer", "Open Apps", "LOGO+a", "Mod+A"),
         shortcut(
             "notification-center",
             "Open Notification Center",

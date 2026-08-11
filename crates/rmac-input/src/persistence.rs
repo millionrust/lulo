@@ -384,7 +384,7 @@ pub(super) fn validate_candidate(authority: &Authority, managed_source: &str) ->
             Error::new("write the main validation candidate", error.to_string())
         })?;
         let mut command = Command::new("niri");
-        command.arg("--config").arg(&main_candidate).arg("validate");
+        command.arg("validate").arg("--config").arg(&main_candidate);
         bounded_command_output(&mut command, "run niri validation")
     })();
     let cleanup = [&main_candidate, &managed_candidate]
@@ -670,7 +670,7 @@ pub(super) fn niri_available() -> bool {
 
 pub(super) fn validate_current_config(path: &Path) -> Result<(), Error> {
     let mut command = Command::new("niri");
-    command.arg("--config").arg(path).arg("validate");
+    command.arg("validate").arg("--config").arg(path);
     let output = bounded_command_output(&mut command, "validate the current niri configuration")?;
     if output.status.success() {
         return Ok(());

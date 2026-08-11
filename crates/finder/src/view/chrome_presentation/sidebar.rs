@@ -81,7 +81,7 @@ impl FinderView {
         row
     }
 
-    fn trash_click(&mut self, cx: &mut Context<Self>) {
+    pub(in crate::view) fn trash_click(&mut self, cx: &mut Context<Self>) {
         self.trash_view = true;
         if self.view == ViewMode::Column {
             self.view = ViewMode::List;

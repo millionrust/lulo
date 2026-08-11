@@ -232,7 +232,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(normal_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
     assert!(normal_target.contains("rmac-notification-center-panel.service"));
-    assert!(!normal_target.contains("rmac-app-drawer.service"));
+    assert!(normal_target.contains("rmac-app-drawer.service"));
     assert!(normal_target.contains("rmac-osd.service"));
     assert!(safe_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));

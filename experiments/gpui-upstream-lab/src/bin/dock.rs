@@ -1031,19 +1031,23 @@ mod linux_wayland {
     fn dispatch_special(activation: rmac_dock::SpecialActivation, cx: &mut App) {
         let (target, label) = match activation {
             rmac_dock::SpecialActivation::OpenDirectory { path, .. } => {
-                (path.into_os_string(), "Dock folder")
+                (Some(path.into_os_string()), "Dock folder")
             }
-            rmac_dock::SpecialActivation::OpenTrash => ("trash:///".into(), "Trash"),
+            rmac_dock::SpecialActivation::OpenTrash => (None, "Trash"),
             rmac_dock::SpecialActivation::Unavailable { .. } => return,
         };
         cx.background_executor()
             .spawn(async move {
-                let opened = blocking::unblock(move || {
-                    Command::new("gio")
+                let opened = blocking::unblock(move || match target {
+                    Some(target) => Command::new("gio")
                         .arg("open")
                         .arg(target)
                         .spawn()
-                        .map(|_| ())
+                        .map(|_| ()),
+                    None => Command::new("rmac-files")
+                        .arg("--trash")
+                        .spawn()
+                        .map(|_| ()),
                 })
                 .await;
                 if opened.is_err() {
@@ -1078,22 +1082,28 @@ mod linux_wayland {
                         rmac_dock::SpecialItemKind::Downloads
                             if report.snapshot.downloads.exists =>
                         {
-                            report.snapshot.downloads.path.into_os_string()
+                            Some(report.snapshot.downloads.path.into_os_string())
                         }
-                        rmac_dock::SpecialItemKind::Trash => "trash:///".into(),
+                        rmac_dock::SpecialItemKind::Trash => None,
                         rmac_dock::SpecialItemKind::Files => {
-                            report.snapshot.home.path.into_os_string()
+                            Some(report.snapshot.home.path.into_os_string())
                         }
                         rmac_dock::SpecialItemKind::Downloads => {
                             return Err("Downloads is unavailable".to_owned())
                         }
                     };
-                    Command::new("gio")
-                        .arg("open")
-                        .arg(target)
-                        .spawn()
-                        .map(|_| ())
-                        .map_err(|error| error.to_string())
+                    match target {
+                        Some(target) => Command::new("gio")
+                            .arg("open")
+                            .arg(target)
+                            .spawn()
+                            .map(|_| ()),
+                        None => Command::new("rmac-files")
+                            .arg("--trash")
+                            .spawn()
+                            .map(|_| ()),
+                    }
+                    .map_err(|error| error.to_string())
                 })
                 .await;
                 if let Err(error) = result {

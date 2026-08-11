@@ -32,7 +32,7 @@ fn main() {
                 if let Err(error) =
                     rmac_shortcuts::dispatch(&rmac_shortcuts::ShortcutId("app-drawer".into()))
                 {
-                    eprintln!("Could not open Apps in Spotlight: {error}");
+                    eprintln!("Could not open Apps: {error}");
                     std::process::exit(1);
                 }
             }

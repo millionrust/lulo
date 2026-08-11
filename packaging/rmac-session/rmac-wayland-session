@@ -21,6 +21,8 @@ stop_rmac()
             >/dev/null 2>&1 || :
         rmac_config_imported=false
     fi
+    /usr/bin/systemctl --user unset-environment RMAC_COLOR_SCHEME \
+        >/dev/null 2>&1 || :
 }
 
 terminate_session()
@@ -92,10 +94,20 @@ else
     export NIRI_CONFIG
 fi
 XDG_SESSION_TYPE=wayland
+if [ -x /usr/bin/gsettings ]; then
+    case $(/usr/bin/gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null) in
+        "'prefer-dark'") RMAC_COLOR_SCHEME=dark ;;
+        "'prefer-light'"|"'default'") RMAC_COLOR_SCHEME=light ;;
+        *) unset RMAC_COLOR_SCHEME ;;
+    esac
+else
+    unset RMAC_COLOR_SCHEME
+fi
 export XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
+[ -z "${RMAC_COLOR_SCHEME-}" ] || export RMAC_COLOR_SCHEME
 
 if [ -n "${NIRI_CONFIG-}" ]; then
-    if ! /usr/bin/systemctl --user import-environment NIRI_CONFIG; then
+    if ! /usr/bin/systemctl --user import-environment NIRI_CONFIG RMAC_COLOR_SCHEME; then
         echo "could not select the rmac niri configuration" >&2
         exit 1
     fi

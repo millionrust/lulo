@@ -27,6 +27,7 @@ layout {
 window-rule {
     open-floating true
     geometry-corner-radius 12
+    clip-to-geometry true
     focus-ring { off; }
     border { off; }
 }

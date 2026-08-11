@@ -2,7 +2,7 @@
 
 binds {
     Mod+Space repeat=false hotkey-overlay-title="Open rmac launcher" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "launcher"; }
-    Mod+A repeat=false hotkey-overlay-title="Open Apps in Spotlight" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "app-drawer"; }
+    Mod+A repeat=false hotkey-overlay-title="Open Apps" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "app-drawer"; }
     Mod+N repeat=false hotkey-overlay-title="Open Notification Center" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "notification-center"; }
     Mod+Ctrl+C repeat=false hotkey-overlay-title="Open Quick Settings" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "quick-settings"; }
     Mod+Ctrl+Q repeat=false allow-when-locked=true hotkey-overlay-title="Lock the rmac session" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "lock"; }

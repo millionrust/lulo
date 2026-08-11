@@ -18,10 +18,10 @@ impl FinderView {
         if trash_view {
             if has_selection {
                 m = m
-                    .item("Restore", Box::new(RestoreItems))
+                    .item("Put Back", Box::new(RestoreItems))
                     .separator()
                     .danger_command_item(
-                        "Delete Permanently…",
+                        "Delete Immediately…",
                         rmac_ui::shortcuts::DELETE_PERMANENT,
                         Box::new(DeletePermanently),
                     );
@@ -38,37 +38,35 @@ impl FinderView {
                 m = m.item("Open With…", Box::new(OpenWith));
             }
             m = m
-                .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem))
-                .command_item(
-                    "Duplicate",
-                    rmac_ui::shortcuts::DUPLICATE,
-                    Box::new(Duplicate),
-                )
-                .separator()
-                .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems))
-                .command_item("Cut", rmac_ui::shortcuts::CUT, Box::new(CutItems));
-        }
-        if can_paste {
-            m = m.command_item(
-                "Paste Item",
-                rmac_ui::shortcuts::PASTE,
-                Box::new(PasteItems),
-            );
-        }
-        m = m.separator().command_item(
-            "New Folder",
-            rmac_ui::shortcuts::NEW_FOLDER,
-            Box::new(NewFolder),
-        );
-        if has_selection {
-            m = m
                 .separator()
                 .command_item(
                     "Move to Trash",
                     rmac_ui::shortcuts::DELETE,
                     Box::new(MoveToTrash),
                 )
-                .danger_item("Delete Immediately", Box::new(DeleteItem));
+                .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
+                .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem))
+                .command_item(
+                    "Duplicate",
+                    rmac_ui::shortcuts::DUPLICATE,
+                    Box::new(Duplicate),
+                )
+                .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
+                .separator()
+                .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems));
+        } else {
+            m = m.command_item(
+                "New Folder",
+                rmac_ui::shortcuts::NEW_FOLDER,
+                Box::new(NewFolder),
+            );
+            if can_paste {
+                m = m.command_item(
+                    "Paste Item",
+                    rmac_ui::shortcuts::PASTE,
+                    Box::new(PasteItems),
+                );
+            }
         }
         m
     }

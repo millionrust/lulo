@@ -90,6 +90,7 @@ fn result(id: &str, category: Category, title: &str) -> SearchResult {
             local: title.to_lowercase(),
         },
         category,
+        application_group: None,
         title: title.into(),
         subtitle: None,
         icon: None,

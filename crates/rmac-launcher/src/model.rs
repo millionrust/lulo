@@ -38,6 +38,45 @@ impl Category {
     }
 }
 
+/// Tahoe's fixed Apps browse categories. Suggestions are intentionally not a
+/// category: they require truthful usage ranking and are omitted until that
+/// authority is available. Arcade is Apple Games content and is likewise not
+/// synthesized from ordinary Linux games.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ApplicationGroup {
+    ProductivityFinance,
+    Social,
+    Creativity,
+    InformationReading,
+    Entertainment,
+    Utilities,
+    Other,
+}
+
+impl ApplicationGroup {
+    pub const ORDER: [Self; 7] = [
+        Self::ProductivityFinance,
+        Self::Social,
+        Self::Creativity,
+        Self::InformationReading,
+        Self::Entertainment,
+        Self::Utilities,
+        Self::Other,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ProductivityFinance => "Productivity & Finance",
+            Self::Social => "Social",
+            Self::Creativity => "Creativity",
+            Self::InformationReading => "Information & Reading",
+            Self::Entertainment => "Entertainment",
+            Self::Utilities => "Utilities",
+            Self::Other => "Other",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Privacy {
     pub private_content: bool,
@@ -102,6 +141,9 @@ pub enum Action {
 pub struct SearchResult {
     pub id: ResultId,
     pub category: Category,
+    /// Apps-browse grouping supplied only by the installed-application
+    /// provider. Other result categories leave this unset.
+    pub application_group: Option<ApplicationGroup>,
     pub title: String,
     pub subtitle: Option<String>,
     /// Optional host-resolved icon for presentation. Providers may omit it;

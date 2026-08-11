@@ -658,6 +658,7 @@ mod tests {
                 local: local.into(),
             },
             category,
+            application_group: None,
             category_label: category.label(),
             title: title.into(),
             subtitle: Some(format!("Private subtitle for {title}")),

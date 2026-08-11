@@ -103,6 +103,21 @@ impl Coordinator {
         before != self.launcher.session().selected().cloned()
     }
 
+    pub fn move_selection_in_application_group(
+        &mut self,
+        group: rmac_launcher::ApplicationGroup,
+        direction: MoveSelection,
+    ) -> bool {
+        if self.activation.is_some() || !self.launcher.is_open() {
+            return false;
+        }
+        let before = self.launcher.session().selected().cloned();
+        self.launcher
+            .session_mut()
+            .move_selection_in_application_group(group, direction);
+        before != self.launcher.session().selected().cloned()
+    }
+
     pub fn activate_selected(&mut self, mode: ActivationMode) -> KeyEffect {
         if !self.launcher.is_open() {
             KeyEffect::None
@@ -260,6 +275,7 @@ impl Coordinator {
             .map(|ranked| Row {
                 id: ranked.result.id.clone(),
                 category: ranked.result.category,
+                application_group: ranked.result.application_group,
                 category_label: ranked.result.category.label(),
                 title: ranked.result.title.clone(),
                 subtitle: ranked.result.subtitle.clone(),

@@ -72,6 +72,65 @@ fn normalized_catalog(catalog: Vec<rmac_apps::Application>) -> Vec<rmac_apps::Ap
         .collect()
 }
 
+fn application_group(categories: &[String]) -> rmac_launcher::ApplicationGroup {
+    use rmac_launcher::ApplicationGroup;
+
+    let categories = categories
+        .iter()
+        .map(|category| category.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let contains = |needles: &[&str]| {
+        categories
+            .iter()
+            .any(|category| needles.iter().any(|needle| category.contains(needle)))
+    };
+
+    if contains(&[
+        "office",
+        "finance",
+        "business",
+        "productivity",
+        "projectmanagement",
+    ]) {
+        ApplicationGroup::ProductivityFinance
+    } else if contains(&["social", "network", "email", "instantmessaging", "chat"]) {
+        ApplicationGroup::Social
+    } else if contains(&[
+        "graphics",
+        "photography",
+        "publishing",
+        "audiovideoediting",
+        "creativity",
+        "design",
+    ]) {
+        ApplicationGroup::Creativity
+    } else if contains(&[
+        "education",
+        "science",
+        "news",
+        "dictionary",
+        "documentation",
+        "reference",
+        "reading",
+    ]) {
+        ApplicationGroup::InformationReading
+    } else if contains(&["audio", "video", "player", "game", "entertainment"]) {
+        ApplicationGroup::Entertainment
+    } else if contains(&[
+        "utility",
+        "system",
+        "settings",
+        "filetools",
+        "archiving",
+        "development",
+        "terminalemulator",
+    ]) {
+        ApplicationGroup::Utilities
+    } else {
+        ApplicationGroup::Other
+    }
+}
+
 impl Provider for ApplicationProvider {
     fn descriptor(&self) -> ProviderDescriptor {
         descriptor(
@@ -110,6 +169,7 @@ impl Provider for ApplicationProvider {
                     local: application.id.clone(),
                 },
                 category: Category::Applications,
+                application_group: Some(application_group(&application.categories)),
                 title: application.name.clone(),
                 subtitle,
                 icon: application.icon.clone(),

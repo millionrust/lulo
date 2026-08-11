@@ -117,29 +117,32 @@ impl LauncherView {
                     .text_color(mac::text_tertiary())
                     .child(row.category_label),
             )
-            .when(row.has_alternate, |item| {
-                item.child(
-                    div()
-                        .id(SharedString::from(format!("launcher-alternate-{index}")))
-                        .size(px(28.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(mac::radius_control()))
-                        .bg(mac::control_fill())
-                        .hover(|hover| hover.bg(mac::control_fill_hover()))
-                        .child("•••")
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            cx.stop_propagation();
-                            this.select_and_activate(
-                                alternate_id.clone(),
-                                ActivationMode::Alternate,
-                                window,
-                                cx,
-                            );
-                        })),
-                )
-            })
+            .when(
+                row.has_alternate && self.browse_mode != Some(BrowseMode::Applications),
+                |item| {
+                    item.child(
+                        div()
+                            .id(SharedString::from(format!("launcher-alternate-{index}")))
+                            .size(px(28.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(mac::radius_control()))
+                            .bg(mac::control_fill())
+                            .hover(|hover| hover.bg(mac::control_fill_hover()))
+                            .child("•••")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.select_and_activate(
+                                    alternate_id.clone(),
+                                    ActivationMode::Alternate,
+                                    window,
+                                    cx,
+                                );
+                            })),
+                    )
+                },
+            )
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.select_and_activate(primary_id.clone(), ActivationMode::Primary, window, cx);
             }))
@@ -147,6 +150,9 @@ impl LauncherView {
     }
 
     pub(super) fn results(&self, rows: &[Row], query: &str, cx: &Context<Self>) -> AnyElement {
+        if self.browse_mode == Some(BrowseMode::Applications) {
+            return self.application_results(rows, cx);
+        }
         if query.is_empty() {
             let applications = rows
                 .iter()
@@ -191,6 +197,43 @@ impl LauncherView {
                 last_category = Some(row.category);
             }
             content = content.child(self.list_row(row, index, cx));
+        }
+        content.into_any_element()
+    }
+
+    fn application_results(&self, rows: &[Row], cx: &Context<Self>) -> AnyElement {
+        let mut content = div().v_flex().gap_4();
+        for group in ApplicationGroup::ORDER {
+            let matching = rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| row.application_group == Some(group))
+                .collect::<Vec<_>>();
+            if matching.is_empty() {
+                continue;
+            }
+            let section = match self.application_view {
+                ApplicationView::Grid => div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .children(
+                        matching
+                            .into_iter()
+                            .map(|(index, row)| self.grid_tile(row, index, cx)),
+                    )
+                    .into_any_element(),
+                ApplicationView::List => div()
+                    .v_flex()
+                    .gap_0p5()
+                    .children(
+                        matching
+                            .into_iter()
+                            .map(|(index, row)| self.list_row(row, index, cx)),
+                    )
+                    .into_any_element(),
+            };
+            content = content.child(section_label(group.label())).child(section);
         }
         content.into_any_element()
     }

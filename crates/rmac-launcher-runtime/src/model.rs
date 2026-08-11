@@ -61,6 +61,7 @@ pub enum Phase {
 pub struct Row {
     pub id: ResultId,
     pub category: rmac_launcher::Category,
+    pub application_group: Option<rmac_launcher::ApplicationGroup>,
     pub category_label: &'static str,
     pub title: String,
     pub subtitle: Option<String>,
@@ -77,6 +78,7 @@ impl fmt::Debug for Row {
             .debug_struct("Row")
             .field("id", &"<redacted>")
             .field("category", &self.category)
+            .field("application_group", &self.application_group)
             .field("title", &"<redacted>")
             .field("subtitle", &self.subtitle.as_ref().map(|_| "<redacted>"))
             .field("icon", &self.icon.as_ref().map(|_| "<redacted>"))

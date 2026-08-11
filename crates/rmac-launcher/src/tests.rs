@@ -30,6 +30,7 @@ fn result(provider: &str, local: &str, category: Category, title: &str) -> Searc
             local: local.into(),
         },
         category,
+        application_group: None,
         title: title.into(),
         subtitle: None,
         icon: None,

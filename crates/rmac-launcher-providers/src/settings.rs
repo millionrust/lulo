@@ -228,6 +228,7 @@ impl Provider for SettingsProvider {
                     local: entry.pane_id.clone(),
                 },
                 category: Category::Settings,
+                application_group: None,
                 title: entry.title.clone(),
                 subtitle: entry.subtitle.clone(),
                 icon: None,

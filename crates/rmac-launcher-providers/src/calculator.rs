@@ -32,6 +32,7 @@ impl Provider for CalculatorProvider {
                 local: query.trim().into(),
             },
             category: Category::Calculator,
+            application_group: None,
             title: text.clone(),
             subtitle: Some(query.trim().into()),
             icon: None,

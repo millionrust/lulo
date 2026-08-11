@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use gpui::{px, size, AppContext as _, Context, Entity, Focusable as _, SharedString, Window};
-use rmac_launcher::{ActivationMode, Category, MoveSelection, ResultId};
+use rmac_launcher::{ActivationMode, ApplicationGroup, Category, MoveSelection, ResultId};
 use rmac_launcher_runtime::{
     CatalogUpdate, Coordinator, KeyCommand, KeyEffect, Registry, ShortcutEffect,
 };
@@ -27,6 +27,15 @@ pub(crate) struct LauncherView {
     was_active: bool,
     compact: bool,
     browse_mode: Option<BrowseMode>,
+    application_group: Option<ApplicationGroup>,
+    application_view: ApplicationView,
+    application_options_open: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ApplicationView {
+    Grid,
+    List,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -162,6 +171,9 @@ impl LauncherView {
             was_active: false,
             compact,
             browse_mode: initial_browse_mode,
+            application_group: None,
+            application_view: ApplicationView::Grid,
+            application_options_open: false,
         };
         view.ensure_browse_selection();
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
@@ -268,10 +280,22 @@ impl LauncherView {
                 _ => None,
             };
             if let Some(direction) = direction {
-                if self
-                    .coordinator
-                    .move_selection_in_category(mode.category(), direction)
-                {
+                let changed = if mode == BrowseMode::Applications {
+                    self.application_group.map_or_else(
+                        || {
+                            self.coordinator
+                                .move_selection_in_category(mode.category(), direction)
+                        },
+                        |group| {
+                            self.coordinator
+                                .move_selection_in_application_group(group, direction)
+                        },
+                    )
+                } else {
+                    self.coordinator
+                        .move_selection_in_category(mode.category(), direction)
+                };
+                if changed {
                     cx.notify();
                 }
                 return;
@@ -288,6 +312,7 @@ impl LauncherView {
         cx: &mut Context<Self>,
     ) {
         self.browse_mode = Some(mode);
+        self.application_options_open = false;
         self.compact = false;
         window.resize(size(
             px(rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32),
@@ -297,20 +322,46 @@ impl LauncherView {
         cx.notify();
     }
 
+    pub(crate) fn set_application_group(
+        &mut self,
+        group: Option<ApplicationGroup>,
+        cx: &mut Context<Self>,
+    ) {
+        self.application_group = group;
+        self.ensure_browse_selection();
+        cx.notify();
+    }
+
+    pub(crate) fn set_application_view(&mut self, view: ApplicationView, cx: &mut Context<Self>) {
+        self.application_view = view;
+        self.application_options_open = false;
+        cx.notify();
+    }
+
     fn ensure_browse_selection(&mut self) {
         let Some(mode) = self.browse_mode else {
             return;
         };
         let category = mode.category();
         let snapshot = self.coordinator.snapshot();
+        let matches_group = |row: &rmac_launcher_runtime::Row| {
+            mode != BrowseMode::Applications
+                || self
+                    .application_group
+                    .is_none_or(|group| row.application_group == Some(group))
+        };
         if snapshot
             .rows
             .iter()
-            .any(|row| row.category == category && row.selected)
+            .any(|row| row.category == category && matches_group(row) && row.selected)
         {
             return;
         }
-        if let Some(row) = snapshot.rows.iter().find(|row| row.category == category) {
+        if let Some(row) = snapshot
+            .rows
+            .iter()
+            .find(|row| row.category == category && matches_group(row))
+        {
             self.coordinator.select(&row.id);
         }
     }

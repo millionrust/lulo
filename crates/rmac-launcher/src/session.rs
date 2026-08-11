@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::engine::{normalize, score};
 use crate::{
-    Action, ActivationMode, Cancellation, Category, MoveSelection, Privacy, ProviderDescriptor,
-    ProviderError, RankedResult, Request, ResultId, SearchResult, DEFAULT_CATEGORY_LIMIT,
-    DEFAULT_LIMIT,
+    Action, ActivationMode, ApplicationGroup, Cancellation, Category, MoveSelection, Privacy,
+    ProviderDescriptor, ProviderError, RankedResult, Request, ResultId, SearchResult,
+    DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT,
 };
 
 #[derive(Clone, Debug)]
@@ -213,6 +213,43 @@ impl Session {
             .iter()
             .enumerate()
             .filter_map(|(index, ranked)| (ranked.result.category == category).then_some(index))
+            .collect::<Vec<_>>();
+        if matching.is_empty() {
+            self.selected = None;
+            return None;
+        }
+        let current = self.selected.as_ref().and_then(|selected| {
+            matching
+                .iter()
+                .position(|index| &self.ranked[*index].result.id == selected)
+        });
+        let position = match (current, direction) {
+            (Some(position), MoveSelection::Next) => (position + 1) % matching.len(),
+            (Some(0), MoveSelection::Previous) | (None, MoveSelection::Previous) => {
+                matching.len() - 1
+            }
+            (Some(position), MoveSelection::Previous) => position - 1,
+            (None, MoveSelection::Next) => 0,
+        };
+        self.selected = Some(self.ranked[matching[position]].result.id.clone());
+        self.selected.as_ref()
+    }
+
+    /// Move only through visible applications in one Apps browse category.
+    pub fn move_selection_in_application_group(
+        &mut self,
+        group: ApplicationGroup,
+        direction: MoveSelection,
+    ) -> Option<&ResultId> {
+        let matching = self
+            .ranked
+            .iter()
+            .enumerate()
+            .filter_map(|(index, ranked)| {
+                (ranked.result.category == Category::Applications
+                    && ranked.result.application_group == Some(group))
+                .then_some(index)
+            })
             .collect::<Vec<_>>();
         if matching.is_empty() {
             self.selected = None;

@@ -211,6 +211,7 @@ fn file_result(path: PathBuf, query: &str) -> Option<SearchResult> {
             local,
         },
         category: Category::Files,
+        application_group: None,
         title,
         subtitle,
         icon: None,

@@ -562,12 +562,33 @@ mod linux_wayland {
                         }
                         item = item.child(visual);
                         if actionable {
+                            let reveal_app_id = app_id.clone();
                             item = item
                                 .cursor_pointer()
                                 .hover(|style| style.opacity(0.88))
-                                .on_click(move |_, _, cx| {
-                                    dispatch_activation(activation.clone(), cx);
-                                });
+                                .on_click(cx.listener(
+                                    move |this, event: &gpui::ClickEvent, _, cx| {
+                                        if event.modifiers().platform {
+                                            let reveal = {
+                                                let status = this.status.read(cx);
+                                                status
+                                                    .model()
+                                                    .context_menu(&reveal_app_id)
+                                                    .and_then(|menu| menu.show_in_finder)
+                                                    .filter(|action| {
+                                                        status
+                                                            .model()
+                                                            .authorizes_context_action(action)
+                                                    })
+                                            };
+                                            if let Some(action) = reveal {
+                                                dispatch_context_action(action, cx);
+                                            }
+                                        } else {
+                                            dispatch_activation(activation.clone(), cx);
+                                        }
+                                    },
+                                ));
                         }
                         let context_app_id = app_id.clone();
                         item = item.on_mouse_down(

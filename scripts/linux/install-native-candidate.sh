@@ -10,14 +10,16 @@ minimum_kib=$((15 * 1024 * 1024))
 install_minimum_kib=$((25 * 1024 * 1024))
 mode=
 package_directory=
+reinstall=false
 
 usage() {
   cat >&2 <<'EOF'
 usage: scripts/linux/install-native-candidate.sh --check|--execute \
-  --directory /absolute/path/to/native-package-set
+  --directory /absolute/path/to/native-package-set [--reinstall]
 
   --check    Verify the Ubuntu/GNOME recovery boundary and candidate packages.
   --execute  Install that exact two-package set through APT and verify it.
+  --reinstall  Reinstall an already-current package set (execute only).
 
 Execution requires /run/rmac-reference-pc to contain exactly:
   rmac-reference-pc-install-v1
@@ -55,6 +57,10 @@ while [[ $# -gt 0 ]]; do
         || fail "--directory requires one value"
       package_directory=$1
       ;;
+    --reinstall)
+      [[ "$reinstall" == false ]] || fail "--reinstall may be specified once"
+      reinstall=true
+      ;;
     -h|--help)
       usage
       exit 0
@@ -71,6 +77,8 @@ done
   usage
   exit 2
 }
+[[ "$mode" == execute || "$reinstall" == false ]] \
+  || fail "--reinstall requires --execute"
 [[ "$(uname -s)" == Linux ]] || fail "Ubuntu Linux is required"
 [[ ${EUID} -ne 0 ]] || fail "run as the graphical test user, not root"
 [[ -r /etc/os-release ]] || fail "/etc/os-release is unavailable"
@@ -131,6 +139,7 @@ Verified native candidate install plan
   Existing GNOME recovery session: verified
   Legacy source-install artifacts: archived if present
   User settings and documents: preserved
+  Package repair: $reinstall
 EOF
 
 if [[ "$mode" == check ]]; then
@@ -146,7 +155,11 @@ fi
 sudo -v
 python3 "$repo_root/scripts/linux/archive-development-install.py" --execute
 sudo rm -- "$marker"
-sudo apt-get install --yes --no-remove "$apps_package" "$session_package"
+apt_options=(install --yes --no-remove)
+if [[ "$reinstall" == true ]]; then
+  apt_options+=(--reinstall)
+fi
+sudo apt-get "${apt_options[@]}" "$apps_package" "$session_package"
 require_space "$minimum_kib" "completed candidate installation"
 
 tab=$'\t'

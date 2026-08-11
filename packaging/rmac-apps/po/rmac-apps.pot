@@ -23,7 +23,7 @@ msgstr ""
 msgid "Browse and organize files and folders"
 msgstr ""
 
-msgid "files;folders;storage;browse;"
+msgid "finder;files;folders;storage;browse;"
 msgstr ""
 
 msgid "Terminal"

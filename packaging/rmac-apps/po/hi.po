@@ -22,8 +22,8 @@ msgstr "फ़ाइल प्रबंधक"
 msgid "Browse and organize files and folders"
 msgstr "फ़ाइलें और फ़ोल्डर देखें और व्यवस्थित करें"
 
-msgid "files;folders;storage;browse;"
-msgstr "फ़ाइलें;फ़ोल्डर;स्टोरेज;ब्राउज़;"
+msgid "finder;files;folders;storage;browse;"
+msgstr "फ़ाइंडर;फ़ाइलें;फ़ोल्डर;स्टोरेज;ब्राउज़;"
 
 msgid "Terminal"
 msgstr "टर्मिनल"

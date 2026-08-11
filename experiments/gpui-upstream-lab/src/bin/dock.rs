@@ -12,13 +12,13 @@ mod linux_wayland {
     use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
-        Context, DisplayId, Entity, FontWeight, PlatformDisplay, QuitMode, Role, Size, Window,
-        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        Context, DisplayId, Entity, FontWeight, MouseButton, PlatformDisplay, QuitMode, Role, Size,
+        Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_gpui_upstream_lab::shell_visuals as visuals;
 
-    const SURFACE_HEIGHT: f32 = 184.0;
+    const SURFACE_HEIGHT: f32 = 520.0;
     const SIDE_SURFACE_WIDTH: f32 = 344.0;
     const EXCLUSIVE_ZONE: f32 = 88.0;
     const ICON_SIZE: f32 = 56.0;
@@ -27,6 +27,8 @@ mod linux_wayland {
     const SEPARATOR_WIDTH: f32 = 1.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
     const TOOLTIP_BOTTOM: f32 = 92.0;
+    const MENU_WIDTH: f32 = 248.0;
+    const MENU_ROW_HEIGHT: f32 = 28.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
     static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
@@ -198,13 +200,19 @@ mod linux_wayland {
         }
     }
 
+    struct DockMenu {
+        anchor: f32,
+        session: rmac_dock::menu::Session,
+    }
+
     struct Dock {
         display_id: u64,
         placement: rmac_shell_settings::DockPlacement,
         render_count: u64,
         status: Entity<DockStatus>,
         hovered_item: Option<(f32, String)>,
-        input_region: Option<(f32, f32, bool)>,
+        context_menu: Option<DockMenu>,
+        input_region: Option<(f32, f32, bool, bool)>,
         pointer_inside: bool,
         hidden: bool,
         fullscreen: bool,
@@ -227,6 +235,7 @@ mod linux_wayland {
                 render_count: 0,
                 status,
                 hovered_item: None,
+                context_menu: None,
                 input_region: None,
                 pointer_inside: false,
                 hidden: surface.fullscreen && !surface.overview_visible,
@@ -309,9 +318,27 @@ mod linux_wayland {
                 + 2.0 * SHELF_PADDING;
             let shelf_start = (axis - shelf_extent) / 2.0;
             let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
-            let input_region = (shelf_start, shelf_extent, self.hidden);
+            let menu_geometry = self.context_menu.as_ref().map(|menu| {
+                let row_count = menu.session.rows().len() as f32;
+                let section_breaks = menu
+                    .session
+                    .rows()
+                    .windows(2)
+                    .filter(|rows| rows[0].section != rows[1].section)
+                    .count() as f32;
+                let height = 38.0 + row_count * MENU_ROW_HEIGHT + section_breaks * 9.0;
+                let start = (shelf_start + menu.anchor - MENU_WIDTH / 2.0)
+                    .clamp(8.0, (axis - MENU_WIDTH - 8.0).max(8.0));
+                (start, height)
+            });
+            let input_region = (
+                shelf_start,
+                shelf_extent,
+                self.hidden,
+                menu_geometry.is_some(),
+            );
             if self.input_region != Some(input_region) {
-                let bounds = match (self.placement, self.hidden) {
+                let shelf_bounds = match (self.placement, self.hidden) {
                     (rmac_shell_settings::DockPlacement::Bottom, true) => Bounds {
                         origin: point(px(shelf_start), px(SURFACE_HEIGHT - 2.0)),
                         size: Size::new(px(shelf_extent), px(2.0)),
@@ -340,7 +367,33 @@ mod linux_wayland {
                         size: Size::new(px(EXCLUSIVE_ZONE), px(shelf_extent)),
                     },
                 };
-                window.set_input_region(Some(&[bounds]));
+                let mut regions = vec![shelf_bounds];
+                if let Some((start, height)) = menu_geometry {
+                    regions.push(match self.placement {
+                        rmac_shell_settings::DockPlacement::Bottom => Bounds {
+                            origin: point(
+                                px(start),
+                                px(SURFACE_HEIGHT - EXCLUSIVE_ZONE - height - 8.0),
+                            ),
+                            size: Size::new(px(MENU_WIDTH), px(height)),
+                        },
+                        rmac_shell_settings::DockPlacement::Left => Bounds {
+                            origin: point(px(EXCLUSIVE_ZONE + 8.0), px(start)),
+                            size: Size::new(px(MENU_WIDTH), px(height)),
+                        },
+                        rmac_shell_settings::DockPlacement::Right => Bounds {
+                            origin: point(
+                                px(f32::from(window_size.width)
+                                    - EXCLUSIVE_ZONE
+                                    - MENU_WIDTH
+                                    - 8.0),
+                                px(start),
+                            ),
+                            size: Size::new(px(MENU_WIDTH), px(height)),
+                        },
+                    });
+                }
+                window.set_input_region(Some(&regions));
                 self.input_region = Some(input_region);
             }
             let tooltip = (!self.hidden)
@@ -393,6 +446,12 @@ mod linux_wayland {
                 .size_full()
                 .relative()
                 .flex()
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if this.context_menu.take().is_some() {
+                        this.input_region = None;
+                        cx.notify();
+                    }
+                }))
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                     this.pointer_inside = *hovered;
                     this.hide_generation = this.hide_generation.saturating_add(1);
@@ -524,6 +583,26 @@ mod linux_wayland {
                                     dispatch_activation(activation.clone(), cx);
                                 });
                         }
+                        let context_app_id = app_id.clone();
+                        item = item.on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                let session =
+                                    {
+                                        let status = this.status.read(cx);
+                                        status.model().context_menu(&context_app_id).and_then(
+                                            |menu| rmac_dock::menu::Session::context(&menu).ok(),
+                                        )
+                                    };
+                                this.context_menu = session.map(|session| DockMenu {
+                                    anchor: relative_center,
+                                    session,
+                                });
+                                this.input_region = None;
+                                cx.notify();
+                            }),
+                        );
                         item = item.on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             if *hovered {
                                 this.hovered_item = Some((relative_center, tooltip_label.clone()));
@@ -616,6 +695,31 @@ mod linux_wayland {
                                 dispatch_special(trash_activation.clone(), cx)
                             });
                         }
+                        trash = trash.on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                let session = {
+                                    let status = this.status.read(cx);
+                                    status
+                                        .model()
+                                        .special_context_menu(rmac_dock::SpecialItemKind::Trash)
+                                        .and_then(|mut menu| {
+                                            // Permanent deletion remains behind a dedicated
+                                            // confirmation sheet. The first Dock-menu slice
+                                            // exposes the safe Open Trash command only.
+                                            menu.empty_trash = None;
+                                            rmac_dock::menu::Session::special(&menu).ok()
+                                        })
+                                };
+                                this.context_menu = session.map(|session| DockMenu {
+                                    anchor: trash_center,
+                                    session,
+                                });
+                                this.input_region = None;
+                                cx.notify();
+                            }),
+                        );
                         if let Some(path) = trash_icon_path(trash_full) {
                             let image = img(path)
                                 .absolute()
@@ -638,7 +742,115 @@ mod linux_wayland {
                         trash
                     }),
             )
+            .children(render_context_menu(
+                self.context_menu.as_ref(),
+                self.placement,
+                menu_geometry,
+                self.display_id,
+                cx,
+            ))
         }
+    }
+
+    fn render_context_menu(
+        menu: Option<&DockMenu>,
+        placement: rmac_shell_settings::DockPlacement,
+        geometry: Option<(f32, f32)>,
+        display_id: u64,
+        cx: &Context<Dock>,
+    ) -> Option<gpui::Div> {
+        let menu = menu?;
+        let (start, _) = geometry?;
+        let selected = menu.session.selected().cloned();
+        let rows = menu.session.rows().to_vec();
+        let mut panel = div()
+            .id(format!("dock-menu-{display_id}"))
+            .role(Role::Menu)
+            .aria_label(menu.session.accessible_title().to_owned())
+            .absolute()
+            .w(px(MENU_WIDTH))
+            .p_1()
+            .rounded(px(visuals::MENU_RADIUS))
+            .bg(rgba(visuals::REGULAR_DARK_TINT))
+            .border_1()
+            .border_color(rgba(visuals::LIGHT_BORDER))
+            .shadow_lg()
+            .text_size(px(13.0))
+            .text_color(rgba(visuals::PRIMARY_TEXT))
+            .occlude()
+            .child(
+                div()
+                    .h(px(30.0))
+                    .px_2()
+                    .flex()
+                    .items_center()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(menu.session.title().to_owned()),
+            );
+        panel = match placement {
+            rmac_shell_settings::DockPlacement::Bottom => {
+                panel.left(px(start)).bottom(px(EXCLUSIVE_ZONE + 8.0))
+            }
+            rmac_shell_settings::DockPlacement::Left => {
+                panel.left(px(EXCLUSIVE_ZONE + 8.0)).top(px(start))
+            }
+            rmac_shell_settings::DockPlacement::Right => {
+                panel.right(px(EXCLUSIVE_ZONE + 8.0)).top(px(start))
+            }
+        };
+        for (index, row) in rows.iter().enumerate() {
+            if index > 0 && rows[index - 1].section != row.section {
+                panel = panel.child(div().h(px(1.0)).mx_2().my_1().bg(rgba(0xffffff25)));
+            }
+            let row_id = row.id.clone();
+            let action = row.primary.clone();
+            let enabled = row.enabled && action.is_some();
+            let mut element = div()
+                .id(format!("dock-menu-{display_id}-{index}"))
+                .role(Role::MenuItem)
+                .aria_label(row.accessible_label.clone())
+                .h(px(MENU_ROW_HEIGHT))
+                .px_2()
+                .flex()
+                .items_center()
+                .justify_between()
+                .rounded(px(visuals::MENU_ITEM_RADIUS))
+                .when(selected.as_ref() == Some(&row.id), |style| {
+                    style.bg(rgba(visuals::ACCENT))
+                })
+                .when(!enabled, |style| {
+                    style.text_color(rgba(visuals::DISABLED_TEXT))
+                })
+                .child(row.label.clone());
+            if row.checked {
+                element = element.child("✓");
+            }
+            if enabled {
+                let action = action.expect("enabled Dock menu row has an action");
+                element = element
+                    .cursor_pointer()
+                    .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        if *hovered
+                            && this
+                                .context_menu
+                                .as_mut()
+                                .is_some_and(|menu| menu.session.select(&row_id))
+                        {
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.context_menu = None;
+                        this.input_region = None;
+                        dispatch_dock_menu_action(action.clone(), cx);
+                        cx.notify();
+                    }));
+            }
+            panel = panel.child(element);
+        }
+        Some(panel)
     }
 
     fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {
@@ -802,6 +1014,82 @@ mod linux_wayland {
                 .await;
                 if opened.is_err() {
                     eprintln!("could not open Trash");
+                }
+            })
+            .detach();
+    }
+
+    fn dispatch_dock_menu_action(action: rmac_dock::menu::Action, cx: &mut App) {
+        match action {
+            rmac_dock::menu::Action::Context(action) => dispatch_context_action(action, cx),
+            rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
+                rmac_dock::SpecialItemKind::Trash,
+            )) => dispatch_special(rmac_dock::SpecialActivation::OpenTrash, cx),
+            rmac_dock::menu::Action::ActivateEntry(_)
+            | rmac_dock::menu::Action::SpecialContext(_) => {
+                eprintln!("the selected Dock menu command is not available in this shell surface")
+            }
+        }
+    }
+
+    fn dispatch_context_action(action: rmac_dock::ContextAction, cx: &mut App) {
+        match action {
+            rmac_dock::ContextAction::LaunchNew { app_id, spec } => {
+                cx.background_executor()
+                    .spawn(async move {
+                        if let Err(error) = rmac_app_launch::launch(spec).await {
+                            eprintln!("could not launch a new Dock window for {app_id}: {error}");
+                        }
+                    })
+                    .detach();
+            }
+            rmac_dock::ContextAction::FocusWindow { window, .. } => {
+                dispatch_window_action(rmac_compositor::Action::FocusWindow { window }, cx)
+            }
+            rmac_dock::ContextAction::CloseWindow { window, .. } => {
+                dispatch_window_action(rmac_compositor::Action::CloseWindow { window }, cx)
+            }
+            rmac_dock::ContextAction::UpdatePins(command) => {
+                cx.background_executor()
+                    .spawn(async move {
+                        let result = blocking::unblock(move || {
+                            let store = rmac_shell_settings::ShellSettingsStore::from_environment()
+                                .map_err(|error| error.to_string())?;
+                            let mut settings =
+                                store.load().map_err(|error| error.to_string())?.settings;
+                            settings.pinned_apps =
+                                rmac_dock::apply_pin_command(&settings.pinned_apps, &command)
+                                    .map_err(|error| error.to_string())?;
+                            store.save(&settings).map_err(|error| error.to_string())?;
+                            Ok::<_, String>(())
+                        })
+                        .await;
+                        if let Err(error) = result {
+                            eprintln!("could not update Dock pins: {error}");
+                        }
+                    })
+                    .detach();
+            }
+        }
+    }
+
+    fn dispatch_window_action(action: rmac_compositor::Action, cx: &mut App) {
+        let Ok(previous) =
+            NEXT_ACTIVATION.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+        else {
+            eprintln!("could not run Dock window action: activation IDs exhausted");
+            return;
+        };
+        let request = rmac_compositor::ActionRequest {
+            id: rmac_compositor::ActivationId(previous + 1),
+            action,
+        };
+        cx.background_executor()
+            .spawn(async move {
+                if rmac_compositor_niri::execute(request).await.result.is_err() {
+                    eprintln!("could not run the selected Dock window action");
                 }
             })
             .detach();

@@ -319,6 +319,7 @@ fn surface_plan_keeps_reservation_stable_across_magnification_and_autohide() {
     };
     let settings = rmac_shell_settings::DockSettings {
         autohide: true,
+        magnification: true,
         magnification_scale: 1.5,
         reserve_space: true,
         ..Default::default()

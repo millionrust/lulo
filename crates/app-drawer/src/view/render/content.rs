@@ -4,8 +4,12 @@ use super::*;
 
 impl AppDrawer {
     pub(super) fn icon_element(&self, app: &App, size: f32) -> gpui::AnyElement {
-        match &app.icon {
-            Some(path) => img(path.clone()).w(px(size)).h(px(size)).into_any_element(),
+        let content = match &app.icon {
+            Some(path) => img(path.clone())
+                .w(px(size - 4.0))
+                .h(px(size - 4.0))
+                .rounded(px((size - 4.0) * 0.22))
+                .into_any_element(),
             None => {
                 let initial = app
                     .name
@@ -14,19 +18,33 @@ impl AppDrawer {
                     .map(|character| character.to_uppercase().to_string())
                     .unwrap_or_default();
                 div()
-                    .w(px(size))
-                    .h(px(size))
+                    .w(px(size - 4.0))
+                    .h(px(size - 4.0))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(size * 0.23))
+                    .rounded(px((size - 4.0) * 0.22))
                     .bg(mac::control_fill())
                     .text_color(mac::text_secondary())
                     .text_size(rmac_ui::text_px(size * 0.43))
                     .child(initial)
                     .into_any_element()
             }
-        }
+        };
+        div()
+            .w(px(size))
+            .h(px(size))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(size * 0.23))
+            .bg(mac::raised())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_md()
+            .overflow_hidden()
+            .child(content)
+            .into_any_element()
     }
 
     /// `position` is the index in the visible projection tracked by selection.

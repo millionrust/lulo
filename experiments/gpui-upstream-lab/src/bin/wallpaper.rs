@@ -5,21 +5,23 @@ mod linux_wayland {
     use std::io::Write as _;
     use std::path::PathBuf;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
 
     use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
-        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, PlatformDisplay, QuitMode,
-        RenderImage, Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
-        WindowOptions,
+        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, MouseButton, PlatformDisplay,
+        QuitMode, RenderImage, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use uuid::Uuid;
 
     const READY_FILE_ENV: &str = "RMAC_WALLPAPER_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_WALLPAPER_RENDER_COUNT_DIR";
+    static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
 
     #[derive(Clone)]
     struct PreparedSurface {
@@ -35,6 +37,7 @@ mod linux_wayland {
     struct WallpaperStatus {
         surfaces: std::collections::BTreeMap<Uuid, PreparedSurface>,
         health: rmac_wallpaper_runtime::HealthSnapshot,
+        compositor: rmac_compositor::State,
     }
 
     impl WallpaperStatus {
@@ -59,7 +62,17 @@ mod linux_wayland {
             Self {
                 surfaces: std::collections::BTreeMap::new(),
                 health: rmac_wallpaper_runtime::HealthSnapshot::default(),
+                compositor: rmac_compositor::State::default(),
             }
+        }
+
+        fn app_drawer_window(&self) -> Option<rmac_compositor::WindowId> {
+            self.compositor
+                .snapshot()
+                .windows
+                .into_iter()
+                .find(|window| window.app_id.as_deref() == Some(rmac_apps::identity::APP_DRAWER))
+                .map(|window| window.id)
         }
     }
 
@@ -85,6 +98,28 @@ mod linux_wayland {
                 status,
             }
         }
+
+        fn dismiss_app_drawer(&self, cx: &mut App) {
+            let Some(window) = self.status.read(cx).app_drawer_window() else {
+                return;
+            };
+            let Ok(previous) =
+                NEXT_ACTIVATION.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    current.checked_add(1)
+                })
+            else {
+                return;
+            };
+            cx.background_executor()
+                .spawn(async move {
+                    let _ = rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+                        id: rmac_compositor::ActivationId(previous + 1),
+                        action: rmac_compositor::Action::CloseWindow { window },
+                    })
+                    .await;
+                })
+                .detach();
+        }
     }
 
     impl Render for Wallpaper {
@@ -104,6 +139,10 @@ mod linux_wayland {
                 .aria_label("Desktop wallpaper")
                 .relative()
                 .size_full()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| this.dismiss_app_drawer(cx)),
+                )
                 .overflow_hidden()
                 .bg(linear_gradient(
                     145.0,
@@ -259,7 +298,30 @@ mod linux_wayland {
                 }
             })
             .detach();
-        cx.new(|cx| WallpaperStatus::new(prepared_rx, cx))
+        let status = cx.new(|cx| WallpaperStatus::new(prepared_rx, cx));
+        let (compositor_tx, compositor_rx) = async_channel::bounded(64);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_compositor_niri::watch(compositor_tx).await {
+                    eprintln!("wallpaper compositor watcher stopped: {error}");
+                }
+            })
+            .detach();
+        let compositor_status = status.clone();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = compositor_rx.recv().await {
+                if compositor_status
+                    .update(cx, |status, _| {
+                        status.compositor.apply(event);
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        status
     }
 
     fn record_configured_surface(window: &Window, display_id: u64) {

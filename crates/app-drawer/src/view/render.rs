@@ -137,6 +137,8 @@ impl Render for AppDrawer {
             .rounded(px(mac::radius_large_surface()))
             .border_1()
             .border_color(mac::separator())
+            .shadow_lg()
+            .occlude()
             .text_color(mac::text())
             .child(
                 div()

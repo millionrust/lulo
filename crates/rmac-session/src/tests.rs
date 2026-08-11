@@ -190,7 +190,8 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let lock = include_str!("../units/rmac-lock.service");
     assert!(lock.contains("Type=notify"));
     assert!(lock.contains("NotifyAccess=all"));
-    assert!(lock.contains("Restart=on-failure"));
+    assert!(!lock.contains("Restart="));
+    assert!(!lock.contains("RestartSec="));
     assert!(lock.contains("StartLimitIntervalSec=30s"));
     assert!(lock.contains("StartLimitBurst=4"));
     assert!(lock.contains("OnFailure=rmac-lock-fallback.service"));

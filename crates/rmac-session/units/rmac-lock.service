@@ -14,6 +14,4 @@ ExecStart=%h/.local/libexec/rmac/rmac-lock-provider
 TimeoutStartSec=15s
 WatchdogSec=10s
 WatchdogSignal=SIGKILL
-Restart=on-failure
-RestartSec=1s
 KillMode=control-group

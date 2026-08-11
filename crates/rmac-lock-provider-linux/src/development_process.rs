@@ -197,7 +197,7 @@ fn notify_ready() -> Result<(), Error> {
 
 fn notify_watchdog() -> Result<(), Error> {
     let status = Command::new(SYSTEMD_NOTIFY)
-        .args(["--watchdog", "--pid=parent"])
+        .args(["--pid=parent", "WATCHDOG=1"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .status()

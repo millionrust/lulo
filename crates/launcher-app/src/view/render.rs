@@ -6,6 +6,7 @@ use gpui::{
     KeyDownEvent, MouseButton, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window,
 };
+use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::StyledExt as _;
 use gpui_component::{Icon, IconName};
 use rmac_launcher::{ActivationMode, ApplicationGroup, Category};

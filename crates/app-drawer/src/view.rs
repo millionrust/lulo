@@ -65,6 +65,7 @@ pub(crate) struct AppDrawer {
     catalog_error: Option<SharedString>,
     action_error: Option<SharedString>,
     launching: bool,
+    was_active: bool,
     _catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 }
 

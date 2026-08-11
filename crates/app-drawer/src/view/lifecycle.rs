@@ -37,10 +37,10 @@ impl AppDrawer {
         let focus = cx.focus_handle();
         focus.focus(window);
         cx.observe_window_activation(window, |this, window, cx| {
-            if !window.is_window_active()
-                && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window)
-            {
-                cx.notify();
+            if window.is_window_active() {
+                this.was_active = true;
+            } else if this.was_active {
+                this.dismiss(window, cx);
             }
         })
         .detach();
@@ -147,6 +147,7 @@ impl AppDrawer {
             catalog_error,
             action_error: None,
             launching: false,
+            was_active: false,
             _catalog_watcher: catalog_watcher,
         }
     }

@@ -752,11 +752,11 @@ mod linux_wayland {
 
     fn dispatch_activation(activation: rmac_dock::Activation, cx: &mut App) {
         match activation {
-            rmac_dock::Activation::Launch { spec, .. } => {
+            rmac_dock::Activation::Launch { app_id, spec } => {
                 cx.background_executor()
                     .spawn(async move {
-                        if rmac_app_launch::launch(spec).await.is_err() {
-                            eprintln!("could not launch the selected Dock application");
+                        if let Err(error) = rmac_app_launch::launch(spec).await {
+                            eprintln!("could not launch Dock application {app_id}: {error}");
                         }
                     })
                     .detach();
@@ -890,42 +890,111 @@ mod linux_wayland {
 
     fn discover_dock_catalog() -> std::io::Result<Vec<rmac_apps::Application>> {
         let mut catalog = rmac_apps::discover()?;
+
+        // The shelf is the recovery path for opening core applications. Keep
+        // every first-run item actionable even when an XDG catalog refresh is
+        // late or a desktop entry is hidden from ordinary application lists.
+        for (identity, name, generic_name, program, icon) in [
+            (
+                rmac_apps::identity::FILES,
+                "Files",
+                "File Manager",
+                "/usr/bin/rmac-files",
+                "org.rmac.Files.svg",
+            ),
+            (
+                rmac_apps::identity::APP_DRAWER,
+                "Applications",
+                "Application Launcher",
+                "/usr/bin/rmac-app-drawer",
+                "org.rmac.AppDrawer.svg",
+            ),
+            (
+                rmac_apps::identity::TERMINAL,
+                "Terminal",
+                "Terminal Emulator",
+                "/usr/bin/rmac-terminal",
+                "org.rmac.Terminal.svg",
+            ),
+            (
+                rmac_apps::identity::NOTES,
+                "Notes",
+                "Notes",
+                "/usr/bin/rmac-notes",
+                "org.rmac.Notes.svg",
+            ),
+            (
+                rmac_apps::identity::SYSTEM_SETTINGS,
+                "Settings",
+                "System Settings",
+                "/usr/bin/rmac-system-settings",
+                "org.rmac.SystemSettings.svg",
+            ),
+        ] {
+            ensure_dock_application(
+                &mut catalog,
+                identity,
+                name,
+                generic_name,
+                program,
+                Some(icon),
+            );
+        }
+        ensure_dock_application(
+            &mut catalog,
+            "firefox_firefox",
+            "Firefox",
+            "Web Browser",
+            "/snap/bin/firefox",
+            None,
+        );
+        Ok(catalog)
+    }
+
+    fn ensure_dock_application(
+        catalog: &mut Vec<rmac_apps::Application>,
+        identity: &str,
+        name: &str,
+        generic_name: &str,
+        program: &str,
+        icon_name: Option<&str>,
+    ) {
         if catalog.iter().any(|application| {
             application
                 .id
                 .trim_end_matches(".desktop")
-                .eq_ignore_ascii_case(rmac_apps::identity::APP_DRAWER)
-        }) {
-            return Ok(catalog);
+                .eq_ignore_ascii_case(identity)
+        }) || !PathBuf::from(program).is_file()
+        {
+            return;
         }
-
-        // Applications is intentionally NoDisplay so it cannot list itself,
-        // but the Dock still needs the macOS-style Launchpad entry.
-        let installed_icon =
-            PathBuf::from("/usr/share/icons/hicolor/scalable/apps/org.rmac.AppDrawer.svg");
-        let source_icon = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../packaging/rmac-apps/icons/org.rmac.AppDrawer.svg");
-        catalog.push(rmac_apps::Application {
-            id: format!("{}.desktop", rmac_apps::identity::APP_DRAWER),
-            name: "Applications".into(),
-            generic_name: Some("Application Launcher".into()),
-            keywords: vec!["applications".into(), "apps".into(), "launcher".into()],
-            source: PathBuf::from("/usr/share/applications/org.rmac.AppDrawer.desktop"),
-            icon: installed_icon
+        let icon = icon_name.and_then(|icon_name| {
+            let installed = PathBuf::from("/usr/share/icons/hicolor/scalable/apps").join(icon_name);
+            let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../packaging/rmac-apps/icons")
+                .join(icon_name);
+            installed
                 .is_file()
-                .then_some(installed_icon)
-                .or_else(|| source_icon.is_file().then_some(source_icon)),
+                .then_some(installed)
+                .or_else(|| source.is_file().then_some(source))
+        });
+        catalog.push(rmac_apps::Application {
+            id: format!("{identity}.desktop"),
+            name: name.into(),
+            generic_name: Some(generic_name.into()),
+            keywords: Vec::new(),
+            source: PathBuf::from(format!("/usr/share/applications/{identity}.desktop")),
+            icon,
             categories: vec!["System".into()],
             mime_types: Vec::new(),
             launch: rmac_apps::LaunchSpec::Command {
-                program: "/usr/bin/rmac-app-drawer".into(),
+                program: program.into(),
                 args: Vec::new(),
                 working_dir: None,
                 terminal: false,
             },
             actions: Vec::new(),
         });
-        Ok(catalog)
     }
 
     async fn watch_places(sender: async_channel::Sender<SourceEvent>) {

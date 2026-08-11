@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original procedural rmac artwork. No Apple or third-party assets. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10162f"/>
+      <stop offset="1" stop-color="#3949ab"/>
+    </linearGradient>
+    <radialGradient id="teal" cx="0" cy="0" r="1" gradientTransform="translate(250 190) rotate(36) scale(1120 830)">
+      <stop offset="0" stop-color="#22a6a1" stop-opacity=".88"/>
+      <stop offset=".72" stop-color="#22a6a1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rose" cx="0" cy="0" r="1" gradientTransform="translate(1670 900) rotate(214) scale(1070 760)">
+      <stop offset="0" stop-color="#d96c9d" stop-opacity=".82"/>
+      <stop offset=".76" stop-color="#d96c9d" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000" stop-opacity=".08"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".28"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#base)"/>
+  <rect width="1920" height="1080" fill="url(#teal)"/>
+  <rect width="1920" height="1080" fill="url(#rose)"/>
+  <rect width="1920" height="1080" fill="url(#shade)"/>
+</svg>

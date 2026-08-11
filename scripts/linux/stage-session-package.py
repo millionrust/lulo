@@ -114,6 +114,18 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(session / "lock-policy.json"),
             0o644,
         ),
+        "usr/share/rmac/greeter/rmac-aurora.svg": (
+            _read_regular(package / "greeter" / "rmac-aurora.svg"),
+            0o644,
+        ),
+        "usr/share/rmac/greeter/rmac-greeter-logo.svg": (
+            _read_regular(package / "greeter" / "rmac-greeter-logo.svg"),
+            0o644,
+        ),
+        "usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override": (
+            _read_regular(package / "greeter" / "90_rmac-greeter.gschema.override"),
+            0o644,
+        ),
         "etc/pam.d/rmac-lock": (
             _read_regular(lock_provider / "pam" / "rmac-lock"),
             0o644,

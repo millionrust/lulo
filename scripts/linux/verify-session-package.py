@@ -63,6 +63,9 @@ EXPECTED_PATHS = {
     Path("usr/share/rmac/niri/shortcuts-fallback.kdl"),
     Path("usr/share/rmac/session/swaylock.conf"),
     Path("usr/share/rmac/session/lock-policy.json"),
+    Path("usr/share/rmac/greeter/rmac-aurora.svg"),
+    Path("usr/share/rmac/greeter/rmac-greeter-logo.svg"),
+    Path("usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override"),
     Path("usr/share/xdg-desktop-portal/portals/rmac.portal"),
     Path("usr/share/xdg-desktop-portal/rmac-portals.conf"),
     Path("usr/share/doc/rmac-session/copyright"),
@@ -199,6 +202,23 @@ def verify_tree(root: Path, *, exact_tree: bool = True) -> None:
         expected = _with_parent_directories(claimed | {MANIFEST})
         if actual != expected:
             raise VerificationError("staged package tree contains an unexpected path")
+
+    greeter_override, greeter_mode = _regular_bytes(
+        root / "usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override",
+        16 * 1024,
+    )
+    if greeter_mode != 0o644 or greeter_override != (
+        b"[org.gnome.login-screen]\n"
+        b"logo='/usr/share/rmac/greeter/rmac-greeter-logo.svg'\n"
+        b"\n"
+        b"[org.gnome.desktop.background]\n"
+        b"picture-uri='file:///usr/share/rmac/greeter/rmac-aurora.svg'\n"
+        b"picture-uri-dark='file:///usr/share/rmac/greeter/rmac-aurora.svg'\n"
+        b"picture-options='zoom'\n"
+        b"primary-color='#10162f'\n"
+        b"secondary-color='#3949ab'\n"
+    ):
+        raise VerificationError("GDM appearance override exceeds the reviewed boundary")
 
     for relative in claimed:
         if relative.parent == Path("usr/lib/systemd/user"):

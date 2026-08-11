@@ -86,7 +86,7 @@ impl LauncherView {
             .gap_2()
             .px_4()
             .py_2()
-            .overflow_x_scroll()
+            .overflow_x_scrollbar()
             .border_b_1()
             .border_color(mac::separator())
             .child(pill(

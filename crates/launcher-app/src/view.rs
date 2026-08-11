@@ -281,16 +281,13 @@ impl LauncherView {
             };
             if let Some(direction) = direction {
                 let changed = if mode == BrowseMode::Applications {
-                    self.application_group.map_or_else(
-                        || {
-                            self.coordinator
-                                .move_selection_in_category(mode.category(), direction)
-                        },
-                        |group| {
-                            self.coordinator
-                                .move_selection_in_application_group(group, direction)
-                        },
-                    )
+                    if let Some(group) = self.application_group {
+                        self.coordinator
+                            .move_selection_in_application_group(group, direction)
+                    } else {
+                        self.coordinator
+                            .move_selection_in_category(mode.category(), direction)
+                    }
                 } else {
                     self.coordinator
                         .move_selection_in_category(mode.category(), direction)

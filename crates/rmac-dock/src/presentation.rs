@@ -642,6 +642,8 @@ mod tests {
             launchable: true,
             windows: Vec::new(),
             launch: None,
+            source: None,
+            actions: Vec::new(),
         }
     }
 
@@ -674,6 +676,7 @@ mod tests {
             WindowItem {
                 id: rmac_compositor::WindowId(1),
                 title: None,
+                pid: None,
                 focused: true,
                 urgent: false,
                 focus_timestamp: None,
@@ -681,6 +684,7 @@ mod tests {
             WindowItem {
                 id: rmac_compositor::WindowId(2),
                 title: None,
+                pid: None,
                 focused: false,
                 urgent: true,
                 focus_timestamp: None,

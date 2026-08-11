@@ -8,6 +8,7 @@
 mod application;
 mod document;
 mod model;
+mod termination;
 
 pub use application::launch;
 pub use document::{
@@ -18,6 +19,7 @@ pub use model::{
     AssociationError, Delivery, Error, ErrorKind, ItemError, ItemOperation, OpenWithError, Outcome,
     RecentDocumentError,
 };
+pub use termination::{terminate_application, TerminationError, TerminationKind};
 
 #[cfg(test)]
 mod tests;

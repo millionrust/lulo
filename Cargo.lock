@@ -4870,6 +4870,7 @@ name = "rmac-app-launch"
 version = "0.1.0"
 dependencies = [
  "blocking",
+ "libc",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",

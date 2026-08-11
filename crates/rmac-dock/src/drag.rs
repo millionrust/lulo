@@ -456,6 +456,8 @@ mod tests {
                 launchable: true,
                 windows: Vec::new(),
                 launch: None,
+                source: None,
+                actions: Vec::new(),
             }],
             ..Default::default()
         };

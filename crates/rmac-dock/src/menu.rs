@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::presentation::{EntryId, OverflowGroup};
 use crate::{
-    ContextAction, ContextMenu, MoveDirection, PinCommand, SpecialActivation, SpecialContextAction,
+    ContextAction, ContextMenu, PinCommand, SpecialActivation, SpecialContextAction,
     SpecialContextMenu, SpecialItemKind,
 };
 
@@ -14,10 +14,12 @@ const MAX_LABEL_CHARACTERS: usize = 96;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RowId {
     OverflowApplication(String),
-    LaunchNew,
+    Open,
+    ApplicationCommand(String),
     Window(rmac_compositor::WindowId),
     Pin,
-    Move(MoveDirection),
+    ShowInFinder,
+    Quit,
     OpenSpecial(SpecialItemKind),
     EmptyTrash,
 }
@@ -202,24 +204,22 @@ impl Session {
     }
 
     pub fn context(menu: &ContextMenu) -> Result<Self, MenuError> {
-        let row_count = usize::from(menu.launch_new.is_some())
+        let row_count = usize::from(menu.open.is_some())
+            + menu.application_commands.len()
             + menu.windows.len()
             + 1
-            + usize::from(menu.move_left.is_some())
-            + usize::from(menu.move_right.is_some());
+            + usize::from(menu.show_in_finder.is_some())
+            + usize::from(menu.quit.is_some());
         if row_count > MAX_MENU_ROWS {
             return Err(MenuError::TooManyRows { count: row_count });
         }
         let mut rows = Vec::new();
-        if let Some(action) = &menu.launch_new {
+        if let Some(action) = &menu.open {
             rows.push(Row {
-                id: RowId::LaunchNew,
+                id: RowId::Open,
                 section: Section::Commands,
-                label: "New Window".into(),
-                accessible_label: bounded(&format!(
-                    "New {} window",
-                    bounded(&menu.application_name)
-                )),
+                label: "Open".into(),
+                accessible_label: bounded(&format!("Open {}", bounded(&menu.application_name),)),
                 enabled: true,
                 checked: false,
                 urgent: false,
@@ -228,6 +228,22 @@ impl Session {
                 secondary: None,
             });
         }
+        rows.extend(menu.application_commands.iter().map(|command| Row {
+            id: RowId::ApplicationCommand(command.id.clone()),
+            section: Section::Commands,
+            label: bounded(&command.name),
+            accessible_label: bounded(&format!(
+                "{}, {}",
+                bounded(&command.name),
+                bounded(&menu.application_name)
+            )),
+            enabled: true,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: Some(Action::Context(command.action.clone())),
+            secondary: None,
+        }));
         rows.extend(menu.windows.iter().map(|window| {
             let title = bounded(&window.title);
             let mut accessible = vec![title.clone()];
@@ -270,27 +286,39 @@ impl Session {
             primary: Some(Action::Context(ContextAction::UpdatePins(menu.pin.clone()))),
             secondary: None,
         });
-        for (direction, command, label) in [
-            (MoveDirection::Left, menu.move_left.as_ref(), "Move Left"),
-            (MoveDirection::Right, menu.move_right.as_ref(), "Move Right"),
-        ] {
-            if let Some(command) = command {
-                rows.push(Row {
-                    id: RowId::Move(direction),
-                    section: Section::Organization,
-                    label: label.into(),
-                    accessible_label: bounded(&format!(
-                        "{label}, {}",
-                        bounded(&menu.application_name)
-                    )),
-                    enabled: true,
-                    checked: false,
-                    urgent: false,
-                    destructive: false,
-                    primary: Some(Action::Context(ContextAction::UpdatePins(command.clone()))),
-                    secondary: None,
-                });
-            }
+        if let Some(action) = &menu.show_in_finder {
+            rows.push(Row {
+                id: RowId::ShowInFinder,
+                section: Section::Organization,
+                label: "Show in Finder".into(),
+                accessible_label: bounded(&format!(
+                    "Show {} in Finder",
+                    bounded(&menu.application_name)
+                )),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                secondary: None,
+            });
+        }
+        if let Some(action) = &menu.quit {
+            rows.push(Row {
+                id: RowId::Quit,
+                section: Section::Commands,
+                label: "Quit".into(),
+                accessible_label: bounded(&format!(
+                    "Quit {}, hold Option to Force Quit",
+                    bounded(&menu.application_name)
+                )),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                secondary: menu.force_quit.clone().map(Action::Context),
+            });
         }
         Self::new(
             EntryId::Application(menu.app_id.clone()),
@@ -570,6 +598,14 @@ mod tests {
         }
     }
 
+    fn terminate(app_id: &str, kind: crate::TerminationKind) -> ContextAction {
+        ContextAction::TerminateApplication {
+            app_id: app_id.into(),
+            pids: vec![42],
+            kind,
+        }
+    }
+
     #[test]
     fn overflow_preserves_order_skips_disabled_rows_and_restores_focus() {
         let overflow = OverflowGroup {
@@ -632,7 +668,8 @@ mod tests {
         let menu = ContextMenu {
             app_id: "terminal.desktop".into(),
             application_name: "Terminal".into(),
-            launch_new: None,
+            open: None,
+            application_commands: Vec::new(),
             windows: vec![WindowMenu {
                 id: rmac_compositor::WindowId(7),
                 title: "/home/alex/private — shell".into(),
@@ -641,14 +678,12 @@ mod tests {
                 focus: focus("terminal.desktop", 7),
                 close: close("terminal.desktop", 7),
             }],
+            show_in_finder: None,
             pin: PinCommand::Unpin {
                 app_id: "terminal.desktop".into(),
             },
-            move_left: Some(PinCommand::Move {
-                app_id: "terminal.desktop".into(),
-                direction: MoveDirection::Left,
-            }),
-            move_right: None,
+            quit: None,
+            force_quit: None,
         };
         let mut session = Session::context(&menu).unwrap();
 
@@ -673,18 +708,20 @@ mod tests {
         let menu = ContextMenu {
             app_id: "music.desktop".into(),
             application_name: "Music".into(),
-            launch_new: None,
+            open: None,
+            application_commands: Vec::new(),
             windows: Vec::new(),
+            show_in_finder: None,
             pin: PinCommand::Pin {
                 app_id: "music.desktop".into(),
             },
-            move_left: None,
-            move_right: None,
+            quit: None,
+            force_quit: None,
         };
         let mut session = Session::context(&menu).unwrap();
         assert_eq!(session.selected(), Some(&RowId::Pin));
         assert_eq!(session.handle_key(KeyCommand::Home), Effect::None);
-        assert!(!session.select(&RowId::LaunchNew));
+        assert!(!session.select(&RowId::Open));
         assert_eq!(
             session.handle_key(KeyCommand::Escape),
             Effect::Dismissed {
@@ -692,6 +729,60 @@ mod tests {
             }
         );
         assert!(!session.is_open());
+    }
+
+    #[test]
+    fn catalog_actions_and_option_force_quit_remain_exact() {
+        let launch = ContextAction::LaunchNew {
+            app_id: "music.desktop".into(),
+            spec: rmac_apps::LaunchSpec::Command {
+                program: "music".into(),
+                args: Vec::new(),
+                working_dir: None,
+                terminal: false,
+            },
+        };
+        let mut menu = ContextMenu {
+            app_id: "music.desktop".into(),
+            application_name: "Music".into(),
+            open: Some(launch.clone()),
+            application_commands: Vec::new(),
+            windows: Vec::new(),
+            show_in_finder: None,
+            pin: PinCommand::Pin {
+                app_id: "music.desktop".into(),
+            },
+            quit: None,
+            force_quit: None,
+        };
+        let closed = Session::context(&menu).unwrap();
+        assert_eq!(closed.rows()[0].id, RowId::Open);
+        assert_eq!(closed.rows()[0].label, "Open");
+
+        menu.open = None;
+        menu.application_commands = vec![crate::ApplicationCommand {
+            id: "new-window".into(),
+            name: "New Window".into(),
+            action: launch,
+        }];
+        menu.quit = Some(terminate("music.desktop", crate::TerminationKind::Quit));
+        menu.force_quit = Some(terminate(
+            "music.desktop",
+            crate::TerminationKind::ForceQuit,
+        ));
+        let mut running = Session::context(&menu).unwrap();
+        assert_eq!(running.rows()[0].label, "New Window");
+        assert!(running.select(&RowId::Quit));
+        assert_eq!(
+            running.handle_key(KeyCommand::AlternateReturn),
+            Effect::Activate {
+                action: Action::Context(terminate(
+                    "music.desktop",
+                    crate::TerminationKind::ForceQuit,
+                )),
+                restore_focus: EntryId::Application("music.desktop".into()),
+            }
+        );
     }
 
     #[test]

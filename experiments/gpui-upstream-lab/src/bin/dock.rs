@@ -789,8 +789,9 @@ mod linux_wayland {
                 panel = panel.child(div().h(px(1.0)).mx_2().my_1().bg(rgba(0xffffff25)));
             }
             let row_id = row.id.clone();
-            let action = row.primary.clone();
-            let enabled = row.enabled && action.is_some();
+            let primary = row.primary.clone();
+            let secondary = row.secondary.clone();
+            let enabled = row.enabled && primary.is_some();
             let mut element = div()
                 .id(format!("dock-menu-{display_id}-{index}"))
                 .role(Role::MenuItem)
@@ -812,7 +813,8 @@ mod linux_wayland {
                 element = element.child("✓");
             }
             if enabled {
-                let action = action.expect("enabled Dock menu row has an action");
+                let primary = primary.expect("enabled Dock menu row has an action");
+                let click_row_id = row.id.clone();
                 element = element
                     .cursor_pointer()
                     .hover(|style| style.bg(rgba(visuals::ACCENT)))
@@ -826,11 +828,31 @@ mod linux_wayland {
                             cx.notify();
                         }
                     }))
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                         cx.stop_propagation();
+                        let action = if matches!(click_row_id, rmac_dock::menu::RowId::Quit)
+                            && event.modifiers().alt
+                        {
+                            secondary.clone().unwrap_or_else(|| primary.clone())
+                        } else {
+                            primary.clone()
+                        };
+                        let authorized = match &action {
+                            rmac_dock::menu::Action::Context(action) => this
+                                .status
+                                .read(cx)
+                                .model()
+                                .authorizes_context_action(action),
+                            rmac_dock::menu::Action::ActivateEntry(_)
+                            | rmac_dock::menu::Action::SpecialContext(_) => true,
+                        };
                         this.context_menu = None;
                         this.input_region = None;
-                        dispatch_dock_menu_action(action.clone(), cx);
+                        if authorized {
+                            dispatch_dock_menu_action(action, cx);
+                        } else {
+                            eprintln!("the selected Dock command is no longer current");
+                        }
                         cx.notify();
                     }));
             }
@@ -1076,6 +1098,33 @@ mod linux_wayland {
             }
             rmac_dock::ContextAction::CloseWindow { window, .. } => {
                 dispatch_window_action(rmac_compositor::Action::CloseWindow { window }, cx)
+            }
+            rmac_dock::ContextAction::RevealApplication { app_id, source } => {
+                cx.background_executor()
+                    .spawn(async move {
+                        if let Err(error) = rmac_app_launch::reveal_item(source).await {
+                            eprintln!("could not show {app_id} in Finder: {error}");
+                        }
+                    })
+                    .detach();
+            }
+            rmac_dock::ContextAction::TerminateApplication { app_id, pids, kind } => {
+                cx.background_executor()
+                    .spawn(async move {
+                        let kind = match kind {
+                            rmac_dock::TerminationKind::Quit => {
+                                rmac_app_launch::TerminationKind::Quit
+                            }
+                            rmac_dock::TerminationKind::ForceQuit => {
+                                rmac_app_launch::TerminationKind::ForceQuit
+                            }
+                        };
+                        if let Err(error) = rmac_app_launch::terminate_application(pids, kind).await
+                        {
+                            eprintln!("could not terminate {app_id}: {error}");
+                        }
+                    })
+                    .detach();
             }
             rmac_dock::ContextAction::UpdatePins(command) => {
                 cx.background_executor()

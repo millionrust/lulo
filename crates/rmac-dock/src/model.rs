@@ -6,6 +6,8 @@ use super::*;
 pub struct WindowItem {
     pub id: rmac_compositor::WindowId,
     pub title: Option<String>,
+    /// Positive compositor-reported process identity when available.
+    pub pid: Option<u32>,
     pub focused: bool,
     pub urgent: bool,
     pub focus_timestamp: Option<rmac_compositor::Timestamp>,
@@ -24,6 +26,8 @@ pub struct Item {
     pub launchable: bool,
     pub windows: Vec<WindowItem>,
     pub(super) launch: Option<rmac_apps::LaunchSpec>,
+    pub(super) source: Option<PathBuf>,
+    pub(super) actions: Vec<rmac_apps::DesktopAction>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -137,7 +141,13 @@ impl PinCommand {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TerminationKind {
+    Quit,
+    ForceQuit,
+}
+
+#[derive(Clone, Eq, PartialEq)]
 pub enum ContextAction {
     LaunchNew {
         app_id: String,
@@ -151,7 +161,52 @@ pub enum ContextAction {
         app_id: String,
         window: rmac_compositor::WindowId,
     },
+    RevealApplication {
+        app_id: String,
+        source: PathBuf,
+    },
+    TerminateApplication {
+        app_id: String,
+        pids: Vec<u32>,
+        kind: TerminationKind,
+    },
     UpdatePins(PinCommand),
+}
+
+impl fmt::Debug for ContextAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LaunchNew { app_id, .. } => formatter
+                .debug_struct("LaunchNew")
+                .field("app_id", app_id)
+                .field("spec", &"<private>")
+                .finish(),
+            Self::FocusWindow { app_id, window } => formatter
+                .debug_struct("FocusWindow")
+                .field("app_id", app_id)
+                .field("window", window)
+                .finish(),
+            Self::CloseWindow { app_id, window } => formatter
+                .debug_struct("CloseWindow")
+                .field("app_id", app_id)
+                .field("window", window)
+                .finish(),
+            Self::RevealApplication { app_id, .. } => formatter
+                .debug_struct("RevealApplication")
+                .field("app_id", app_id)
+                .field("source", &"<private>")
+                .finish(),
+            Self::TerminateApplication { app_id, kind, .. } => formatter
+                .debug_struct("TerminateApplication")
+                .field("app_id", app_id)
+                .field("kind", kind)
+                .field("pids", &"<redacted>")
+                .finish(),
+            Self::UpdatePins(command) => {
+                formatter.debug_tuple("UpdatePins").field(command).finish()
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -165,14 +220,23 @@ pub struct WindowMenu {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApplicationCommand {
+    pub id: String,
+    pub name: String,
+    pub action: ContextAction,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ContextMenu {
     pub app_id: String,
     pub application_name: String,
-    pub launch_new: Option<ContextAction>,
+    pub open: Option<ContextAction>,
+    pub application_commands: Vec<ApplicationCommand>,
     pub windows: Vec<WindowMenu>,
+    pub show_in_finder: Option<ContextAction>,
     pub pin: PinCommand,
-    pub move_left: Option<PinCommand>,
-    pub move_right: Option<PinCommand>,
+    pub quit: Option<ContextAction>,
+    pub force_quit: Option<ContextAction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

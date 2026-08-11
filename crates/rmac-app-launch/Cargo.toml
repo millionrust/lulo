@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 blocking.workspace = true
+libc.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true

@@ -400,7 +400,7 @@ fn invalid_magnification_policy_fails_before_any_surface_is_described() {
 }
 
 #[test]
-fn context_menu_exposes_real_windows_without_inventing_quit() {
+fn context_menu_exposes_real_windows_and_hides_unverifiable_process_actions() {
     let catalog = [application("terminal.desktop", "Terminal")];
     let pinned = [rmac_shell_settings::AppId("terminal.desktop".into())];
     let compositor = rmac_compositor::Snapshot {
@@ -413,10 +413,8 @@ fn context_menu_exposes_real_windows_without_inventing_quit() {
     let model = Model::build(&pinned, &Default::default(), &catalog, &compositor);
     let menu = model.context_menu("terminal").expect("Dock item exists");
     assert_eq!(menu.application_name, "Terminal");
-    assert!(matches!(
-        menu.launch_new,
-        Some(ContextAction::LaunchNew { .. })
-    ));
+    assert!(menu.open.is_none());
+    assert!(menu.application_commands.is_empty());
     assert_eq!(menu.windows.len(), 2);
     assert!(menu.windows[0].focused);
     assert!(matches!(
@@ -432,8 +430,81 @@ fn context_menu_exposes_real_windows_without_inventing_quit() {
             app_id: "terminal.desktop".into()
         }
     );
-    assert!(menu.move_left.is_none());
-    assert!(menu.move_right.is_none());
+    assert!(matches!(
+        menu.show_in_finder,
+        Some(ContextAction::RevealApplication { .. })
+    ));
+    assert!(menu.quit.is_none());
+    assert!(menu.force_quit.is_none());
+}
+
+#[test]
+fn context_menu_quit_actions_require_and_revalidate_exact_live_processes() {
+    let catalog = [application("terminal.desktop", "Terminal")];
+    let pinned = [rmac_shell_settings::AppId("terminal.desktop".into())];
+    let mut first = window(1, "terminal", true, false, 20);
+    first.pid = Some(4242);
+    let mut second = window(2, "terminal", false, false, 10);
+    second.pid = Some(4242);
+    let model = Model::build(
+        &pinned,
+        &Default::default(),
+        &catalog,
+        &rmac_compositor::Snapshot {
+            windows: vec![first, second],
+            ..Default::default()
+        },
+    );
+    let menu = model.context_menu("terminal").unwrap();
+    let quit = menu.quit.clone().expect("authoritative PID exposes Quit");
+    assert_eq!(
+        quit,
+        ContextAction::TerminateApplication {
+            app_id: "terminal.desktop".into(),
+            pids: vec![4242],
+            kind: TerminationKind::Quit,
+        }
+    );
+    assert!(matches!(
+        menu.force_quit,
+        Some(ContextAction::TerminateApplication {
+            kind: TerminationKind::ForceQuit,
+            ..
+        })
+    ));
+    assert!(model.authorizes_context_action(&quit));
+
+    let mut replaced = window(1, "terminal", true, false, 30);
+    replaced.pid = Some(4343);
+    let changed = Model::build(
+        &pinned,
+        &Default::default(),
+        &catalog,
+        &rmac_compositor::Snapshot {
+            windows: vec![replaced],
+            ..Default::default()
+        },
+    );
+    assert!(!changed.authorizes_context_action(&quit));
+}
+
+#[test]
+fn reveal_action_keeps_catalog_source_private_and_revalidates_it() {
+    let catalog = [application("terminal.desktop", "Terminal")];
+    let model = Model::build(
+        &[rmac_shell_settings::AppId("terminal.desktop".into())],
+        &Default::default(),
+        &catalog,
+        &Default::default(),
+    );
+    let action = model
+        .context_menu("terminal")
+        .and_then(|menu| menu.show_in_finder)
+        .unwrap();
+    assert!(model.authorizes_context_action(&action));
+    let debug = format!("{action:?}");
+    assert!(debug.contains("<private>"));
+    assert!(!debug.contains("/apps/"));
 }
 
 fn places(downloads: &str, downloads_exists: bool, trash_count: usize) -> rmac_places::Snapshot {

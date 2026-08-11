@@ -181,19 +181,50 @@ impl Model {
                 }
             })
             .collect();
-        let pinned_index = self.items[..index]
-            .iter()
-            .filter(|item| item.pinned)
-            .count();
-        let pinned_count = self.items.iter().filter(|item| item.pinned).count();
+        let process_ids = authoritative_process_ids(item);
+        let quit = process_ids
+            .as_ref()
+            .map(|pids| ContextAction::TerminateApplication {
+                app_id: item.id.clone(),
+                pids: pids.clone(),
+                kind: TerminationKind::Quit,
+            });
+        let force_quit = process_ids.map(|pids| ContextAction::TerminateApplication {
+            app_id: item.id.clone(),
+            pids,
+            kind: TerminationKind::ForceQuit,
+        });
         Some(ContextMenu {
             app_id: item.id.clone(),
             application_name: item.name.clone(),
-            launch_new: item.launch.clone().map(|spec| ContextAction::LaunchNew {
-                app_id: item.id.clone(),
-                spec,
-            }),
+            open: (!item.running)
+                .then(|| {
+                    item.launch.clone().map(|spec| ContextAction::LaunchNew {
+                        app_id: item.id.clone(),
+                        spec,
+                    })
+                })
+                .flatten(),
+            application_commands: item
+                .actions
+                .iter()
+                .map(|command| ApplicationCommand {
+                    id: command.id.clone(),
+                    name: command.name.clone(),
+                    action: ContextAction::LaunchNew {
+                        app_id: item.id.clone(),
+                        spec: command.launch.clone(),
+                    },
+                })
+                .collect(),
             windows,
+            show_in_finder: item
+                .source
+                .clone()
+                .map(|source| ContextAction::RevealApplication {
+                    app_id: item.id.clone(),
+                    source,
+                }),
             pin: if item.pinned {
                 PinCommand::Unpin {
                     app_id: item.id.clone(),
@@ -203,18 +234,65 @@ impl Model {
                     app_id: item.id.clone(),
                 }
             },
-            move_left: (item.pinned && pinned_index > 0).then(|| PinCommand::Move {
-                app_id: item.id.clone(),
-                direction: MoveDirection::Left,
-            }),
-            move_right: (item.pinned && pinned_index + 1 < pinned_count).then(|| {
-                PinCommand::Move {
-                    app_id: item.id.clone(),
-                    direction: MoveDirection::Right,
-                }
-            }),
+            quit,
+            force_quit,
         })
     }
+
+    /// Revalidates a menu command against the newest Dock projection before a
+    /// renderer crosses into an external application, compositor, or process
+    /// authority. A menu left open across process/window churn fails closed.
+    pub fn authorizes_context_action(&self, action: &ContextAction) -> bool {
+        let app_id = match action {
+            ContextAction::LaunchNew { app_id, .. }
+            | ContextAction::FocusWindow { app_id, .. }
+            | ContextAction::CloseWindow { app_id, .. }
+            | ContextAction::RevealApplication { app_id, .. }
+            | ContextAction::TerminateApplication { app_id, .. } => app_id,
+            ContextAction::UpdatePins(command) => command.app_id(),
+        };
+        let canonical = canonical_app_id(app_id);
+        let Some(item) = self
+            .items
+            .iter()
+            .find(|item| canonical_app_id(&item.id) == canonical)
+        else {
+            return false;
+        };
+        match action {
+            ContextAction::LaunchNew { spec, .. } => {
+                item.launch.as_ref() == Some(spec)
+                    || item.actions.iter().any(|action| &action.launch == spec)
+            }
+            ContextAction::FocusWindow { window, .. }
+            | ContextAction::CloseWindow { window, .. } => {
+                item.windows.iter().any(|candidate| candidate.id == *window)
+            }
+            ContextAction::RevealApplication { source, .. } => item.source.as_ref() == Some(source),
+            ContextAction::TerminateApplication { pids, .. } => {
+                authoritative_process_ids(item).as_ref() == Some(pids)
+            }
+            ContextAction::UpdatePins(PinCommand::Pin { .. }) => !item.pinned,
+            ContextAction::UpdatePins(PinCommand::Unpin { .. }) => item.pinned,
+            ContextAction::UpdatePins(PinCommand::Move { .. } | PinCommand::MoveTo { .. }) => {
+                item.pinned
+            }
+        }
+    }
+}
+
+fn authoritative_process_ids(item: &Item) -> Option<Vec<u32>> {
+    if item.windows.is_empty() || item.windows.iter().any(|window| window.pid.is_none()) {
+        return None;
+    }
+    let mut pids = item
+        .windows
+        .iter()
+        .filter_map(|window| window.pid)
+        .collect::<Vec<_>>();
+    pids.sort_unstable();
+    pids.dedup();
+    (!pids.is_empty()).then_some(pids)
 }
 
 pub(super) fn project_special_items(places: &rmac_places::Snapshot) -> Vec<SpecialItem> {
@@ -315,6 +393,10 @@ pub(super) fn window_groups(
             window: WindowItem {
                 id: window.id,
                 title: window.title.clone(),
+                pid: window
+                    .pid
+                    .and_then(|pid| u32::try_from(pid).ok())
+                    .filter(|pid| *pid > 0),
                 focused: window.focused || focused_id == Some(window.id),
                 urgent: window.urgent,
                 focus_timestamp: window.focus_timestamp,
@@ -356,6 +438,10 @@ pub(super) fn build_item(
         launchable: application.is_some(),
         windows,
         launch: application.map(|application| application.launch.clone()),
+        source: application.map(|application| application.source.clone()),
+        actions: application
+            .map(|application| application.actions.clone())
+            .unwrap_or_default(),
     }
 }
 

@@ -21,6 +21,7 @@ pub const ACTIVATE_NAME: &str = "Open";
 pub const SHOW_MENU_NAME: &str = "Show Menu";
 pub const ACTIVATE_MENU_ITEM_NAME: &str = "Activate";
 pub const CLOSE_WINDOW_NAME: &str = "Close Window";
+pub const FORCE_QUIT_NAME: &str = "Force Quit";
 pub const CLOSE_MENU_NAME: &str = "Close Menu";
 pub const MAX_APPLICATIONS: usize = 512;
 pub const MAX_PLACES: usize = 3;
@@ -48,6 +49,7 @@ pub enum AccessibleActionKind {
     ShowMenu,
     ActivateMenuItem,
     CloseWindow,
+    ForceQuitApplication,
     CloseMenu,
 }
 
@@ -674,13 +676,12 @@ fn project_menu(
             ));
         }
         if row.secondary.is_some() {
-            actions.push(menu_action(
-                &id,
-                CLOSE_WINDOW_NAME,
-                AccessibleActionKind::CloseWindow,
-                row.id.clone(),
-                true,
-            ));
+            let (name, kind) = if row.id == RowId::Quit {
+                (FORCE_QUIT_NAME, AccessibleActionKind::ForceQuitApplication)
+            } else {
+                (CLOSE_WINDOW_NAME, AccessibleActionKind::CloseWindow)
+            };
+            actions.push(menu_action(&id, name, kind, row.id.clone(), true));
         }
         validate_action_ids(&actions, action_ids, budget)?;
         let is_selected = selected == Some(&row.id);
@@ -743,6 +744,7 @@ fn shelf_action(
         AccessibleActionKind::ShowMenu => "menu",
         AccessibleActionKind::ActivateMenuItem
         | AccessibleActionKind::CloseWindow
+        | AccessibleActionKind::ForceQuitApplication
         | AccessibleActionKind::CloseMenu => unreachable!("shelf action kind"),
     };
     AccessibleAction {
@@ -841,6 +843,8 @@ mod tests {
             launchable,
             windows: Vec::new(),
             launch: None,
+            source: None,
+            actions: Vec::new(),
         }
     }
 
@@ -897,6 +901,7 @@ mod tests {
         finder.windows.push(WindowItem {
             id: rmac_compositor::WindowId(7),
             title: Some("Private document title".into()),
+            pid: None,
             focused: true,
             urgent: true,
             focus_timestamp: None,

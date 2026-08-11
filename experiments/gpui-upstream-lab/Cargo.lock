@@ -4642,6 +4642,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-desktop"
+version = "0.1.0"
+dependencies = [
+ "notify",
+]
+
+[[package]]
 name = "rmac-dock"
 version = "0.1.0"
 dependencies = [
@@ -4698,6 +4705,7 @@ name = "rmac-gpui-upstream-lab"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "async-io",
  "blocking",
  "chrono",
  "futures-util",
@@ -4709,6 +4717,7 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-desktop",
  "rmac-dock",
  "rmac-osd",
  "rmac-places",
@@ -4719,6 +4728,7 @@ dependencies = [
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-runtime",
+ "trash",
  "uuid",
 ]
 

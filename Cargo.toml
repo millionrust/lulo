@@ -63,6 +63,7 @@ rmac-notifications-store = { version = "=0.1.0", path = "crates/rmac-notificatio
 rmac-osd = { version = "=0.1.0", path = "crates/rmac-osd" }
 rmac-audio = { version = "=0.1.0", path = "crates/rmac-audio" }
 rmac-display = { version = "=0.1.0", path = "crates/rmac-display" }
+rmac-desktop = { version = "=0.1.0", path = "crates/rmac-desktop" }
 rmac-dock = { version = "=0.1.0", path = "crates/rmac-dock" }
 rmac-dock-system = { version = "=0.1.0", path = "crates/rmac-dock-system" }
 rmac-dock-runtime = { version = "=0.1.0", path = "crates/rmac-dock-runtime" }

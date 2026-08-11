@@ -4966,6 +4966,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-desktop"
+version = "0.1.0"
+dependencies = [
+ "notify",
+]
+
+[[package]]
 name = "rmac-display"
 version = "0.1.0"
 dependencies = [

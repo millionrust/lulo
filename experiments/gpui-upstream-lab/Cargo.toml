@@ -28,6 +28,8 @@ rmac-desktop = { path = "../../crates/rmac-desktop" }
 rmac-dock = { path = "../../crates/rmac-dock" }
 rmac-places = { path = "../../crates/rmac-places" }
 rmac-places-system = { path = "../../crates/rmac-places-system" }
+rmac-recent-documents = { path = "../../crates/rmac-recent-documents" }
+rmac-search = { path = "../../crates/rmac-search" }
 rmac-osd = { path = "../../crates/rmac-osd" }
 rmac-shell-runtime = { path = "../../crates/rmac-shell-runtime" }
 rmac-shell-settings = { path = "../../crates/rmac-shell-settings" }

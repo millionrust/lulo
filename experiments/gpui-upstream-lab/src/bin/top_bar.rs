@@ -7,7 +7,7 @@ mod linux_wayland {
     use std::path::PathBuf;
     use std::process::Command;
     use std::rc::Rc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use chrono::Local;
@@ -27,9 +27,11 @@ mod linux_wayland {
     use uuid::Uuid;
 
     const BAR_HEIGHT: f32 = 26.0;
-    const MENU_SURFACE_HEIGHT: f32 = 420.0;
+    const MENU_SURFACE_HEIGHT: f32 = 520.0;
     const MENU_WIDTH: f32 = 248.0;
+    const RECENT_MENU_WIDTH: f32 = 286.0;
     const MENU_ROW_HEIGHT: f32 = 28.0;
+    const MAX_RECENT_ITEMS: usize = 10;
     const FULLSCREEN_REVEAL_EDGE: f32 = 2.0;
     const FULLSCREEN_HIDE_DELAY: Duration = Duration::from_millis(500);
     const SYSTEM_MENU_ID: &str = "org.rmac.Desktop.SystemMenu";
@@ -131,6 +133,12 @@ mod linux_wayland {
         open_menu: Option<usize>,
         selected_item: usize,
         open_app_id: Option<String>,
+        recent_items: Vec<PathBuf>,
+        recent_items_loading: bool,
+        recent_items_unavailable: bool,
+        recent_generation: u64,
+        recent_submenu_open: bool,
+        recent_selected_item: usize,
         pending_system_action: Option<String>,
         fullscreen: bool,
         revealed: bool,
@@ -162,6 +170,12 @@ mod linux_wayland {
                 open_menu: None,
                 selected_item: 0,
                 open_app_id: None,
+                recent_items: Vec::new(),
+                recent_items_loading: false,
+                recent_items_unavailable: false,
+                recent_generation: 0,
+                recent_submenu_open: false,
+                recent_selected_item: 0,
                 pending_system_action: None,
                 fullscreen,
                 revealed: !fullscreen,
@@ -175,6 +189,8 @@ mod linux_wayland {
         fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             if self.open_menu.take().is_some() {
                 self.open_app_id = None;
+                self.recent_submenu_open = false;
+                self.recent_selected_item = 0;
                 self.pending_system_action = None;
                 self.selected_item = 0;
                 window.refresh();
@@ -197,10 +213,55 @@ mod linux_wayland {
             self.revealed = true;
             self.selected_item = 0;
             self.open_app_id = Some(app_id);
+            self.recent_submenu_open = false;
+            self.recent_selected_item = 0;
             self.pending_system_action = None;
+            if index == 0 {
+                self.load_recent_items(cx);
+            }
             window.focus(&self.focus, cx);
             window.refresh();
             cx.notify();
+        }
+
+        fn load_recent_items(&mut self, cx: &mut Context<Self>) {
+            self.recent_generation = self.recent_generation.saturating_add(1);
+            let generation = self.recent_generation;
+            self.recent_items_loading = true;
+            self.recent_items_unavailable = false;
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        blocking::unblock(move || {
+                            let cancel = AtomicBool::new(false);
+                            let mut options = rmac_search::Options::new(&cancel);
+                            options.limit = MAX_RECENT_ITEMS;
+                            rmac_search::recents(options)
+                        })
+                        .await
+                    })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.recent_generation != generation {
+                        return;
+                    }
+                    this.recent_items_loading = false;
+                    match result {
+                        Ok(paths) => {
+                            this.recent_items = paths;
+                            this.recent_items_unavailable = false;
+                        }
+                        Err(_) => {
+                            this.recent_items.clear();
+                            this.recent_items_unavailable = true;
+                        }
+                    }
+                    this.recent_selected_item = 0;
+                    cx.notify();
+                });
+            })
+            .detach();
         }
 
         fn schedule_fullscreen_hide(&mut self, cx: &mut Context<Self>) {
@@ -271,6 +332,44 @@ mod linux_wayland {
                 }
                 return;
             }
+            if self.recent_submenu_open {
+                let action_count = recent_action_count(
+                    &self.recent_items,
+                    self.recent_items_loading,
+                    self.recent_items_unavailable,
+                );
+                match event.keystroke.key.as_str() {
+                    "escape" | "left" => {
+                        self.recent_submenu_open = false;
+                        self.recent_selected_item = 0;
+                        cx.notify();
+                    }
+                    "down" if action_count > 0 => {
+                        self.recent_selected_item = (self.recent_selected_item + 1) % action_count;
+                        cx.notify();
+                    }
+                    "up" if action_count > 0 => {
+                        self.recent_selected_item = self
+                            .recent_selected_item
+                            .checked_sub(1)
+                            .unwrap_or(action_count - 1);
+                        cx.notify();
+                    }
+                    "enter" | "space" if action_count > 0 => {
+                        let selected = self.recent_selected_item.min(action_count - 1);
+                        let path = self.recent_items.get(selected).cloned();
+                        let clear = selected == self.recent_items.len();
+                        self.close_menu(window, cx);
+                        if let Some(path) = path {
+                            dispatch_recent_item(path, cx);
+                        } else if clear {
+                            clear_recent_items(cx);
+                        }
+                    }
+                    _ => {}
+                }
+                return;
+            }
             let Some(menu) = menus.get(menu_index).cloned() else {
                 self.close_menu(window, cx);
                 return;
@@ -279,6 +378,7 @@ mod linux_wayland {
                 "escape" => self.close_menu(window, cx),
                 "down" => {
                     self.selected_item = (self.selected_item + 1) % menu.items.len();
+                    self.recent_submenu_open = false;
                     cx.notify();
                 }
                 "up" => {
@@ -286,6 +386,18 @@ mod linux_wayland {
                         .selected_item
                         .checked_sub(1)
                         .unwrap_or(menu.items.len() - 1);
+                    self.recent_submenu_open = false;
+                    cx.notify();
+                }
+                "right"
+                    if menu_index == 0
+                        && menu
+                            .items
+                            .get(self.selected_item)
+                            .is_some_and(|item| item.action == "system::recents") =>
+                {
+                    self.recent_submenu_open = true;
+                    self.recent_selected_item = 0;
                     cx.notify();
                 }
                 "right" | "left" => {
@@ -296,6 +408,7 @@ mod linux_wayland {
                     };
                     self.open_menu = Some(next);
                     self.selected_item = 0;
+                    self.recent_submenu_open = false;
                     cx.notify();
                 }
                 "enter" | "space" => {
@@ -303,7 +416,11 @@ mod linux_wayland {
                         self.open_app_id.clone(),
                         menu.items.get(self.selected_item).cloned(),
                     ) {
-                        if app_id == SYSTEM_MENU_ID
+                        if app_id == SYSTEM_MENU_ID && item.action == "system::recents" {
+                            self.recent_submenu_open = true;
+                            self.recent_selected_item = 0;
+                            cx.notify();
+                        } else if app_id == SYSTEM_MENU_ID
                             && system_action_needs_confirmation(&item.action)
                         {
                             self.pending_system_action = Some(item.action);
@@ -357,6 +474,17 @@ mod linux_wayland {
                     .and_then(|index| menus.get(index))
                     .map(menu_panel_height)
             };
+            let recent_submenu_top = self.recent_submenu_open.then(|| {
+                menus
+                    .first()
+                    .and_then(|menu| {
+                        menu.items
+                            .iter()
+                            .position(|item| item.action == "system::recents")
+                            .map(|index| menu_item_top(menu, index))
+                    })
+                    .unwrap_or(BAR_HEIGHT + 2.0)
+            });
             let bar_region = Bounds {
                 origin: point(px(0.0), px(0.0)),
                 size: Size::new(
@@ -368,19 +496,29 @@ mod linux_wayland {
                     }),
                 ),
             };
+            let mut input_regions = vec![bar_region];
             if visible {
                 if let (Some(left), Some(height)) = (menu_left, menu_height) {
-                    let popup_region = Bounds {
+                    input_regions.push(Bounds {
                         origin: point(px(left), px(BAR_HEIGHT)),
                         size: Size::new(px(MENU_WIDTH), px(height + 4.0)),
-                    };
-                    window.set_input_region(Some(&[bar_region, popup_region]));
-                } else {
-                    window.set_input_region(Some(&[bar_region]));
+                    });
+                    if let Some(top) = recent_submenu_top {
+                        input_regions.push(Bounds {
+                            origin: point(px(left + MENU_WIDTH - 4.0), px(top)),
+                            size: Size::new(
+                                px(RECENT_MENU_WIDTH),
+                                px(recent_menu_height(
+                                    self.recent_items.len(),
+                                    self.recent_items_loading,
+                                    self.recent_items_unavailable,
+                                )),
+                            ),
+                        });
+                    }
                 }
-            } else {
-                window.set_input_region(Some(&[bar_region]));
             }
+            window.set_input_region(Some(&input_regions));
 
             let app_id_for_buttons = focused_app_id.clone();
             let menu_buttons = menus
@@ -513,6 +651,8 @@ mod linux_wayland {
                     let action = item.action.clone();
                     let item_app_id = app_id.clone();
                     let enabled = item.enabled;
+                    let opens_recents =
+                        item_app_id == SYSTEM_MENU_ID && action == "system::recents";
                     let mut row = div()
                         .id(format!(
                             "app-menu-item-{}-{menu_index}-{item_index}",
@@ -541,9 +681,22 @@ mod linux_wayland {
                         row = row
                             .cursor_pointer()
                             .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                if *hovered {
+                                    if this.recent_submenu_open != opens_recents {
+                                        this.recent_submenu_open = opens_recents;
+                                        this.recent_selected_item = 0;
+                                        cx.notify();
+                                    }
+                                }
+                            }))
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
-                                if item_app_id == SYSTEM_MENU_ID
+                                if item_app_id == SYSTEM_MENU_ID && action == "system::recents" {
+                                    this.recent_submenu_open = true;
+                                    this.recent_selected_item = 0;
+                                    cx.notify();
+                                } else if item_app_id == SYSTEM_MENU_ID
                                     && system_action_needs_confirmation(&action)
                                 {
                                     this.pending_system_action = Some(action.clone());
@@ -561,7 +714,111 @@ mod linux_wayland {
                     }
                     panel = panel.child(row);
                 }
-                Some(panel)
+                let mut surfaces = div().child(panel);
+                if self.recent_submenu_open && menu_index == 0 {
+                    let submenu_top = recent_submenu_top?;
+                    let selected = self.recent_selected_item;
+                    let mut submenu = div()
+                        .id(format!("recent-items-panel-{}", self.display_id))
+                        .role(Role::Menu)
+                        .aria_label("Recent Items")
+                        .absolute()
+                        .top(px(submenu_top))
+                        .left(px(left + MENU_WIDTH - 4.0))
+                        .w(px(RECENT_MENU_WIDTH))
+                        .py_1()
+                        .rounded(px(visuals::MENU_RADIUS))
+                        .bg(rgba(visuals::REGULAR_DARK_TINT))
+                        .border_1()
+                        .border_color(rgba(visuals::LIGHT_BORDER))
+                        .shadow_lg()
+                        .occlude()
+                        .child(
+                            div()
+                                .h(px(22.0))
+                                .px_3()
+                                .flex()
+                                .items_center()
+                                .text_size(px(11.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(rgba(0xf7f8fa99))
+                                .child("Documents"),
+                        );
+                    if self.recent_items_loading {
+                        submenu = submenu.child(recent_status_row("Loading…"));
+                    } else if self.recent_items_unavailable {
+                        submenu = submenu.child(recent_status_row("Recent Items Unavailable"));
+                    } else if self.recent_items.is_empty() {
+                        submenu = submenu.child(recent_status_row("None"));
+                    } else {
+                        for (index, path) in self.recent_items.iter().cloned().enumerate() {
+                            let label = recent_item_label(&path);
+                            submenu = submenu.child(
+                                div()
+                                    .id(format!("recent-item-{}-{index}", self.display_id))
+                                    .role(Role::MenuItem)
+                                    .aria_label(format!("Open {label}"))
+                                    .h(px(MENU_ROW_HEIGHT))
+                                    .mx_1()
+                                    .px_2()
+                                    .flex()
+                                    .items_center()
+                                    .rounded(px(visuals::MENU_ITEM_RADIUS))
+                                    .when(selected == index, |style| {
+                                        style.bg(rgba(visuals::ACCENT))
+                                    })
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                        if *hovered && this.recent_selected_item != index {
+                                            this.recent_selected_item = index;
+                                            cx.notify();
+                                        }
+                                    }))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        cx.stop_propagation();
+                                        this.close_menu(window, cx);
+                                        dispatch_recent_item(path.clone(), cx);
+                                    }))
+                                    .child(label),
+                            );
+                        }
+                        let clear_index = self.recent_items.len();
+                        submenu = submenu
+                            .child(div().h(px(1.0)).mx_2().my_1().bg(rgba(0xffffff25)))
+                            .child(
+                                div()
+                                    .id(format!("recent-items-clear-{}", self.display_id))
+                                    .role(Role::MenuItem)
+                                    .aria_label("Clear Recent Items")
+                                    .h(px(MENU_ROW_HEIGHT))
+                                    .mx_1()
+                                    .px_2()
+                                    .flex()
+                                    .items_center()
+                                    .rounded(px(visuals::MENU_ITEM_RADIUS))
+                                    .when(selected == clear_index, |style| {
+                                        style.bg(rgba(visuals::ACCENT))
+                                    })
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                        if *hovered && this.recent_selected_item != clear_index {
+                                            this.recent_selected_item = clear_index;
+                                            cx.notify();
+                                        }
+                                    }))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        cx.stop_propagation();
+                                        this.close_menu(window, cx);
+                                        clear_recent_items(cx);
+                                    }))
+                                    .child("Clear Menu"),
+                            );
+                    }
+                    surfaces = surfaces.child(submenu);
+                }
+                Some(surfaces)
             });
 
             let bar = div()
@@ -777,8 +1034,8 @@ mod linux_wayland {
                     separator_before: true,
                 },
                 Item {
-                    label: "App Center".into(),
-                    action: "system::app-center".into(),
+                    label: "Software Center".into(),
+                    action: "system::software-center".into(),
                     shortcut: String::new(),
                     enabled: true,
                     separator_before: false,
@@ -885,6 +1142,67 @@ mod linux_wayland {
         8.0 + MENU_ROW_HEIGHT * menu.items.len() as f32 + separators * 9.0
     }
 
+    fn menu_item_top(menu: &rmac_app_menu::Menu, index: usize) -> f32 {
+        let separators = menu
+            .items
+            .iter()
+            .take(index + 1)
+            .filter(|item| item.separator_before)
+            .count() as f32;
+        BAR_HEIGHT + 6.0 + MENU_ROW_HEIGHT * index as f32 + separators * 9.0
+    }
+
+    fn recent_action_count(items: &[PathBuf], loading: bool, unavailable: bool) -> usize {
+        if loading || unavailable || items.is_empty() {
+            0
+        } else {
+            items.len() + 1
+        }
+    }
+
+    fn recent_menu_height(items: usize, loading: bool, unavailable: bool) -> f32 {
+        let rows = if loading || unavailable || items == 0 {
+            1
+        } else {
+            items + 1
+        };
+        30.0 + rows as f32 * MENU_ROW_HEIGHT
+            + if items > 0 && !loading && !unavailable {
+                9.0
+            } else {
+                0.0
+            }
+    }
+
+    fn recent_status_row(label: &'static str) -> gpui::Div {
+        div()
+            .role(Role::MenuItem)
+            .aria_label(label)
+            .h(px(MENU_ROW_HEIGHT))
+            .mx_1()
+            .px_2()
+            .flex()
+            .items_center()
+            .text_color(rgba(visuals::DISABLED_TEXT))
+            .child(label)
+    }
+
+    fn recent_item_label(path: &std::path::Path) -> String {
+        const MAX_CHARACTERS: usize = 38;
+        let label = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "Document".into());
+        let mut characters = label.chars();
+        let shortened = characters.by_ref().take(MAX_CHARACTERS).collect::<String>();
+        if characters.next().is_some() {
+            format!("{shortened}…")
+        } else {
+            shortened
+        }
+    }
+
     fn indicator_icon_path(kind: TopBarIndicatorKind) -> PathBuf {
         let file = match kind {
             TopBarIndicatorKind::Focus => "focus.svg",
@@ -960,8 +1278,9 @@ mod linux_wayland {
                 spawn_command("/usr/bin/rmac-system-settings", &["--pane", "general"], cx)
             }
             "system::settings" => spawn_command("/usr/bin/rmac-system-settings", &[], cx),
-            "system::app-center" => spawn_command("gtk-launch", &["snap-store_snap-store"], cx),
-            "system::recents" => dispatch_shortcut("launcher", cx),
+            "system::software-center" => {
+                spawn_command("gtk-launch", &["snap-store_snap-store"], cx)
+            }
             "system::force-quit" => spawn_command("/usr/bin/rmac-system-monitor", &[], cx),
             "system::sleep" => spawn_command("systemctl", &["suspend"], cx),
             "system::restart" => spawn_command("systemctl", &["reboot"], cx),
@@ -974,6 +1293,30 @@ mod linux_wayland {
             ),
             _ => eprintln!("unknown rmac system menu action: {action}"),
         }
+    }
+
+    fn dispatch_recent_item(path: PathBuf, cx: &mut App) {
+        cx.background_executor()
+            .spawn(async move {
+                if rmac_app_launch::open_item(path).await.is_err() {
+                    eprintln!("could not open the recent item");
+                }
+            })
+            .detach();
+    }
+
+    fn clear_recent_items(cx: &mut App) {
+        cx.background_executor()
+            .spawn(async move {
+                let result = blocking::unblock(move || {
+                    rmac_recent_documents::Store::from_environment().and_then(|store| store.clear())
+                })
+                .await;
+                if result.is_err() {
+                    eprintln!("could not clear Recent Items");
+                }
+            })
+            .detach();
     }
 
     fn spawn_command(program: &'static str, args: &'static [&'static str], cx: &mut App) {

@@ -135,6 +135,7 @@ impl Render for AppDrawer {
             .v_flex()
             .bg(mac::material())
             .rounded(px(mac::radius_large_surface()))
+            .overflow_hidden()
             .border_1()
             .border_color(mac::separator())
             .shadow_lg()

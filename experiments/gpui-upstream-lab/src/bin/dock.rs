@@ -1483,7 +1483,11 @@ mod linux_wayland {
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.Dock".to_owned()),
-                    window_background: WindowBackgroundAppearance::Blurred,
+                    // The layer is deliberately much larger than the visible
+                    // shelf so Dock menus can open above it. A blurred window
+                    // background would therefore blur a large band of every
+                    // application behind the otherwise transparent surface.
+                    window_background: WindowBackgroundAppearance::Transparent,
                     kind: WindowKind::LayerShell(LayerShellOptions {
                         namespace: format!("rmac-dock-{}", u64::from(display_id)),
                         layer: Layer::Top,

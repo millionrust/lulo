@@ -9,7 +9,7 @@ impl AppDrawer {
         cx: &mut Context<Self>,
     ) -> Self {
         let (apps, mut catalog_error) = catalog::scan();
-        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Applications"));
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search Apps"));
 
         if let Some(token) = service_token {
             cx.on_release(move |_, cx| {
@@ -89,7 +89,7 @@ impl AppDrawer {
             Err(error) => {
                 if catalog_error.is_none() {
                     catalog_error = Some(
-                        format!("Applications loaded, but live updates are unavailable: {error}")
+                        format!("Apps loaded, but live updates are unavailable: {error}")
                             .into(),
                     );
                 }

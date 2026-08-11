@@ -129,7 +129,7 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
     });
     let mut drawer = None;
     let handle = cx.open_window(drawer_options(bounds), |window, cx| {
-        window.set_window_title("Applications");
+        window.set_window_title("Apps");
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));
         drawer = Some(view.downgrade());

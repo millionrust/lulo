@@ -73,8 +73,8 @@ msgstr "प्रक्रियाओं और सिस्टम संसा
 msgid "process;cpu;memory;disk;network;"
 msgstr "प्रक्रिया;सीपीयू;मेमोरी;डिस्क;नेटवर्क;"
 
-msgid "Applications"
-msgstr "अनुप्रयोग"
+msgid "Apps"
+msgstr "ऐप्स"
 
 msgid "Application Launcher"
 msgstr "अनुप्रयोग लॉन्चर"

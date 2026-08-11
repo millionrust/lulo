@@ -100,7 +100,7 @@ PACKAGE_SPECS = (
         summary="macOS-inspired applications for the rmac Linux desktop",
         description=(
             "Provides Files, Terminal, Notes, Text Editor, System Monitor, "
-            "Applications, and Settings with their original rmac desktop "
+            "Apps, and Settings with their original rmac desktop "
             "metadata and assets."
         ),
     ),

@@ -29,7 +29,7 @@ TEXT_MIME_TYPES = (
 )
 APPLICATIONS = {
     "org.rmac.AppDrawer": {
-        "name": "Applications",
+        "name": "Apps",
         "generic": "Application Launcher",
         "summary": "Browse and launch installed applications",
         "keywords": "applications;apps;launcher;programs;",
@@ -93,7 +93,7 @@ APPLICATIONS = {
     },
 }
 HINDI = {
-    "Applications": "अनुप्रयोग",
+    "Apps": "ऐप्स",
     "Application Launcher": "अनुप्रयोग लॉन्चर",
     "Browse and launch installed applications": "इंस्टॉल किए गए अनुप्रयोग देखें और चलाएँ",
     "applications;apps;launcher;programs;": "अनुप्रयोग;ऐप्स;लॉन्चर;प्रोग्राम;",

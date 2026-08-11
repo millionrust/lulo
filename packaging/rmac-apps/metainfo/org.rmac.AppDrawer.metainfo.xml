@@ -4,12 +4,12 @@
   <id>org.rmac.AppDrawer</id>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
-  <name>Applications</name>
-  <name xml:lang="hi">अनुप्रयोग</name>
+  <name>Apps</name>
+  <name xml:lang="hi">ऐप्स</name>
   <summary>Browse and launch installed applications</summary>
   <summary xml:lang="hi">इंस्टॉल किए गए अनुप्रयोग देखें और चलाएँ</summary>
   <description>
-    <p>Applications provides the rmac session with a searchable grid of valid applications and desktop actions.</p>
+    <p>Apps provides the rmac session with a searchable grid of valid applications and desktop actions.</p>
     <p>It follows freedesktop menu metadata, executable availability, localization, and live catalog changes.</p>
   </description>
   <launchable type="desktop-id">org.rmac.AppDrawer.desktop</launchable>

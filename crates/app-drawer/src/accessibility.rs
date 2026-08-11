@@ -9,7 +9,7 @@ pub const MAX_ACCESSIBLE_APPLICATION_NAME_BYTES: usize = 4 * 1024;
 pub const MAX_ACCESSIBLE_ACTION_ID_BYTES: usize = 255;
 pub const MAX_ACCESSIBLE_ACTION_NAME_BYTES: usize = 512;
 pub const MAX_ACCESSIBLE_TEXT_BYTES: usize = 2 * 1024 * 1024;
-pub const APPLICATIONS_NAME: &str = "Applications";
+pub const APPS_NAME: &str = "Apps";
 pub const OPEN_ACTION_NAME: &str = "Open";
 pub const SHOW_IN_FOLDER_ACTION_NAME: &str = "Show in Folder";
 pub const OPENING_ANNOUNCEMENT: &str = "Opening application…";
@@ -256,7 +256,7 @@ pub fn project_app_drawer<T: ApplicationSemantics>(
     }
 
     let mut budget = TextBudget::default();
-    budget.add(APPLICATIONS_NAME)?;
+    budget.add(APPS_NAME)?;
     budget.add(state.view.collection_name())?;
 
     let mut category_counts = [0usize; ApplicationCategory::ORDER.len()];
@@ -375,7 +375,7 @@ pub fn project_app_drawer<T: ApplicationSemantics>(
     };
 
     Ok(AppDrawerAccessibilitySnapshot {
-        name: APPLICATIONS_NAME,
+        name: APPS_NAME,
         view: state.view,
         collection_name: state.view.collection_name(),
         application_count: applications.len(),

@@ -714,7 +714,9 @@ mod linux_wayland {
                     }
                     panel = panel.child(row);
                 }
-                let mut surfaces = div().child(panel);
+                let mut surfaces = div()
+                    .id(format!("menu-surfaces-{}-{menu_index}", self.display_id))
+                    .child(panel);
                 if self.recent_submenu_open && menu_index == 0 {
                     let submenu_top = recent_submenu_top?;
                     let selected = self.recent_selected_item;
@@ -1174,8 +1176,9 @@ mod linux_wayland {
             }
     }
 
-    fn recent_status_row(label: &'static str) -> gpui::Div {
+    fn recent_status_row(label: &'static str) -> impl IntoElement {
         div()
+            .id(format!("recent-items-status-{label}"))
             .role(Role::MenuItem)
             .aria_label(label)
             .h(px(MENU_ROW_HEIGHT))

@@ -6,6 +6,7 @@ mod view;
 
 use rmac_app_drawer::{run_mode, RunMode};
 
+#[cfg(not(target_os = "linux"))]
 use view::{AppDrawer, DRAWER_HEIGHT, DRAWER_WIDTH};
 
 gpui::actions!(

@@ -57,7 +57,7 @@ impl FinderView {
             let icon_color = if selected {
                 white()
             } else if e.is_dir {
-                accent()
+                folder_blue()
             } else {
                 secondary()
             };
@@ -226,7 +226,7 @@ impl FinderView {
                 } else {
                     "icons/file-fill.svg"
                 };
-                let icon_color = if e.is_dir { accent() } else { secondary() };
+                let icon_color = if e.is_dir { folder_blue() } else { secondary() };
                 let visual: gpui::AnyElement = match self.thumbs.get(&e.path) {
                     Some(t) => img(t.clone())
                         .max_w(px(56.0))

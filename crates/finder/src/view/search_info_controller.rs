@@ -175,7 +175,7 @@ impl FinderView {
         } else {
             "icons/file-fill.svg"
         };
-        let glyph_color = if e.is_dir { accent() } else { secondary() };
+        let glyph_color = if e.is_dir { folder_blue() } else { secondary() };
 
         let mut card = div()
             .w(px(300.0))

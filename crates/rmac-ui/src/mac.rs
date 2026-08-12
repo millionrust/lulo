@@ -1,4 +1,4 @@
-use gpui::{FontWeight, Hsla};
+use gpui::{rgb, FontWeight, Hsla};
 
 // Surfaces
 /// Window / editor content background.
@@ -148,6 +148,16 @@ pub fn accent_subtle() -> Hsla {
 }
 pub fn accent_border() -> Hsla {
     crate::theme::current().colors.accent_border.hsla()
+}
+/// Stable semantic blue for system-owned identity artwork such as Finder
+/// folders. Unlike `accent`, this does not follow the user's control-accent
+/// choice. The dynamic values were measured from AppKit `NSColor.systemBlue`
+/// in Aqua and Dark Aqua on the reference Mac.
+pub fn system_blue() -> Hsla {
+    match crate::theme::current().color_scheme {
+        rmac_appearance::ResolvedColorScheme::Light => rgb(0x0088ff).into(),
+        rmac_appearance::ResolvedColorScheme::Dark => rgb(0x0091ff).into(),
+    }
 }
 /// System red — destructive actions.
 pub fn danger() -> Hsla {

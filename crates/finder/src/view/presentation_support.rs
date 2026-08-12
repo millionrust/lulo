@@ -84,6 +84,9 @@ pub(super) fn sel() -> Hsla {
 pub(super) fn accent() -> Hsla {
     rmac_ui::mac::accent()
 }
+pub(super) fn folder_blue() -> Hsla {
+    rmac_ui::mac::system_blue()
+}
 pub(super) fn sep() -> Hsla {
     rmac_ui::mac::separator()
 }

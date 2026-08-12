@@ -34,7 +34,7 @@ impl FinderView {
                 let icol = if is_sel {
                     white()
                 } else if is_dir {
-                    accent()
+                    folder_blue()
                 } else {
                     secondary()
                 };

@@ -165,7 +165,7 @@ impl FinderView {
                         .items_center()
                         .justify_center()
                         .gap_3()
-                        .child(icon("icons/folder-fill.svg", 96.0, accent()))
+                        .child(icon("icons/folder-fill.svg", 96.0, folder_blue()))
                         .child(
                             div()
                                 .text_size(rmac_ui::text_px(15.0))

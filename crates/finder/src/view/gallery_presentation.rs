@@ -59,7 +59,11 @@ impl FinderView {
                             icon(
                                 glyph,
                                 132.0,
-                                if entry.is_dir { accent() } else { secondary() },
+                                if entry.is_dir {
+                                    folder_blue()
+                                } else {
+                                    secondary()
+                                },
                             )
                             .into_any_element()
                         },
@@ -139,7 +143,11 @@ impl FinderView {
                     icon(
                         glyph,
                         42.0,
-                        if entry.is_dir { accent() } else { secondary() },
+                        if entry.is_dir {
+                            folder_blue()
+                        } else {
+                            secondary()
+                        },
                     )
                     .into_any_element()
                 },

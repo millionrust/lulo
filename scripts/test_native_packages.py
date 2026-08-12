@@ -168,7 +168,7 @@ class NativePackageContractTests(unittest.TestCase):
             with self.subTest(value=invalid):
                 with self.assertRaises(contract.ContractError):
                     contract.source_date_epoch(invalid)
-        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.1.0-21")
+        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.1.0-22")
 
     def test_shlibdeps_is_argument_separated_and_uses_clean_native_context(self):
         with tempfile.TemporaryDirectory() as temporary:

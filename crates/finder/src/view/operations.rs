@@ -2,6 +2,12 @@ use super::*;
 
 impl FinderView {
     pub(super) fn block_mutation_during_transfer(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.applications_view {
+            self.operation_error =
+                Some("Installed applications are managed by their installer or App Center".into());
+            cx.notify();
+            return true;
+        }
         if self.trash_view {
             self.operation_error =
                 Some("Use Restore for items in Trash; direct changes are disabled".into());

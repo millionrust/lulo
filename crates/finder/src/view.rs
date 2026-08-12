@@ -146,12 +146,23 @@ struct Entry {
     size_bytes: u64,
     mtime: SystemTime,
     search_detail: Option<SharedString>,
+    /// Installed applications are a Finder destination, not ordinary launcher
+    /// files. Keep the trusted catalog launch contract with the projected row
+    /// so opening one never routes its `.desktop` file through a document app.
+    application: Option<ApplicationEntry>,
+}
+
+#[derive(Clone)]
+struct ApplicationEntry {
+    launch: rmac_apps::LaunchSpec,
+    icon: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 enum PlaceKind {
     Item,
     Volume,
+    Applications,
     Tag,
     /// Recently-used files from the platform search provider, not a folder.
     Recents,
@@ -261,6 +272,7 @@ struct FinderView {
     #[cfg(any(target_os = "linux", test))]
     trash_operation: Option<ActiveTrash>,
     trash_view: bool,
+    applications_view: bool,
     #[cfg(any(target_os = "linux", test))]
     trash_items: Vec<trash_store::TrashedItem>,
     #[cfg(any(target_os = "linux", test))]

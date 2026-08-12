@@ -14,6 +14,12 @@ impl FinderView {
 
     /// Recursive platform search of the current folder tree (Return in the search box).
     pub(super) fn recursive_search(&mut self, cx: &mut Context<Self>) {
+        if self.applications_view {
+            self.operation_notice =
+                Some("Applications are filtered as you type in the search field".into());
+            cx.notify();
+            return;
+        }
         if self.trash_view {
             self.operation_error = Some("Trash search filters the current list as you type".into());
             cx.notify();
@@ -82,6 +88,7 @@ impl FinderView {
 
     pub(super) fn tag_click(&mut self, name: SharedString, cx: &mut Context<Self>) {
         self.trash_view = false;
+        self.applications_view = false;
         let title: SharedString = format!("Tag: {name}").into();
         let key = self.sort_key;
         let asc = self.sort_asc;
@@ -122,6 +129,7 @@ impl FinderView {
     /// Show real recently-used files from Spotlight or the XDG bookmark store.
     pub(super) fn recents_click(&mut self, cx: &mut Context<Self>) {
         self.trash_view = false;
+        self.applications_view = false;
         let (generation, cancel) = self.begin_search();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx

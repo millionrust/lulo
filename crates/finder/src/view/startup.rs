@@ -91,15 +91,13 @@ impl FinderView {
             ));
         }
 
-        let mut favorites = Vec::new();
-        #[cfg(target_os = "macos")]
-        favorites.push(p(
+        let mut favorites = vec![p(
             "Applications",
-            "/Applications".into(),
+            PathBuf::new(),
             "icons/layout-grid.svg",
             accent(),
-            PlaceKind::Item,
-        ));
+            PlaceKind::Applications,
+        )];
         favorites.extend([
             p(
                 "Documents",
@@ -307,6 +305,7 @@ impl FinderView {
             #[cfg(any(target_os = "linux", test))]
             trash_operation: None,
             trash_view: false,
+            applications_view: false,
             #[cfg(any(target_os = "linux", test))]
             trash_items: Vec::new(),
             #[cfg(any(target_os = "linux", test))]

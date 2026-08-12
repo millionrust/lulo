@@ -29,6 +29,7 @@ impl FinderView {
         }
         self.save_tab();
         self.trash_view = false;
+        self.applications_view = false;
         self.tabs.push(Tab {
             cwd: self.home.clone(),
             identity: None,
@@ -57,6 +58,7 @@ impl FinderView {
         }
         if was_active {
             self.trash_view = false;
+            self.applications_view = false;
             self.load_tab(self.active);
             self.persist_finder_state();
             self.reload(cx);
@@ -72,6 +74,7 @@ impl FinderView {
         }
         self.save_tab();
         self.trash_view = false;
+        self.applications_view = false;
         self.active = index;
         self.load_tab(index);
         self.persist_finder_state();
@@ -79,10 +82,11 @@ impl FinderView {
     }
 
     pub(super) fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if !path.is_dir() || (path == self.cwd && !self.trash_view) {
+        if !path.is_dir() || (path == self.cwd && !self.trash_view && !self.applications_view) {
             return;
         }
         self.trash_view = false;
+        self.applications_view = false;
         self.back.push(self.cwd.clone());
         self.fwd.clear();
         self.cwd = path;
@@ -92,8 +96,9 @@ impl FinderView {
     }
 
     pub(super) fn go_back(&mut self, cx: &mut Context<Self>) {
-        if self.trash_view {
+        if self.trash_view || self.applications_view {
             self.trash_view = false;
+            self.applications_view = false;
             self.reload(cx);
             return;
         }
@@ -107,6 +112,14 @@ impl FinderView {
     }
 
     pub(super) fn go_forward(&mut self, cx: &mut Context<Self>) {
+        if self.trash_view || self.applications_view {
+            self.trash_view = false;
+            self.applications_view = false;
+            if self.fwd.is_empty() {
+                self.reload(cx);
+                return;
+            }
+        }
         if let Some(path) = self.fwd.pop() {
             self.back.push(self.cwd.clone());
             self.cwd = path;
@@ -117,8 +130,9 @@ impl FinderView {
     }
 
     pub(super) fn go_up(&mut self, cx: &mut Context<Self>) {
-        if self.trash_view {
+        if self.trash_view || self.applications_view {
             self.trash_view = false;
+            self.applications_view = false;
             self.reload(cx);
             return;
         }
@@ -136,6 +150,10 @@ impl FinderView {
         let Some(entry) = self.entries.get(index).cloned() else {
             return;
         };
+        if let Some(application) = entry.application {
+            self.launch_applications(vec![application.launch], cx);
+            return;
+        }
         if entry.is_dir {
             self.navigate(entry.path, cx);
         } else {
@@ -147,6 +165,17 @@ impl FinderView {
         if self.trash_view {
             self.operation_error = Some("Restore items before opening them".into());
             cx.notify();
+            return;
+        }
+        let applications = self
+            .selected
+            .iter()
+            .filter_map(|&index| self.entries.get(index))
+            .filter_map(|entry| entry.application.as_ref())
+            .map(|application| application.launch.clone())
+            .collect::<Vec<_>>();
+        if !applications.is_empty() {
+            self.launch_applications(applications, cx);
             return;
         }
         let paths: Vec<(bool, PathBuf)> = self
@@ -188,6 +217,48 @@ impl FinderView {
                         } else {
                             format!(
                                 "{first} (and {} more of {total} items could not be opened)",
+                                failures.len() - 1
+                            )
+                        }
+                        .into(),
+                    );
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn launch_applications(
+        &mut self,
+        applications: Vec<rmac_apps::LaunchSpec>,
+        cx: &mut Context<Self>,
+    ) {
+        if applications.is_empty() {
+            return;
+        }
+        self.operation_error = None;
+        self.open_generation = self.open_generation.wrapping_add(1);
+        let generation = self.open_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let total = applications.len();
+            let mut failures = Vec::new();
+            for application in applications {
+                if let Err(error) = rmac_app_launch::launch(application).await {
+                    failures.push(error.to_string());
+                }
+            }
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.open_generation != generation {
+                    return;
+                }
+                if let Some(first) = failures.first() {
+                    this.operation_error = Some(
+                        if failures.len() == 1 {
+                            format!("Could not open application: {first}")
+                        } else {
+                            format!(
+                                "Could not open application: {first} (and {} more of {total})",
                                 failures.len() - 1
                             )
                         }

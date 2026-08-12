@@ -3,10 +3,10 @@ use super::*;
 impl FinderView {
     fn render_place(&self, p: &Place, cx: &Context<Self>) -> impl IntoElement {
         let is_tag = p.kind == PlaceKind::Tag;
-        let selected = if p.kind == PlaceKind::Trash {
-            self.trash_view
-        } else {
-            !is_tag && !self.trash_view && self.cwd == p.path
+        let selected = match p.kind {
+            PlaceKind::Trash => self.trash_view,
+            PlaceKind::Applications => self.applications_view,
+            _ => !is_tag && !self.trash_view && !self.applications_view && self.cwd == p.path,
         };
         let key = format!("{}-{}", p.name, p.path.display());
 
@@ -48,6 +48,7 @@ impl FinderView {
                 PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
                 PlaceKind::Recents => this.recents_click(cx),
                 PlaceKind::Trash => this.trash_click(cx),
+                PlaceKind::Applications => this.applications_click(cx),
                 _ => this.navigate(np.clone(), cx),
             }));
 
@@ -85,6 +86,7 @@ impl FinderView {
     }
 
     pub(in crate::view) fn trash_click(&mut self, cx: &mut Context<Self>) {
+        self.applications_view = false;
         self.trash_view = true;
         if self.view == ViewMode::Column {
             self.view = ViewMode::List;
@@ -92,6 +94,61 @@ impl FinderView {
         self.result_title = Some("Trash".into());
         self.operation_error = None;
         self.reload_trash(cx);
+    }
+
+    pub(in crate::view) fn applications_click(&mut self, cx: &mut Context<Self>) {
+        self.trash_view = false;
+        self.applications_view = true;
+        if self.view == ViewMode::Column {
+            self.view = ViewMode::Icon;
+        }
+        self.cancel_search();
+        self.result_title = Some("Applications".into());
+        self.search_summary = Some("Loading applications…".into());
+        self.search_relevance_order = false;
+        self.entries.clear();
+        self.selected.clear();
+        self.anchor = None;
+        self.renaming = None;
+        self.menu_at = None;
+        self.directory_generation = self.directory_generation.wrapping_add(1);
+        let generation = self.directory_generation;
+        let key = self.sort_key;
+        let asc = self.sort_asc;
+        cx.notify();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut entries = rmac_apps::discover()?
+                        .into_iter()
+                        .map(entry_for_application)
+                        .collect::<Vec<_>>();
+                    sort_entries(&mut entries, key, asc);
+                    Ok::<_, std::io::Error>(entries)
+                })
+                .await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if !this.applications_view || this.directory_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(entries) => {
+                        this.search_summary = None;
+                        this.entries = entries;
+                        this.operation_error = None;
+                    }
+                    Err(error) => {
+                        this.search_summary = None;
+                        this.operation_error =
+                            Some(format!("Could not load applications: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(in crate::view) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {

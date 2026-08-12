@@ -2,6 +2,11 @@ use super::*;
 
 impl FinderView {
     pub(super) fn request_open_with(&mut self, cx: &mut Context<Self>) {
+        if self.applications_view {
+            self.operation_error = Some("Applications open directly".into());
+            cx.notify();
+            return;
+        }
         if self.trash_view {
             self.operation_error = Some("Restore the item before choosing an application".into());
             cx.notify();

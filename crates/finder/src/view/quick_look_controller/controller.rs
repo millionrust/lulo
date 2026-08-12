@@ -2,6 +2,11 @@ use super::*;
 
 impl FinderView {
     pub(in crate::view) fn quick_look(&mut self, cx: &mut Context<Self>) {
+        if self.applications_view {
+            self.operation_error = Some("Quick Look is unavailable for applications".into());
+            cx.notify();
+            return;
+        }
         if self.trash_view {
             self.operation_error = Some("Restore items before previewing them".into());
             cx.notify();

@@ -154,7 +154,7 @@ impl FinderView {
                             "back",
                             IconName::ChevronLeft,
                             "Back",
-                            self.trash_view || !self.back.is_empty(),
+                            self.trash_view || self.applications_view || !self.back.is_empty(),
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
                     )

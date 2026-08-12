@@ -6,6 +6,10 @@ impl FinderView {
             self.reload_trash(cx);
             return;
         }
+        if self.applications_view {
+            self.applications_click(cx);
+            return;
+        }
         #[cfg(any(target_os = "linux", test))]
         {
             self.delete_confirmation = None;
@@ -17,6 +21,9 @@ impl FinderView {
     /// slowly and is refreshed on navigation and explicit file operations.
     pub(super) fn reload_after_event(&mut self, hints: FilesystemHints, cx: &mut Context<Self>) {
         if self.trash_view {
+            return;
+        }
+        if self.applications_view {
             return;
         }
         if hints.watch_error {

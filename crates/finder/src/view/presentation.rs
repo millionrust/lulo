@@ -17,6 +17,7 @@ impl Render for FinderView {
         let menu_at = self.menu_at.clone();
         let has_sel = !self.selected.is_empty();
         let can_open_with = !self.trash_view
+            && !self.applications_view
             && self.selected.len() == 1
             && self
                 .selected
@@ -347,6 +348,7 @@ impl Render for FinderView {
                         can_open_with,
                         can_paste,
                         self.trash_view,
+                        self.applications_view,
                         undo_label,
                     )
                     .render(&state),

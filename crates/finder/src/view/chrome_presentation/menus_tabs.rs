@@ -7,6 +7,7 @@ impl FinderView {
         can_open_with: bool,
         can_paste: bool,
         trash_view: bool,
+        applications_view: bool,
         undo_label: Option<String>,
     ) -> rmac_ui::ContextMenu {
         let mut m = rmac_ui::ContextMenu::new(pos);
@@ -25,6 +26,19 @@ impl FinderView {
                         rmac_ui::shortcuts::DELETE_PERMANENT,
                         Box::new(DeletePermanently),
                     );
+            }
+            return m;
+        }
+        if applications_view {
+            if has_selection {
+                m = m
+                    .command_item(
+                        "Open",
+                        rmac_ui::shortcuts::OPEN_SELECTION,
+                        Box::new(OpenItems),
+                    )
+                    .separator()
+                    .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo));
             }
             return m;
         }

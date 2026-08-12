@@ -54,27 +54,40 @@ impl FinderView {
                     } else {
                         "icons/file-fill.svg"
                     };
-                    let visual = self.thumbs.get(&entry.path).map_or_else(
-                        || {
-                            icon(
-                                glyph,
-                                132.0,
-                                if entry.is_dir {
-                                    folder_blue()
-                                } else {
-                                    secondary()
+                    let visual = entry
+                        .application
+                        .as_ref()
+                        .and_then(|application| application.icon.clone())
+                        .map(|path| {
+                            img(path)
+                                .max_w(px(132.0))
+                                .max_h(px(132.0))
+                                .rounded(px(29.0))
+                                .into_any_element()
+                        })
+                        .unwrap_or_else(|| {
+                            self.thumbs.get(&entry.path).map_or_else(
+                                || {
+                                    icon(
+                                        glyph,
+                                        132.0,
+                                        if entry.is_dir {
+                                            folder_blue()
+                                        } else {
+                                            secondary()
+                                        },
+                                    )
+                                    .into_any_element()
+                                },
+                                |thumbnail| {
+                                    img(thumbnail.clone())
+                                        .max_w(px(440.0))
+                                        .max_h(px(280.0))
+                                        .rounded(px(8.0))
+                                        .into_any_element()
                                 },
                             )
-                            .into_any_element()
-                        },
-                        |thumbnail| {
-                            img(thumbnail.clone())
-                                .max_w(px(440.0))
-                                .max_h(px(280.0))
-                                .rounded(px(8.0))
-                                .into_any_element()
-                        },
-                    );
+                        });
                     let name = if selected_count > 1 {
                         SharedString::from(format!("{} items selected", selected_count))
                     } else {
@@ -138,27 +151,40 @@ impl FinderView {
             } else {
                 "icons/file-fill.svg"
             };
-            let visual = self.thumbs.get(&entry.path).map_or_else(
-                || {
-                    icon(
-                        glyph,
-                        42.0,
-                        if entry.is_dir {
-                            folder_blue()
-                        } else {
-                            secondary()
+            let visual = entry
+                .application
+                .as_ref()
+                .and_then(|application| application.icon.clone())
+                .map(|path| {
+                    img(path)
+                        .max_w(px(48.0))
+                        .max_h(px(48.0))
+                        .rounded(px(10.0))
+                        .into_any_element()
+                })
+                .unwrap_or_else(|| {
+                    self.thumbs.get(&entry.path).map_or_else(
+                        || {
+                            icon(
+                                glyph,
+                                42.0,
+                                if entry.is_dir {
+                                    folder_blue()
+                                } else {
+                                    secondary()
+                                },
+                            )
+                            .into_any_element()
+                        },
+                        |thumbnail| {
+                            img(thumbnail.clone())
+                                .max_w(px(58.0))
+                                .max_h(px(48.0))
+                                .rounded(px(4.0))
+                                .into_any_element()
                         },
                     )
-                    .into_any_element()
-                },
-                |thumbnail| {
-                    img(thumbnail.clone())
-                        .max_w(px(58.0))
-                        .max_h(px(48.0))
-                        .rounded(px(4.0))
-                        .into_any_element()
-                },
-            );
+                });
             let drag_paths = if selected {
                 self.selected_paths()
             } else {
@@ -220,6 +246,11 @@ impl FinderView {
                         }),
                     )
                     .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                        if event.modifiers().control {
+                            cx.stop_propagation();
+                            this.open_context_menu(Some(index), event.position(), window, cx);
+                            return;
+                        }
                         if event.click_count() >= 2 {
                             this.open_index(index, cx);
                             return;
@@ -229,20 +260,23 @@ impl FinderView {
                         window.focus(&this.focus);
                         cx.notify();
                     }))
-                    .when(!self.trash_view, |element| {
+                    .when(!self.trash_view && !self.applications_view, |element| {
                         element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
                             cx.new(|_| DragPreview { count: drag_count })
                         })
                     })
-                    .when(is_directory && !self.trash_view, |element| {
-                        element
-                            .drag_over::<DraggedPaths>(|style, _, _, _| {
-                                style.bg(rmac_ui::mac::accent_subtle())
-                            })
-                            .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
-                                this.drop_into(drop_directory.clone(), &paths.0, cx)
-                            }))
-                    })
+                    .when(
+                        is_directory && !self.trash_view && !self.applications_view,
+                        |element| {
+                            element
+                                .drag_over::<DraggedPaths>(|style, _, _, _| {
+                                    style.bg(rmac_ui::mac::accent_subtle())
+                                })
+                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
+                                    this.drop_into(drop_directory.clone(), &paths.0, cx)
+                                }))
+                        },
+                    )
                     .into_any_element(),
             )
         });
@@ -272,13 +306,8 @@ impl FinderView {
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                        event.position,
-                        &this.focus,
-                        window,
-                        cx,
-                    ));
-                    cx.notify();
+                    cx.stop_propagation();
+                    this.open_context_menu(None, event.position, window, cx);
                 }),
             )
     }

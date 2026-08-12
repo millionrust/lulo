@@ -54,6 +54,11 @@ impl FinderView {
     }
 
     pub(super) fn copy(&mut self, cx: &mut Context<Self>) {
+        if self.applications_view {
+            self.operation_error = Some("Applications cannot be copied from this view".into());
+            cx.notify();
+            return;
+        }
         if self.trash_view {
             self.operation_error = Some("Restore items before copying them".into());
             cx.notify();
@@ -65,6 +70,11 @@ impl FinderView {
     }
 
     pub(super) fn cut(&mut self, cx: &mut Context<Self>) {
+        if self.applications_view {
+            self.operation_error = Some("Applications cannot be moved from this view".into());
+            cx.notify();
+            return;
+        }
         if self.trash_view {
             self.operation_error = Some("Use Restore to move an item out of Trash".into());
             cx.notify();

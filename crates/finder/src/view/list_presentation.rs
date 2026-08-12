@@ -1,6 +1,30 @@
 use super::*;
 
 impl FinderView {
+    pub(in crate::view) fn open_context_menu(
+        &mut self,
+        index: Option<usize>,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match index {
+            Some(index) if !self.selected.contains(&index) => self.select_single(index),
+            Some(_) => {}
+            None => {
+                self.selected.clear();
+                self.anchor = None;
+            }
+        }
+        self.menu_at = Some(rmac_ui::ContextMenuState::open(
+            position,
+            &self.focus,
+            window,
+            cx,
+        ));
+        cx.notify();
+    }
+
     pub(super) fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Recursive content matches may not contain the query in their names.
         // Local filtering remains active until Return starts a ranked search.
@@ -61,6 +85,20 @@ impl FinderView {
             } else {
                 secondary()
             };
+            let row_icon: gpui::AnyElement = e
+                .application
+                .as_ref()
+                .and_then(|application| application.icon.clone())
+                .map_or_else(
+                    || icon(glyph, 16.0, icon_color).into_any_element(),
+                    |path| {
+                        img(path)
+                            .w(px(17.0))
+                            .h(px(17.0))
+                            .rounded(px(4.0))
+                            .into_any_element()
+                    },
+                );
 
             let drag_paths: Vec<PathBuf> = if selected {
                 self.selected_paths()
@@ -129,7 +167,7 @@ impl FinderView {
                                     ))
                                 },
                             ))
-                            .child(icon(glyph, 16.0, icon_color))
+                            .child(row_icon)
                             .child(name_cell),
                     )
                     .child(
@@ -157,20 +195,16 @@ impl FinderView {
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                            if !this.selected.contains(&ix) {
-                                this.select_single(ix);
-                            }
-                            window.focus(&this.focus);
-                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                                ev.position,
-                                &this.focus,
-                                window,
-                                cx,
-                            ));
-                            cx.notify();
+                            cx.stop_propagation();
+                            this.open_context_menu(Some(ix), ev.position, window, cx);
                         }),
                     )
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                        if ev.modifiers().control {
+                            cx.stop_propagation();
+                            this.open_context_menu(Some(ix), ev.position(), window, cx);
+                            return;
+                        }
                         if ev.click_count() >= 2 {
                             this.open_index(ix, cx);
                             return;
@@ -180,22 +214,28 @@ impl FinderView {
                         window.focus(&this.focus);
                         cx.notify();
                     }))
-                    .when(!self.trash_view, |el: Stateful<Div>| {
-                        el.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
-                            cx.new(|_| DragPreview { count: drag_count })
-                        })
-                    })
-                    .when(row_is_dir && !self.trash_view, |el: Stateful<Div>| {
-                        let dd = drop_dir.clone();
-                        el.drag_over::<DraggedPaths>(|s, _, _, _| {
-                            s.bg(rmac_ui::mac::accent_subtle())
-                        })
-                        .on_drop(cx.listener(
-                            move |this, p: &DraggedPaths, _, cx| {
-                                this.drop_into(dd.clone(), &p.0, cx)
-                            },
-                        ))
-                    })
+                    .when(
+                        !self.trash_view && !self.applications_view,
+                        |el: Stateful<Div>| {
+                            el.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                                cx.new(|_| DragPreview { count: drag_count })
+                            })
+                        },
+                    )
+                    .when(
+                        row_is_dir && !self.trash_view && !self.applications_view,
+                        |el: Stateful<Div>| {
+                            let dd = drop_dir.clone();
+                            el.drag_over::<DraggedPaths>(|s, _, _, _| {
+                                s.bg(rmac_ui::mac::accent_subtle())
+                            })
+                            .on_drop(cx.listener(
+                                move |this, p: &DraggedPaths, _, cx| {
+                                    this.drop_into(dd.clone(), &p.0, cx)
+                                },
+                            ))
+                        },
+                    )
                     .into_any_element(),
             );
         }
@@ -230,13 +270,25 @@ impl FinderView {
                     "icons/file-fill.svg"
                 };
                 let icon_color = if e.is_dir { folder_blue() } else { secondary() };
-                let visual: gpui::AnyElement = match self.thumbs.get(&e.path) {
-                    Some(t) => img(t.clone())
+                let visual: gpui::AnyElement = if let Some(path) = e
+                    .application
+                    .as_ref()
+                    .and_then(|application| application.icon.clone())
+                {
+                    img(path)
                         .max_w(px(icon_size))
-                        .max_h(px(icon_size - 6.0))
-                        .rounded(px(3.0))
-                        .into_any_element(),
-                    None => icon(glyph, icon_size, icon_color).into_any_element(),
+                        .max_h(px(icon_size))
+                        .rounded(px(icon_size * 0.22))
+                        .into_any_element()
+                } else {
+                    match self.thumbs.get(&e.path) {
+                        Some(t) => img(t.clone())
+                            .max_w(px(icon_size))
+                            .max_h(px(icon_size - 6.0))
+                            .rounded(px(3.0))
+                            .into_any_element(),
+                        None => icon(glyph, icon_size, icon_color).into_any_element(),
+                    }
                 };
                 let drag_paths = if selected {
                     self.selected_paths()
@@ -273,20 +325,16 @@ impl FinderView {
                         .on_mouse_down(
                             MouseButton::Right,
                             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                                if !this.selected.contains(&ix) {
-                                    this.select_single(ix);
-                                }
-                                window.focus(&this.focus);
-                                this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                                    ev.position,
-                                    &this.focus,
-                                    window,
-                                    cx,
-                                ));
-                                cx.notify();
+                                cx.stop_propagation();
+                                this.open_context_menu(Some(ix), ev.position, window, cx);
                             }),
                         )
                         .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                            if ev.modifiers().control {
+                                cx.stop_propagation();
+                                this.open_context_menu(Some(ix), ev.position(), window, cx);
+                                return;
+                            }
                             if ev.click_count() >= 2 {
                                 this.open_index(ix, cx);
                                 return;
@@ -296,20 +344,25 @@ impl FinderView {
                             window.focus(&this.focus);
                             cx.notify();
                         }))
-                        .when(!self.trash_view, |element| {
+                        .when(!self.trash_view && !self.applications_view, |element| {
                             element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
                                 cx.new(|_| DragPreview { count: drag_count })
                             })
                         })
-                        .when(is_directory && !self.trash_view, |element| {
-                            element
-                                .drag_over::<DraggedPaths>(|style, _, _, _| {
-                                    style.bg(rmac_ui::mac::accent_subtle())
-                                })
-                                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
-                                    this.drop_into(drop_directory.clone(), &paths.0, cx)
-                                }))
-                        })
+                        .when(
+                            is_directory && !self.trash_view && !self.applications_view,
+                            |element| {
+                                element
+                                    .drag_over::<DraggedPaths>(|style, _, _, _| {
+                                        style.bg(rmac_ui::mac::accent_subtle())
+                                    })
+                                    .on_drop(cx.listener(
+                                        move |this, paths: &DraggedPaths, _, cx| {
+                                            this.drop_into(drop_directory.clone(), &paths.0, cx)
+                                        },
+                                    ))
+                            },
+                        )
                         .into_any_element(),
                 );
             }
@@ -339,13 +392,8 @@ impl FinderView {
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                                ev.position,
-                                &this.focus,
-                                window,
-                                cx,
-                            ));
-                            cx.notify();
+                            cx.stop_propagation();
+                            this.open_context_menu(None, ev.position, window, cx);
                         }),
                     )
                     .into_any_element(),
@@ -361,13 +409,8 @@ impl FinderView {
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                                ev.position,
-                                &this.focus,
-                                window,
-                                cx,
-                            ));
-                            cx.notify();
+                            cx.stop_propagation();
+                            this.open_context_menu(None, ev.position, window, cx);
                         }),
                     )
                     .into_any_element(),
@@ -451,10 +494,13 @@ impl FinderView {
                     }
                 }
             }))
-            .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(rmac_ui::mac::accent_subtle()))
-            .on_drop(cx.listener(|this, ep: &ExternalPaths, _, cx| {
-                this.drop_external(ep.paths().to_vec(), cx)
-            }))
+            .when(!self.applications_view && !self.trash_view, |element| {
+                element
+                    .drag_over::<ExternalPaths>(|s, _, _, _| s.bg(rmac_ui::mac::accent_subtle()))
+                    .on_drop(cx.listener(|this, ep: &ExternalPaths, _, cx| {
+                        this.drop_external(ep.paths().to_vec(), cx)
+                    }))
+            })
             .flex_1()
             .v_flex()
             .overflow_hidden()

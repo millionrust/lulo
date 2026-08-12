@@ -166,8 +166,15 @@ impl FinderPersistence {
 
 impl FinderView {
     pub(super) fn select_view_mode(&mut self, mode: ViewMode, cx: &mut Context<Self>) {
-        if self.trash_view && mode == ViewMode::Column {
-            self.operation_error = Some("Column view is unavailable in Trash".into());
+        if (self.trash_view || self.applications_view) && mode == ViewMode::Column {
+            self.operation_error = Some(
+                if self.trash_view {
+                    "Column view is unavailable in Bin"
+                } else {
+                    "Column view is unavailable in Applications"
+                }
+                .into(),
+            );
             cx.notify();
             return;
         }

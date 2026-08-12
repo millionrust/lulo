@@ -59,7 +59,31 @@ pub(super) fn entry_for(path: &Path) -> Option<Entry> {
         size_bytes,
         mtime,
         search_detail: None,
+        application: None,
     })
+}
+
+pub(super) fn entry_for_application(application: rmac_apps::Application) -> Entry {
+    let metadata = std::fs::metadata(&application.source).ok();
+    let mtime = metadata
+        .as_ref()
+        .and_then(|metadata| metadata.modified().ok())
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    Entry {
+        name: application.name.into(),
+        path: application.source,
+        is_dir: false,
+        size: "--".into(),
+        modified: date_label(mtime).into(),
+        kind: "Application".into(),
+        size_bytes: metadata.map_or(0, |metadata| metadata.len()),
+        mtime,
+        search_detail: application.generic_name.map(Into::into),
+        application: Some(ApplicationEntry {
+            launch: application.launch,
+            icon: application.icon,
+        }),
+    }
 }
 
 pub(super) fn read_entries(dir: &Path, show_hidden: bool) -> Vec<Entry> {

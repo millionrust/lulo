@@ -11,11 +11,10 @@ mod linux_wayland {
 
     use futures_util::FutureExt as _;
     use gpui::{
-        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
-        Context, DisplayId, Entity, FontWeight, MouseButton, PlatformDisplay, QuitMode, Role, Size,
-        Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Application,
+        Bounds, Context, DisplayId, Entity, FontWeight, MouseButton, PlatformDisplay, QuitMode,
+        Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
-    use gpui_platform::application;
     use rmac_gpui_upstream_lab::shell_visuals as visuals;
 
     const EXCLUSIVE_ZONE: f32 = 88.0;
@@ -1327,7 +1326,7 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        let app = application().with_quit_mode(QuitMode::Explicit);
+        let app = Application::new().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             let (runtime_tx, runtime_rx) = async_channel::bounded(4);
             cx.background_executor()

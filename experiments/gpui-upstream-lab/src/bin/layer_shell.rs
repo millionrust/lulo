@@ -1,10 +1,9 @@
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
     use gpui::{
-        div, layer_shell::*, point, prelude::*, px, rgb, App, Bounds, Context, Size, Window,
-        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        div, layer_shell::*, point, prelude::*, px, rgb, App, Application, Bounds, Context, Size,
+        Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
-    use gpui_platform::application;
     use rmac_gpui_upstream_lab::mark_first_frame;
 
     struct LayerShellLab;
@@ -23,7 +22,7 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        application().run(|cx: &mut App| {
+        Application::new().run(|cx: &mut App| {
             cx.open_window(
                 WindowOptions {
                     titlebar: None,

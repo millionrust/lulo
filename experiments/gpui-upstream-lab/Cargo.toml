@@ -7,8 +7,8 @@ license = "MIT"
 
 [features]
 default = []
-wayland = ["gpui_platform/wayland"]
-x11 = ["gpui_platform/x11"]
+wayland = ["gpui/wayland"]
+x11 = ["gpui/x11"]
 
 [dependencies]
 async-channel = "2"
@@ -17,7 +17,6 @@ blocking = "1"
 chrono = "0.4"
 futures-util = "0.3"
 gpui = { git = "https://github.com/zed-industries/zed.git", rev = "07fe8e9bb1484b2771d8a9d80f7fc370cee9c4ac", package = "gpui" }
-gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "07fe8e9bb1484b2771d8a9d80f7fc370cee9c4ac", package = "gpui_platform", features = ["font-kit"] }
 image = { version = "0.25", default-features = false }
 rmac-apps = { path = "../../crates/rmac-apps" }
 rmac-app-launch = { path = "../../crates/rmac-app-launch" }

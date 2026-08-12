@@ -28,8 +28,6 @@ impl FinderView {
         self.anchor = Some(index);
         self.operation_error = None;
         self.rename_start(window, cx);
-        // Finder selects the generated name so typing replaces it immediately.
-        window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
     }
 
     pub(super) fn duplicate(&mut self, cx: &mut Context<Self>) {

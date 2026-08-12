@@ -118,6 +118,7 @@ impl FinderView {
                     .child(TextField::new(input).appearance(true))
                     .into_any_element(),
                 _ => div()
+                    .id(("list-name", ix))
                     .pl(px(6.0))
                     .flex_1()
                     .min_w(px(0.0))
@@ -133,6 +134,25 @@ impl FinderView {
                                 .child(detail),
                         )
                     })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                            if selected
+                                && !this.trash_view
+                                && !this.applications_view
+                                && !ev.modifiers.platform
+                                && !ev.modifiers.shift
+                            {
+                                cx.stop_propagation();
+                                this.rename_start(window, cx);
+                            }
+                        }),
+                    )
+                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                        if selected {
+                            cx.stop_propagation();
+                        }
+                    }))
                     .into_any_element(),
             };
 
@@ -302,6 +322,44 @@ impl FinderView {
                 let drag_count = drag_paths.len();
                 let drop_directory = e.path.clone();
                 let is_directory = e.is_dir;
+                let tile_label: gpui::AnyElement = match &self.renaming {
+                    Some((rename_index, input)) if *rename_index == ix => div()
+                        .w(px(label_width))
+                        .child(TextField::new(input).appearance(true))
+                        .into_any_element(),
+                    _ => div()
+                        .id(("tile-name", ix))
+                        .max_w(px(label_width))
+                        .px_1p5()
+                        .py_0p5()
+                        .rounded(px(4.0))
+                        .when(selected, |el: Stateful<Div>| el.bg(sel()))
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_center()
+                        .truncate()
+                        .text_color(if selected { white() } else { label() })
+                        .child(e.name.clone())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                                if selected
+                                    && !this.trash_view
+                                    && !this.applications_view
+                                    && !ev.modifiers.platform
+                                    && !ev.modifiers.shift
+                                {
+                                    cx.stop_propagation();
+                                    this.rename_start(window, cx);
+                                }
+                            }),
+                        )
+                        .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                            if selected {
+                                cx.stop_propagation();
+                            }
+                        }))
+                        .into_any_element(),
+                };
                 tiles.push(
                     div()
                         .id(("tile", ix))
@@ -324,19 +382,7 @@ impl FinderView {
                                 .justify_center()
                                 .child(visual),
                         )
-                        .child(
-                            div()
-                                .max_w(px(label_width))
-                                .px_1p5()
-                                .py_0p5()
-                                .rounded(px(4.0))
-                                .when(selected, |el: Div| el.bg(sel()))
-                                .text_size(rmac_ui::text_px(13.0))
-                                .text_center()
-                                .truncate()
-                                .text_color(if selected { white() } else { label() })
-                                .child(e.name.clone()),
-                        )
+                        .child(tile_label)
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {

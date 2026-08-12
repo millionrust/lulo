@@ -23,6 +23,14 @@ impl FinderView {
         window.focus(&focus);
         self.renaming = Some((index, input));
         cx.notify();
+        // The TextField action handlers exist after the next render. Select
+        // the whole generated/current name then so typing replaces it, just
+        // like Finder, regardless of whether Rename came from a menu, a name
+        // click, Return, or New Folder.
+        window.on_next_frame(move |window, cx| {
+            window.focus(&focus);
+            window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
+        });
     }
 
     fn rename_commit(&mut self, cx: &mut Context<Self>) {

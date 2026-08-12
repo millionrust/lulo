@@ -371,8 +371,11 @@ impl ContextMenu {
                             let return_focus = return_focus.clone();
                             move |_, window, cx| {
                                 window.focus(&return_focus);
-                                window.dispatch_action(action.boxed_clone(), cx);
+                                // Dismiss first so actions that deliberately
+                                // move focus (for example Finder's inline
+                                // Rename editor) keep their new focus.
                                 window.dispatch_action(Box::new(DismissMenu), cx);
+                                window.dispatch_action(action.boxed_clone(), cx);
                             }
                         });
                     panel = panel.child(row);

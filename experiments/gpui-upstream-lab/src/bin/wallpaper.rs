@@ -12,11 +12,12 @@ mod linux_wayland {
     use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
-        AnyWindowHandle, App, Application, Bounds, ClickEvent, Context, DisplayId, Entity,
-        FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, Pixels,
-        PlatformDisplay, Point, QuitMode, RenderImage, Role, SharedString, Size, Window,
-        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        AnyWindowHandle, App, Bounds, ClickEvent, Context, DisplayId, Entity, FocusHandle,
+        FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, Pixels, PlatformDisplay, Point,
+        QuitMode, RenderImage, Role, SharedString, Size, Window, WindowBackgroundAppearance,
+        WindowBounds, WindowKind, WindowOptions,
     };
+    use gpui_platform::application;
     use uuid::Uuid;
 
     const READY_FILE_ENV: &str = "RMAC_WALLPAPER_READY_FILE";
@@ -1103,7 +1104,7 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        let app = Application::new().with_quit_mode(QuitMode::Explicit);
+        let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             let status = start_status(cx);
             let (output_tx, output_rx) = async_channel::bounded(4);

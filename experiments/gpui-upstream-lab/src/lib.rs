@@ -105,7 +105,7 @@ pub mod output_surfaces {
             };
             let replace = displays
                 .get(&uuid)
-                .is_some_and(|current| u32::from(display.id()) > u32::from(current.id()));
+                .is_some_and(|current| u64::from(display.id()) > u64::from(current.id()));
             if replace || !displays.contains_key(&uuid) {
                 displays.insert(uuid, display);
             }

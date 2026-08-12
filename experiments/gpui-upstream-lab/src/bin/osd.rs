@@ -9,9 +9,10 @@ mod linux_wayland {
     use futures_util::FutureExt as _;
     use gpui::{
         div, img, layer_shell::*, point, prelude::*, px, relative, rgba, AnyWindowHandle, App,
-        Application, Bounds, Context, DisplayId, Entity, FontWeight, PlatformDisplay, QuitMode,
-        Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        Bounds, Context, DisplayId, Entity, FontWeight, PlatformDisplay, QuitMode, Role, Size,
+        Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
+    use gpui_platform::application;
     use rmac_gpui_upstream_lab::shell_visuals as visuals;
     use rmac_osd::{Kind, Presentation};
     use uuid::Uuid;
@@ -362,7 +363,7 @@ mod linux_wayland {
 
     fn run_service() -> Result<(), rmac_osd::Error> {
         let updates = start_listener()?;
-        let app = Application::new().with_quit_mode(QuitMode::Explicit);
+        let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(move |cx: &mut App| {
             let (compositor_tx, compositor_rx) = async_channel::bounded(64);
             cx.background_executor()

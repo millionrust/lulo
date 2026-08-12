@@ -1,7 +1,8 @@
 use gpui::{
-    actions, div, prelude::*, px, rgb, size, AccessibleAction, App, Application, Bounds, Context,
-    FocusHandle, KeyBinding, Role, SharedString, Toggled, Window, WindowBounds, WindowOptions,
+    actions, div, prelude::*, px, rgb, size, AccessibleAction, App, Bounds, Context, FocusHandle,
+    KeyBinding, Role, SharedString, Toggled, Window, WindowBounds, WindowOptions,
 };
+use gpui_platform::application;
 use rmac_gpui_upstream_lab::mark_first_frame;
 
 actions!(rmac_a11y_lab, [Tab, TabPrevious]);
@@ -123,7 +124,7 @@ impl Render for AccessibilityLab {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    application().run(|cx: &mut App| {
         cx.bind_keys([
             KeyBinding::new("tab", Tab, None),
             KeyBinding::new("shift-tab", TabPrevious, None),

@@ -13,11 +13,12 @@ mod linux_wayland {
     use chrono::Local;
     use futures_util::FutureExt as _;
     use gpui::{
-        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Application,
-        Bounds, Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay,
+        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
+        Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay,
         QuitMode, Role, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
         WindowKind, WindowOptions,
     };
+    use gpui_platform::application;
     use rmac_gpui_upstream_lab::shell_visuals as visuals;
     use rmac_gpui_upstream_lab::{
         delay_until_next_clock_tick, top_bar_active_app_name, top_bar_clock_pattern,
@@ -1482,7 +1483,7 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        let app = Application::new().with_quit_mode(QuitMode::Explicit);
+        let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             let status = start_status(cx);
             let (output_tx, output_rx) = async_channel::bounded(4);

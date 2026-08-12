@@ -229,7 +229,11 @@ impl FinderView {
                     ),
             );
 
-        let mut details = div().v_flex().min_h(px(0.0)).overflow_y_scrollbar();
+        let mut details = div()
+            .v_flex()
+            .min_h(px(0.0))
+            .max_h(px(300.0))
+            .overflow_y_scrollbar();
         for (k, v) in file_info(e) {
             details = details.child(
                 div()

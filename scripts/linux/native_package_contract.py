@@ -76,6 +76,16 @@ SESSION_BINARIES = (
     "rmac-idle-locker",
 )
 
+# The four shell surfaces are built from the separately locked Linux GPUI
+# graph. Each host must consume the maintained runtime/model crate listed here;
+# packaging and contract tests treat this mapping as part of the release ABI.
+SHIPPING_SHELL_SOURCES = {
+    "rmac-wallpaper": ("wallpaper", ("rmac-wallpaper-runtime",)),
+    "rmac-top-bar": ("top-bar", ("rmac-shell-runtime",)),
+    "rmac-dock": ("dock", ("rmac-dock-runtime",)),
+    "rmac-osd": ("osd", ("rmac-osd",)),
+}
+
 PACKAGE_SPECS = (
     PackageSpec(
         name="rmac-apps",

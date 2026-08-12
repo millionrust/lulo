@@ -184,6 +184,18 @@ jobs:
         working-directory: experiments/gpui-upstream-lab
         run: cargo fmt --all -- --check
 
+      - name: Check shell dependency policy
+        uses: EmbarkStudios/cargo-deny-action@v2.0.20
+        with:
+          log-level: error
+          command: check
+          arguments: --locked --manifest-path experiments/gpui-upstream-lab/Cargo.toml
+          command-arguments: --config experiments/gpui-upstream-lab/deny.toml --hide-inclusion-graph
+
+      - name: Test shell support library
+        working-directory: experiments/gpui-upstream-lab
+        run: cargo test --locked --lib
+
       - name: Check Wayland probes
         working-directory: experiments/gpui-upstream-lab
         run: cargo clippy --locked --bins --features wayland -- -D warnings

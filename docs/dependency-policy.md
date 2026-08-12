@@ -2,7 +2,7 @@
 
 > Adopted: 2026-07-10
 >
-> Scope: the product Cargo workspace and its four supported target triples
+> Scope: the product Cargo workspace and the separately locked Linux shell graph
 
 ## Enforcement
 
@@ -77,10 +77,21 @@ Duplicate direct workspace declarations are denied. This prevents new rmac
 manifest drift while leaving existing third-party convergence to normal,
 reviewed upgrades.
 
-## Isolated upstream experiment
+## Separately locked Linux shell graph
 
-`experiments/gpui-upstream-lab` is deliberately outside the product workspace,
-uses exact Git revisions, and is not evaluated by the root `deny.toml`. It is
-non-shipping evidence. Before any dependency from that graph can be promoted,
-ADR 0002 requires a dedicated resolved-dependency and license review in
-addition to the Linux runtime gates.
+`experiments/gpui-upstream-lab` remains outside the product workspace because
+the four packaged layer-shell hosts require a newer GPUI API than the ordinary
+application graph. It is shipping input for `rmac-wallpaper`, `rmac-top-bar`,
+`rmac-dock`, and `rmac-osd`, not a disposable preview.
+
+The graph has its own lockfile and `deny.toml`. CI checks its advisories,
+licenses, bans, and sources independently. Every Git dependency has an exact
+revision and version, and only the four reviewed upstream repositories are
+allowed. GPL-only Zed tracing is replaced by the local MIT compatibility crate
+at `compat/ztracing`, which only re-exports the permissively licensed `tracing`
+macros required by `sum_tree`. GPL is not added to the accepted license list.
+
+The shell policy covers the two supported GNU/Linux architectures. The root
+policy continues to cover the application workspace on macOS and Linux. A
+revision or source-policy change still requires a dedicated dependency review
+and the Ubuntu runtime gates in ADR 0001.

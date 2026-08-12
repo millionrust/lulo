@@ -16,28 +16,28 @@ async-io = "2"
 blocking = "1"
 chrono = "0.4"
 futures-util = "0.3"
-gpui = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui" }
-gpui_platform = { git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
+gpui = { version = "=0.2.2", git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui" }
+gpui_platform = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
 image = { version = "0.25", default-features = false }
-rmac-apps = { path = "../../crates/rmac-apps" }
-rmac-app-launch = { path = "../../crates/rmac-app-launch" }
-rmac-app-menu = { path = "../../crates/rmac-app-menu" }
-rmac-compositor = { path = "../../crates/rmac-compositor" }
-rmac-compositor-niri = { path = "../../crates/rmac-compositor-niri" }
-rmac-desktop = { path = "../../crates/rmac-desktop" }
-rmac-dock = { path = "../../crates/rmac-dock" }
-rmac-dock-runtime = { path = "../../crates/rmac-dock-runtime" }
-rmac-places = { path = "../../crates/rmac-places" }
-rmac-places-system = { path = "../../crates/rmac-places-system" }
-rmac-recent-documents = { path = "../../crates/rmac-recent-documents" }
-rmac-search = { path = "../../crates/rmac-search" }
-rmac-osd = { path = "../../crates/rmac-osd" }
-rmac-shell-runtime = { path = "../../crates/rmac-shell-runtime" }
-rmac-shell-settings = { path = "../../crates/rmac-shell-settings" }
-rmac-shell-status = { path = "../../crates/rmac-shell-status" }
-rmac-wallpaper = { path = "../../crates/rmac-wallpaper" }
-rmac-wallpaper-image = { path = "../../crates/rmac-wallpaper-image" }
-rmac-wallpaper-runtime = { path = "../../crates/rmac-wallpaper-runtime" }
+rmac-apps = { version = "=0.1.0", path = "../../crates/rmac-apps" }
+rmac-app-launch = { version = "=0.1.0", path = "../../crates/rmac-app-launch" }
+rmac-app-menu = { version = "=0.1.0", path = "../../crates/rmac-app-menu" }
+rmac-compositor = { version = "=0.1.0", path = "../../crates/rmac-compositor" }
+rmac-compositor-niri = { version = "=0.1.0", path = "../../crates/rmac-compositor-niri" }
+rmac-desktop = { version = "=0.1.0", path = "../../crates/rmac-desktop" }
+rmac-dock = { version = "=0.1.0", path = "../../crates/rmac-dock" }
+rmac-dock-runtime = { version = "=0.1.0", path = "../../crates/rmac-dock-runtime" }
+rmac-places = { version = "=0.1.0", path = "../../crates/rmac-places" }
+rmac-places-system = { version = "=0.1.0", path = "../../crates/rmac-places-system" }
+rmac-recent-documents = { version = "=0.1.0", path = "../../crates/rmac-recent-documents" }
+rmac-search = { version = "=0.1.0", path = "../../crates/rmac-search" }
+rmac-osd = { version = "=0.1.0", path = "../../crates/rmac-osd" }
+rmac-shell-runtime = { version = "=0.1.0", path = "../../crates/rmac-shell-runtime" }
+rmac-shell-settings = { version = "=0.1.0", path = "../../crates/rmac-shell-settings" }
+rmac-shell-status = { version = "=0.1.0", path = "../../crates/rmac-shell-status" }
+rmac-wallpaper = { version = "=0.1.0", path = "../../crates/rmac-wallpaper" }
+rmac-wallpaper-image = { version = "=0.1.0", path = "../../crates/rmac-wallpaper-image" }
+rmac-wallpaper-runtime = { version = "=0.1.0", path = "../../crates/rmac-wallpaper-runtime" }
 trash = "5"
 uuid = { version = "1", features = ["v5"] }
 

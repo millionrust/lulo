@@ -3,23 +3,24 @@
 - Date: 2026-07-10
 - Upstream: Zed/GPUI revision
   `76c93968da5b8b8809bdd72e4ad9e7d0e946bad0`
-- Experiment: `experiments/gpui-upstream-lab`
-- Product workspace: unchanged on GPUI 0.2.2 and Rust 1.94.1
-- Experiment toolchain: Rust 1.95.0, matching the pinned upstream revision
+- Linux shell graph: `experiments/gpui-upstream-lab`
+- Application workspace: GPUI 0.2.2 and Rust 1.94.1
+- Shell toolchain: Rust 1.95.0, matching the pinned upstream revision
 
 ## Why this is separate
 
-The released GPUI 0.2.2 platform lab can exercise ordinary windows and desktop
-input integrations, but it has no exposed accessibility-tree or layer-shell
-API. Current upstream has both. The experiment is excluded from the root Cargo
-workspace so evaluating those APIs cannot silently migrate the seven product
-applications or their transitive dependency graph.
+The released GPUI 0.2.2 application graph can exercise ordinary windows and
+desktop input integrations, but it has no exposed accessibility-tree or
+layer-shell API. Current upstream has both. The shell graph is excluded from
+the root Cargo workspace so those APIs cannot silently migrate the seven
+product applications or their transitive dependency graph.
 
 Both the Git revision and the experiment's resolved `Cargo.lock` are committed.
 `target/` remains ignored because it is generated build output.
-The regular product checks still use the stable workspace; a separate Linux CI
-job compiles and smoke-tests both upstream probes with the Wayland feature and
-Rust 1.95.0.
+The regular application checks still use the stable workspace. The separately
+locked graph now supplies the four packaged Linux shell hosts, so its Linux CI
+job enforces dependency policy, tests its support library, compiles every host,
+and runs the nested Wayland smoke protocol with Rust 1.95.0.
 
 ## Implemented probes
 
@@ -107,10 +108,10 @@ and `rmac-dock`, and restarts only those services when the rmac target is
 already active. The installed revision manifest is local evidence rather than a
 release artifact.
 
-This is a development integration gate, not GPUI promotion. It refuses dirty
+This handoff remains a guarded reference-PC development path. It refuses dirty
 tracked input, a changed upstream revision, low storage, root, a non-reference
-Ubuntu release, or a simultaneously running manual preview. Native packages
-remain unchanged until A4/A5 and the representative product migration pass.
+Ubuntu release, or a simultaneously running manual preview. Release packages
+build the same four locked shell hosts through `build-native-inputs.sh`.
 
 On 2026-08-09, the supervised handoff passed on the Ubuntu 26.04/niri Intel HD
 Graphics 5500 reference PC at rmac commit `80a9c07` and GPUI revision

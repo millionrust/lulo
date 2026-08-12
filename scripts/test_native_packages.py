@@ -44,6 +44,24 @@ def populate_binary_directory(directory: Path, machine: int) -> None:
 
 
 class NativePackageContractTests(unittest.TestCase):
+    def test_shipping_shell_hosts_are_explicit_and_runtime_backed(self):
+        self.assertEqual(
+            set(contract.SHIPPING_SHELL_SOURCES),
+            {"rmac-wallpaper", "rmac-top-bar", "rmac-dock", "rmac-osd"},
+        )
+        self.assertTrue(
+            set(contract.SHIPPING_SHELL_SOURCES).issubset(contract.SESSION_BINARIES)
+        )
+        manifest = (
+            Path(__file__).parents[1]
+            / "experiments"
+            / "gpui-upstream-lab"
+            / "Cargo.toml"
+        ).read_text(encoding="utf-8")
+        for _, runtime_crates in contract.SHIPPING_SHELL_SOURCES.values():
+            for crate in runtime_crates:
+                self.assertIn(f'{crate} = {{ version = "=0.1.0",', manifest)
+
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 7)
         self.assertEqual(len(contract.SESSION_BINARIES), 17)

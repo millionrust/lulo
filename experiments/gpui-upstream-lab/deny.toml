@@ -1,0 +1,55 @@
+[graph]
+targets = [
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+]
+all-features = true
+
+[advisories]
+yanked = "deny"
+unmaintained = "workspace"
+unsound = "all"
+ignore = [
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml is build-only through wayland-scanner and parses trusted protocol XML; remove when wayland-scanner supports quick-xml >=0.41" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml is build-only through wayland-scanner and parses trusted protocol XML; remove when wayland-scanner supports quick-xml >=0.41" },
+]
+
+[licenses]
+confidence-threshold = 0.93
+unused-allowed-license = "warn"
+unused-license-exception = "deny"
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+    "bzip2-1.0.6",
+]
+exceptions = [
+    { crate = "option-ext@0.2.0", allow = ["MPL-2.0"] },
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "simplest-path"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    "https://github.com/zed-industries/font-kit",
+    "https://github.com/zed-industries/scap",
+    "https://github.com/zed-industries/xim-rs.git",
+    "https://github.com/zed-industries/zed.git",
+]

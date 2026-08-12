@@ -1,6 +1,6 @@
 # ADR 0002: pin GPUI exactly and promote upgrades through the Linux gate
 
-- Status: accepted
+- Status: accepted, amended for the packaged Linux shell
 - Date: 2026-07-10
 - Owners: rmac maintainers
 - Review cadence: every four weeks and at each phase gate
@@ -31,15 +31,22 @@ macOS and Linux, but its Ubuntu/Wayland runtime gates remain open.
 - The product remains on this line until every promotion gate below passes. A
   compiling experiment alone is not approval.
 
-### Upstream evaluation line
+### Separately locked Linux shell line
 
 - `experiments/gpui-upstream-lab` stays outside the product workspace.
 - It pins a full immutable Git revision and its matching Rust toolchain and
   commits its own lockfile.
+- Its `wallpaper`, `top-bar`, `dock`, and `osd` binaries are the maintained
+  layer-shell hosts packaged as the corresponding `rmac-*` session binaries.
+- Each host consumes the framework-neutral rmac runtime/model crate recorded by
+  `SHIPPING_SHELL_SOURCES`; application binaries remain on the root GPUI line.
+- The shell graph has a dedicated `deny.toml` and CI gate. Exact reviewed Git
+  sources are permitted, but GPL-only tracing is replaced by an original MIT
+  compatibility shim instead of widening the product license policy.
 - Moving the revision requires a dedicated change containing the upstream
   comparison, resolved dependency diff, macOS smoke result, Linux compile
   result, and updated runtime evidence.
-- The experiment is evidence and must never be imported by a product crate.
+- Product workspace crates must not import the shell host package.
 
 ### Review cadence and triggers
 
@@ -108,9 +115,8 @@ belongs in `rmac-ui` or a platform boundary, not duplicated across applications.
   the project's highest platform risk.
 - Security fixes may require an expedited evaluation, but still require the
   safety and accessibility gates proportional to the affected code path.
-- The currently evaluated upstream revision is not a product dependency and
-  does not yet authorize Phase 2 application-foundation work as a substitute
-  for completing Phase 1 runtime validation.
+- The packaged shell and ordinary application graphs can evolve independently,
+  while both remain lockfile-, policy-, and runtime-gated.
 
 ## Evidence
 

@@ -254,6 +254,17 @@ mod linux_wayland {
                     snapshot.content.applications.clone(),
                 )
             };
+            if self.render_count == 1 {
+                for item in &model.items {
+                    eprintln!(
+                        "Dock item {} launchable={} running={} windows={}",
+                        item.id,
+                        item.launchable,
+                        item.running,
+                        item.windows.len()
+                    );
+                }
+            }
             let effective_autohide = dock_settings.autohide || self.fullscreen;
             let visibility_policy = (effective_autohide, self.overview_visible);
             if self.visibility_policy != Some(visibility_policy) {

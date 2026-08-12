@@ -25,7 +25,7 @@ fn evidence_units_are_separate_readiness_gated_crash_domains() {
     assert!(FALLBACK_UNIT.contains("NotifyAccess=all"));
     assert!(FALLBACK_UNIT.contains("Restart=on-failure"));
     assert!(FALLBACK_UNIT.contains("StartLimitIntervalSec=0"));
-    assert!(FALLBACK_UNIT.contains("/rmac/rmac-locker --config"));
+    assert!(FALLBACK_UNIT.contains("ExecStart=@RMAC_LOCKER@ --config"));
     assert!(FALLBACK_UNIT.contains("EnvironmentFile=%t/rmac-lock-evidence/environment"));
 
     for unit in [CUSTOM_UNIT, FALLBACK_UNIT] {
@@ -38,6 +38,8 @@ fn evidence_units_are_separate_readiness_gated_crash_domains() {
 #[test]
 fn evidence_scripts_require_opt_in_nested_recovery_without_installing_it_normally() {
     assert!(INSTALLER.contains("--features development-provider"));
+    assert!(INSTALLER.contains("/usr/libexec/rmac/rmac-locker"));
+    assert!(INSTALLER.contains("@RMAC_LOCKER@"));
     assert!(INSTALLER.contains("at least 25 GiB free"));
     assert!(INSTALLER.contains("no provider was started or enabled"));
     assert!(!INSTALLER.contains("systemctl --user enable"));

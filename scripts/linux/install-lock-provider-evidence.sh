@@ -28,8 +28,14 @@ if [ ! -f /etc/pam.d/rmac-lock ]; then
     echo "review and install crates/rmac-lock-provider-linux/pam/rmac-lock before evidence setup" >&2
     exit 1
 fi
-if [ ! -x "${HOME}/.local/libexec/rmac/rmac-locker" ] ||
-   [ ! -f "${config_home}/rmac/swaylock.conf" ]; then
+normal_locker=
+for candidate in /usr/libexec/rmac/rmac-locker "${HOME}/.local/libexec/rmac/rmac-locker"; do
+    if [ -x "${candidate}" ]; then
+        normal_locker=${candidate}
+        break
+    fi
+done
+if [ -z "${normal_locker}" ] || [ ! -f "${config_home}/rmac/swaylock.conf" ]; then
     echo "install the normal swaylock-backed rmac session units before evidence setup" >&2
     exit 1
 fi
@@ -62,8 +68,19 @@ install -m 0755 "${script_dir}/launch-lock-provider-evidence.sh" \
     "${libexec_dir}/rmac-lock-provider-evidence-launch"
 install -m 0644 "${asset_dir}/units/rmac-lock-provider-evidence.service" \
     "${unit_dir}/rmac-lock-provider-evidence.service"
-install -m 0644 "${asset_dir}/units/rmac-lock-fallback-evidence.service" \
-    "${unit_dir}/rmac-lock-fallback-evidence.service"
+fallback_unit="${unit_dir}/rmac-lock-fallback-evidence.service"
+fallback_temporary=$(mktemp "${unit_dir}/.rmac-lock-fallback-evidence.XXXXXX")
+trap 'rm -f "${fallback_temporary:-}"' EXIT HUP INT TERM
+sed "s|@RMAC_LOCKER@|${normal_locker}|g" \
+    "${asset_dir}/units/rmac-lock-fallback-evidence.service" \
+    >"${fallback_temporary}"
+if grep -q '@RMAC_LOCKER@' "${fallback_temporary}"; then
+    echo "lock-provider fallback evidence template was not resolved" >&2
+    exit 1
+fi
+chmod 0644 "${fallback_temporary}"
+mv -f "${fallback_temporary}" "${fallback_unit}"
+trap - EXIT HUP INT TERM
 /usr/bin/systemctl --user daemon-reload
 
 echo "Installed opt-in nested lock evidence assets; no provider was started or enabled."

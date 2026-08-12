@@ -714,8 +714,11 @@ fn existing_trash_layouts() -> io::Result<Vec<TrashLayout>> {
                         path_relative_to_topdir: true,
                     }),
                     Ok(false) => {}
-                    Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {}
-                    Err(error) => return Err(error),
+                    // Linux exposes pseudo mounts whose mountpoint is not a
+                    // directory (notably snap namespace `.mnt` files).  A
+                    // missing or unreadable Trash on another mount must not
+                    // make the user's valid home Trash disappear.
+                    Err(_) => {}
                 }
             }
         }
@@ -727,8 +730,9 @@ fn existing_trash_layouts() -> io::Result<Vec<TrashLayout>> {
                 path_relative_to_topdir: true,
             }),
             Ok(false) => {}
-            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {}
-            Err(error) => return Err(error),
+            // External and pseudo mounts are optional discovery targets.  The
+            // home layout above remains strict and fully verified.
+            Err(_) => {}
         }
     }
     layouts.sort_by(|left, right| left.root.cmp(&right.root));

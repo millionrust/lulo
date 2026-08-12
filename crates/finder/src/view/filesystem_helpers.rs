@@ -189,10 +189,15 @@ pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
     if let Some(md) = &md {
         v.push(("Permissions", perm_string(md.permissions().mode())));
     }
-    if let Ok(out) = Command::new("stat")
+    #[cfg(target_os = "macos")]
+    let owner = Command::new("stat")
         .args(["-f", "%Su\n%Sg", &e.path.to_string_lossy()])
-        .output()
-    {
+        .output();
+    #[cfg(not(target_os = "macos"))]
+    let owner = Command::new("stat")
+        .args(["-c", "%U\n%G", &e.path.to_string_lossy()])
+        .output();
+    if let Ok(out) = owner {
         let s = String::from_utf8_lossy(&out.stdout);
         let mut lines = s.lines();
         if let Some(o) = lines.next().filter(|l| !l.is_empty()) {

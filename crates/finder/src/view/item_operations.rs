@@ -2,16 +2,34 @@ use super::*;
 
 impl FinderView {
     // ---- operations ----
-    pub(super) fn new_folder(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
         let path = unique_path(self.cwd.join("untitled folder"));
-        let failures = file_ops::create_folder(&file_ops::RealFileSystem, &path)
-            .err()
-            .into_iter()
-            .collect();
-        self.finish_file_operations(failures, cx);
+        if let Err(failure) = file_ops::create_folder(&file_ops::RealFileSystem, &path) {
+            self.record_operation_failures(vec![failure], cx);
+            return;
+        }
+
+        let Some(entry) = entry_for(&path) else {
+            self.operation_error = Some("The folder was created but could not be displayed".into());
+            self.reload(cx);
+            return;
+        };
+        self.entries.push(entry);
+        sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+        let Some(index) = self.entries.iter().position(|entry| entry.path == path) else {
+            self.reload(cx);
+            return;
+        };
+        self.selected.clear();
+        self.selected.insert(index);
+        self.anchor = Some(index);
+        self.operation_error = None;
+        self.rename_start(window, cx);
+        // Finder selects the generated name so typing replaces it immediately.
+        window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
     }
 
     pub(super) fn duplicate(&mut self, cx: &mut Context<Self>) {

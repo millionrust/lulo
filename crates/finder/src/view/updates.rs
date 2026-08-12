@@ -197,6 +197,11 @@ impl FinderView {
             .anchor
             .and_then(|index| self.entries.get(index))
             .map(|entry| entry.path.clone());
+        let renaming = self.renaming.as_ref().and_then(|(index, input)| {
+            self.entries
+                .get(*index)
+                .map(|entry| (entry.path.clone(), input.clone()))
+        });
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
@@ -263,7 +268,12 @@ impl FinderView {
                             })
                             .filter(|index| this.selected.contains(index))
                             .or_else(|| this.selected.iter().next().copied());
-                        this.renaming = None;
+                        this.renaming = renaming.as_ref().and_then(|(path, input)| {
+                            this.entries
+                                .iter()
+                                .position(|entry| &entry.path == path)
+                                .map(|index| (index, input.clone()))
+                        });
                         cx.notify();
                         this.gen_thumbs(cx);
                     }

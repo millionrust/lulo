@@ -117,6 +117,10 @@ actions!(
         ViewAsList,
         ViewAsColumns,
         ViewAsGallery,
+        SortByName,
+        SortByDate,
+        SortBySize,
+        SortByKind,
         NewTab,
         CloseTab,
     ]

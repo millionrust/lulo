@@ -47,6 +47,11 @@ impl FinderView {
                 .item("View as Columns", Box::new(ViewAsColumns))
                 .item("View as Gallery", Box::new(ViewAsGallery))
                 .separator()
+                .item("Sort by Name", Box::new(SortByName))
+                .item("Sort by Date Modified", Box::new(SortByDate))
+                .item("Sort by Size", Box::new(SortBySize))
+                .item("Sort by Kind", Box::new(SortByKind))
+                .separator()
                 .command_item(
                     "Select All",
                     rmac_ui::shortcuts::SELECT_ALL,
@@ -98,6 +103,11 @@ impl FinderView {
                 .item("View as List", Box::new(ViewAsList))
                 .item("View as Columns", Box::new(ViewAsColumns))
                 .item("View as Gallery", Box::new(ViewAsGallery))
+                .separator()
+                .item("Sort by Name", Box::new(SortByName))
+                .item("Sort by Date Modified", Box::new(SortByDate))
+                .item("Sort by Size", Box::new(SortBySize))
+                .item("Sort by Kind", Box::new(SortByKind))
                 .separator()
                 .command_item(
                     "Select All",

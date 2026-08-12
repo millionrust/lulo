@@ -1,4 +1,5 @@
 use super::*;
+use gpui_component::scroll::ScrollableElement as _;
 
 impl FinderView {
     pub(super) fn get_info(&mut self, cx: &mut Context<Self>) {
@@ -187,6 +188,8 @@ impl FinderView {
 
         let mut card = div()
             .w(px(300.0))
+            .max_h(px(500.0))
+            .overflow_hidden()
             .rounded(px(12.0))
             .bg(rmac_ui::mac::raised())
             .border_1()
@@ -217,6 +220,7 @@ impl FinderView {
                     .child(icon(glyph, 56.0, glyph_color))
                     .child(
                         div()
+                            .max_w(px(260.0))
                             .text_size(rmac_ui::text_px(15.0))
                             .font_weight(rmac_ui::mac::SEMIBOLD)
                             .text_color(label())
@@ -225,8 +229,9 @@ impl FinderView {
                     ),
             );
 
+        let mut details = div().v_flex().min_h(px(0.0)).overflow_y_scrollbar();
         for (k, v) in file_info(e) {
-            card = card.child(
+            details = details.child(
                 div()
                     .flex()
                     .items_start()
@@ -242,9 +247,17 @@ impl FinderView {
                             .text_right()
                             .child(format!("{k}:")),
                     )
-                    .child(div().flex_1().text_color(label()).child(v)),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .overflow_hidden()
+                            .text_color(label())
+                            .child(v),
+                    ),
             );
         }
+        card = card.child(details);
 
         div()
             .absolute()

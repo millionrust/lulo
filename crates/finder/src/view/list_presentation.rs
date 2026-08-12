@@ -465,7 +465,7 @@ impl FinderView {
         div()
             .track_focus(&self.focus)
             .key_context("Finder")
-            .on_action(cx.listener(|this, _: &NewFolder, _, cx| this.new_folder(cx)))
+            .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_start(window, cx)),
             )
@@ -503,6 +503,10 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ViewAsGallery, _, cx| {
                 this.select_view_mode(ViewMode::Gallery, cx)
             }))
+            .on_action(cx.listener(|this, _: &SortByName, _, cx| this.set_sort(SortKey::Name, cx)))
+            .on_action(cx.listener(|this, _: &SortByDate, _, cx| this.set_sort(SortKey::Date, cx)))
+            .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.set_sort(SortKey::Size, cx)))
+            .on_action(cx.listener(|this, _: &SortByKind, _, cx| this.set_sort(SortKey::Kind, cx)))
             .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
             .on_action(cx.listener(|this, _: &CloseTab, _, cx| {
                 let a = this.active;

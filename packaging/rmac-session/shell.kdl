@@ -32,11 +32,11 @@ window-rule {
     border { off; }
 }
 
-// Finder uses the large macOS document-window radius and lets niri clip and
+// Finder uses the measured macOS document-window curve and lets niri clip and
 // blur the translucent source-list material behind its unified toolbar.
 window-rule {
     match app-id=r#"^org\.rmac\.Files$"#
-    geometry-corner-radius 24
+    geometry-corner-radius 12
     clip-to-geometry true
     shadow {
         on

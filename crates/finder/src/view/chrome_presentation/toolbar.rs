@@ -159,7 +159,7 @@ impl FinderView {
                 toolbar.child(
                     div()
                         .pl_1()
-                        .text_size(rmac_ui::text_px(15.0))
+                        .text_size(rmac_ui::text_px(13.0))
                         .font_weight(rmac_ui::mac::SEMIBOLD)
                         .text_color(label())
                         .child(self.title()),

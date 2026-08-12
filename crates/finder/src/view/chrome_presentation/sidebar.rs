@@ -26,28 +26,30 @@ impl FinderView {
         let tag_name = p.name.clone();
         let kind = p.kind;
         let main = div()
+            .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
             .flex()
             .items_center()
             .gap_2()
             .min_w(px(0.0))
+            .cursor_pointer()
             .child(leading)
             .child(
-                Button::new(
-                    SharedString::from(format!("placemain-{key}")),
-                    p.name.clone(),
-                )
-                .ghost()
-                .xsmall()
-                .selected(selected)
-                .flex_1()
-                .on_click(cx.listener(move |this, _, _, cx| match kind {
-                    PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
-                    PlaceKind::Recents => this.recents_click(cx),
-                    PlaceKind::Trash => this.trash_click(cx),
-                    _ => this.navigate(np.clone(), cx),
-                })),
-            );
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .truncate()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::REGULAR)
+                    .text_color(label())
+                    .child(p.name.clone()),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| match kind {
+                PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
+                PlaceKind::Recents => this.recents_click(cx),
+                PlaceKind::Trash => this.trash_click(cx),
+                _ => this.navigate(np.clone(), cx),
+            }));
 
         let mut row = div()
             .id(SharedString::from(format!("place-{key}")))
@@ -74,6 +76,7 @@ impl FinderView {
                     .xsmall()
                     .tooltip(tooltip)
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
                         this.eject_volume(ep.clone(), cx);
                     })),
             );

@@ -229,11 +229,11 @@ impl FinderView {
                 let icon_color = if e.is_dir { folder_blue() } else { secondary() };
                 let visual: gpui::AnyElement = match self.thumbs.get(&e.path) {
                     Some(t) => img(t.clone())
-                        .max_w(px(56.0))
-                        .max_h(px(50.0))
+                        .max_w(px(64.0))
+                        .max_h(px(58.0))
                         .rounded(px(3.0))
                         .into_any_element(),
-                    None => icon(glyph, 52.0, icon_color).into_any_element(),
+                    None => icon(glyph, 64.0, icon_color).into_any_element(),
                 };
                 let drag_paths = if selected {
                     self.selected_paths()
@@ -246,14 +246,14 @@ impl FinderView {
                 tiles.push(
                     div()
                         .id(("tile", ix))
-                        .w(px(104.0))
+                        .w(px(116.0))
                         .flex()
                         .flex_col()
                         .items_center()
                         .gap_1()
                         .px_1()
                         .py_2()
-                        .child(div().h(px(52.0)).flex().items_center().child(visual))
+                        .child(div().h(px(64.0)).flex().items_center().child(visual))
                         .child(
                             div()
                                 .max_w(px(96.0))
@@ -261,7 +261,7 @@ impl FinderView {
                                 .py_0p5()
                                 .rounded(px(4.0))
                                 .when(selected, |el: Div| el.bg(sel()))
-                                .text_size(rmac_ui::text_px(12.0))
+                                .text_size(rmac_ui::text_px(13.0))
                                 .text_center()
                                 .truncate()
                                 .text_color(if selected { white() } else { label() })

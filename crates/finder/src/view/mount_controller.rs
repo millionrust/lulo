@@ -117,7 +117,20 @@ impl FinderView {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| root_volume_name().to_string());
-        let mut places = vec![
+        let mut places = Vec::new();
+        let icloud = self
+            .home
+            .join("Library/Mobile Documents/com~apple~CloudDocs");
+        if icloud.is_dir() {
+            places.push(Place {
+                name: "iCloud Drive".into(),
+                path: icloud,
+                icon: "icons/cloud.svg",
+                tint: accent(),
+                kind: PlaceKind::Item,
+            });
+        }
+        places.extend([
             Place {
                 name: host.into(),
                 path: self.home.clone(),
@@ -132,7 +145,7 @@ impl FinderView {
                 tint: drive_gray(),
                 kind: PlaceKind::Item,
             },
-        ];
+        ]);
         places.extend(self.mounts.iter().map(|mount| Place {
             name: mount.name.clone().into(),
             path: mount.path.clone(),
@@ -144,6 +157,14 @@ impl FinderView {
                 PlaceKind::Item
             },
         }));
+        #[cfg(target_os = "linux")]
+        places.push(Place {
+            name: "Trash".into(),
+            path: PathBuf::new(),
+            icon: "icons/trash-2.svg",
+            tint: accent(),
+            kind: PlaceKind::Trash,
+        });
         if let Some(locations) = self
             .sections
             .iter_mut()

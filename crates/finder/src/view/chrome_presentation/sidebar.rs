@@ -102,6 +102,7 @@ impl FinderView {
         self.applications_view = true;
         self.cancel_search();
         self.result_title = Some("Applications".into());
+        self.operation_error = None;
         self.search_summary = Some("Loading applications…".into());
         self.search_relevance_order = false;
         self.entries.clear();

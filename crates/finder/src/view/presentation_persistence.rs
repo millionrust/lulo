@@ -172,6 +172,7 @@ impl FinderView {
             return;
         }
         self.view = mode;
+        self.operation_error = None;
         self.persist_finder_state();
         cx.notify();
     }

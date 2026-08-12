@@ -192,6 +192,11 @@ impl FinderView {
         // Compared on completion so a slow read for a directory we've since
         // navigated away from doesn't clobber the current listing.
         let read_path = path.clone();
+        let selected_paths = self.selected_paths().into_iter().collect::<BTreeSet<_>>();
+        let anchor_path = self
+            .anchor
+            .and_then(|index| self.entries.get(index))
+            .map(|entry| entry.path.clone());
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
@@ -243,8 +248,21 @@ impl FinderView {
                         if let Some(free) = free {
                             this.free_bytes = free;
                         }
-                        this.selected.clear();
-                        this.anchor = None;
+                        this.selected = this
+                            .entries
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(index, entry)| {
+                                selected_paths.contains(&entry.path).then_some(index)
+                            })
+                            .collect();
+                        this.anchor = anchor_path
+                            .as_ref()
+                            .and_then(|path| {
+                                this.entries.iter().position(|entry| &entry.path == path)
+                            })
+                            .filter(|index| this.selected.contains(index))
+                            .or_else(|| this.selected.iter().next().copied());
                         this.renaming = None;
                         cx.notify();
                         this.gen_thumbs(cx);

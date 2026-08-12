@@ -198,14 +198,10 @@ mod linux_wayland {
                     Err(error) => Err(error.to_string()),
                 }
             }) {
-                Ok(Ok(Some(pending))) => pending,
-                Ok(Ok(None)) => return,
-                Ok(Err(error)) => {
-                    eprintln!("could not begin Dock action: {error}");
-                    return;
-                }
+                Ok(Some(pending)) => pending,
+                Ok(None) => return,
                 Err(error) => {
-                    eprintln!("could not access Dock action state: {error}");
+                    eprintln!("could not begin Dock action: {error}");
                     return;
                 }
             };

@@ -35,7 +35,7 @@ APPLICATIONS = {
         "keywords": "applications;apps;launcher;programs;",
         "binary": "rmac-app-drawer",
         "categories": "System;",
-        "hidden": True,
+        "hidden": False,
     },
     "org.rmac.Files": {
         "name": "Finder",

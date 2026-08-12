@@ -284,8 +284,10 @@ pub(crate) fn run(destination: crate::StartupDestination) {
         720.0,
         move |window, cx| {
             let mut finder = FinderView::new(window, cx);
-            if destination == crate::StartupDestination::Trash {
-                finder.trash_click(cx);
+            match destination {
+                crate::StartupDestination::Default => {}
+                crate::StartupDestination::Trash => finder.trash_click(cx),
+                crate::StartupDestination::Directory(path) => finder.navigate(path, cx),
             }
             finder
         },

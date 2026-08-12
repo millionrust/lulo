@@ -11,18 +11,7 @@ impl Backend for SystemBackend {
         spec: &'a rmac_apps::LaunchSpec,
     ) -> BackendFuture<'a, Result<rmac_app_launch::Outcome, BackendError>> {
         let spec = spec.clone();
-        Box::pin(async move {
-            rmac_app_launch::launch(spec).await.map_err(|error| {
-                BackendError::new(
-                    match error.kind {
-                        rmac_app_launch::ErrorKind::Io(kind) => FailureKind::Io(kind),
-                        rmac_app_launch::ErrorKind::Rejected => FailureKind::Rejected,
-                        rmac_app_launch::ErrorKind::Protocol => FailureKind::Protocol,
-                    },
-                    error.to_string(),
-                )
-            })
-        })
+        Box::pin(async move { rmac_app_launch::launch(spec).await.map_err(launch_error) })
     }
 
     fn focus_window(
@@ -119,22 +108,42 @@ impl Backend for SystemBackend {
     fn open_directory(&self, path: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
         let path = path.to_path_buf();
         Box::pin(async move {
-            rmac_app_launch::reveal_item(path).await.map_err(|_| {
+            let path = path.into_os_string().into_string().map_err(|_| {
                 BackendError::new(
-                    FailureKind::Other,
-                    "the desktop portal could not open the selected directory",
+                    FailureKind::Unsupported,
+                    "Finder cannot open a directory whose path is not valid UTF-8",
                 )
-            })
+            })?;
+            launch_finder(vec!["--path".into(), path]).await
         })
     }
 
     fn open_trash(&self) -> BackendFuture<'_, Result<(), BackendError>> {
-        Box::pin(async move {
-            rmac_portal::open_trash().await.map_err(|_| {
-                BackendError::new(FailureKind::Other, "the desktop could not open Trash")
-            })
-        })
+        Box::pin(async move { launch_finder(vec!["--trash".into()]).await })
     }
+}
+
+async fn launch_finder(args: Vec<String>) -> Result<(), BackendError> {
+    rmac_app_launch::launch(rmac_apps::LaunchSpec::Command {
+        program: "/usr/bin/rmac-files".into(),
+        args,
+        working_dir: None,
+        terminal: false,
+    })
+    .await
+    .map(|_| ())
+    .map_err(launch_error)
+}
+
+fn launch_error(error: rmac_app_launch::Error) -> BackendError {
+    BackendError::new(
+        match error.kind {
+            rmac_app_launch::ErrorKind::Io(kind) => FailureKind::Io(kind),
+            rmac_app_launch::ErrorKind::Rejected => FailureKind::Rejected,
+            rmac_app_launch::ErrorKind::Protocol => FailureKind::Protocol,
+        },
+        error.to_string(),
+    )
 }
 
 pub(crate) fn update_pins_in_store(

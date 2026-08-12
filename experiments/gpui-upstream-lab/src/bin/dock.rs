@@ -494,6 +494,8 @@ mod linux_wayland {
                             &dock_settings,
                         );
                         let visual_offset = (ICON_SIZE - visual_size) / 2.0;
+                        let reveal_app_id = app_id.clone();
+                        let activate_app_id = app_id.clone();
                         let mut item = div()
                             .id(format!("dock-item-{}-{index}", self.display_id))
                             .role(Role::Button)
@@ -509,6 +511,7 @@ mod linux_wayland {
                             .font_weight(FontWeight::BOLD)
                             .opacity(if available { 1.0 } else { 0.58 });
                         let mut visual = div()
+                            .id(format!("dock-visual-{}-{index}", self.display_id))
                             .absolute()
                             .w(px(visual_size))
                             .h(px(visual_size))
@@ -520,7 +523,59 @@ mod linux_wayland {
                                 0x00000000
                             } else {
                                 item_color(&app_id, available)
-                            }));
+                            }))
+                            .when(actionable, |visual| {
+                                visual
+                                    .cursor_pointer()
+                                    .hover(|style| style.opacity(0.88))
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this,
+                                                  event: &gpui::MouseDownEvent,
+                                                  _,
+                                                  cx| {
+                                                cx.stop_propagation();
+                                                eprintln!(
+                                                    "Dock activation requested for {activate_app_id}"
+                                                );
+                                                if event.modifiers.platform {
+                                                    let reveal = {
+                                                        let status = this.status.read(cx);
+                                                        status
+                                                            .model()
+                                                            .and_then(|model| {
+                                                                model.context_menu(&reveal_app_id)
+                                                            })
+                                                            .and_then(|menu| menu.show_in_finder)
+                                                            .filter(|action| {
+                                                                status.model().is_some_and(|model| {
+                                                                    model.authorizes_context_action(
+                                                                        action,
+                                                                    )
+                                                                })
+                                                            })
+                                                    };
+                                                    if let Some(action) = reveal {
+                                                        this.dispatch_action(
+                                                            rmac_dock::menu::Action::Context(action),
+                                                            cx,
+                                                        );
+                                                    }
+                                                } else {
+                                                    this.dispatch_action(
+                                                        rmac_dock::menu::Action::ActivateEntry(
+                                                            rmac_dock::presentation::EntryId::Application(
+                                                                activate_app_id.clone(),
+                                                            ),
+                                                        ),
+                                                        cx,
+                                                    );
+                                                }
+                                            },
+                                        ),
+                                    )
+                            });
                         visual = match self.placement {
                             rmac_shell_settings::DockPlacement::Bottom => {
                                 visual.left(px(visual_offset)).bottom_0()
@@ -543,56 +598,6 @@ mod linux_wayland {
                             visual = visual.child(item_mark(&entry.label));
                         }
                         item = item.child(visual);
-                        if actionable {
-                            let reveal_app_id = app_id.clone();
-                            let activate_app_id = app_id.clone();
-                            item = item
-                                .cursor_pointer()
-                                .hover(|style| style.opacity(0.88))
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(
-                                        move |this, event: &gpui::MouseDownEvent, _, cx| {
-                                            cx.stop_propagation();
-                                            eprintln!(
-                                                "Dock activation requested for {activate_app_id}"
-                                            );
-                                            if event.modifiers.platform {
-                                                let reveal =
-                                                    {
-                                                        let status = this.status.read(cx);
-                                                        status
-                                                            .model()
-                                                            .and_then(|model| {
-                                                                model.context_menu(&reveal_app_id)
-                                                            })
-                                                            .and_then(|menu| menu.show_in_finder)
-                                                            .filter(|action| {
-                                                                status.model().is_some_and(|model| {
-                                                            model.authorizes_context_action(action)
-                                                        })
-                                                            })
-                                                    };
-                                                if let Some(action) = reveal {
-                                                    this.dispatch_action(
-                                                        rmac_dock::menu::Action::Context(action),
-                                                        cx,
-                                                    );
-                                                }
-                                            } else {
-                                                this.dispatch_action(
-                                                rmac_dock::menu::Action::ActivateEntry(
-                                                    rmac_dock::presentation::EntryId::Application(
-                                                        activate_app_id.clone(),
-                                                    ),
-                                                ),
-                                                cx,
-                                            );
-                                            }
-                                        },
-                                    ),
-                                );
-                        }
                         let context_app_id = app_id.clone();
                         item = item.on_mouse_down(
                             MouseButton::Right,

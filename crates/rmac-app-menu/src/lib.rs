@@ -86,8 +86,8 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Find…", "text_editor::ToggleFind", "⌘F"),
             item!("Find Next", "text_editor::FindNext", "⌘G"),
-            item!("Find Previous", "text_editor::FindPrev", "Ctrl+Shift+G"),
-            item!("Replace…", "text_editor::ToggleReplace", "⇧⌘F", separator),
+            item!("Find Previous", "text_editor::FindPrev", "⇧⌘G"),
+            item!("Replace…", "text_editor::ToggleReplace", "⌥⌘F", separator),
         ],
     },
     MenuSpec {
@@ -104,24 +104,24 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Shell",
         items: &[
-            item!("New Tab", "terminal::NewTab", "⇧⌘T"),
-            item!("Close Tab", "terminal::CloseTab", "⇧⌘W"),
-            item!("Next Tab", "terminal::NextTab", "⌘Tab", separator),
-            item!("Previous Tab", "terminal::PrevTab", "⇧⌘Tab"),
+            item!("New Tab", "terminal::NewTab", "⌘T"),
+            item!("Close Tab", "terminal::CloseTab", "⌘W"),
+            item!("Next Tab", "terminal::NextTab", "⇧⌘]", separator),
+            item!("Previous Tab", "terminal::PrevTab", "⇧⌘["),
         ],
     },
     MenuSpec {
         label: "Edit",
         items: &[
-            item!("Copy", "terminal::Copy", "⇧⌘C"),
-            item!("Paste", "terminal::Paste", "⇧⌘V"),
-            item!("Select All", "terminal::SelectAll", "⇧⌘A", separator),
+            item!("Copy", "terminal::Copy", "⌘C"),
+            item!("Paste", "terminal::Paste", "⌘V"),
+            item!("Select All", "terminal::SelectAll", "⌘A", separator),
         ],
     },
     MenuSpec {
         label: "View",
         items: &[
-            item!("Find…", "terminal::Find", "⇧⌘F"),
+            item!("Find…", "terminal::Find", "⌘F"),
             item!("Clear", "terminal::Clear", "⌘K"),
             item!("Bigger", "terminal::ZoomIn", "⌘+", separator),
             item!("Smaller", "terminal::ZoomOut", "⌘−"),
@@ -177,7 +177,7 @@ const FILES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
-            item!("Show Hidden Files", "finder::ToggleHidden", "Ctrl+Shift+."),
+            item!("Show Hidden Files", "finder::ToggleHidden", "⇧⌘."),
             item!("Quick Look", "finder::QuickLook", "Space"),
             item!("Enclosing Folder", "finder::GoUp", "⌘↑"),
         ],
@@ -509,5 +509,49 @@ mod tests {
             }],
         }];
         assert_eq!(validate_menus(&oversized), Err(Error::Protocol));
+    }
+
+    #[test]
+    fn exported_hints_preserve_standard_macos_shortcuts() {
+        let terminal = definition(
+            rmac_apps::identity::TERMINAL,
+            &[
+                "terminal::NewTab",
+                "terminal::CloseTab",
+                "terminal::NextTab",
+                "terminal::PrevTab",
+                "terminal::Copy",
+                "terminal::Paste",
+                "terminal::SelectAll",
+                "terminal::Find",
+            ],
+        )
+        .unwrap();
+        let terminal_hints = terminal
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .map(|item| (item.action.as_str(), item.shortcut.as_str()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(terminal_hints["terminal::NewTab"], "⌘T");
+        assert_eq!(terminal_hints["terminal::CloseTab"], "⌘W");
+        assert_eq!(terminal_hints["terminal::NextTab"], "⇧⌘]");
+        assert_eq!(terminal_hints["terminal::PrevTab"], "⇧⌘[");
+        assert_eq!(terminal_hints["terminal::Copy"], "⌘C");
+        assert_eq!(terminal_hints["terminal::Paste"], "⌘V");
+        assert_eq!(terminal_hints["terminal::SelectAll"], "⌘A");
+        assert_eq!(terminal_hints["terminal::Find"], "⌘F");
+
+        let editor = definition(
+            rmac_apps::identity::TEXT_EDITOR,
+            &["text_editor::FindPrev", "text_editor::ToggleReplace"],
+        )
+        .unwrap();
+        let editor_hints = editor
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .map(|item| (item.action.as_str(), item.shortcut.as_str()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(editor_hints["text_editor::FindPrev"], "⇧⌘G");
+        assert_eq!(editor_hints["text_editor::ToggleReplace"], "⌥⌘F");
     }
 }

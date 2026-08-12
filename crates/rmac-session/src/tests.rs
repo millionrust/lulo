@@ -270,6 +270,28 @@ fn apps_and_spotlight_have_exactly_one_activation_owner_each() {
 }
 
 #[test]
+fn compositor_shortcuts_preserve_standard_command_keys() {
+    let shell = include_str!("../../../packaging/rmac-session/shell.kdl");
+    let fallback = include_str!("../../../packaging/rmac-session/shortcuts-fallback.kdl");
+
+    for reserved in [
+        "Mod+A ", "Mod+F ", "Mod+H ", "Mod+J ", "Mod+K ", "Mod+L ", "Mod+N ", "Mod+O ", "Mod+Q ",
+        "Mod+T ", "Mod+W ",
+    ] {
+        assert!(!shell.contains(reserved), "shell captures {reserved}");
+        assert!(!fallback.contains(reserved), "fallback captures {reserved}");
+    }
+    assert!(!shell.contains("shortcuts-fallback.kdl"));
+    assert!(shell.contains("Ctrl+Up repeat=false hotkey-overlay-title=\"Mission Control\""));
+    assert!(shell.contains("Mod+Ctrl+F repeat=false hotkey-overlay-title=\"Full Screen\""));
+    assert!(shell.contains("Mod+Tab { next-window; }"));
+    assert!(shell.contains("Mod+grave { next-window filter=\"app-id\"; }"));
+    assert!(fallback.contains("Mod+Space repeat=false"));
+    assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
+    assert_eq!(fallback.matches("{ spawn ").count(), 2);
+}
+
+#[test]
 fn notification_portal_assets_select_only_the_rmac_backend_interface() {
     let descriptor = include_str!("../../rmac-notifications-linux/install/rmac.portal");
     assert!(descriptor.contains("DBusName=org.freedesktop.impl.portal.desktop.rmac"));

@@ -69,34 +69,28 @@ blur {
     saturation 1.5
 }
 
-// rmac owns its shell shortcuts in this session. The portal broker remains
-// available to applications, while these bindings make the desktop usable
-// immediately after login without a manual config step.
-include "/usr/share/rmac/niri/shortcuts-fallback.kdl"
-
 binds {
-    Mod+T repeat=false hotkey-overlay-title="Open Terminal" { spawn "rmac-terminal"; }
-    Mod+Q repeat=false hotkey-overlay-title="Close Window" { close-window; }
-    Mod+Tab repeat=false hotkey-overlay-title="Next Window" { focus-column-right; }
-    Mod+Shift+Tab repeat=false hotkey-overlay-title="Previous Window" { focus-column-left; }
-    Mod+H repeat=false { focus-column-left; }
-    Mod+L repeat=false { focus-column-right; }
-    Mod+J repeat=false { focus-workspace-down; }
-    Mod+K repeat=false { focus-workspace-up; }
-    Mod+Shift+H repeat=false { move-column-left; }
-    Mod+Shift+L repeat=false { move-column-right; }
-    Mod+Shift+J repeat=false { move-column-to-workspace-down; }
-    Mod+Shift+K repeat=false { move-column-to-workspace-up; }
-    Mod+F repeat=false hotkey-overlay-title="Fill Screen" { maximize-column; }
+    // Preserve Super/Command letter keys for the focused application. macOS
+    // uses Control+Arrow for Spaces and Control+Up for Mission Control.
+    Ctrl+Left repeat=false hotkey-overlay-title="Previous Space" { focus-workspace-up; }
+    Ctrl+Right repeat=false hotkey-overlay-title="Next Space" { focus-workspace-down; }
+    Ctrl+Up repeat=false hotkey-overlay-title="Mission Control" { toggle-overview; }
     Mod+Ctrl+F repeat=false hotkey-overlay-title="Full Screen" { fullscreen-window; }
-    Mod+O repeat=false hotkey-overlay-title="Mission Control" { toggle-overview; }
-    Mod+Shift+Slash repeat=false { show-hotkey-overlay; }
     XF86AudioRaiseVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-up"; }
     XF86AudioLowerVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-down"; }
     XF86AudioMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-output-mute"; }
     XF86AudioMicMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-input-mute"; }
     XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
+}
+
+// niri 26.04 owns the compositor-level MRU UI. Super+Tab follows the macOS
+// recent-window flow; Super+grave restricts the cycle to the current app.
+recent-windows {
+    binds {
+        Mod+Tab { next-window; }
+        Mod+grave { next-window filter="app-id"; }
+    }
 }
 
 // macOS 26-style system feedback lives beneath the menu bar on the display

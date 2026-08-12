@@ -16,10 +16,7 @@ pub fn shortcut_socket_path(id: &ShortcutId) -> Result<PathBuf, Error> {
 }
 
 pub(super) fn shortcut_socket_path_in(runtime: &Path, id: &ShortcutId) -> Result<PathBuf, Error> {
-    if !default_shortcuts()
-        .iter()
-        .any(|shortcut| shortcut.id == *id)
-    {
+    if !known_action(id) {
         return Err(Error::new(
             Operation::Dispatch,
             format!("unknown shortcut {}", id.0),
@@ -31,7 +28,7 @@ pub(super) fn shortcut_socket_path_in(runtime: &Path, id: &ShortcutId) -> Result
 pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
     let specs = default_shortcuts();
     validate_specs(&specs)?;
-    if !specs.iter().any(|shortcut| shortcut.id == *id) {
+    if !known_action(id) {
         return Err(Error::new(
             Operation::Dispatch,
             format!("unknown shortcut {}", id.0),
@@ -74,7 +71,7 @@ pub(super) async fn watch_dispatches_inner(
     sender: Sender<Event>,
     ready: Option<Sender<()>>,
 ) -> Result<(), Error> {
-    if !default_shortcuts().iter().any(|shortcut| shortcut.id == id) {
+    if !known_action(&id) {
         return Err(Error::new(
             Operation::BindDispatch,
             format!("unknown shortcut {}", id.0),

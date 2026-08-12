@@ -114,7 +114,15 @@ rm -f "${focus_activation_tmp}"
 trap - EXIT HUP INT TERM
 
 systemctl --user daemon-reload
-fallback_path="${config_home}/rmac/niri-shortcuts.kdl"
+niri_config=${NIRI_CONFIG:-"${config_home}/rmac/niri/session.kdl"}
+case ${niri_config} in
+    /*) ;;
+    *)
+        echo "NIRI_CONFIG must be an absolute path" >&2
+        exit 1
+        ;;
+esac
+fallback_path=$(dirname -- "${niri_config}")/shortcuts-generated.kdl
 "${libexec_dir}/rmac-shortcut-dispatch" write-niri-fallback \
     "${fallback_path}" "${libexec_dir}/rmac-shortcut-dispatch"
 echo "Installed rmac user units in ${unit_dir}."
@@ -125,5 +133,4 @@ echo "Installed the rmac lock screen with fail-closed swaylock recovery, logind 
 echo "The four upstream shell surfaces remain an explicit framework-gated development candidate."
 echo "Check them with: bash ${script_dir}/install-upstream-shell-candidate.sh --check"
 echo "Start the session from niri with ${bin_dir}/rmac-session-start."
-echo "If shortcuts-status.json reports fallback-required, add this to niri config:"
-echo "include \"${fallback_path}\""
+echo "The shortcut broker owns ${fallback_path}; include it once from the active niri config."

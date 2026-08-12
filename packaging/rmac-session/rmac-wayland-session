@@ -78,6 +78,8 @@ else
     esac
     packaged_config=/usr/share/rmac/niri/config.kdl
     rmac_config=${config_home}/rmac/niri/config.kdl
+    rmac_shortcuts=${config_home}/rmac/niri/shortcuts-generated.kdl
+    rmac_session_config=${config_home}/rmac/niri/session.kdl
     if [ ! -f "${packaged_config}" ] || [ -L "${packaged_config}" ]; then
         echo "the packaged rmac niri configuration is unavailable" >&2
         exit 1
@@ -90,7 +92,29 @@ else
         echo "the rmac niri configuration is not a regular file" >&2
         exit 1
     fi
-    NIRI_CONFIG=${rmac_config}
+    if [ -e "${rmac_shortcuts}" ] &&
+        { [ ! -f "${rmac_shortcuts}" ] || [ -L "${rmac_shortcuts}" ]; }; then
+        echo "the generated rmac shortcut configuration is not a regular file" >&2
+        exit 1
+    fi
+    # Clear a stale fallback before niri starts. The shortcut broker atomically
+    # writes either the portal-owned empty mode or the fallback mode afterward.
+    /usr/bin/install -m 0600 /dev/null "${rmac_shortcuts}"
+    rmac_session_temporary=${rmac_session_config}.new.$$
+    if [ -e "${rmac_session_temporary}" ] || [ -L "${rmac_session_temporary}" ]; then
+        echo "the temporary rmac session configuration already exists" >&2
+        exit 1
+    fi
+    /usr/bin/install -m 0600 /dev/null "${rmac_session_temporary}"
+    if ! printf '%s\n' \
+        'include "config.kdl"' \
+        'include "shortcuts-generated.kdl"' \
+        >"${rmac_session_temporary}"; then
+        echo "could not write the generated rmac session configuration" >&2
+        exit 1
+    fi
+    /usr/bin/mv -f "${rmac_session_temporary}" "${rmac_session_config}"
+    NIRI_CONFIG=${rmac_session_config}
     export NIRI_CONFIG
 fi
 XDG_SESSION_TYPE=wayland

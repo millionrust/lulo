@@ -97,9 +97,10 @@ def add_wrapper_config_fixture(root: Path) -> None:
     packaged = root / "usr/share/rmac/niri/config.kdl"
     packaged.parent.mkdir(parents=True, exist_ok=True)
     packaged.write_text('include "/usr/share/rmac/niri/shell.kdl"\n', encoding="utf-8")
-    install = shutil.which("install")
-    assert install is not None
-    write_program(root / "usr/bin/install", f'exec "{install}" "$@"\n')
+    for executable in ("install", "mv"):
+        target = shutil.which(executable)
+        assert target is not None
+        write_program(root / "usr/bin" / executable, f'exec "{target}" "$@"\n')
 
 
 class SessionPackageTests(unittest.TestCase):
@@ -305,7 +306,7 @@ class SessionPackageTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
                 capture.read_text(encoding="utf-8"),
-                f"rmac:niri|rmac|{root}/home/.config/rmac/niri/config.kdl|"
+                f"rmac:niri|rmac|{root}/home/.config/rmac/niri/session.kdl|"
                 f"wayland-9|{root}/runtime/niri.wayland-9.42.sock|"
                 "--system-package\n",
             )
@@ -315,6 +316,14 @@ class SessionPackageTests(unittest.TestCase):
                 'include "/usr/share/rmac/niri/shell.kdl"\n',
             )
             self.assertEqual(stat.S_IMODE(user_config.stat().st_mode), 0o600)
+            session_config = root / "home/.config/rmac/niri/session.kdl"
+            self.assertEqual(
+                session_config.read_text(encoding="utf-8"),
+                'include "config.kdl"\ninclude "shortcuts-generated.kdl"\n',
+            )
+            generated_shortcuts = root / "home/.config/rmac/niri/shortcuts-generated.kdl"
+            self.assertEqual(generated_shortcuts.read_text(encoding="utf-8"), "")
+            self.assertEqual(stat.S_IMODE(generated_shortcuts.stat().st_mode), 0o600)
             cleanup = systemctl_capture.read_text(encoding="utf-8")
             self.assertIn("--user stop waybar.service", cleanup)
             for unit in (

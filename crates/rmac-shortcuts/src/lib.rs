@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_channel::Sender;
-use rmac_storage::atomic_write;
 use serde::{Deserialize, Serialize};
 
 mod configuration;

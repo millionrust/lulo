@@ -17,21 +17,15 @@ pub struct ShortcutSpec {
 pub fn default_shortcuts() -> Vec<ShortcutSpec> {
     vec![
         shortcut("launcher", "Open rmac launcher", "LOGO+space", "Mod+Space"),
-        shortcut("app-drawer", "Open Apps", "LOGO+a", "Mod+A"),
-        shortcut(
-            "notification-center",
-            "Open Notification Center",
-            "LOGO+n",
-            "Mod+N",
-        ),
-        shortcut(
-            "quick-settings",
-            "Open Quick Settings",
-            "LOGO+CTRL+c",
-            "Mod+Ctrl+C",
-        ),
         shortcut("lock", "Lock the rmac session", "LOGO+CTRL+q", "Mod+Ctrl+Q"),
     ]
+}
+
+pub fn known_action(id: &ShortcutId) -> bool {
+    matches!(
+        id.0.as_str(),
+        "launcher" | "app-drawer" | "notification-center" | "quick-settings" | "lock"
+    )
 }
 
 fn shortcut(id: &str, description: &str, preferred: &str, niri: &str) -> ShortcutSpec {

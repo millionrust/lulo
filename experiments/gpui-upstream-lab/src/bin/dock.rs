@@ -4,7 +4,6 @@ mod linux_wayland {
     use std::fs::{self, OpenOptions};
     use std::io::Write as _;
     use std::path::PathBuf;
-    use std::process::Command;
     use std::rc::Rc;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
@@ -35,6 +34,7 @@ mod linux_wayland {
         snapshot: Option<rmac_dock_runtime::Snapshot>,
         outputs: std::collections::BTreeSet<uuid::Uuid>,
         removed_outputs: std::collections::BTreeSet<uuid::Uuid>,
+        actions: rmac_dock_system::interaction::State,
     }
 
     impl DockStatus {
@@ -83,6 +83,7 @@ mod linux_wayland {
                 snapshot: None,
                 outputs: std::collections::BTreeSet::new(),
                 removed_outputs: std::collections::BTreeSet::new(),
+                actions: rmac_dock_system::interaction::State::default(),
             }
         }
 
@@ -176,6 +177,66 @@ mod linux_wayland {
             })
             .detach();
         }
+
+        fn dispatch_action(&mut self, action: rmac_dock::menu::Action, cx: &mut Context<Self>) {
+            let pending = match self.status.update(cx, |status, _| {
+                let model = status
+                    .model()
+                    .ok_or_else(|| "runtime is not ready".to_owned())?;
+                let preparation = rmac_dock_system::dispatch::prepare(model, action)
+                    .map_err(|error| error.to_string())?;
+                let prepared = match preparation {
+                    rmac_dock_system::dispatch::Preparation::Ready(prepared) => prepared,
+                    rmac_dock_system::dispatch::Preparation::NoAction => return Ok(None),
+                    rmac_dock_system::dispatch::Preparation::TrashReview(_) => {
+                        return Err("Empty Trash requires the confirmation sheet".to_owned());
+                    }
+                };
+                match prepared.begin(&mut status.actions) {
+                    Ok(pending) => Ok(Some(pending)),
+                    Err(rmac_dock_system::interaction::BeginError::Busy { .. }) => Ok(None),
+                    Err(error) => Err(error.to_string()),
+                }
+            }) {
+                Ok(Ok(Some(pending))) => pending,
+                Ok(Ok(None)) => return,
+                Ok(Err(error)) => {
+                    eprintln!("could not begin Dock action: {error}");
+                    return;
+                }
+                Err(error) => {
+                    eprintln!("could not access Dock action state: {error}");
+                    return;
+                }
+            };
+            let Some(request_id) = next_activation_id() else {
+                let _ = self.status.update(cx, |status, cx| {
+                    if pending.cancel(&mut status.actions).visible {
+                        cx.notify();
+                    }
+                });
+                eprintln!("could not run Dock action: activation IDs exhausted");
+                return;
+            };
+            cx.notify();
+            let status = self.status.clone();
+            cx.spawn(async move |_, cx| {
+                let backend = rmac_dock_system::SystemBackend;
+                let completion = pending.run(request_id, &backend).await;
+                let _ = status.update(cx, |status, cx| {
+                    let (result, transition) = completion.apply(&mut status.actions);
+                    if result.is_err() {
+                        if let Some(feedback) = transition.snapshot.feedback.last() {
+                            eprintln!("{}", feedback.accessible_message());
+                        }
+                    }
+                    if transition.visible {
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
     }
 
     impl Render for Dock {
@@ -217,8 +278,8 @@ mod linux_wayland {
                 Some(count) => format!("Trash, {count} items"),
                 None => "Trash unavailable".into(),
             };
-            let trash_activation = model.activate_special(rmac_dock::SpecialItemKind::Trash);
-            let trash_available = trash_activation == rmac_dock::SpecialActivation::OpenTrash;
+            let trash_available = model.activate_special(rmac_dock::SpecialItemKind::Trash)
+                == rmac_dock::SpecialActivation::OpenTrash;
             let pinned_count = model.items.iter().take_while(|item| item.pinned).count();
             let separates_running = pinned_count > 0 && pinned_count < entries.len();
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
@@ -484,6 +545,7 @@ mod linux_wayland {
                         item = item.child(visual);
                         if actionable {
                             let reveal_app_id = app_id.clone();
+                            let activate_app_id = app_id.clone();
                             item = item
                                 .cursor_pointer()
                                 .hover(|style| style.opacity(0.88))
@@ -505,10 +567,20 @@ mod linux_wayland {
                                                     })
                                             };
                                             if let Some(action) = reveal {
-                                                dispatch_context_action(action, cx);
+                                                this.dispatch_action(
+                                                    rmac_dock::menu::Action::Context(action),
+                                                    cx,
+                                                );
                                             }
                                         } else {
-                                            dispatch_activation(activation.clone(), cx);
+                                            this.dispatch_action(
+                                                rmac_dock::menu::Action::ActivateEntry(
+                                                    rmac_dock::presentation::EntryId::Application(
+                                                        activate_app_id.clone(),
+                                                    ),
+                                                ),
+                                                cx,
+                                            );
                                         }
                                     },
                                 ));
@@ -622,9 +694,18 @@ mod linux_wayland {
                                 }
                             }));
                         if trash_available {
-                            trash = trash.cursor_pointer().on_click(move |_, _, cx| {
-                                dispatch_special(trash_activation.clone(), cx)
-                            });
+                            trash = trash.cursor_pointer().on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    this.dispatch_action(
+                                        rmac_dock::menu::Action::ActivateEntry(
+                                            rmac_dock::presentation::EntryId::Special(
+                                                rmac_dock::SpecialItemKind::Trash,
+                                            ),
+                                        ),
+                                        cx,
+                                    );
+                                },
+                            ));
                         }
                         trash = trash.on_mouse_down(
                             MouseButton::Right,
@@ -798,7 +879,7 @@ mod linux_wayland {
                         this.context_menu = None;
                         this.input_region = None;
                         if authorized {
-                            dispatch_dock_menu_action(action, cx);
+                            this.dispatch_action(action, cx);
                         } else {
                             eprintln!("the selected Dock command is no longer current");
                         }
@@ -920,215 +1001,15 @@ mod linux_wayland {
         }
     }
 
-    fn dispatch_activation(activation: rmac_dock::Activation, cx: &mut App) {
-        match activation {
-            rmac_dock::Activation::Launch { app_id, spec } => {
-                cx.background_executor()
-                    .spawn(async move {
-                        if let Err(error) = rmac_app_launch::launch(spec).await {
-                            eprintln!("could not launch Dock application {app_id}: {error}");
-                        }
-                    })
-                    .detach();
-            }
-            rmac_dock::Activation::FocusWindow(window) => {
-                let Ok(previous) =
-                    NEXT_ACTIVATION.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                        current.checked_add(1)
-                    })
-                else {
-                    eprintln!("could not focus Dock application: activation IDs exhausted");
-                    return;
-                };
-                let request = rmac_compositor::ActionRequest {
-                    id: rmac_compositor::ActivationId(previous + 1),
-                    action: rmac_compositor::Action::FocusWindow { window },
-                };
-                cx.background_executor()
-                    .spawn(async move {
-                        if rmac_compositor_niri::execute(request).await.result.is_err() {
-                            eprintln!("could not focus the selected Dock application");
-                        }
-                    })
-                    .detach();
-            }
-            rmac_dock::Activation::NoAction | rmac_dock::Activation::Unavailable { .. } => {}
-        }
-    }
-
-    fn dispatch_special(activation: rmac_dock::SpecialActivation, cx: &mut App) {
-        let (target, label) = match activation {
-            rmac_dock::SpecialActivation::OpenDirectory { path, .. } => {
-                (Some(path.into_os_string()), "Dock folder")
-            }
-            rmac_dock::SpecialActivation::OpenTrash => (None, "Trash"),
-            rmac_dock::SpecialActivation::Unavailable { .. } => return,
-        };
-        cx.background_executor()
-            .spawn(async move {
-                let opened = blocking::unblock(move || match target {
-                    Some(target) => Command::new("gio")
-                        .arg("open")
-                        .arg(target)
-                        .spawn()
-                        .map(|_| ()),
-                    None => Command::new("rmac-files")
-                        .arg("--trash")
-                        .spawn()
-                        .map(|_| ()),
-                })
-                .await;
-                if opened.is_err() {
-                    eprintln!("could not open {label}");
-                }
-            })
-            .detach();
-    }
-
-    fn dispatch_dock_menu_action(action: rmac_dock::menu::Action, cx: &mut App) {
-        match action {
-            rmac_dock::menu::Action::Context(action) => dispatch_context_action(action, cx),
-            rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(
-                kind @ (rmac_dock::SpecialItemKind::Downloads | rmac_dock::SpecialItemKind::Trash),
-            )) => {
-                dispatch_live_special(kind, cx);
-            }
-            rmac_dock::menu::Action::ActivateEntry(_)
-            | rmac_dock::menu::Action::SpecialContext(_) => {
-                eprintln!("the selected Dock menu command is not available in this shell surface")
-            }
-        }
-    }
-
-    fn dispatch_live_special(kind: rmac_dock::SpecialItemKind, cx: &mut App) {
-        cx.background_executor()
-            .spawn(async move {
-                let result = blocking::unblock(move || {
-                    let report = rmac_places_system::snapshot(&rmac_places_system::SystemBackend)
-                        .map_err(|error| error.to_string())?;
-                    let target = match kind {
-                        rmac_dock::SpecialItemKind::Downloads
-                            if report.snapshot.downloads.exists =>
-                        {
-                            Some(report.snapshot.downloads.path.into_os_string())
-                        }
-                        rmac_dock::SpecialItemKind::Trash => None,
-                        rmac_dock::SpecialItemKind::Files => {
-                            Some(report.snapshot.home.path.into_os_string())
-                        }
-                        rmac_dock::SpecialItemKind::Downloads => {
-                            return Err("Downloads is unavailable".to_owned())
-                        }
-                    };
-                    match target {
-                        Some(target) => Command::new("gio")
-                            .arg("open")
-                            .arg(target)
-                            .spawn()
-                            .map(|_| ()),
-                        None => Command::new("rmac-files")
-                            .arg("--trash")
-                            .spawn()
-                            .map(|_| ()),
-                    }
-                    .map_err(|error| error.to_string())
-                })
-                .await;
-                if let Err(error) = result {
-                    eprintln!("could not open Dock place: {error}");
-                }
-            })
-            .detach();
-    }
-
-    fn dispatch_context_action(action: rmac_dock::ContextAction, cx: &mut App) {
-        match action {
-            rmac_dock::ContextAction::LaunchNew { app_id, spec } => {
-                cx.background_executor()
-                    .spawn(async move {
-                        if let Err(error) = rmac_app_launch::launch(spec).await {
-                            eprintln!("could not launch a new Dock window for {app_id}: {error}");
-                        }
-                    })
-                    .detach();
-            }
-            rmac_dock::ContextAction::FocusWindow { window, .. } => {
-                dispatch_window_action(rmac_compositor::Action::FocusWindow { window }, cx)
-            }
-            rmac_dock::ContextAction::CloseWindow { window, .. } => {
-                dispatch_window_action(rmac_compositor::Action::CloseWindow { window }, cx)
-            }
-            rmac_dock::ContextAction::RevealApplication { app_id, source } => {
-                cx.background_executor()
-                    .spawn(async move {
-                        if let Err(error) = rmac_app_launch::reveal_item(source).await {
-                            eprintln!("could not show {app_id} in Finder: {error}");
-                        }
-                    })
-                    .detach();
-            }
-            rmac_dock::ContextAction::TerminateApplication { app_id, pids, kind } => {
-                cx.background_executor()
-                    .spawn(async move {
-                        let kind = match kind {
-                            rmac_dock::TerminationKind::Quit => {
-                                rmac_app_launch::TerminationKind::Quit
-                            }
-                            rmac_dock::TerminationKind::ForceQuit => {
-                                rmac_app_launch::TerminationKind::ForceQuit
-                            }
-                        };
-                        if let Err(error) = rmac_app_launch::terminate_application(pids, kind).await
-                        {
-                            eprintln!("could not terminate {app_id}: {error}");
-                        }
-                    })
-                    .detach();
-            }
-            rmac_dock::ContextAction::UpdatePins(command) => {
-                cx.background_executor()
-                    .spawn(async move {
-                        let result = blocking::unblock(move || {
-                            let store = rmac_shell_settings::ShellSettingsStore::from_environment()
-                                .map_err(|error| error.to_string())?;
-                            let mut settings =
-                                store.load().map_err(|error| error.to_string())?.settings;
-                            settings.pinned_apps =
-                                rmac_dock::apply_pin_command(&settings.pinned_apps, &command)
-                                    .map_err(|error| error.to_string())?;
-                            store.save(&settings).map_err(|error| error.to_string())?;
-                            Ok::<_, String>(())
-                        })
-                        .await;
-                        if let Err(error) = result {
-                            eprintln!("could not update Dock pins: {error}");
-                        }
-                    })
-                    .detach();
-            }
-        }
-    }
-
-    fn dispatch_window_action(action: rmac_compositor::Action, cx: &mut App) {
+    fn next_activation_id() -> Option<rmac_compositor::ActivationId> {
         let Ok(previous) =
             NEXT_ACTIVATION.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 current.checked_add(1)
             })
         else {
-            eprintln!("could not run Dock window action: activation IDs exhausted");
-            return;
+            return None;
         };
-        let request = rmac_compositor::ActionRequest {
-            id: rmac_compositor::ActivationId(previous + 1),
-            action,
-        };
-        cx.background_executor()
-            .spawn(async move {
-                if rmac_compositor_niri::execute(request).await.result.is_err() {
-                    eprintln!("could not run the selected Dock window action");
-                }
-            })
-            .detach();
+        Some(rmac_compositor::ActivationId(previous + 1))
     }
 
     fn record_configured_surface(window: &Window, display_id: u64) {

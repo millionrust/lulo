@@ -82,7 +82,7 @@ SESSION_BINARIES = (
 SHIPPING_SHELL_SOURCES = {
     "rmac-wallpaper": ("wallpaper", ("rmac-wallpaper-runtime",)),
     "rmac-top-bar": ("top-bar", ("rmac-shell-runtime",)),
-    "rmac-dock": ("dock", ("rmac-dock-runtime",)),
+    "rmac-dock": ("dock", ("rmac-dock-runtime", "rmac-dock-system")),
     "rmac-osd": ("osd", ("rmac-osd",)),
 }
 

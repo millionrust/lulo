@@ -39,8 +39,19 @@ impl FinderView {
                     )
                     .separator()
                     .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo));
+                return m;
             }
-            return m;
+            return m
+                .item("View as Icons", Box::new(ViewAsIcons))
+                .item("View as List", Box::new(ViewAsList))
+                .item("View as Columns", Box::new(ViewAsColumns))
+                .item("View as Gallery", Box::new(ViewAsGallery))
+                .separator()
+                .command_item(
+                    "Select All",
+                    rmac_ui::shortcuts::SELECT_ALL,
+                    Box::new(SelectAll),
+                );
         }
         if has_selection {
             m = m.command_item(
@@ -81,6 +92,18 @@ impl FinderView {
                     Box::new(PasteItems),
                 );
             }
+            m = m
+                .separator()
+                .item("View as Icons", Box::new(ViewAsIcons))
+                .item("View as List", Box::new(ViewAsList))
+                .item("View as Columns", Box::new(ViewAsColumns))
+                .item("View as Gallery", Box::new(ViewAsGallery))
+                .separator()
+                .command_item(
+                    "Select All",
+                    rmac_ui::shortcuts::SELECT_ALL,
+                    Box::new(SelectAll),
+                );
         }
         m
     }

@@ -1,7 +1,10 @@
 use super::*;
 
 impl FinderView {
-    pub(super) fn render_columns(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_columns(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if self.applications_view {
+            return self.render_application_columns(cx).into_any_element();
+        }
         let mut row = div()
             .id("columns")
             .flex_1()
@@ -81,7 +84,173 @@ impl FinderView {
             }
             row = row.child(col);
         }
-        row
+        row.into_any_element()
+    }
+
+    fn render_application_columns(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let mut applications = div()
+            .id("applications-column")
+            .w(px(300.0))
+            .h_full()
+            .flex_none()
+            .overflow_y_scroll()
+            .v_flex()
+            .py_1()
+            .border_r_1()
+            .border_color(sep());
+
+        for (index, entry) in self.entries.iter().enumerate() {
+            let selected = self.selected.contains(&index);
+            let icon_element = entry
+                .application
+                .as_ref()
+                .and_then(|application| application.icon.clone())
+                .map_or_else(
+                    || icon("icons/layout-grid.svg", 22.0, secondary()).into_any_element(),
+                    |path| {
+                        img(path)
+                            .w(px(24.0))
+                            .h(px(24.0))
+                            .rounded(px(5.0))
+                            .into_any_element()
+                    },
+                );
+            applications = applications.child(
+                div()
+                    .id(("application-column-row", index))
+                    .h(px(32.0))
+                    .mx_1()
+                    .px_2()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .rounded(px(5.0))
+                    .when(selected, |element: Stateful<Div>| element.bg(sel()))
+                    .when(!selected, |element: Stateful<Div>| {
+                        element.hover(|hover| hover.bg(rmac_ui::mac::hover()))
+                    })
+                    .child(icon_element)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .truncate()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(if selected { white() } else { label() })
+                            .child(entry.name.clone()),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            if event.modifiers.control {
+                                this.open_context_menu(Some(index), event.position, window, cx);
+                                return;
+                            }
+                            this.handle_click(
+                                index,
+                                event.modifiers.platform,
+                                event.modifiers.shift,
+                            );
+                            window.focus(&this.focus);
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.open_context_menu(Some(index), event.position, window, cx);
+                        }),
+                    )
+                    .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                        if event.click_count() >= 2 {
+                            this.open_index(index, cx);
+                        }
+                    })),
+            );
+        }
+
+        let preview = self
+            .selected
+            .iter()
+            .next()
+            .and_then(|index| self.entries.get(*index))
+            .map(|entry| {
+                let artwork = entry
+                    .application
+                    .as_ref()
+                    .and_then(|application| application.icon.clone())
+                    .map_or_else(
+                        || icon("icons/layout-grid.svg", 96.0, secondary()).into_any_element(),
+                        |path| {
+                            img(path)
+                                .w(px(96.0))
+                                .h(px(96.0))
+                                .rounded(px(21.0))
+                                .into_any_element()
+                        },
+                    );
+                div()
+                    .flex_1()
+                    .h_full()
+                    .v_flex()
+                    .items_center()
+                    .justify_center()
+                    .gap_3()
+                    .child(artwork)
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(15.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(label())
+                            .child(entry.name.clone()),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child("Application"),
+                    )
+            })
+            .unwrap_or_else(|| {
+                div()
+                    .flex_1()
+                    .h_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        rmac_ui::EmptyState::new("Select an Application")
+                            .message("Choose an application to see its preview."),
+                    )
+            });
+
+        div()
+            .id("application-columns")
+            .flex_1()
+            .min_h(px(0.0))
+            .flex()
+            .bg(list_bg())
+            .child(applications)
+            .child(preview)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    this.selected.clear();
+                    this.anchor = None;
+                    window.focus(&this.focus);
+                    cx.notify();
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    this.open_context_menu(None, event.position, window, cx);
+                }),
+            )
     }
 
     /// macOS-style status bar: item / selection count + free space available.

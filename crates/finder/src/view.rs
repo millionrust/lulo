@@ -113,6 +113,10 @@ actions!(
         OpenWith,
         QuickLook,
         GetInfo,
+        ViewAsIcons,
+        ViewAsList,
+        ViewAsColumns,
+        ViewAsGallery,
         NewTab,
         CloseTab,
     ]

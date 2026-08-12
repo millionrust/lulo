@@ -60,8 +60,8 @@ impl FinderView {
                         .and_then(|application| application.icon.clone())
                         .map(|path| {
                             img(path)
-                                .max_w(px(132.0))
-                                .max_h(px(132.0))
+                                .w(px(132.0))
+                                .h(px(132.0))
                                 .rounded(px(29.0))
                                 .into_any_element()
                         })
@@ -157,8 +157,8 @@ impl FinderView {
                 .and_then(|application| application.icon.clone())
                 .map(|path| {
                     img(path)
-                        .max_w(px(48.0))
-                        .max_h(px(48.0))
+                        .w(px(48.0))
+                        .h(px(48.0))
                         .rounded(px(10.0))
                         .into_any_element()
                 })
@@ -229,36 +229,34 @@ impl FinderView {
                             .child(entry.name.clone()),
                     )
                     .on_mouse_down(
-                        MouseButton::Right,
+                        MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                            if !this.selected.contains(&index) {
-                                this.select_single(index);
-                            }
-                            window.focus(&this.focus);
-                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                                event.position,
-                                &this.focus,
-                                window,
-                                cx,
-                            ));
                             cx.stop_propagation();
+                            if event.modifiers.control {
+                                this.open_context_menu(Some(index), event.position, window, cx);
+                                return;
+                            }
+                            this.handle_click(
+                                index,
+                                event.modifiers.platform,
+                                event.modifiers.shift,
+                            );
+                            window.focus(&this.focus);
                             cx.notify();
                         }),
                     )
-                    .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
-                        if event.modifiers().control {
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
-                            this.open_context_menu(Some(index), event.position(), window, cx);
-                            return;
-                        }
+                            this.open_context_menu(Some(index), event.position, window, cx);
+                        }),
+                    )
+                    .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
                         if event.click_count() >= 2 {
                             this.open_index(index, cx);
-                            return;
                         }
-                        let modifiers = event.modifiers();
-                        this.handle_click(index, modifiers.platform, modifiers.shift);
                         window.focus(&this.focus);
-                        cx.notify();
                     }))
                     .when(!self.trash_view && !self.applications_view, |element| {
                         element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
@@ -302,6 +300,15 @@ impl FinderView {
                     .border_color(sep())
                     .bg(toolbar_bg())
                     .children(filmstrip),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    this.selected.clear();
+                    this.anchor = None;
+                    window.focus(&this.focus);
+                    cx.notify();
+                }),
             )
             .on_mouse_down(
                 MouseButton::Right,

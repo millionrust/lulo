@@ -140,7 +140,7 @@ impl FinderView {
         }
         #[cfg(target_os = "linux")]
         locations.push(p(
-            "Bin",
+            "Trash",
             PathBuf::new(),
             "icons/trash-2.svg",
             accent(),

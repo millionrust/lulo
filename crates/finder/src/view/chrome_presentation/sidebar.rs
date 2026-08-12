@@ -1,4 +1,5 @@
 use super::*;
+use gpui_component::scroll::ScrollableElement as _;
 
 impl FinderView {
     fn render_place(&self, p: &Place, cx: &Context<Self>) -> impl IntoElement {
@@ -99,9 +100,6 @@ impl FinderView {
     pub(in crate::view) fn applications_click(&mut self, cx: &mut Context<Self>) {
         self.trash_view = false;
         self.applications_view = true;
-        if self.view == ViewMode::Column {
-            self.view = ViewMode::Icon;
-        }
         self.cancel_search();
         self.result_title = Some("Applications".into());
         self.search_summary = Some("Loading applications…".into());
@@ -152,21 +150,10 @@ impl FinderView {
     }
 
     pub(in crate::view) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut col = div()
-            .w(px(self.sidebar_width))
-            .h_full()
-            .flex_shrink_0()
-            .v_flex()
-            .relative()
-            .pt_2()
-            .px_2()
-            .gap_0p5()
-            .bg(sidebar_bg())
-            .border_r_1()
-            .border_color(sep());
+        let mut contents = div().h_full().v_flex().pt_2().px_2().gap_0p5();
         for (si, section) in self.sections.iter().enumerate() {
             if !section.title.is_empty() {
-                col = col.child(
+                contents = contents.child(
                     div()
                         .px_2()
                         .pt(px(if si == 0 { 2.0 } else { 12.0 }))
@@ -178,31 +165,40 @@ impl FinderView {
                 );
             }
             for p in &section.places {
-                col = col.child(self.render_place(p, cx));
+                contents = contents.child(self.render_place(p, cx));
             }
         }
-        col.child(
-            div()
-                .id("sidebar-resizer")
-                .absolute()
-                .right_0()
-                .top_0()
-                .bottom_0()
-                .w(px(5.0))
-                .hover(|handle| handle.bg(rmac_ui::mac::accent_subtle()))
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, _| this.begin_sidebar_resize()),
-                )
-                .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                    if event.pressed_button == Some(MouseButton::Left) {
-                        this.resize_sidebar(f32::from(event.position.x), cx);
-                    }
-                }))
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, _| this.finish_sidebar_resize()),
-                ),
-        )
+        div()
+            .w(px(self.sidebar_width))
+            .h_full()
+            .flex_shrink_0()
+            .relative()
+            .bg(sidebar_bg())
+            .border_r_1()
+            .border_color(sep())
+            .child(contents.overflow_y_scrollbar())
+            .child(
+                div()
+                    .id("sidebar-resizer")
+                    .absolute()
+                    .right_0()
+                    .top_0()
+                    .bottom_0()
+                    .w(px(5.0))
+                    .hover(|handle| handle.bg(rmac_ui::mac::accent_subtle()))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| this.begin_sidebar_resize()),
+                    )
+                    .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                        if event.pressed_button == Some(MouseButton::Left) {
+                            this.resize_sidebar(f32::from(event.position.x), cx);
+                        }
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| this.finish_sidebar_resize()),
+                    ),
+            )
     }
 }

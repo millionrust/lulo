@@ -193,6 +193,19 @@ impl FinderView {
                             .child(e.kind.clone()),
                     )
                     .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            if ev.modifiers.control {
+                                this.open_context_menu(Some(ix), ev.position, window, cx);
+                                return;
+                            }
+                            this.handle_click(ix, ev.modifiers.platform, ev.modifiers.shift);
+                            window.focus(&this.focus);
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
@@ -200,19 +213,10 @@ impl FinderView {
                         }),
                     )
                     .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                        if ev.modifiers().control {
-                            cx.stop_propagation();
-                            this.open_context_menu(Some(ix), ev.position(), window, cx);
-                            return;
-                        }
                         if ev.click_count() >= 2 {
                             this.open_index(ix, cx);
-                            return;
                         }
-                        let m = ev.modifiers();
-                        this.handle_click(ix, m.platform, m.shift);
                         window.focus(&this.focus);
-                        cx.notify();
                     }))
                     .when(
                         !self.trash_view && !self.applications_view,
@@ -276,8 +280,8 @@ impl FinderView {
                     .and_then(|application| application.icon.clone())
                 {
                     img(path)
-                        .max_w(px(icon_size))
-                        .max_h(px(icon_size))
+                        .w(px(icon_size))
+                        .h(px(icon_size))
                         .rounded(px(icon_size * 0.22))
                         .into_any_element()
                 } else {
@@ -302,13 +306,24 @@ impl FinderView {
                     div()
                         .id(("tile", ix))
                         .w(px(tile_width))
+                        .h(px(icon_size + 48.0))
+                        .flex_none()
                         .flex()
                         .flex_col()
                         .items_center()
                         .gap_1()
                         .px_1()
                         .py_2()
-                        .child(div().h(px(icon_size)).flex().items_center().child(visual))
+                        .child(
+                            div()
+                                .w(px(icon_size))
+                                .h(px(icon_size))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(visual),
+                        )
                         .child(
                             div()
                                 .max_w(px(label_width))
@@ -323,6 +338,19 @@ impl FinderView {
                                 .child(e.name.clone()),
                         )
                         .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                                cx.stop_propagation();
+                                if ev.modifiers.control {
+                                    this.open_context_menu(Some(ix), ev.position, window, cx);
+                                    return;
+                                }
+                                this.handle_click(ix, ev.modifiers.platform, ev.modifiers.shift);
+                                window.focus(&this.focus);
+                                cx.notify();
+                            }),
+                        )
+                        .on_mouse_down(
                             MouseButton::Right,
                             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
                                 cx.stop_propagation();
@@ -330,19 +358,10 @@ impl FinderView {
                             }),
                         )
                         .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                            if ev.modifiers().control {
-                                cx.stop_propagation();
-                                this.open_context_menu(Some(ix), ev.position(), window, cx);
-                                return;
-                            }
                             if ev.click_count() >= 2 {
                                 this.open_index(ix, cx);
-                                return;
                             }
-                            let m = ev.modifiers();
-                            this.handle_click(ix, m.platform, m.shift);
                             window.focus(&this.focus);
-                            cx.notify();
                         }))
                         .when(!self.trash_view && !self.applications_view, |element| {
                             element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
@@ -390,6 +409,15 @@ impl FinderView {
                     .overflow_y_scroll()
                     .child(div().v_flex().children(rows))
                     .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            this.selected.clear();
+                            this.anchor = None;
+                            window.focus(&this.focus);
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(|this, ev: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
@@ -405,7 +433,24 @@ impl FinderView {
                     .min_h(px(0.0))
                     .overflow_y_scroll()
                     .p_3()
-                    .child(div().flex().flex_wrap().gap_2().children(tiles))
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .flex_wrap()
+                            .content_start()
+                            .gap_2()
+                            .children(tiles),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            this.selected.clear();
+                            this.anchor = None;
+                            window.focus(&this.focus);
+                            cx.notify();
+                        }),
+                    )
                     .on_mouse_down(
                         MouseButton::Right,
                         cx.listener(|this, ev: &MouseDownEvent, window, cx| {
@@ -442,6 +487,22 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, _, cx| this.get_info(cx)))
+            .on_action(
+                cx.listener(|this, _: &ViewAsIcons, _, cx| {
+                    this.select_view_mode(ViewMode::Icon, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &ViewAsList, _, cx| {
+                    this.select_view_mode(ViewMode::List, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &ViewAsColumns, _, cx| {
+                this.select_view_mode(ViewMode::Column, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ViewAsGallery, _, cx| {
+                this.select_view_mode(ViewMode::Gallery, cx)
+            }))
             .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
             .on_action(cx.listener(|this, _: &CloseTab, _, cx| {
                 let a = this.active;

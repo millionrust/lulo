@@ -69,6 +69,30 @@ class ArchiveDevelopmentInstallTests(unittest.TestCase):
             )
             self.assertEqual(MODULE.discover(roots), ())
 
+    def test_stale_desktop_entries_can_complete_an_earlier_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            roots = self.roots(temporary)
+            first = roots.state / "rmac/migrations/development-install-v1"
+            first.mkdir(parents=True)
+            desktop = roots.data / "applications/org.rmac.Files.desktop"
+            icon = roots.data / "icons/hicolor/scalable/apps/org.rmac.Files.svg"
+            manifest = roots.data / "rmac/development/upstream-shell-candidate.txt"
+            for path in (desktop, icon, manifest):
+                self.write(path)
+
+            destination = MODULE.archive(roots, MODULE.discover(roots))
+
+            self.assertEqual(
+                destination,
+                roots.state / "rmac/migrations/development-install-v2",
+            )
+            self.assertFalse(desktop.exists())
+            self.assertFalse(icon.exists())
+            self.assertFalse(manifest.exists())
+            self.assertTrue(
+                (destination / "data/applications/org.rmac.Files.desktop").is_file()
+            )
+
     def test_unknown_development_binary_refuses_without_moving(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             roots = self.roots(temporary)

@@ -26,7 +26,14 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "linux"))
 from native_package_contract import ALL_BINARIES  # noqa: E402
 
 
-ARCHIVE_NAME = "development-install-v1"
+ARCHIVE_NAMES = ("development-install-v1", "development-install-v2")
+LEGACY_APPLICATION_IDS = (
+    "org.rmac.Files",
+    "org.rmac.Terminal",
+    "org.rmac.TextEditor",
+    "org.rmac.SystemMonitor",
+    "org.rmac.SystemSettings",
+)
 DBUS_SERVICES = (
     "org.freedesktop.impl.portal.desktop.rmac.service",
     "org.rmac.Focus1.service",
@@ -158,6 +165,30 @@ def discover(roots: Roots) -> tuple[Artifact, ...]:
                 Artifact(source, Path("data/xdg-desktop-portal") / relative)
             )
 
+    for identity in LEGACY_APPLICATION_IDS:
+        desktop = roots.data / "applications" / f"{identity}.desktop"
+        if _regular_file(desktop):
+            artifacts.append(
+                Artifact(desktop, Path("data/applications") / desktop.name)
+            )
+        icon = roots.data / "icons/hicolor/scalable/apps" / f"{identity}.svg"
+        if _regular_file(icon):
+            artifacts.append(
+                Artifact(
+                    icon,
+                    Path("data/icons/hicolor/scalable/apps") / icon.name,
+                )
+            )
+
+    manifest = roots.data / "rmac/development/upstream-shell-candidate.txt"
+    if _regular_file(manifest):
+        artifacts.append(
+            Artifact(
+                manifest,
+                Path("data/rmac/development/upstream-shell-candidate.txt"),
+            )
+        )
+
     launcher = roots.home / ".local/bin/rmac-session-start"
     if _regular_file(launcher):
         artifacts.append(Artifact(launcher, Path("home-local/bin/rmac-session-start")))
@@ -172,12 +203,19 @@ def archive(roots: Roots, artifacts: tuple[Artifact, ...]) -> Path | None:
     if not artifacts:
         return None
     parent = roots.state / "rmac/migrations"
-    destination = parent / ARCHIVE_NAME
-    if destination.exists() or destination.is_symlink():
-        raise MigrationError("development-install archive already exists")
+    destination = next(
+        (
+            parent / name
+            for name in ARCHIVE_NAMES
+            if not (parent / name).exists() and not (parent / name).is_symlink()
+        ),
+        None,
+    )
+    if destination is None:
+        raise MigrationError("development-install archives already exist")
     try:
         parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        temporary = Path(tempfile.mkdtemp(prefix=f".{ARCHIVE_NAME}.", dir=parent))
+        temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.", dir=parent))
         temporary.chmod(0o700)
     except OSError as error:
         raise MigrationError("development-install archive cannot be created") from error

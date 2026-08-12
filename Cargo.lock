@@ -5058,6 +5058,7 @@ dependencies = [
  "objc2-app-kit",
  "objc2-foundation",
  "rmac-app-launch",
+ "rmac-appearance",
  "rmac-apps",
  "rmac-mounts",
  "rmac-search",

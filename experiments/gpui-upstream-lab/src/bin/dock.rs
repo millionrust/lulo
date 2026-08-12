@@ -216,12 +216,16 @@ mod linux_wayland {
             };
             cx.notify();
             let status = self.status.clone();
-            cx.spawn(async move |_, cx| {
+            let execution = cx.background_executor().spawn(async move {
                 let backend = rmac_dock_system::SystemBackend;
-                let completion = pending.run(request_id, &backend).await;
+                pending.run(request_id, &backend).await
+            });
+            cx.spawn(async move |_, cx| {
+                let completion = execution.await;
                 let _ = status.update(cx, |status, cx| {
                     let (result, transition) = completion.apply(&mut status.actions);
-                    if result.is_err() {
+                    if let Err(error) = &result {
+                        eprintln!("{error}");
                         if let Some(feedback) = transition.snapshot.feedback.last() {
                             eprintln!("{}", feedback.accessible_message());
                         }
@@ -545,9 +549,10 @@ mod linux_wayland {
                             item = item
                                 .cursor_pointer()
                                 .hover(|style| style.opacity(0.88))
-                                .on_click(cx.listener(
-                                    move |this, event: &gpui::ClickEvent, _, cx| {
-                                        if event.modifiers().platform {
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |this, event: &gpui::MouseUpEvent, _, cx| {
+                                        if event.modifiers.platform {
                                             let reveal = {
                                                 let status = this.status.read(cx);
                                                 status
@@ -578,8 +583,8 @@ mod linux_wayland {
                                                 cx,
                                             );
                                         }
-                                    },
-                                ));
+                                    }),
+                                );
                         }
                         let context_app_id = app_id.clone();
                         item = item.on_mouse_down(
@@ -690,8 +695,9 @@ mod linux_wayland {
                                 }
                             }));
                         if trash_available {
-                            trash = trash.cursor_pointer().on_click(cx.listener(
-                                move |this, _, _, cx| {
+                            trash = trash.cursor_pointer().on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |this, _, _, cx| {
                                     this.dispatch_action(
                                         rmac_dock::menu::Action::ActivateEntry(
                                             rmac_dock::presentation::EntryId::Special(
@@ -700,8 +706,8 @@ mod linux_wayland {
                                         ),
                                         cx,
                                     );
-                                },
-                            ));
+                                }),
+                            );
                         }
                         trash = trash.on_mouse_down(
                             MouseButton::Right,

@@ -3,15 +3,13 @@ Description=rmac secure session locker
 Documentation=https://github.com/rmac/rmac
 BindsTo=graphical-session.target
 After=graphical-session.target
-OnFailure=rmac-lock-fallback.service
-StartLimitIntervalSec=30s
-StartLimitBurst=4
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
 NotifyAccess=all
-ExecStart=%h/.local/libexec/rmac/rmac-lock-provider
+ExecStart=%h/.local/libexec/rmac/rmac-locker --config %h/.config/rmac/swaylock.conf
 TimeoutStartSec=15s
-WatchdogSec=10s
-WatchdogSignal=SIGKILL
+Restart=on-failure
+RestartSec=1s
 KillMode=control-group

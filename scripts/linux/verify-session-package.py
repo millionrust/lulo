@@ -27,7 +27,6 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-focus-service",
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",
-    "rmac-lock-provider",
     "rmac-locker",
     "rmac-lock-coordinator",
     "rmac-idle-locker",
@@ -40,7 +39,6 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-idle-lock.service",
     "rmac-launcher.service",
     "rmac-lock-coordinator.service",
-    "rmac-lock-fallback.service",
     "rmac-lock.service",
     "rmac-notification-center-panel.service",
     "rmac-notification-center.service",
@@ -54,7 +52,6 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-wallpaper.service",
 )
 EXPECTED_PATHS = {
-    Path("etc/pam.d/rmac-lock"),
     Path("usr/share/wayland-sessions/rmac.desktop"),
     Path("usr/libexec/rmac/rmac-wayland-session"),
     Path("usr/libexec/rmac/rmac-session-start"),
@@ -127,9 +124,7 @@ def _load_manifest(root: Path) -> list[dict[str, str]]:
 
 
 def _safe_manifest_path(value: object) -> Path:
-    if not isinstance(value, str) or not (
-        value.startswith("/usr/") or value == "/etc/pam.d/rmac-lock"
-    ):
+    if not isinstance(value, str) or not value.startswith("/usr/"):
         raise VerificationError("package manifest contains a non-system path")
     relative = Path(value.removeprefix("/"))
     if (

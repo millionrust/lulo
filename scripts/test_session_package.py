@@ -119,10 +119,7 @@ class SessionPackageTests(unittest.TestCase):
             paths = [entry["path"] for entry in manifest["files"]]
             self.assertEqual(paths, sorted(paths))
             self.assertTrue(
-                all(
-                    path.startswith("/usr/") or path == "/etc/pam.d/rmac-lock"
-                    for path in paths
-                )
+                all(path.startswith("/usr/") for path in paths)
             )
             self.assertFalse(any("/home/" in path or "/root/" in path for path in paths))
             self.assertFalse(

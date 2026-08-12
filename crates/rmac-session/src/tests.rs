@@ -190,28 +190,20 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let lock = include_str!("../units/rmac-lock.service");
     assert!(lock.contains("Type=notify"));
     assert!(lock.contains("NotifyAccess=all"));
-    assert!(!lock.contains("Restart="));
-    assert!(!lock.contains("RestartSec="));
-    assert!(lock.contains("StartLimitIntervalSec=30s"));
-    assert!(lock.contains("StartLimitBurst=4"));
-    assert!(lock.contains("OnFailure=rmac-lock-fallback.service"));
-    assert!(lock.contains("ExecStart=%h/.local/libexec/rmac/rmac-lock-provider"));
-    assert!(lock.contains("WatchdogSec=10s"));
+    assert!(lock.contains("Restart=on-failure"));
+    assert!(lock.contains("RestartSec=1s"));
+    assert!(lock.contains("StartLimitIntervalSec=0"));
+    assert!(!lock.contains("StartLimitBurst="));
+    assert!(!lock.contains("OnFailure="));
+    assert!(lock.contains(
+        "ExecStart=%h/.local/libexec/rmac/rmac-locker --config %h/.config/rmac/swaylock.conf"
+    ));
+    assert!(!lock.contains("rmac-lock-provider"));
+    assert!(!lock.contains("WatchdogSec="));
     assert!(lock.contains("KillMode=control-group"));
     assert!(!lock.contains("OnFailure=rmac-component-failure"));
     assert!(!lock.contains("NoNewPrivileges=yes"));
     assert!(!lock.contains("/bin/sh"));
-
-    let fallback = include_str!("../units/rmac-lock-fallback.service");
-    assert!(fallback.contains("Type=notify"));
-    assert!(fallback.contains("NotifyAccess=all"));
-    assert!(fallback.contains("StartLimitIntervalSec=0"));
-    assert!(fallback.contains("Restart=on-failure"));
-    assert!(fallback.contains(
-        "ExecStart=%h/.local/libexec/rmac/rmac-locker --config %h/.config/rmac/swaylock.conf"
-    ));
-    assert!(fallback.contains("KillMode=control-group"));
-    assert!(!fallback.contains("/bin/sh"));
 
     let coordinator = include_str!("../units/rmac-lock-coordinator.service");
     assert!(coordinator.contains("Type=notify"));
@@ -252,6 +244,29 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(default_policy.contains("\"version\": 1"));
     assert!(default_policy.contains("\"lock_after_seconds\": 300"));
     assert!(default_policy.contains("\"suspend_after_seconds\": null"));
+}
+
+#[test]
+fn apps_and_spotlight_have_exactly_one_activation_owner_each() {
+    let launcher = include_str!("../../launcher-app/src/service.rs");
+    let app_drawer = include_str!("../../app-drawer/src/service.rs");
+
+    assert!(launcher.contains("const LINUX_SHORTCUT_ENDPOINT: &str = \"launcher\";"));
+    assert!(!launcher.contains("const LINUX_SHORTCUT_ENDPOINT: &str = \"app-drawer\";"));
+    assert!(app_drawer.contains("const LINUX_SHORTCUT_ENDPOINT: &str = \"app-drawer\";"));
+    assert!(!app_drawer.contains("const LINUX_SHORTCUT_ENDPOINT: &str = \"launcher\";"));
+    assert_eq!(
+        launcher
+            .matches("rmac_shell_activation_runtime::watch(")
+            .count(),
+        1
+    );
+    assert_eq!(
+        app_drawer
+            .matches("rmac_shell_activation_runtime::watch(")
+            .count(),
+        1
+    );
 }
 
 #[test]

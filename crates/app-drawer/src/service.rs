@@ -6,6 +6,9 @@ use gpui::{
 use gpui_component::Root;
 
 use crate::view::{AppDrawer, DRAWER_HEIGHT, DRAWER_WIDTH};
+
+#[cfg(target_os = "linux")]
+const LINUX_SHORTCUT_ENDPOINT: &str = "app-drawer";
 use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp};
 
 #[derive(Clone)]
@@ -196,7 +199,7 @@ pub(crate) fn run(show_on_start: bool) {
             #[cfg(target_os = "linux")]
             let activation_done = cx.spawn(async move |_: &mut gpui::AsyncApp| {
                 rmac_shell_activation_runtime::watch(
-                    rmac_shortcuts::ShortcutId("app-drawer".into()),
+                    rmac_shortcuts::ShortcutId(LINUX_SHORTCUT_ENDPOINT.into()),
                     activation_tx,
                 )
                 .await

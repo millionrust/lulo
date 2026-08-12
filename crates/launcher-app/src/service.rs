@@ -28,6 +28,8 @@ use registry::build_registry;
 const WIDTH: f32 = rmac_launcher::surface::LOGICAL_WIDTH as f32;
 #[cfg(not(target_os = "linux"))]
 const HEIGHT: f32 = rmac_launcher::surface::LOGICAL_HEIGHT as f32;
+#[cfg(target_os = "linux")]
+const LINUX_SHORTCUT_ENDPOINT: &str = "launcher";
 
 #[derive(Clone)]
 struct ActiveOverlay {
@@ -152,27 +154,19 @@ pub(crate) fn run() {
             let (activation_tx, activation_rx) = async_channel::bounded(16);
             #[cfg(target_os = "linux")]
             let activation_done = cx.spawn(async move |_: &mut gpui::AsyncApp| {
-                let launcher = rmac_shell_activation_runtime::watch(
-                    rmac_shortcuts::ShortcutId("launcher".into()),
-                    activation_tx.clone(),
-                );
-                let apps = rmac_shell_activation_runtime::watch(
-                    rmac_shortcuts::ShortcutId("app-drawer".into()),
+                rmac_shell_activation_runtime::watch(
+                    rmac_shortcuts::ShortcutId(LINUX_SHORTCUT_ENDPOINT.into()),
                     activation_tx,
-                );
-                futures_util::try_join!(launcher, apps).map(|_| ())
+                )
+                .await
             });
             #[cfg(target_os = "linux")]
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
-                let mut ready_endpoints = 0_u8;
                 let consume = async {
                     while let Ok(update) = activation_rx.recv().await {
                         match update {
                             rmac_shell_activation_runtime::Update::Ready => {
-                                ready_endpoints = ready_endpoints.saturating_add(1);
-                                if ready_endpoints == 2 {
-                                    blocking::unblock(notify_ready).await?;
-                                }
+                                blocking::unblock(notify_ready).await?;
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
                                 if cx.update(|cx| route_activation(*activation, cx)).is_err() {

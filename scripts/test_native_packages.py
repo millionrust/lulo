@@ -46,8 +46,8 @@ def populate_binary_directory(directory: Path, machine: int) -> None:
 class NativePackageContractTests(unittest.TestCase):
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 7)
-        self.assertEqual(len(contract.SESSION_BINARIES), 18)
-        self.assertEqual(len(contract.ALL_BINARIES), 23)
+        self.assertEqual(len(contract.SESSION_BINARIES), 17)
+        self.assertEqual(len(contract.ALL_BINARIES), 22)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -63,7 +63,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-apps (= {version})", session.static_dependencies)
         self.assertIn("niri", session.static_dependencies)
         self.assertIn("swaylock", session.static_dependencies)
-        self.assertIn("libpam0g", session.static_dependencies)
+        self.assertNotIn("libpam0g", session.static_dependencies)
         self.assertIn("swayidle", session.static_dependencies)
         self.assertNotIn("brightnessctl", session.static_dependencies)
         self.assertIn("pipewire-bin", session.static_dependencies)
@@ -71,6 +71,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-top-bar", session.binaries)
         self.assertIn("rmac-dock", session.binaries)
         self.assertIn("rmac-osd", session.binaries)
+        self.assertNotIn("rmac-lock-provider", session.binaries)
 
     def test_accepts_exact_amd64_and_arm64_elf_inventories(self):
         for architecture, machine in contract.ARCHITECTURES.items():

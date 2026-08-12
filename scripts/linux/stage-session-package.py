@@ -79,7 +79,6 @@ def package_files() -> dict[str, tuple[bytes, int]]:
     session = REPO_ROOT / "crates" / "rmac-session"
     notifications = REPO_ROOT / "crates" / "rmac-notifications-linux" / "install"
     focus = REPO_ROOT / "crates" / "rmac-focus-linux" / "install"
-    lock_provider = REPO_ROOT / "crates" / "rmac-lock-provider-linux"
 
     files: dict[str, tuple[bytes, int]] = {
         "usr/share/wayland-sessions/rmac.desktop": (
@@ -124,10 +123,6 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         ),
         "usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override": (
             _read_regular(package / "greeter" / "90_rmac-greeter.gschema.override"),
-            0o644,
-        ),
-        "etc/pam.d/rmac-lock": (
-            _read_regular(lock_provider / "pam" / "rmac-lock"),
             0o644,
         ),
         "usr/share/xdg-desktop-portal/portals/rmac.portal": (

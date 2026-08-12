@@ -549,32 +549,38 @@ mod linux_wayland {
                             item = item
                                 .cursor_pointer()
                                 .hover(|style| style.opacity(0.88))
-                                .on_mouse_up(
+                                .on_mouse_down(
                                     MouseButton::Left,
-                                    cx.listener(move |this, event: &gpui::MouseUpEvent, _, cx| {
-                                        if event.modifiers.platform {
-                                            let reveal = {
-                                                let status = this.status.read(cx);
-                                                status
-                                                    .model()
-                                                    .and_then(|model| {
-                                                        model.context_menu(&reveal_app_id)
-                                                    })
-                                                    .and_then(|menu| menu.show_in_finder)
-                                                    .filter(|action| {
-                                                        status.model().is_some_and(|model| {
+                                    cx.listener(
+                                        move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                            cx.stop_propagation();
+                                            eprintln!(
+                                                "Dock activation requested for {activate_app_id}"
+                                            );
+                                            if event.modifiers.platform {
+                                                let reveal =
+                                                    {
+                                                        let status = this.status.read(cx);
+                                                        status
+                                                            .model()
+                                                            .and_then(|model| {
+                                                                model.context_menu(&reveal_app_id)
+                                                            })
+                                                            .and_then(|menu| menu.show_in_finder)
+                                                            .filter(|action| {
+                                                                status.model().is_some_and(|model| {
                                                             model.authorizes_context_action(action)
                                                         })
-                                                    })
-                                            };
-                                            if let Some(action) = reveal {
+                                                            })
+                                                    };
+                                                if let Some(action) = reveal {
+                                                    this.dispatch_action(
+                                                        rmac_dock::menu::Action::Context(action),
+                                                        cx,
+                                                    );
+                                                }
+                                            } else {
                                                 this.dispatch_action(
-                                                    rmac_dock::menu::Action::Context(action),
-                                                    cx,
-                                                );
-                                            }
-                                        } else {
-                                            this.dispatch_action(
                                                 rmac_dock::menu::Action::ActivateEntry(
                                                     rmac_dock::presentation::EntryId::Application(
                                                         activate_app_id.clone(),
@@ -582,8 +588,9 @@ mod linux_wayland {
                                                 ),
                                                 cx,
                                             );
-                                        }
-                                    }),
+                                            }
+                                        },
+                                    ),
                                 );
                         }
                         let context_app_id = app_id.clone();
@@ -695,9 +702,11 @@ mod linux_wayland {
                                 }
                             }));
                         if trash_available {
-                            trash = trash.cursor_pointer().on_mouse_up(
+                            trash = trash.cursor_pointer().on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    eprintln!("Dock activation requested for Trash");
                                     this.dispatch_action(
                                         rmac_dock::menu::Action::ActivateEntry(
                                             rmac_dock::presentation::EntryId::Special(

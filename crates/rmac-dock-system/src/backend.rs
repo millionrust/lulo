@@ -57,6 +57,35 @@ impl Backend for SystemBackend {
         })
     }
 
+    fn reveal_application(&self, source: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
+        let source = source.to_path_buf();
+        Box::pin(async move {
+            rmac_app_launch::reveal_item(source).await.map_err(|_| {
+                BackendError::new(
+                    FailureKind::Other,
+                    "the desktop portal could not reveal the application",
+                )
+            })
+        })
+    }
+
+    fn terminate_application(
+        &self,
+        pids: &[u32],
+        kind: rmac_dock::TerminationKind,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        let pids = pids.to_vec();
+        let kind = match kind {
+            rmac_dock::TerminationKind::Quit => rmac_app_launch::TerminationKind::Quit,
+            rmac_dock::TerminationKind::ForceQuit => rmac_app_launch::TerminationKind::ForceQuit,
+        };
+        Box::pin(async move {
+            rmac_app_launch::terminate_application(pids, kind)
+                .await
+                .map_err(|error| BackendError::new(FailureKind::Rejected, error.to_string()))
+        })
+    }
+
     fn update_pins(
         &self,
         command: &rmac_dock::PinCommand,

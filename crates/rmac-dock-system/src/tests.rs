@@ -426,6 +426,7 @@ fn pin_store_transaction_preserves_unrelated_shell_settings() {
         std::env::temp_dir().join(format!("rmac-dock-system-{}-{unique}", std::process::id()));
     let store = rmac_shell_settings::ShellSettingsStore::new(directory.join("shell.json"));
     let settings = rmac_shell_settings::ShellSettings {
+        pinned_apps: Vec::new(),
         dock: rmac_shell_settings::DockSettings {
             autohide: true,
             ..Default::default()

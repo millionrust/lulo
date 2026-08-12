@@ -36,12 +36,15 @@ impl Coordinator {
             self.reduced_motion,
         );
         let content = rmac_dock::presentation::ShelfContent::project(&model);
+        let overview_visible = compositor.overview_visible;
         Snapshot {
+            compositor,
+            settings: self.settings.dock.clone(),
             model,
             content,
             outputs,
             surface_plan,
-            overview_visible: compositor.overview_visible,
+            overview_visible,
             reduced_motion: self.reduced_motion,
             health: self.health.clone(),
         }

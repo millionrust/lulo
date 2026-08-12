@@ -26,6 +26,7 @@ rmac-compositor = { path = "../../crates/rmac-compositor" }
 rmac-compositor-niri = { path = "../../crates/rmac-compositor-niri" }
 rmac-desktop = { path = "../../crates/rmac-desktop" }
 rmac-dock = { path = "../../crates/rmac-dock" }
+rmac-dock-runtime = { path = "../../crates/rmac-dock-runtime" }
 rmac-places = { path = "../../crates/rmac-places" }
 rmac-places-system = { path = "../../crates/rmac-places-system" }
 rmac-recent-documents = { path = "../../crates/rmac-recent-documents" }

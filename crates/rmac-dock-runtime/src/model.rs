@@ -46,6 +46,11 @@ pub struct HealthSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
+    /// Complete compositor authority retained for renderer policies such as
+    /// fullscreen suppression. Hosts must not rebuild Dock state from it.
+    pub compositor: rmac_compositor::Snapshot,
+    /// Effective Dock settings used to produce this exact snapshot.
+    pub settings: rmac_shell_settings::DockSettings,
     pub model: rmac_dock::Model,
     /// Renderer-facing item groups, icons, indicators, badges, and semantics.
     pub content: rmac_dock::presentation::ShelfContent,
@@ -64,6 +69,8 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            compositor: rmac_compositor::Snapshot::default(),
+            settings: rmac_shell_settings::DockSettings::default(),
             model: rmac_dock::Model::default(),
             content: rmac_dock::presentation::ShelfContent::default(),
             outputs: Vec::new(),

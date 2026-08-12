@@ -99,7 +99,8 @@ pub(super) fn primary_output() -> Result<Option<rmac_compositor::OutputId>, Stri
 pub(super) fn publication(previous: Option<&Snapshot>, next: Snapshot) -> Update {
     Update {
         visible: previous.is_none_or(|previous| {
-            previous.model != next.model
+            previous.settings != next.settings
+                || previous.model != next.model
                 || previous.content != next.content
                 || previous.outputs != next.outputs
                 || previous.surface_plan != next.surface_plan

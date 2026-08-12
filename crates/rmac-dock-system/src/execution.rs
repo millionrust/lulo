@@ -64,6 +64,21 @@ pub async fn execute_context(
             .await
             .map(|()| Outcome::CloseRequested { window: *window })
             .map_err(|error| Error::new(Operation::Close, error.kind, app_id, error.detail)),
+        rmac_dock::ContextAction::RevealApplication { app_id, source } => backend
+            .reveal_application(source)
+            .await
+            .map(|()| Outcome::ApplicationRevealed {
+                app_id: app_id.clone(),
+            })
+            .map_err(|error| Error::new(Operation::Reveal, error.kind, app_id, error.detail)),
+        rmac_dock::ContextAction::TerminateApplication { app_id, pids, kind } => backend
+            .terminate_application(pids, *kind)
+            .await
+            .map(|()| Outcome::TerminationRequested {
+                app_id: app_id.clone(),
+                kind: *kind,
+            })
+            .map_err(|error| Error::new(Operation::Terminate, error.kind, app_id, error.detail)),
         rmac_dock::ContextAction::UpdatePins(command) => backend
             .update_pins(command)
             .await

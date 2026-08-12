@@ -68,7 +68,7 @@ fn primary_scope_waits_for_display_authority() {
     let mut coordinator = Coordinator::default();
     let mut settings = rmac_shell_settings::ShellSettings::default();
     settings.dock.outputs = rmac_shell_settings::OutputScope::Primary;
-    coordinator.apply_settings(Ok(settings));
+    coordinator.apply_settings(Ok(settings.clone()));
     coordinator.apply_catalog(Ok(Vec::new()));
     coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
     coordinator.apply_appearance(Ok(false));
@@ -230,9 +230,10 @@ fn renderer_policy_changes_request_a_frame_without_changing_dock_items() {
     settings.dock.autohide = true;
     settings.dock.reserve_space = false;
     settings.dock.magnification_scale = 2.0;
-    coordinator.apply_settings(Ok(settings));
+    coordinator.apply_settings(Ok(settings.clone()));
     let after = coordinator.snapshot();
 
+    assert_eq!(after.settings, settings.dock);
     assert_eq!(after.model, before.model);
     assert_eq!(after.outputs, before.outputs);
     assert_ne!(after.surface_plan, before.surface_plan);

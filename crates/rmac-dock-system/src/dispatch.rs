@@ -472,6 +472,16 @@ fn context_identity(action: &rmac_dock::ContextAction) -> (ActionTarget, Operati
             Operation::Close,
             app_id.clone(),
         ),
+        rmac_dock::ContextAction::RevealApplication { app_id, .. } => (
+            ActionTarget::Application(app_id.clone()),
+            Operation::Reveal,
+            app_id.clone(),
+        ),
+        rmac_dock::ContextAction::TerminateApplication { app_id, .. } => (
+            ActionTarget::Application(app_id.clone()),
+            Operation::Terminate,
+            app_id.clone(),
+        ),
         rmac_dock::ContextAction::UpdatePins(command) => (
             ActionTarget::Application(command.app_id().to_owned()),
             Operation::UpdatePins,
@@ -486,7 +496,12 @@ fn revalidate_context(
 ) -> Option<rmac_dock::ContextAction> {
     match requested {
         rmac_dock::ContextAction::LaunchNew { app_id, .. } => {
-            model.context_menu(app_id)?.launch_new
+            let menu = model.context_menu(app_id)?;
+            menu.application_commands
+                .into_iter()
+                .map(|command| command.action)
+                .find(|candidate| candidate == requested)
+                .or(menu.open)
         }
         rmac_dock::ContextAction::FocusWindow { app_id, window } => model
             .context_menu(app_id)?
@@ -500,6 +515,18 @@ fn revalidate_context(
             .into_iter()
             .find(|candidate| candidate.id == *window)
             .map(|candidate| candidate.close),
+        rmac_dock::ContextAction::RevealApplication { app_id, .. } => model
+            .context_menu(app_id)?
+            .show_in_finder
+            .filter(|candidate| candidate == requested),
+        rmac_dock::ContextAction::TerminateApplication { app_id, kind, .. } => {
+            let menu = model.context_menu(app_id)?;
+            match kind {
+                rmac_dock::TerminationKind::Quit => menu.quit,
+                rmac_dock::TerminationKind::ForceQuit => menu.force_quit,
+            }
+            .filter(|candidate| candidate == requested)
+        }
         rmac_dock::ContextAction::UpdatePins(requested) => {
             let menu = model.context_menu(requested.app_id())?;
             match requested {
@@ -513,17 +540,11 @@ fn revalidate_context(
                 {
                     Some(rmac_dock::ContextAction::UpdatePins(menu.pin))
                 }
-                rmac_dock::PinCommand::Move {
-                    direction: rmac_dock::MoveDirection::Left,
-                    ..
-                } => menu.move_left.map(rmac_dock::ContextAction::UpdatePins),
-                rmac_dock::PinCommand::Move {
-                    direction: rmac_dock::MoveDirection::Right,
-                    ..
-                } => menu.move_right.map(rmac_dock::ContextAction::UpdatePins),
-                rmac_dock::PinCommand::MoveTo { .. }
-                | rmac_dock::PinCommand::Pin { .. }
-                | rmac_dock::PinCommand::Unpin { .. } => None,
+                rmac_dock::PinCommand::Move { .. } | rmac_dock::PinCommand::MoveTo { .. } => {
+                    let action = rmac_dock::ContextAction::UpdatePins(requested.clone());
+                    model.authorizes_context_action(&action).then_some(action)
+                }
+                rmac_dock::PinCommand::Pin { .. } | rmac_dock::PinCommand::Unpin { .. } => None,
             }
         }
     }
@@ -847,7 +868,7 @@ mod tests {
         let old = model("old-terminal", Vec::new(), true)
             .context_menu("terminal")
             .unwrap()
-            .launch_new
+            .open
             .unwrap();
         let current = model("current-terminal", Vec::new(), true);
         let Preparation::Ready(prepared) =
@@ -963,11 +984,7 @@ mod tests {
     #[test]
     fn a_second_action_for_the_same_target_cannot_start_while_busy() {
         let current = model("terminal", Vec::new(), true);
-        let action = current
-            .context_menu("terminal")
-            .unwrap()
-            .launch_new
-            .unwrap();
+        let action = current.context_menu("terminal").unwrap().open.unwrap();
         let Preparation::Ready(first) =
             prepare(&current, rmac_dock::menu::Action::Context(action.clone())).unwrap()
         else {
@@ -992,11 +1009,7 @@ mod tests {
     #[test]
     fn renderer_cancellation_makes_a_late_dispatch_completion_inert() {
         let current = model("terminal", Vec::new(), true);
-        let action = current
-            .context_menu("terminal")
-            .unwrap()
-            .launch_new
-            .unwrap();
+        let action = current.context_menu("terminal").unwrap().open.unwrap();
         let Preparation::Ready(prepared) =
             prepare(&current, rmac_dock::menu::Action::Context(action)).unwrap()
         else {

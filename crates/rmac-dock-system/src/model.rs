@@ -10,6 +10,8 @@ pub enum Operation {
     Launch,
     Focus,
     Close,
+    Reveal,
+    Terminate,
     UpdatePins,
     Resolve,
     OpenPlace,
@@ -49,6 +51,8 @@ impl fmt::Display for Operation {
             Self::Launch => "launch application",
             Self::Focus => "focus application window",
             Self::Close => "close application window",
+            Self::Reveal => "show application in Finder",
+            Self::Terminate => "terminate application",
             Self::UpdatePins => "update pinned applications",
             Self::Resolve => "resolve Dock activation",
             Self::OpenPlace => "open Dock place",
@@ -110,6 +114,13 @@ pub enum Outcome {
     CloseRequested {
         window: rmac_compositor::WindowId,
     },
+    ApplicationRevealed {
+        app_id: String,
+    },
+    TerminationRequested {
+        app_id: String,
+        kind: rmac_dock::TerminationKind,
+    },
     PinsUpdated {
         pinned: Vec<rmac_shell_settings::AppId>,
     },
@@ -139,6 +150,30 @@ pub trait Backend: Send + Sync + 'static {
         request_id: rmac_compositor::ActivationId,
         window: rmac_compositor::WindowId,
     ) -> BackendFuture<'_, Result<(), BackendError>>;
+
+    fn reveal_application(&self, source: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
+        let _ = source;
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unsupported,
+                "revealing applications is unavailable",
+            ))
+        })
+    }
+
+    fn terminate_application(
+        &self,
+        pids: &[u32],
+        kind: rmac_dock::TerminationKind,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        let _ = (pids, kind);
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unsupported,
+                "application termination is unavailable",
+            ))
+        })
+    }
 
     fn update_pins(
         &self,

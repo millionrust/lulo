@@ -31,47 +31,31 @@ mod linux_wayland {
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
     static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
 
-    enum SourceEvent {
-        Settings(Result<rmac_shell_settings::ShellSettings, String>),
-        Catalog(Result<Vec<rmac_apps::Application>, String>),
-        Places(Result<rmac_places::Snapshot, String>),
-    }
-
     struct DockStatus {
-        settings: rmac_shell_settings::ShellSettings,
-        catalog: Vec<rmac_apps::Application>,
-        compositor: rmac_compositor::State,
-        compositor_ready: bool,
+        snapshot: Option<rmac_dock_runtime::Snapshot>,
         outputs: std::collections::BTreeSet<uuid::Uuid>,
         removed_outputs: std::collections::BTreeSet<uuid::Uuid>,
-        places: rmac_places::Snapshot,
     }
 
     impl DockStatus {
         fn new(
-            compositor: async_channel::Receiver<rmac_compositor::Event>,
-            sources: async_channel::Receiver<SourceEvent>,
+            updates: async_channel::Receiver<rmac_dock_runtime::Update>,
             reconcile: async_channel::Sender<()>,
             cx: &mut Context<Self>,
         ) -> Self {
-            let compositor_reconcile = reconcile.clone();
             cx.spawn(async move |this, cx| {
-                while let Ok(event) = compositor.recv().await {
+                while let Ok(update) = updates.recv().await {
                     if this
                         .update(cx, |this, cx| {
-                            let was_ready = this.compositor_ready;
-                            if this.compositor.apply(event).visible {
+                            let was_ready = this.snapshot.is_some();
+                            if update.visible {
                                 cx.notify();
                             }
-                            let outputs = this
-                                .compositor
-                                .snapshot()
+                            let outputs = update
+                                .snapshot
                                 .outputs
-                                .into_iter()
-                                .filter(|output| output.enabled())
-                                .map(|output| {
-                                    rmac_gpui_upstream_lab::stable_output_uuid(&output.id)
-                                })
+                                .iter()
+                                .map(|output| rmac_gpui_upstream_lab::stable_output_uuid(output))
                                 .collect();
                             if was_ready
                                 && rmac_gpui_upstream_lab::output_reappeared(
@@ -85,116 +69,46 @@ mod linux_wayland {
                                 );
                             }
                             this.outputs = outputs;
-                            this.compositor_ready = true;
+                            this.snapshot = Some(update.snapshot);
                         })
                         .is_err()
                     {
                         break;
                     }
-                    let _ = compositor_reconcile.try_send(());
-                }
-            })
-            .detach();
-            let source_reconcile = reconcile;
-            cx.spawn(async move |this, cx| {
-                while let Ok(event) = sources.recv().await {
-                    let settings_changed = matches!(&event, SourceEvent::Settings(Ok(_)));
-                    if this
-                        .update(cx, |this, cx| match event {
-                            SourceEvent::Settings(Ok(settings)) if this.settings != settings => {
-                                this.settings = settings;
-                                cx.notify();
-                            }
-                            SourceEvent::Catalog(Ok(catalog)) if this.catalog != catalog => {
-                                this.catalog = catalog;
-                                cx.notify();
-                            }
-                            SourceEvent::Places(Ok(places)) if this.places != places => {
-                                this.places = places;
-                                cx.notify();
-                            }
-                            SourceEvent::Settings(Err(detail)) => {
-                                eprintln!("Dock settings unavailable: {detail}");
-                            }
-                            SourceEvent::Catalog(Err(detail)) => {
-                                eprintln!("Dock catalog unavailable: {detail}");
-                            }
-                            SourceEvent::Places(Err(detail)) => {
-                                eprintln!("Dock places unavailable: {detail}");
-                            }
-                            SourceEvent::Settings(Ok(_))
-                            | SourceEvent::Catalog(Ok(_))
-                            | SourceEvent::Places(Ok(_)) => {}
-                        })
-                        .is_err()
-                    {
-                        break;
-                    }
-                    if settings_changed {
-                        let _ = source_reconcile.try_send(());
-                    }
+                    let _ = reconcile.try_send(());
                 }
             })
             .detach();
             Self {
-                settings: rmac_shell_settings::ShellSettings::default(),
-                catalog: Vec::new(),
-                compositor: rmac_compositor::State::default(),
-                compositor_ready: false,
+                snapshot: None,
                 outputs: std::collections::BTreeSet::new(),
                 removed_outputs: std::collections::BTreeSet::new(),
-                places: rmac_places::Snapshot {
-                    home: rmac_places::Place {
-                        path: PathBuf::new(),
-                        exists: false,
-                    },
-                    downloads: rmac_places::Place {
-                        path: PathBuf::new(),
-                        exists: false,
-                    },
-                    downloads_configured: false,
-                    trash: rmac_places::TrashSnapshot::default(),
-                },
             }
         }
 
-        fn model(&self) -> rmac_dock::Model {
-            rmac_dock::Model::build_with_places(
-                &self.settings.pinned_apps,
-                &self.settings.dock,
-                &self.catalog,
-                &self.compositor.snapshot(),
-                &self.places,
-            )
+        fn snapshot(&self) -> Option<&rmac_dock_runtime::Snapshot> {
+            self.snapshot.as_ref()
+        }
+
+        fn model(&self) -> Option<&rmac_dock::Model> {
+            self.snapshot().map(|snapshot| &snapshot.model)
         }
 
         fn surfaces(&self) -> Option<Vec<DockSurface>> {
-            if !self.compositor_ready {
-                return None;
-            }
-            let snapshot = self.compositor.snapshot();
-            let primary = snapshot
-                .outputs
-                .iter()
-                .filter(|output| output.enabled())
-                .map(|output| &output.id)
-                .min();
-            let fullscreen = rmac_gpui_upstream_lab::top_bar_output_policies(&snapshot);
-            rmac_dock::surface_descriptions(&snapshot, &self.settings.dock, primary, false)
-                .ok()
-                .map(|surfaces| {
-                    surfaces
-                        .iter()
-                        .map(|surface| {
-                            let output =
-                                rmac_gpui_upstream_lab::stable_output_uuid(&surface.output);
-                            DockSurface::from_description(
-                                surface,
-                                fullscreen.get(&output).copied().unwrap_or(false),
-                            )
-                        })
-                        .collect()
-                })
+            let snapshot = self.snapshot()?;
+            let fullscreen = rmac_gpui_upstream_lab::top_bar_output_policies(&snapshot.compositor);
+            snapshot.surface_plan.as_ref().ok().map(|surfaces| {
+                surfaces
+                    .iter()
+                    .map(|surface| {
+                        let output = rmac_gpui_upstream_lab::stable_output_uuid(&surface.output);
+                        DockSurface::from_description(
+                            surface,
+                            fullscreen.get(&output).copied().unwrap_or(false),
+                        )
+                    })
+                    .collect()
+            })
         }
     }
 
@@ -269,8 +183,11 @@ mod linux_wayland {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
             let status = self.status.read(cx);
-            let dock_settings = status.settings.dock.clone();
-            let model = status.model();
+            let snapshot = status
+                .snapshot()
+                .expect("a Dock surface is opened only after runtime readiness");
+            let dock_settings = snapshot.settings.clone();
+            let model = &snapshot.model;
             let effective_autohide = dock_settings.autohide || self.fullscreen;
             let visibility_policy = (effective_autohide, self.overview_visible);
             if self.visibility_policy != Some(visibility_policy) {
@@ -282,7 +199,7 @@ mod linux_wayland {
                     self.schedule_hide(cx);
                 }
             }
-            let entries = rmac_dock::presentation::ShelfContent::project(&model).applications;
+            let entries = snapshot.content.applications.clone();
             let trash = model
                 .special_items
                 .iter()
@@ -573,12 +490,14 @@ mod linux_wayland {
                                                 let status = this.status.read(cx);
                                                 status
                                                     .model()
-                                                    .context_menu(&reveal_app_id)
+                                                    .and_then(|model| {
+                                                        model.context_menu(&reveal_app_id)
+                                                    })
                                                     .and_then(|menu| menu.show_in_finder)
                                                     .filter(|action| {
-                                                        status
-                                                            .model()
-                                                            .authorizes_context_action(action)
+                                                        status.model().is_some_and(|model| {
+                                                            model.authorizes_context_action(action)
+                                                        })
                                                     })
                                             };
                                             if let Some(action) = reveal {
@@ -595,13 +514,14 @@ mod linux_wayland {
                             MouseButton::Right,
                             cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
-                                let session =
-                                    {
-                                        let status = this.status.read(cx);
-                                        status.model().context_menu(&context_app_id).and_then(
-                                            |menu| rmac_dock::menu::Session::context(&menu).ok(),
-                                        )
-                                    };
+                                let session = {
+                                    let status = this.status.read(cx);
+                                    status.model().and_then(|model| {
+                                        model.context_menu(&context_app_id).and_then(|menu| {
+                                            rmac_dock::menu::Session::context(&menu).ok()
+                                        })
+                                    })
+                                };
                                 this.context_menu = session.map(|session| DockMenu {
                                     anchor: relative_center,
                                     session,
@@ -710,7 +630,11 @@ mod linux_wayland {
                                     let status = this.status.read(cx);
                                     status
                                         .model()
-                                        .special_context_menu(rmac_dock::SpecialItemKind::Trash)
+                                        .and_then(|model| {
+                                            model.special_context_menu(
+                                                rmac_dock::SpecialItemKind::Trash,
+                                            )
+                                        })
                                         .and_then(|mut menu| {
                                             // Permanent deletion remains behind a dedicated
                                             // confirmation sheet. The first Dock-menu slice
@@ -863,7 +787,7 @@ mod linux_wayland {
                                 .status
                                 .read(cx)
                                 .model()
-                                .authorizes_context_action(action),
+                                .is_some_and(|model| model.authorizes_context_action(action)),
                             rmac_dock::menu::Action::ActivateEntry(_)
                             | rmac_dock::menu::Action::SpecialContext(_) => true,
                         };
@@ -1203,227 +1127,6 @@ mod linux_wayland {
             .detach();
     }
 
-    async fn watch_settings(sender: async_channel::Sender<SourceEvent>) {
-        let setup = blocking::unblock(|| {
-            let store = rmac_shell_settings::ShellSettingsStore::from_environment()
-                .map_err(|_| "the shell settings authority could not start".to_owned())?;
-            let settings = store
-                .load()
-                .map_err(|_| "the shell settings could not be loaded".to_owned())?
-                .settings;
-            let watcher = store
-                .watch()
-                .map_err(|_| "the shell settings watcher could not start".to_owned())?;
-            Ok::<_, String>((store, watcher, settings))
-        })
-        .await;
-        let (mut store, watcher, settings) = match setup {
-            Ok(setup) => setup,
-            Err(detail) => {
-                let _ = sender.send(SourceEvent::Settings(Err(detail))).await;
-                return;
-            }
-        };
-        if sender
-            .send(SourceEvent::Settings(Ok(settings)))
-            .await
-            .is_err()
-        {
-            return;
-        }
-        while watcher.recv().await.is_ok() {
-            let (returned, result) = blocking::unblock(move || {
-                let result = store
-                    .load()
-                    .map(|snapshot| snapshot.settings)
-                    .map_err(|_| "the changed shell settings could not be loaded".to_owned());
-                (store, result)
-            })
-            .await;
-            store = returned;
-            if sender.send(SourceEvent::Settings(result)).await.is_err() {
-                return;
-            }
-        }
-    }
-
-    async fn watch_catalog(sender: async_channel::Sender<SourceEvent>) {
-        let (changed_tx, changed_rx) = async_channel::bounded(1);
-        let setup = blocking::unblock(move || {
-            let catalog = discover_dock_catalog()
-                .map_err(|_| "the application catalog could not be loaded".to_owned())?;
-            let watcher = rmac_apps::watch_catalog(move || {
-                let _ = changed_tx.try_send(());
-            })
-            .map_err(|_| "the application catalog watcher could not start".to_owned())?;
-            Ok::<_, String>((watcher, catalog))
-        })
-        .await;
-        let (_watcher, catalog) = match setup {
-            Ok(setup) => setup,
-            Err(detail) => {
-                let _ = sender.send(SourceEvent::Catalog(Err(detail))).await;
-                return;
-            }
-        };
-        if sender
-            .send(SourceEvent::Catalog(Ok(catalog)))
-            .await
-            .is_err()
-        {
-            return;
-        }
-        while changed_rx.recv().await.is_ok() {
-            let result = blocking::unblock(|| {
-                discover_dock_catalog()
-                    .map_err(|_| "the changed application catalog could not be loaded".to_owned())
-            })
-            .await;
-            if sender.send(SourceEvent::Catalog(result)).await.is_err() {
-                return;
-            }
-        }
-    }
-
-    fn discover_dock_catalog() -> std::io::Result<Vec<rmac_apps::Application>> {
-        let mut catalog = rmac_apps::discover()?;
-
-        // The shelf is the recovery path for opening core applications. Keep
-        // every first-run item actionable even when an XDG catalog refresh is
-        // late or a desktop entry is hidden from ordinary application lists.
-        for (identity, name, generic_name, program, icon) in [
-            (
-                rmac_apps::identity::FILES,
-                "Finder",
-                "File Manager",
-                "/usr/bin/rmac-files",
-                "org.rmac.Files.svg",
-            ),
-            (
-                rmac_apps::identity::APP_DRAWER,
-                "Apps",
-                "Application Browser",
-                "/usr/bin/rmac-app-drawer",
-                "org.rmac.AppDrawer.svg",
-            ),
-            (
-                rmac_apps::identity::TERMINAL,
-                "Terminal",
-                "Terminal Emulator",
-                "/usr/bin/rmac-terminal",
-                "org.rmac.Terminal.svg",
-            ),
-            (
-                rmac_apps::identity::NOTES,
-                "Notes",
-                "Notes",
-                "/usr/bin/rmac-notes",
-                "org.rmac.Notes.svg",
-            ),
-            (
-                rmac_apps::identity::SYSTEM_SETTINGS,
-                "Settings",
-                "System Settings",
-                "/usr/bin/rmac-system-settings",
-                "org.rmac.SystemSettings.svg",
-            ),
-        ] {
-            ensure_dock_application(
-                &mut catalog,
-                identity,
-                name,
-                generic_name,
-                program,
-                Some(icon),
-            );
-        }
-        ensure_dock_application(
-            &mut catalog,
-            "firefox_firefox",
-            "Firefox",
-            "Web Browser",
-            "/snap/bin/firefox",
-            None,
-        );
-        Ok(catalog)
-    }
-
-    fn ensure_dock_application(
-        catalog: &mut Vec<rmac_apps::Application>,
-        identity: &str,
-        name: &str,
-        generic_name: &str,
-        program: &str,
-        icon_name: Option<&str>,
-    ) {
-        if catalog.iter().any(|application| {
-            application
-                .id
-                .trim_end_matches(".desktop")
-                .eq_ignore_ascii_case(identity)
-        }) || !PathBuf::from(program).is_file()
-        {
-            return;
-        }
-        let icon = icon_name.and_then(|icon_name| {
-            let installed = PathBuf::from("/usr/share/icons/hicolor/scalable/apps").join(icon_name);
-            let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../packaging/rmac-apps/icons")
-                .join(icon_name);
-            installed
-                .is_file()
-                .then_some(installed)
-                .or_else(|| source.is_file().then_some(source))
-        });
-        catalog.push(rmac_apps::Application {
-            id: format!("{identity}.desktop"),
-            name: name.into(),
-            generic_name: Some(generic_name.into()),
-            keywords: Vec::new(),
-            source: PathBuf::from(format!("/usr/share/applications/{identity}.desktop")),
-            icon,
-            categories: vec!["System".into()],
-            mime_types: Vec::new(),
-            launch: rmac_apps::LaunchSpec::Command {
-                program: program.into(),
-                args: Vec::new(),
-                working_dir: None,
-                terminal: false,
-            },
-            actions: Vec::new(),
-        });
-    }
-
-    async fn watch_places(sender: async_channel::Sender<SourceEvent>) {
-        let (changed_tx, changed_rx) = async_channel::bounded(1);
-        loop {
-            let callback_tx = changed_tx.clone();
-            let setup = blocking::unblock(move || {
-                let report = rmac_places_system::snapshot(&rmac_places_system::SystemBackend)
-                    .map_err(|error| error.to_string())?;
-                let watcher = rmac_places_system::watch(&report, move |_| {
-                    let _ = callback_tx.try_send(());
-                })
-                .map_err(|error| error.to_string())?;
-                Ok::<_, String>((watcher, report.snapshot))
-            })
-            .await;
-            let (_watcher, places) = match setup {
-                Ok(setup) => setup,
-                Err(detail) => {
-                    let _ = sender.send(SourceEvent::Places(Err(detail))).await;
-                    return;
-                }
-            };
-            if sender.send(SourceEvent::Places(Ok(places))).await.is_err() {
-                return;
-            }
-            if changed_rx.recv().await.is_err() {
-                return;
-            }
-        }
-    }
-
     fn record_configured_surface(window: &Window, display_id: u64) {
         let Some(path) = env::var_os(READY_FILE_ENV).map(PathBuf::from) else {
             return;
@@ -1622,27 +1325,16 @@ mod linux_wayland {
     pub fn run() {
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
-            let (compositor_tx, compositor_rx) = async_channel::bounded(64);
+            let (runtime_tx, runtime_rx) = async_channel::bounded(4);
             cx.background_executor()
                 .spawn(async move {
-                    if let Err(error) = rmac_compositor_niri::watch(compositor_tx).await {
-                        eprintln!("Dock compositor watcher stopped: {error}");
+                    if let Err(error) = rmac_dock_runtime::watch(runtime_tx).await {
+                        eprintln!("Dock runtime stopped: {error}");
                     }
                 })
                 .detach();
-            let (source_tx, source_rx) = async_channel::bounded(4);
             let (reconcile_tx, reconcile_rx) = async_channel::bounded(1);
-            cx.background_executor()
-                .spawn(watch_settings(source_tx.clone()))
-                .detach();
-            cx.background_executor()
-                .spawn(watch_catalog(source_tx.clone()))
-                .detach();
-            cx.background_executor()
-                .spawn(watch_places(source_tx))
-                .detach();
-            let status =
-                cx.new(|cx| DockStatus::new(compositor_rx, source_rx, reconcile_tx.clone(), cx));
+            let status = cx.new(|cx| DockStatus::new(runtime_rx, reconcile_tx.clone(), cx));
             let _ = reconcile_tx.try_send(());
             cx.spawn(async move |cx| {
                 let mut windows = DockWindows::default();
@@ -1650,11 +1342,11 @@ mod linux_wayland {
                     loop {
                         let complete = cx.update(|cx| {
                             let surfaces = status.read(cx).surfaces();
-                            let expected = surfaces
-                                .as_ref()
-                                .map(Vec::len)
-                                .unwrap_or_else(|| cx.displays().len());
-                            windows.reconcile(surfaces.as_deref(), &status, cx);
+                            let Some(surfaces) = surfaces else {
+                                return false;
+                            };
+                            let expected = surfaces.len();
+                            windows.reconcile(Some(&surfaces), &status, cx);
                             windows.len() == expected
                         });
                         if complete {

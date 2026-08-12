@@ -43,6 +43,10 @@ PORTAL_FILES = (
     Path("portals/rmac.portal"),
     Path("rmac-portals.conf"),
 )
+PRESERVED_AUXILIARY_UNITS = (
+    "rmac-lock-fallback-evidence.service",
+    "rmac-lock-provider-evidence.service",
+)
 
 
 class MigrationError(RuntimeError):
@@ -142,7 +146,7 @@ def discover(roots: Roots) -> tuple[Artifact, ...]:
             artifacts.append(Artifact(source, Path("config/systemd/user") / name))
 
     if unit_dir.is_dir() and not unit_dir.is_symlink():
-        known = set(_unit_names())
+        known = set(_unit_names()) | set(PRESERVED_AUXILIARY_UNITS)
         try:
             unknown = sorted(
                 path.name

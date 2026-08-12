@@ -105,6 +105,29 @@ class ArchiveDevelopmentInstallTests(unittest.TestCase):
             self.assertTrue(unit.is_file())
             self.assertTrue(unknown.is_file())
 
+    def test_opt_in_lock_evidence_units_are_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            roots = self.roots(temporary)
+            units = tuple(
+                roots.config / "systemd/user" / name
+                for name in MODULE.PRESERVED_AUXILIARY_UNITS
+            )
+            for unit in units:
+                self.write(unit)
+
+            self.assertEqual(MODULE.discover(roots), ())
+            self.assertTrue(all(unit.is_file() for unit in units))
+
+    def test_unknown_rmac_unit_still_refuses(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            roots = self.roots(temporary)
+            unknown = roots.config / "systemd/user/rmac-personal.service"
+            self.write(unknown)
+
+            with self.assertRaisesRegex(MODULE.MigrationError, "unknown rmac unit"):
+                MODULE.discover(roots)
+            self.assertTrue(unknown.is_file())
+
     def test_symlinked_generated_artifact_refuses(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             roots = self.roots(temporary)

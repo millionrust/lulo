@@ -50,7 +50,7 @@ impl FinderView {
             let primary = if selected { white() } else { label() };
             let sub = if selected { white() } else { secondary() };
             let glyph = if e.is_dir {
-                "icons/folder-fill.svg"
+                "icons/folder-artwork.svg"
             } else {
                 "icons/file-fill.svg"
             };
@@ -222,7 +222,7 @@ impl FinderView {
                 }
                 let selected = self.selected.contains(&ix);
                 let glyph = if e.is_dir {
-                    "icons/folder-fill.svg"
+                    "icons/folder-artwork.svg"
                 } else {
                     "icons/file-fill.svg"
                 };

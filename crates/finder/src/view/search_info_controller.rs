@@ -171,7 +171,7 @@ impl FinderView {
             return div();
         };
         let glyph = if e.is_dir {
-            "icons/folder-fill.svg"
+            "icons/folder-artwork.svg"
         } else {
             "icons/file-fill.svg"
         };

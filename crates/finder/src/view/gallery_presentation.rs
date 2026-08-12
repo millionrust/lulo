@@ -50,7 +50,7 @@ impl FinderView {
                 },
                 |(index, entry)| {
                     let glyph = if entry.is_dir {
-                        "icons/folder-fill.svg"
+                        "icons/folder-artwork.svg"
                     } else {
                         "icons/file-fill.svg"
                     };
@@ -134,7 +134,7 @@ impl FinderView {
             let entry = self.entries.get(index)?;
             let selected = self.selected.contains(&index);
             let glyph = if entry.is_dir {
-                "icons/folder-fill.svg"
+                "icons/folder-artwork.svg"
             } else {
                 "icons/file-fill.svg"
             };

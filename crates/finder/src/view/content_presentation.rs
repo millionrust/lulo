@@ -27,7 +27,7 @@ impl FinderView {
                 let ep = e.path.clone();
                 let is_dir = e.is_dir;
                 let glyph = if is_dir {
-                    "icons/folder-fill.svg"
+                    "icons/folder-artwork.svg"
                 } else {
                     "icons/file-fill.svg"
                 };

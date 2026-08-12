@@ -85,7 +85,13 @@ pub(super) fn accent() -> Hsla {
     rmac_ui::mac::accent()
 }
 pub(super) fn folder_blue() -> Hsla {
-    rmac_ui::mac::system_blue()
+    // Folder artwork has a stable semantic identity rather than following the
+    // user's control accent. These dynamic values were measured from AppKit
+    // `NSColor.systemBlue` in Aqua and Dark Aqua on the reference Mac.
+    match rmac_ui::theme::current().color_scheme {
+        rmac_appearance::ResolvedColorScheme::Light => gpui::rgb(0x0088ff).into(),
+        rmac_appearance::ResolvedColorScheme::Dark => gpui::rgb(0x0091ff).into(),
+    }
 }
 pub(super) fn sep() -> Hsla {
     rmac_ui::mac::separator()

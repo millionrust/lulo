@@ -1,0 +1,16 @@
+[Unit]
+Description=rmac secure lock recovery provider
+Documentation=https://github.com/rmac/rmac
+BindsTo=graphical-session.target
+After=graphical-session.target
+StartLimitIntervalSec=0
+ConditionPathExists=%h/.config/rmac/swaylock.conf
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=%h/.local/libexec/rmac/rmac-locker --config %h/.config/rmac/swaylock.conf
+TimeoutStartSec=15s
+Restart=on-failure
+RestartSec=1s
+KillMode=control-group

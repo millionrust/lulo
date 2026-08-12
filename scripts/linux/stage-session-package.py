@@ -113,6 +113,12 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(session / "lock-policy.json"),
             0o644,
         ),
+        "etc/pam.d/rmac-lock": (
+            _read_regular(
+                REPO_ROOT / "crates/rmac-lock-provider-linux/pam/rmac-lock"
+            ),
+            0o644,
+        ),
         "usr/share/rmac/greeter/rmac-aurora.svg": (
             _read_regular(package / "greeter" / "rmac-aurora.svg"),
             0o644,

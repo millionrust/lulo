@@ -12,7 +12,7 @@ import struct
 
 
 FORMAT_VERSION = 1
-DEBIAN_REVISION = 22
+DEBIAN_REVISION = 23
 MAX_BINARY_BYTES = 1024 * 1024 * 1024
 MAX_SOURCE_DATE_EPOCH = 253_402_300_799
 ARCHITECTURES = {
@@ -72,6 +72,7 @@ SESSION_BINARIES = (
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",
     "rmac-locker",
+    "rmac-lock-provider",
     "rmac-lock-coordinator",
     "rmac-idle-locker",
 )

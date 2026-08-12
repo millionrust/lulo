@@ -182,12 +182,17 @@ mod linux_wayland {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
-            let status = self.status.read(cx);
-            let snapshot = status
-                .snapshot()
-                .expect("a Dock surface is opened only after runtime readiness");
-            let dock_settings = snapshot.settings.clone();
-            let model = &snapshot.model;
+            let (dock_settings, model, entries) = {
+                let status = self.status.read(cx);
+                let snapshot = status
+                    .snapshot()
+                    .expect("a Dock surface is opened only after runtime readiness");
+                (
+                    snapshot.settings.clone(),
+                    snapshot.model.clone(),
+                    snapshot.content.applications.clone(),
+                )
+            };
             let effective_autohide = dock_settings.autohide || self.fullscreen;
             let visibility_policy = (effective_autohide, self.overview_visible);
             if self.visibility_policy != Some(visibility_policy) {
@@ -199,7 +204,6 @@ mod linux_wayland {
                     self.schedule_hide(cx);
                 }
             }
-            let entries = snapshot.content.applications.clone();
             let trash = model
                 .special_items
                 .iter()

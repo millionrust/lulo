@@ -9,8 +9,9 @@ authorization, packages, and login; rmac presents those real capabilities.
 ## The desktop
 
 - The top bar shows focused-app context and bounded system indicators.
-- The Dock combines pinned applications, running windows, Downloads, Files,
-  and Trash without inventing state.
+- The Dock combines configured applications, running windows, and Trash
+  without inventing state. Optional folder stacks appear only when the user
+  has configured them; the default profile does not force Downloads.
 - The launcher searches applications, Settings, allowed files/recents, and
   calculator results. Private file search is opt-in and exclusion-aware.
 - Notification Center stores bounded local history. Focus controls delivery
@@ -30,7 +31,7 @@ Shell surfaces remain subject to the Linux framework and hardware gates in
 | Text Editor | Open and safely save text, Markdown, and supported rich-text documents |
 | Terminal | Run the host shell in tabs with selection, search, profiles, and process ownership |
 | System Monitor | Inspect resources and request confirmed process actions |
-| Applications | Browse and launch valid installed desktop applications |
+| Apps | Browse and launch valid installed desktop applications |
 | System Settings | Configure the rmac desktop and supported Linux services |
 
 ## Everyday flow

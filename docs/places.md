@@ -1,7 +1,7 @@
 # Downloads and Trash places
 
-`rmac-places` is the platform-neutral input for Finder sidebars and the Dock's
-Downloads/Trash special items. It follows the
+`rmac-places` is the platform-neutral input for Files sidebars, configured
+folder stacks, and the Dock's Trash endpoint. It follows the
 [XDG Base Directory specification](https://specifications.freedesktop.org/basedir/latest/)
 and the
 [freedesktop Trash specification](https://specifications.freedesktop.org/trash/latest/)
@@ -73,14 +73,13 @@ off-thread resample, recreates the watch set, and publishes only a changed
 model. A 60-second reconciliation catches mount backends that do not emit a
 usable filesystem notification; identical results never request a Dock frame.
 
-The Dock model projects a fixed Files, Downloads, Trash order after a
-renderer-owned separator. These entries never enter application pin ordering.
-Missing or explicitly disabled Downloads remains visible but unavailable;
-Trash displays a count only when enumeration is authoritative. Private paths
-are retained only in activation values and redacted from their default debug
-form. Files and Downloads open through the desktop portal, and Trash opens the
-standard `trash:///` desktop URI, with typed success/failure receipts that do
-not mutate the model optimistically.
+The default Dock model projects only Trash after a renderer-owned separator.
+Files stays in configured application ordering and therefore cannot appear a
+second time in the tail. Downloads is not forced into the default profile;
+showing it as a folder stack requires a future persisted user choice. Trash
+displays a count only when enumeration is authoritative and opens the standard
+`trash:///` desktop URI with typed success/failure receipts that do not mutate
+the model optimistically. Private paths remain redacted from Debug output.
 
 The Dock domain now exposes Empty Trash only for an available, authoritatively
 nonempty Trash and binds the menu count into the exact system review. The

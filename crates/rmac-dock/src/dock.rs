@@ -296,46 +296,6 @@ fn authoritative_process_ids(item: &Item) -> Option<Vec<u32>> {
 }
 
 pub(super) fn project_special_items(places: &rmac_places::Snapshot) -> Vec<SpecialItem> {
-    let files = SpecialItem {
-        kind: SpecialItemKind::Files,
-        name: "Files",
-        available: places.home.exists,
-        item_count: None,
-        activation: if places.home.exists {
-            SpecialActivation::OpenDirectory {
-                kind: SpecialItemKind::Files,
-                path: places.home.path.clone(),
-            }
-        } else {
-            SpecialActivation::Unavailable {
-                kind: SpecialItemKind::Files,
-                detail: "the home directory is unavailable".into(),
-            }
-        },
-    };
-    let downloads_available = places.downloads.exists && places.downloads.path != places.home.path;
-    let downloads = SpecialItem {
-        kind: SpecialItemKind::Downloads,
-        name: "Downloads",
-        available: downloads_available,
-        item_count: None,
-        activation: if downloads_available {
-            SpecialActivation::OpenDirectory {
-                kind: SpecialItemKind::Downloads,
-                path: places.downloads.path.clone(),
-            }
-        } else {
-            SpecialActivation::Unavailable {
-                kind: SpecialItemKind::Downloads,
-                detail: if places.downloads.path == places.home.path {
-                    "the Downloads user directory is disabled"
-                } else {
-                    "the Downloads directory is unavailable"
-                }
-                .into(),
-            }
-        },
-    };
     let trash = SpecialItem {
         kind: SpecialItemKind::Trash,
         name: "Trash",
@@ -350,7 +310,11 @@ pub(super) fn project_special_items(places: &rmac_places::Snapshot) -> Vec<Speci
             }
         },
     };
-    vec![files, downloads, trash]
+    // Files is an ordinary configured application identity and Downloads is an
+    // optional folder stack. Neither belongs in an unconditional special-item
+    // tail. Until folder stacks have a persisted configuration authority, the
+    // only permanent Dock endpoint is the authoritative desktop Trash.
+    vec![trash]
 }
 
 #[derive(Clone, Debug)]

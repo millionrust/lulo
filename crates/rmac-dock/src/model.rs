@@ -259,8 +259,9 @@ impl std::error::Error for PinError {}
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Model {
     pub items: Vec<Item>,
-    /// Files, Downloads, and Trash are kept after a renderer-owned separator;
-    /// they are not application identities and cannot enter pinned ordering.
+    /// Non-application endpoints kept after a renderer-owned separator. The
+    /// default projection contains only Trash; Files remains a configured app
+    /// and optional folder stacks require persisted user configuration.
     pub special_items: Vec<SpecialItem>,
     pub(super) repeated_click: rmac_shell_settings::RepeatedClickBehavior,
 }

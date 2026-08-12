@@ -104,8 +104,9 @@ stack into bounded renderer rows without re-resolving actions. Application
 menus keep New Window, the ordered real-window list, Keep/Remove from Dock, and
 only the reorder directions that can act. A window row carries its exact focus
 action plus an exact secondary close action; focused and urgent state are
-announced independently. Files, Downloads, and Trash menus expose a typed Open
-row without copying a private directory path. Only an available,
+announced independently. The default Trash endpoint exposes a typed Open row;
+the domain retains the same path-redacted row contract for future configured
+folder stacks. Only an available,
 authoritatively nonempty Trash adds an **Empty Trash…** row in a distinct
 destructive section; its accessible label announces the exact item count and
 that confirmation is required. The More stack preserves the hidden application
@@ -133,7 +134,7 @@ renderer consumes those rows without re-resolving their actions.
 renderer `ShelfContent`, one output's retained `ShelfLayoutPlan`, and the
 currently open menu session. It first proves that model and content are equal,
 then proves that the visible IDs are the complete fitted prefix, exact More
-group when needed, and canonical Files/Downloads/Trash tail. A renderer cannot
+group when needed, and exact model-projected special tail. A renderer cannot
 silently omit a crowded application or expose a stale hidden tail.
 
 The resulting named Dock toolbar carries application/place group positions,
@@ -150,8 +151,9 @@ Window state; its initial selection comes from the exact menu session, Escape
 has a Close Menu action, and dismissal restores the precise visible invoker.
 Disabled rows remain in reading order but not keyboard order.
 
-The boundary accepts at most 512 applications, the exact zero-or-three place
-inventory, 512 menu rows, 512-byte identities, 4 KiB individual text, and 2 MiB
+The boundary accepts at most 512 applications, at most three model-projected
+place endpoints (zero or one in the default profile), 512 menu rows, 512-byte
+identities, 4 KiB individual text, and 2 MiB
 aggregate semantic text. Duplicate identities, model/content drift, malformed
 icons/state, stale or closed menus, invalid layout/overflow, controls, and
 oversized input fail closed. Custom diagnostics redact application identities,

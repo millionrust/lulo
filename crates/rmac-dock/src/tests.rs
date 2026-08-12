@@ -1,7 +1,5 @@
 //! Focused Dock model and surface contracts.
 
-use std::path::Path;
-
 use super::*;
 
 fn application(id: &str, name: &str) -> rmac_apps::Application {
@@ -528,7 +526,7 @@ fn places(downloads: &str, downloads_exists: bool, trash_count: usize) -> rmac_p
 }
 
 #[test]
-fn places_project_after_applications_without_becoming_pins() {
+fn only_permanent_trash_projects_after_configured_applications() {
     let places = places("/home/alex/Transfers", true, 7);
     let model = Model::build_with_places(
         &[rmac_shell_settings::AppId("finder.desktop".into())],
@@ -546,37 +544,33 @@ fn places_project_after_applications_without_becoming_pins() {
             .iter()
             .map(|item| (item.kind, item.name, item.available, item.item_count))
             .collect::<Vec<_>>(),
-        [
-            (SpecialItemKind::Files, "Files", true, None),
-            (SpecialItemKind::Downloads, "Downloads", true, None),
-            (SpecialItemKind::Trash, "Trash", true, Some(7)),
-        ]
+        [(SpecialItemKind::Trash, "Trash", true, Some(7))]
     );
     assert!(matches!(
         model.activate_special(SpecialItemKind::Downloads),
-        SpecialActivation::OpenDirectory {
+        SpecialActivation::Unavailable {
             kind: SpecialItemKind::Downloads,
-            path
-        } if path == Path::new("/home/alex/Transfers")
+            ..
+        }
     ));
 }
 
 #[test]
-fn disabled_or_missing_places_remain_visible_and_truthfully_unavailable() {
-    let mut places = places("/home/alex", true, 0);
-    places.home.exists = false;
+fn unavailable_trash_remains_visible_and_truthfully_unavailable() {
+    let mut places = places("/home/alex/Downloads", true, 0);
+    places.trash.available = false;
     let model =
         Model::build_with_places(&[], &Default::default(), &[], &Default::default(), &places);
 
+    assert_eq!(model.special_items.len(), 1);
     assert!(!model.special_items[0].available);
     assert!(matches!(
-        model.activate_special(SpecialItemKind::Files),
+        model.activate_special(SpecialItemKind::Trash),
         SpecialActivation::Unavailable {
-            kind: SpecialItemKind::Files,
+            kind: SpecialItemKind::Trash,
             ..
         }
     ));
-    assert!(!model.special_items[1].available);
     assert!(matches!(
         model.activate_special(SpecialItemKind::Downloads),
         SpecialActivation::Unavailable {
@@ -584,7 +578,7 @@ fn disabled_or_missing_places_remain_visible_and_truthfully_unavailable() {
             ..
         }
     ));
-    assert_eq!(model.special_items[2].item_count, Some(0));
+    assert_eq!(model.special_items[0].item_count, None);
 }
 
 #[test]
@@ -617,11 +611,7 @@ fn only_authoritatively_nonempty_trash_offers_destructive_review() {
             expected_item_count: 4
         })
     );
-    assert!(model
-        .special_context_menu(SpecialItemKind::Files)
-        .expect("Files menu")
-        .empty_trash
-        .is_none());
+    assert!(model.special_context_menu(SpecialItemKind::Files).is_none());
 
     let empty = Model::build_with_places(
         &[],

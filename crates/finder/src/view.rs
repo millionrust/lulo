@@ -43,7 +43,7 @@ mod updates;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -52,14 +52,17 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource,
-    ClickEvent, ClipboardItem, Context, Div, ExternalPaths, FocusHandle, Focusable as _, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Svg, Window,
+    ClickEvent, ClipboardItem, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _,
+    Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, SharedString,
+    Stateful, StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use rmac_ui::{Button, InputEvent, InputState, SearchField, TextField, Toggle};
+use rmac_ui::{
+    Button, InputEvent, InputState, SearchField, Slider, SliderEvent, SliderState, TextField,
+    Toggle,
+};
 
 use crate::conflict::{
     conflict_prompt, prepare_conflict_batch, resolve_conflict_task, unique_path_avoiding,
@@ -216,6 +219,8 @@ struct FinderView {
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,
+    icon_size: f32,
+    icon_size_slider: Entity<SliderState>,
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
     sections: Vec<Section>,

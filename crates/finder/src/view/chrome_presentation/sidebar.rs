@@ -108,16 +108,18 @@ impl FinderView {
             .border_r_1()
             .border_color(sep());
         for (si, section) in self.sections.iter().enumerate() {
-            col = col.child(
-                div()
-                    .px_2()
-                    .pt(px(if si == 0 { 2.0 } else { 12.0 }))
-                    .pb_1()
-                    .text_size(rmac_ui::text_px(11.0))
-                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                    .text_color(secondary())
-                    .child(section.title.clone()),
-            );
+            if !section.title.is_empty() {
+                col = col.child(
+                    div()
+                        .px_2()
+                        .pt(px(if si == 0 { 2.0 } else { 12.0 }))
+                        .pb_1()
+                        .text_size(rmac_ui::text_px(11.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(secondary())
+                        .child(section.title.clone()),
+                );
+            }
             for p in &section.places {
                 col = col.child(self.render_place(p, cx));
             }

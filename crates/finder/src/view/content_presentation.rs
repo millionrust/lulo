@@ -102,6 +102,7 @@ impl FinderView {
         div()
             .h(px(22.0))
             .flex_none()
+            .relative()
             .flex()
             .items_center()
             .justify_center()
@@ -116,61 +117,18 @@ impl FinderView {
                 el.child(div().text_color(tertiary()).child("•"))
                     .child(free)
             })
-    }
-
-    pub(super) fn render_path_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.trash_view {
-            return div()
-                .h(px(24.0))
-                .flex_none()
-                .flex()
-                .items_center()
-                .px_3()
-                .gap_1()
-                .bg(toolbar_bg())
-                .border_t_1()
-                .border_color(sep())
-                .text_size(rmac_ui::text_px(11.0))
-                .text_color(secondary())
-                .child(icon("icons/trash-2.svg", 12.0, secondary()))
-                .child("Trash");
-        }
-        let mut comps: Vec<(String, PathBuf)> = Vec::new();
-        let mut acc = PathBuf::new();
-        for c in self.cwd.components() {
-            acc.push(c.as_os_str());
-            let name = match c {
-                Component::RootDir => root_volume_name().to_string(),
-                Component::Normal(s) => s.to_string_lossy().into_owned(),
-                _ => continue,
-            };
-            comps.push((name, acc.clone()));
-        }
-        let n = comps.len();
-        let mut bar = div()
-            .h(px(24.0))
-            .flex_none()
-            .flex()
-            .items_center()
-            .px_3()
-            .gap_1()
-            .bg(toolbar_bg())
-            .border_t_1()
-            .border_color(sep())
-            .text_size(rmac_ui::text_px(11.0))
-            .text_color(secondary());
-        for (i, (name, path)) in comps.into_iter().enumerate() {
-            bar = bar.child(
-                Button::new(SharedString::from(format!("crumb-{i}")), name)
-                    .ghost()
-                    .xsmall()
-                    .on_click(cx.listener(move |this, _, _, cx| this.navigate(path.clone(), cx))),
-            );
-            if i + 1 < n {
-                bar = bar.child(icon("icons/chevron-right.svg", 9.0, tertiary()));
-            }
-        }
-        bar
+            .when(self.view == ViewMode::Icon, |bar| {
+                bar.child(
+                    div()
+                        .absolute()
+                        .right(px(12.0))
+                        .w(px(104.0))
+                        .h_full()
+                        .flex()
+                        .items_center()
+                        .child(Slider::new(&self.icon_size_slider).w_full()),
+                )
+            })
     }
 
     pub(super) fn drop_into(&mut self, dir: PathBuf, paths: &[PathBuf], cx: &mut Context<Self>) {

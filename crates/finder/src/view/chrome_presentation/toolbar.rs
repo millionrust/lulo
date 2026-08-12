@@ -70,6 +70,43 @@ impl FinderView {
                     .child(SearchField::new(&self.query).appearance(false)),
             );
 
+        let sidebar_toggle = Button::new("toggle-sidebar", "")
+            .icon(
+                Icon::new(if layout.sidebar_visible {
+                    IconName::PanelLeftClose
+                } else {
+                    IconName::PanelLeftOpen
+                })
+                .text_color(rmac_ui::mac::text()),
+            )
+            .ghost()
+            .with_size(Size::Small)
+            .selected(layout.sidebar_visible)
+            .disabled(!layout.sidebar_available)
+            .tooltip(if !layout.sidebar_available {
+                "Sidebar hidden until the window is wider"
+            } else if layout.sidebar_visible {
+                "Hide Sidebar"
+            } else {
+                "Show Sidebar"
+            })
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx)));
+
+        let leading = div()
+            .h_full()
+            .flex_none()
+            .flex()
+            .items_center()
+            .pl(px(13.0))
+            .pr_2()
+            .child(rmac_ui::traffic_lights())
+            .child(div().flex_1())
+            .child(sidebar_toggle)
+            .when(layout.sidebar_visible, |leading| {
+                leading.w(px(self.sidebar_width))
+            })
+            .when(!layout.sidebar_visible, |leading| leading.w(px(108.0)));
+
         div()
             .id("toolbar")
             .h(px(52.0))
@@ -78,7 +115,6 @@ impl FinderView {
             .flex()
             .items_center()
             .gap_2()
-            .pl(px(13.0))
             .pr_3()
             .relative()
             .bg(list_bg())
@@ -107,30 +143,7 @@ impl FinderView {
                     window.start_window_move();
                 }
             }))
-            .child(div().relative().mr_1().child(rmac_ui::traffic_lights()))
-            .child(
-                Button::new("toggle-sidebar", "")
-                    .icon(
-                        Icon::new(if layout.sidebar_visible {
-                            IconName::PanelLeftClose
-                        } else {
-                            IconName::PanelLeftOpen
-                        })
-                        .text_color(rmac_ui::mac::text()),
-                    )
-                    .ghost()
-                    .with_size(Size::Small)
-                    .selected(layout.sidebar_visible)
-                    .disabled(!layout.sidebar_available)
-                    .tooltip(if !layout.sidebar_available {
-                        "Sidebar hidden until the window is wider"
-                    } else if layout.sidebar_visible {
-                        "Hide Sidebar"
-                    } else {
-                        "Show Sidebar"
-                    })
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_sidebar(cx))),
-            )
+            .child(leading)
             .child(
                 div()
                     .flex()

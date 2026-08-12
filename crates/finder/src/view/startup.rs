@@ -24,7 +24,17 @@ impl FinderView {
             };
 
         // Real mounted volumes.
-        let mut locations = vec![
+        let mut locations = Vec::new();
+        if icloud.is_dir() {
+            locations.push(p(
+                "iCloud Drive",
+                icloud,
+                "icons/cloud.svg",
+                accent(),
+                PlaceKind::Item,
+            ));
+        }
+        locations.extend([
             p(
                 &host,
                 home.clone(),
@@ -39,7 +49,7 @@ impl FinderView {
                 drive_gray(),
                 PlaceKind::Item,
             ),
-        ];
+        ]);
         let (mounts, mount_error) = match rmac_mounts::discover() {
             Ok(mounts) => (mounts, None),
             Err(error) => (
@@ -63,13 +73,25 @@ impl FinderView {
 
         #[cfg(target_os = "macos")]
         let tag = |name: &str, color: u32| p(name, PathBuf::new(), "", hsl(color), PlaceKind::Tag);
-        let mut favorites = vec![p(
+        let mut prominent = vec![p(
             "Recents",
             PathBuf::new(),
             "icons/clock.svg",
             accent(),
             PlaceKind::Recents,
         )];
+        let shared = home.join("Public");
+        if shared.is_dir() {
+            prominent.push(p(
+                "Shared",
+                shared,
+                "icons/users.svg",
+                accent(),
+                PlaceKind::Item,
+            ));
+        }
+
+        let mut favorites = Vec::new();
         #[cfg(target_os = "macos")]
         favorites.push(p(
             "Applications",
@@ -79,13 +101,6 @@ impl FinderView {
             PlaceKind::Item,
         ));
         favorites.extend([
-            p(
-                "Desktop",
-                home.join("Desktop"),
-                "icons/folder-fill.svg",
-                accent(),
-                PlaceKind::Item,
-            ),
             p(
                 "Documents",
                 home.join("Documents"),
@@ -100,36 +115,53 @@ impl FinderView {
                 accent(),
                 PlaceKind::Item,
             ),
+            p(
+                "Desktop",
+                home.join("Desktop"),
+                "icons/folder-fill.svg",
+                accent(),
+                PlaceKind::Item,
+            ),
+            p(
+                "Movies",
+                home.join("Videos"),
+                "icons/folder-fill.svg",
+                accent(),
+                PlaceKind::Item,
+            ),
         ]);
+        let projects = home.join("Projects");
+        if projects.is_dir() {
+            favorites.push(p(
+                "Projects",
+                projects,
+                "icons/folder-fill.svg",
+                accent(),
+                PlaceKind::Item,
+            ));
+        }
         #[cfg(target_os = "linux")]
-        favorites.push(p(
-            "Trash",
+        locations.push(p(
+            "Bin",
             PathBuf::new(),
             "icons/trash-2.svg",
             accent(),
             PlaceKind::Trash,
         ));
-        let mut sections = vec![Section {
-            title: "Favorites".into(),
-            places: favorites,
-        }];
-        // Only show iCloud Drive when the real CloudDocs folder exists.
-        if icloud.is_dir() {
-            sections.push(Section {
-                title: "iCloud".into(),
-                places: vec![p(
-                    "iCloud Drive",
-                    icloud,
-                    "icons/cloud.svg",
-                    accent(),
-                    PlaceKind::Item,
-                )],
-            });
-        }
-        sections.push(Section {
-            title: "Locations".into(),
-            places: locations,
-        });
+        let mut sections = vec![
+            Section {
+                title: "".into(),
+                places: prominent,
+            },
+            Section {
+                title: "Favorites".into(),
+                places: favorites,
+            },
+            Section {
+                title: "Locations".into(),
+                places: locations,
+            },
+        ];
         #[cfg(target_os = "macos")]
         sections.push(Section {
             title: "Tags".into(),
@@ -153,6 +185,21 @@ impl FinderView {
             if let InputEvent::PressEnter { .. } = ev {
                 this.recursive_search(cx);
             }
+        })
+        .detach();
+
+        let icon_size = 64.0;
+        let icon_size_slider = cx.new(|_| {
+            SliderState::new()
+                .min(48.0)
+                .max(88.0)
+                .step(4.0)
+                .default_value(icon_size)
+        });
+        cx.subscribe(&icon_size_slider, |this, _, event: &SliderEvent, cx| {
+            let SliderEvent::Change(value) = event;
+            this.icon_size = value.start().clamp(48.0, 88.0);
+            cx.notify();
         })
         .detach();
 
@@ -218,6 +265,8 @@ impl FinderView {
             sort_key: SortKey::Name,
             sort_asc: true,
             query,
+            icon_size,
+            icon_size_slider,
             back: Vec::new(),
             fwd: Vec::new(),
             sections,

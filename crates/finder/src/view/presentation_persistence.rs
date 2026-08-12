@@ -17,7 +17,8 @@ pub(super) const MIN_SIDEBAR_WIDTH: f32 = 160.0;
 pub(super) const MAX_SIDEBAR_WIDTH: f32 = 360.0;
 pub(super) const MAX_RESTORED_TABS: usize = 16;
 const DEFAULT_SIDEBAR_WIDTH: f32 = 180.0;
-const CURRENT_VERSION: u32 = 2;
+const LEGACY_DEFAULT_SIDEBAR_WIDTH: f32 = 220.0;
+const CURRENT_VERSION: u32 = 3;
 const MAX_FILE_BYTES: usize = 80 * 1024;
 const MAX_PATH_BYTES: usize = 4 * 1024;
 const SAVE_QUIET_PERIOD: Duration = Duration::from_millis(250);
@@ -320,8 +321,17 @@ impl FinderStateStore {
                     .map_err(|_| Error::new(Operation::Parse, ErrorKind::Invalid))?;
                 FinderState::checked(stored.state, Vec::new(), 0)
             }
-            CURRENT_VERSION => {
+            2 => {
                 let stored: StoredVersion2 = serde_json::from_slice(&bytes)
+                    .map_err(|_| Error::new(Operation::Parse, ErrorKind::Invalid))?;
+                let mut state = stored.state;
+                if state.presentation.sidebar_width == LEGACY_DEFAULT_SIDEBAR_WIDTH {
+                    state.presentation.sidebar_width = DEFAULT_SIDEBAR_WIDTH;
+                }
+                state.is_valid().then_some(state)
+            }
+            CURRENT_VERSION => {
+                let stored: StoredVersion3 = serde_json::from_slice(&bytes)
                     .map_err(|_| Error::new(Operation::Parse, ErrorKind::Invalid))?;
                 stored.state.is_valid().then_some(stored.state)
             }
@@ -344,7 +354,7 @@ impl FinderStateStore {
             .ok_or_else(|| Error::new(Operation::ResolvePath, ErrorKind::Invalid))?;
         rmac_storage::create_dir_all_private(parent)
             .map_err(|error| Error::io(Operation::CreateDirectory, error))?;
-        let bytes = serde_json::to_vec(&StoredVersion2 {
+        let bytes = serde_json::to_vec(&StoredVersion3 {
             version: CURRENT_VERSION,
             state: state.clone(),
         })
@@ -386,6 +396,12 @@ struct StoredVersion1 {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredVersion2 {
+    version: u32,
+    state: FinderState,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredVersion3 {
     version: u32,
     state: FinderState,
 }
@@ -444,6 +460,49 @@ mod tests {
                 active_tab: 0,
             })
         );
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn version_two_migrates_only_the_old_default_sidebar_width() {
+        let path = test_path("default-sidebar-width-migration");
+        let parent = path.parent().unwrap();
+        std::fs::create_dir_all(parent).unwrap();
+        let state = FinderState::checked(
+            PresentationState::checked(ViewMode::Icon, true, 220.0).unwrap(),
+            vec![PathBuf::from("/tmp")],
+            0,
+        )
+        .unwrap();
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&StoredVersion2 { version: 2, state }).unwrap(),
+        )
+        .unwrap();
+
+        let migrated = FinderStateStore::at(path.clone()).load().unwrap().unwrap();
+        assert_eq!(migrated.presentation.sidebar_width, 180.0);
+
+        std::fs::remove_dir_all(parent).unwrap();
+
+        let path = test_path("custom-sidebar-width-migration");
+        let parent = path.parent().unwrap();
+        std::fs::create_dir_all(parent).unwrap();
+        let state = FinderState::checked(
+            PresentationState::checked(ViewMode::Icon, true, 248.0).unwrap(),
+            vec![PathBuf::from("/tmp")],
+            0,
+        )
+        .unwrap();
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&StoredVersion2 { version: 2, state }).unwrap(),
+        )
+        .unwrap();
+
+        let migrated = FinderStateStore::at(path.clone()).load().unwrap().unwrap();
+        assert_eq!(migrated.presentation.sidebar_width, 248.0);
+
         std::fs::remove_dir_all(parent).unwrap();
     }
 

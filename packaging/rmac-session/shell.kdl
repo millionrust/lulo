@@ -36,6 +36,7 @@ window-rule {
 // blur the translucent source-list material behind its unified toolbar.
 window-rule {
     match app-id=r#"^org\.rmac\.Files$"#
+    open-maximized true
     geometry-corner-radius 12
     clip-to-geometry true
     shadow {

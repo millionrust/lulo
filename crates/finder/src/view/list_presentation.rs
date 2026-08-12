@@ -216,6 +216,9 @@ impl FinderView {
         // Icon-grid tiles. Gallery owns a distinct preview + filmstrip tree.
         let mut tiles: Vec<gpui::AnyElement> = Vec::new();
         if show_icons {
+            let icon_size = self.icon_size;
+            let tile_width = icon_size + 52.0;
+            let label_width = icon_size + 32.0;
             for (ix, e) in self.entries.iter().enumerate() {
                 if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
                     continue;
@@ -229,11 +232,11 @@ impl FinderView {
                 let icon_color = if e.is_dir { folder_blue() } else { secondary() };
                 let visual: gpui::AnyElement = match self.thumbs.get(&e.path) {
                     Some(t) => img(t.clone())
-                        .max_w(px(64.0))
-                        .max_h(px(58.0))
+                        .max_w(px(icon_size))
+                        .max_h(px(icon_size - 6.0))
                         .rounded(px(3.0))
                         .into_any_element(),
-                    None => icon(glyph, 64.0, icon_color).into_any_element(),
+                    None => icon(glyph, icon_size, icon_color).into_any_element(),
                 };
                 let drag_paths = if selected {
                     self.selected_paths()
@@ -246,17 +249,17 @@ impl FinderView {
                 tiles.push(
                     div()
                         .id(("tile", ix))
-                        .w(px(116.0))
+                        .w(px(tile_width))
                         .flex()
                         .flex_col()
                         .items_center()
                         .gap_1()
                         .px_1()
                         .py_2()
-                        .child(div().h(px(64.0)).flex().items_center().child(visual))
+                        .child(div().h(px(icon_size)).flex().items_center().child(visual))
                         .child(
                             div()
-                                .max_w(px(96.0))
+                                .max_w(px(label_width))
                                 .px_1p5()
                                 .py_0p5()
                                 .rounded(px(4.0))
@@ -458,7 +461,6 @@ impl FinderView {
             .bg(list_bg())
             .when(show_list, |el: Div| el.child(header))
             .child(content)
-            .child(self.render_path_bar(cx))
             .child(self.render_status_bar())
     }
 }

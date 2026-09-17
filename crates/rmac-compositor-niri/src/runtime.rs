@@ -215,6 +215,38 @@ pub(super) fn action_error(error: Error) -> domain::ActionError {
     }
 }
 
+/// Read exactly one coherent compositor snapshot without leaving a watcher
+/// running. Hosts use this to resolve a window before sending an action.
+pub async fn snapshot() -> Result<domain::Snapshot, Error> {
+    let path = env::var_os(SOCKET_PATH_ENV)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .ok_or(Error::MissingSocketPath)?;
+    snapshot_at(&path).await
+}
+
+pub async fn snapshot_at(path: &Path) -> Result<domain::Snapshot, Error> {
+    let (sender, receiver) = async_channel::bounded(16);
+    let stream = futures_util::FutureExt::boxed_local(stream_once(path, &sender));
+    let reader = futures_util::FutureExt::boxed_local(async move {
+        loop {
+            match receiver.recv().await {
+                Ok(domain::Event::Snapshot { snapshot }) => return Ok(snapshot),
+                Ok(_) => continue,
+                Err(_) => return Err(Error::ConsumerClosed),
+            }
+        }
+    });
+    futures_util::pin_mut!(stream, reader);
+    match futures_util::future::select(stream, reader).await {
+        futures_util::future::Either::Right((snapshot, _stream)) => snapshot,
+        futures_util::future::Either::Left((stream_result, _reader)) => match stream_result {
+            Ok(()) => Err(Error::InitialStateIncomplete),
+            Err(error) => Err(error),
+        },
+    }
+}
+
 /// One complete connection lifetime, exposed for deterministic socket tests.
 pub async fn stream_once(path: &Path, sender: &Sender<domain::Event>) -> Result<(), Error> {
     let mut stream = connect(path)?;

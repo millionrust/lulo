@@ -281,6 +281,42 @@ fn stream_emits_one_coherent_initial_snapshot() {
     let _ = fs::remove_file(socket);
 }
 
+#[test]
+fn snapshot_reads_one_initial_snapshot_without_a_long_lived_watcher() {
+    let socket = PathBuf::from(format!("/tmp/rmac-niri-snap-{}.sock", std::process::id()));
+    let _ = fs::remove_file(&socket);
+    let listener = UnixListener::bind(&socket).unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        assert_eq!(read_sync_line(&mut stream), "\"EventStream\"");
+        stream.write_all(b"{\"Ok\":\"Handled\"}\n").unwrap();
+
+        let (mut outputs, _) = listener.accept().unwrap();
+        assert_eq!(read_sync_line(&mut outputs), "\"Outputs\"");
+        outputs.write_all(b"{\"Ok\":{\"Outputs\":{}}}\n").unwrap();
+
+        let (mut layers, _) = listener.accept().unwrap();
+        assert_eq!(read_sync_line(&mut layers), "\"Layers\"");
+        layers.write_all(b"{\"Ok\":{\"Layers\":[]}}\n").unwrap();
+
+        stream
+            .write_all(b"{\"WorkspacesChanged\":{\"workspaces\":[]}}\n")
+            .unwrap();
+        stream
+            .write_all(b"{\"WindowsChanged\":{\"windows\":[]}}\n")
+            .unwrap();
+        stream
+            .write_all(b"{\"OverviewOpenedOrClosed\":{\"is_open\":true}}\n")
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    });
+
+    let snapshot = async_io::block_on(snapshot_at(&socket)).unwrap();
+    assert!(snapshot.overview_visible);
+    server.join().unwrap();
+    let _ = fs::remove_file(&socket);
+}
+
 fn serve_fixture(listener: UnixListener) {
     let (mut stream, _) = listener.accept().unwrap();
     let request = read_sync_line(&mut stream);

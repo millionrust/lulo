@@ -23,28 +23,27 @@ enum WindowAction {
 /// minimize, so fullscreen/fill must be compositor actions on this process's
 /// focused window.
 fn send_window_action(action: WindowAction, cx: &mut App) {
-    cx.background_executor()
-        .spawn(async move {
-            let pid = std::process::id() as i32;
-            let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
-                return;
-            };
-            let window = snapshot
-                .windows
-                .iter()
-                .filter(|window| window.pid == Some(pid))
-                .min_by_key(|window| i32::from(!window.focused))
-                .map(|window| window.id);
-            let Some(window) = window else { return };
-            let action = match action {
-                WindowAction::ToggleFullscreen => {
-                    rmac_compositor::Action::FullscreenWindow { window, on: true }
-                }
-                WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
-            };
-            let _ = rmac_compositor_niri::execute_action(&action).await;
-        })
-        .detach();
+    cx.spawn(async move {
+        let pid = std::process::id() as i32;
+        let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+            return;
+        };
+        let window = snapshot
+            .windows
+            .iter()
+            .filter(|window| window.pid == Some(pid))
+            .min_by_key(|window| i32::from(!window.focused))
+            .map(|window| window.id);
+        let Some(window) = window else { return };
+        let action = match action {
+            WindowAction::ToggleFullscreen => {
+                rmac_compositor::Action::FullscreenWindow { window, on: true }
+            }
+            WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
+        };
+        let _ = rmac_compositor_niri::execute_action(&action).await;
+    })
+    .detach();
 }
 
 fn traffic_light(

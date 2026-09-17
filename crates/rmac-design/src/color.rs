@@ -122,6 +122,10 @@ pub struct Colors {
 
     pub accent: Rgba,
     pub on_accent: Rgba,
+    /// Absolute white, used by switch thumbs and slider knobs in both schemes.
+    pub white: Rgba,
+    /// Absolute black.
+    pub black: Rgba,
 
     pub traffic_close: Rgba,
     pub traffic_close_border: Rgba,
@@ -203,6 +207,8 @@ impl Colors {
 
                 accent,
                 on_accent,
+                white: Rgba::rgb(0xffffff),
+                black: Rgba::rgb(0x000000),
 
                 traffic_close: Rgba::rgb(0xff5f57),
                 traffic_close_border: Rgba::rgb(0xe0443e),
@@ -263,6 +269,8 @@ impl Colors {
 
                 accent,
                 on_accent,
+                white: Rgba::rgb(0xffffff),
+                black: Rgba::rgb(0x000000),
 
                 traffic_close: Rgba::rgb(0xff5f57),
                 traffic_close_border: Rgba::rgb(0xe0443e),

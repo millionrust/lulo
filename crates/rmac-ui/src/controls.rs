@@ -326,11 +326,32 @@ impl RenderOnce for PopUpButton {
 
 type ToggleHandler = Rc<dyn Fn(&bool, &mut Window, &mut App)>;
 
+/// Metric size of a [`Toggle`] switch.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SwitchSize {
+    #[default]
+    Regular,
+    Small,
+    Mini,
+}
+
+impl SwitchSize {
+    fn dimensions(self) -> (f32, f32, f32) {
+        match self {
+            Self::Regular => mac::switch_regular(),
+            Self::Small => mac::switch_small(),
+            Self::Mini => mac::switch_mini(),
+        }
+    }
+}
+
 /// Keyboard-focusable binary or mixed-state toggle.
 #[derive(IntoElement)]
 pub struct Toggle {
     id: ElementId,
     state: ToggleState,
+    size: SwitchSize,
+    pending: bool,
     label: Option<SharedString>,
     disabled: bool,
     tooltip: Option<SharedString>,
@@ -342,11 +363,25 @@ impl Toggle {
         Self {
             id: id.into(),
             state: ToggleState::Off,
+            size: SwitchSize::Regular,
+            pending: false,
             label: None,
             disabled: false,
             tooltip: None,
             on_change: None,
         }
+    }
+
+    pub fn with_size(mut self, size: SwitchSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// An async authority is still settling; keep the old value and show a
+    /// busy thumb until the readback arrives.
+    pub fn pending(mut self, pending: bool) -> Self {
+        self.pending = pending;
+        self
     }
 
     pub fn checked(mut self, checked: bool) -> Self {
@@ -393,20 +428,42 @@ impl RenderOnce for Toggle {
         let transparent = rgba(0x00000000).into();
         let active = self.state != ToggleState::Off;
         let next = !matches!(self.state, ToggleState::On);
+        let (width, height, thumb) = self.size.dimensions();
         let variant = ButtonCustomVariant::new(cx)
             .color(transparent)
             .foreground(mac::text())
             .border(transparent)
             .hover(mac::control_fill_hover())
             .active(mac::hover());
+        let indicator = if self.pending {
+            div()
+                .size(px(10.0))
+                .rounded_full()
+                .border_2()
+                .border_color(mac::white())
+                .into_any_element()
+        } else {
+            div()
+                .size(px(thumb))
+                .rounded_full()
+                .bg(mac::white())
+                .shadow_sm()
+                .into_any_element()
+        };
         let track = div()
-            .w(px(mac::toggle_width()))
-            .h(px(mac::toggle_height()))
+            .w(px(width))
+            .h(px(height))
             .px(px(2.0))
             .flex()
             .items_center()
             .rounded_full()
             .bg(if active {
+                mac::accent()
+            } else {
+                mac::control_fill()
+            })
+            .border_1()
+            .border_color(if active {
                 mac::accent()
             } else {
                 mac::separator()
@@ -418,13 +475,7 @@ impl RenderOnce for Toggle {
             .when(self.state == ToggleState::Mixed, |track| {
                 track.justify_center()
             })
-            .child(
-                div()
-                    .size(px(mac::toggle_thumb()))
-                    .rounded_full()
-                    .bg(mac::raised())
-                    .shadow_sm(),
-            );
+            .child(indicator);
         let content = div()
             .flex()
             .items_center()
@@ -435,7 +486,7 @@ impl RenderOnce for Toggle {
             .custom(variant)
             .with_size(Size::Small)
             .compact()
-            .disabled(self.disabled)
+            .disabled(self.disabled || self.pending)
             .selected(active)
             .child(content);
         if let Some(tooltip) = self.tooltip {
@@ -443,6 +494,203 @@ impl RenderOnce for Toggle {
         }
         if let Some(handler) = self.on_change {
             button = button.on_click(move |_, window, cx| handler(&next, window, cx));
+        }
+        button
+    }
+}
+
+/// 14 px tri-state checkbox with a label that toggles it.
+#[derive(IntoElement)]
+pub struct Checkbox {
+    id: ElementId,
+    state: ToggleState,
+    label: Option<SharedString>,
+    disabled: bool,
+    on_change: Option<ToggleHandler>,
+}
+
+impl Checkbox {
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            state: ToggleState::Off,
+            label: None,
+            disabled: false,
+            on_change: None,
+        }
+    }
+
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.state = if checked {
+            ToggleState::On
+        } else {
+            ToggleState::Off
+        };
+        self
+    }
+
+    pub fn state(mut self, state: ToggleState) -> Self {
+        self.state = state;
+        self
+    }
+
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn on_change(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for Checkbox {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let active = self.state != ToggleState::Off;
+        let next = !matches!(self.state, ToggleState::On);
+        let marker = match self.state {
+            ToggleState::On => div()
+                .text_color(mac::white())
+                .text_size(px(11.0))
+                .child("✓")
+                .into_any_element(),
+            ToggleState::Mixed => div()
+                .w(px(8.0))
+                .h(px(2.0))
+                .rounded_full()
+                .bg(mac::white())
+                .into_any_element(),
+            ToggleState::Off => div().into_any_element(),
+        };
+        let box_ = div()
+            .size(px(14.0))
+            .rounded(px(4.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(if active { mac::accent() } else { mac::raised() })
+            .border_1()
+            .border_color(if active {
+                mac::accent()
+            } else {
+                mac::separator()
+            })
+            .child(marker);
+        let content = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(box_)
+            .when_some(self.label, |content, label| content.child(label));
+        let variant = ButtonCustomVariant::new(cx)
+            .color(rgba(0x00000000).into())
+            .foreground(mac::text())
+            .border(rgba(0x00000000).into())
+            .hover(mac::control_fill_hover())
+            .active(mac::hover());
+        let mut button = ComponentButton::new(self.id)
+            .custom(variant)
+            .compact()
+            .disabled(self.disabled)
+            .selected(active)
+            .child(content);
+        if let Some(handler) = self.on_change {
+            button = button.on_click(move |_, window, cx| handler(&next, window, cx));
+        }
+        button
+    }
+}
+
+/// 14 px radio button with a label that selects it.
+#[derive(IntoElement)]
+pub struct Radio {
+    id: ElementId,
+    selected: bool,
+    label: Option<SharedString>,
+    disabled: bool,
+    on_change: Option<ToggleHandler>,
+}
+
+impl Radio {
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            selected: false,
+            label: None,
+            disabled: false,
+            on_change: None,
+        }
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn on_change(mut self, handler: impl Fn(&bool, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for Radio {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let circle = div()
+            .size(px(14.0))
+            .rounded_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(if self.selected {
+                mac::accent()
+            } else {
+                mac::raised()
+            })
+            .border_1()
+            .border_color(if self.selected {
+                mac::accent()
+            } else {
+                mac::separator()
+            })
+            .when(self.selected, |circle| {
+                circle.child(div().size(px(6.0)).rounded_full().bg(mac::white()))
+            });
+        let content = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(circle)
+            .when_some(self.label, |content, label| content.child(label));
+        let variant = ButtonCustomVariant::new(cx)
+            .color(rgba(0x00000000).into())
+            .foreground(mac::text())
+            .border(rgba(0x00000000).into())
+            .hover(mac::control_fill_hover())
+            .active(mac::hover());
+        let mut button = ComponentButton::new(self.id)
+            .custom(variant)
+            .compact()
+            .disabled(self.disabled)
+            .selected(self.selected)
+            .child(content);
+        if let Some(handler) = self.on_change {
+            button = button.on_click(move |_, window, cx| handler(&true, window, cx));
         }
         button
     }
@@ -1282,6 +1530,26 @@ mod tests {
             .disabled(true)
             .selected(true);
         let _ = PopUpButton::new("popup-menu", "Kind").dropdown_menu(|menu, _window, _cx| menu);
+    }
+
+    #[test]
+    fn checkbox_and_radio_build_for_every_state() {
+        let _ = Checkbox::new("cb").checked(true).label("Enabled");
+        let _ = Checkbox::new("cb-mixed").state(ToggleState::Mixed);
+        let _ = Checkbox::new("cb-disabled").disabled(true);
+        let _ = Radio::new("r1").selected(true).label("One");
+        let _ = Radio::new("r2").disabled(true).label("Two");
+    }
+
+    #[test]
+    fn switch_sizes_are_ordered_from_regular_to_mini() {
+        assert_eq!(SwitchSize::default(), SwitchSize::Regular);
+        let (regular_w, regular_h, regular_thumb) = mac::switch_regular();
+        let (small_w, small_h, small_thumb) = mac::switch_small();
+        let (mini_w, mini_h, mini_thumb) = mac::switch_mini();
+        assert!(regular_w > small_w && small_w > mini_w);
+        assert!(regular_h > small_h && small_h > mini_h);
+        assert!(regular_thumb > small_thumb && small_thumb > mini_thumb);
     }
 
     #[test]

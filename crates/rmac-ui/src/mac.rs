@@ -23,6 +23,16 @@ pub fn material_clear() -> Hsla {
 pub fn material_sidebar() -> Hsla {
     crate::theme::current().materials.sidebar.hsla()
 }
+/// Absolute white, for switch thumbs and slider knobs.
+pub fn white() -> Hsla {
+    crate::theme::current().colors.white.hsla()
+}
+
+/// Absolute black.
+pub fn black() -> Hsla {
+    crate::theme::current().colors.black.hsla()
+}
+
 /// Opaque standard material for the content layer.
 pub fn material_content() -> Hsla {
     crate::theme::current().materials.content.hsla()
@@ -90,6 +100,34 @@ pub fn toggle_height() -> f32 {
 }
 pub fn toggle_thumb() -> f32 {
     crate::theme::current().metrics.toggle_thumb
+}
+
+/// `(width, height, thumb)` for each switch size.
+pub fn switch_regular() -> (f32, f32, f32) {
+    let metrics = crate::theme::current().metrics;
+    (
+        metrics.switch_regular_width,
+        metrics.switch_regular_height,
+        metrics.switch_regular_thumb,
+    )
+}
+
+pub fn switch_small() -> (f32, f32, f32) {
+    let metrics = crate::theme::current().metrics;
+    (
+        metrics.switch_small_width,
+        metrics.switch_small_height,
+        metrics.switch_small_thumb,
+    )
+}
+
+pub fn switch_mini() -> (f32, f32, f32) {
+    let metrics = crate::theme::current().metrics;
+    (
+        metrics.switch_mini_width,
+        metrics.switch_mini_height,
+        metrics.switch_mini_thumb,
+    )
 }
 pub fn traffic_light_hit_width() -> f32 {
     crate::theme::current().metrics.traffic_light_hit_width

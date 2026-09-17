@@ -630,7 +630,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Measure with any pixel ruler (divide by 2 for logical px). Overwrite every **S** value in §4 of this file **and** in `crates/rmac-design` in one commit named `Measure Tahoe tokens from reference captures`.
   Verify: diff shows only §4/`rmac-design` changes; tests pass.
 
-- [ ] **1.2 Buttons, pop-ups, segmented (5.1, 5.2, 5.7)** in `rmac-ui/controls.rs` and `rmac-shell-ui`. Gallery specimens for each state.
+- [~] **1.2 Buttons, pop-ups, segmented (5.1, 5.2, 5.7)** in `rmac-ui/controls.rs` and `rmac-shell-ui`. Gallery specimens for each state. (Started against **S** values: `Button` already had roles/sizes/disabled/busy/selected/tooltip/dropdown; added `SegmentedControl` (5.7) with token styling, a pure `wrapped_selection` keyboard model, a `GalleryComponent::Segmented` specimen and states, and tests. `cargo test -p rmac-ui` ✔ 28, `cargo check -p rmac-component-gallery` ✔. Still pending: a dedicated pop-up button (5.2), window-inactive primary styling, `rmac-shell-ui` mirrors.) — `9032bf9`, `a566094`, `f7a41b9`
 - [ ] **1.3 Switch, checkbox, radio, slider (5.3–5.5)** including pending state and CC thick slider variant.
 - [ ] **1.4 Text and search fields (5.6)** including IME preedit and error state.
 - [ ] **1.5 Menus (5.9)** — one implementation per UI crate, used by: menu bar menus, Dock context menus, app context menus (`rmac_ui::ContextMenu` → rewrite), pop-up buttons. Includes submenu safe-triangle, type-select, off-screen flip, select blink.

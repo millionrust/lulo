@@ -23,7 +23,7 @@ enum WindowAction {
 /// minimize, so fullscreen/fill must be compositor actions on this process's
 /// focused window.
 fn send_window_action(action: WindowAction, cx: &mut App) {
-    cx.spawn(async move {
+    cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
         let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
             return;

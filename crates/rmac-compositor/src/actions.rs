@@ -277,6 +277,22 @@ pub fn show_desktop(snapshot: &Snapshot) -> Vec<Action> {
         .collect()
 }
 
+/// Find the compositor window that belongs to a client process. An exact
+/// app-id match wins over a bare pid match, so a multi-window application can
+/// resolve its focused window from a snapshot.
+pub fn window_id_for_process(
+    snapshot: &Snapshot,
+    pid: i32,
+    app_id: Option<&str>,
+) -> Option<WindowId> {
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| window.pid == Some(pid))
+        .min_by_key(|window| i32::from(!(app_id.is_some() && window.app_id.as_deref() == app_id)))
+        .map(|window| window.id)
+}
+
 /// Expand a restore set back into per-window restore actions.
 pub fn restore_all(origins: &[(WindowId, WorkspaceId)]) -> Vec<Action> {
     origins

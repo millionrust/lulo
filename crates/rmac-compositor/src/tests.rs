@@ -199,6 +199,29 @@ fn hide_and_show_desktop_expand_to_minimize_per_visible_window() {
 }
 
 #[test]
+fn process_lookup_prefers_the_matching_app_id() {
+    let desktop = WorkspaceId(1);
+    let mut first = app_window(1, "org.rmac.Notes", desktop);
+    first.pid = Some(4242);
+    let mut second = app_window(2, "org.rmac.Other", desktop);
+    second.pid = Some(4242);
+    let snapshot = Snapshot {
+        workspaces: vec![workspace(1, Some("DP-1"))],
+        windows: vec![first, second],
+        ..Default::default()
+    };
+    assert_eq!(
+        window_id_for_process(&snapshot, 4242, Some("org.rmac.Other")),
+        Some(WindowId(2))
+    );
+    assert_eq!(
+        window_id_for_process(&snapshot, 4242, None),
+        Some(WindowId(1))
+    );
+    assert_eq!(window_id_for_process(&snapshot, 9999, None), None);
+}
+
+#[test]
 fn spawn_commands_are_bounded_round_trippable_and_debug_redacted() {
     let command = SpawnCommand::new(vec![
         "demo".into(),

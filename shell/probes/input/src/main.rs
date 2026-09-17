@@ -9,7 +9,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use wayland_client::{
-    globals::registry_queue_init,
+    globals::{registry_queue_init, GlobalListContents},
     protocol::{wl_pointer, wl_registry, wl_seat},
     Connection, Dispatch, QueueHandle,
 };
@@ -26,15 +26,14 @@ const BTN_LEFT: u32 = 0x110;
 struct State {
     seat: Option<wl_seat::WlSeat>,
     manager: Option<ZwlrVirtualPointerManagerV1>,
-    frames: u32,
 }
 
-impl Dispatch<wl_registry::WlRegistry, ()> for State {
+impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
     fn event(
         state: &mut Self,
         registry: &wl_registry::WlRegistry,
         event: wl_registry::Event,
-        _: &(),
+        _: &GlobalListContents,
         _: &Connection,
         qh: &QueueHandle<Self>,
     ) {
@@ -46,14 +45,12 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
         {
             match interface.as_str() {
                 "zwlr_virtual_pointer_manager_v1" => {
-                    state.manager = Some(
-                        registry.bind::<ZwlrVirtualPointerManagerV1, _, _>(name, 2, qh, ()),
-                    );
+                    state.manager =
+                        Some(registry.bind::<ZwlrVirtualPointerManagerV1, _, _>(name, 2, qh, ()));
                 }
                 "wl_seat" => {
-                    state.seat = Some(
-                        registry.bind::<wl_seat::WlSeat, _, _>(name, version.min(9), qh, ()),
-                    );
+                    state.seat =
+                        Some(registry.bind::<wl_seat::WlSeat, _, _>(name, version.min(9), qh, ()));
                 }
                 _ => {}
             }
@@ -94,9 +91,7 @@ impl Dispatch<ZwlrVirtualPointerV1, ()> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if matches!(event, zwlr_virtual_pointer_v1::Event::Frame) {
-            state.frames = state.frames.saturating_add(1);
-        }
+        let _ = (state, event);
     }
 }
 
@@ -110,9 +105,15 @@ fn now_millis() -> u32 {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let (command, x, y) = match args.get(1).map(String::as_str) {
-        Some("click") if args.len() == 4 => ("click", args[2].parse::<u32>()?, args[3].parse::<u32>()?),
-        Some("press") if args.len() == 4 => ("press", args[2].parse::<u32>()?, args[3].parse::<u32>()?),
-        Some("move") if args.len() == 4 => ("move", args[2].parse::<u32>()?, args[3].parse::<u32>()?),
+        Some("click") if args.len() == 4 => {
+            ("click", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
+        }
+        Some("press") if args.len() == 4 => {
+            ("press", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
+        }
+        Some("move") if args.len() == 4 => {
+            ("move", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
+        }
         _ => {
             eprintln!("usage: input-probe click|press|move <x> <y>");
             std::process::exit(2);
@@ -158,6 +159,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     queue.flush()?;
     std::thread::sleep(std::time::Duration::from_millis(120));
-    let _ = state.frames;
     Ok(())
 }

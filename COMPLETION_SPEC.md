@@ -562,7 +562,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Do: write FD-1 as an ADR: context (stable 0.2.2 lacks layer-shell/a11y proof), decision (shell on rev `76c93968…`, apps on 0.2.2), consequences, upgrade policy (bump rev at most monthly after the Phase 8 smoke passes), rollback (previous rev manifest). Link it from `README.md` and `GOAL.md` Checkpoint 0.
   Verify: `python3 scripts/verify-documentation.py`.
 
-- [ ] **0.2 Promote the lab into `shell/`.**
+- [x] **0.2 Promote the lab into `shell/`.** (`git mv` to a `crates/*`+`bins/*`+`probes/*` workspace with `rmac-shell-ui`/`rmac-shell-layer`; all 15 path references updated) — restructure `2cd384e`, package-collision fix `21adab5`, lockfile+`Tracker::is_empty` `29d2580`, clippy `ada44b5`, `rmac-design` dep `21d3a08`. Ubuntu: `cargo build --locked --release --features wayland --bins` ✔ (3m32s), debug `--locked` ✔, `cargo clippy --locked --bins --features wayland -- -D warnings` ✔, `cargo test --locked --lib` ✔ (12), installer `--check` ✔. **Caveat:** `shell/scripts/nested-wayland-smoke.sh` cannot pass: it runs nested Sway, but `rmac-dock-runtime` has required a niri socket since `b3c09fc` (2026-08-02, before the base commit) — pre-existing, not caused by the move.
   Files: `git mv experiments/gpui-upstream-lab shell`; update every path reference (`rg -l "experiments/gpui-upstream-lab"` → fix all, including `.github/workflows/ci.yml`, `scripts/linux/*.sh`, `scripts/linux/*.py`, `packaging/`, docs, root `Cargo.toml` `exclude`).
   Restructure inside `shell/` into a workspace:
   ```
@@ -581,7 +581,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Keep binary names that `packaging/` and systemd units already expect (check `packaging/rmac-session/*` and `scripts/linux/install-session-units.sh`; if a unit expects `rmac-top-bar`, keep that binary name).
   Verify (Ubuntu): `cd shell && cargo build --locked --release --features wayland` then run the existing `shell/scripts/nested-wayland-smoke.sh` (moved with the lab).
 
-- [x] **0.3 Create `crates/rmac-design` (GPUI-free tokens).** (all §4 tokens as plain data; `Tokens::resolve`; 8 tests) — `9f0ecaf`; pending shell/Cargo.toml dep in 0.2
+- [x] **0.3 Create `crates/rmac-design` (GPUI-free tokens).** (all §4 tokens as plain data; `Tokens::resolve`; 8 tests; shell dep added in `21d3a08`) — `9f0ecaf`; passes `cargo test --locked -p rmac-design` on macOS and Ubuntu
   Files: new crate in main workspace; add `rmac-design = { path = "../crates/rmac-design" }` to `shell/Cargo.toml` too.
   Do: `pub struct Tokens { colors, materials, type_scale, radii, metrics, elevation, motion }` built by `Tokens::resolve(appearance: rmac_appearance::ResolvedAppearance) -> Tokens`, containing **every** value in §4 as named fields (use the token names in §4 converted to snake_case). Colors are `Rgba(u32)`. No gpui dependency. Unit tests: dark/light/high-contrast each produce WCAG ≥ 4.5 for `label.primary` on `surface.window`, ≥ 3.0 for `label.secondary`; every alpha in reduced-transparency materials ≥ `F0`.
   Verify: `cargo test --locked -p rmac-design`.
@@ -611,7 +611,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Verify: `python3 scripts/run-release-contract-checks.py`.
 
 **Phase 0 exit checklist**
-- [ ] `shell/` builds on Ubuntu; nested smoke passes; systemd units start the promoted binaries.
+- [~] `shell/` builds on Ubuntu ✔ (debug + release, `--locked`); systemd units start the promoted binaries (installer `--check` passes; binary names preserved) — nested smoke ✗ blocked by pre-existing niri requirement in `rmac-dock-runtime` (see 0.2).
 - [ ] `rg -n "0x[0-9a-fA-F]{8}" shell/bins crates/*/src --glob '*render*'` finds no color literals outside `rmac-design` (allow SVG/asset code and tests).
 - [ ] Inter and JetBrains Mono render on Ubuntu (screenshot of component gallery text).
 - [ ] No visible "App Drawer" string.

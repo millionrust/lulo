@@ -15,5 +15,6 @@ rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
 rmac-app-menu.workspace = true
 rmac-apps.workspace = true
+rmac-design.workspace = true
 rmac-theme.workspace = true
 rmac-window-state.workspace = true

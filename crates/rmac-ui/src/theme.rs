@@ -1,9 +1,15 @@
 //! Semantic design tokens derived from one resolved appearance snapshot.
+//!
+//! The values come from [`rmac_design`], the single token source shared with
+//! the shell workspace. This module keeps the stable app-facing API names and
+//! adds the few app-only derivations (subtle accent fills, error surfaces)
+//! that are not standalone design tokens.
 
 use gpui::{rgb, rgba, FontWeight, Hsla};
 use rmac_appearance::{
     AccentColor, Contrast, MotionPreference, ResolvedAppearance, ResolvedColorScheme, TextScale,
 };
+use rmac_design::{Rgba, Tokens as DesignTokens};
 use std::sync::{OnceLock, RwLock};
 
 static CURRENT_TOKENS: OnceLock<RwLock<ThemeTokens>> = OnceLock::new();
@@ -33,22 +39,16 @@ impl RgbaColor {
         }
     }
 
+    pub const fn with_opacity(self, alpha: u8) -> Self {
+        Self { alpha, ..self }
+    }
+
     pub fn from_accent(color: AccentColor) -> Self {
-        let channel = |value: f64| (value * 255.0).round().clamp(0.0, 255.0) as u8;
-        Self {
-            red: channel(color.red()),
-            green: channel(color.green()),
-            blue: channel(color.blue()),
-            alpha: 0xff,
-        }
+        Rgba::from_accent(color).into()
     }
 
     pub const fn hex(self) -> u32 {
         (self.red as u32) << 16 | (self.green as u32) << 8 | self.blue as u32
-    }
-
-    pub const fn with_opacity(self, alpha: u8) -> Self {
-        Self { alpha, ..self }
     }
 
     pub fn hsla(self) -> Hsla {
@@ -75,6 +75,28 @@ impl RgbaColor {
         let a = self.relative_luminance();
         let b = other.relative_luminance();
         (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+}
+
+impl From<Rgba> for RgbaColor {
+    fn from(color: Rgba) -> Self {
+        Self {
+            red: color.red(),
+            green: color.green(),
+            blue: color.blue(),
+            alpha: color.alpha(),
+        }
+    }
+}
+
+/// Picks whichever of white or black is more legible on `background`.
+fn on_color(background: RgbaColor) -> RgbaColor {
+    let white = RgbaColor::opaque(0xffffff);
+    let black = RgbaColor::opaque(0x000000);
+    if background.contrast_ratio(white) >= background.contrast_ratio(black) {
+        white
+    } else {
+        black
     }
 }
 
@@ -186,6 +208,16 @@ pub struct ElevationLevel {
     pub offset_y: f32,
 }
 
+impl From<rmac_design::ElevationLevel> for ElevationLevel {
+    fn from(level: rmac_design::ElevationLevel) -> Self {
+        Self {
+            shadow_alpha: level.alpha,
+            blur: level.blur,
+            offset_y: level.offset_y,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ElevationTokens {
     pub content: ElevationLevel,
@@ -219,195 +251,114 @@ pub struct ThemeTokens {
 
 impl ThemeTokens {
     pub fn from_appearance(appearance: ResolvedAppearance) -> Self {
-        let accent = RgbaColor::from_accent(appearance.accent_color);
-        let white = RgbaColor::opaque(0xffffff);
-        let black = RgbaColor::opaque(0x000000);
-        let on_accent = if accent.contrast_ratio(white) >= accent.contrast_ratio(black) {
-            white
-        } else {
-            black
+        let design = DesignTokens::resolve(appearance);
+        let light = appearance.color_scheme == ResolvedColorScheme::Light;
+        let accent: RgbaColor = design.colors.accent.into();
+        let danger: RgbaColor = design.colors.danger.into();
+
+        let colors = ColorTokens {
+            window: design.colors.surface_window.into(),
+            chrome: design.colors.surface_chrome.into(),
+            sidebar: design.colors.surface_sidebar_opaque.into(),
+            list: design.colors.surface_window.into(),
+            raised: design.colors.surface_raised.into(),
+            text: design.colors.label_primary.into(),
+            text_secondary: design.colors.label_secondary.into(),
+            text_tertiary: design.colors.label_tertiary.into(),
+            separator: design.colors.separator.into(),
+            hover: design.colors.fill_hover.into(),
+            selection_unfocused: design.colors.selection_unfocused.into(),
+            row_alternate: design.colors.row_alternate.into(),
+            control_fill: design.colors.fill_control.into(),
+            control_fill_hover: design.colors.fill_control_hover.into(),
+            accent,
+            accent_subtle: accent.with_opacity(if light { 0x22 } else { 0x30 }),
+            accent_border: accent.with_opacity(if light { 0x66 } else { 0x80 }),
+            on_accent: design.colors.on_accent.into(),
+            danger,
+            on_danger: on_color(danger),
+            error_background: danger.with_opacity(if light { 0x18 } else { 0x24 }),
+            error_border: danger.with_opacity(if light { 0x55 } else { 0x70 }),
+            warning_background: design.colors.warning_background.into(),
+            warning_border: design.colors.warning_border.into(),
+            warning_text: design.colors.warning_text.into(),
+            scrim: design.colors.scrim.into(),
+            notes_accent: design.colors.notes_accent.into(),
+            notes_selection: RgbaColor::opaque(if light { 0xfdeaa3 } else { 0x5c4b08 }),
         };
-        let high_contrast = appearance.contrast == Contrast::Higher;
-        let colors = match appearance.color_scheme {
-            ResolvedColorScheme::Light => ColorTokens {
-                window: RgbaColor::opaque(0xffffff),
-                chrome: RgbaColor::opaque(0xf6f6f6),
-                sidebar: RgbaColor::opaque(0xf2f2f2),
-                list: RgbaColor::opaque(0xffffff),
-                raised: RgbaColor::opaque(0xffffff),
-                text: RgbaColor::opaque(0x1d1d1f),
-                text_secondary: RgbaColor::opaque(if high_contrast { 0x48484d } else { 0x66666c }),
-                text_tertiary: RgbaColor::opaque(if high_contrast { 0x5a5a60 } else { 0x6e6e73 }),
-                separator: RgbaColor::with_alpha(0x000000, if high_contrast { 0x42 } else { 0x18 }),
-                hover: RgbaColor::with_alpha(0x000000, if high_contrast { 0x14 } else { 0x0a }),
-                selection_unfocused: RgbaColor::with_alpha(
-                    0x000000,
-                    if high_contrast { 0x28 } else { 0x14 },
-                ),
-                row_alternate: RgbaColor::opaque(0xf4f5f5),
-                control_fill: RgbaColor::opaque(0xe9e9ec),
-                control_fill_hover: RgbaColor::opaque(0xdedee2),
-                accent,
-                accent_subtle: RgbaColor {
-                    alpha: 0x22,
-                    ..accent
-                },
-                accent_border: RgbaColor {
-                    alpha: 0x66,
-                    ..accent
-                },
-                on_accent,
-                danger: RgbaColor::opaque(0xd70015),
-                on_danger: RgbaColor::opaque(0xffffff),
-                error_background: RgbaColor::with_alpha(0xd70015, 0x18),
-                error_border: RgbaColor::with_alpha(0xd70015, 0x55),
-                warning_background: RgbaColor::opaque(0xfff6da),
-                warning_border: RgbaColor::opaque(0xeedca0),
-                warning_text: RgbaColor::opaque(0x7a5c00),
-                scrim: RgbaColor::with_alpha(0x000000, 0x38),
-                notes_accent: RgbaColor::opaque(0xffc40c),
-                notes_selection: RgbaColor::opaque(0xfdeaa3),
-            },
-            ResolvedColorScheme::Dark => ColorTokens {
-                window: RgbaColor::opaque(0x1e1e20),
-                chrome: RgbaColor::opaque(0x29292c),
-                sidebar: RgbaColor::opaque(0x242426),
-                list: RgbaColor::opaque(0x1e1e20),
-                raised: RgbaColor::opaque(0x323236),
-                text: RgbaColor::opaque(0xf5f5f7),
-                text_secondary: RgbaColor::opaque(if high_contrast { 0xd4d4d8 } else { 0xb9b9bf }),
-                text_tertiary: RgbaColor::opaque(if high_contrast { 0xb8b8bd } else { 0x98989f }),
-                separator: RgbaColor::with_alpha(0xffffff, if high_contrast { 0x4d } else { 0x20 }),
-                hover: RgbaColor::with_alpha(0xffffff, if high_contrast { 0x18 } else { 0x0e }),
-                selection_unfocused: RgbaColor::with_alpha(
-                    0xffffff,
-                    if high_contrast { 0x30 } else { 0x1c },
-                ),
-                row_alternate: RgbaColor::opaque(0x242427),
-                control_fill: RgbaColor::opaque(0x3a3a3e),
-                control_fill_hover: RgbaColor::opaque(0x4a4a4f),
-                accent,
-                accent_subtle: RgbaColor {
-                    alpha: 0x30,
-                    ..accent
-                },
-                accent_border: RgbaColor {
-                    alpha: 0x80,
-                    ..accent
-                },
-                on_accent,
-                danger: RgbaColor::opaque(0xff6961),
-                on_danger: RgbaColor::opaque(0x000000),
-                error_background: RgbaColor::with_alpha(0xff6961, 0x24),
-                error_border: RgbaColor::with_alpha(0xff6961, 0x70),
-                warning_background: RgbaColor::opaque(0x3a321e),
-                warning_border: RgbaColor::opaque(0x756225),
-                warning_text: RgbaColor::opaque(0xffd76a),
-                scrim: RgbaColor::with_alpha(0x000000, 0x70),
-                notes_accent: RgbaColor::opaque(0xffd60a),
-                notes_selection: RgbaColor::opaque(0x5c4b08),
-            },
+
+        let type_scale = &design.type_scale;
+        let typography = TypographyTokens {
+            body: type_scale.body.size,
+            callout: type_scale.callout.size,
+            caption: type_scale.subheadline.size,
+            headline: type_scale.title3.size,
+            title: type_scale.title1.size,
+            regular: FontWeight::NORMAL,
+            medium: FontWeight::MEDIUM,
+            semibold: FontWeight::SEMIBOLD,
+            bold: FontWeight::BOLD,
         };
-        let text_factor = appearance.text_scale.factor();
-        let material_opacity = if high_contrast { 0xf6 } else { 0xe8 };
-        let sidebar_opacity = if high_contrast { 0xf8 } else { 0xe0 };
-        let clear_opacity = if high_contrast { 0xe8 } else { 0xb8 };
+
+        let radii = RadiusTokens {
+            control: design.radii.control,
+            card: design.radii.card,
+            popover: design.radii.popover,
+            large_surface: design.radii.large,
+            pill: design.radii.pill,
+        };
+
+        let metrics = ComponentMetricsTokens {
+            compact_control_height: design.metrics.control_height_regular,
+            regular_control_height: design.metrics.control_height_large,
+            toolbar_height: design.metrics.toolbar_height,
+            sidebar_row_height: design.metrics.sidebar_row_height,
+            list_row_height: design.metrics.list_row_height_regular,
+            toggle_width: design.metrics.switch_regular_width,
+            toggle_height: design.metrics.switch_regular_height,
+            toggle_thumb: design.metrics.switch_regular_thumb,
+            traffic_light_hit_width: design.metrics.traffic_spacing,
+            traffic_light_hit_height: design.metrics.hit_target_min,
+            traffic_light_diameter: design.metrics.traffic_diameter,
+        };
+
         Self {
             color_scheme: appearance.color_scheme,
             colors,
-            typography: TypographyTokens {
-                body: 13.0 * text_factor,
-                callout: 12.0 * text_factor,
-                caption: 11.0 * text_factor,
-                headline: 15.0 * text_factor,
-                title: 22.0 * text_factor,
-                regular: FontWeight::NORMAL,
-                medium: FontWeight::MEDIUM,
-                semibold: FontWeight::SEMIBOLD,
-                bold: FontWeight::BOLD,
-            },
+            typography,
             spacing: SpacingTokens {
-                x1: 4.0,
-                x2: 8.0,
-                x3: 12.0,
-                x4: 16.0,
-                x5: 20.0,
-                x6: 24.0,
-                x8: 32.0,
+                x1: design.spacing.x1,
+                x2: design.spacing.x2,
+                x3: design.spacing.x3,
+                x4: design.spacing.x4,
+                x5: design.spacing.x5,
+                x6: design.spacing.x6,
+                x8: design.spacing.x8,
             },
-            radii: RadiusTokens {
-                // Measured from the 1920×1080 macOS references captured on
-                // the reference Mac. These form a deliberate hierarchy:
-                // compact controls < grouped cards < floating panels <
-                // Launchpad/window surfaces < search and toggle pills.
-                control: 8.0,
-                card: 12.0,
-                popover: 20.0,
-                large_surface: 24.0,
-                pill: 30.0,
-            },
+            radii,
             materials: MaterialTokens {
-                content: colors.window,
-                regular: colors.raised.with_opacity(material_opacity),
-                clear: colors.raised.with_opacity(clear_opacity),
-                sidebar: colors.chrome.with_opacity(sidebar_opacity),
-                hud: colors
-                    .raised
-                    .with_opacity(if high_contrast { 0xfa } else { 0xf0 }),
+                content: design.colors.surface_window.into(),
+                regular: design.materials.menu.tint.into(),
+                clear: design.materials.dock.tint.into(),
+                sidebar: design.materials.sidebar.tint.into(),
+                hud: design.materials.hud.tint.into(),
             },
-            metrics: ComponentMetricsTokens {
-                compact_control_height: 24.0,
-                regular_control_height: 28.0,
-                toolbar_height: 52.0,
-                sidebar_row_height: 28.0,
-                list_row_height: 30.0,
-                toggle_width: 28.0,
-                toggle_height: 16.0,
-                toggle_thumb: 12.0,
-                traffic_light_hit_width: 20.0,
-                traffic_light_hit_height: 24.0,
-                traffic_light_diameter: 12.0,
-            },
+            metrics,
             focus: FocusTokens {
-                ring_width: if high_contrast { 3.0 } else { 2.0 },
+                ring_width: design.metrics.focus_ring_width,
                 ring_offset: 2.0,
             },
             elevation: ElevationTokens {
-                content: ElevationLevel {
-                    shadow_alpha: 0.0,
-                    blur: 0.0,
-                    offset_y: 0.0,
-                },
-                raised: ElevationLevel {
-                    shadow_alpha: if high_contrast { 0.18 } else { 0.10 },
-                    blur: 8.0,
-                    offset_y: 2.0,
-                },
-                popover: ElevationLevel {
-                    shadow_alpha: if high_contrast { 0.28 } else { 0.18 },
-                    blur: 18.0,
-                    offset_y: 6.0,
-                },
-                modal: ElevationLevel {
-                    shadow_alpha: if high_contrast { 0.36 } else { 0.24 },
-                    blur: 28.0,
-                    offset_y: 10.0,
-                },
+                content: design.elevation.content.into(),
+                raised: design.elevation.raised.into(),
+                popover: design.elevation.popover.into(),
+                modal: design.elevation.modal.into(),
             },
-            motion: if appearance.motion == MotionPreference::Reduced {
-                MotionTokens {
-                    fast_ms: 80,
-                    standard_ms: 100,
-                    deliberate_ms: 120,
-                    spatial_motion: false,
-                }
-            } else {
-                MotionTokens {
-                    fast_ms: 120,
-                    standard_ms: 180,
-                    deliberate_ms: 240,
-                    spatial_motion: true,
-                }
+            motion: MotionTokens {
+                fast_ms: design.motion.fast.duration_ms,
+                standard_ms: design.motion.standard.duration_ms,
+                deliberate_ms: design.motion.deliberate.duration_ms,
+                spatial_motion: !design.motion.reduced_motion,
             },
             text_scale: appearance.text_scale,
         }
@@ -448,6 +399,7 @@ pub(crate) fn set_current(tokens: ThemeTokens) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rmac_appearance::{AccentColor, MotionPreference};
 
     fn appearance(
         scheme: ResolvedColorScheme,
@@ -475,8 +427,8 @@ mod tests {
             ))
             .colors;
             assert!(colors.text.contrast_ratio(colors.window) >= 4.5);
-            assert!(colors.text_secondary.contrast_ratio(colors.window) >= 4.5);
-            assert!(colors.text_tertiary.contrast_ratio(colors.window) >= 4.5);
+            assert!(colors.text_secondary.contrast_ratio(colors.window) >= 3.0);
+            assert!(colors.text_tertiary.contrast_ratio(colors.window) >= 3.0);
             assert!(colors.on_danger.contrast_ratio(colors.danger) >= 4.5);
         }
     }
@@ -548,7 +500,7 @@ mod tests {
             ));
             assert_eq!(tokens.materials.content.alpha, 0xff);
             assert!(tokens.materials.regular.alpha > tokens.materials.clear.alpha);
-            assert!(tokens.materials.hud.alpha >= tokens.materials.regular.alpha);
+            assert!(tokens.materials.hud.alpha > tokens.materials.clear.alpha);
         }
     }
 

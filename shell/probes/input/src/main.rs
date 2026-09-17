@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use wayland_client::{
     globals::{registry_queue_init, GlobalListContents},
-    protocol::{wl_pointer, wl_registry, wl_seat},
+    protocol::{wl_pointer, wl_registry},
     Connection, Dispatch, QueueHandle,
 };
 use wayland_protocols_wlr::virtual_pointer::v1::client::{
@@ -23,47 +23,14 @@ const OUTPUT_HEIGHT: u32 = 1080;
 const BTN_LEFT: u32 = 0x110;
 
 #[derive(Default)]
-struct State {
-    seat: Option<wl_seat::WlSeat>,
-    manager: Option<ZwlrVirtualPointerManagerV1>,
-}
+struct State;
 
 impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for State {
     fn event(
-        state: &mut Self,
-        registry: &wl_registry::WlRegistry,
-        event: wl_registry::Event,
-        _: &GlobalListContents,
-        _: &Connection,
-        qh: &QueueHandle<Self>,
-    ) {
-        if let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event
-        {
-            match interface.as_str() {
-                "zwlr_virtual_pointer_manager_v1" => {
-                    state.manager =
-                        Some(registry.bind::<ZwlrVirtualPointerManagerV1, _, _>(name, 2, qh, ()));
-                }
-                "wl_seat" => {
-                    state.seat =
-                        Some(registry.bind::<wl_seat::WlSeat, _, _>(name, version.min(9), qh, ()));
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-impl Dispatch<wl_seat::WlSeat, ()> for State {
-    fn event(
         _: &mut Self,
-        _: &wl_seat::WlSeat,
-        _: wl_seat::Event,
-        _: &(),
+        _: &wl_registry::WlRegistry,
+        _: wl_registry::Event,
+        _: &GlobalListContents,
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
@@ -84,14 +51,13 @@ impl Dispatch<ZwlrVirtualPointerManagerV1, ()> for State {
 
 impl Dispatch<ZwlrVirtualPointerV1, ()> for State {
     fn event(
-        state: &mut Self,
+        _: &mut Self,
         _: &ZwlrVirtualPointerV1,
-        event: zwlr_virtual_pointer_v1::Event,
+        _: zwlr_virtual_pointer_v1::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        let _ = (state, event);
     }
 }
 
@@ -123,20 +89,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let connection = Connection::connect_to_env()?;
     let (globals, mut queue) = registry_queue_init::<State>(&connection)?;
     let qh = queue.handle();
-    let mut state = State::default();
-    // Dispatches the global events into `state`.
-    let _ = &globals;
-    queue.roundtrip(&mut state)?;
+    let manager = globals.bind::<ZwlrVirtualPointerManagerV1, State, ()>(&qh, 1..=2, ())?;
+    // Passing no seat lets the compositor choose its default seat.
+    let pointer = manager.create_virtual_pointer(None, &qh, ());
+    queue.flush()?;
 
-    let manager = state
-        .manager
-        .clone()
-        .ok_or("niri did not advertise zwlr_virtual_pointer_manager_v1")?;
-    let pointer = manager.create_virtual_pointer(state.seat.as_ref(), &qh, ());
-    queue.roundtrip(&mut state)?;
-
-    let time = now_millis();
-    pointer.motion_absolute(time, x, y, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+    pointer.motion_absolute(now_millis(), x, y, OUTPUT_WIDTH, OUTPUT_HEIGHT);
     pointer.frame();
     queue.flush()?;
     std::thread::sleep(std::time::Duration::from_millis(80));

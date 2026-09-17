@@ -84,9 +84,9 @@ logos, and application icons must not be imported.
 The visual target is the current compact macOS desktop hierarchy, expressed
 with original rmac identity:
 
-- a 32-logical-pixel adaptive menu bar on every selected output;
-- a bottom-centered glass shelf with 48-logical-pixel resting icons, 8-pixel
-  gaps/padding, approximately 20-pixel corner radius, a subtle light inner
+- a 26-logical-pixel adaptive menu bar on every selected output;
+- a bottom-centered glass shelf with 56-logical-pixel resting icons, 8-pixel
+  gaps/padding, approximately 26-pixel corner radius, a subtle light inner
   edge, dark outer edge, and wallpaper-aware shadow;
 - real desktop-entry artwork for installed applications and original embedded
   rmac artwork for first-party or fallback entries;

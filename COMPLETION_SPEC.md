@@ -603,12 +603,12 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Do: add `fonts-inter` and `fonts-jetbrains-mono` to the session/app package `Depends`. At app start (`rmac_ui::window::boot*`) check the font resolves; if not, log one warning and fall back to the system sans (never crash). Terminal: replace `"Menlo"` with `rmac_ui::MONO_FONT`; replace `CELL_W = FONT_SIZE * 0.6` with advance width measured via `window.text_system().advance(font_id, size, 'M')` at startup and on font/scale change.
   Verify: `cargo test --locked -p rmac-terminal`; Ubuntu: `fc-match Inter` and `fc-match "JetBrains Mono"` resolve after package install; Terminal columns fill the window exactly (no right gap > 1 cell).
 
-- [ ] **0.7 Names.**
+- [x] **0.7 Names.** (the desktop `Name=Apps` and metainfo `<name>Apps</name>` were already correct; renamed every remaining product-name occurrence — service description, app-drawer log/status strings, crate comments, and 20+ docs — while keeping identifiers `rmac-app-drawer`/`app-drawer`/`APP_DRAWER`/`AppDrawer`) — `aab4bf0`. Ubuntu: `cargo test --locked -p rmac-app-drawer -p rmac-top-bar` ✔ (4+3+9), `python3 scripts/verify-documentation.py` ✔; `grep -rn "App Drawer"` outside the guide now finds no prose.
   Files: `packaging/rmac-apps/applications/org.rmac.AppDrawer.desktop` (`Name=Apps`), metainfo, `po/`, `crates/app-drawer` visible strings, `crates/rmac-top-bar/src/labels.rs`, Settings strings, docs (`docs/user-guide.md`, `docs/places.md`, `docs/dock.md`, `docs/shortcuts.md`, `README.md`).
   Do: apply FD-6. Keep desktop-file IDs and crate names. Regenerate `rmac-apps.pot`.
   Verify: `rg -n "App Drawer" --glob '!crates/**/tests*' --glob '!*.pot'` shows only internal identifiers; `python3 scripts/verify-documentation.py`.
 
-- [ ] **0.8 Fix contradictory docs.**
+- [x] **0.8 Fix contradictory docs.** (`docs/macos-ui-reference.md`: 32→26 menu bar, 48→56 Dock icons, ~20→26 shelf radius; `docs/dock.md`: 48→56 icon. `docs/places.md`/`docs/user-guide.md` already stated the corrected non-forced Files/Downloads Dock contract, so no edit was needed.) — docs change in the 0.8 commit. Verify: `python3 scripts/verify-documentation.py` ✔. `python3 scripts/run-release-contract-checks.py` on Ubuntu runs but 3 `test_apt_publisher` tests fail on the pre-existing storage-floor guard because `/tmp` is a 3.4 GiB tmpfs; unrelated to this change.
   Files: `docs/macos-ui-reference.md` (32→26 menu bar, 48→56 Dock icons), `docs/dock.md`, `docs/places.md`, `docs/user-guide.md` (remove forced Files/Downloads Dock tail per parity spec §13 mismatch 1).
   Verify: `python3 scripts/run-release-contract-checks.py`.
 

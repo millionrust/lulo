@@ -314,7 +314,7 @@ allow old completion to overwrite newer artwork.
 ## Crowded outputs
 
 Fitting is chosen from content and output width before hover. The Dock first
-keeps every item and reduces its 48-pixel icon, normal gap, and influence radius
+keeps every item and reduces its 56-pixel icon, normal gap, and influence radius
 proportionally, never below the 36-pixel primary-shell hit target. A conservative
 worst-case magnification envelope is reserved during this decision, so pointer
 movement cannot change the selected base size or make the shelf overflow.

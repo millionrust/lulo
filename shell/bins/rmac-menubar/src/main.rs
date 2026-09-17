@@ -107,21 +107,39 @@ mod linux_wayland {
 
     fn request_app_menus(app_id: String, generation: u64, cx: &mut Context<ShellStatus>) {
         cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn({
-                    let app_id = app_id.clone();
-                    async move { rmac_app_menu::fetch(&app_id).await }
-                })
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.menu_generation == generation
-                    && this.menu_app_id.as_deref() == Some(app_id.as_str())
-                {
-                    this.menus = result.unwrap_or_default();
-                    cx.notify();
+            // The focused app may still be registering its menu interface on
+            // D-Bus when focus first arrives, so retry a few times while it
+            // stays focused instead of leaving the bar permanently empty.
+            for _ in 0..6 {
+                let result = cx
+                    .background_executor()
+                    .spawn({
+                        let app_id = app_id.clone();
+                        async move { rmac_app_menu::fetch(&app_id).await }
+                    })
+                    .await;
+                let fetched = result.ok().filter(|menus| !menus.is_empty());
+                let stop = this
+                    .update(cx, |this, cx| {
+                        if this.menu_generation != generation
+                            || this.menu_app_id.as_deref() != Some(app_id.as_str())
+                        {
+                            return true;
+                        }
+                        if let Some(menus) = fetched {
+                            this.menus = menus;
+                            cx.notify();
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(true);
+                if stop {
+                    break;
                 }
-            });
+                async_io::Timer::after(std::time::Duration::from_millis(300)).await;
+            }
         })
         .detach();
     }

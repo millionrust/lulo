@@ -118,7 +118,7 @@ async fn watch_compositor(sender: Sender<rmac_compositor::Event>) -> Result<(), 
                     }).await.is_err() {
                         return Ok(());
                     }
-                    let _ = error;
+                    eprintln!("rmac-shell-runtime: compositor watch reconnect: {error}");
                 }
             },
             _ = closed => return Ok(()),

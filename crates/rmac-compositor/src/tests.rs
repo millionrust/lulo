@@ -138,6 +138,21 @@ fn actions_report_stable_kinds_and_capabilities() {
     assert!(!capabilities.supports(ActionKind::SetOverview));
 }
 
+fn window(id: u64, app_id: &str, workspace: WorkspaceId) -> Window {
+    Window {
+        id: WindowId(id),
+        title: None,
+        app_id: Some(app_id.to_string()),
+        pid: None,
+        workspace: Some(workspace),
+        focused: false,
+        floating: false,
+        urgent: false,
+        focus_timestamp: None,
+        layout: WindowLayout::default(),
+    }
+}
+
 #[test]
 fn hide_and_show_desktop_expand_to_minimize_per_visible_window() {
     let desktop = WorkspaceId(1);
@@ -148,24 +163,9 @@ fn hide_and_show_desktop_expand_to_minimize_per_visible_window() {
     let snapshot = Snapshot {
         workspaces: vec![workspace(1, Some("DP-1")), parking],
         windows: vec![
-            Window {
-                id: WindowId(1),
-                app_id: Some("org.rmac.Notes".into()),
-                workspace: Some(desktop),
-                ..Default::default()
-            },
-            Window {
-                id: WindowId(2),
-                app_id: Some("org.rmac.Notes".into()),
-                workspace: Some(WorkspaceId(9)),
-                ..Default::default()
-            },
-            Window {
-                id: WindowId(3),
-                app_id: Some("org.mozilla.firefox".into()),
-                workspace: Some(desktop),
-                ..Default::default()
-            },
+            window(1, "org.rmac.Notes", desktop),
+            window(2, "org.rmac.Notes", WorkspaceId(9)),
+            window(3, "org.mozilla.firefox", desktop),
         ],
         ..Default::default()
     };

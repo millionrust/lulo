@@ -1425,6 +1425,13 @@ mod linux_wayland {
             cx: &mut App,
         ) {
             let available = rmac_shell_layer::output_surfaces::newest_displays(cx);
+            if std::env::var_os("RMAC_DEBUG_FULLSCREEN").is_some() {
+                eprintln!(
+                    "tracker desired={:?} available={:?}",
+                    desired,
+                    available.keys().collect::<Vec<_>>()
+                );
+            }
             let target = desired
                 .map(|desired| {
                     desired

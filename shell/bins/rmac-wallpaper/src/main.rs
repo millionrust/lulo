@@ -18,6 +18,7 @@ mod linux_wayland {
         WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
+    use rmac_shell_ui::tokens;
     use uuid::Uuid;
 
     const READY_FILE_ENV: &str = "RMAC_WALLPAPER_READY_FILE";

@@ -16,9 +16,28 @@ fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScal
 /// long-lived shell process that creates windows on demand.
 pub fn init_application(cx: &mut App) {
     seed_initial_theme();
+    warn_if_ui_font_missing(cx);
     gpui_component::init(cx);
     components::init(cx);
     start_theme_runtime(cx);
+}
+
+/// Warn once if the declared UI font is absent. GPUI silently falls back to
+/// the system sans, so this keeps a missing `fonts-inter` package diagnosable
+/// without ever blocking startup.
+fn warn_if_ui_font_missing(cx: &App) {
+    if cx
+        .text_system()
+        .all_font_names()
+        .iter()
+        .any(|name| name == crate::UI_FONT)
+    {
+        return;
+    }
+    eprintln!(
+        "rmac: UI font '{}' is not installed; using the system sans instead. Install the 'fonts-inter' package for the intended look.",
+        crate::UI_FONT
+    );
 }
 
 /// Resolve the session's exported host scheme and any explicit rmac preference

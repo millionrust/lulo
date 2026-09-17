@@ -96,6 +96,8 @@ PACKAGE_SPECS = (
         static_dependencies=(
             "bluez",
             "dbus-user-session",
+            "fonts-inter",
+            "fonts-jetbrains-mono",
             "libglib2.0-bin",
             "network-manager",
             "packagekit",
@@ -122,6 +124,8 @@ PACKAGE_SPECS = (
         static_dependencies=(
             "coreutils",
             "dbus-user-session",
+            "fonts-inter",
+            "fonts-jetbrains-mono",
             "gawk | mawk",
             "niri",
             "pipewire-bin",

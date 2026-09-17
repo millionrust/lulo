@@ -347,7 +347,7 @@ fn rasterize(
     buffer.set_size(font_system, Some(width as f32), Some(height as f32));
     buffer.set_wrap(font_system, Wrap::WordOrGlyph);
     let attrs = Attrs::new()
-        .family(Family::Name("Inter"))
+        .family(Family::Name(rmac_design::UI_FONT))
         .weight(if role == TextRole::Clock {
             Weight::LIGHT
         } else {

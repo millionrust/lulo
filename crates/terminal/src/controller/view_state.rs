@@ -104,10 +104,10 @@ impl TerminalView {
     }
 
     /// Set the font size (clamped) and re-fit the grid to the window next frame.
-    pub(super) fn set_font(&mut self, size: f32, cx: &mut Context<Self>) {
+    pub(super) fn set_font(&mut self, size: f32, window: &Window, cx: &mut Context<Self>) {
         self.font_size = size.clamp(8.0, 32.0);
         self.line_h = self.font_size * (LINE_H / FONT_SIZE);
-        self.cell_w = self.font_size * 0.6;
+        self.cell_w = measure_cell_w(window, self.font_size);
         cx.notify();
     }
 
@@ -128,6 +128,7 @@ impl TerminalView {
 
     /// Recompute the grid from the window size and propagate to the terminal + PTY.
     pub(super) fn resize_to(&mut self, window: &Window) {
+        self.cell_w = measure_cell_w(window, self.font_size);
         let viewport = window.viewport_size();
         let width = f32::from(viewport.width);
         let height = f32::from(viewport.height);

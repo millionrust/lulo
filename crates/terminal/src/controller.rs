@@ -64,11 +64,22 @@ use vte::ansi::{ClearMode, Color, Handler as _, NamedColor};
 const COLS: usize = 100;
 const ROWS: usize = 28;
 pub(super) const MAX_TABS: usize = 16;
-const FONT: &str = "Menlo"; // macOS Terminal's default monospace
 const FONT_SIZE: f32 = 13.0;
 const LINE_H: f32 = 17.0;
-/// Approximate monospace cell advance for `Menlo` at `FONT_SIZE`.
-const CELL_W: f32 = FONT_SIZE * 0.6;
+/// Pre-measurement fallback for the monospace cell advance. The real advance
+/// is measured from `rmac_ui::MONO_FONT` through the window text system; this
+/// ratio is used only before a window exists or if the glyph cannot resolve.
+const CELL_RATIO_FALLBACK: f32 = 0.6;
+
+/// Measure one monospace cell advance in logical pixels.
+pub(super) fn measure_cell_w(window: &Window, font_size: f32) -> f32 {
+    let text_system = window.text_system();
+    let font_id = text_system.resolve_font(&gpui::font(rmac_ui::MONO_FONT));
+    text_system
+        .advance(font_id, px(font_size), 'M')
+        .map(|size| f32::from(size.width))
+        .unwrap_or(font_size * CELL_RATIO_FALLBACK)
+}
 const TITLE_BAR_HEIGHT: f32 = 34.0;
 const TAB_BAR_HEIGHT: f32 = 32.0;
 const BODY_PAD: f32 = 8.0;

@@ -12,6 +12,7 @@ development-provider = ["provider"]
 
 [dependencies]
 chrono.workspace = true
+rmac-design.workspace = true
 rmac-lock-provider.workspace = true
 zeroize.workspace = true
 

@@ -74,12 +74,14 @@ Shared-library dependencies are generated from every packaged ELF with
 The generated relations are retained separately in the publication manifest.
 They are combined with reviewed command/service dependencies:
 
-- `rmac-apps`: BlueZ, the D-Bus user session, GLib command tools,
-  NetworkManager, PackageKit tools, PipeWire tools, power profiles, UPower,
-  WirePlumber, XDG portals, and XDG utilities;
+- `rmac-apps`: BlueZ, the D-Bus user session, the `fonts-inter` and
+  `fonts-jetbrains-mono` UI fonts, GLib command tools, NetworkManager,
+  PackageKit tools, PipeWire tools, power profiles, UPower, WirePlumber, XDG
+  portals, and XDG utilities;
 - `rmac-session`: the exact apps package, coreutils, the D-Bus user session,
-  an `awk` implementation, niri, swayidle, swaylock, systemd, the portal
-  frontend, and the GNOME and GTK portal backends;
+  the `fonts-inter` and `fonts-jetbrains-mono` UI fonts, an `awk`
+  implementation, niri, swayidle, swaylock, systemd, the portal frontend, and
+  the GNOME and GTK portal backends;
 - GDM is a recommendation rather than a hard dependency so the packages remain
   inspectable on non-GDM development hosts. H4 installation acceptance still
   requires GDM and a separate stock GNOME Wayland recovery entry.

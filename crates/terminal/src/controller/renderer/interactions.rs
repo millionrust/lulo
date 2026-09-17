@@ -70,15 +70,17 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &Paste, window, cx| this.request_paste(window, cx)))
             .on_action(cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)))
-            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
+            .on_action(cx.listener(|this, _: &ZoomIn, window, cx| {
                 let size = this.font_size + 1.0;
-                this.set_font(size, cx);
+                this.set_font(size, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| {
+            .on_action(cx.listener(|this, _: &ZoomOut, window, cx| {
                 let size = this.font_size - 1.0;
-                this.set_font(size, cx);
+                this.set_font(size, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_font(FONT_SIZE, cx)))
+            .on_action(cx.listener(|this, _: &ZoomReset, window, cx| {
+                this.set_font(FONT_SIZE, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &Clear, _, cx| this.clear(cx)))
             .on_action(cx.listener(|this, _: &PreviousPrompt, _, cx| {
@@ -291,7 +293,7 @@ impl TerminalView {
             .relative()
             .p_2()
             .bg(hsla(active().bg))
-            .font_family(FONT)
+            .font_family(rmac_ui::MONO_FONT)
             .text_size(px(self.font_size))
             .v_flex()
             .children(rows)

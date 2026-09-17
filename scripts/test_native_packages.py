@@ -52,12 +52,9 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertTrue(
             set(contract.SHIPPING_SHELL_SOURCES).issubset(contract.SESSION_BINARIES)
         )
-        manifest = (
-            Path(__file__).parents[1]
-            / "experiments"
-            / "gpui-upstream-lab"
-            / "Cargo.toml"
-        ).read_text(encoding="utf-8")
+        manifest = (Path(__file__).parents[1] / "shell" / "Cargo.toml").read_text(
+            encoding="utf-8"
+        )
         for _, runtime_crates in contract.SHIPPING_SHELL_SOURCES.values():
             for crate in runtime_crates:
                 self.assertIn(f'{crate} = {{ version = "=0.1.0",', manifest)

@@ -126,7 +126,7 @@ impl TerminalView {
             rows: ROWS,
             font_size: FONT_SIZE,
             line_h: LINE_H,
-            cell_w: CELL_W,
+            cell_w: measure_cell_w(window, FONT_SIZE),
             focus,
             native_window_title: "Terminal".into(),
             window_active,

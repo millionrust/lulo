@@ -4966,6 +4966,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-design"
+version = "0.1.0"
+dependencies = [
+ "rmac-appearance",
+]
+
+[[package]]
 name = "rmac-desktop"
 version = "0.1.0"
 dependencies = [

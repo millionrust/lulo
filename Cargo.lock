@@ -5255,6 +5255,7 @@ dependencies = [
  "cosmic-text",
  "libc",
  "pam-sys2",
+ "rmac-design",
  "rmac-lock-provider",
  "rustix 1.1.4",
  "wayland-client",

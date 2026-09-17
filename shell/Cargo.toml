@@ -44,6 +44,8 @@ rmac-wallpaper-image = { version = "=0.1.0", path = "../crates/rmac-wallpaper-im
 rmac-wallpaper-runtime = { version = "=0.1.0", path = "../crates/rmac-wallpaper-runtime" }
 trash = "5"
 uuid = { version = "1", features = ["v5"] }
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "compat/ztracing" }

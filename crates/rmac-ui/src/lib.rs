@@ -16,8 +16,8 @@ mod window;
 
 pub use chrome::{body_bg, page, title_bar, toolbar, traffic_lights};
 pub use components::{
-    alert, dialog, dialog_button, ContextMenu, ContextMenuState, DialogButtonKind, DismissMenu,
-    RequestClose,
+    alert, dialog, dialog_button, type_select_match, ContextMenu, ContextMenuState,
+    DialogButtonKind, DismissMenu, MenuCheck, RequestClose,
 };
 pub use controls::{
     Button, ButtonRole, Checkbox, CollectionState, InputEvent, InputState, List, ListRow,

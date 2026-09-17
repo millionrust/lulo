@@ -136,6 +136,15 @@ pub fn alert(
 
 // ---- Context menu ---------------------------------------------------------
 
+/// Checkmark column state for a menu row.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MenuCheck {
+    #[default]
+    None,
+    On,
+    Mixed,
+}
+
 /// One entry in a [`ContextMenu`].
 enum MenuEntry {
     Item {
@@ -143,8 +152,20 @@ enum MenuEntry {
         shortcut: Option<SharedString>,
         action: Box<dyn Action>,
         danger: bool,
+        enabled: bool,
+        checked: MenuCheck,
     },
     Separator,
+    Header(SharedString),
+}
+
+/// First enabled item whose label starts with `query` (case-insensitive).
+/// This is the pure model behind macOS type-select.
+pub fn type_select_match(labels: &[(&str, bool)], query: &str) -> Option<usize> {
+    let query = query.to_lowercase();
+    labels
+        .iter()
+        .position(|(label, enabled)| *enabled && label.to_lowercase().starts_with(&query))
 }
 
 /// Focus and placement state for one open context menu.
@@ -250,6 +271,8 @@ impl ContextMenu {
             shortcut: None,
             action,
             danger: false,
+            enabled: true,
+            checked: MenuCheck::None,
         });
         self
     }
@@ -266,6 +289,8 @@ impl ContextMenu {
             shortcut: Some(shortcut.into()),
             action,
             danger: false,
+            enabled: true,
+            checked: MenuCheck::None,
         });
         self
     }
@@ -287,6 +312,8 @@ impl ContextMenu {
             shortcut: None,
             action,
             danger: true,
+            enabled: true,
+            checked: MenuCheck::None,
         });
         self
     }
@@ -303,6 +330,8 @@ impl ContextMenu {
             shortcut: Some(shortcut.hint.into()),
             action,
             danger: true,
+            enabled: true,
+            checked: MenuCheck::None,
         });
         self
     }
@@ -310,6 +339,48 @@ impl ContextMenu {
     /// Append a thin divider.
     pub fn separator(mut self) -> Self {
         self.items.push(MenuEntry::Separator);
+        self
+    }
+
+    /// Append a non-interactive section header.
+    pub fn header(mut self, label: impl Into<SharedString>) -> Self {
+        self.items.push(MenuEntry::Header(label.into()));
+        self
+    }
+
+    /// Append a disabled item (dimmed and skipped by keyboard navigation).
+    pub fn disabled_item(
+        mut self,
+        label: impl Into<SharedString>,
+        action: Box<dyn Action>,
+    ) -> Self {
+        self.items.push(MenuEntry::Item {
+            label: label.into(),
+            shortcut: None,
+            action,
+            danger: false,
+            enabled: false,
+            checked: MenuCheck::None,
+        });
+        self
+    }
+
+    /// Append an item with a checkmark (`On`) or dash (`Mixed`) in the check
+    /// column, as used by View menus.
+    pub fn checked_item(
+        mut self,
+        label: impl Into<SharedString>,
+        checked: MenuCheck,
+        action: Box<dyn Action>,
+    ) -> Self {
+        self.items.push(MenuEntry::Item {
+            label: label.into(),
+            shortcut: None,
+            action,
+            danger: false,
+            enabled: true,
+            checked,
+        });
         self
     }
 
@@ -341,21 +412,53 @@ impl ContextMenu {
                             .bg(mac::separator()),
                     );
                 }
+                MenuEntry::Header(label) => {
+                    panel = panel.child(
+                        div()
+                            .mx(px(5.0))
+                            .px(px(8.0))
+                            .py(px(3.0))
+                            .text_size(crate::text_px(11.0))
+                            .font_weight(mac::SEMIBOLD)
+                            .text_color(mac::text_secondary())
+                            .child(label),
+                    );
+                }
                 MenuEntry::Item {
                     label,
                     shortcut,
                     action,
                     danger,
+                    enabled,
+                    checked,
                 } => {
-                    let base = if danger { mac::danger() } else { mac::text() };
+                    let base = if !enabled {
+                        mac::text_tertiary()
+                    } else if danger {
+                        mac::danger()
+                    } else {
+                        mac::text()
+                    };
+                    let mark = match checked {
+                        MenuCheck::On => "✓",
+                        MenuCheck::Mixed => "–",
+                        MenuCheck::None => "",
+                    };
                     let content = div()
                         .w_full()
                         .h_flex()
                         .items_center()
-                        .justify_between()
-                        .gap_4()
+                        .gap_2()
                         .text_color(base)
-                        .child(div().child(label))
+                        .child(
+                            div()
+                                .w(px(14.0))
+                                .flex()
+                                .justify_center()
+                                .text_size(crate::text_px(12.0))
+                                .child(mark),
+                        )
+                        .child(div().flex_1().child(label))
                         .when_some(shortcut, |el, sc| {
                             el.child(
                                 div()
@@ -364,10 +467,11 @@ impl ContextMenu {
                                     .child(sc),
                             )
                         });
-                    let row = ListRow::new(("rmac-menu-item", i), content)
+                    let mut row = ListRow::new(("rmac-menu-item", i), content)
                         .mx(px(5.0))
-                        .px(px(8.0))
-                        .on_activate({
+                        .px(px(8.0));
+                    if enabled {
+                        row = row.on_activate({
                             let return_focus = return_focus.clone();
                             move |_, window, cx| {
                                 window.focus(&return_focus);
@@ -378,6 +482,7 @@ impl ContextMenu {
                                 window.dispatch_action(action.boxed_clone(), cx);
                             }
                         });
+                    }
                     panel = panel.child(row);
                 }
             }
@@ -419,5 +524,32 @@ impl ContextMenu {
                 )
                 .with_priority(1),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn type_select_is_case_insensitive_and_skips_disabled_items() {
+        let labels = [
+            ("Open", true),
+            ("Open With", true),
+            ("Duplicate", false),
+            ("Delete", true),
+        ];
+        assert_eq!(type_select_match(&labels, "o"), Some(0));
+        assert_eq!(type_select_match(&labels, "op"), Some(0));
+        // "Duplicate" is disabled, so type-select lands on "Delete".
+        assert_eq!(type_select_match(&labels, "d"), Some(3));
+        assert_eq!(type_select_match(&labels, "de"), Some(3));
+        assert_eq!(type_select_match(&labels, "z"), None);
+        assert_eq!(type_select_match(&[], "a"), None);
+    }
+
+    #[test]
+    fn menu_check_defaults_to_none() {
+        assert_eq!(MenuCheck::default(), MenuCheck::None);
     }
 }

@@ -111,7 +111,7 @@ impl Settings {
             .items_center()
             .gap_1p5()
             .px_2()
-            .rounded(px(7.0))
+            .rounded(px(mac::radius_segmented()))
             .bg(rmac_ui::mac::control_fill())
             .child(glyph("icons/search.svg", 13.0, secondary()))
             .child(
@@ -135,7 +135,7 @@ impl Settings {
             .mb_2()
             .px_2()
             .py_1p5()
-            .rounded(px(8.0))
+            .rounded(px(mac::radius_control()))
             .child(
                 div()
                     .w(px(38.0))

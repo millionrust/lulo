@@ -32,7 +32,7 @@ impl FinderView {
             .items_center()
             .gap_0p5()
             .p_0p5()
-            .rounded(px(7.0))
+            .rounded(px(mac::radius_segmented()))
             .bg(rmac_ui::mac::control_fill())
             .child(seg(
                 "v-icon",
@@ -61,7 +61,7 @@ impl FinderView {
             .items_center()
             .gap_1p5()
             .px_2()
-            .rounded(px(7.0))
+            .rounded(px(mac::radius_segmented()))
             .bg(rmac_ui::mac::control_fill())
             .child(icon("icons/search.svg", 14.0, tertiary()))
             .child(

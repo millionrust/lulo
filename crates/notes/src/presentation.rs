@@ -61,7 +61,7 @@ pub(super) fn folder_row(
         .gap_2()
         .px_2()
         .py_1p5()
-        .rounded(px(6.0))
+        .rounded(px(mac::radius_menu_item()))
         .when(selected, |element: Stateful<Div>| {
             element.bg(mac::sidebar_selection())
         })
@@ -93,7 +93,7 @@ pub(super) fn tag_pill(fragment: SearchTextFragment) -> impl IntoElement {
     div()
         .px_1p5()
         .py_0p5()
-        .rounded(px(5.0))
+        .rounded(px(mac::radius_menu_item()))
         .bg(mac::control_fill())
         .text_size(rmac_ui::text_px(10.0))
         .text_color(mac::text_secondary())

@@ -119,6 +119,10 @@ pub struct Colors {
     pub warning_border: Rgba,
     pub warning_text: Rgba,
     pub notes_accent: Rgba,
+    /// Stable folder-artwork blue, measured from AppKit `systemBlue`
+    /// (Aqua `0088FF` / Dark Aqua `0091FF`); it does not follow the control
+    /// accent.
+    pub folder_blue: Rgba,
 
     pub accent: Rgba,
     pub on_accent: Rgba,
@@ -204,6 +208,7 @@ impl Colors {
                 warning_border: Rgba::rgb(0xeedca0),
                 warning_text: Rgba::rgb(0x7a5c00),
                 notes_accent: Rgba::rgb(0xffc40c),
+                folder_blue: Rgba::rgb(0x0088ff),
 
                 accent,
                 on_accent,
@@ -266,6 +271,7 @@ impl Colors {
                 warning_border: Rgba::rgb(0x756225),
                 warning_text: Rgba::rgb(0xffd76a),
                 notes_accent: Rgba::rgb(0xffd60a),
+                folder_blue: Rgba::rgb(0x0091ff),
 
                 accent,
                 on_accent,

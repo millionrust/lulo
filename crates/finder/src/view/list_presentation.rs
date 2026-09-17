@@ -95,7 +95,7 @@ impl FinderView {
                         img(path)
                             .w(px(17.0))
                             .h(px(17.0))
-                            .rounded(px(4.0))
+                            .rounded(px(mac::radius_menu_item()))
                             .into_any_element()
                     },
                 );
@@ -309,7 +309,7 @@ impl FinderView {
                         Some(t) => img(t.clone())
                             .max_w(px(icon_size))
                             .max_h(px(icon_size - 6.0))
-                            .rounded(px(3.0))
+                            .rounded(px(mac::radius_menu_item()))
                             .into_any_element(),
                         None => icon(glyph, icon_size, icon_color).into_any_element(),
                     }
@@ -332,7 +332,7 @@ impl FinderView {
                         .max_w(px(label_width))
                         .px_1p5()
                         .py_0p5()
-                        .rounded(px(4.0))
+                        .rounded(px(mac::radius_menu_item()))
                         .when(selected, |el: Stateful<Div>| el.bg(sel()))
                         .text_size(rmac_ui::text_px(13.0))
                         .text_center()

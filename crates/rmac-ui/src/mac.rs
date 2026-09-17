@@ -129,6 +129,16 @@ pub fn radius_segmented() -> f32 {
     crate::theme::current().radii.segmented
 }
 
+/// No rounding, for deliberately square full-bleed surfaces.
+pub fn radius_none() -> f32 {
+    0.0
+}
+
+/// Stable folder-artwork blue (does not follow the control accent).
+pub fn folder_blue() -> Hsla {
+    crate::theme::current().colors.folder_blue.hsla()
+}
+
 pub fn system_blue() -> Hsla {
     crate::theme::current().colors.system_blue.hsla()
 }

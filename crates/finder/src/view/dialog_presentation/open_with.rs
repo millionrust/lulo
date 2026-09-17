@@ -106,7 +106,7 @@ impl FinderView {
             body = body.child(
                 div()
                     .id("open-with-error")
-                    .rounded(px(6.0))
+                    .rounded(px(mac::radius_menu_item()))
                     .border_1()
                     .border_color(rmac_ui::mac::error_border())
                     .bg(rmac_ui::mac::error_background())
@@ -160,7 +160,7 @@ impl FinderView {
                         .w(px(440.0))
                         .max_h(px(520.0))
                         .v_flex()
-                        .rounded(px(12.0))
+                        .rounded(px(mac::radius_card()))
                         .bg(rmac_ui::mac::raised())
                         .border_1()
                         .border_color(sep())

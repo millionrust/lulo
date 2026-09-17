@@ -31,7 +31,7 @@ pub(super) fn render_markdown_document(document: &MarkdownPreviewDocument) -> An
             element.child(
                 div()
                     .p_3()
-                    .rounded(px(8.0))
+                    .rounded(px(mac::radius_control()))
                     .bg(mac::warning_background())
                     .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::warning_text())
@@ -140,7 +140,7 @@ fn render_markdown_block(block: &MarkdownPreviewBlock) -> AnyElement {
         }
         MarkdownPreviewBlockKind::CodeBlock => div()
             .p_3()
-            .rounded(px(8.0))
+            .rounded(px(mac::radius_control()))
             .bg(mac::control_fill())
             .child(content)
             .into_any_element(),
@@ -161,7 +161,7 @@ fn render_markdown_block(block: &MarkdownPreviewBlock) -> AnyElement {
             .into_any_element(),
         MarkdownPreviewBlockKind::InertNotice => div()
             .p_3()
-            .rounded(px(8.0))
+            .rounded(px(mac::radius_control()))
             .bg(mac::control_fill())
             .text_size(rmac_ui::text_px(12.0))
             .text_color(mac::text_secondary())

@@ -26,7 +26,7 @@ impl Render for DragPreview {
         div()
             .px_2()
             .py_0p5()
-            .rounded(px(6.0))
+            .rounded(px(mac::radius_menu_item()))
             .bg(rmac_ui::mac::accent())
             .text_color(rmac_ui::mac::on_accent())
             .text_size(rmac_ui::text_px(12.0))
@@ -86,12 +86,8 @@ pub(super) fn accent() -> Hsla {
 }
 pub(super) fn folder_blue() -> Hsla {
     // Folder artwork has a stable semantic identity rather than following the
-    // user's control accent. These dynamic values were measured from AppKit
-    // `NSColor.systemBlue` in Aqua and Dark Aqua on the reference Mac.
-    match rmac_ui::theme::current().color_scheme {
-        rmac_appearance::ResolvedColorScheme::Light => gpui::rgb(0x0088ff).into(),
-        rmac_appearance::ResolvedColorScheme::Dark => gpui::rgb(0x0091ff).into(),
-    }
+    // user's control accent; the value is a measured `rmac-design` token.
+    rmac_ui::mac::folder_blue()
 }
 pub(super) fn sep() -> Hsla {
     rmac_ui::mac::separator()

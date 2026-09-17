@@ -151,7 +151,7 @@ impl Settings {
             .h(px(270.0))
             .mx_auto()
             .mb_3()
-            .rounded(px(12.0))
+            .rounded(px(mac::radius_card()))
             .overflow_hidden()
             .bg(hsl(0x1e1e20))
             .border_1()

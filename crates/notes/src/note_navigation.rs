@@ -238,7 +238,7 @@ impl NotesView {
                     .mx_1()
                     .px_3()
                     .py_2()
-                    .rounded(px(6.0))
+                    .rounded(px(mac::radius_menu_item()))
                     .when(selected == Some(note.id), |element: Stateful<Div>| {
                         element.bg(mac::notes_selection())
                     })

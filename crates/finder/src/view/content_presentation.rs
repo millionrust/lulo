@@ -50,7 +50,7 @@ impl FinderView {
                         .h(px(22.0))
                         .mx_1()
                         .px_2()
-                        .rounded(px(5.0))
+                        .rounded(px(mac::radius_menu_item()))
                         .when(is_sel, |el: Stateful<Div>| el.bg(sel()))
                         .when(!is_sel, |el: Stateful<Div>| {
                             el.hover(|h| h.bg(rmac_ui::mac::hover()))
@@ -111,7 +111,7 @@ impl FinderView {
                         img(path)
                             .w(px(24.0))
                             .h(px(24.0))
-                            .rounded(px(5.0))
+                            .rounded(px(mac::radius_menu_item()))
                             .into_any_element()
                     },
                 );
@@ -125,7 +125,7 @@ impl FinderView {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .rounded(px(5.0))
+                    .rounded(px(mac::radius_menu_item()))
                     .when(selected, |element: Stateful<Div>| element.bg(sel()))
                     .when(!selected, |element: Stateful<Div>| {
                         element.hover(|hover| hover.bg(rmac_ui::mac::hover()))
@@ -188,7 +188,7 @@ impl FinderView {
                             img(path)
                                 .w(px(96.0))
                                 .h(px(96.0))
-                                .rounded(px(21.0))
+                                .rounded(px(mac::radius_popover()))
                                 .into_any_element()
                         },
                     );

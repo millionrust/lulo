@@ -60,7 +60,7 @@ impl FinderView {
             .gap_2()
             .h(px(28.0))
             .px_2()
-            .rounded(px(6.0))
+            .rounded(px(mac::radius_menu_item()))
             .when(selected, |el: Stateful<Div>| {
                 el.bg(rmac_ui::mac::sidebar_selection())
             })

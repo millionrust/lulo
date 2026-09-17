@@ -71,7 +71,7 @@ impl Settings {
                         .gap_2()
                         .mb_3()
                         .p_4()
-                        .rounded(px(10.0))
+                        .rounded(px(mac::radius_menu()))
                         .bg(card_bg())
                         .border_1()
                         .border_color(if usage.is_low_space() {
@@ -130,13 +130,13 @@ impl Settings {
                             div()
                                 .w_full()
                                 .h(px(10.0))
-                                .rounded(px(5.0))
+                                .rounded(px(mac::radius_menu_item()))
                                 .bg(rmac_ui::mac::control_fill())
                                 .child(
                                     div()
                                         .h_full()
                                         .w(gpui::relative(usage.used_fraction()))
-                                        .rounded(px(5.0))
+                                        .rounded(px(mac::radius_menu_item()))
                                         .bg(if usage.is_low_space() {
                                             hsl(0xff3b30)
                                         } else {

@@ -33,7 +33,7 @@ pub(in crate::controller) fn battery_history_card(
             .flex_1()
             .min_w(px(2.0))
             .h(px(4.0 + f32::from(point.percentage) * 0.72))
-            .rounded(px(2.0))
+            .rounded(px(mac::radius_menu_item()))
             .bg(color)
     });
     div()
@@ -41,7 +41,7 @@ pub(in crate::controller) fn battery_history_card(
         .mb_3()
         .gap_2()
         .p_3()
-        .rounded(px(10.0))
+        .rounded(px(mac::radius_menu()))
         .bg(card_bg())
         .border_1()
         .border_color(sep())

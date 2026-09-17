@@ -70,7 +70,7 @@ impl Settings {
             .v_flex()
             .gap_4()
             .p_5()
-            .rounded(px(14.0))
+            .rounded(px(mac::radius_card()))
             .border_1()
             .border_color(rmac_ui::mac::separator())
             .shadow_xl()

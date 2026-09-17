@@ -62,7 +62,7 @@ impl FinderView {
                             img(path)
                                 .w(px(132.0))
                                 .h(px(132.0))
-                                .rounded(px(29.0))
+                                .rounded(px(mac::radius_pill()))
                                 .into_any_element()
                         })
                         .unwrap_or_else(|| {
@@ -83,7 +83,7 @@ impl FinderView {
                                     img(thumbnail.clone())
                                         .max_w(px(440.0))
                                         .max_h(px(280.0))
-                                        .rounded(px(8.0))
+                                        .rounded(px(mac::radius_control()))
                                         .into_any_element()
                                 },
                             )
@@ -159,7 +159,7 @@ impl FinderView {
                     img(path)
                         .w(px(48.0))
                         .h(px(48.0))
-                        .rounded(px(10.0))
+                        .rounded(px(mac::radius_menu()))
                         .into_any_element()
                 })
                 .unwrap_or_else(|| {
@@ -180,7 +180,7 @@ impl FinderView {
                             img(thumbnail.clone())
                                 .max_w(px(58.0))
                                 .max_h(px(48.0))
-                                .rounded(px(4.0))
+                                .rounded(px(mac::radius_menu_item()))
                                 .into_any_element()
                         },
                     )
@@ -205,7 +205,7 @@ impl FinderView {
                     .justify_center()
                     .gap_1()
                     .px_1()
-                    .rounded(px(8.0))
+                    .rounded(px(mac::radius_control()))
                     .border_2()
                     .border_color(if selected { accent() } else { list_bg() })
                     .when(!selected, |element: Stateful<Div>| {

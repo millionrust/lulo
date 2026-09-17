@@ -118,7 +118,7 @@ impl NotesView {
                             .items_center()
                             .gap_1()
                             .px_2()
-                            .rounded(px(7.0))
+                            .rounded(px(mac::radius_segmented()))
                             .bg(mac::control_fill())
                             .child(
                                 Icon::new(IconName::Search)

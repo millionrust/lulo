@@ -6,6 +6,12 @@ license.workspace = true
 publish = false
 
 [dependencies]
+async-channel.workspace = true
+gpui.workspace = true
+rmac-appearance.workspace = true
+rmac-appearance-portal.workspace = true
 rmac-apps.workspace = true
+rmac-design.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shell-status.workspace = true
+rmac-theme.workspace = true

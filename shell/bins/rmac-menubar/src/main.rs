@@ -19,7 +19,7 @@ mod linux_wayland {
         WindowKind, WindowOptions,
     };
     use gpui_platform::application;
-    use rmac_shell_ui::shell_visuals as visuals;
+    use rmac_shell_ui::tokens;
     use rmac_shell_ui::{
         delay_until_next_clock_tick, top_bar_active_app_name, top_bar_clock_pattern,
         top_bar_indicator_labels, top_bar_workspace_label, TopBarIndicatorKind,
@@ -538,7 +538,7 @@ mod linux_wayland {
                         .px_1()
                         .flex()
                         .items_center()
-                        .rounded(px(visuals::MENU_ITEM_RADIUS))
+                        .rounded(px(tokens::menu_item_radius()))
                         .cursor_pointer()
                         .when(open, |style| style.bg(rgba(0xffffff2d)))
                         .hover(|style| style.bg(rgba(0xffffff22)))
@@ -572,10 +572,10 @@ mod linux_wayland {
                     .left(px(left))
                     .w(px(MENU_WIDTH))
                     .py_1()
-                    .rounded(px(visuals::MENU_RADIUS))
-                    .bg(rgba(visuals::REGULAR_DARK_TINT))
+                    .rounded(px(tokens::menu_radius()))
+                    .bg(rgba(tokens::regular_dark_tint()))
                     .border_1()
-                    .border_color(rgba(visuals::LIGHT_BORDER))
+                    .border_color(rgba(tokens::light_border()))
                     .shadow_lg()
                     .occlude();
                 if let Some(action) = self.pending_system_action.clone() {
@@ -589,7 +589,11 @@ mod linux_wayland {
                             .flex_col()
                             .gap_2()
                             .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
-                            .child(div().text_color(rgba(0xf7f8faaa)).child(detail))
+                            .child(
+                                div()
+                                    .text_color(rgba(tokens::secondary_text()))
+                                    .child(detail),
+                            )
                             .child(
                                 div()
                                     .flex()
@@ -630,9 +634,9 @@ mod linux_wayland {
                                             .flex()
                                             .items_center()
                                             .rounded(px(6.0))
-                                            .bg(rgba(visuals::ACCENT))
+                                            .bg(rgba(tokens::accent()))
                                             .cursor_pointer()
-                                            .hover(|style| style.bg(rgba(visuals::ACCENT_HOVER)))
+                                            .hover(|style| style.bg(rgba(tokens::accent_hover())))
                                             .on_click(cx.listener(move |this, _, window, cx| {
                                                 cx.stop_propagation();
                                                 this.close_menu(window, cx);
@@ -666,21 +670,25 @@ mod linux_wayland {
                         .flex()
                         .items_center()
                         .justify_between()
-                        .rounded(px(visuals::MENU_ITEM_RADIUS))
+                        .rounded(px(tokens::menu_item_radius()))
                         .when(selected == item_index, |style| {
-                            style.bg(rgba(visuals::ACCENT))
+                            style.bg(rgba(tokens::accent()))
                         })
                         .when(!enabled, |style| {
-                            style.text_color(rgba(visuals::DISABLED_TEXT))
+                            style.text_color(rgba(tokens::disabled_text()))
                         })
                         .child(item.label);
                     if !item.shortcut.is_empty() {
-                        row = row.child(div().text_color(rgba(0xf7f8faaa)).child(item.shortcut));
+                        row = row.child(
+                            div()
+                                .text_color(rgba(tokens::secondary_text()))
+                                .child(item.shortcut),
+                        );
                     }
                     if enabled {
                         row = row
                             .cursor_pointer()
-                            .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                            .hover(|style| style.bg(rgba(tokens::accent())))
                             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                 if *hovered && this.recent_submenu_open != opens_recents {
                                     this.recent_submenu_open = opens_recents;
@@ -727,10 +735,10 @@ mod linux_wayland {
                         .left(px(left + MENU_WIDTH - 4.0))
                         .w(px(RECENT_MENU_WIDTH))
                         .py_1()
-                        .rounded(px(visuals::MENU_RADIUS))
-                        .bg(rgba(visuals::REGULAR_DARK_TINT))
+                        .rounded(px(tokens::menu_radius()))
+                        .bg(rgba(tokens::regular_dark_tint()))
                         .border_1()
-                        .border_color(rgba(visuals::LIGHT_BORDER))
+                        .border_color(rgba(tokens::light_border()))
                         .shadow_lg()
                         .occlude()
                         .child(
@@ -741,7 +749,7 @@ mod linux_wayland {
                                 .items_center()
                                 .text_size(px(11.0))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgba(0xf7f8fa99))
+                                .text_color(rgba(tokens::disabled_text()))
                                 .child("Documents"),
                         );
                     if self.recent_items_loading {
@@ -763,12 +771,12 @@ mod linux_wayland {
                                     .px_2()
                                     .flex()
                                     .items_center()
-                                    .rounded(px(visuals::MENU_ITEM_RADIUS))
+                                    .rounded(px(tokens::menu_item_radius()))
                                     .when(selected == index, |style| {
-                                        style.bg(rgba(visuals::ACCENT))
+                                        style.bg(rgba(tokens::accent()))
                                     })
                                     .cursor_pointer()
-                                    .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                                    .hover(|style| style.bg(rgba(tokens::accent())))
                                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                         if *hovered && this.recent_selected_item != index {
                                             this.recent_selected_item = index;
@@ -796,12 +804,12 @@ mod linux_wayland {
                                     .px_2()
                                     .flex()
                                     .items_center()
-                                    .rounded(px(visuals::MENU_ITEM_RADIUS))
+                                    .rounded(px(tokens::menu_item_radius()))
                                     .when(selected == clear_index, |style| {
-                                        style.bg(rgba(visuals::ACCENT))
+                                        style.bg(rgba(tokens::accent()))
                                     })
                                     .cursor_pointer()
-                                    .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                                    .hover(|style| style.bg(rgba(tokens::accent())))
                                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                         if *hovered && this.recent_selected_item != clear_index {
                                             this.recent_selected_item = clear_index;
@@ -833,8 +841,8 @@ mod linux_wayland {
                 .flex()
                 .items_center()
                 .px_4()
-                .bg(rgba(visuals::TOP_BAR_TINT))
-                .text_color(rgba(visuals::PRIMARY_TEXT))
+                .bg(rgba(tokens::top_bar_tint()))
+                .text_color(rgba(tokens::primary_text()))
                 .text_size(px(12.0))
                 .child(
                     div()
@@ -873,7 +881,7 @@ mod linux_wayland {
                         .children(workspace.map(|workspace| {
                             div()
                                 .id(format!("workspace-{}", self.display_id))
-                                .text_color(rgba(0xf7f8faaa))
+                                .text_color(rgba(tokens::secondary_text()))
                                 .aria_label(format!("Workspace {workspace}"))
                                 .child(workspace)
                         })),
@@ -1184,7 +1192,7 @@ mod linux_wayland {
             .px_2()
             .flex()
             .items_center()
-            .text_color(rgba(visuals::DISABLED_TEXT))
+            .text_color(rgba(tokens::disabled_text()))
             .child(label)
     }
 
@@ -1483,6 +1491,7 @@ mod linux_wayland {
     pub fn run() {
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
+            rmac_shell_ui::tokens::install_appearance_watch(cx);
             let status = start_status(cx);
             let (output_tx, output_rx) = async_channel::bounded(4);
             cx.background_executor()

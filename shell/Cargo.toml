@@ -20,6 +20,8 @@ image = { version = "0.25", default-features = false }
 rmac-apps = { version = "=0.1.0", path = "../crates/rmac-apps" }
 rmac-app-launch = { version = "=0.1.0", path = "../crates/rmac-app-launch" }
 rmac-app-menu = { version = "=0.1.0", path = "../crates/rmac-app-menu" }
+rmac-appearance = { version = "=0.1.0", path = "../crates/rmac-appearance" }
+rmac-appearance-portal = { version = "=0.1.0", path = "../crates/rmac-appearance-portal" }
 rmac-compositor = { version = "=0.1.0", path = "../crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.1.0", path = "../crates/rmac-compositor-niri" }
 rmac-design = { version = "=0.1.0", path = "../crates/rmac-design" }
@@ -36,6 +38,7 @@ rmac-shell-runtime = { version = "=0.1.0", path = "../crates/rmac-shell-runtime"
 rmac-shell-settings = { version = "=0.1.0", path = "../crates/rmac-shell-settings" }
 rmac-shell-status = { version = "=0.1.0", path = "../crates/rmac-shell-status" }
 rmac-shell-ui = { version = "=0.1.0", path = "crates/rmac-shell-ui" }
+rmac-theme = { version = "=0.1.0", path = "../crates/rmac-theme" }
 rmac-wallpaper = { version = "=0.1.0", path = "../crates/rmac-wallpaper" }
 rmac-wallpaper-image = { version = "=0.1.0", path = "../crates/rmac-wallpaper-image" }
 rmac-wallpaper-runtime = { version = "=0.1.0", path = "../crates/rmac-wallpaper-runtime" }

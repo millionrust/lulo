@@ -1106,6 +1106,7 @@ mod linux_wayland {
     pub fn run() {
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
+            rmac_shell_ui::tokens::install_appearance_watch(cx);
             let status = start_status(cx);
             let (output_tx, output_rx) = async_channel::bounded(4);
             cx.background_executor()

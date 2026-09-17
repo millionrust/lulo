@@ -15,7 +15,7 @@ mod linux_wayland {
         Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
-    use rmac_shell_ui::shell_visuals as visuals;
+    use rmac_shell_ui::tokens;
 
     const EXCLUSIVE_ZONE: f32 = 88.0;
     const ICON_SIZE: f32 = 56.0;
@@ -385,10 +385,10 @@ mod linux_wayland {
                             div()
                                 .px_3()
                                 .py_1()
-                                .rounded(px(visuals::TOOLTIP_RADIUS))
+                                .rounded(px(tokens::tooltip_radius()))
                                 .bg(rgba(0x18263aee))
                                 .border_1()
-                                .border_color(rgba(visuals::LIGHT_BORDER))
+                                .border_color(rgba(tokens::light_border()))
                                 .shadow_lg()
                                 .text_sm()
                                 .text_color(rgba(0xffffffff))
@@ -449,10 +449,10 @@ mod linux_wayland {
                 .flex()
                 .gap_2()
                 .p_2()
-                .rounded(px(visuals::DOCK_RADIUS))
-                .bg(rgba(visuals::DOCK_TINT))
+                .rounded(px(tokens::dock_radius()))
+                .bg(rgba(tokens::dock_tint()))
                 .border_1()
-                .border_color(rgba(visuals::DOCK_BORDER))
+                .border_color(rgba(tokens::dock_border()))
                 .shadow_lg()
                 .opacity(if self.hidden { 0.0 } else { 1.0 });
             let shelf = if horizontal {
@@ -802,13 +802,13 @@ mod linux_wayland {
             .absolute()
             .w(px(MENU_WIDTH))
             .p_1()
-            .rounded(px(visuals::MENU_RADIUS))
-            .bg(rgba(visuals::REGULAR_DARK_TINT))
+            .rounded(px(tokens::menu_radius()))
+            .bg(rgba(tokens::regular_dark_tint()))
             .border_1()
-            .border_color(rgba(visuals::LIGHT_BORDER))
+            .border_color(rgba(tokens::light_border()))
             .shadow_lg()
             .text_size(px(13.0))
-            .text_color(rgba(visuals::PRIMARY_TEXT))
+            .text_color(rgba(tokens::primary_text()))
             .occlude()
             .child(
                 div()
@@ -847,12 +847,12 @@ mod linux_wayland {
                 .flex()
                 .items_center()
                 .justify_between()
-                .rounded(px(visuals::MENU_ITEM_RADIUS))
+                .rounded(px(tokens::menu_item_radius()))
                 .when(selected.as_ref() == Some(&row.id), |style| {
-                    style.bg(rgba(visuals::ACCENT))
+                    style.bg(rgba(tokens::accent()))
                 })
                 .when(!enabled, |style| {
-                    style.text_color(rgba(visuals::DISABLED_TEXT))
+                    style.text_color(rgba(tokens::disabled_text()))
                 })
                 .child(row.label.clone());
             if row.checked {
@@ -863,7 +863,7 @@ mod linux_wayland {
                 let click_row_id = row.id.clone();
                 element = element
                     .cursor_pointer()
-                    .hover(|style| style.bg(rgba(visuals::ACCENT)))
+                    .hover(|style| style.bg(rgba(tokens::accent())))
                     .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                         if *hovered
                             && this
@@ -908,7 +908,7 @@ mod linux_wayland {
     }
 
     fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {
-        let separator = div().bg(rgba(visuals::SEPARATOR));
+        let separator = div().bg(rgba(tokens::separator()));
         match placement {
             rmac_shell_settings::DockPlacement::Bottom => separator
                 .w(px(SEPARATOR_WIDTH))
@@ -1226,6 +1226,7 @@ mod linux_wayland {
     pub fn run() {
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
+            rmac_shell_ui::tokens::install_appearance_watch(cx);
             let (runtime_tx, runtime_rx) = async_channel::bounded(4);
             cx.background_executor()
                 .spawn(async move {

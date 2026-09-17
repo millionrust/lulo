@@ -14,7 +14,7 @@ mod linux_wayland {
     };
     use gpui_platform::application;
     use rmac_osd::{Kind, Presentation};
-    use rmac_shell_ui::shell_visuals as visuals;
+    use rmac_shell_ui::tokens;
     use uuid::Uuid;
 
     const SURFACE_WIDTH: f32 = 304.0;
@@ -196,8 +196,8 @@ mod linux_wayland {
                     .gap_1()
                     .px_4()
                     .py_2()
-                    .rounded(px(visuals::HUD_RADIUS))
-                    .bg(rgba(visuals::HUD_TINT))
+                    .rounded(px(tokens::hud_radius()))
+                    .bg(rgba(tokens::hud_tint()))
                     .border_1()
                     .border_color(rgba(0xffffff26))
                     .role(Role::Status)
@@ -363,6 +363,7 @@ mod linux_wayland {
         let updates = start_listener()?;
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(move |cx: &mut App| {
+            rmac_shell_ui::tokens::install_appearance_watch(cx);
             let (compositor_tx, compositor_rx) = async_channel::bounded(64);
             cx.background_executor()
                 .spawn(async move {

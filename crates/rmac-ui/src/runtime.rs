@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use gpui::{px, App, AppContext as _, Window};
+use gpui::{px, App, AppContext as _, SharedString, Window};
 
 use crate::{components, theme};
 
@@ -19,7 +19,99 @@ pub fn init_application(cx: &mut App) {
     warn_if_ui_font_missing(cx);
     gpui_component::init(cx);
     components::init(cx);
+    apply_component_theme(cx);
     start_theme_runtime(cx);
+}
+
+/// Push the resolved rmac tokens into gpui-component's global theme so shared
+/// component primitives (inputs, sliders, menus, tables) share the same colors,
+/// radii, and fonts as the rmac-owned controls.
+fn apply_component_theme(cx: &mut App) {
+    let tokens = theme::current();
+    let colors = tokens.colors;
+    let theme = gpui_component::theme::Theme::global_mut(cx);
+    theme.font_family = SharedString::from(crate::UI_FONT);
+    theme.mono_font_family = SharedString::from(crate::MONO_FONT);
+    theme.radius = px(tokens.radii.control);
+    theme.radius_lg = px(tokens.radii.popover);
+
+    theme.primary = colors.accent.hsla();
+    theme.primary_foreground = colors.on_accent.hsla();
+    theme.primary_hover = colors.accent.hsla();
+    theme.primary_active = colors.accent.hsla();
+    theme.background = colors.window.hsla();
+    theme.foreground = colors.text.hsla();
+    theme.border = colors.separator.hsla();
+    theme.input = colors.separator.hsla();
+    theme.accent = colors.selection_unfocused.hsla();
+    theme.accent_foreground = colors.text.hsla();
+    theme.secondary = colors.control_fill.hsla();
+    theme.secondary_foreground = colors.text.hsla();
+    theme.secondary_hover = colors.control_fill_hover.hsla();
+    theme.secondary_active = colors.hover.hsla();
+    theme.muted = colors.control_fill.hsla();
+    theme.muted_foreground = colors.text_secondary.hsla();
+    theme.popover = colors.raised.hsla();
+    theme.popover_foreground = colors.text.hsla();
+    theme.list = colors.window.hsla();
+    theme.list_hover = colors.hover.hsla();
+    theme.list_active = colors.accent.hsla();
+    theme.list_active_border = colors.accent.hsla();
+    theme.list_even = colors.row_alternate.hsla();
+    theme.list_head = colors.chrome.hsla();
+    theme.selection = colors.accent_subtle.hsla();
+    theme.caret = colors.accent.hsla();
+    theme.ring = colors.accent.hsla();
+    theme.danger = colors.danger.hsla();
+    theme.danger_foreground = colors.on_danger.hsla();
+    theme.danger_hover = colors.danger.hsla();
+    theme.danger_active = colors.danger.hsla();
+    theme.sidebar = colors.sidebar.hsla();
+    theme.sidebar_accent = colors.accent.hsla();
+    theme.sidebar_accent_foreground = colors.on_accent.hsla();
+    theme.sidebar_border = colors.separator.hsla();
+    theme.scrollbar_thumb = colors.separator.hsla();
+    theme.group_box = colors.raised.hsla();
+    theme.group_box_foreground = colors.text.hsla();
+    theme.progress_bar = colors.control_fill.hsla();
+    theme.sidebar_foreground = colors.text_secondary.hsla();
+    theme.sidebar_primary = colors.accent.hsla();
+    theme.sidebar_primary_foreground = colors.on_accent.hsla();
+    theme.switch = colors.control_fill.hsla();
+    theme.switch_thumb = colors.white.hsla();
+    theme.slider_bar = colors.control_fill.hsla();
+    theme.slider_thumb = colors.white.hsla();
+    theme.tab = colors.window.hsla();
+    theme.tab_active = colors.accent.hsla();
+    theme.tab_active_foreground = colors.on_accent.hsla();
+    theme.tab_bar = colors.window.hsla();
+    theme.tab_bar_segmented = colors.control_fill.hsla();
+    theme.tab_foreground = colors.text_secondary.hsla();
+    theme.table = colors.window.hsla();
+    theme.table_active = colors.accent.hsla();
+    theme.table_active_border = colors.accent.hsla();
+    theme.table_even = colors.row_alternate.hsla();
+    theme.table_head = colors.chrome.hsla();
+    theme.table_head_foreground = colors.text_secondary.hsla();
+    theme.table_hover = colors.hover.hsla();
+    theme.table_row_border = colors.separator.hsla();
+    theme.title_bar = colors.chrome.hsla();
+    theme.title_bar_border = colors.separator.hsla();
+    theme.overlay = colors.scrim.hsla();
+    theme.drag_border = colors.accent.hsla();
+    theme.drop_target = colors.selection_unfocused.hsla();
+    theme.skeleton = colors.control_fill.hsla();
+    theme.success = colors.system_green.hsla();
+    theme.success_foreground = colors.white.hsla();
+    theme.warning = colors.warning_background.hsla();
+    theme.warning_foreground = colors.warning_text.hsla();
+    theme.info = colors.system_blue.hsla();
+    theme.red = colors.system_red.hsla();
+    theme.green = colors.system_green.hsla();
+    theme.blue = colors.system_blue.hsla();
+    theme.yellow = colors.system_yellow.hsla();
+    theme.magenta = colors.system_pink.hsla();
+    theme.cyan = colors.system_teal.hsla();
 }
 
 /// Warn once if the declared UI font is absent. GPUI silently falls back to
@@ -225,6 +317,7 @@ fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
             });
         }
         gpui_component::theme::Theme::change(mode, None, app);
+        apply_component_theme(app);
         app.refresh_windows();
     });
 }

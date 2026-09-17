@@ -87,7 +87,7 @@ pub(super) fn accent() -> Hsla {
 pub(super) fn folder_blue() -> Hsla {
     // Folder artwork has a stable semantic identity rather than following the
     // user's control accent; the value is a measured `rmac-design` token.
-    rmac_ui::rmac_ui::mac::folder_blue()
+    rmac_ui::mac::folder_blue()
 }
 pub(super) fn sep() -> Hsla {
     rmac_ui::mac::separator()

@@ -69,7 +69,7 @@ impl Render for FinderView {
             .relative()
             .v_flex()
             .bg(list_bg())
-            .rounded(px(rmac_ui::rmac_ui::mac::radius_card()))
+            .rounded(px(rmac_ui::mac::radius_card()))
             .overflow_hidden()
             .text_color(label())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {

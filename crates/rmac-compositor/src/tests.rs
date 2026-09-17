@@ -138,7 +138,7 @@ fn actions_report_stable_kinds_and_capabilities() {
     assert!(!capabilities.supports(ActionKind::SetOverview));
 }
 
-fn window(id: u64, app_id: &str, workspace: WorkspaceId) -> Window {
+fn app_window(id: u64, app_id: &str, workspace: WorkspaceId) -> Window {
     Window {
         id: WindowId(id),
         title: None,
@@ -163,9 +163,9 @@ fn hide_and_show_desktop_expand_to_minimize_per_visible_window() {
     let snapshot = Snapshot {
         workspaces: vec![workspace(1, Some("DP-1")), parking],
         windows: vec![
-            window(1, "org.rmac.Notes", desktop),
-            window(2, "org.rmac.Notes", WorkspaceId(9)),
-            window(3, "org.mozilla.firefox", desktop),
+            app_window(1, "org.rmac.Notes", desktop),
+            app_window(2, "org.rmac.Notes", WorkspaceId(9)),
+            app_window(3, "org.mozilla.firefox", desktop),
         ],
         ..Default::default()
     };

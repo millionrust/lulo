@@ -120,6 +120,7 @@ mod linux_wayland {
 
     struct Dock {
         display_id: u64,
+        output: Option<rmac_compositor::OutputId>,
         placement: rmac_shell_settings::DockPlacement,
         render_count: u64,
         status: Entity<DockStatus>,
@@ -132,6 +133,10 @@ mod linux_wayland {
         overview_visible: bool,
         visibility_policy: Option<(bool, bool)>,
         hide_generation: u64,
+        surface_description: Option<rmac_dock::SurfaceDescription>,
+        content: rmac_dock::presentation::ShelfContent,
+        drag: Option<rmac_dock::DragSession>,
+        drag_order: Option<Vec<String>>,
     }
 
     impl Dock {
@@ -144,6 +149,7 @@ mod linux_wayland {
             cx.observe(&status, |_, _, cx| cx.notify()).detach();
             Self {
                 display_id: u64::from(display_id),
+                output: surface.output.clone(),
                 placement: surface.placement,
                 render_count: 0,
                 status,
@@ -156,6 +162,10 @@ mod linux_wayland {
                 overview_visible: surface.overview_visible,
                 visibility_policy: None,
                 hide_generation: 0,
+                surface_description: surface.description.clone(),
+                content: rmac_dock::presentation::ShelfContent::default(),
+                drag: None,
+                drag_order: None,
             }
         }
 
@@ -176,6 +186,42 @@ mod linux_wayland {
                 });
             })
             .detach();
+        }
+
+        fn model_snapshot(&self, cx: &Context<Self>) -> Option<rmac_dock::Model> {
+            self.status
+                .read(cx)
+                .snapshot()
+                .map(|snapshot| snapshot.model.clone())
+        }
+
+        /// Primary activation for one Dock tile: ⌘-click reveals in Files,
+        /// otherwise launch/focus through the system authority.
+        fn activate_entry(&mut self, app_id: &str, platform: bool, cx: &mut Context<Self>) {
+            if platform {
+                let reveal = {
+                    let status = self.status.read(cx);
+                    status
+                        .model()
+                        .and_then(|model| model.context_menu(app_id))
+                        .and_then(|menu| menu.show_in_finder)
+                        .filter(|action| {
+                            status
+                                .model()
+                                .is_some_and(|model| model.authorizes_context_action(action))
+                        })
+                };
+                if let Some(action) = reveal {
+                    self.dispatch_action(rmac_dock::menu::Action::Context(action), cx);
+                }
+            } else {
+                self.dispatch_action(
+                    rmac_dock::menu::Action::ActivateEntry(
+                        rmac_dock::presentation::EntryId::Application(app_id.to_owned()),
+                    ),
+                    cx,
+                );
+            }
         }
 
         fn dispatch_action(&mut self, action: rmac_dock::menu::Action, cx: &mut Context<Self>) {
@@ -243,17 +289,27 @@ mod linux_wayland {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
-            let (dock_settings, model, entries) = {
+            let (dock_settings, model, mut entries, content, description) = {
                 let status = self.status.read(cx);
                 let snapshot = status
                     .snapshot()
                     .expect("a Dock surface is opened only after runtime readiness");
+                let description = snapshot.surface_plan.as_ref().ok().and_then(|surfaces| {
+                    surfaces
+                        .iter()
+                        .find(|surface| Some(&surface.output) == self.output.as_ref())
+                        .cloned()
+                });
                 (
                     snapshot.settings.clone(),
                     snapshot.model.clone(),
                     snapshot.content.applications.clone(),
+                    snapshot.content.clone(),
+                    description,
                 )
             };
+            self.content = content;
+            self.surface_description = description;
             let effective_autohide = dock_settings.autohide || self.fullscreen;
             let visibility_policy = (effective_autohide, self.overview_visible);
             if self.visibility_policy != Some(visibility_policy) {
@@ -281,6 +337,17 @@ mod linux_wayland {
             let trash_available = model.activate_special(rmac_dock::SpecialItemKind::Trash)
                 == rmac_dock::SpecialActivation::OpenTrash;
             let pinned_count = model.items.iter().take_while(|item| item.pinned).count();
+            if let Some(order) = self.drag_order.clone() {
+                if pinned_count > 0 {
+                    entries[..pinned_count].sort_by_key(|entry| match &entry.id {
+                        rmac_dock::presentation::EntryId::Application(app_id) => order
+                            .iter()
+                            .position(|candidate| candidate == app_id)
+                            .unwrap_or(usize::MAX),
+                        _ => usize::MAX,
+                    });
+                }
+            }
             let separates_running = pinned_count > 0 && pinned_count < entries.len();
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
             let item_count = entries.len() + 1;
@@ -494,7 +561,6 @@ mod linux_wayland {
                             &dock_settings,
                         );
                         let visual_offset = (ICON_SIZE - visual_size) / 2.0;
-                        let reveal_app_id = app_id.clone();
                         let activate_app_id = app_id.clone();
                         let mut item = div()
                             .id(format!("dock-item-{}-{index}", self.display_id))
@@ -525,52 +591,124 @@ mod linux_wayland {
                                 item_color(&app_id, available)
                             }))
                             .when(actionable, |visual| {
+                                let drag_entry =
+                                    rmac_dock::presentation::EntryId::Application(app_id.clone());
                                 visual
                                     .cursor_pointer()
                                     .hover(|style| style.opacity(0.88))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
-                                            move |this,
-                                                  event: &gpui::MouseDownEvent,
-                                                  _,
-                                                  cx| {
+                                            move |this, event: &gpui::MouseDownEvent, _, cx| {
                                                 cx.stop_propagation();
-                                                eprintln!(
-                                                    "Dock activation requested for {activate_app_id}"
-                                                );
-                                                if event.modifiers.platform {
-                                                    let reveal = {
-                                                        let status = this.status.read(cx);
-                                                        status
-                                                            .model()
-                                                            .and_then(|model| {
-                                                                model.context_menu(&reveal_app_id)
-                                                            })
-                                                            .and_then(|menu| menu.show_in_finder)
-                                                            .filter(|action| {
-                                                                status.model().is_some_and(|model| {
-                                                                    model.authorizes_context_action(
-                                                                        action,
-                                                                    )
-                                                                })
-                                                            })
-                                                    };
-                                                    if let Some(action) = reveal {
-                                                        this.dispatch_action(
-                                                            rmac_dock::menu::Action::Context(action),
+                                                if index >= pinned_count {
+                                                    return;
+                                                }
+                                                let axis = match this.placement {
+                                                    rmac_shell_settings::DockPlacement::Bottom => {
+                                                        f32::from(event.position.x)
+                                                    }
+                                                    _ => f32::from(event.position.y),
+                                                };
+                                                let Some(description) =
+                                                    this.surface_description.clone()
+                                                else {
+                                                    return;
+                                                };
+                                                let Ok(plan) =
+                                                    this.content.prepare_layout(&description)
+                                                else {
+                                                    return;
+                                                };
+                                                let Some(model) = this.model_snapshot(cx) else {
+                                                    return;
+                                                };
+                                                if let Ok(session) =
+                                                    rmac_dock::drag::DragSession::begin(
+                                                        &model,
+                                                        &plan,
+                                                        &drag_entry,
+                                                        axis,
+                                                    )
+                                                {
+                                                    this.drag = Some(session);
+                                                    this.drag_order = None;
+                                                    cx.notify();
+                                                }
+                                            },
+                                        ),
+                                    )
+                                    .on_mouse_move(cx.listener(
+                                        move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                                            if event.pressed_button != Some(MouseButton::Left) {
+                                                return;
+                                            }
+                                            let axis = match this.placement {
+                                                rmac_shell_settings::DockPlacement::Bottom => {
+                                                    f32::from(event.position.x)
+                                                }
+                                                _ => f32::from(event.position.y),
+                                            };
+                                            let active_order = {
+                                                let Some(session) = this.drag.as_mut() else {
+                                                    return;
+                                                };
+                                                match session.update(axis) {
+                                                    Ok(update) if update.active => {
+                                                        Some(update.preview_order.to_vec())
+                                                    }
+                                                    _ => None,
+                                                }
+                                            };
+                                            if let Some(order) = active_order {
+                                                this.drag_order = Some(order);
+                                                cx.notify();
+                                            }
+                                        },
+                                    ))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(
+                                            move |this, event: &gpui::MouseUpEvent, _, cx| {
+                                                let platform = event.modifiers.platform;
+                                                let Some(session) = this.drag.take() else {
+                                                    this.activate_entry(
+                                                        &activate_app_id,
+                                                        platform,
+                                                        cx,
+                                                    );
+                                                    return;
+                                                };
+                                                this.drag_order = None;
+                                                match session.finish() {
+                                                    rmac_dock::drag::DropOutcome::Click { .. } => {
+                                                        this.activate_entry(
+                                                            &activate_app_id,
+                                                            platform,
                                                             cx,
                                                         );
                                                     }
-                                                } else {
-                                                    this.dispatch_action(
-                                                        rmac_dock::menu::Action::ActivateEntry(
-                                                            rmac_dock::presentation::EntryId::Application(
-                                                                activate_app_id.clone(),
-                                                            ),
-                                                        ),
-                                                        cx,
-                                                    );
+                                                    rmac_dock::drag::DropOutcome::Reorder(
+                                                        intent,
+                                                    ) => {
+                                                        let model = this.model_snapshot(cx);
+                                                        if let Some(revalidated) = model
+                                                            .as_ref()
+                                                            .and_then(|model| {
+                                                                intent.revalidate(model)
+                                                            })
+                                                        {
+                                                            let command =
+                                                                revalidated.command().clone();
+                                                            this.dispatch_action(
+                                                                rmac_dock::menu::Action::Context(
+                                                                    rmac_dock::ContextAction::UpdatePins(command),
+                                                                ),
+                                                                cx,
+                                                            );
+                                                        }
+                                                    }
+                                                    _ => cx.notify(),
                                                 }
                                             },
                                         ),
@@ -1062,6 +1200,7 @@ mod linux_wayland {
         reserve_space: bool,
         fullscreen: bool,
         overview_visible: bool,
+        description: Option<rmac_dock::SurfaceDescription>,
     }
 
     impl Default for DockSurface {
@@ -1072,6 +1211,7 @@ mod linux_wayland {
                 reserve_space: true,
                 fullscreen: false,
                 overview_visible: false,
+                description: None,
             }
         }
     }
@@ -1084,6 +1224,7 @@ mod linux_wayland {
                 reserve_space: surface.exclusive_zone > 0.0 && !fullscreen,
                 fullscreen,
                 overview_visible: surface.overview_visible,
+                description: Some(surface.clone()),
             }
         }
     }

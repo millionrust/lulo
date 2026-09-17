@@ -100,6 +100,10 @@ pub mod output_surfaces {
             self.windows.len()
         }
 
+        pub fn is_empty(&self) -> bool {
+            self.windows.is_empty()
+        }
+
         pub fn reconcile(
             &mut self,
             desired: Option<&BTreeSet<Uuid>>,

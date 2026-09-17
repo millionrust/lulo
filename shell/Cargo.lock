@@ -4818,41 +4818,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rmac-gpui-upstream-lab"
-version = "0.1.0"
-dependencies = [
- "async-channel",
- "async-io",
- "blocking",
- "chrono",
- "futures-util",
- "gpui",
- "gpui_platform",
- "image",
- "rmac-app-launch",
- "rmac-app-menu",
- "rmac-apps",
- "rmac-compositor",
- "rmac-compositor-niri",
- "rmac-desktop",
- "rmac-dock",
- "rmac-dock-runtime",
- "rmac-dock-system",
- "rmac-osd",
- "rmac-places",
- "rmac-recent-documents",
- "rmac-search",
- "rmac-shell-runtime",
- "rmac-shell-settings",
- "rmac-shell-status",
- "rmac-wallpaper",
- "rmac-wallpaper-image",
- "rmac-wallpaper-runtime",
- "trash",
- "uuid",
-]
-
-[[package]]
 name = "rmac-icon"
 version = "0.1.0"
 dependencies = [
@@ -5006,6 +4971,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-a11y-probe"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui_platform",
+ "rmac-shell-layer",
+]
+
+[[package]]
+name = "rmac-shell-dock"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-app-launch",
+ "rmac-app-menu",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-desktop",
+ "rmac-dock",
+ "rmac-dock-runtime",
+ "rmac-dock-system",
+ "rmac-osd",
+ "rmac-places",
+ "rmac-recent-documents",
+ "rmac-search",
+ "rmac-shell-layer",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-ui",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
+ "trash",
+ "uuid",
+]
+
+[[package]]
 name = "rmac-shell-invocation"
 version = "0.1.0"
 dependencies = [
@@ -5014,6 +5025,102 @@ dependencies = [
  "futures-util",
  "rmac-compositor",
  "wayland-client",
+]
+
+[[package]]
+name = "rmac-shell-layer"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "uuid",
+]
+
+[[package]]
+name = "rmac-shell-layer-probe"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui_platform",
+ "rmac-shell-layer",
+]
+
+[[package]]
+name = "rmac-shell-menubar"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-app-launch",
+ "rmac-app-menu",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-desktop",
+ "rmac-dock",
+ "rmac-dock-runtime",
+ "rmac-dock-system",
+ "rmac-osd",
+ "rmac-places",
+ "rmac-recent-documents",
+ "rmac-search",
+ "rmac-shell-layer",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-ui",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
+ "trash",
+ "uuid",
+]
+
+[[package]]
+name = "rmac-shell-osd"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-app-launch",
+ "rmac-app-menu",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-desktop",
+ "rmac-dock",
+ "rmac-dock-runtime",
+ "rmac-dock-system",
+ "rmac-osd",
+ "rmac-places",
+ "rmac-recent-documents",
+ "rmac-search",
+ "rmac-shell-layer",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-ui",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
+ "trash",
+ "uuid",
 ]
 
 [[package]]
@@ -5075,6 +5182,52 @@ dependencies = [
  "futures-lite",
  "futures-util",
  "zbus",
+]
+
+[[package]]
+name = "rmac-shell-ui"
+version = "0.1.0"
+dependencies = [
+ "rmac-apps",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+]
+
+[[package]]
+name = "rmac-shell-wallpaper"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "chrono",
+ "futures-util",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-app-launch",
+ "rmac-app-menu",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-desktop",
+ "rmac-dock",
+ "rmac-dock-runtime",
+ "rmac-dock-system",
+ "rmac-osd",
+ "rmac-places",
+ "rmac-recent-documents",
+ "rmac-search",
+ "rmac-shell-layer",
+ "rmac-shell-runtime",
+ "rmac-shell-settings",
+ "rmac-shell-status",
+ "rmac-shell-ui",
+ "rmac-wallpaper",
+ "rmac-wallpaper-image",
+ "rmac-wallpaper-runtime",
+ "trash",
+ "uuid",
 ]
 
 [[package]]

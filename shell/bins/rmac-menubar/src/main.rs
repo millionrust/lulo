@@ -70,9 +70,6 @@ mod linux_wayland {
                         let visible = update.visible;
                         if this.update(cx, |this, cx| {
                             let focused_app = update.snapshot.status.focused.app_id.clone();
-                            if std::env::var_os("RMAC_DEBUG_MENU").is_some() {
-                                eprintln!("debug menu focused_app={focused_app:?}");
-                            }
                             if focused_app != this.menu_app_id {
                                 this.menu_app_id = focused_app.clone();
                                 this.menus.clear();

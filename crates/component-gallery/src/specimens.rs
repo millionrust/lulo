@@ -104,6 +104,7 @@ pub(crate) fn render_specimen(
         }
         GalleryComponent::Tabs => render_tab(state, scale),
         GalleryComponent::Segmented => render_segmented(state, scale),
+        GalleryComponent::Popup => render_popup(state, scale),
         GalleryComponent::Dialog => render_dialog(state, scale),
         GalleryComponent::Alert | GalleryComponent::Toast => {
             render_message(component, state, scale)
@@ -363,6 +364,26 @@ fn render_segmented(state: GalleryState, scale: PreviewScale) -> AnyElement {
         .when(is_disabled(state), |element| element.opacity(0.42))
         .child(segment("Icons", true))
         .child(segment("List", false))
+        .into_any_element()
+}
+
+fn render_popup(state: GalleryState, scale: PreviewScale) -> AnyElement {
+    div()
+        .h(p(scale, 24.0))
+        .px(p(scale, 10.0))
+        .flex()
+        .items_center()
+        .justify_between()
+        .gap(p(scale, 12.0))
+        .rounded(p(scale, mac::radius_control()))
+        .border_1()
+        .border_color(state_border(state))
+        .bg(state_background(state))
+        .text_color(state_text(state))
+        .text_size(p(scale, 11.0))
+        .when(is_disabled(state), |element| element.opacity(0.42))
+        .child("Kind")
+        .child(div().text_color(mac::text_secondary()).child("⌄"))
         .into_any_element()
 }
 

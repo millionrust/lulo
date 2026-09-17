@@ -50,6 +50,7 @@ pub enum GalleryComponent {
     Tree,
     Tabs,
     Segmented,
+    Popup,
     Dialog,
     Alert,
     ContextMenu,
@@ -73,6 +74,7 @@ impl GalleryComponent {
             Self::Tree => "tree",
             Self::Tabs => "tabs",
             Self::Segmented => "segmented",
+            Self::Popup => "popup",
             Self::Dialog => "dialog",
             Self::Alert => "alert",
             Self::ContextMenu => "context-menu",
@@ -96,6 +98,7 @@ impl GalleryComponent {
             Self::Tree => "Tree",
             Self::Tabs => "Tabs",
             Self::Segmented => "Segmented control",
+            Self::Popup => "Pop-up button",
             Self::Dialog => "Dialog",
             Self::Alert => "Alert",
             Self::ContextMenu => "Context menu",
@@ -274,6 +277,13 @@ const SEGMENTED_STATES: &[GalleryState] = &[
     GalleryState::Focused,
     GalleryState::Disabled,
 ];
+const POPUP_STATES: &[GalleryState] = &[
+    GalleryState::Default,
+    GalleryState::Hover,
+    GalleryState::Pressed,
+    GalleryState::Focused,
+    GalleryState::Disabled,
+];
 const DIALOG_STATES: &[GalleryState] = &[
     GalleryState::Default,
     GalleryState::Focused,
@@ -392,6 +402,11 @@ pub const COMPONENT_SPECS: &[ComponentSpec] = &[
         keyboard: Some(NAVIGATE),
     },
     ComponentSpec {
+        component: GalleryComponent::Popup,
+        states: POPUP_STATES,
+        keyboard: Some(NAVIGATE),
+    },
+    ComponentSpec {
         component: GalleryComponent::Dialog,
         states: DIALOG_STATES,
         keyboard: Some(MODAL),
@@ -455,6 +470,7 @@ mod tests {
             GalleryComponent::Tree,
             GalleryComponent::Tabs,
             GalleryComponent::Segmented,
+            GalleryComponent::Popup,
             GalleryComponent::Dialog,
             GalleryComponent::Alert,
             GalleryComponent::ContextMenu,

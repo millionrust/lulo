@@ -89,6 +89,15 @@ impl From<Rgba> for RgbaColor {
     }
 }
 
+/// The effective duration of a motion token under the user's motion setting.
+fn motion_duration(spec: rmac_design::MotionSpec, reduced: bool) -> u16 {
+    if reduced {
+        spec.reduce_duration_ms
+    } else {
+        spec.duration_ms
+    }
+}
+
 /// Picks whichever of white or black is more legible on `background`.
 fn on_color(background: RgbaColor) -> RgbaColor {
     let white = RgbaColor::opaque(0xffffff);
@@ -355,9 +364,12 @@ impl ThemeTokens {
                 modal: design.elevation.modal.into(),
             },
             motion: MotionTokens {
-                fast_ms: design.motion.fast.duration_ms,
-                standard_ms: design.motion.standard.duration_ms,
-                deliberate_ms: design.motion.deliberate.duration_ms,
+                fast_ms: motion_duration(design.motion.fast, design.motion.reduced_motion),
+                standard_ms: motion_duration(design.motion.standard, design.motion.reduced_motion),
+                deliberate_ms: motion_duration(
+                    design.motion.deliberate,
+                    design.motion.reduced_motion,
+                ),
                 spatial_motion: !design.motion.reduced_motion,
             },
             text_scale: appearance.text_scale,

@@ -70,13 +70,16 @@ mod linux_wayland {
                         let visible = update.visible;
                         if this.update(cx, |this, cx| {
                             let focused_app = update.snapshot.status.focused.app_id.clone();
-                            if focused_app != this.menu_app_id {
-                                this.menu_app_id = focused_app.clone();
+                            // The compositor projection can momentarily report no
+                            // focused window during unrelated events; keep the
+                            // last known app's menus rather than clearing them.
+                            if let Some(app_id) = focused_app
+                                .filter(|app_id| Some(app_id) != this.menu_app_id.as_ref())
+                            {
+                                this.menu_app_id = Some(app_id.clone());
                                 this.menus.clear();
                                 this.menu_generation = this.menu_generation.saturating_add(1);
-                                if let Some(app_id) = focused_app
-                                    .filter(|app_id| rmac_app_menu::bus_name(app_id).is_some())
-                                {
+                                if rmac_app_menu::bus_name(&app_id).is_some() {
                                     request_app_menus(app_id, this.menu_generation, cx);
                                 }
                             }
@@ -475,7 +478,10 @@ mod linux_wayland {
 
             if self.open_menu.is_some()
                 && (self.open_menu >= Some(menus.len())
-                    || (self.open_menu != Some(0) && self.open_app_id != focused_app_id))
+                    || (self.open_menu != Some(0)
+                        && focused_app_id
+                            .as_deref()
+                            .is_some_and(|id| self.open_app_id.as_deref() != Some(id))))
             {
                 self.open_menu = None;
                 self.open_app_id = None;

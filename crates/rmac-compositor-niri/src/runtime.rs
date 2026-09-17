@@ -215,6 +215,18 @@ pub(super) fn action_error(error: Error) -> domain::ActionError {
     }
 }
 
+/// Execute one action using the session's own niri socket.
+pub async fn execute_action(action: &domain::Action) -> Result<(), domain::ActionError> {
+    let path = env::var_os(SOCKET_PATH_ENV)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .ok_or(domain::ActionError {
+            kind: domain::ActionErrorKind::Unavailable,
+            message: format!("{SOCKET_PATH_ENV} is not set"),
+        })?;
+    execute_at(&path, action).await
+}
+
 /// Read exactly one coherent compositor snapshot without leaving a watcher
 /// running. Hosts use this to resolve a window before sending an action.
 pub async fn snapshot() -> Result<domain::Snapshot, Error> {

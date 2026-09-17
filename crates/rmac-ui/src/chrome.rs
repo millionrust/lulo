@@ -12,6 +12,41 @@ use crate::{components, mac, text_px};
 /// One traffic-light button: a colored circle that reveals its glyph on hover
 /// and runs `on_click` (a window-control action). The glyph is always present
 /// but transparent until hover, giving the macOS reveal-on-hover effect.
+#[derive(Clone, Copy)]
+enum WindowAction {
+    ToggleFullscreen,
+    Fill,
+}
+
+/// Route a window control through the niri compositor. GPUI's own window
+/// controls are no-ops under niri's floating policy, and niri has no native
+/// minimize, so fullscreen/fill must be compositor actions on this process's
+/// focused window.
+fn send_window_action(action: WindowAction, cx: &mut App) {
+    cx.background_executor()
+        .spawn(async move {
+            let pid = std::process::id() as i32;
+            let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                return;
+            };
+            let window = snapshot
+                .windows
+                .iter()
+                .filter(|window| window.pid == Some(pid))
+                .min_by_key(|window| i32::from(!window.focused))
+                .map(|window| window.id);
+            let Some(window) = window else { return };
+            let action = match action {
+                WindowAction::ToggleFullscreen => {
+                    rmac_compositor::Action::FullscreenWindow { window, on: true }
+                }
+                WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
+            };
+            let _ = rmac_compositor_niri::execute_action(&action).await;
+        })
+        .detach();
+}
+
 fn traffic_light(
     id: impl Into<ElementId>,
     fill: Hsla,
@@ -19,7 +54,7 @@ fn traffic_light(
     glyph: &'static str,
     tooltip: &'static str,
     active: bool,
-    on_click: impl Fn(&mut Window, &mut App) + 'static,
+    on_click: impl Fn(bool, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     ComponentButton::new(id)
         .ghost()
@@ -49,7 +84,7 @@ fn traffic_light(
                 })
                 .child(glyph),
         )
-        .on_click(move |_, window, cx| on_click(window, cx))
+        .on_click(move |event, window, cx| on_click(event.modifiers().alt, window, cx))
 }
 
 /// The rmac traffic-light cluster (close / minimize / zoom), wired to the GPUI
@@ -88,7 +123,7 @@ pub fn traffic_lights_active(active: bool) -> impl IntoElement {
             active,
             // Route through the app's close guard (e.g. unsaved-changes prompt)
             // rather than closing the window directly. Apps bind `RequestClose`.
-            |window, cx| window.dispatch_action(Box::new(components::RequestClose), cx),
+            |_, window, cx| window.dispatch_action(Box::new(components::RequestClose), cx),
         ))
         .child(traffic_light(
             "tl-min",
@@ -97,7 +132,7 @@ pub fn traffic_lights_active(active: bool) -> impl IntoElement {
             "—",
             "Minimize",
             active,
-            |window, _| window.minimize_window(),
+            |_, window, _| window.minimize_window(),
         ))
         .child(traffic_light(
             "tl-zoom",
@@ -106,7 +141,16 @@ pub fn traffic_lights_active(active: bool) -> impl IntoElement {
             "+",
             "Zoom",
             active,
-            |window, _| window.zoom_window(),
+            move |alt, _, cx| {
+                send_window_action(
+                    if alt {
+                        WindowAction::Fill
+                    } else {
+                        WindowAction::ToggleFullscreen
+                    },
+                    cx,
+                )
+            },
         ))
 }
 

@@ -122,3 +122,26 @@ pub struct CacheStats {
     pub bytes: usize,
     pub decodes: u64,
 }
+
+/// Shape of a resolved third-party icon, used to decide whether it needs the
+/// Tahoe squircle plate for a uniform Dock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IconShape {
+    /// Already a rounded-square app icon.
+    RoundedSquare,
+    /// Any other shape: a logo, glyph, or irregular artwork.
+    Other,
+}
+
+/// Fraction of the tile at which a plated icon is drawn (`§4.10`).
+pub const PLATE_ICON_SCALE: f32 = 0.8;
+
+/// `Some(scale)` when a third-party icon should be drawn inside a squircle
+/// plate (`scale` of the tile), or `None` when it already reads as an app
+/// icon. The plate is white in light appearance and `2C2C2E` in dark.
+pub fn third_party_plate(shape: IconShape) -> Option<f32> {
+    match shape {
+        IconShape::RoundedSquare => None,
+        IconShape::Other => Some(PLATE_ICON_SCALE),
+    }
+}

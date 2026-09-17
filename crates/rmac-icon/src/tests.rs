@@ -247,3 +247,10 @@ fn concurrent_misses_are_coalesced_into_one_bounded_decode() {
     assert_eq!(cache.stats().decodes, 1);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn third_party_plate_only_wraps_non_app_icons() {
+    assert_eq!(third_party_plate(IconShape::RoundedSquare), None);
+    assert_eq!(third_party_plate(IconShape::Other), Some(PLATE_ICON_SCALE));
+    assert!(PLATE_ICON_SCALE > 0.0 && PLATE_ICON_SCALE < 1.0);
+}

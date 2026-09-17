@@ -21,6 +21,12 @@ layout {
     }
 }
 
+// niri has no native minimize, so the shell hides a window by parking it on
+// this named workspace. It must be declared here for niri to resolve the name
+// in a move-window-to-workspace reference; the shell excludes it from the
+// Spaces bar, Mission Control, the app switcher, and Dock running counts (§2.2).
+workspace "rmac-parking"
+
 // macOS uses freely movable, overlapping application windows. Keep niri as
 // the Wayland compositor, but make its normal presentation floating instead
 // of exposing the scrolling-tiler layout as the product experience.

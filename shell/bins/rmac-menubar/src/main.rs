@@ -471,7 +471,6 @@ mod linux_wayland {
             let active_app = top_bar_active_app_name(snapshot);
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
-            let focused_app_id = snapshot.focused.app_id.clone();
             let focused_window_id = snapshot.focused.window_id;
             let mut menus = status.menus.clone();
             menus.insert(0, system_menu());

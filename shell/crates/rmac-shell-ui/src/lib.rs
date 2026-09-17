@@ -75,15 +75,20 @@ pub fn top_bar_active_app_name(snapshot: &rmac_shell_status::Snapshot) -> String
         .focused
         .app_id
         .as_deref()
-        .map(|app_id| {
-            rmac_apps::identity::window_title(app_id)
-                .map(str::to_owned)
-                .unwrap_or_else(|| humanize_app_id(app_id))
-        })
+        .map(app_display_name)
         .filter(|name| !name.is_empty())
         // Like macOS Finder, the first-party file manager owns the desktop
         // identity when no application window has focus.
         .unwrap_or_else(|| "Finder".to_owned())
+}
+
+/// The menu-bar name for an app id. Opening a popup temporarily moves keyboard
+/// focus to the shell's layer surface, so hosts keep the last known app id and
+/// name it with this instead of falling back to the desktop identity.
+pub fn app_display_name(app_id: &str) -> String {
+    rmac_apps::identity::window_title(app_id)
+        .map(str::to_owned)
+        .unwrap_or_else(|| humanize_app_id(app_id))
 }
 
 fn humanize_app_id(app_id: &str) -> String {

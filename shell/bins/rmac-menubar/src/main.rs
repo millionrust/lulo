@@ -21,8 +21,9 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
     use rmac_shell_ui::{
-        delay_until_next_clock_tick, top_bar_active_app_name, top_bar_clock_pattern,
-        top_bar_indicator_labels, top_bar_workspace_label, TopBarIndicatorKind,
+        app_display_name, delay_until_next_clock_tick, top_bar_active_app_name,
+        top_bar_clock_pattern, top_bar_indicator_labels, top_bar_workspace_label,
+        TopBarIndicatorKind,
     };
     use uuid::Uuid;
 
@@ -471,14 +472,22 @@ mod linux_wayland {
                 .format(top_bar_clock_pattern(&snapshot.clock))
                 .to_string();
             let clock_label = clock.clone();
-            let active_app = top_bar_active_app_name(snapshot);
             // Opening a popup moves keyboard focus to this layer surface, so the
             // live focused window drops to None. Use the last app the status
-            // runtime reported (kept across those blips) for the app menu.
+            // runtime reported (kept across those blips) for the app menu, and
+            // name it rather than letting the desktop identity take over.
             let active_app_id = status
                 .menu_app_id
                 .clone()
                 .or_else(|| snapshot.focused.app_id.clone());
+            let active_app = if self.open_menu.is_some() {
+                active_app_id
+                    .as_deref()
+                    .map(app_display_name)
+                    .unwrap_or_else(|| top_bar_active_app_name(snapshot))
+            } else {
+                top_bar_active_app_name(snapshot)
+            };
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
             let focused_window_id = snapshot.focused.window_id;

@@ -753,7 +753,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 - [ ] **3.10 Accessibility.** Menu bar exposes `menubar` role; each item `menuitem` with popup; status items expose value text (e.g. "Wi-Fi, connected to Home, 3 of 3 bars"). Existing `assert_top_bar_accessibility.py` extended accordingly.
 
 **Phase 3 exit checklist**
-- [ ] Screenshot pairs: light wallpaper, dark wallpaper, menu open, submenu, each status menu, full-screen reveal.
+- [~] Screenshot pairs: light wallpaper, dark wallpaper, menu open, submenu, each status menu, full-screen reveal. (**Open bug 2026-09-17:** with a window focused and `niri msg action fullscreen-window` applied, `niri msg --json windows` reports `tile_size` `1536x864` == the output logical size and `is_floating false` — so `top_bar_output_policies` *should* report fullscreen — yet the bar stays visible at y=13 (`target/evidence/phase3/fs-*.png`). Needs debugging in the per-output policy watcher: `rmac-shell-layer` publishes `BTreeMap<stable_output_uuid, bool>` and the host must map it back to the right display; verify the uuid match and that `workspace.active_window` names the focused window.)
 - [ ] Every system-menu row performs its real action on Ubuntu (Sleep/Restart/Shut Down/Log Out tested on the reference PC with recovery).
 - [ ] Files, Settings, Terminal, Notes, Text Editor, System Monitor show complete real menus; Firefox shows FD-8 fallback; a GTK app (e.g. `gnome-text-editor`) shows its exported menus.
 - [ ] Turning Wi-Fi off from GNOME Settings/`nmcli` updates the bar within 1 s, no polling.

@@ -823,10 +823,11 @@ impl Styled for TextField {
 
 impl RenderOnce for TextField {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let mut style = self.style.clone();
-        if self.error.is_some() {
-            style.border_color(mac::danger());
-        }
+        let style = if self.error.is_some() {
+            self.style.clone().border_color(mac::danger())
+        } else {
+            self.style.clone()
+        };
         let input = ComponentInput::new(&self.state)
             .appearance(self.appearance)
             .cleanable(self.cleanable)

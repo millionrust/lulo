@@ -450,6 +450,17 @@ mod linux_wayland {
             let active_app = top_bar_active_app_name(snapshot);
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
+            if std::env::var_os("RMAC_DEBUG_STATUS").is_some() {
+                eprintln!(
+                    "top-bar status: network={} bluetooth={} sound={} battery={} focus={} indicators={}",
+                    snapshot.network.is_some(),
+                    snapshot.bluetooth.is_some(),
+                    snapshot.sound.is_some(),
+                    snapshot.battery.is_some(),
+                    snapshot.focus.is_some(),
+                    indicators.len()
+                );
+            }
             let focused_app_id = snapshot.focused.app_id.clone();
             let focused_window_id = snapshot.focused.window_id;
             let mut menus = status.menus.clone();

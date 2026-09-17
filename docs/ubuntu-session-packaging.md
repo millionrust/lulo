@@ -58,7 +58,7 @@ window rules and desktop bindings without rewriting user data. System Settings
 may place its isolated display include first and input include last in the
 entry point. The initial shell policy suppresses niri's default Waybar startup,
 provides the rmac session shortcuts and hardware volume/brightness keys, and
-opens Spotlight, App Drawer, Quick Settings, and Notification Center as sized
+opens Spotlight, Apps, Quick Settings, and Notification Center as sized
 floating surfaces rather than scrolling-layout application windows. Persistent
 safe mode removes `NIRI_CONFIG` before niri starts and remains independent of
 this shell policy.

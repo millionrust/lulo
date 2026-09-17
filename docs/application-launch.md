@@ -1,6 +1,6 @@
 # Application launch and activation
 
-`rmac-app-launch` is the shared execution route for App Drawer, Spotlight, and
+`rmac-app-launch` is the shared execution route for Apps, Spotlight, and
 Dock. It preserves one parsed `rmac_apps::LaunchSpec` and never turns desktop
 entry text into a shell command.
 
@@ -42,6 +42,6 @@ redacted.
 
 The Ubuntu/niri reference gate must enable niri's strict new-window focus
 policy, then launch native Wayland, XWayland, terminal, working-directory, and
-desktop-action entries from App Drawer, Spotlight, and Dock. Evidence must show
+desktop-action entries from Apps, Spotlight, and Dock. Evidence must show
 that token-aware clients focus correctly, rejected launches do not fall back,
 and ordinary GNOME/macOS development launches retain their direct behavior.

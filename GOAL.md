@@ -279,7 +279,7 @@ crashes enter safe mode; GNOME still logs in.
 
 #### System overlays
 
-- Spotlight, App Drawer, Control Center, Notification Center, banners, Focus,
+- Spotlight, Apps, Control Center, Notification Center, banners, Focus,
   privacy indicators, volume/brightness/media OSDs, lock screen, logout,
   restart, suspend, and shutdown form one visual and interaction system.
 - Global shortcuts work immediately after login and never depend on a terminal.
@@ -313,7 +313,7 @@ Treat each application as a complete daily journey, not a static imitation.
    Focus, users, privacy, language/time, storage, updates, About, lock, and
    session controls where Linux has an authority. Risky changes offer Keep and
    Revert. Unsupported Apple-only services do not masquerade as working rows.
-7. **App Drawer:** complete installed-app discovery, search, categories/folders,
+7. **Apps:** complete installed-app discovery, search, categories/folders,
    keyboard navigation, live refresh, launch, context actions, stable layout,
    and Dock interaction.
 

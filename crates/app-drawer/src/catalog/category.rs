@@ -1,4 +1,4 @@
-//! Cross-platform App Drawer application category classification.
+//! Cross-platform Apps application category classification.
 
 use super::*;
 

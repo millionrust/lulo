@@ -1,4 +1,4 @@
-//! rmac App Drawer — a searchable grid of installed applications.
+//! rmac Apps — a searchable grid of installed applications.
 
 mod catalog;
 mod service;

@@ -79,7 +79,7 @@ The authoritative matrix is
   and control PTYs, processes, signals, and the host filesystem.
 - System Monitor remains native because the sandbox intentionally hides the
   host process and metric authorities it reports and controls.
-- App Drawer remains native because it resolves host desktop-entry precedence
+- Apps remains native because it resolves host desktop-entry precedence
   and activates arbitrary reviewed host applications.
 - System Settings remains native because its purpose is coordinated system
   D-Bus, polkit, package, hardware, privacy, and session mutation.

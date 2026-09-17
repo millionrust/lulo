@@ -30,7 +30,7 @@ prove optical quality.
 
 `rmac-ui` owns these constants and creates both standard and unified-toolbar
 window options with the exact identity. Files, Terminal, Text Editor,
-System Monitor, App Drawer, and System Settings publish it today. Notes is
+System Monitor, Apps, and System Settings publish it today. Notes is
 reserved in the same domain but still needs its running window switched before
 the application metadata package can pass the complete seven-app gate.
 

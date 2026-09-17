@@ -21,7 +21,7 @@ login, and files.
 | Application | Package | Run command |
 |---|---|---|
 | System Monitor | `rmac-activity-monitor` | `cargo run -p rmac-activity-monitor` |
-| App Drawer | `rmac-app-drawer` | `cargo run -p rmac-app-drawer` |
+| Apps | `rmac-app-drawer` | `cargo run -p rmac-app-drawer` |
 | Launcher / Spotlight | `rmac-launcher-app` | `cargo run -p rmac-launcher-app -- --show` |
 | Files | `rmac-finder` | `cargo run -p rmac-finder` |
 | Notes | `rmac-notes` | `cargo run -p rmac-notes` |

@@ -1,4 +1,4 @@
-//! App Drawer catalog, selection, and launch controller.
+//! Apps catalog, selection, and launch controller.
 
 mod lifecycle;
 mod render;

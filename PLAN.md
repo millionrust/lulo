@@ -58,7 +58,7 @@ never generic theme colors. Verify the *look* with a screenshot, not just a clea
 |---|---|---|
 | `rmac-ui` | Design system: `mac::` token palette, fonts, traffic-light `TitleBar` + `toolbar()`, `boot()` (icon assets + light theme), window-position persistence | **every** app |
 | `rmac-editor` | Text editing core: rope buffer (gpui-component `input`/Rope), undo/redo (`history`), syntax highlight (`highlighter`) | Text Editor, Notes |
-| `rmac-apps` | Installed-app enumeration abstraction — `.desktop` (Linux) vs `.app` (macOS), icons, launch | App Drawer, future Spotlight + Dock |
+| `rmac-apps` | Installed-app enumeration abstraction — `.desktop` (Linux) vs `.app` (macOS), icons, launch | Apps, future Spotlight + Dock |
 | `rmac-sys` | System data + control: `sysinfo` wrappers, per-OS settings backends | Activity Monitor, System Settings |
 
 ### The apps → Rust approach
@@ -69,7 +69,7 @@ never generic theme colors. Verify the *look* with a screenshot, not just a clea
 | 2 | **Notes** | `rmac-editor` + storage (`rusqlite` or files) + full-text search | Apple Notes | ✅ |
 | 3 | **Finder** | `std::fs` + `notify` (watch) + async I/O (yazi arch); `tree`/`sidebar`/`list` | yazi, cosmic-files | ✅ |
 | 4 | **System Settings** | `sidebar` + panes shell; backends per-OS (Linux: gsettings/dconf/compositor) | — | shell ✅, Linux backends later |
-| 5 | **App Drawer** | Launchpad/App-Library grid + fuzzy search; `rmac-apps` enumeration | macOS Launchpad/App Library | ✅ |
+| 5 | **Apps** | Launchpad/App-Library grid + fuzzy search; `rmac-apps` enumeration | macOS Launchpad/App Library | ✅ |
 | 6 | **Text Editor** | `rmac-editor` + `highlighter` (syntax) | macOS TextEdit | ✅ |
 
 ## Roadmap
@@ -83,7 +83,7 @@ never generic theme colors. Verify the *look* with a screenshot, not just a clea
   - **Activity Monitor** ✅ — live process table + summary cards (mac palette).
   - **Terminal** ✅ — `alacritty_terminal` + `portable-pty` + GPUI grid; 256-color, block cursor, input. v1 limits: fixed 100×28, no scrollback/selection yet.
   - **Finder** ✅ — pixel-accurate from Apple-docs spec (`crates/finder/SPEC.md`): 52pt draggable toolbar, sidebar sections, filled folders, alt stripes, exact colors.
-  - **App Drawer** ✅ — Launchpad grid; real `.icns`→PNG icons (sips, cached); search; launch.
+  - **Apps** ✅ — Launchpad grid; real `.icns`→PNG icons (sips, cached); search; launch.
   - **System Settings** ✅ — sidebar (account card + colored category tiles) + detail (hero + grouped cards). macOS = read-only mockup; Linux backends later.
 - **Phase 4 — Dock & shell** (Linux) — layer-shell dock (hover magnification, spring physics), top bar, Spotlight.
 - **Phase 5 — The *feel*** — inertial gestures (in compositor), global menu bar, Mission-Control overview, packaging as Ubuntu remix.

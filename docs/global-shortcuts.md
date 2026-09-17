@@ -65,11 +65,11 @@ fixed `rmac-lock.service` directly and waits for the lock readiness transaction,
 so shell availability cannot turn a security action into a dropped event. No
 shortcut is converted into a shell command.
 
-The supervised launcher, App Drawer, Quick Settings, and Notification Center
+The supervised launcher, Apps, Quick Settings, and Notification Center
 panel processes bind their own endpoints, signal systemd readiness only after
 the socket exists, and order the broker after all four ready units. Each keeps
 at most one on-demand GPUI surface and treats a repeated activation as
-dismissal. App Drawer retains a separate standalone mode for development and
+dismissal. Apps retains a separate standalone mode for development and
 performance measurement; only its explicit service mode owns the shortcut.
 The notification daemon remains a separate D-Bus authority and cannot consume
 the panel shortcut. Every compiled ordinary shell action therefore has a live,

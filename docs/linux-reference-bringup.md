@@ -240,7 +240,7 @@ dismissal, System Settings routing, keyboard-only order, and no hardware watcher
 remaining after close. Repeat at 100%, 125%, 150%, and 200% with Orca and record
 primary/trailing placement as candidate evidence, not final layer-shell proof.
 
-Confirm the App Drawer service is idle-ready with no window or catalog watcher,
+Confirm the Apps service is idle-ready with no window or catalog watcher,
 then invoke the exact action used by both shortcut backends:
 
 ```sh
@@ -547,7 +547,7 @@ bash scripts/linux/run-reference-gates.sh --session niri --with-performance
 Compare the resulting JSON with `docs/performance-baseline.md`. Do not compare
 debug builds, software Vulkan, or measurements taken while package updates are
 running. The first Linux run establishes the hardware baseline; optimization
-work then targets measured failures, beginning with Terminal and App Drawer
+work then targets measured failures, beginning with Terminal and Apps
 idle CPU and System Settings first-frame startup.
 
 ## 7. Evidence needed from the machine

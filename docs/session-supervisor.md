@@ -9,12 +9,12 @@ installer.
 ## Startup and environment
 
 Run `scripts/linux/install-session-units.sh` once from the repository. It
-builds the release supervisor, launcher, supervised App Drawer, on-demand Quick
+builds the release supervisor, launcher, supervised Apps, on-demand Quick
 Settings and Notification Center panel services, and launcher-routed System
 Settings, installs them under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
 directory, and installs `~/.local/bin/rmac-session-start`.
-The launcher, App Drawer, Quick Settings, and Notification Center panel
+The launcher, Apps, Quick Settings, and Notification Center panel
 services bind their separate action-scoped runtime sockets before the shortcut
 broker starts, so
 the first consented activation has an owner and one surface crash cannot
@@ -77,7 +77,7 @@ need to be imported before these services start.
 
 ## Crash and restart policy
 
-Top bar, Dock, launcher, App Drawer, Quick Settings, the notification authority,
+Top bar, Dock, launcher, Apps, Quick Settings, the notification authority,
 Notification Center panel, Focus authority, wallpaper, and the global shortcut
 broker each have their own service. They use
 `Restart=on-failure`, a

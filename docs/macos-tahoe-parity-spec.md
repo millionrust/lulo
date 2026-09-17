@@ -976,7 +976,7 @@ performance still require end-to-end proof.
    a fixed Files/Downloads/Trash Dock tail. Tahoe supports folder stacks, but
    the visible Dock must use configured items and the reference profile must
    not force Downloads or Files.
-2. Several documents and binaries use the product-facing name “App Drawer.”
+2. Several documents and binaries use the product-facing name “Apps.”
    Tahoe 26 presents an Apps view from the Dock. Internal crate names may remain
    stable, but the visible name, icon, menus, animation, layout, and settings
    must follow the measured Tahoe Apps experience.

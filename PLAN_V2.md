@@ -340,7 +340,7 @@ Exit gate:
 - application catalog matches a reference desktop on a representative fixture set;
 - portal tests pass both with a mock bus and a real Ubuntu session;
 - corrupt config and interrupted-write tests prove recovery;
-- there are no unconditional redraw timers in App Drawer or simple apps.
+- there are no unconditional redraw timers in Apps or simple apps.
 
 ### Phase 3 — Make `rmac-ui` a real accessible design system (3–5 weeks)
 
@@ -368,7 +368,7 @@ Port in this order:
 
 1. **Text Editor** — portals, atomic save, crash recovery, find/replace, semantics.
 2. **Activity Monitor** — Linux process/system metrics, event-driven refresh, safe signals.
-3. **App Drawer** — XDG catalog, icons, categories, actions, launch activation.
+3. **Apps** — XDG catalog, icons, categories, actions, launch activation.
 
 Each application is split into domain, services, state/update, and render modules. Keep main
 files below roughly 300 lines; exceptions need a review note.
@@ -382,7 +382,7 @@ Exit gate per app:
 - destructive or privileged operations have confirmation and actionable errors.
 
 Phase exit gate: all three ship as installable native development packages. Text Editor also
-ships as a development Flatpak. Activity Monitor and App Drawer receive written sandbox
+ships as a development Flatpak. Activity Monitor and Apps receive written sandbox
 feasibility decisions rather than misleading Flatpaks that cannot see host processes/apps.
 
 ### Phase 5 — Build Linux system services (4–7 weeks)
@@ -530,7 +530,7 @@ Every R&D item starts with a two-week spike and a stop/go decision.
 | Terminal | real PTY, dynamic resize, scrollback, selection, search, tabs, profiles | multiplexing/server mode |
 | Finder | safe file operations, trash, undo, mounts, search, previews, MIME actions | universal remote filesystem support |
 | Activity Monitor | process/resource views, search/sort, safe terminate, histories | unsupported per-process GPU fabrication |
-| App Drawer | standards-compliant discovery/icons/actions/search/launch | store/install management |
+| Apps | standards-compliant discovery/icons/actions/search/launch | store/install management |
 | System Settings | only working Network, Bluetooth, Power, Audio, Display info, Appearance | placeholder panes |
 
 “Required” includes loading, empty, unavailable, permission-denied, and error states.
@@ -607,7 +607,7 @@ This is the recommended starting queue.
 11. Create `rmac-portals` file/open/settings clients with mock-bus tests.
 12. Create `rmac-apps` desktop-entry parser and conformance fixtures.
 13. Add icon-theme resolver and cache.
-14. Remove App Drawer polling and port it to `rmac-apps`.
+14. Remove Apps polling and port it to `rmac-apps`.
 15. Build accessible Button/Dialog/Menu/Search components and gallery.
 16. Add focus/keyboard/semantic component tests.
 17. Port Text Editor open/save/recovery to portals and storage.

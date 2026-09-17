@@ -57,10 +57,10 @@ hints.
 
 ## Current adoption
 
-Text Editor, Files, Terminal, System Monitor, App Drawer, and System Settings
+Text Editor, Files, Terminal, System Monitor, Apps, and System Settings
 register their application-level bindings from the shared vocabulary. Files
 and Terminal context menus consume the same shortcut values as their bindings;
-App Drawer does the same for Open. Menu entries without a registered direct
+Apps does the same for Open. Menu entries without a registered direct
 binding, including Open With, Restore, Profiles, and Show in Folder, do not
 invent hints.
 

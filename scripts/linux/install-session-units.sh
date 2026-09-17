@@ -127,7 +127,7 @@ fallback_path=$(dirname -- "${niri_config}")/shortcuts-generated.kdl
     "${fallback_path}" "${libexec_dir}/rmac-shortcut-dispatch"
 echo "Installed rmac user units in ${unit_dir}."
 echo "Installed the supervisor in ${libexec_dir}."
-echo "Installed the supervised App Drawer, notification service, on-demand Center and Quick Settings panels, and rmac notification portal backend."
+echo "Installed the supervised Apps, notification service, on-demand Center and Quick Settings panels, and rmac notification portal backend."
 echo "Installed the Focus policy authority."
 echo "Installed the rmac lock screen with fail-closed swaylock recovery, logind coordination, idle locking, and default lock policy."
 echo "The four upstream shell surfaces remain an explicit framework-gated development candidate."

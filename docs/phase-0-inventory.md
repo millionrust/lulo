@@ -34,14 +34,14 @@ Approximate post-format sizes:
 | Notes `main.rs` | 1,624 | store, search/index, document model, render |
 | Terminal `main.rs` | 1,247 | PTY/session, terminal model, selection, render |
 | Text Editor `main.rs` | 981 | document/store, actions, render |
-| App Drawer `main.rs` | 905 | app catalog, icon resolver, state, render |
+| Apps `main.rs` | 905 | app catalog, icon resolver, state, render |
 
 These are not split in one refactor. Each is split when its vertical slice gains
 the corresponding service interface and tests.
 
 ## macOS-only or macOS-shaped paths
 
-### App Drawer
+### Apps
 
 - scans `/Applications` and `/System/Applications` for `.app` bundles;
 - reads bundle metadata with `defaults` and `PlistBuddy`;
@@ -55,7 +55,7 @@ desktop visibility and `TryExec`, expands `Exec` field codes without a shell,
 and resolves icons through the active GTK, KDE, or GNOME theme. Theme lookup
 honors XDG base-directory precedence, recursive inheritance, `hicolor` and
 unthemed fallbacks, and fixed/scalable/threshold size metadata. Native catalog
-watches refresh App Drawer after debounced install, removal, and desktop-entry
+watches refresh Apps after debounced install, removal, and desktop-entry
 changes while preserving its active search, category, and selection. App reveal
 uses `rmac-portal` OpenDirectory on Linux, with an `xdg-open` fallback, while
 macOS retains Finder reveal.
@@ -211,7 +211,7 @@ data-changing Linux path may add a new ignored error.
   2026-07-10 with a bounded, event-triggered watcher channel. Event bursts are
   debounced into one reload and the UI task sleeps until the watched directory
   actually changes.
-- App Drawer's former 120 ms redraw timer was removed on 2026-07-10. Search
+- Apps' former 120 ms redraw timer was removed on 2026-07-10. Search
   input and icon extraction completion now request the redraws they need. Its
   `rmac-apps` catalog watcher now sleeps between native filesystem events and
   coalesces event bursts into one background rescan.

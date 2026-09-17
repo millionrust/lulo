@@ -1,4 +1,4 @@
-//! App Drawer icon, grid/list item, category, and view-toggle projection.
+//! Apps icon, grid/list item, category, and view-toggle projection.
 
 use super::*;
 

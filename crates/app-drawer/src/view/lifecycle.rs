@@ -1,4 +1,4 @@
-//! App Drawer window, search observation, and live-catalog lifecycle.
+//! Apps window, search observation, and live-catalog lifecycle.
 
 use super::*;
 

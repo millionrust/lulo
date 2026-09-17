@@ -12,7 +12,7 @@ The package set is intentionally split:
 | `rmac-apps` | `/usr/bin` | 7 | Files, Terminal, Notes, Text Editor, System Monitor, Applications, and Settings plus their desktop metadata |
 | `rmac-session` | `/usr/libexec/rmac` | 13 | Session supervision, launcher and panels, notification/Focus services, shortcuts, and the accepted swaylock coordination boundary |
 
-`rmac-session` depends on the exact matching `rmac-apps` version. App Drawer
+`rmac-session` depends on the exact matching `rmac-apps` version. Apps
 and Settings appear in both payloads because the ordinary applications launch
 from `/usr/bin`, while their supervised session modes use the immutable
 `/usr/libexec/rmac` boundary. The currently gated Top Bar, Dock, and Wallpaper

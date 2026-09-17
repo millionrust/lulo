@@ -107,7 +107,7 @@ evidence remains gated by the reference-PC framework work.
   ranges from GPUI's authoritative input state. Runtime AT-SPI/Orca export,
   native Linux portal/print/IME behavior, visual references, and performance
   evidence keep G1 partial.
-- **App Drawer** 🟡 — localized XDG discovery, `TryExec`, inherited icons,
+- **Apps** 🟡 — localized XDG discovery, `TryExec`, inherited icons,
   search, shell-free launch, keyboard navigation, grid/list and category views,
   live refresh, metadata/action search, explicit empty states, and context
   actions (Open / declared desktop actions / Show in Folder). Its bounded
@@ -125,16 +125,16 @@ modals, third-party menus, or the framework's native prompt:
   unsaved-changes guard / save error) and Notes (folder delete).
 - **ContextMenu** — our own right-click popover (dispatches GPUI actions itself,
   dismisses on click-away via a `DismissMenu` action). Replaced gpui-component's
-  `PopupMenu` in Terminal, Notes, Finder, and App Drawer.
+  `PopupMenu` in Terminal, Notes, Finder, and Apps.
 - **Traffic lights** — the OS lights are hidden off-screen; `rmac_ui::title_bar` /
   `toolbar` draw our own red/yellow/green controls (glyph-on-hover) wired to
   `remove_window` / `minimize_window` / `zoom_window`. Adopted by all 7 apps.
 
 ## Framework-blocked (GPUI 0.2.2 limitations — not faked)
 These need capabilities GPUI doesn't expose; documented honestly rather than mocked:
-- **Native drag-OUT to other apps** (Finder drag-to-Finder, App Drawer drag-to-Dock):
+- **Native drag-OUT to other apps** (Finder drag-to-Finder, Apps drag-to-Dock):
   GPUI's `NSView` only `registerForDraggedTypes` (receives drops) — there's no
-  `NSDraggingSource`/`beginDraggingSession`. App Drawer ships *Reveal in Finder*
+  `NSDraggingSource`/`beginDraggingSession`. Apps ships *Reveal in Finder*
   as the honest bridge; Finder ships native pasteboard copy/paste.
 - **Rich-text *editing* (RTF authoring)**: GPUI has no editable rich-text widget
   and can't embed a native `NSTextView`. The Text Editor ships a read-only

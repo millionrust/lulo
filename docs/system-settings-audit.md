@@ -409,7 +409,7 @@ remain separate. All System Settings-owned labels, values, section headings,
 buttons, segmented controls, sidebar text, and pane chrome now use the live
 factor; fixed-height segmented/accent controls retain sufficient logical height
 at the bounded 130% maximum. Every app-owned label and chrome surface in
-Activity Monitor, Finder, App Drawer, Notes, Terminal, and Text Editor follows
+Activity Monitor, Finder, Apps, Notes, Terminal, and Text Editor follows
 the live factor, while independently controlled editor and terminal content
 fonts remain separate. Portal and theme-file events now coalesce into complete
 generation-safe reads. Every in-pane change performs a fresh whole-preference

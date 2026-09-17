@@ -1,5 +1,5 @@
 [Unit]
-Description=rmac App Drawer
+Description=rmac Apps
 PartOf=rmac-session.target
 After=rmac-session-supervisor.service
 Before=rmac-shortcut-broker.service

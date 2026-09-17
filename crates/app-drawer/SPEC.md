@@ -1,8 +1,8 @@
-# App Drawer product specification
+# Apps product specification
 
 ## Purpose
 
-App Drawer is the complete, searchable view of installed applications. It
+Apps is the complete, searchable view of installed applications. It
 should feel as immediate and spatially predictable as a carefully designed app
 library while remaining truthful to Linux desktop-entry metadata. It is not a
 software store, package manager, or imitation of Apple Launchpad.
@@ -12,7 +12,7 @@ software store, package manager, or imitation of Apple Launchpad.
 - `rmac-apps` owns discovery from XDG application directories, desktop-entry
   precedence, localization, visibility, `TryExec`, icon-theme inheritance,
   categories, launch specifications, declared actions, and filesystem watches.
-- App Drawer's isolated catalog projection converts that authoritative catalog
+- Apps' isolated catalog projection converts that authoritative catalog
   into category/search/render records while retaining the exact parsed launch
   specifications and desktop actions. It also owns the development-only macOS
   category and cached icon fallbacks; neither fallback is compiled on Linux.
@@ -41,7 +41,7 @@ software store, package manager, or imitation of Apple Launchpad.
   passed through a shell. Declared action order is preserved and bounded.
 - “Show in Folder” uses the file-manager portal through `rmac-apps::reveal`.
 - `rmac-ui` owns live appearance, shared controls, text scaling, and window
-  chrome. App Drawer does not maintain a private theme.
+  chrome. Apps does not maintain a private theme.
 - `rmac-app-drawer.service` owns only the action-scoped `app-drawer` shortcut
   endpoint and one on-demand window. Its explicit `--service` mode reports ready
   only after binding; standalone launches remain available for development and
@@ -57,7 +57,7 @@ software store, package manager, or imitation of Apple Launchpad.
 
 ## Primary journeys
 
-1. Open App Drawer and see a stable grid of installed, visible applications
+1. Open Apps and see a stable grid of installed, visible applications
    with their resolved icons and localized names.
 2. Type a localized name, generic name, keyword, category, or desktop-action
    label in Search and receive an immediate filtered result without moving
@@ -69,7 +69,7 @@ software store, package manager, or imitation of Apple Launchpad.
    such as New Window, or Show in Folder.
 6. Install, remove, or edit a desktop entry and see a coalesced catalog refresh
    that preserves selection by source path where possible.
-7. Invoke the global shortcut to open one App Drawer, invoke it again to close
+7. Invoke the global shortcut to open one Apps, invoke it again to close
    that window, and invoke it a third time to open a fresh view without
    restarting the supervised endpoint.
 

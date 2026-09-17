@@ -19,7 +19,7 @@ import time
 
 APPS = (
     ("System Monitor", "rmac-activity-monitor", "rmac-system-monitor"),
-    ("App Drawer", "rmac-app-drawer", "rmac-app-drawer"),
+    ("Apps", "rmac-app-drawer", "rmac-app-drawer"),
     ("Files", "rmac-finder", "rmac-files"),
     ("Notes", "rmac-notes", "rmac-notes"),
     ("System Settings", "rmac-system-settings", "rmac-system-settings"),

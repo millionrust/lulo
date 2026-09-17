@@ -41,7 +41,7 @@ JSON is written under ignored `target/baselines/` output.
 | Application | Warm median | Warm p95 | Idle CPU | Idle RSS |
 |---|---:|---:|---:|---:|
 | Activity Monitor | 164.5 ms | 166.3 ms | 2.70% | 80.0 MiB |
-| App Drawer | 333.1 ms | 347.1 ms | 7.10% | 89.5 MiB |
+| Apps | 333.1 ms | 347.1 ms | 7.10% | 89.5 MiB |
 | Finder | 132.4 ms | 136.1 ms | 0.80% | 73.7 MiB |
 | Notes | 126.6 ms | 131.0 ms | 0.60% | 69.5 MiB |
 | System Settings | 986.7 ms | 1,102.8 ms | 0.60% | 71.2 MiB |
@@ -60,7 +60,7 @@ The follow-up below moves its discovery off the first-frame path and clears the
 failure.
 
 The provisional idle CPU budget is 0.3% per normal app. None of the original
-prototypes passes it. Terminal and App Drawer were the priority outliers, which
+prototypes passes it. Terminal and Apps were the priority outliers, which
 matched their known 33 ms and 120 ms redraw loops in the Phase 0 inventory.
 Activity Monitor's periodic metric refresh is legitimate domain work; the
 follow-up below profiles it and defines a separate active-refresh budget. RSS
@@ -89,9 +89,9 @@ well inside Terminal's 900 ms budget. The idle improvement is material but does
 not yet meet the provisional 0.3% goal. The Linux reference-PC run must confirm
 the event-driven behavior under Wayland and identify the remaining base cost.
 
-## App Drawer event-driven redraw follow-up
+## Apps event-driven redraw follow-up
 
-Revision `72b2e22c1545691d98f1c067525cf4b1f757d5ed` removed App Drawer's
+Revision `72b2e22c1545691d98f1c067525cf4b1f757d5ed` removed Apps'
 unconditional 120 ms redraw timer. Search input already notified its observer,
 and the asynchronous icon pass already notified GPUI after updating the model,
 so the timer repainted unchanged state between real events.
@@ -110,7 +110,7 @@ Startup remains inside the 500 ms simple-app budget. Cold icon-cache discovery
 is a separate active workload: it overlapped early three-second settling
 windows and produced unstable idle samples while the cache was being populated.
 The stable figure above therefore describes quiescent idle, not first-run icon
-indexing. App Drawer still misses the provisional 0.3% idle goal; Linux catalog
+indexing. Apps still misses the provisional 0.3% idle goal; Linux catalog
 events and icon-cache lifecycle need separate measurements during its
 `rmac-apps` port.
 

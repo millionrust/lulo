@@ -76,13 +76,13 @@ fn notify_ready() -> Result<(), String> {
     }
     let status = std::process::Command::new("/usr/bin/systemd-notify")
         .arg("--ready")
-        .arg("--status=App Drawer shortcut endpoint ready")
+        .arg("--status=Apps shortcut endpoint ready")
         .status()
         .map_err(|error| error.to_string())?;
     status
         .success()
         .then_some(())
-        .ok_or_else(|| "systemd rejected App Drawer readiness".to_owned())
+        .ok_or_else(|| "systemd rejected Apps readiness".to_owned())
 }
 
 fn dismiss_active(cx: &mut GpuiApp) -> bool {
@@ -166,7 +166,7 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
     let context = match activation.context() {
         Ok(context) => context,
         Err(error) => {
-            eprintln!("App Drawer activation rejected: {error}");
+            eprintln!("Apps activation rejected: {error}");
             return;
         }
     };
@@ -176,7 +176,7 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
             size(px(bounds.width), px(bounds.height)),
         ),
         Err(error) => {
-            eprintln!("App Drawer surface bounds rejected: {error}");
+            eprintln!("Apps surface bounds rejected: {error}");
             return;
         }
     };
@@ -214,7 +214,7 @@ pub(crate) fn run(show_on_start: bool) {
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
                                 if cx.update(|cx| route_activation(*activation, cx)).is_err() {
-                                    return Err("App Drawer application context stopped".to_owned());
+                                    return Err("Apps application context stopped".to_owned());
                                 }
                             }
                         }
@@ -224,7 +224,7 @@ pub(crate) fn run(show_on_start: bool) {
                 let watcher = async {
                     activation_done.await.map_err(|error| {
                         format!(
-                            "App Drawer shell activation {:?} failed: {}",
+                            "Apps shell activation {:?} failed: {}",
                             error.operation(),
                             error.detail()
                         )
@@ -253,7 +253,7 @@ pub(crate) fn run(show_on_start: bool) {
                     let consume = async {
                         while shortcut_rx.recv().await.is_ok() {
                             if cx.update(route_shortcut).is_err() {
-                                return Err("App Drawer application context stopped".to_owned());
+                                return Err("Apps application context stopped".to_owned());
                             }
                         }
                         Ok::<(), String>(())
@@ -261,7 +261,7 @@ pub(crate) fn run(show_on_start: bool) {
                     let watcher = async { shortcut_done.await.map_err(|error| error.to_string()) };
                     let readiness = async {
                         ready_rx.recv().await.map_err(|_| {
-                            "App Drawer endpoint stopped before readiness".to_owned()
+                            "Apps endpoint stopped before readiness".to_owned()
                         })?;
                         blocking::unblock(notify_ready).await
                     };

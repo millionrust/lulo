@@ -132,7 +132,7 @@ roles. System Settings uses the latter three for loading, empty Wi-Fi results,
 and dismissible service/persistence failures.
 The shared Button supports text, icons, compact sizes, selected state, and
 dropdown triggers. Terminal uses it for the profile control; Terminal, Finder,
-and App Drawer use shared text/search fields exclusively.
+and Apps use shared text/search fields exclusively.
 All seven product apps are prohibited from importing upstream Button, Input,
 Switch, Slider, or Table modules by `scripts/check-shared-controls.sh`, which is
 run in CI and the Linux reference gate. Alerts form a tab group, and context
@@ -214,7 +214,7 @@ reconnecting portal events and bounded preference-file events, changes the
 gpui-component mode, and refreshes windows only when resolved tokens change.
 Terminal is the first representative consumer: its application chrome follows
 live tokens while terminal color profiles remain explicit user content.
-Finder and App Drawer also consume semantic backgrounds, controls, selection,
+Finder and Apps also consume semantic backgrounds, controls, selection,
 drag targets, and notice colors; file tags and application icons remain
 content-owned colors rather than being recolored as chrome.
 Notes and Text Editor consume the same live document surfaces and notice
@@ -321,7 +321,7 @@ Output-scope resolution requires an explicit primary-output authority and never
 invents a surface on a disabled or missing display. Layer-shell rendering,
 pointer dynamics, and process execution remain adapters above this model.
 `rmac-dock-system` executes those typed outcomes: desktop-entry `LaunchSpec`
-values go through shared `rmac-app-launch` off the render thread. App Drawer,
+values go through shared `rmac-app-launch` off the render thread. Apps,
 Spotlight, and Dock therefore use the same direct niri `Spawn` action and XDG
 activation-token path, with redacted bounded argv and a typed direct fallback.
 Window focus goes directly to the niri socket with a request ID.
@@ -329,7 +329,7 @@ Receipts never update the Dock model; only later catalog/compositor events do.
 Its context boundary exposes per-window focus/close and current-settings-based
 pin mutations. Pin writes preserve unrelated shell settings and reread the
 atomic authority before returning; there is no fabricated process-wide Quit.
-App Drawer's explicit supervised mode owns the action-scoped `app-drawer`
+Apps' explicit supervised mode owns the action-scoped `app-drawer`
 shortcut endpoint and reports readiness only after binding. It constructs its
 catalog watcher and GPUI entity only while its single window exists; repeated
 activation dismisses that window without stopping the endpoint. Its standalone

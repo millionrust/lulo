@@ -41,7 +41,7 @@ only. Apple fonts, icons, logos, wallpapers, and sounds are never copied.
   controls, stable Dock order, real activation and places, accessibility, and
   event-driven rendering.
 
-## Spotlight and App Drawer
+## Spotlight and Apps
 
 - Apple: immediate Command-Space focus, apps/files/settings/actions/calculation,
   ranked results, keyboard operation, and explicit reveal/open behavior.
@@ -128,7 +128,7 @@ only. Apple fonts, icons, logos, wallpapers, and sounds are never copied.
   macOS-familiar table/summary hierarchy, safe process actions, bounded refresh,
   and no invented energy/GPU figures.
 
-## App Drawer and software management
+## Apps and software management
 
 - Apple: Launchpad/Apps presents an icon grid with search and folders; App
   Store is a separate browsing/install/update experience.

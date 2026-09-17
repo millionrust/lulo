@@ -1,4 +1,4 @@
-//! Framework-neutral App Drawer contracts.
+//! Framework-neutral Apps contracts.
 
 pub mod accessibility;
 

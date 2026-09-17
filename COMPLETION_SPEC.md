@@ -713,7 +713,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
   Mouse: press opens the menu; while one menu is open, hovering other titles switches menus without clicking; release on an item selects it (press-drag-release). Keyboard: ⌃F2 focuses the menu bar (Full Keyboard Access), ←/→ move between menus, ↓ opens, Return selects, Escape closes.
   Truncation: when menus + status items collide, hide menu titles from the right into a `»` overflow menu; app name is never hidden.
 
-- [ ] **3.2 System menu (rmac mark).** Exact rows and order:
+- [~] **3.2 System menu (rmac mark).** Exact rows and order: (Verified live 2026-09-17 with the virtual-pointer probe: clicking the mark opens the dark `material.menu` panel in the spec order — About This rmac · System Settings… · Software Center · ─ · Recent Items › · ─ · Force Quit… ⌥⌘⎋ · ─ · Sleep · Restart… · Shut Down… · ─ · Lock Screen ⌃⌘Q · Log Out Jacob… ⇧⌘Q; first row hover-highlighted. Clicking “System Settings…” launched `org.rmac.SystemSettings` (“Wi-Fi — Settings”). Still to do: the update badge, hiding Software Center when absent, and an About window verifying real device/OS facts.)
   ```
   About This Computer
   ─

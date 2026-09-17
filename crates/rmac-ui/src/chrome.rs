@@ -16,12 +16,14 @@ use crate::{components, mac, text_px};
 enum WindowAction {
     ToggleFullscreen,
     Fill,
+    Minimize,
 }
 
 /// Route a window control through the niri compositor. GPUI's own window
 /// controls are no-ops under niri's floating policy, and niri has no native
-/// minimize, so fullscreen/fill must be compositor actions on this process's
-/// focused window.
+/// minimize, so all three are compositor actions on this process's focused
+/// window. Minimize parks the window on `rmac-parking` and records where it
+/// came from so the app menu's Show All can restore it (§2.2).
 fn send_window_action(action: WindowAction, cx: &mut App) {
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
@@ -40,6 +42,14 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
                 rmac_compositor::Action::FullscreenWindow { window, on: true }
             }
             WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
+            WindowAction::Minimize => {
+                let mut store = rmac_compositor::ParkingStore::load_default();
+                store.record_from(&snapshot, &[window]);
+                if let Err(error) = store.save_default() {
+                    eprintln!("could not save the parking set: {error}");
+                }
+                rmac_compositor::Action::MinimizeWindow { window }
+            }
         };
         let _ = rmac_compositor_niri::execute_action(&action).await;
     })
@@ -131,7 +141,7 @@ pub fn traffic_lights_active(active: bool) -> impl IntoElement {
             "—",
             "Minimize",
             active,
-            |_, window, _| window.minimize_window(),
+            |_, _, cx| send_window_action(WindowAction::Minimize, cx),
         ))
         .child(traffic_light(
             "tl-zoom",

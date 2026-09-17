@@ -483,15 +483,6 @@ mod linux_wayland {
                             .as_deref()
                             .is_some_and(|id| self.open_app_id.as_deref() != Some(id))))
             {
-                if std::env::var_os("RMAC_DEBUG_MENU").is_some() {
-                    eprintln!(
-                        "dbg close open={:?} len={} menu_app={:?} open_app={:?}",
-                        self.open_menu,
-                        menus.len(),
-                        status.menu_app_id,
-                        self.open_app_id
-                    );
-                }
                 self.open_menu = None;
                 self.open_app_id = None;
                 self.selected_item = 0;
@@ -577,9 +568,6 @@ mod linux_wayland {
                         .hover(|style| style.bg(rgba(tokens::light_hover())))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
-                            if std::env::var_os("RMAC_DEBUG_MENU").is_some() {
-                                eprintln!("dbg menu btn index={index} app={app_id}");
-                            }
                             if this.open_menu == Some(index) {
                                 this.close_menu(window, cx);
                             } else {
@@ -600,9 +588,6 @@ mod linux_wayland {
                     self.open_app_id.clone()?
                 };
                 let left = menu_left?;
-                if std::env::var_os("RMAC_DEBUG_MENU").is_some() {
-                    eprintln!("dbg popup idx={menu_index} app={app_id} left={left}");
-                }
                 let selected = self.selected_item.min(menu.items.len().saturating_sub(1));
                 let mut panel = div()
                     .id(format!("app-menu-panel-{}-{menu_index}", self.display_id))

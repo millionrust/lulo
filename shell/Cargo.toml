@@ -22,6 +22,7 @@ rmac-app-launch = { version = "=0.1.0", path = "../crates/rmac-app-launch" }
 rmac-app-menu = { version = "=0.1.0", path = "../crates/rmac-app-menu" }
 rmac-compositor = { version = "=0.1.0", path = "../crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.1.0", path = "../crates/rmac-compositor-niri" }
+rmac-design = { version = "=0.1.0", path = "../crates/rmac-design" }
 rmac-desktop = { version = "=0.1.0", path = "../crates/rmac-desktop" }
 rmac-dock = { version = "=0.1.0", path = "../crates/rmac-dock" }
 rmac-dock-runtime = { version = "=0.1.0", path = "../crates/rmac-dock-runtime" }

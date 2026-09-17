@@ -861,11 +861,7 @@ mod linux_wayland {
                 .role(Role::Toolbar)
                 .aria_label("rmac top bar")
                 .absolute()
-                // Keep the strip at the top edge while hidden (without
-                // painting) so the 2 px reveal input region still overlaps a
-                // live element and can receive the hover that reveals it.
-                .top(px(0.0))
-                .opacity(if visible { 1.0 } else { 0.0 })
+                .top(px(if visible { 0.0 } else { -BAR_HEIGHT }))
                 .left_0()
                 .right_0()
                 .h(px(BAR_HEIGHT))

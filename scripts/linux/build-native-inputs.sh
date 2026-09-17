@@ -5,7 +5,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 target_dir="$repo_root/target"
-lab_dir="$repo_root/experiments/gpui-upstream-lab"
+lab_dir="$repo_root/shell"
 lab_target_dir="$lab_dir/target"
 minimum_kib=$((15 * 1024 * 1024))
 build_minimum_kib=$((25 * 1024 * 1024))

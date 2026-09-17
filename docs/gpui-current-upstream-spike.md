@@ -3,7 +3,7 @@
 - Date: 2026-07-10
 - Upstream: Zed/GPUI revision
   `76c93968da5b8b8809bdd72e4ad9e7d0e946bad0`
-- Linux shell graph: `experiments/gpui-upstream-lab`
+- Linux shell graph: `shell`
 - Application workspace: GPUI 0.2.2 and Rust 1.94.1
 - Shell toolchain: Rust 1.95.0, matching the pinned upstream revision
 
@@ -210,7 +210,7 @@ Run on both GNOME Wayland and niri where specified. Capture the GPUI lab commit,
 kernel, compositor version, session type, GPU and driver, monitor layouts and
 scale factors, and Orca version with every result.
 
-1. From `experiments/gpui-upstream-lab`, run
+1. From `shell`, run
    `cargo check --features wayland --bins`.
 2. Launch `cargo run --features wayland --bin a11y` with Orca active.
 3. Confirm Orca announces the application, heading, spin button, counter value,

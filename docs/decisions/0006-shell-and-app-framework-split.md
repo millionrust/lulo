@@ -21,7 +21,7 @@ accessibility tree, so shell surfaces built on it are ordinary `xdg` windows:
 they enter niri's window lists and switchers, cannot reliably target the focused
 output or stack above full-screen windows, and cannot expose AT-SPI semantics.
 
-`experiments/gpui-upstream-lab` already pins Zed revision
+`shell` already pins Zed revision
 `76c93968da5b8b8809bdd72e4ad9e7d0e946bad0` (with `gpui_platform` and the
 `wayland` feature). It has compiled probes for layer-shell, accessibility, and
 the four visible shell candidates (`wallpaper`, `top-bar`, `dock`, `osd`). The
@@ -67,14 +67,14 @@ application port and make failures hard to isolate. Keeping shell surfaces as
 - Out-of-cycle bumps are allowed only for a relevant security advisory or an
   upstream fix for a confirmed product blocker, with the same evidence scaled
   to the affected path.
-- `experiments/gpui-upstream-lab/README.md`, ADR 0002, and the installer
+- `shell/README.md`, ADR 0002, and the installer
   revision checks are updated in the same change.
 
 ## Rollback
 
 - The immediately preceding shell revision is
   `07fe8e9bb1484b2771d8a9d80f7fc370cee9c4ac` with its committed
-  `shell/Cargo.lock` (currently `experiments/gpui-upstream-lab/Cargo.lock`).
+  `shell/Cargo.lock` (currently `shell/Cargo.lock`).
 - Rollback reverts the shell workspace, its lockfile, and the installer's
   expected revision as one unit; it must not require user-data conversion
   because shell persistence formats do not change with a framework bump.
@@ -97,7 +97,7 @@ application port and make failures hard to isolate. Keeping shell surfaces as
 
 ## Evidence
 
-- `experiments/gpui-upstream-lab/` (pinned revision, probes, smoke scripts)
+- `shell/` (pinned revision, probes, smoke scripts)
 - `docs/decisions/0001-gpui-linux-gate.md`
 - `docs/decisions/0002-gpui-version-policy.md`
 - `docs/gpui-current-upstream-spike.md`

@@ -5,7 +5,7 @@ mod linux_wayland {
         WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
-    use rmac_gpui_upstream_lab::mark_first_frame;
+    use rmac_shell_layer::mark_first_frame;
 
     struct LayerShellLab;
 

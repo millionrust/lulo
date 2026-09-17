@@ -1111,14 +1111,14 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(async move {
                     if let Err(error) =
-                        rmac_gpui_upstream_lab::output_surfaces::watch_enabled(output_tx).await
+                        rmac_shell_layer::output_surfaces::watch_enabled(output_tx).await
                     {
                         eprintln!("wallpaper output watcher unavailable: {error}");
                     }
                 })
                 .detach();
             cx.spawn(async move |cx| {
-                let mut tracker = rmac_gpui_upstream_lab::output_surfaces::Tracker::default();
+                let mut tracker = rmac_shell_layer::output_surfaces::Tracker::default();
                 let mut removed_outputs = std::collections::BTreeSet::new();
                 match output_rx.recv().await {
                     Ok(mut desired) => 'updates: loop {
@@ -1178,8 +1178,8 @@ mod linux_wayland {
         current: &std::collections::BTreeSet<Uuid>,
         removed: &mut std::collections::BTreeSet<Uuid>,
     ) {
-        if rmac_gpui_upstream_lab::output_reappeared(previous, current, removed) {
-            std::process::exit(rmac_gpui_upstream_lab::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
+        if rmac_shell_layer::output_reappeared(previous, current, removed) {
+            std::process::exit(rmac_shell_layer::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
         }
     }
 }

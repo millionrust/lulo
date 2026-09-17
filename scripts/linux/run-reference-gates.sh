@@ -194,7 +194,7 @@ run_gate dependency-policy "$minimum_kib" \
 
 if [[ "$run_upstream_smoke" == true ]]; then
   run_gate upstream-wayland-smoke "$build_minimum_kib" dbus-run-session -- \
-    bash experiments/gpui-upstream-lab/scripts/nested-wayland-smoke.sh
+    bash shell/scripts/nested-wayland-smoke.sh
 fi
 
 if [[ "$run_performance" == true ]]; then

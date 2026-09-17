@@ -54,7 +54,7 @@ STAGES = (
     ),
     (
         "a4-report-fixtures",
-        ("$PYTHON", "experiments/gpui-upstream-lab/scripts/test_a4_report.py"),
+        ("$PYTHON", "shell/scripts/test_a4_report.py"),
     ),
     ("update-trust", ("$PYTHON", "scripts/linux/verify-update-trust.py")),
     (

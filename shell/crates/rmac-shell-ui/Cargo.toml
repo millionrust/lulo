@@ -1,0 +1,11 @@
+[package]
+name = "rmac-shell-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+rmac-apps.workspace = true
+rmac-shell-settings.workspace = true
+rmac-shell-status.workspace = true

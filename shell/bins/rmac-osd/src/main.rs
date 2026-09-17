@@ -13,8 +13,8 @@ mod linux_wayland {
         Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
-    use rmac_gpui_upstream_lab::shell_visuals as visuals;
     use rmac_osd::{Kind, Presentation};
+    use rmac_shell_ui::shell_visuals as visuals;
     use uuid::Uuid;
 
     const SURFACE_WIDTH: f32 = 304.0;
@@ -59,14 +59,12 @@ mod linux_wayland {
                                         .find(|workspace| workspace.active)
                                 })
                                 .and_then(|workspace| workspace.output.as_ref())
-                                .map(rmac_gpui_upstream_lab::stable_output_uuid);
+                                .map(rmac_shell_layer::stable_output_uuid);
                             this.fallback_output = snapshot
                                 .outputs
                                 .iter()
                                 .filter(|output| output.enabled())
-                                .map(|output| {
-                                    rmac_gpui_upstream_lab::stable_output_uuid(&output.id)
-                                })
+                                .map(|output| rmac_shell_layer::stable_output_uuid(&output.id))
                                 .min();
                         })
                         .is_err()
@@ -278,7 +276,7 @@ mod linux_wayland {
             status: &Entity<OsdStatus>,
             cx: &mut App,
         ) {
-            let displays = rmac_gpui_upstream_lab::output_surfaces::newest_displays(cx);
+            let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
             let available = displays.keys().copied().collect::<BTreeSet<_>>();
             let active = desired
                 .map(|desired| desired.intersection(&available).copied().collect())
@@ -378,7 +376,7 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(async move {
                     if let Err(error) =
-                        rmac_gpui_upstream_lab::output_surfaces::watch_enabled(output_tx).await
+                        rmac_shell_layer::output_surfaces::watch_enabled(output_tx).await
                     {
                         eprintln!("OSD output watcher stopped: {error}");
                     }

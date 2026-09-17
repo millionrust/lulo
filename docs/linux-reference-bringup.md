@@ -372,7 +372,7 @@ Run the evidence collector again, then launch the current-upstream probes:
 
 ```sh
 bash scripts/linux/collect-reference-evidence.sh
-cd experiments/gpui-upstream-lab
+cd shell
 cargo run --features wayland --bin a11y
 cargo run --features wayland --bin layer-shell
 cargo run --features wayland --bin top-bar

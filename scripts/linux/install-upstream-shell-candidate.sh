@@ -8,7 +8,7 @@ repo_root="${RMAC_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
   echo "upstream shell candidate refused: RMAC_REPO_ROOT must be absolute" >&2
   exit 1
 }
-lab_dir="$repo_root/experiments/gpui-upstream-lab"
+lab_dir="$repo_root/shell"
 target_dir="$lab_dir/target"
 libexec_dir="${HOME}/.local/libexec/rmac"
 data_home="${XDG_DATA_HOME:-${HOME}/.local/share}"

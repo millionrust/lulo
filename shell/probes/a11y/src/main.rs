@@ -3,7 +3,7 @@ use gpui::{
     KeyBinding, Role, SharedString, Toggled, Window, WindowBounds, WindowOptions,
 };
 use gpui_platform::application;
-use rmac_gpui_upstream_lab::mark_first_frame;
+use rmac_shell_layer::mark_first_frame;
 
 actions!(rmac_a11y_lab, [Tab, TabPrevious]);
 

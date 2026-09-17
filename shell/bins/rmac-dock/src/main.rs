@@ -15,7 +15,7 @@ mod linux_wayland {
         Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
-    use rmac_gpui_upstream_lab::shell_visuals as visuals;
+    use rmac_shell_ui::shell_visuals as visuals;
 
     const EXCLUSIVE_ZONE: f32 = 88.0;
     const ICON_SIZE: f32 = 56.0;
@@ -55,17 +55,17 @@ mod linux_wayland {
                                 .snapshot
                                 .outputs
                                 .iter()
-                                .map(|output| rmac_gpui_upstream_lab::stable_output_uuid(output))
+                                .map(|output| rmac_shell_layer::stable_output_uuid(output))
                                 .collect();
                             if was_ready
-                                && rmac_gpui_upstream_lab::output_reappeared(
+                                && rmac_shell_layer::output_reappeared(
                                     &this.outputs,
                                     &outputs,
                                     &mut this.removed_outputs,
                                 )
                             {
                                 std::process::exit(
-                                    rmac_gpui_upstream_lab::WAYLAND_OUTPUT_RESTART_EXIT_CODE,
+                                    rmac_shell_layer::WAYLAND_OUTPUT_RESTART_EXIT_CODE,
                                 );
                             }
                             this.outputs = outputs;
@@ -97,12 +97,12 @@ mod linux_wayland {
 
         fn surfaces(&self) -> Option<Vec<DockSurface>> {
             let snapshot = self.snapshot()?;
-            let fullscreen = rmac_gpui_upstream_lab::top_bar_output_policies(&snapshot.compositor);
+            let fullscreen = rmac_shell_layer::top_bar_output_policies(&snapshot.compositor);
             snapshot.surface_plan.as_ref().ok().map(|surfaces| {
                 surfaces
                     .iter()
                     .map(|surface| {
-                        let output = rmac_gpui_upstream_lab::stable_output_uuid(&surface.output);
+                        let output = rmac_shell_layer::stable_output_uuid(&surface.output);
                         DockSurface::from_description(
                             surface,
                             fullscreen.get(&output).copied().unwrap_or(false),
@@ -1104,14 +1104,14 @@ mod linux_wayland {
             status: &Entity<DockStatus>,
             cx: &mut App,
         ) {
-            let displays = rmac_gpui_upstream_lab::output_surfaces::newest_displays(cx);
+            let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
             let desired = desired.map(|surfaces| {
                 surfaces
                     .iter()
                     .filter_map(|surface| {
                         surface.output.as_ref().map(|output| {
                             (
-                                rmac_gpui_upstream_lab::stable_output_uuid(output),
+                                rmac_shell_layer::stable_output_uuid(output),
                                 surface.clone(),
                             )
                         })

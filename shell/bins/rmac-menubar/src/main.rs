@@ -19,8 +19,8 @@ mod linux_wayland {
         WindowKind, WindowOptions,
     };
     use gpui_platform::application;
-    use rmac_gpui_upstream_lab::shell_visuals as visuals;
-    use rmac_gpui_upstream_lab::{
+    use rmac_shell_ui::shell_visuals as visuals;
+    use rmac_shell_ui::{
         delay_until_next_clock_tick, top_bar_active_app_name, top_bar_clock_pattern,
         top_bar_indicator_labels, top_bar_workspace_label, TopBarIndicatorKind,
     };
@@ -1391,7 +1391,7 @@ mod linux_wayland {
             status: &Entity<ShellStatus>,
             cx: &mut App,
         ) {
-            let available = rmac_gpui_upstream_lab::output_surfaces::newest_displays(cx);
+            let available = rmac_shell_layer::output_surfaces::newest_displays(cx);
             let target = desired
                 .map(|desired| {
                     desired
@@ -1490,7 +1490,7 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(async move {
                     if let Err(error) =
-                        rmac_gpui_upstream_lab::output_surfaces::watch_top_bar(output_tx).await
+                        rmac_shell_layer::output_surfaces::watch_top_bar(output_tx).await
                     {
                         eprintln!("top-bar output watcher unavailable: {error}");
                     }
@@ -1553,8 +1553,8 @@ mod linux_wayland {
     ) {
         let previous = previous.keys().copied().collect();
         let current = current.keys().copied().collect();
-        if rmac_gpui_upstream_lab::output_reappeared(&previous, &current, removed) {
-            std::process::exit(rmac_gpui_upstream_lab::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
+        if rmac_shell_layer::output_reappeared(&previous, &current, removed) {
+            std::process::exit(rmac_shell_layer::WAYLAND_OUTPUT_RESTART_EXIT_CODE);
         }
     }
 }

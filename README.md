@@ -89,7 +89,7 @@ The separate current-upstream experiment probes APIs unavailable in the stable
 release without changing product dependencies:
 
 ```sh
-cd experiments/gpui-upstream-lab
+cd shell
 cargo run --bin a11y
 # Linux/Wayland only:
 cargo run --features wayland --bin layer-shell

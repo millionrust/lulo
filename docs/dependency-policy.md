@@ -79,7 +79,7 @@ reviewed upgrades.
 
 ## Separately locked Linux shell graph
 
-`experiments/gpui-upstream-lab` remains outside the product workspace because
+`shell` remains outside the product workspace because
 the four packaged layer-shell hosts require a newer GPUI API than the ordinary
 application graph. It is shipping input for `rmac-wallpaper`, `rmac-top-bar`,
 `rmac-dock`, and `rmac-osd`, not a disposable preview.

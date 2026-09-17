@@ -1,0 +1,48 @@
+[package]
+name = "rmac-menubar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "top-bar"
+path = "src/main.rs"
+
+[features]
+default = []
+wayland = ["gpui_platform/wayland"]
+x11 = ["gpui_platform/x11"]
+
+[dependencies]
+async-channel.workspace = true
+async-io.workspace = true
+blocking.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
+image.workspace = true
+rmac-apps.workspace = true
+rmac-app-launch.workspace = true
+rmac-app-menu.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-niri.workspace = true
+rmac-desktop.workspace = true
+rmac-dock.workspace = true
+rmac-dock-runtime.workspace = true
+rmac-dock-system.workspace = true
+rmac-osd.workspace = true
+rmac-places.workspace = true
+rmac-recent-documents.workspace = true
+rmac-search.workspace = true
+rmac-shell-layer.workspace = true
+rmac-shell-runtime.workspace = true
+rmac-shell-settings.workspace = true
+rmac-shell-status.workspace = true
+rmac-shell-ui.workspace = true
+rmac-wallpaper.workspace = true
+rmac-wallpaper-image.workspace = true
+rmac-wallpaper-runtime.workspace = true
+trash.workspace = true
+uuid.workspace = true

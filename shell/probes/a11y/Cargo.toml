@@ -1,0 +1,20 @@
+[package]
+name = "rmac-shell-a11y-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "a11y"
+path = "src/main.rs"
+
+[features]
+default = []
+wayland = ["gpui_platform/wayland"]
+x11 = ["gpui_platform/x11"]
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+rmac-shell-layer.workspace = true

@@ -177,11 +177,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            experiments/gpui-upstream-lab/target
-          key: ${{ runner.os }}-upstream-gpui-${{ hashFiles('experiments/gpui-upstream-lab/Cargo.lock', 'experiments/gpui-upstream-lab/rust-toolchain.toml') }}
+            shell/target
+          key: ${{ runner.os }}-upstream-gpui-${{ hashFiles('shell/Cargo.lock', 'shell/rust-toolchain.toml') }}
 
       - name: Check experiment formatting
-        working-directory: experiments/gpui-upstream-lab
+        working-directory: shell
         run: cargo fmt --all -- --check
 
       - name: Check shell dependency policy
@@ -189,17 +189,17 @@ jobs:
         with:
           log-level: error
           command: check
-          arguments: --locked --manifest-path experiments/gpui-upstream-lab/Cargo.toml
-          command-arguments: --config experiments/gpui-upstream-lab/deny.toml --hide-inclusion-graph
+          arguments: --locked --manifest-path shell/Cargo.toml
+          command-arguments: --config shell/deny.toml --hide-inclusion-graph
 
       - name: Test shell support library
-        working-directory: experiments/gpui-upstream-lab
+        working-directory: shell
         run: cargo test --locked --lib
 
       - name: Check Wayland probes
-        working-directory: experiments/gpui-upstream-lab
+        working-directory: shell
         run: cargo clippy --locked --bins --features wayland -- -D warnings
 
       - name: Run nested Wayland smoke checks
-        working-directory: experiments/gpui-upstream-lab
+        working-directory: shell
         run: dbus-run-session -- bash scripts/nested-wayland-smoke.sh

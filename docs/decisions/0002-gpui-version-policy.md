@@ -33,7 +33,7 @@ macOS and Linux, but its Ubuntu/Wayland runtime gates remain open.
 
 ### Separately locked Linux shell line
 
-- `experiments/gpui-upstream-lab` stays outside the product workspace.
+- `shell` stays outside the product workspace.
 - It pins a full immutable Git revision and its matching Rust toolchain and
   commits its own lockfile.
 - Its `wallpaper`, `top-bar`, `dock`, and `osd` binaries are the maintained
@@ -123,4 +123,4 @@ belongs in `rmac-ui` or a platform boundary, not duplicated across applications.
 - `docs/decisions/0001-gpui-linux-gate.md`
 - `docs/gpui-0.2.2-stable-spike.md`
 - `docs/gpui-current-upstream-spike.md`
-- `experiments/gpui-upstream-lab`
+- `shell`

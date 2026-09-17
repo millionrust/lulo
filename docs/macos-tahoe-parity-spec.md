@@ -981,7 +981,7 @@ performance still require end-to-end proof.
    stable, but the visible name, icon, menus, animation, layout, and settings
    must follow the measured Tahoe Apps experience.
 3. Shell rendering is now built from the separately locked
-   `experiments/gpui-upstream-lab` graph into the native session package. Keep
+   `shell` graph into the native session package. Keep
    each host connected to its maintained runtime/model crate and prevent any
    preview-only implementation from diverging from the packaged path.
 4. System Settings has substantial real Linux authority coverage, but visual

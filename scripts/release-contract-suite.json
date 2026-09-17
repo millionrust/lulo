@@ -38,7 +38,7 @@
     {
       "command": [
         "$PYTHON",
-        "experiments/gpui-upstream-lab/scripts/test_a4_report.py"
+        "shell/scripts/test_a4_report.py"
       ],
       "id": "a4-report-fixtures"
     },

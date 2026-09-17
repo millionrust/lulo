@@ -105,6 +105,8 @@ pub(crate) fn render_specimen(
         GalleryComponent::Tabs => render_tab(state, scale),
         GalleryComponent::Segmented => render_segmented(state, scale),
         GalleryComponent::Popup => render_popup(state, scale),
+        GalleryComponent::Checkbox => render_checkbox(state, scale),
+        GalleryComponent::Radio => render_radio(state, scale),
         GalleryComponent::Dialog => render_dialog(state, scale),
         GalleryComponent::Alert | GalleryComponent::Toast => {
             render_message(component, state, scale)
@@ -364,6 +366,89 @@ fn render_segmented(state: GalleryState, scale: PreviewScale) -> AnyElement {
         .when(is_disabled(state), |element| element.opacity(0.42))
         .child(segment("Icons", true))
         .child(segment("List", false))
+        .into_any_element()
+}
+
+fn render_checkbox(state: GalleryState, scale: PreviewScale) -> AnyElement {
+    let checked = state == GalleryState::On;
+    let mixed = state == GalleryState::Mixed;
+    let marker = if mixed {
+        div()
+            .w(p(scale, 8.0))
+            .h(p(scale, 2.0))
+            .rounded_full()
+            .bg(mac::white())
+            .into_any_element()
+    } else if checked {
+        div()
+            .text_color(mac::white())
+            .text_size(p(scale, 11.0))
+            .child("✓")
+            .into_any_element()
+    } else {
+        div().into_any_element()
+    };
+    let box_ = div()
+        .size(p(scale, 14.0))
+        .rounded(p(scale, 4.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(if checked || mixed {
+            mac::accent()
+        } else {
+            mac::raised()
+        })
+        .border_1()
+        .border_color(if checked || mixed {
+            mac::accent()
+        } else {
+            mac::separator()
+        })
+        .child(marker);
+    div()
+        .flex()
+        .items_center()
+        .gap(p(scale, 6.0))
+        .text_size(p(scale, 11.0))
+        .text_color(state_text(state))
+        .when(is_disabled(state), |element| element.opacity(0.42))
+        .child(box_)
+        .child("Option")
+        .into_any_element()
+}
+
+fn render_radio(state: GalleryState, scale: PreviewScale) -> AnyElement {
+    let selected = state == GalleryState::Selected;
+    let circle = div()
+        .size(p(scale, 14.0))
+        .rounded_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(if selected {
+            mac::accent()
+        } else {
+            mac::raised()
+        })
+        .border_1()
+        .border_color(if selected {
+            mac::accent()
+        } else {
+            mac::separator()
+        })
+        .when(selected, |circle| {
+            circle.child(div().size(p(scale, 6.0)).rounded_full().bg(mac::white()))
+        });
+    div()
+        .flex()
+        .items_center()
+        .gap(p(scale, 6.0))
+        .text_size(p(scale, 11.0))
+        .text_color(state_text(state))
+        .when(is_disabled(state), |element| element.opacity(0.42))
+        .child(circle)
+        .child("Option")
         .into_any_element()
 }
 

@@ -51,6 +51,8 @@ pub enum GalleryComponent {
     Tabs,
     Segmented,
     Popup,
+    Checkbox,
+    Radio,
     Dialog,
     Alert,
     ContextMenu,
@@ -75,6 +77,8 @@ impl GalleryComponent {
             Self::Tabs => "tabs",
             Self::Segmented => "segmented",
             Self::Popup => "popup",
+            Self::Checkbox => "checkbox",
+            Self::Radio => "radio",
             Self::Dialog => "dialog",
             Self::Alert => "alert",
             Self::ContextMenu => "context-menu",
@@ -99,6 +103,8 @@ impl GalleryComponent {
             Self::Tabs => "Tabs",
             Self::Segmented => "Segmented control",
             Self::Popup => "Pop-up button",
+            Self::Checkbox => "Checkbox",
+            Self::Radio => "Radio button",
             Self::Dialog => "Dialog",
             Self::Alert => "Alert",
             Self::ContextMenu => "Context menu",
@@ -284,6 +290,19 @@ const POPUP_STATES: &[GalleryState] = &[
     GalleryState::Focused,
     GalleryState::Disabled,
 ];
+const CHECKBOX_STATES: &[GalleryState] = &[
+    GalleryState::Off,
+    GalleryState::On,
+    GalleryState::Mixed,
+    GalleryState::Focused,
+    GalleryState::Disabled,
+];
+const RADIO_STATES: &[GalleryState] = &[
+    GalleryState::Unselected,
+    GalleryState::Selected,
+    GalleryState::Focused,
+    GalleryState::Disabled,
+];
 const DIALOG_STATES: &[GalleryState] = &[
     GalleryState::Default,
     GalleryState::Focused,
@@ -407,6 +426,16 @@ pub const COMPONENT_SPECS: &[ComponentSpec] = &[
         keyboard: Some(NAVIGATE),
     },
     ComponentSpec {
+        component: GalleryComponent::Checkbox,
+        states: CHECKBOX_STATES,
+        keyboard: Some(NAVIGATE),
+    },
+    ComponentSpec {
+        component: GalleryComponent::Radio,
+        states: RADIO_STATES,
+        keyboard: Some(NAVIGATE),
+    },
+    ComponentSpec {
         component: GalleryComponent::Dialog,
         states: DIALOG_STATES,
         keyboard: Some(MODAL),
@@ -471,6 +500,8 @@ mod tests {
             GalleryComponent::Tabs,
             GalleryComponent::Segmented,
             GalleryComponent::Popup,
+            GalleryComponent::Checkbox,
+            GalleryComponent::Radio,
             GalleryComponent::Dialog,
             GalleryComponent::Alert,
             GalleryComponent::ContextMenu,

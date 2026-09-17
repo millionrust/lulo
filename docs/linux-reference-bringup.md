@@ -157,6 +157,17 @@ cat "$XDG_RUNTIME_DIR/rmac/shortcuts-status.json"
 ```
 
 The second installer is the single development-only handoff for the pinned
+For interactive checks without a physical pointer, niri advertises
+`zwlr_virtual_pointer_manager_v1`; build and run the dev-only probe:
+
+```sh
+cd shell && cargo build -p rmac-shell-input-probe
+./target/debug/input-probe click 1803 13   # clock -> Notification Center
+./target/debug/input-probe click 18 13     # rmac mark -> system menu
+```
+
+It injects only pointer motion/buttons and is never part of a product package.
+
 upstream wallpaper, menu bar, and Dock. Stop `run-shell-preview.sh` before
 executing it. It uses the existing three systemd crash domains, records both
 the rmac and GPUI revisions, and deliberately does not add the candidates to

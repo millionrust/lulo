@@ -807,7 +807,7 @@ mod linux_wayland {
             .border_1()
             .border_color(rgba(tokens::light_border()))
             .shadow_lg()
-            .text_size(px(tokens::dock_tile_radius(ICON_SIZE)))
+            .text_size(px(13.0))
             .text_color(rgba(tokens::primary_text()))
             .occlude()
             .child(

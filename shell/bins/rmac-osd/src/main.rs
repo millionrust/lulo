@@ -215,7 +215,7 @@ mod linux_wayland {
                             .overflow_hidden()
                             .text_ellipsis()
                             .whitespace_nowrap()
-                            .text_size(px(tokens::dock_tile_radius(ICON_SIZE)))
+                            .text_size(px(13.0))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgba(tokens::primary_text()))
                             .child(presentation.title),

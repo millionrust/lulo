@@ -765,6 +765,7 @@ pub struct TextField {
     disabled: bool,
     size: Size,
     tab_index: isize,
+    error: Option<SharedString>,
     style: StyleRefinement,
 }
 
@@ -777,6 +778,7 @@ impl TextField {
             disabled: false,
             size: Size::Medium,
             tab_index: 0,
+            error: None,
             style: StyleRefinement::default(),
         }
     }
@@ -805,6 +807,12 @@ impl TextField {
         self.tab_index = tab_index;
         self
     }
+
+    /// Show a validation message below the field and draw a danger border.
+    pub fn error(mut self, message: impl Into<SharedString>) -> Self {
+        self.error = Some(message.into());
+        self
+    }
 }
 
 impl Styled for TextField {
@@ -815,13 +823,32 @@ impl Styled for TextField {
 
 impl RenderOnce for TextField {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        ComponentInput::new(&self.state)
+        let mut style = self.style.clone();
+        if self.error.is_some() {
+            style.border_color(mac::danger());
+        }
+        let input = ComponentInput::new(&self.state)
             .appearance(self.appearance)
             .cleanable(self.cleanable)
             .disabled(self.disabled)
             .tab_index(self.tab_index)
             .with_size(self.size)
-            .refine_style(&self.style)
+            .refine_style(&style);
+        match self.error {
+            Some(message) => div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(input)
+                .child(
+                    div()
+                        .text_color(mac::danger())
+                        .text_size(px(11.0))
+                        .child(message),
+                )
+                .into_any_element(),
+            None => input.into_any_element(),
+        }
     }
 }
 
@@ -855,6 +882,11 @@ impl SearchField {
 
     pub fn tab_index(mut self, tab_index: isize) -> Self {
         self.field = self.field.tab_index(tab_index);
+        self
+    }
+
+    pub fn error(mut self, message: impl Into<SharedString>) -> Self {
+        self.field = self.field.error(message);
         self
     }
 }

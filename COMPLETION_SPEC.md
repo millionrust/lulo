@@ -921,7 +921,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 
 ### 5.6 OSD (volume/brightness/keyboard backlight/mute)
 
-- Keep existing layer surface (R: 304×74, radius 28, hold 1600 ms) but restyle to Tahoe: horizontal capsule under the menu bar on the right side (top-right, 10 px below bar, aligned with Control Center column), content: glyph 22 + title `headline` ("Display"/"Sound"/"Keyboard") + thick slider 16 high, output device name `subheadline` for sound.
+- [~] Keep existing layer surface (R: 304×74, radius 28, hold 1600 ms) but restyle to Tahoe: horizontal capsule under the menu bar on the right side (top-right, 10 px below bar, aligned with Control Center column), content: glyph 22 + title `headline` ("Display"/"Sound"/"Keyboard") + thick slider 16 high, output device name `subheadline` for sound. (**Verified live 2026-09-17:** running the dev `osd volume-up` shows the rounded HUD capsule near the top-right with the real output name "Built-in Audio Analog Stereo", speaker glyphs, a thick slider, and tick dots — `target/evidence/phase5/osd.png`. Still to do: exact title/step behavior, brightness/keyboard variants, fine-adjust, and in-place repeat.)
 - Repeated key presses update in place (no re-animation); ⌥⇧+key = quarter steps (fine adjust) via `rmac-osd` step size.
 
 ### 5.7 App switcher (⌘Tab) and window cycling (⌘`)

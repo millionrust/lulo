@@ -65,7 +65,7 @@ impl AppDrawer {
             .gap_2()
             .px_1()
             .py_1p5()
-            .rounded(px(10.0))
+            .rounded(px(mac::radius_menu()))
             .when(selected, |element: Stateful<Div>| {
                 element
                     .bg(mac::accent_subtle())
@@ -121,7 +121,7 @@ impl AppDrawer {
             .w_full()
             .px_3()
             .py_1p5()
-            .rounded(px(8.0))
+            .rounded(px(mac::radius_control()))
             .when(selected, |element: Stateful<Div>| {
                 element.bg(mac::accent_subtle())
             })
@@ -171,7 +171,7 @@ impl AppDrawer {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(px(5.0))
+                .rounded(px(mac::radius_menu_item()))
                 .when(active, |element: Stateful<Div>| element.bg(mac::raised()))
                 .child(
                     svg()
@@ -194,7 +194,7 @@ impl AppDrawer {
             .items_center()
             .gap_0p5()
             .p_0p5()
-            .rounded(px(7.0))
+            .rounded(px(mac::radius_segmented()))
             .bg(mac::control_fill())
             .child(segment(
                 "v-grid",
@@ -218,7 +218,7 @@ impl AppDrawer {
                     .id(id)
                     .px_3()
                     .py_1()
-                    .rounded(px(13.0))
+                    .rounded(px(mac::radius_card()))
                     .text_size(rmac_ui::text_px(12.0))
                     .when(active, |element: Stateful<Div>| {
                         element

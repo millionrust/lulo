@@ -12,11 +12,11 @@ impl LauncherView {
                 .into_any_element();
         }
         let (glyph, color): (&str, Hsla) = match row.category {
-            Category::Applications => ("A", gpui::rgb(0x0a84ff).into()),
-            Category::Settings => ("⚙", gpui::rgb(0x8e8e93).into()),
-            Category::Calculator => ("=", gpui::rgb(0xff9f0a).into()),
-            Category::Files => ("▤", gpui::rgb(0x30b0c7).into()),
-            Category::Other => ("•", gpui::rgb(0x5e5ce6).into()),
+            Category::Applications => ("A", mac::system_blue()),
+            Category::Settings => ("⚙", mac::system_gray()),
+            Category::Calculator => ("=", mac::system_orange()),
+            Category::Files => ("▤", mac::system_teal()),
+            Category::Other => ("•", mac::system_indigo()),
         };
         div()
             .size(px(size))

@@ -193,6 +193,11 @@ pub struct RadiusTokens {
     pub popover: f32,
     pub large_surface: f32,
     pub pill: f32,
+    pub menu: f32,
+    pub menu_item: f32,
+    pub dock: f32,
+    pub hud: f32,
+    pub segmented: f32,
 }
 
 /// Adaptive material tints for the distinct macOS visual layers.
@@ -366,6 +371,11 @@ impl ThemeTokens {
             popover: design.radii.popover,
             large_surface: design.radii.large,
             pill: design.radii.pill,
+            menu: design.radii.menu,
+            menu_item: design.radii.menu_item,
+            dock: design.radii.dock,
+            hud: design.radii.hud,
+            segmented: design.metrics.segmented_radius,
         };
 
         let metrics = ComponentMetricsTokens {

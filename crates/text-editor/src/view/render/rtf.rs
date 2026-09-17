@@ -62,7 +62,7 @@ impl EditorView {
             .mb_4()
             .px_3()
             .py_2()
-            .rounded(px(8.0))
+            .rounded(px(mac::radius_control()))
             .bg(mac::chrome())
             .border_1()
             .border_color(mac::separator())

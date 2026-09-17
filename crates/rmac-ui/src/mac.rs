@@ -109,6 +109,70 @@ pub fn radius_pill() -> f32 {
     crate::theme::current().radii.pill
 }
 
+pub fn radius_menu() -> f32 {
+    crate::theme::current().radii.menu
+}
+
+pub fn radius_menu_item() -> f32 {
+    crate::theme::current().radii.menu_item
+}
+
+pub fn radius_dock() -> f32 {
+    crate::theme::current().radii.dock
+}
+
+pub fn radius_hud() -> f32 {
+    crate::theme::current().radii.hud
+}
+
+pub fn radius_segmented() -> f32 {
+    crate::theme::current().radii.segmented
+}
+
+pub fn system_blue() -> Hsla {
+    crate::theme::current().colors.system_blue.hsla()
+}
+
+pub fn system_purple() -> Hsla {
+    crate::theme::current().colors.system_purple.hsla()
+}
+
+pub fn system_pink() -> Hsla {
+    crate::theme::current().colors.system_pink.hsla()
+}
+
+pub fn system_red() -> Hsla {
+    crate::theme::current().colors.system_red.hsla()
+}
+
+pub fn system_orange() -> Hsla {
+    crate::theme::current().colors.system_orange.hsla()
+}
+
+pub fn system_yellow() -> Hsla {
+    crate::theme::current().colors.system_yellow.hsla()
+}
+
+pub fn system_green() -> Hsla {
+    crate::theme::current().colors.system_green.hsla()
+}
+
+pub fn system_teal() -> Hsla {
+    crate::theme::current().colors.system_teal.hsla()
+}
+
+pub fn system_indigo() -> Hsla {
+    crate::theme::current().colors.system_indigo.hsla()
+}
+
+pub fn system_brown() -> Hsla {
+    crate::theme::current().colors.system_brown.hsla()
+}
+
+pub fn system_gray() -> Hsla {
+    crate::theme::current().colors.system_gray.hsla()
+}
+
 // Shared desktop component metrics.
 pub fn compact_control_height() -> f32 {
     crate::theme::current().metrics.compact_control_height
